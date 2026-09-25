@@ -1,10 +1,12 @@
 name: CI
 
-# The tree here is copied from the ConfigHub server's repository on each release, and
-# pull requests are checked the same way before they are carried over there.
+# Lint, typecheck, production build and the specs that need no ConfigHub instance.
 on:
   push:
     branches: [main]
+    # A change to the workflows alone has nothing to check (and before the first release,
+    # no code to check).
+    paths-ignore: ['.github/**']
   pull_request:
 
 jobs:
@@ -20,7 +22,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       # tsc -b, then the Vite production bundle.
-      - run: npm run build:standalone
+      - run: npm run build
       - run: test -f dist/index.html
       # The specs that need no ConfigHub instance. The rest run against a live instance
       # and a test user; see README.

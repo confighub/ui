@@ -1,17 +1,20 @@
 name: Image
 
-# Builds the UI image and pushes it to GHCR as
-# ghcr.io/confighub/ui, tagged with the commit and, on main, `latest`.
-# The image is configured at runtime (see README), so one image serves every instance.
+# Builds the UI image on each release tag and pushes it to GHCR as ghcr.io/confighub/ui,
+# tagged with the version (0.6.3), its minor line (0.6) and `latest`. Release tags arrive
+# with each ConfigHub release, together with the code they tag. The image is configured
+# at runtime (see README), so the same image works with any ConfigHub instance.
+# Pull requests (and a manual run on a branch) build it without pushing; a manual run on
+# a tag rebuilds that release.
 #
 # Each architecture is built natively on a runner of that architecture (an emulated
 # arm64 build takes twenty minutes; a native one takes two), then the two are joined
 # into one multi-arch manifest.
 on:
   push:
-    branches: [main]
     tags: ['v*.*.*']
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -38,7 +41,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
-        if: github.event_name != 'pull_request'
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -49,18 +52,23 @@ jobs:
           context: .
           file: Dockerfile
           platforms: linux/${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.title=ConfigHub UI
           # Per-arch images are pushed by digest only; the tags go on the manifest.
-          push: ${{ github.event_name != 'pull_request' }}
-          outputs: ${{ github.event_name != 'pull_request' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE) || 'type=docker' }}
+          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          outputs: ${{ startsWith(github.ref, 'refs/tags/v') && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE) || 'type=docker' }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,scope=${{ matrix.arch }},mode=max
       - id: push
-        if: github.event_name != 'pull_request'
+        if: startsWith(github.ref, 'refs/tags/v')
         run: echo "digest-${{ matrix.arch }}=${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
 
   manifest:
     needs: build
-    if: github.event_name != 'pull_request'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -73,10 +81,11 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
+          flavor: latest=false
           tags: |
-            type=sha,format=long
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
       - name: Join the per-arch images into one tagged manifest
         run: |
           set -euo pipefail
