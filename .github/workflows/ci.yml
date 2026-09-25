@@ -1,0 +1,28 @@
+name: CI
+
+# The tree here is copied from the ConfigHub server's repository on each release, and
+# pull requests are checked the same way before they are carried over there.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      # tsc -b, then the Vite production bundle.
+      - run: npm run build:standalone
+      - run: test -f dist/index.html
+      # The specs that need no ConfigHub instance. The rest run against a live instance
+      # and a test user; see README.
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test -c playwright.pure.config.ts
