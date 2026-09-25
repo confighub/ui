@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: confighub
+  annotations:
+    confighub.com/ResourceID: 6bca81d1-386d-4b48-86d3-bf41ed64f496
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/confighubai/cubbychat/backend:1.1.7
+          ports:
+            - containerPort: 8080
+          env:
+            - name: OLLAMA_URL
+              value: 'http://ollama:11434'
+            - name: OLLAMA_ENABLED
+              value: 'true' # AI features enabled
+            - name: DATABASE_URL
+              value: 'postgres://admin:password@postgres:5432/chatdb'
+            - name: CHAT_TITLE
+              value: 'Cubby Chat'
+            - name: PORT
+              value: '8080'
+            - name: REGION
+              value: 'EU'
+            - name: ROLE
+              value: 'staging'
+          resources:
+            requests:
+              memory: '128Mi'
+              cpu: 128m
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            httpGet:
+              path: confighubplaceholder
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 30
+            successThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: confighubplaceholder
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
+            successThreshold: 1
+          readinessProbe:
+            httpGet:
+              path: confighubplaceholder
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
+            successThreshold: 1
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 3000
+        fsGroup: 2000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: confighub
+  annotations:
+    confighub.com/ResourceID: d28e0cc9-bccd-41b3-afc0-b2d47764e16d
+spec:
+  selector:
+    app: backend
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backend-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/enable-websockets: 'true'
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '3600'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '3600'
+    confighub.com/ResourceID: confighubplaceholder
+  namespace: confighub
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: eu-staging.local.cubby.bz
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8080

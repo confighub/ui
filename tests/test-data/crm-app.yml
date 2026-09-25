@@ -1,0 +1,41 @@
+# crm-deployment.yaml
+
+# 1. ConfigMap: For non-sensitive CRM configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crm-app-config
+data:
+  # Example configuration values for a CRM
+  ORG_NAME: 'St. Pete Sales Co.'
+  DEFAULT_CURRENCY: 'USD'
+  SESSION_TIMEOUT: '3600' # In seconds
+---
+# 2. Secret: For sensitive data like database credentials and API keys
+# IMPORTANT: Values must be base64-encoded. See instructions below.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: crm-app-secrets
+type: Opaque
+data:
+  # Example for a PostgreSQL connection string.
+  # Command to generate: echo -n 'postgres://user:password@db-host.com:5432/crmdb?sslmode=require' | base64
+  DATABASE_URL: 'cG9zdGdyZXM6Ly91c2VyOnBhc3N3b3JkQGRiLWhvc3QuY29tOjU0MzIvY3JtZGI/c3NsbW9kZT1yZXF1aXJl'
+  # Example for an email service API key
+  # Command to generate: echo -n 'SG.your-sendgrid-api-key' | base64
+  SENDGRID_API_KEY: 'U0cueW91ci1zZW5kZ3JpZC1hcGkta2V5'
+---
+# 3. Deployment: Manages the CRM application pods
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crm-app-deployment
+  labels:
+    app: crm-app
+spec:
+  replicas: 2 # Start with 2 replicas for high availability
+  selector:
+    matchLabels:
+      app: crm-app
+  template:

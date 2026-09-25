@@ -1,0 +1,37 @@
+{
+  "ignoreDeprecations": "6.0",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "types": ["node"],
+    /* Bundler mode */
+    "moduleResolution": "Bundler",
+    /* When @confighub/* are linked from a local checkout (file: dependencies), resolve
+       their imports from here, so they share this app's React and Redux Toolkit rather
+       than the checkout's own. Their own runtime dependencies (openapi-fetch) are
+       therefore this app's dependencies too. */
+    "preserveSymlinks": true,
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "playwright.config.ts"]
+}

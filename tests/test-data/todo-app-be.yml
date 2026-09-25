@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todo-backend-deployment
+  labels:
+    app: todo-app
+    tier: backend
+spec:
+  replicas: 2 # You can adjust the number of desired replicas
+  selector:
+    matchLabels:
+      app: todo-app
+      tier: backend
+  template:
+    metadata:
+      labels:
+        app: todo-app
+        tier: backend
+    spec:
+      containers:
+        - name: todo-backend # Name of your container
+          image: your-docker-repo/todo-backend:latest # Replace with your backend's Docker image and tag
+          ports:
+            - containerPort: 8080 # The port your backend application listens on
+          env:
+            # Example environment variables (replace with your actual env vars)
+            - name: DATABASE_HOST
+              value: 'todo-db-service' # This would be the name of your database service
+            - name: DATABASE_PORT
+              value: '5432'
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: todo-db-secrets # Name of your Kubernetes Secret
+                  key: db_user
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: todo-db-secrets
+                  key: db_password
+            # Add any other environment variables your backend needs (e.g., API keys, external service URLs)
+          resources:
+            requests:
+              cpu: '100m' # Request 0.1 CPU core
+              memory: '128Mi' # Request 128 MiB of memory
+            limits:
+              cpu: '500m' # Limit to 0.5 CPU core
+              memory: '512Mi' # Limit to 512 MiB of memory
+          livenessProbe:
+            httpGet:
+              path: /health # Replace with your backend's health check endpoint
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /ready # Replace with your backend's readiness check endpoint
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      # Optionally, if you have a database connection that needs time to establish
+      # you might want to consider an initContainer if your backend can't gracefully
+      # handle a missing database connection on startup.
+      # initContainers:
+      #   - name: wait-for-db
+      #     image: busybox:1.36
+      #     command: ['sh', '-c', 'until nc -z todo-db-service 5432; do echo waiting for db; sleep 2; done;']

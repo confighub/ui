@@ -1,0 +1,18 @@
+# todo-db-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: todo-db-service # This will be the DNS name your app uses to connect
+  namespace: default # Or your specific namespace
+  labels:
+    app: todo-app
+    tier: database
+spec:
+  type: ClusterIP # Exposes the service on an internal IP in the cluster
+  ports:
+    - port: 5432 # Port the service will listen on
+      targetPort: 5432 # Port on the Pods (containerPort)
+  selector:
+    app: todo-app
+    tier: database
+    instance: todo-db # Must match the labels of your DB Pods

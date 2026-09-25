@@ -1,0 +1,686 @@
+/* Copyright (C) ConfigHub, Inc. */
+/* SPDX-License-Identifier: MIT */
+
+/*
+  The change-workflow builder's own surface, lifted from the `workflow-builder-v2`
+  mockup and scoped under `.wfb` so none of it reaches the rest of the app. That
+  mockup is not in the repository -- design artifacts do not ship in a feature PR --
+  so it is named here rather than linked.
+
+  The design's `:root` custom properties live on `.wfb` for the same reason:
+  declared on `:root` they would repaint every other page. A page-local
+  override of the global MUI theme is the precedent this page follows, the way
+  the rollouts console does.
+
+  Values here are the design's, not values chosen by eye. The design is the
+  specification; when a value here looks wrong, the design is the thing to read.
+*/
+
+.wfb{
+  --bg:#f4f5f7; --card:#ffffff; --sunk:#f8f9fb; --inset:#eef0f3;
+  --ink:#191d23; --ink-muted:#4b5361; --ink-subtle:#646b78;
+  --line:#e2e5ea; --line-strong:#cdd2da;
+  --accent:#ba3d03; --accent-ink:#8c2c00; --accent-soft:#fdece3; --accent-line:#f0b99a;
+  --ok:#1c7a4c; --ok-soft:#e7f4ed; --ok-line:#b4dcc6;
+  --wait:#8a6100; --wait-soft:#fbf1dc; --wait-line:#e8d5a6;
+  --bad:#ad2b2b; --bad-soft:#fbeaea; --bad-line:#eec5c5;
+  --r-card:10px; --r-ctl:8px; --r-micro:3px;
+  --shadow:0 1px 2px rgba(25,29,35,.05), 0 1px 1px rgba(25,29,35,.04);
+  --ring:inset 0 0 0 1.5px var(--accent);
+  --font:"Manrope", system-ui, -apple-system, sans-serif;
+  --mono:ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+.wfb *{box-sizing:border-box}
+.wfb{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:12.5px;line-height:1.45;-webkit-font-smoothing:antialiased}
+/* The page root, where the design had `body`. It fills the app's scrolling
+   content area and carries the design's own canvas colour, which is not the
+   app shell's. */
+.wfb{width:100%;min-height:100%;flex:1;min-width:0}
+/* The Component field sits above content -- the variant lists -- whose height
+   swings by hundreds of pixels as its value changes. Chrome's scroll anchoring
+   reads that as content it should compensate for and shifts the scrolling
+   ancestor's scrollTop to hold the anchor node steady, which moves the FOCUSED
+   field itself, reading as it jumping while the user types into it. The field
+   is not the content growing; anchoring here is solving a problem this page
+   does not have.
+
+   ⚠️ TRIED SCOPED TO `.detwrap`, THEN TO THE STAGES CARD. NEITHER HELD --
+   measured with the same four-point check each time, same jump, same numbers,
+   both times. The node Chrome selects to anchor on is not confined to either
+   wrapper, so excluding only one of them left it eligible regardless. Whole
+   page is what is actually confirmed to hold the field still; narrower is a
+   guess this page has twice failed to confirm. */
+.wfb{overflow-anchor:none}
+.wfb :where(button, input, textarea, select):not(.qbhost *){font-family:inherit;font-size:inherit;color:inherit}
+.wfb :focus{outline:none}
+.wfb :focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:2px}
+.wfb .mono{font-family:var(--mono)}
+.wfb .srOnly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+/* `.infoicon` is excluded: it sits inline after a label's own text, and
+   `display:block` -- right for every other icon on this page, each alone in
+   its own control -- forces a line break before it, dropping it onto an empty
+   line of its own under the label. */
+.wfb svg:not(.qbhost svg):not(.infoicon){display:block}
+
+/* ---------- shell ---------- */
+.wfb .shell{max-width:1560px;margin:0 auto;padding:16px 20px 44px}
+.wfb .backlink{display:inline-block;margin-bottom:12px;font-size:12.5px;color:var(--ink-muted);text-decoration:none;border:0;background:transparent;padding:0;cursor:pointer}
+.wfb .backlink:hover{color:var(--ink);text-decoration:underline}
+
+.wfb .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow)}
+.wfb .card + .card{margin-top:14px}
+.wfb .cardhead{background:var(--sunk);border-bottom:1px solid var(--line);border-radius:var(--r-card) var(--r-card) 0 0;padding:9px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+/* ⚠️ THE STAGES HEAD FOLLOWS ITS CARD, AND THAT IS NOT DECORATION.
+   The head sits above the rail in the document, so any scroll far enough
+   leaves the Stage count off screen with the card it counts -- which is
+   exactly when someone reads one, screenshots it, or quotes it. A frame that
+   can scroll away from what it frames is not a frame. The design has nothing
+   sticky; this is added for that reason and no other. */
+.wfb .card .cardhead.follows{position:sticky;top:0;z-index:5}
+.wfb .cardtitle{font-size:12.5px;font-weight:600;line-height:1.35}
+.wfb .cardsub{font-size:11.5px;color:var(--ink-subtle);font-weight:400;line-height:1.45}
+/* The Component picker's own field, wherever it renders -- directly above the
+   filter blocks in a selected Stage, or at the top of the empty-selection
+   pane. Fixed rather than the generic `.input{width:100%}`, so typing changes
+   what is inside the box, never the box's own position. */
+.wfb .compfield{width:320px;margin-bottom:10px}
+.wfb .cardbody{padding:14px}
+
+/* ---------- buttons ---------- */
+.wfb .btn{height:28px;padding:0 10px;border-radius:var(--r-ctl);border:1px solid var(--line-strong);background:var(--card);color:var(--ink);font-size:12.5px;font-weight:600;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.wfb .btn:hover{background:var(--sunk)}
+.wfb .btn:active{background:var(--inset)}
+.wfb .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.wfb .btn.primary:hover{background:var(--accent-ink);border-color:var(--accent-ink)}
+.wfb .btn.quiet{border-color:transparent;background:transparent;color:var(--accent-ink);padding:0 6px}
+.wfb .btn.quiet:hover{background:var(--accent-soft)}
+.wfb .btn.danger{color:var(--bad);border-color:var(--bad-line)}
+.wfb .btn.danger:hover{background:var(--bad-soft)}
+.wfb .btn:disabled{opacity:.55;cursor:not-allowed}
+.wfb .btn:disabled:hover{background:var(--card)}
+.wfb .btn.primary:disabled{background:var(--inset);border-color:var(--line-strong);color:var(--ink-subtle);opacity:1}
+.wfb .btn.primary:disabled:hover{background:var(--inset)}
+.wfb .btn.sm{height:24px;padding:0 8px;font-size:11.5px}
+.wfb .btn.wide{width:100%}
+.wfb .linkbtn{border:0;background:transparent;padding:0;color:var(--accent-ink);font-size:11.5px;font-weight:600;cursor:pointer;text-align:left}
+.wfb .linkbtn:hover{text-decoration:underline}
+.wfb .iconbtn{width:20px;height:20px;border:1px solid var(--line);background:var(--card);border-radius:var(--r-micro);color:var(--ink-muted);font-size:11px;line-height:1;display:grid;place-items:center;cursor:pointer;padding:0}
+.wfb .iconbtn:hover{background:var(--inset);color:var(--ink)}
+.wfb .iconbtn:disabled{opacity:.35;cursor:not-allowed}
+.wfb .iconbtn:disabled:hover{background:var(--card);color:var(--ink-muted)}
+.wfb .iconbtn.rm:hover{background:var(--bad-soft);color:var(--bad);border-color:var(--bad-line)}
+
+/* ---------- chips ---------- */
+.wfb .chip{display:inline-flex;align-items:center;gap:5px;height:18px;padding:0 6px;border-radius:var(--r-micro);border:1px solid var(--line);background:var(--card);color:var(--ink-muted);font-family:var(--mono);font-size:10.5px;line-height:1;white-space:nowrap}
+.wfb .chip.sans{font-family:var(--font)}
+.wfb .chip.locked{background:var(--inset);color:var(--ink-subtle)}
+.wfb .chip.custom{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink)}
+.wfb .chip.err{background:var(--bad-soft);border-color:var(--bad-line);color:var(--bad)}
+.wfb .chip.warn{background:var(--wait-soft);border-color:var(--wait-line);color:var(--wait)}
+.wfb .chip.good{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok)}
+.wfb .chip.h22{height:22px;padding:0 8px;font-size:11.5px}
+
+/* the rollout page's own state pill: 1px border, 2px 10px, coloured by state */
+.wfb .statechip{display:inline-flex;align-items:center;border:1px solid;border-radius:999px;padding:2px 10px;font-size:11.5px;font-weight:600;line-height:1.35;white-space:nowrap}
+.wfb .statechip.ok{color:var(--ok);background:var(--ok-soft);border-color:var(--ok-line)}
+.wfb .statechip.wait{color:var(--wait);background:var(--wait-soft);border-color:var(--wait-line)}
+.wfb .statechip.bad{color:var(--bad);background:var(--bad-soft);border-color:var(--bad-line)}
+.wfb button.statechip{cursor:pointer;font-family:inherit}
+.wfb button.statechip:hover{text-decoration:underline}
+
+/* ---------- summary card: the rollout detail page's own head ---------- */
+/* `align-items:start` stops the shorter column stretching to match the
+   taller one's height, which read as unexplained blank space down one side.
+   `.sumright` is legitimately denser than `.sumleft` -- a Space picker, up to
+   three buttons, help text, against a slug and one facts row -- and that
+   density is not the thing to hide; framing the mismatch as two panels with
+   their own heights, divided rather than stretched into false alignment, is. */
+.wfb .summary{padding:18px 20px;display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:20px 24px;align-items:start}
+@media (max-width:900px){.wfb .summary{grid-template-columns:minmax(0,1fr)}}
+.wfb .sumleft{min-width:0}
+.wfb .sumtitle{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+/* The label toggles between `.srOnly` (absolutely positioned, takes no space)
+   and `.flabel` (visible, stacked above the field) on the SAME element, so
+   this wrapper only ever affects layout in the visible case -- an established
+   workflow's slug renders exactly as it did before this existed. */
+.wfb .sumslugwrap{display:flex;flex-direction:column}
+.wfb .sumslug{font-family:var(--mono);font-size:21px;font-weight:650;letter-spacing:-.015em;line-height:1.25;margin:0;color:var(--ink);border:1px solid transparent;border-radius:var(--r-ctl);padding:1px 6px;margin-left:-6px;background:transparent;max-width:100%}
+/* Same "nothing here yet, dashed until filled" convention as `.blank` and
+   `.addtile` -- one width, `.sumslug`'s own, only the style and colour change. */
+.wfb .sumslug.draft{border-style:dashed;border-color:var(--line-strong)}
+.wfb .sumslug.draft:focus{border-style:solid;border-color:var(--accent);background:var(--card)}
+.wfb .facts{display:grid;grid-template-columns:repeat(auto-fit, minmax(150px,1fr));gap:14px;margin:16px 0 0}
+.wfb .facts dt{font-size:11px;color:var(--ink-subtle);line-height:1.35;margin:0 0 3px}
+.wfb .facts dd{margin:0;font-size:12.5px;line-height:1.45;color:var(--ink);word-break:break-word}
+.wfb .facts dd a, .wfb .facts dd .factlink{color:var(--accent-ink);text-decoration:none;border:0;background:transparent;padding:0;font:inherit;cursor:pointer}
+.wfb .facts dd a:hover, .wfb .facts dd .factlink:hover{text-decoration:underline}
+/* `1px solid var(--line)` is the same hairline `.detail`, `.probband` and
+   `.cpcol` already use to divide one region from another on this page --
+   reused here rather than invented, now that `align-items:start` on `.summary`
+   means the two columns no longer share a bottom edge to imply the divide on
+   their own. */
+.wfb .sumright{display:flex;flex-direction:column;gap:8px;align-items:stretch;border-left:1px solid var(--line);padding-left:20px}
+/* Placed AFTER the base `.sumright` rule, deliberately: at equal specificity
+   CSS resolves ties by source order regardless of which rule sits inside a
+   matching media query, so putting this override BEFORE the base rule let the
+   later, unconditional rule win anyway -- `border-left`/`padding-left` leaked
+   through at narrow width even though this block matched. Converts the column
+   divider into a row divider once the grid stacks to one column, so it faces
+   the new seam instead of sitting orphaned on the left edge of a full-width
+   block -- the same shape `.cpcol` reaches for at its own breakpoint, though
+   that one has the identical ordering problem this rule just had. */
+@media (max-width:900px){
+  .wfb .sumright{border-left:0;border-top:1px solid var(--line);padding-left:0;padding-top:20px}
+}
+/* `.field`'s own margin-bottom is for a form/dl context with no other spacing
+   mechanism; stacked on top of `.sumright`'s flex gap it would put a visibly
+   larger gap after a Space picker than between every other control here. */
+.wfb .sumright .field{margin-bottom:0}
+.wfb .savenote{font-size:11.5px;color:var(--ink-subtle);line-height:1.45}
+.wfb .savenote.bad{color:var(--bad)}
+.wfb .savenote.wait{color:var(--wait)}
+.wfb .titlefield{width:100%;border:1px solid transparent;border-radius:var(--r-ctl);background:transparent;padding:2px 6px;margin-left:-6px;font-size:13.5px;font-weight:600;line-height:1.35}
+.wfb .titlefield:hover{border-color:var(--line)}
+.wfb .titlefield:focus{border-color:var(--accent);background:var(--card)}
+
+/* ---------- summary card, never-saved draft: the band ---------- */
+/* Everything in `.summary` above reports on a workflow that exists: a Space,
+   Labels, a governed-order count, a Last written stamp, a copy made from the
+   saved shape. A draft has none of them, so the card for one is not the same
+   card with empty values -- it is the three controls that can actually run,
+   on one row. The five facts, the clone control and the state chip all come
+   back with `.summary` itself at the first save. */
+.wfb .band{padding:14px 20px 13px}
+/* Bottom-aligned, not centred: the slug is 21px type and the Space picker is a
+   28px control, so a common baseline at the foot of the row is the only thing
+   that reads as one row rather than three things of different heights. */
+.wfb .bandrow{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap}
+.wfb .bslug{flex:1 1 300px;min-width:200px;max-width:440px}
+.wfb .bspace{flex:0 1 220px;min-width:176px}
+.wfb .bacts{margin-left:auto;display:flex;gap:8px;align-items:center;padding-bottom:2px}
+/* The slug keeps its own type, but it is a field in a row now, so it takes the
+   row's left edge rather than `.sumslug`'s negative margin -- that margin exists
+   to hang an unbordered title off the card's text edge, and there is a visible
+   label above it here. */
+.wfb .band .sumslug{width:100%;margin-left:0;padding:3px 8px}
+.wfb .bandfoot{margin:11px 0 0}
+/* Once the row wraps, `margin-left:auto` would pin the actions to the right of
+   a line of their own, away from the fields they act on. */
+@media (max-width:780px){.wfb .bacts{margin-left:0;width:100%}}
+
+/* ---------- stage rail ---------- */
+.wfb .railbody{padding:14px 14px 4px}
+.wfb .rail{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+.wfb .hop{display:flex;gap:10px;align-items:stretch;flex:1 1 248px;min-width:248px;max-width:306px}
+.wfb .hop.first{flex:1 1 150px;min-width:150px;max-width:208px}
+.wfb .hop.tail{flex:0 0 auto;min-width:0}
+
+.wfb .gatelink{flex:0 0 88px;width:88px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  border:1px solid transparent;border-radius:var(--r-ctl);background:transparent;padding:4px 2px;cursor:pointer;text-align:center}
+.wfb .gatelink:hover{background:var(--accent-soft);border-color:var(--accent-line)}
+.wfb .gatelink[aria-pressed="true"]{border-color:var(--accent);box-shadow:var(--ring);background:var(--card)}
+.wfb .gatedot{width:22px;height:22px;border-radius:999px;display:grid;place-items:center;flex:none;border:1px solid}
+/* Required is a fact about the definition, not a selection anyone made, so it
+   does not borrow the action colour -- see the same rule on `.node.fin` below. */
+.wfb .gatedot.req{background:var(--inset);border-color:var(--line-strong);color:var(--ink-muted)}
+.wfb .gatedot.none{background:var(--sunk);border-color:var(--line-strong);color:var(--ink-subtle)}
+.wfb .gatedot.bad{background:var(--bad-soft);border-color:var(--bad-line);color:var(--bad)}
+.wfb .gatecount{display:block;font-family:var(--mono);font-size:10.5px;font-weight:600;line-height:1.2;white-space:nowrap}
+.wfb .gatecount.req{color:var(--ink-muted)}
+.wfb .gatecount.none{color:var(--ink-subtle)}
+.wfb .gatecount.bad{color:var(--bad)}
+.wfb .gatecap{font-size:10.5px;line-height:1.25;color:var(--ink-subtle);overflow-wrap:break-word}
+.wfb .gatecap .mono{color:var(--ink-muted);white-space:nowrap}
+
+.wfb .node{flex:1 1 150px;min-width:150px;max-width:100%;text-align:left;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-card);
+  background:var(--bg);color:var(--ink);cursor:pointer;display:block}
+.wfb .node:hover{border-color:var(--line-strong);background:var(--sunk)}
+.wfb .node[aria-pressed="true"]{border-color:var(--accent);box-shadow:var(--ring);background:var(--card)}
+.wfb .node.problem{border-color:var(--bad-line);background:var(--bad-soft)}
+.wfb .node.problem[aria-pressed="true"]{border-color:var(--bad);box-shadow:inset 0 0 0 1.5px var(--bad)}
+.wfb .nodetop{display:flex;align-items:center;gap:8px}
+.wfb .nodedot{width:22px;height:22px;border-radius:999px;display:grid;place-items:center;flex:none;border:1px solid}
+.wfb .nodedot.ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok)}
+.wfb .nodedot.bad{background:var(--bad-soft);border-color:var(--bad-line);color:var(--bad)}
+.wfb .nodedot.fin{background:var(--inset);border-color:var(--line-strong);color:var(--ink-muted)}
+.wfb .nodename{display:block;font-family:var(--mono);font-size:13.5px;font-weight:600;line-height:1.25;min-width:0;overflow-wrap:break-word}
+.wfb .nodelabel{display:block;font-size:11.5px;color:var(--ink-muted);line-height:1.45;margin-top:4px}
+.wfb .nodelabel.bad{color:var(--bad);font-weight:600}
+/* A note is worth reading and is not a defect: it takes the waiting colour
+   rather than the fault one, so a Stage that is fine does not look broken. */
+.wfb .nodelabel.wait{color:var(--wait);font-weight:600}
+.wfb .nodewhere{display:block;font-family:var(--mono);font-size:10.5px;color:var(--ink-subtle);line-height:1.4;margin-top:2px;overflow-wrap:break-word}
+.wfb .nodewhere.plain{font-family:var(--font)}
+/* Final carries no accent fill: accent means "selected" on this page, and a
+   permanently accent-tinted tile reads as a selection nobody made. A dashed
+   edge says "not a Stage" without borrowing the selection colour. */
+.wfb .node.fin{border-style:dashed}
+.wfb .node.fin:hover{border-color:var(--line-strong)}
+.wfb .addtile{flex:0 0 auto;width:112px;min-height:74px;border:1px dashed var(--line-strong);border-radius:var(--r-card);background:transparent;
+  color:var(--accent-ink);font-size:12.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.wfb .addtile:hover{background:var(--accent-soft);border-color:var(--accent-line)}
+.wfb .railfoot{border-top:1px solid var(--line);padding:4px 10px;display:flex;justify-content:flex-end;background:var(--sunk);border-radius:0 0 var(--r-card) var(--r-card);margin-top:10px}
+.wfb .railkbd{display:flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:1px solid transparent;border-radius:var(--r-ctl);background:transparent;color:var(--ink-subtle);font-size:14px;cursor:pointer}
+.wfb .railkbd:hover{background:var(--inset);color:var(--ink)}
+
+/* ---------- the selected Stage ---------- */
+/* The rail is the list; this is the one Stage it points at. It lives inside the
+   Stages card rather than in a card of its own, because it is not a second
+   subject - it is the rail's selection, enlarged. */
+.wfb .detail{border-top:1px solid var(--line)}
+.wfb .dethead{display:flex;align-items:baseline;gap:9px;padding:10px 14px;background:var(--sunk);border-bottom:1px solid var(--line)}
+.wfb .sbord{font-family:var(--mono);font-size:10.5px;color:var(--ink-subtle);min-width:13px;flex:none;line-height:1.5}
+.wfb .sbflag{color:var(--ink-subtle);flex:none;align-self:center;display:flex}
+.wfb .sbname{font-family:var(--mono);font-size:13.5px;font-weight:600;line-height:1.3;overflow-wrap:break-word}
+.wfb .sbcount{font-size:11.5px;color:var(--ink-subtle);line-height:1.5;white-space:nowrap}
+.wfb .sbcount.bad{color:var(--bad);font-weight:600}
+/* Three controls share the top row, so they are one group pushed right with a
+   hairline before Close: reordering and closing are different jobs and the
+   rule says so without a fourth border. The arrows point the way the rail
+   runs - it is horizontal, so earlier is left - and the keyboard shortcut
+   uses the same axis. */
+.wfb .detacts{margin-left:auto;flex:none;align-self:center;display:flex;align-items:center;gap:6px}
+.wfb .detacts .sep{width:1px;align-self:stretch;background:var(--line-strong);margin:0 2px}
+.wfb .detacts .btn .ar{font-family:var(--mono);line-height:1}
+.wfb .detacts .btn:disabled{opacity:.45}
+
+.wfb .detbody{padding:0 14px 14px}
+.wfb .detbody .sec{padding:13px 0;border-bottom:1px dashed var(--line);border-radius:0}
+.wfb .detbody .sec:last-child{border-bottom:0;padding-bottom:0}
+/* Marks the edge of the Name/Component/blocks group, not a seam inside it --
+   see the note on `.firstsec` in `DetailPane.tsx`. */
+.wfb .detbody .sec.firstsec{border-top:1px dashed var(--line)}
+.wfb .detbody .rowbtns{display:flex;gap:8px;flex-wrap:wrap}
+
+/* Nothing selected. The slot says the two things the rail cannot: how to use
+   it, and which variants of the component no Stage reaches. */
+.wfb .detempty{padding:16px 14px 18px}
+.wfb .detempty h3{font-size:12.5px;font-weight:600;line-height:1.35}
+.wfb .detempty .lede{font-size:12.5px;color:var(--ink-muted);line-height:1.55;margin:5px 0 0;max-width:84ch}
+.wfb .detempty .cov{margin-top:14px;padding-top:13px;border-top:1px dashed var(--line)}
+.wfb .detempty .covchips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+
+/* ---------- the fault band ---------- */
+/* The rail tile says which Stage is wrong in three words; this says why, in a
+   sentence, and takes you there. Both are on screen with nothing selected,
+   which is the job the Stage list used to do. */
+.wfb .probband{border-top:1px solid var(--line)}
+.wfb .probband.lvbad{background:var(--bad-soft)}
+.wfb .probband.lvnote{background:var(--wait-soft)}
+.wfb .probband .issue{border-bottom:1px solid rgba(25,29,35,.09)}
+.wfb .probband .issue:last-child{border-bottom:0}
+.wfb .probband .sev{background:var(--card)}
+
+/* ---------- loading skeletons ---------- */
+/* The skeleton wears the loaded page's own classes, so its boxes are the page's
+   boxes. These rules only replace text with a block of the same line box, and
+   strip the borrowed borders where a skeleton should not draw one. */
+@keyframes wfbpulse{0%,100%{opacity:1}50%{opacity:.75}}
+.wfb .skelline,.wfb .skelbtn,.wfb .skeldot,.wfb .skelchip{
+  background:var(--inset);border-radius:var(--r-micro);
+  animation:wfbpulse 1.9s ease-in-out infinite}
+/* Blocks sized to the line box the text would have filled: 12.5px/1.45 and
+   11.5px/1.45 round to 18px and 17px, so the margin carries the difference. */
+.wfb .skelline{height:12px;margin:3px 0}
+.wfb .skelline.sm{height:10px;margin:3.5px 0}
+/* A selector line: 10.5px at 1.4 is a 14.7px line box. */
+.wfb .skelline.where{height:11px;margin:1.85px 0}
+.wfb .skelwhere{margin-top:2px}
+.wfb .skelline.lg{height:20px;margin:3px 0;border-radius:var(--r-ctl)}
+.wfb .skelline.pill{height:20px;margin:3px 0;border-radius:999px}
+.wfb .skelbtn{height:28px;border-radius:var(--r-ctl)}
+.wfb .skelbtn.sm{height:24px}
+.wfb .skeldot{width:22px;height:22px;border-radius:999px;flex:none}
+.wfb .skelchip{height:18px;border-radius:var(--r-micro)}
+/* A tag's own line box, which is taller than a line of body text. */
+.wfb .skeltag{width:46px;height:16px;border-radius:var(--r-micro);background:var(--inset);
+  animation:wfbpulse 1.9s ease-in-out infinite;flex:none}
+/* A tile that is still being read is not a control: it keeps the real box's
+   size and loses the edge that would invite a click. */
+.wfb .node.skelplain,.wfb .gatelink.skelplain,.wfb .addtile.skelplain{
+  border-color:transparent;background:transparent;cursor:default}
+.wfb .node.fin.skelplain{border-style:solid}
+.wfb .gatelink.skelplain{justify-content:flex-start}
+/* The cards stagger so the page does not breathe as one slab, which is what
+   reads as cheap. Within a card the blocks stay in step; it is the surface that
+   should not move as a single object. */
+.wfb .card + .card .skelline,.wfb .card + .card .skelbtn,
+.wfb .card + .card .skeldot,.wfb .card + .card .skelchip{animation-delay:.5s}
+.wfb .cpcol .skelline,.wfb .cpcol .skelbtn,.wfb .cpcol .skeltag{animation-delay:.95s}
+@media (prefers-reduced-motion:reduce){
+  .wfb .skelline,.wfb .skelbtn,.wfb .skeldot,.wfb .skelchip,.wfb .skeltag{animation:none}
+}
+
+/* ---------- the version-conflict band ---------- */
+/* Reserved rather than inserted: the slot is in the tree from the start and
+   collapsed to nothing, so a conflict arriving mid-session expands one element
+   instead of pushing the page down by inserting one. */
+.wfb .cfslot{display:block;height:0;overflow:hidden}
+.wfb .cfslot.on{height:auto;overflow:visible}
+.wfb .conflict{display:flex;gap:10px;align-items:flex-start;padding:11px 20px;
+  border-top:1px solid var(--wait-line);background:var(--wait-soft);
+  border-radius:0 0 var(--r-card) var(--r-card)}
+.wfb .conflict .cw{color:var(--wait);flex:none;display:flex;padding-top:2px}
+
+/* The in-workflow clone panel: a section of the summary card itself, between
+   .summary and the (possibly collapsed) save-conflict slot below it -- so it
+   gets the same horizontal padding as .summary's own content and a top border
+   to separate from it, but no bottom radius, since it is never necessarily the
+   card's last visible section. Opened by an explicit click on "Clone to another
+   Space" rather than appearing unprompted, so -- unlike .cfslot above -- it
+   mounts and unmounts rather than being a reserved, height-animated slot: a
+   deliberate action reflowing what is below it is the expected shape of a
+   click, not the unprompted layout shift that slot exists to avoid. */
+.wfb .card > .clonepanel{padding:13px 20px;border-top:1px solid var(--line)}
+.wfb .conflict .ct{flex:1;font-size:12.5px;line-height:1.55;color:var(--ink);max-width:88ch}
+.wfb .conflict .ct p{margin:0}
+.wfb .conflict .ct p + p{margin-top:5px}
+.wfb .conflict .ca{display:flex;gap:6px;flex:none;align-items:center}
+/* A refusal is a fault, not a caution: it takes the fault band's own ground. */
+.wfb .conflict.bad{border-top-color:var(--bad-line);background:var(--bad-soft)}
+.wfb .conflict.bad .cw{color:var(--bad)}
+
+/* ---------- the reorder warning ---------- */
+/* Moving a Stage silently re-points its gates and changes the meaning of the
+   Stage it passed. Both halves get said out loud, next to the rail that just
+   changed, for as long as the move is unsaved. */
+.wfb .reorder{display:flex;gap:10px;align-items:flex-start;margin:0 14px 12px;padding:10px 12px;
+  border:1px solid var(--wait-line);background:var(--wait-soft);border-radius:var(--r-ctl)}
+.wfb .reorder .rw{color:var(--wait);flex:none;display:flex;padding-top:2px}
+.wfb .reorder .rt{flex:1;font-size:12.5px;line-height:1.55;color:var(--ink);max-width:88ch}
+.wfb .reorder .rt p{margin:0}
+.wfb .reorder .rt p + p{margin-top:5px}
+.wfb .reorder .rt strong{font-family:var(--mono);font-weight:650}
+.wfb .reorder .rt .gn{font-family:var(--mono);color:var(--ink)}
+.wfb .reorder .ra{display:flex;gap:6px;flex:none;align-items:center}
+
+/* ---------- mock-state switcher ---------- */
+/* Deliberately not product chrome: it floats clear of the page rather than
+   sitting in the shell pretending to be a filter bar. */
+.wfb .mock{position:fixed;left:12px;bottom:12px;z-index:60;display:flex;align-items:center;gap:5px;
+  padding:5px 8px;border-radius:999px;border:1px solid var(--line-strong);background:var(--card);
+  box-shadow:0 8px 24px rgba(25,29,35,.14), var(--shadow)}
+.wfb .mock .ml{font-size:10.5px;color:var(--ink-subtle);padding:0 3px}
+.wfb .mock button{height:22px;padding:0 9px;border-radius:999px;border:1px solid transparent;background:transparent;
+  font-size:11px;font-weight:600;color:var(--ink-muted);cursor:pointer;white-space:nowrap}
+.wfb .mock button:hover{background:var(--sunk);color:var(--ink)}
+.wfb .mock button[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink)}
+
+/* ---------- detail sections ---------- */
+.wfb .sec{padding:14px;border-bottom:1px solid var(--line)}
+.wfb .sec:last-child{border-bottom:0}
+.wfb .seclabel{font-size:12.5px;font-weight:600;line-height:1.35;margin-bottom:4px}
+.wfb .sechelp{font-size:11.5px;color:var(--ink-subtle);line-height:1.5;margin:0 0 10px;max-width:78ch}
+.wfb .lead{font-size:13.5px;line-height:1.5;margin:0 0 9px;color:var(--ink);max-width:78ch}
+.wfb .lead strong{font-weight:650}
+.wfb .prose{font-size:12.5px;line-height:1.55;color:var(--ink-muted);margin:0;max-width:78ch}
+.wfb .prose + .prose{margin-top:8px}
+
+.wfb .gaterow{display:flex;gap:9px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-ctl);margin-bottom:6px;background:var(--card);align-items:flex-start}
+.wfb .gaterow:last-child{margin-bottom:0}
+.wfb .gaterow.on{border-color:var(--accent-line);background:var(--accent-soft)}
+.wfb .gaterow.lockedrow{background:var(--inset);border-color:var(--line)}
+.wfb .gaterow.missing{border-color:var(--bad-line);background:var(--bad-soft)}
+.wfb .gaterow input[type=checkbox]{margin:2px 0 0;width:13px;height:13px;accent-color:var(--accent);flex:none}
+.wfb .gaterow label{cursor:pointer;display:block;min-width:0}
+.wfb .gaterow.lockedrow label{cursor:default}
+.wfb .gname{font-family:var(--mono);font-size:12.5px;font-weight:600;line-height:1.35;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.wfb .gdesc{font-size:11px;color:var(--ink-muted);line-height:1.5;margin-top:2px}
+.wfb .tagmini{font-family:var(--font);font-size:10px;font-weight:600;color:var(--ink-subtle);background:var(--card);border:1px solid var(--line);border-radius:var(--r-micro);padding:0 4px;line-height:14px}
+.wfb .tagmini.bad{color:var(--bad);background:var(--bad-soft);border-color:var(--bad-line)}
+.wfb .subhead{font-size:11.5px;color:var(--ink-muted);line-height:1.45;margin:12px 0 7px}
+
+.wfb .field{display:block;margin-bottom:10px}
+.wfb .field:last-child{margin-bottom:0}
+.wfb .flabel{display:block;font-size:11.5px;font-weight:600;color:var(--ink-muted);margin-bottom:4px;line-height:1.35}
+.wfb .infoicon{font-size:13px;vertical-align:-2px;color:var(--ink-subtle);cursor:help}
+.wfb .infoicon:hover{color:var(--ink)}
+.wfb .input, .wfb .ta, .wfb .sel{width:100%;border:1px solid var(--line-strong);border-radius:var(--r-ctl);background:var(--card);padding:6px 8px;font-size:12.5px;line-height:1.45;color:var(--ink)}
+.wfb .input:hover, .wfb .ta:hover, .wfb .sel:hover{border-color:#b9bfca}
+.wfb .input:focus, .wfb .ta:focus, .wfb .sel:focus{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.wfb .input.mono, .wfb .ta.mono{font-family:var(--mono);font-size:11.5px}
+.wfb .ta{resize:vertical;min-height:52px}
+.wfb .input[aria-invalid="true"], .wfb .ta[aria-invalid="true"]{border-color:var(--bad);background:var(--bad-soft)}
+.wfb .fhelp{font-size:11px;color:var(--ink-subtle);line-height:1.5;margin-top:4px;max-width:78ch}
+.wfb .ferr{font-size:11px;color:var(--bad);line-height:1.5;margin-top:5px;display:flex;gap:5px;align-items:flex-start}
+.wfb .ferr .bang{font-weight:700}
+
+/* collapsible group, mirroring CollapsibleUnitGroup */
+.wfb .group{margin-top:10px}
+.wfb .grouphead{all:unset;cursor:pointer;display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:8px 12px;border-radius:var(--r-ctl);border:1px solid var(--line);background:var(--sunk)}
+.wfb .grouphead:hover{background:var(--inset)}
+.wfb .grouphead:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.wfb .grouphead .gl{font-size:11.5px;font-weight:600;color:var(--ink)}
+.wfb .grouphead .gc{font-size:11.5px;color:var(--ink-muted)}
+.wfb .grouphead .gt{margin-left:auto;display:flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;color:var(--ink-muted)}
+.wfb .groupbody{border:1px solid var(--line);border-radius:var(--r-ctl);margin-top:6px;padding:2px 12px}
+.wfb .mrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.wfb .mrow:last-child{border-bottom:0}
+.wfb .msl{font-family:var(--mono);font-size:11.5px;color:var(--ink);flex:none;white-space:nowrap}
+.wfb .mlb{font-family:var(--mono);font-size:10.5px;color:var(--ink-subtle);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* the coverage editor: the imported QueryBuilder, its text-mode header, and the
+   two variant lists below it. `.qbhost` is excluded from the page's own
+   button/input/textarea/select and svg resets above, so the QueryBuilder
+   renders at MUI's own type and colour, the same as it does on `/spaces`,
+   rather than inheriting this page's. */
+/* `.qbrow` puts "Edit as text" on the QueryBuilder's own row rather than
+   below it: the QB's internal chip row cannot be reached to add a sibling
+   inside it (it is the imported component's own layout), so the outer flex
+   row gives the QB the width it wants and pushes the link to the right of
+   whatever line its own content ends on. */
+.wfb .qbrow{display:flex;align-items:center;gap:10px}
+.wfb .qbhost{min-width:0;flex:1 1 auto;margin:8px 0}
+.wfb .qbedit{flex:none;margin-left:auto;align-self:center}
+.wfb .rawhead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+
+.wfb .vgroups{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin-top:10px;align-items:start}
+@media (max-width:1279px){.wfb .vgroups{grid-template-columns:minmax(0,1fr)}}
+.wfb .vgroup{border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--card);min-width:0}
+.wfb .vgroup.out{background:var(--sunk)}
+.wfb .vgroup .vhead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 10px;border-bottom:1px solid var(--line);font-size:11.5px;font-weight:600;color:var(--ink-muted)}
+.wfb .vgroup .rows{margin:0;padding:2px 10px;max-height:240px;overflow:auto}
+.wfb .vgroup .rows .mrow{padding:6px 0}
+.wfb .vgroup .vempty{padding:10px;margin:0;font-size:11.5px;color:var(--ink-subtle);line-height:1.5}
+
+/* problems list */
+.wfb .issue{display:flex;gap:9px;align-items:flex-start;padding:9px 14px;border-bottom:1px solid var(--line)}
+.wfb .issue:last-child{border-bottom:0}
+.wfb .sev{flex:none;font-size:10.5px;font-weight:600;border-radius:var(--r-micro);padding:0 6px;line-height:17px;border:1px solid}
+.wfb .sev.problem{color:var(--bad);background:var(--bad-soft);border-color:var(--bad-line)}
+.wfb .sev.note{color:var(--wait);background:var(--wait-soft);border-color:var(--wait-line)}
+.wfb .imsg{font-size:12.5px;line-height:1.5;color:var(--ink);max-width:78ch}
+.wfb .imsg code{font-family:var(--mono);font-size:11.5px;background:var(--inset);border-radius:var(--r-micro);padding:0 3px}
+.wfb .iact{margin-left:auto;display:flex;gap:6px;flex:none;padding-top:1px}
+.wfb .allclear{padding:14px;display:flex;align-items:flex-start;gap:9px;font-size:12.5px;color:var(--ok);line-height:1.5}
+.wfb .allclear .dot{width:8px;height:8px;border-radius:999px;background:var(--ok-soft);border:1px solid var(--ok-line);flex:none;margin-top:5px}
+
+/* yaml */
+.wfb .yaml{margin:0;padding:12px 14px;background:var(--sunk);border-radius:0 0 var(--r-card) var(--r-card);font-family:var(--mono);font-size:11.5px;line-height:1.55;color:var(--ink-muted);overflow-x:auto;white-space:pre}
+.wfb .yaml .yk{color:var(--ink)}
+.wfb .yaml .yv{color:var(--accent-ink)}
+
+/* empty states */
+.wfb .blank{border:1px dashed var(--line-strong);border-radius:var(--r-card);padding:24px 16px;text-align:center;background:var(--sunk)}
+.wfb .blank .t{font-size:13.5px;font-weight:600;line-height:1.35}
+.wfb .blank .d{font-size:12.5px;color:var(--ink-muted);margin:6px auto 13px;max-width:62ch;line-height:1.55}
+
+/* ---------- the prerequisites column, headed by the sentence ----------
+   Every prerequisite lives here: the implicit one, the three built in, and
+   every custom one, with adding at the bottom. The Stage keeps its name and
+   the variants it covers; this column is what entering it costs.
+
+   Taking the gate list out of the Stage would have cost the one device that
+   stops a reader thinking prerequisites are checked over the Stage they are
+   listed under. So the sentence comes with it, to the head of the column,
+   where it names both Stages and rewrites on every tick. */
+.wfb .detwrap{display:grid;grid-template-columns:minmax(0,1fr) 360px;border-top:1px solid var(--line);align-items:start}
+.wfb .detwrap > .detail{border-top:0;min-width:0}
+@media (max-width:1279px){.wfb .detwrap{grid-template-columns:minmax(0,1fr) 320px}}
+@media (max-width:1019px){
+  .wfb .detwrap{grid-template-columns:minmax(0,1fr)}
+  .wfb .cpcol{border-left:0;border-top:1px solid var(--line)}
+}
+.wfb .cpcol{border-left:1px solid var(--line);background:var(--sunk);min-width:0;align-self:stretch;display:flex;flex-direction:column}
+.wfb .cphead{display:flex;align-items:baseline;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--sunk)}
+.wfb .cphead .t{font-size:12.5px;font-weight:600;line-height:1.35}
+.wfb .cphead .n{font-size:11.5px;color:var(--ink-subtle);line-height:1.5}
+.wfb .cphead .btn{margin-left:auto;flex:none;align-self:center}
+
+/* The sentence. It is the largest type in the column on purpose: it is what
+   has been said, and the rows below it are only how to change it. */
+.wfb .cpsent{padding:12px 12px 11px;border-bottom:1px solid var(--line);background:var(--card)}
+.wfb .cpsent p{margin:0}
+.wfb .cpsent .s{font-size:13.5px;line-height:1.55;color:var(--ink)}
+.wfb .cpsent .s strong{font-family:var(--mono);font-weight:650}
+.wfb .cpsent .s .g{font-family:var(--mono);color:var(--ink)}
+.wfb .cpsent .s .g.bad{color:var(--bad);font-weight:600}
+.wfb .cpsent .s .g.implicit{color:var(--ink-subtle)}
+.wfb .cpsent .over{font-size:11px;line-height:1.5;color:var(--ink-subtle);margin-top:7px}
+.wfb .cpsent .over .mono{color:var(--ink-muted)}
+.wfb .cpsent.none .s{color:var(--ink-muted)}
+
+.wfb .cplist{padding:0;flex:1}
+.wfb .cpgroup{padding:7px 12px 3px;font-size:10.5px;color:var(--ink-subtle);line-height:1.45;border-top:1px solid var(--line)}
+.wfb .cpgroup:first-child{border-top:0}
+
+.wfb .cprow{position:relative;padding:8px 12px;border-top:1px solid var(--line)}
+.wfb .cprow.first{border-top:0}
+/* Required is a fact about the target's own prereqs, not a selection anyone
+   made here, so its edge is the neutral line rather than the action colour --
+   `.cprow.sel`, a real selection, keeps it. */
+.wfb .cprow.on{background:var(--card);box-shadow:inset 2px 0 0 var(--line-strong)}
+.wfb .cprow.sel{background:var(--card);box-shadow:inset 2px 0 0 var(--accent)}
+.wfb .cprow.bad{background:var(--bad-soft);box-shadow:inset 2px 0 0 var(--bad)}
+.wfb .cprow.implicit{background:var(--inset)}
+.wfb .cptop{display:flex;align-items:flex-start;gap:8px}
+.wfb .cptop input[type=checkbox]{margin:3px 0 0;width:13px;height:13px;accent-color:var(--accent);flex:none}
+.wfb .cptop input[type=checkbox]:disabled{cursor:not-allowed}
+/* A built-in is a name, not a control: it cannot be renamed, edited or
+   deleted, so it is plain text. A custom one is a button, because opening it
+   is the thing you can do to it. */
+.wfb .cpfix{font-family:var(--mono);font-size:12.5px;font-weight:600;line-height:1.35;color:var(--ink);min-width:0;overflow-wrap:break-word}
+.wfb .cprow.implicit .cpfix{color:var(--ink-subtle)}
+.wfb .cpname{border:0;background:transparent;padding:0;font-family:var(--mono);font-size:12.5px;font-weight:600;
+  line-height:1.35;color:var(--ink);cursor:pointer;text-align:left;min-width:0;overflow-wrap:break-word}
+.wfb .cpname:hover{text-decoration:underline}
+.wfb .cprow.sel .cpname{color:var(--accent-ink)}
+.wfb .cprow.bad .cpname, .wfb .cprow.bad .cpfix{color:var(--bad)}
+.wfb .cptag{margin-left:auto;flex:none;align-self:flex-start}
+.wfb .cpmeta{display:block;font-size:10.5px;line-height:1.5;color:var(--ink-subtle);margin-top:3px;padding-left:21px}
+.wfb .cpmeta.here{color:var(--accent-ink);font-weight:600}
+.wfb .cpmeta.none{color:var(--wait)}
+.wfb .cpwhat{display:block;font-size:11px;line-height:1.5;color:var(--ink-muted);margin-top:3px;padding-left:21px}
+.wfb .cpwhat.missing{color:var(--bad)}
+/* The one `.cpwhat` holding user-authored text, which has no length limit of
+   its own. Clamped to one line rather than reflowing the column; the full
+   text is still there, in `title`. */
+.wfb .cpwhat.clamp{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.wfb .cpedit{margin-top:9px;margin-left:21px;padding-top:9px;border-top:1px dashed var(--line-strong)}
+.wfb .cpglobal{display:flex;gap:6px;font-size:11px;line-height:1.5;color:var(--wait);margin:0 0 9px}
+.wfb .cpglobal .bang{font-weight:700;flex:none}
+.wfb .cpglobal.quiet{color:var(--ink-subtle)}
+.wfb .cpedit .flabel{font-size:11px;font-weight:400;color:var(--ink-subtle)}
+.wfb .cpedit .ta{min-height:76px}
+.wfb .cpfoot{display:flex;gap:14px;align-items:baseline;margin-top:10px;flex-wrap:wrap}
+
+/* Adding is at the foot of the column, and only a custom one can be added. */
+.wfb .cpadd{border-top:1px solid var(--line);padding:11px 12px 13px;background:var(--sunk)}
+.wfb .cpblank{padding:13px 12px 15px}
+.wfb .cpblank .d{font-size:11.5px;color:var(--ink-muted);line-height:1.55;margin:0 0 11px}
+
+/* A rail tile and its connector light up while a prerequisite is pointed at,
+   so the column and the rail are visibly the same subject. A lighter accent
+   than selection, because it answers "where is this named" rather than
+   "what am I editing". */
+.wfb .node.lit{border-color:var(--accent-line);box-shadow:inset 0 0 0 1px var(--accent-line)}
+.wfb .node.lit[aria-pressed="true"]{border-color:var(--accent);box-shadow:var(--ring)}
+.wfb .gatelink.lit{border-color:var(--accent-line);background:var(--accent-soft)}
+
+/* ---------- console ---------- */
+.wfb .conhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.wfb .conh1{font-size:21px;font-weight:650;letter-spacing:-.15px;line-height:1.25;margin:0}
+.wfb .concount{font-family:var(--mono);font-size:18px;font-weight:650;color:var(--ink-muted);line-height:1.25}
+.wfb .conright{margin-left:auto;display:flex;align-items:center;gap:10px}
+.wfb .confresh{font-size:11.5px;color:var(--ink-subtle)}
+.wfb .conintro{font-size:13.5px;line-height:1.45;color:var(--ink-muted);max-width:78ch;margin:4px 0 16px}
+.wfb .filterbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-ctl) var(--r-ctl) 0 0;background:var(--card);border-bottom:0}
+.wfb .filterbar .input, .wfb .filterbar .sel{width:auto}
+.wfb .filterbar .search{min-width:230px;flex:1 1 230px;max-width:360px}
+.wfb .newchoice{display:flex;gap:6px;flex:none;align-items:center}
+/* Stacks between .filterbar and .legend with neither gap nor radius, so the
+   three read as one bordered block rather than a panel dropped onto the page --
+   the "answers in place" idiom applied to a block that has no open workflow to
+   sit beside. */
+.wfb .newwfpanel{padding:12px;border:1px solid var(--line);border-bottom:0;background:var(--card)}
+.wfb .newwfpanel > .prose{margin-bottom:10px}
+/* Only the nested case is styled. The in-workflow caller this class is also
+   built for does not exist yet (held for the next checkpoint), and guessing at
+   its spacing now would be styling a context nobody has seen rendered. */
+.wfb .newwfpanel .clonepanel{margin-top:2px;padding-top:10px;border-top:1px dashed var(--line)}
+.wfb .legend{display:flex;gap:13px;flex-wrap:wrap;padding:7px 12px;background:var(--sunk);border:1px solid var(--line);border-bottom:0}
+.wfb .legend .li{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-muted)}
+/* The same pip the rollouts console draws (`RolloutStageStrip`, re-skinned by
+   that page's own `SEGMENT_TONES`), to the pixel: 6px tall, 3px radius, elastic
+   width down to a 12px floor, and a 1.5px INSET RING rather than a border, so
+   the ring costs no layout width and the pip's footprint is its fill.
+
+   ⚠️ THE TONES ARE MAPPED BY MEANING, NOT COPIED BY NAME. Every rollouts tone
+   reports on a promotion that ran; nothing here has run. `done` on that page is
+   a stage that completed healthy, and painting it on a definition would claim a
+   result from a workflow that has never been used once. So each of the three
+   states here takes the rollouts tone that means the same thing:
+
+     .ok   an ordinary Stage        <- `unverified`: it is there, and no claim is
+                                       made about its health. The ring without a
+                                       fill is what says "not asserted".
+     .bad  the definition faults it <- `degraded`: this one is wrong.
+     .fin  Final, not a Stage       <- `ready` in name only now: that page's
+                                       `ready` takes its action colour, and this
+                                       pip is never hovered, focused or selected,
+                                       so it takes the neutral ring instead.
+
+   Soft fill plus a soft border, which this was, put every state between 1.13:1
+   and 1.63:1 against the row -- under half the 3:1 WCAG asks of a graphical
+   object carrying meaning, and the three separable only by hue at near-equal
+   lightness. Saturated ring or saturated fill clears it at 5.3:1 and up, and
+   filled-versus-ringed separates the states on lightness as well as hue. */
+.wfb .seg{height:6px;border-radius:3px;flex:1 1 0;min-width:12px}
+.wfb .seg.ok{background:transparent;box-shadow:inset 0 0 0 1.5px var(--ok)}
+.wfb .seg.bad{background:var(--bad)}
+/* ⚠️ DELIBERATELY NOT the rollouts `ready` mapping above any more: that tone is
+   the action colour, and this pip is a passive legend swatch, never hovered,
+   focused or selected. Rust stays on hover/focus/selection only; a static
+   status mark takes the neutral ring instead, the same call `.node.fin` and
+   `.nodedot.fin` already make. */
+.wfb .seg.fin{background:var(--inset);box-shadow:inset 0 0 0 1.5px var(--line-strong)}
+/* A key is read one swatch at a time, so its swatches are a fixed size rather
+   than a share of a row -- 16x6, the same figure the rollouts legend uses. */
+.wfb .legend .seg{flex:none;width:16px}
+.wfb .table{border:1px solid var(--line);border-radius:0 0 var(--r-card) var(--r-card);background:var(--card);overflow:hidden;box-shadow:var(--shadow)}
+.wfb .grid4{display:grid;grid-template-columns:minmax(190px,1.5fr) 198px 56px 186px;gap:16px;align-items:center;padding:0 14px}
+.wfb .colhead{height:33px;border-bottom:1px solid var(--line);background:var(--sunk)}
+.wfb .colhead span{font-size:11.5px;font-weight:700;letter-spacing:.02em;color:var(--ink-subtle);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wfb .row{border:0;border-bottom:1px solid var(--line);background:transparent;width:100%;text-align:left;cursor:pointer;padding-top:11px;padding-bottom:11px;font:inherit;color:inherit}
+.wfb .row:last-child{border-bottom:0}
+.wfb .row:hover{background:var(--sunk)}
+.wfb .rname{font-size:13.5px;font-weight:600;line-height:1.35;display:block}
+.wfb .rslug{font-family:var(--mono);font-size:11px;color:var(--ink-subtle);display:block;margin-top:2px}
+.wfb .strip{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+/* 11.5px, not the 10.5px a caption would otherwise take here: the rollouts
+   console sets its own line under the pips at 11.5px mono in this same colour,
+   and a caption a point smaller under an otherwise identical strip is enough to
+   make the two tables read as different furniture. */
+.wfb .stripnote{font-family:var(--mono);font-size:11.5px;color:var(--ink-subtle);margin-top:4px;display:block}
+.wfb .rage{font-family:var(--mono);font-size:11.5px;color:var(--ink-subtle);text-align:right}
+.wfb .raction{text-align:right}
+.wfb .al-r{text-align:right}
+@media (max-width:1150px){
+  .wfb .grid4{grid-template-columns:minmax(170px,1.4fr) 180px 168px}
+  .wfb .hide1150{display:none}
+}
+@media (max-width:860px){
+  .wfb .grid4{grid-template-columns:minmax(150px,1.4fr) 170px}
+  .wfb .hide860{display:none}
+}

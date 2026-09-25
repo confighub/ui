@@ -1,0 +1,43 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+coverage
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+*storybook.log
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+authentication.json
+authentication-session.json
+
+# `global.setup.ts` writes these on every failed authentication, so they reappear
+# for as long as auth is broken. It is a symptom rather than litter, and an
+# untracked file that regenerates is exactly what gets swept into someone
+# else's commit.
+*-error.png
+session-missing.png

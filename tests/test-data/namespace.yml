@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: my-application-namespace # <-- Change this to your desired namespace name
+  # It's good practice to add labels to organize your namespaces
+  labels:
+    team: backend-services
+    environment: development

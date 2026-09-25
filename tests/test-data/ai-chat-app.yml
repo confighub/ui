@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-chat-app-deployment
+spec:
+  replicas: 2 # Start with 2 running instances of your app
+  selector:
+    matchLabels:
+      app: ai-chat-app
+  template:
+    metadata:
+      labels:
+        app: ai-chat-app
+    spec:
+      containers:
+        - name: ai-chat-container
+          # IMPORTANT: Replace this with the path to your own container image
+          image: your-dockerhub-username/ai-chat-app:latest
+          ports:
+            - containerPort: 8080 # The port your application listens on inside the container
+
+          # Consume configuration from ConfigMap and Secret as environment variables
+          envFrom:
+            - configMapRef:
+                name: ai-chat-app-config
+            - secretRef:
+                name: ai-chat-app-secrets
+
+          # Resource requests and limits are crucial for cluster stability
+          resources:
+            requests: # Initial resources requested for the pod
+              cpu: '100m' # 10% of a CPU core
+              memory: '128Mi' # 128 Mebibytes of memory
+            limits: # Maximum resources the pod can consume
+              cpu: '500m' # 50% of a CPU core
+              memory: '512Mi' # 512 Mebibytes of memory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-chat-app-service
+spec:
+  # type: LoadBalancer creates a cloud load balancer (for GKE, EKS, AKS).
+  # For local clusters like Minikube, you might use type: NodePort instead.
+  type: LoadBalancer
+  selector:
+    app: ai-chat-app # This MUST match the 'app' label in the Deployment's template
+  ports:
+    - protocol: TCP
+      port: 80 # The port the service will be available on
+      targetPort: 8080 # The port on the container that the service will send traffic to
+---
+# 5. HorizontalPodAutoscaler: Automatically scales the deployment
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai-chat-app-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-chat-app-deployment # Must match the name of the Deployment
+  minReplicas: 2 # Minimum number of pods
+  maxReplicas: 5 # Maximum number of pods to scale up to
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80 # Target CPU utilization percentage to trigger scaling

@@ -1,0 +1,47 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myapp-ingress
+  annotations:
+    # --- Annotations are specific to your Ingress Controller ---
+    # Example for NGINX Ingress Controller:
+    nginx.ingress.kubernetes.io/rewrite-target: / # Rewrite the URL path to just "/" before sending to the backend service.
+    # Example for enabling SSL Passthrough (if terminating TLS at the pod):
+    # nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+
+    # Example for using Cert-Manager to automatically get a TLS certificate:
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  # The IngressClassName tells the cluster which Ingress Controller should handle this Ingress.
+  # The name must match an IngressClass resource in your cluster (e.g., "nginx", "gce").
+  ingressClassName: nginx
+
+  # --- TLS (SSL) Configuration ---
+  # This section configures HTTPS. It references a Kubernetes Secret that holds your certificate and key.
+  tls:
+    - hosts:
+        - myapp.example.com # The domain this certificate is for.
+      secretName: myapp-tls-secret # The name of the Kubernetes Secret containing the TLS cert and private key.
+
+  # --- Routing Rules ---
+  rules:
+    - host: myapp.example.com # Route traffic intended for this domain.
+      http:
+        paths:
+          # Rule 1: Route traffic for the root path and sub-paths
+          - path: /
+            pathType: Prefix # Matches the path and any sub-paths (e.g., /dashboard, /about)
+            backend:
+              service:
+                name: my-app-service # Name of the Service for your main web app
+                port:
+                  number: 80 # The port on that Service to forward traffic to
+
+          # Rule 2: Route traffic for the /api path to a different service
+          - path: /api
+            pathType: Prefix # Matches /api, /api/users, /api/products, etc.
+            backend:
+              service:
+                name: api-service # Name of the Service for your backend API
+                port:
+                  number: 8080 # The port on that Service
