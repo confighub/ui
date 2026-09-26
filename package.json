@@ -22,9 +22,9 @@
     "playwright:debug": "playwright test --debug"
   },
   "dependencies": {
-    "@confighub/api": "0.6.3",
-    "@confighub/react-auth": "0.6.3",
-    "@confighub/rtk-query": "0.6.3",
+    "@confighub/api": "0.6.4",
+    "@confighub/react-auth": "0.6.4",
+    "@confighub/rtk-query": "0.6.4",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
