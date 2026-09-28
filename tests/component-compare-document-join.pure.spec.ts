@@ -36,9 +36,9 @@ spec:
     spec:
       containers:
         - name: debug-shell
-          image: ghcr.io/confighubai/debug:v0.3.0
+          image: ghcr.io/acme/debug:v0.3.0
         - name: otel-collector
-          image: ghcr.io/confighubai/otel:v1.9.2
+          image: ghcr.io/acme/otel:v1.9.2
 `;
 
 /** The same unit in another deployment, with its resource named after its own space. */

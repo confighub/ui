@@ -13,14 +13,10 @@ const TEST_BASE_URL = process.env.TEST_BASE_URL ?? '';
  * so an unrelated navigation can never satisfy it:
  *  - `/auth/logout`                      — the server's logout route (no identity provider)
  *  - `/protocol/openid-connect/logout`   — Keycloak's RP-initiated logout
- *  - `authkit.app`                       — WorkOS AuthKit hosted logout
- *  - `authorization_session_id`          — WorkOS logout redirect parameter
  */
 const isLogoutUrl = (href: string): boolean =>
   href.includes('/auth/logout') ||
-  href.includes('/protocol/openid-connect/logout') ||
-  href.includes('authkit.app') ||
-  href.includes('authorization_session_id');
+  href.includes('/protocol/openid-connect/logout');
 
 test.describe('header', () => {
   test.use({ storageState: 'authentication.json' });

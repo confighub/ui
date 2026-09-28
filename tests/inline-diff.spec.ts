@@ -54,9 +54,9 @@ test.describe('inline value diff', () => {
   const TAG_SHAPES: { name: string; before: string; after: string; expect: string }[] = [
     {
       name: 'a patch bump highlights the whole version segment',
-      before: 'ghcr.io/confighubai/confighub:v0.4.15',
-      after: 'ghcr.io/confighubai/confighub:v0.4.16',
-      expect: 'ghcr.io/confighubai/confighub:v0.4.[16]',
+      before: 'ghcr.io/acme/confighub:v0.4.15',
+      after: 'ghcr.io/acme/confighub:v0.4.16',
+      expect: 'ghcr.io/acme/confighub:v0.4.[16]',
     },
     {
       name: 'a multi-digit minor bump stays one span',
@@ -68,9 +68,9 @@ test.describe('inline value diff', () => {
       // Every component of the version moved, so the tag is one highlight
       // rather than three: a major bump is a single event, not three edits.
       name: 'a major bump highlights the tag as one span, not one per component',
-      before: 'ghcr.io/confighubai/queue-proxy:v1.9.2',
-      after: 'ghcr.io/confighubai/queue-proxy:v2.0.0',
-      expect: 'ghcr.io/confighubai/queue-proxy:[v2.0.0]',
+      before: 'ghcr.io/acme/queue-proxy:v1.9.2',
+      after: 'ghcr.io/acme/queue-proxy:v2.0.0',
+      expect: 'ghcr.io/acme/queue-proxy:[v2.0.0]',
     },
     {
       name: 'a build counter highlights only the counter',
@@ -80,9 +80,9 @@ test.describe('inline value diff', () => {
     },
     {
       name: 'a calendar tag keeps the unchanged date prefix dim',
-      before: 'ghcr.io/confighubai/docs-site:2026-09-13.1a4f',
-      after: 'ghcr.io/confighubai/docs-site:2026-09-16.9c02',
-      expect: 'ghcr.io/confighubai/docs-site:2026-09-[16.9c02]',
+      before: 'ghcr.io/acme/docs-site:2026-09-13.1a4f',
+      after: 'ghcr.io/acme/docs-site:2026-09-16.9c02',
+      expect: 'ghcr.io/acme/docs-site:2026-09-[16.9c02]',
     },
     {
       name: 'a commit sha highlights the sha and keeps the branch prefix',
@@ -102,9 +102,9 @@ test.describe('inline value diff', () => {
       // The tag is identical on both sides, so the registry is the only thing
       // that moved and the highlight has to find it at the far left.
       name: 'a registry move highlights the host, not the tag',
-      before: 'ghcr.io/confighubai/envoy:v1.30.0',
-      after: 'quay.io/confighubai/envoy:v1.30.0',
-      expect: '[quay].io/confighubai/envoy:v1.30.0',
+      before: 'ghcr.io/acme/envoy:v1.30.0',
+      after: 'quay.io/acme/envoy:v1.30.0',
+      expect: '[quay].io/acme/envoy:v1.30.0',
     },
   ];
 

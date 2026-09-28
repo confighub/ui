@@ -6,7 +6,7 @@
 
 ## What it is
 
-The **Component view** (route `/components`, lazy-loaded at `ui/src/App.tsx`) lets a user
+The **Component view** (route `/components`, lazy-loaded at `src/App.tsx`) lets a user
 propagate config changes *downstream* through a DAG of related units. A downstream unit is typically
 a clone of an **upstream** unit; as the upstream changes, the downstream can **upgrade to** those
 changes — per-field or in bulk. The whole interaction is **opt-in, preview-first, and stage-first**:
@@ -16,7 +16,7 @@ in one network call. The UI is a left **app picker**, a center **flow graph** of
 per config key with colored state checkboxes. The diff is deliberately **not** a text/Monaco diff;
 Monaco only appears in the alternative **Source view**.
 
-Everything lives under **`ui/src/pages/x/apps/`**. There is **no Redux slice** and **no
+Everything lives under **`src/pages/x/apps/`**. There is **no Redux slice** and **no
 promotion-specific backend endpoint** — the feature composes generic Unit queries + bulk
 patch (`upgrade` / `dry_run`) + bulk apply. Promotion semantics live entirely in `UpstreamUnitID` /
 `UpgradeUnit` links and the merge engine.
@@ -98,7 +98,7 @@ you can cite them in review.
 | **Upgrade** | Merging the upstream HEAD revision into a downstream unit. Backend: `upgrade=true` → `mergeUnits` → `SourceTypeUpgradeUnit`. "Upgradable" unit = `UpstreamRevisionNum < upstream.HeadRevisionNum`. |
 | **Release** | Publishing a Space's Units to its Target. "Unreleased" = `LastReleasedRevisionNum < HeadRevisionNum`. |
 | **Override / local override** | The child's locally-changed value at a path; it supersedes the upstream value and *blocks* that path from being "upgradable". |
-| **Protected / Kept on merge** | A path whose `MutationSources.PathMutationMap[path].Protected` is `true` (or inherited from the closest protected ancestor, or the resource-level default) — a merge from upstream must not overwrite it. Committed via the `SetUnitProtection` endpoint (`SourceTypeSetProtection`), a **separate revision** from any value write. Read ladder: `protectedPaths.ts`'s `buildProtectedPathLookup` (exact path → ancestor → resource-level default → `false`). Toggled per-row via the leaf/folder kebab (`Keep on merge` / `Let merges update this`); staged the same way as everything else (`stagedProtection`, below) before commit. Array-indexed paths (`spec.containers.0.image`) are excluded from both read and write — `MutationSources` keys array elements associatively (`ResolvedPath`, e.g. `spec.containers.?name=nginx;@0.image`) and there is no parser in `ui/src` to translate the tree's positional notation into it, so guessing would risk silently mismatching the merge engine's own lookup. |
+| **Protected / Kept on merge** | A path whose `MutationSources.PathMutationMap[path].Protected` is `true` (or inherited from the closest protected ancestor, or the resource-level default) — a merge from upstream must not overwrite it. Committed via the `SetUnitProtection` endpoint (`SourceTypeSetProtection`), a **separate revision** from any value write. Read ladder: `protectedPaths.ts`'s `buildProtectedPathLookup` (exact path → ancestor → resource-level default → `false`). Toggled per-row via the leaf/folder kebab (`Keep on merge` / `Let merges update this`); staged the same way as everything else (`stagedProtection`, below) before commit. Array-indexed paths (`spec.containers.0.image`) are excluded from both read and write — `MutationSources` keys array elements associatively (`ResolvedPath`, e.g. `spec.containers.?name=nginx;@0.image`) and there is no parser in `src` to translate the tree's positional notation into it, so guessing would risk silently mismatching the merge engine's own lookup. |
 | **Value treeview** | The default diff UI: field-level tree, one row per dot-path key, with colored state checkboxes. NOT a text diff. `ComponentValuesSection.tsx`. |
 | **Source view** | Monaco editor of the full raw decoded `unit.Data` (`ComponentSourceSection.tsx`). Opt-in alternative to the treeview (shipped #4538). |
 | **Staged change** | A pending change queued for batch commit. A checkbox for an upgrade OR a manual inline edit. Type: `StagedChange {path, type: StagedChangeType, before, after}` (`ComponentValuesSection.tsx`). A staged **protection** change (`stagedProtection`, below) is a DIFFERENT kind of pending change — it never joins this set, and commits through a different endpoint. |
@@ -140,7 +140,7 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
 
 ### UI (path → responsibility)
 
-| Path (`ui/src/pages/x/apps/`) | Responsibility |
+| Path (`src/pages/x/apps/`) | Responsibility |
 |---|---|
 | `AppsComponentPage.tsx` | Page entry; top-level spaces/targets queries; breadcrumb header. |
 | `AppsComponentLayout.tsx` | 2-pane resizable layout; filters spaces to those with a `Component` label; `?app=` URL; lifts `selectedDeploymentIds`. |
@@ -158,7 +158,7 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
 | `componentData.ts` | `buildComponentData(spaces, units, …)` → `{deployments, stages}`; parent/child edges from `UpstreamUnitID`; label consts `Component`/`Owner`/`Variant`; `arrowKey`. |
 | `componentKeyUtils.ts` | **Dot-index path helpers**: `validateKey`, `isArrayIndexSegment`, `isArrayElementPath`, `pathContainsArrayIndex`. Fixes dormant bracket-vs-dot-index bugs — use these, don't write ad-hoc regex. |
 | `configParser.ts` | `parseUnitData` (base64 → JSON/YAML/multi-YAML/INI/Properties/line-fallback → flat `Map<path,value>`), `flattenObject`, `setValueAtPath`/`deleteValueAtPath`, `mapPathsToLines`. |
-| `protectedPaths.ts` | `buildProtectedPathLookup(mutationSources, fieldPathMeta)` — the read-side "is this path protected" lookup (exact `PathMutationMap` entry → closest ancestor → resource-level default → `false`), mirroring the server's own `previousPathProtection` walk. Array-indexed paths always answer `false` (no `ResolvedPath` translator in `ui/src` — see Terminology → Protected). |
+| `protectedPaths.ts` | `buildProtectedPathLookup(mutationSources, fieldPathMeta)` — the read-side "is this path protected" lookup (exact `PathMutationMap` entry → closest ancestor → resource-level default → `false`), mirroring the server's own `previousPathProtection` walk. Array-indexed paths always answer `false` (no `ResolvedPath` translator in `src` — see Terminology → Protected). |
 | `diffTree.ts` | `DiffTreeNode` build/collapse/context/key-injection; `formatTimeAgo`. |
 | `componentTypes.ts` | All TS interfaces (below). |
 | `componentValues.ts` | `ABSENT='—'`, `NO_VALUE_LABEL='no value'`, `isRemovalSentinel`, `isEmptyValue`. |
@@ -191,7 +191,7 @@ an older link is ignored. An id that fails to resolve (a stale
 `?stage=`/`?rolloutSpace=`) is deleted from the URL rather than left dangling.
 
 **Rollout mode** is a different kind of thing from the graph view: it follows ONE ChangeOrder through a promotion sequence rather than arranging the graph.
-Code lives in `ui/src/pages/x/apps/rollout/`, with the graph pieces in `flow-graph/rolloutLayout.ts`,
+Code lives in `src/pages/x/apps/rollout/`, with the graph pieces in `flow-graph/rolloutLayout.ts`,
 `RolloutLaneNode.tsx` and `RolloutStrip.tsx`. Playwright coverage: `ui/tests/rollout-mode.spec.ts`.
 
 **The rollout pane mounts `ComponentValuesSection` directly — the SAME tree auto mode renders —
@@ -302,21 +302,18 @@ row carrying optional `upgradeEntry` / `applyEntry` / `variationEntry` + `valida
 
 Exported from `ComponentValuesSection.tsx`: `StagedChange`, `StagedChangeType`, `StagedCommitPayload`.
 
-### Backend (path → responsibility)
+### Backend (what the view depends on)
 
-No endpoint is promotion-specific; the view composes generic Unit + bulk-patch + bulk-apply.
+No endpoint is promotion-specific; the view composes generic Unit + bulk-patch + bulk-apply:
 
-| Path | Responsibility |
-|---|---|
-| `internal/views/unit.go:491` | Declares `upgrade` query param. |
-| `internal/views/unit_update.go:59,663` | Parses `upgrade`; when set → `SourceTypeUpgradeUnit`, finds the unit's one `UpgradeUnit` link, calls `mergeUnits` (`:707`) merging upstream HEAD via the link's `WhereMutation`, appends `mergeConflicts` to response `Conflicts`, bumps `UpstreamRevisionNum`. |
-| `internal/views/unit_core.go:1728` | `WhereMutationIsUpgradable = Revision.Source IN ('CloneUnit','UpgradeUnit','MergeUnits')`; `CreateUpgradeLink`, `WhereMutationForUpgradeLink`. |
-| `internal/views/function_execution.go:559` | Parses `dry_run`; when true, data is computed/returned but not persisted. |
-| `internal/views/routes.go:505` | `bulkUnit.POST("/apply", …BulkApplyUnits)`; bulk patch via `PluggableHandleBulkPatchRequest`. |
-| `internal/views/resolve_processor.go:333/521/604` | Auto-update path: `MergeUnits`/`UpgradeUnit` links with `AutoUpdate` re-merge on resolve. |
-| `internal/views/link.go:851/865` | `UpgradeUnit` link rules: only ONE outgoing per unit; `WhereMutation` only for Merge/Upgrade; Bindings must be empty. |
-| `public/core/function/api/mutations.go:119` | `MutationConflict {Reason, Resource, Path, Source, Target, UnitID}`. `ConflictReason` enum (`:92`): **`Subtracted`** (the swallowed-delete case), `DeleteShadowed`, `ProtectedPath`, `UnresolvedPath`. Conflicts are **advisory**: patched output is already correct. |
-| `public/core/configkit/yamlkit/mutations.go` | Merge engine: `SubtractMutations`, `PatchMutations`. |
+- `PATCH /unit/{id}?upgrade=true` merges the upstream HEAD into the unit through its one `UpgradeUnit` link (the link's `WhereMutation`), records the revision as `SourceTypeUpgradeUnit`, returns any `mergeConflicts` in the response's `Conflicts`, and bumps `UpstreamRevisionNum`.
+- A unit is upgradable when its revision source is one of `CloneUnit`, `UpgradeUnit`, `MergeUnits`.
+- Function execution honours `dry_run`: the data is computed and returned but not persisted.
+- Bulk apply is `POST /unit/apply`; bulk patch goes through the pluggable bulk-patch handler.
+- `MergeUnits` / `UpgradeUnit` links with `AutoUpdate` re-merge on resolve.
+- `UpgradeUnit` link rules: only one outgoing per unit; `WhereMutation` only on Merge/Upgrade links; Bindings must be empty.
+- `MutationConflict {Reason, Resource, Path, Source, Target, UnitID}` and the `ConflictReason` enum (**`Subtracted`**, the swallowed-delete case; `DeleteShadowed`; `ProtectedPath`; `UnresolvedPath`) are in the SDK at `core/function/api/mutations.go`. Conflicts are **advisory**: patched output is already correct.
+- The merge engine (`SubtractMutations`, `PatchMutations`) is `core/configkit/yamlkit/mutations.go` in the SDK.
 
 ### Known gaps / intent vs. reality
 
