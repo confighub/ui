@@ -53,7 +53,7 @@
     "lz-string": "^1.5.0",
     "monaco-editor": "^0.52.2",
     "monaco-yaml": "^5.4.1",
-    "nanoid": "^3.3.8",
+    "nanoid": "^3.3.19",
     "openapi-fetch": "^0.13.1",
     "posthog-js": "^1.295.0",
     "react": "^18.3.1",
