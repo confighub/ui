@@ -23,18 +23,19 @@
  *
  * ── A SPACE WITH NO RELEASE TARGET IS UNKNOWN, NOT EXEMPT ──────────────────
  *
- * `cub` refuses a promote outright when a previous-stage Space carries no
- * `ReleaseTargetID`: its health "cannot be determined", and it "cannot have any
- * released changes". This module says the same thing in its own vocabulary —
+ * `cub` refuses a `Healthy` promote outright when a previous-stage Space
+ * carries no `ReleaseTargetID`: its health "cannot be determined". This module
+ * says the same thing in its own vocabulary —
  * `evaluated: false`, which renders as not-checked and holds the stage — rather
  * than granting such a Space a pass it was never tested for.
  *
- * ⚠️ AND IT IS ASKED IN `cub`'s ORDER, WHICH IS FIRST. Both
- * `checkSpaceIsHealthy` and the `Released` check in `evaluatePrerequisites`
- * refuse on the missing `ReleaseTargetID` BEFORE they read anything else about
- * the Space,
- * so no live status and no release record can decide either gate for a
- * targetless Space. Reading those first and falling back to the target only when
+ * The `Released` check is the exception: a Space with no release target can
+ * never release, so it passes that check once it has taken the change.
+ *
+ * ⚠️ AND IT IS ASKED IN `cub`'s ORDER, WHICH IS FIRST. `checkSpaceIsHealthy`
+ * refuses on the missing `ReleaseTargetID` BEFORE it reads anything else about
+ * the Space, so no live status can decide the health gate for a targetless
+ * Space. Reading those first and falling back to the target only when
  * they are absent is a different function: `ReleaseTargetID` is clearable and
  * nothing clears `confighub.com/live-status` alongside it, so such a Space keeps
  * whatever it last reported — and a stale green then opens the only gate
@@ -50,8 +51,8 @@
  * the remainder is reporting a verdict about nothing, and a reader cannot tell
  * it apart from a verdict about everything.
  *
- * The cost is that a targetless base Space named as another stage's prerequisite
- * holds that stage until the check can be made — the same refusal `cub` gives,
+ * The cost is that a targetless base Space ahead of a stage that requires
+ * `Healthy` holds that stage until the check can be made — the same refusal `cub` gives,
  * and with no more way past it here than there. Blocking on an unknown is the
  * behaviour every other unknown in this module already has.
  *
@@ -528,9 +529,8 @@ function unsatisfiedLiveStatus(reason: string): RolloutGate {
  * stage.
  *
  * Each Space is asked, in `cub`'s order, to have TAKEN the change and then to
- * have RELEASED it. A Space with no release target cannot be asked the second
- * question and cannot be excused from it either — `cub` refuses it outright —
- * so the gate reports itself unevaluated rather than satisfied.
+ * have RELEASED it. A Space with no release target can never release, so it
+ * passes once it has taken the change.
  *
  * The "has taken" test below is ALSO the mandatory `promoted` gate's, and it is
  * repeated here rather than assumed. Every gate of a stage is evaluated on its
@@ -577,20 +577,18 @@ function releasedGate(context: RolloutGateContext): RolloutGate {
     };
   }
 
+  let anyTargetless = false;
   for (const space of previousStageSpaces) {
     if (!progress.resolvedSpaceIds.has(space.spaceId)) {
       return unsatisfiedReleased(
         rolloutCopy.gateReasons.cubNotTaken(space.variantName, changeOrderSlug),
       );
     }
+    // A Space with no release target can never release, so taking the change
+    // is all this check can ask of it.
     if (space.releaseTargetId === undefined) {
-      return {
-        id: rolloutCopy.gateNames.released,
-        name: rolloutCopy.gateNames.released,
-        ok: false,
-        evaluated: false,
-        reason: rolloutCopy.gateReasons.releasedTargetless(space.variantName),
-      };
+      anyTargetless = true;
+      continue;
     }
     if (!progress.releasedSpaceIds.has(space.spaceId)) {
       return unsatisfiedReleased(
@@ -603,7 +601,9 @@ function releasedGate(context: RolloutGateContext): RolloutGate {
     name: rolloutCopy.gateNames.released,
     ok: true,
     evaluated: true,
-    reason: rolloutCopy.gateReasons.upstreamStageReleased(previousStageId),
+    reason: anyTargetless
+      ? rolloutCopy.gateReasons.releasedTargetless(previousStageId)
+      : rolloutCopy.gateReasons.upstreamStageReleased(previousStageId),
   };
 }
 

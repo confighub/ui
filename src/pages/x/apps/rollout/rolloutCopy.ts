@@ -308,12 +308,11 @@ export const rolloutCopy = {
     upstreamStageReleased: (previousStage: string) =>
       `${previousStage} has taken and released this change.`,
     /**
-     * `cub`: "Variant '%s' cannot have any released changes, missing
-     * ReleaseTargetID". The Space cannot answer the question, which is not the
-     * same as answering it yes.
+     * A Space with no release target can never release anything, so having
+     * taken the change is all the `Released` check can ask of it.
      */
-    releasedTargetless: (variant: string) =>
-      `Not evaluated. ${variant} has no release target, so whether it released this change cannot be determined.`,
+    releasedTargetless: (previousStage: string) =>
+      `${previousStage} has taken this change; its Spaces without a release target have nothing to release.`,
 
     /**
      * Shown for a gate that has not been assessed because an earlier one in the

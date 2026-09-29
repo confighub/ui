@@ -432,8 +432,9 @@ test('an unread Space withholds the gate rather than shrinking the stage', () =>
  * Promote button, skips the override prompt entirely, and lets the row read a
  * Degraded stage as Complete.
  *
- * `cub variant promote` refuses this exact case on both counts, so the UI was
- * shipping the permissive side of the divergence.
+ * `cub variant promote` refuses this exact case on health, so the UI was
+ * shipping the permissive side of the divergence. `Released` is different: a
+ * targetless Space can never release, so it passes once it has taken the change.
  */
 const readTargetless = {
   spaceId: 'd1',
@@ -443,7 +444,7 @@ const readTargetless = {
   releaseTargetId: undefined,
 } as const;
 
-test('a read targetless Space reporting Degraded holds both gates', () => {
+test('a read targetless Space reporting Degraded holds the healthy gate', () => {
   const gates = buildGatesForStage({
     stage: stage({ prerequisites: ['Released', 'Healthy'] }),
     previousStageSpaces: [
@@ -461,9 +462,9 @@ test('a read targetless Space reporting Degraded holds both gates', () => {
   // The status was READ. Reporting a pass here is reporting a Degraded Space as
   // healthy, which is the one thing this gate exists to prevent.
   expect(healthy?.ok).toBe(false);
-  expect(released?.ok).toBe(false);
+  expect(released?.ok).toBe(true);
   expect(gatesOpen(gates)).toBe(false);
-  expect(blockingGates(gates).map((g) => g.id).sort()).toEqual(['check/healthy', 'check/released']);
+  expect(blockingGates(gates).map((g) => g.id)).toEqual(['check/healthy']);
 });
 
 /*
@@ -533,7 +534,7 @@ test('a targetless Space reporting nothing leaves the healthy gate unevaluated',
   expect(blockingGates(gates).map((g) => g.id)).toContain('check/healthy');
 });
 
-test('a targetless Space leaves the released gate unevaluated, not satisfied', () => {
+test('a targetless Space that has taken the change satisfies the released gate', () => {
   const gates = buildGatesForStage({
     stage: stage({ prerequisites: ['Released'] }),
     previousStageSpaces: [readTargetless],
@@ -542,9 +543,10 @@ test('a targetless Space leaves the released gate unevaluated, not satisfied', (
     changeOrderSlug: 'co-1',
   });
   const released = gates.find((g) => g.id === 'check/released');
-  expect(released?.ok).toBe(false);
-  expect(released?.evaluated).toBe(false);
-  expect(gatesOpen(gates)).toBe(false);
+  // It can never release, so having taken the change is all there is to ask.
+  expect(released?.ok).toBe(true);
+  expect(released?.evaluated).toBe(true);
+  expect(gatesOpen(gates)).toBe(true);
 });
 
 /*
@@ -797,9 +799,9 @@ test('the mandatory promoted gate is not run on the first stage either', () => {
 });
 
 /*
- * The narrow reading of the rule — "a targetless Space is unknown, not exempt" —
- * is a property of every stage that has a real predecessor, and it is what the
- * first-stage exemption must not quietly undo.
+ * The narrow reading of the rule — "a targetless Space's health is unknown, not
+ * exempt" — is a property of every stage that has a real predecessor, and it is
+ * what the first-stage exemption must not quietly undo. `Released` passes.
  */
 test('the stage after the first still holds on a targetless predecessor', () => {
   const gates = buildGatesForStage({
@@ -810,7 +812,7 @@ test('the stage after the first still holds on a targetless predecessor', () => 
     changeOrderSlug: 'co-1',
   });
   expect(gates.find((g) => g.id === 'check/healthy')?.evaluated).toBe(false);
-  expect(gates.find((g) => g.id === 'check/released')?.evaluated).toBe(false);
+  expect(gates.find((g) => g.id === 'check/released')?.ok).toBe(true);
   expect(gatesOpen(gates)).toBe(false);
   expect(gateStateFor(gates)).toBe('unknown');
 });
