@@ -9,8 +9,6 @@ import './index.css';
 import { FallbackPage } from './pages/fallback/FallbackPage';
 import { Layout } from './pages/layout/Layout';
 
-const PluginExplorerPage = lazy(() => import('./pages/plugin-explorer/ConnectedExplorer'));
-
 const SpacesListPage = lazy(() => import('./pages/space-list/SpaceListPage'));
 const SpaceDetailPage = lazy(() => import('./pages/space-detail/SpaceDetailPage'));
 const UnitListPage = lazy(() => import('./pages/unit-list/UnitListPage'));
@@ -85,14 +83,6 @@ const routes = [
       </AuthenticatedContextProvider>
     ),
     children: [
-      {
-        path: '/plugins',
-        element: (
-          <Suspense fallback={<Loader isLoading={true} />}>
-            <PluginExplorerPage />
-          </Suspense>
-        ),
-      },
       {
         index: true,
         element: <Navigate to='/components' replace />,

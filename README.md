@@ -88,9 +88,3 @@ Specs named `*.pure.spec.ts` need no server and run with
 ## License
 
 [MIT](./LICENSE).
-
-## Optional plugin explorer
-
-Use the same UI locally with plugin preview files or with an authenticated
-ConfigHub component. See the [plugin explorer guide](docs/dev/plugin-ui/README.md)
-for setup, the shared JSON contract, and validation evidence.

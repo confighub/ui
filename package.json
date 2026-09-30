@@ -19,15 +19,12 @@
     "playwright:report": "playwright show-report",
     "playwright:version": "playwright --version",
     "playwright:codegen": "playwright codegen",
-    "playwright:debug": "playwright test --debug",
-    "build:plugin": "npm run build && node scripts/package-plugin-ui.mjs",
-    "test:plugin": "playwright test -c playwright.plugin.config.ts",
-    "check:preview": "node --experimental-strip-types scripts/check-plugin-preview.mjs"
+    "playwright:debug": "playwright test --debug"
   },
   "dependencies": {
-    "@confighub/api": "0.6.8",
-    "@confighub/react-auth": "0.6.8",
-    "@confighub/rtk-query": "0.6.8",
+    "@confighub/api": "0.6.9",
+    "@confighub/react-auth": "0.6.9",
+    "@confighub/rtk-query": "0.6.9",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",

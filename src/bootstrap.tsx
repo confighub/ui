@@ -5,10 +5,9 @@ import { createRoot } from 'react-dom/client';
 import { ErrorBoundary } from 'react-error-boundary';
 import { Provider as StoreProvider } from 'react-redux';
 import { Outlet, RouterProvider, createBrowserRouter } from 'react-router-dom';
-
+import { PostHogProvider } from 'posthog-js/react';
 import { getAccessToken } from '@confighub/react-auth';
 import { configureConfigHub } from '@confighub/rtk-query';
-import { PostHogProvider } from 'posthog-js/react';
 
 import { Routes } from './App.tsx';
 import { AuthRoot } from './auth/AuthRoot';
@@ -20,13 +19,6 @@ import './index.css';
 import { FallbackPage } from './pages/fallback/FallbackPage';
 import store from './state/store';
 import { posthogKey } from './utility/telemetry';
-
-// Remote typography belongs to connected mode; local previews have no external requests.
-const fonts = document.createElement('link');
-fonts.rel = 'stylesheet';
-fonts.href =
-  'https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap';
-document.head.appendChild(fonts);
 
 // The API client is a module-level singleton: point it at the instance and the token
 // before anything renders, since the first query is dispatched on the first render.
@@ -47,23 +39,20 @@ export const Root = () => {
 };
 
 const createRouter = () =>
-  createBrowserRouter(
-    [
-      {
-        element: <Root />,
-        children: Routes(),
-      },
-    ],
+  createBrowserRouter([
     {
-      future: {
-        v7_fetcherPersist: true,
-        v7_normalizeFormMethod: true,
-        v7_partialHydration: true,
-        v7_relativeSplatPath: true,
-        v7_skipActionErrorRevalidation: true,
-      },
+      element: <Root />,
+      children: Routes(),
     },
-  );
+  ], {
+    future: {
+      v7_fetcherPersist: true,
+      v7_normalizeFormMethod: true,
+      v7_partialHydration: true,
+      v7_relativeSplatPath: true,
+      v7_skipActionErrorRevalidation: true,
+    }
+  });
 
 // The router captures window.location when it is created, so it is created only
 // once AuthRoot has settled: completing an IdP redirect ends by restoring the URL
