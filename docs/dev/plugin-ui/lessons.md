@@ -17,8 +17,8 @@ preview.
   observation. Here the source is a static fleet plan. It cannot prove current
   reconciliation, rendered objects, or delivery. We do not invent a live
   inventory or health result.
-- Represent source-reported skipped inputs and planning problems as warning
-  issues. A valid partial plan remains a valid JSON document. A malformed
+- Represent source-reported skipped inputs as warning issues and planning
+  problems as error issues. A valid partial plan remains a valid JSON document. A malformed
   input is a conversion error: stderr diagnostic and nonzero exit, with no
   partial stdout. Successful CLI conversion writes JSON only to stdout.
 - Treat IDs as text, not UUIDs; use hub slugs only where the plan supplies
@@ -61,8 +61,8 @@ npx playwright test -c playwright.pure.config.ts tests/plugin-preview-flux.pure.
 
 The reproducible fixture preserves the source CLI's plan identity and expected
 relationships while removing its checkout-specific absolute `repoRoot` from
-the envelope. This proves adapter applicability to plan JSON only; it is not a
-claim that the plugin emits this envelope natively or that a live Flux cluster
+the envelope. This initial proof used the adapter. The follow-through adds native Flux
+`plan --format preview-json` with matching contract tests; no live Flux cluster
 was checked.
 
 ## Lessons discovered during integration
@@ -97,3 +97,26 @@ review required one asset-routing repair. These are useful constraints for futur
 delegation: give workers real producer semantics and a representative built bundle.
 No measured dollar saving is claimed. Use inexpensive agents for bounded adapters,
 fixtures and inventories; retain integration review and escalate semantic mismatches.
+
+## Adoption and release follow-through
+
+Native Flux `plan --format preview-json` now preserves the legacy `--json` Plan
+schema while offering the shared envelope. Planning problems are errors, skipped
+inputs are warnings, and Target registration is distinct from a Space targeting
+that destination. Matching the first adapter's fixture was insufficient to catch
+those semantic distinctions; review must check meaning as well as shape.
+
+Optional distribution is a separate versioned archive, installed explicitly with
+checksum and manifest verification. A plugin installed without UI stays CLI-only.
+The shared `npm run --silent check:preview -- FILE` command uses the UI's actual
+validator, so producers have one conformance target.
+
+The initial installed-plugin audit found source/runtime drift: Sveltos source had
+preview support while the installed v0.10.0 binary did not. Check the installed
+release as part of adoption, not just a source checkout. The expanded audit names
+22 discoverable candidates and records unknowns rather than asserting global
+plugin coverage. See `adoption-audit.md` for the inventory and evidence.
+
+Live proof also exposed same-document CLI sign-in: opening a ticket on an already
+mounted sign-in page changes the URL fragment without remounting the component.
+The sign-in handler must react to that change while avoiding duplicate redemption.

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Box, Container, Paper, Typography } from '@mui/material';
 import { Terminal as TerminalIcon } from '@mui/icons-material';
+import { useLocation } from 'react-router-dom';
 
 import { useAuth } from '@confighub/react-auth';
 
@@ -21,22 +22,51 @@ const ticketFromFragment = (): string | null =>
  */
 export const CliSignInPage = () => {
   const { signInWithTicket } = useAuth();
-  const [ticket] = useState(ticketFromFragment);
-  const [failed, setFailed] = useState(false);
-  const redeemed = useRef(false);
+  const location = useLocation();
+  const [ticket, setTicket] = useState(ticketFromFragment);
+  const [failedTicket, setFailedTicket] = useState<string | null>(null);
+  const redeemed = useRef(new Set<string>());
+  const locationSignature = `${location.pathname}${location.search}${location.hash}`;
+  const syncedLocation = useRef(locationSignature);
+  const initialFragmentSynced = useRef(false);
+
+  // BrowserRouter updates for router navigations, while an external fragment
+  // update on the current document emits hashchange without remounting this page.
+  useEffect(() => {
+    const syncTicketFromFragment = () => setTicket(ticketFromFragment());
+    window.addEventListener('hashchange', syncTicketFromFragment);
+    // Close the small gap between the initial state read and effect setup. The
+    // ref prevents StrictMode's effect replay from clearing a redeemed ticket.
+    if (!initialFragmentSynced.current) {
+      initialFragmentSynced.current = true;
+      const currentTicket = ticketFromFragment();
+      if (currentTicket) setTicket(currentTicket);
+    }
+    return () => window.removeEventListener('hashchange', syncTicketFromFragment);
+  }, []);
+
+  useEffect(() => {
+    // The first render already read the fragment. Tracking the router location
+    // prevents StrictMode replay from rereading it after redemption cleared it.
+    if (syncedLocation.current === locationSignature) return;
+    syncedLocation.current = locationSignature;
+    setTicket(ticketFromFragment());
+  }, [locationSignature]);
 
   // Redeeming is a side effect of arriving with a ticket, once: the ticket works
   // only once, and StrictMode runs effects twice in dev.
   useEffect(() => {
-    if (!ticket || redeemed.current) return;
-    redeemed.current = true;
+    if (!ticket || redeemed.current.has(ticket)) return;
+    redeemed.current.add(ticket);
     // Out of the address bar and history before anything else.
-    window.history.replaceState(null, '', window.location.pathname);
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
     signInWithTicket(ticket)
       // A full load, so the app starts over signed in.
       .then(() => window.location.replace('/'))
-      .catch(() => setFailed(true));
+      .catch(() => setFailedTicket(ticket));
   }, [ticket, signInWithTicket]);
+
+  const failed = ticket !== null && failedTicket === ticket;
 
   if (ticket && !failed) {
     return <Loader isLoading={true} />;

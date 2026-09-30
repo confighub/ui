@@ -106,7 +106,7 @@ export function convertFluxPlan(plan, exportedAt = new Date().toISOString()) {
             spaceSlug: targetsSpace,
             targetSlug,
           }));
-          proposalEdges.push(edge(targetSpaceId, targetId, 'targets'));
+          proposalEdges.push(edge(targetSpaceId, targetId, 'registers'));
         }
         const variantUnitId = `proposal-unit/${variantSpace}/${component.name}`;
         proposalNodes.push(node(variantUnitId, 'Unit', text(component.name), undefined, {
@@ -126,7 +126,7 @@ export function convertFluxPlan(plan, exportedAt = new Date().toISOString()) {
     issues.push({ severity: 'warning', code: 'flux-input-skipped', message: text(skipped) });
   }
   for (const problem of plan.problems ?? []) {
-    issues.push({ severity: 'warning', code: 'flux-plan-problem', message: text(problem) });
+    issues.push({ severity: 'error', code: 'flux-plan-problem', message: text(problem) });
   }
   issues.sort((a, b) => compareText(`${a.code}\0${a.message}`, `${b.code}\0${b.message}`));
 
