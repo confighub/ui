@@ -288,6 +288,12 @@ const SHOW_ROLLOUTS_NAV = true;
 
 const ConfigurationItems: INavItem[] = [
   {
+    text: 'Plugin explorer',
+    component: <ExploreIcon sx={{ color: 'white' }} />,
+    navigate: '/plugins',
+    disable: false,
+  },
+  {
     text: 'Components',
     component: <AccountTreeIcon sx={{ color: 'white' }} />,
     navigate: `/components`,

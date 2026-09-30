@@ -19,7 +19,9 @@
     "playwright:report": "playwright show-report",
     "playwright:version": "playwright --version",
     "playwright:codegen": "playwright codegen",
-    "playwright:debug": "playwright test --debug"
+    "playwright:debug": "playwright test --debug",
+    "build:plugin": "npm run build && node scripts/package-plugin-ui.mjs",
+    "test:plugin": "playwright test -c playwright.plugin.config.ts"
   },
   "dependencies": {
     "@confighub/api": "0.6.8",
