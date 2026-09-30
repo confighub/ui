@@ -49,7 +49,7 @@ test.describe('Flux plugin preview adapter', () => {
     expect(preview.issues).toEqual([]);
   });
 
-  test('surfaces skipped inputs and plan problems as warnings and ignores credential-shaped unknown fields', () => {
+  test('surfaces skipped inputs and plan problems as errors and ignores credential-shaped unknown fields', () => {
     const plan = {
       clusters: [{ name: 'dev', dir: 'dev', stage: 'dev', path: 'clusters/dev' }],
       components: [],
@@ -61,7 +61,7 @@ test.describe('Flux plugin preview adapter', () => {
     const preview = convertFluxPlan(plan, exportedAt);
     expect(preview.issues).toEqual([
       { severity: 'warning', code: 'flux-input-skipped', message: 'not a supported file' },
-      { severity: 'warning', code: 'flux-plan-problem', message: 'layer path is missing' },
+      { severity: 'error', code: 'flux-plan-problem', message: 'layer path is missing' },
     ]);
     expect(JSON.stringify(preview)).not.toContain('DO_NOT_EXPORT');
     expect(JSON.stringify(preview)).not.toContain('credentials');

@@ -102,3 +102,25 @@ test('local names give candidates, with ambiguity and absent states', () => {
   );
   expect(matchProposedSpaces(fixture(), scope, [])[0].state).toContain('Not found');
 });
+
+test('shared command validates real preview files without changing them', async () => {
+  const { execFileSync, spawnSync } = await import('node:child_process');
+  const valid = execFileSync(
+    'node',
+    [
+      '--experimental-strip-types',
+      'scripts/check-plugin-preview.mjs',
+      'public/examples/sveltos-preview.json',
+    ],
+    { encoding: 'utf8' },
+  );
+  expect(JSON.parse(valid).valid).toBe(true);
+  const invalid = spawnSync(
+    'node',
+    ['--experimental-strip-types', 'scripts/check-plugin-preview.mjs', 'package.json'],
+    { encoding: 'utf8' },
+  );
+  expect(invalid.status).toBe(1);
+  expect(invalid.stdout).toBe('');
+  expect(invalid.stderr).toContain('Unsupported preview');
+});

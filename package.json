@@ -21,7 +21,8 @@
     "playwright:codegen": "playwright codegen",
     "playwright:debug": "playwright test --debug",
     "build:plugin": "npm run build && node scripts/package-plugin-ui.mjs",
-    "test:plugin": "playwright test -c playwright.plugin.config.ts"
+    "test:plugin": "playwright test -c playwright.plugin.config.ts",
+    "check:preview": "node --experimental-strip-types scripts/check-plugin-preview.mjs"
   },
   "dependencies": {
     "@confighub/api": "0.6.8",

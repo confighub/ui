@@ -763,17 +763,17 @@
       {
         "from": "proposal-space/flux-targets",
         "to": "proposal-target/flux-targets/dev-1",
-        "relation": "targets"
+        "relation": "registers"
       },
       {
         "from": "proposal-space/flux-targets",
         "to": "proposal-target/flux-targets/prod-1",
-        "relation": "targets"
+        "relation": "registers"
       },
       {
         "from": "proposal-space/flux-targets",
         "to": "proposal-target/flux-targets/staging-1",
-        "relation": "targets"
+        "relation": "registers"
       },
       {
         "from": "proposal-space/flux-tenants-base",

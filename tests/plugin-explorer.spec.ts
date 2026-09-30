@@ -17,7 +17,8 @@ const spaces = [
     },
   },
 ];
-const sample = () => readFileSync('public/examples/flux-preview.json');
+const sample = () =>
+  readFileSync(process.env.PLUGIN_PREVIEW_FILE || 'public/examples/flux-preview.json');
 test('local boot and exploration require no backend or external network', async ({ page }) => {
   const forbidden: string[] = [];
   page.on('request', (r) => {

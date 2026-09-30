@@ -41,3 +41,6 @@ authentication-session.json
 # else's commit.
 *-error.png
 session-missing.png
+
+# Versioned optional UI release archives
+/release/
