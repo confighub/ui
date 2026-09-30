@@ -1,0 +1,866 @@
+{
+  "apiVersion": "confighub.com/plugin-preview/v1",
+  "kind": "PluginPreview",
+  "producer": {
+    "name": "cub-flux",
+    "version": "dev"
+  },
+  "exportedAt": "2026-09-30T00:00:00Z",
+  "scope": {
+    "description": "Static cub flux plan derived from the supplied Git fleet repository. Inventory nodes describe plan inputs only; this is not live cluster discovery, rendered Kubernetes inventory, or proof of delivery."
+  },
+  "capabilities": [
+    "preview"
+  ],
+  "inventory": {
+    "nodes": [
+      {
+        "id": "flux-cluster/dev-1",
+        "kind": "FluxCluster",
+        "name": "dev-1",
+        "details": {
+          "stage": "dev",
+          "sourcePath": "gitops/flux/expert-fleet/clusters/dev",
+          "evidence": "Git plan input"
+        }
+      },
+      {
+        "id": "flux-cluster/prod-1",
+        "kind": "FluxCluster",
+        "name": "prod-1",
+        "details": {
+          "stage": "prod",
+          "sourcePath": "gitops/flux/expert-fleet/clusters/prod",
+          "evidence": "Git plan input"
+        }
+      },
+      {
+        "id": "flux-cluster/staging-1",
+        "kind": "FluxCluster",
+        "name": "staging-1",
+        "details": {
+          "stage": "staging",
+          "sourcePath": "gitops/flux/expert-fleet/clusters/staging",
+          "evidence": "Git plan input"
+        }
+      },
+      {
+        "id": "flux-kustomization/dev-1/apps",
+        "kind": "FluxKustomization",
+        "name": "apps",
+        "namespace": "flux-system",
+        "details": {
+          "component": "apps",
+          "stage": "dev",
+          "sourcePath": "gitops/flux/expert-fleet/apps/dev",
+          "departures": "adds namespace.yaml; namespace apptique-dev; label environment=dev; image nginx 1.27.3-alpine (written by image automation); Deployment/frontend replace /spec/replicas = 1; substitutes cluster_name=dev-1; substitutes environment=dev; Flux spec.healthChecks[0].namespace = apptique-dev",
+          "evidence": "Git plan input; not proof of live reconciliation"
+        }
+      },
+      {
+        "id": "flux-kustomization/dev-1/image-automation",
+        "kind": "FluxKustomization",
+        "name": "image-automation",
+        "namespace": "flux-system",
+        "details": {
+          "component": "image-automation",
+          "stage": "dev",
+          "sourcePath": "gitops/flux/expert-fleet/image-automation",
+          "departures": "adds imagerepository.yaml; adds imagepolicy.yaml; adds imageupdateautomation.yaml",
+          "evidence": "Git plan input; not proof of live reconciliation"
+        }
+      },
+      {
+        "id": "flux-kustomization/dev-1/infrastructure",
+        "kind": "FluxKustomization",
+        "name": "infrastructure",
+        "namespace": "flux-system",
+        "details": {
+          "component": "infrastructure",
+          "stage": "dev",
+          "sourcePath": "gitops/flux/expert-fleet/infrastructure/dev",
+          "departures": "label environment=dev",
+          "evidence": "Git plan input; not proof of live reconciliation"
+        }
+      },
+      {
+        "id": "flux-kustomization/dev-1/tenants",
+        "kind": "FluxKustomization",
+        "name": "tenants",
+        "namespace": "flux-system",
+        "details": {
+          "component": "tenants",
+          "stage": "dev",
+          "sourcePath": "gitops/flux/expert-fleet/tenants/dev",
+          "departures": "label environment=dev; GitRepository/team-checkout replace /spec/ref/branch = main",
+          "evidence": "Git plan input; not proof of live reconciliation"
+        }
+      },
+      {
+        "id": "flux-kustomization/prod-1/apps",
+        "kind": "FluxKustomization",
+        "name": "apps",
+        "namespace": "flux-system",
+        "details": {
+          "component": "apps",
+          "stage": "prod",
+          "sourcePath": "gitops/flux/expert-fleet/apps/prod",
+          "departures": "adds namespace.yaml; namespace apptique-prod; label environment=prod; image nginx 1.26.3-alpine; Deployment/frontend replace /spec/replicas = 4; substitutes cluster_name=prod-1; substitutes environment=prod; Flux spec.healthChecks[0].namespace = apptique-prod",
+          "evidence": "Git plan input; not proof of live reconciliation"
+        }
+      },
+      {
+        "id": "flux-kustomization/prod-1/infrastructure",
+        "kind": "FluxKustomization",
+        "name": "infrastructure",
+        "namespace": "flux-system",
+        "details": {
+          "component": "infrastructure",
+          "stage": "prod",
+          "sourcePath": "gitops/flux/expert-fleet/infrastructure/prod",
+          "departures": "label environment=prod; GitRepository/fleet-repo replace /spec/ref/branch = production; HelmRelease/edge-router replace /spec/values/replicaCount = 3",
+          "evidence": "Git plan input; not proof of live reconciliation"
+        }
+      },
+      {
+        "id": "flux-kustomization/prod-1/tenants",
+        "kind": "FluxKustomization",
+        "name": "tenants",
+        "namespace": "flux-system",
+        "details": {
+          "component": "tenants",
+          "stage": "prod",
+          "sourcePath": "gitops/flux/expert-fleet/tenants/prod",
+          "departures": "label environment=prod; GitRepository/team-checkout replace /spec/ref/branch = production",
+          "evidence": "Git plan input; not proof of live reconciliation"
+        }
+      },
+      {
+        "id": "flux-kustomization/staging-1/apps",
+        "kind": "FluxKustomization",
+        "name": "apps",
+        "namespace": "flux-system",
+        "details": {
+          "component": "apps",
+          "stage": "staging",
+          "sourcePath": "gitops/flux/expert-fleet/apps/staging",
+          "departures": "adds namespace.yaml; namespace apptique-staging; label environment=staging; image nginx 1.27.2-alpine; Deployment/frontend replace /spec/replicas = 2; substitutes cluster_name=staging-1; substitutes environment=staging; Flux spec.healthChecks[0].namespace = apptique-staging",
+          "evidence": "Git plan input; not proof of live reconciliation"
+        }
+      },
+      {
+        "id": "flux-kustomization/staging-1/infrastructure",
+        "kind": "FluxKustomization",
+        "name": "infrastructure",
+        "namespace": "flux-system",
+        "details": {
+          "component": "infrastructure",
+          "stage": "staging",
+          "sourcePath": "gitops/flux/expert-fleet/infrastructure/staging",
+          "departures": "label environment=staging; HelmRelease/edge-router replace /spec/values/replicaCount = 2",
+          "evidence": "Git plan input; not proof of live reconciliation"
+        }
+      },
+      {
+        "id": "flux-kustomization/staging-1/tenants",
+        "kind": "FluxKustomization",
+        "name": "tenants",
+        "namespace": "flux-system",
+        "details": {
+          "component": "tenants",
+          "stage": "staging",
+          "sourcePath": "gitops/flux/expert-fleet/tenants/staging",
+          "departures": "label environment=staging; GitRepository/team-checkout replace /spec/ref/branch = main",
+          "evidence": "Git plan input; not proof of live reconciliation"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": "flux-cluster/dev-1",
+        "to": "flux-kustomization/dev-1/apps",
+        "relation": "declares"
+      },
+      {
+        "from": "flux-cluster/dev-1",
+        "to": "flux-kustomization/dev-1/image-automation",
+        "relation": "declares"
+      },
+      {
+        "from": "flux-cluster/dev-1",
+        "to": "flux-kustomization/dev-1/infrastructure",
+        "relation": "declares"
+      },
+      {
+        "from": "flux-cluster/dev-1",
+        "to": "flux-kustomization/dev-1/tenants",
+        "relation": "declares"
+      },
+      {
+        "from": "flux-cluster/prod-1",
+        "to": "flux-kustomization/prod-1/apps",
+        "relation": "declares"
+      },
+      {
+        "from": "flux-cluster/prod-1",
+        "to": "flux-kustomization/prod-1/infrastructure",
+        "relation": "declares"
+      },
+      {
+        "from": "flux-cluster/prod-1",
+        "to": "flux-kustomization/prod-1/tenants",
+        "relation": "declares"
+      },
+      {
+        "from": "flux-cluster/staging-1",
+        "to": "flux-kustomization/staging-1/apps",
+        "relation": "declares"
+      },
+      {
+        "from": "flux-cluster/staging-1",
+        "to": "flux-kustomization/staging-1/infrastructure",
+        "relation": "declares"
+      },
+      {
+        "from": "flux-cluster/staging-1",
+        "to": "flux-kustomization/staging-1/tenants",
+        "relation": "declares"
+      }
+    ]
+  },
+  "proposal": {
+    "nodes": [
+      {
+        "id": "proposal-space/flux-apps-base",
+        "kind": "Space",
+        "name": "flux-apps-base",
+        "details": {
+          "role": "base"
+        },
+        "hub": {
+          "spaceSlug": "flux-apps-base"
+        }
+      },
+      {
+        "id": "proposal-space/flux-apps-dev-1",
+        "kind": "Space",
+        "name": "flux-apps-dev-1",
+        "details": {
+          "role": "variant",
+          "cluster": "dev-1",
+          "stage": "dev"
+        },
+        "hub": {
+          "spaceSlug": "flux-apps-dev-1",
+          "targetSlug": "dev-1",
+          "targetsSpace": "flux-targets"
+        }
+      },
+      {
+        "id": "proposal-space/flux-apps-prod-1",
+        "kind": "Space",
+        "name": "flux-apps-prod-1",
+        "details": {
+          "role": "variant",
+          "cluster": "prod-1",
+          "stage": "prod"
+        },
+        "hub": {
+          "spaceSlug": "flux-apps-prod-1",
+          "targetSlug": "prod-1",
+          "targetsSpace": "flux-targets"
+        }
+      },
+      {
+        "id": "proposal-space/flux-apps-staging-1",
+        "kind": "Space",
+        "name": "flux-apps-staging-1",
+        "details": {
+          "role": "variant",
+          "cluster": "staging-1",
+          "stage": "staging"
+        },
+        "hub": {
+          "spaceSlug": "flux-apps-staging-1",
+          "targetSlug": "staging-1",
+          "targetsSpace": "flux-targets"
+        }
+      },
+      {
+        "id": "proposal-space/flux-image-automation-base",
+        "kind": "Space",
+        "name": "flux-image-automation-base",
+        "details": {
+          "role": "base"
+        },
+        "hub": {
+          "spaceSlug": "flux-image-automation-base"
+        }
+      },
+      {
+        "id": "proposal-space/flux-image-automation-dev-1",
+        "kind": "Space",
+        "name": "flux-image-automation-dev-1",
+        "details": {
+          "role": "variant",
+          "cluster": "dev-1",
+          "stage": "dev"
+        },
+        "hub": {
+          "spaceSlug": "flux-image-automation-dev-1",
+          "targetSlug": "dev-1",
+          "targetsSpace": "flux-targets"
+        }
+      },
+      {
+        "id": "proposal-space/flux-infrastructure-base",
+        "kind": "Space",
+        "name": "flux-infrastructure-base",
+        "details": {
+          "role": "base"
+        },
+        "hub": {
+          "spaceSlug": "flux-infrastructure-base"
+        }
+      },
+      {
+        "id": "proposal-space/flux-infrastructure-dev-1",
+        "kind": "Space",
+        "name": "flux-infrastructure-dev-1",
+        "details": {
+          "role": "variant",
+          "cluster": "dev-1",
+          "stage": "dev"
+        },
+        "hub": {
+          "spaceSlug": "flux-infrastructure-dev-1",
+          "targetSlug": "dev-1",
+          "targetsSpace": "flux-targets"
+        }
+      },
+      {
+        "id": "proposal-space/flux-infrastructure-prod-1",
+        "kind": "Space",
+        "name": "flux-infrastructure-prod-1",
+        "details": {
+          "role": "variant",
+          "cluster": "prod-1",
+          "stage": "prod"
+        },
+        "hub": {
+          "spaceSlug": "flux-infrastructure-prod-1",
+          "targetSlug": "prod-1",
+          "targetsSpace": "flux-targets"
+        }
+      },
+      {
+        "id": "proposal-space/flux-infrastructure-staging-1",
+        "kind": "Space",
+        "name": "flux-infrastructure-staging-1",
+        "details": {
+          "role": "variant",
+          "cluster": "staging-1",
+          "stage": "staging"
+        },
+        "hub": {
+          "spaceSlug": "flux-infrastructure-staging-1",
+          "targetSlug": "staging-1",
+          "targetsSpace": "flux-targets"
+        }
+      },
+      {
+        "id": "proposal-space/flux-targets",
+        "kind": "Space",
+        "name": "flux-targets",
+        "details": {
+          "role": "targets"
+        },
+        "hub": {
+          "spaceSlug": "flux-targets"
+        }
+      },
+      {
+        "id": "proposal-space/flux-tenants-base",
+        "kind": "Space",
+        "name": "flux-tenants-base",
+        "details": {
+          "role": "base"
+        },
+        "hub": {
+          "spaceSlug": "flux-tenants-base"
+        }
+      },
+      {
+        "id": "proposal-space/flux-tenants-dev-1",
+        "kind": "Space",
+        "name": "flux-tenants-dev-1",
+        "details": {
+          "role": "variant",
+          "cluster": "dev-1",
+          "stage": "dev"
+        },
+        "hub": {
+          "spaceSlug": "flux-tenants-dev-1",
+          "targetSlug": "dev-1",
+          "targetsSpace": "flux-targets"
+        }
+      },
+      {
+        "id": "proposal-space/flux-tenants-prod-1",
+        "kind": "Space",
+        "name": "flux-tenants-prod-1",
+        "details": {
+          "role": "variant",
+          "cluster": "prod-1",
+          "stage": "prod"
+        },
+        "hub": {
+          "spaceSlug": "flux-tenants-prod-1",
+          "targetSlug": "prod-1",
+          "targetsSpace": "flux-targets"
+        }
+      },
+      {
+        "id": "proposal-space/flux-tenants-staging-1",
+        "kind": "Space",
+        "name": "flux-tenants-staging-1",
+        "details": {
+          "role": "variant",
+          "cluster": "staging-1",
+          "stage": "staging"
+        },
+        "hub": {
+          "spaceSlug": "flux-tenants-staging-1",
+          "targetSlug": "staging-1",
+          "targetsSpace": "flux-targets"
+        }
+      },
+      {
+        "id": "proposal-target/flux-targets/dev-1",
+        "kind": "Target",
+        "name": "dev-1",
+        "details": {
+          "cluster": "dev-1"
+        },
+        "hub": {
+          "spaceSlug": "flux-targets",
+          "targetSlug": "dev-1"
+        }
+      },
+      {
+        "id": "proposal-target/flux-targets/prod-1",
+        "kind": "Target",
+        "name": "prod-1",
+        "details": {
+          "cluster": "prod-1"
+        },
+        "hub": {
+          "spaceSlug": "flux-targets",
+          "targetSlug": "prod-1"
+        }
+      },
+      {
+        "id": "proposal-target/flux-targets/staging-1",
+        "kind": "Target",
+        "name": "staging-1",
+        "details": {
+          "cluster": "staging-1"
+        },
+        "hub": {
+          "spaceSlug": "flux-targets",
+          "targetSlug": "staging-1"
+        }
+      },
+      {
+        "id": "proposal-unit/flux-apps-base/apps",
+        "kind": "Unit",
+        "name": "apps",
+        "details": {
+          "role": "base",
+          "sourcePath": "gitops/flux/expert-fleet/apps/base/apptique"
+        },
+        "hub": {
+          "spaceSlug": "flux-apps-base",
+          "unitSlug": "apps"
+        }
+      },
+      {
+        "id": "proposal-unit/flux-apps-dev-1/apps",
+        "kind": "Unit",
+        "name": "apps",
+        "details": {
+          "role": "variant",
+          "cluster": "dev-1",
+          "stage": "dev",
+          "sourcePath": "gitops/flux/expert-fleet/apps/dev"
+        },
+        "hub": {
+          "spaceSlug": "flux-apps-dev-1",
+          "unitSlug": "apps"
+        }
+      },
+      {
+        "id": "proposal-unit/flux-apps-prod-1/apps",
+        "kind": "Unit",
+        "name": "apps",
+        "details": {
+          "role": "variant",
+          "cluster": "prod-1",
+          "stage": "prod",
+          "sourcePath": "gitops/flux/expert-fleet/apps/prod"
+        },
+        "hub": {
+          "spaceSlug": "flux-apps-prod-1",
+          "unitSlug": "apps"
+        }
+      },
+      {
+        "id": "proposal-unit/flux-apps-staging-1/apps",
+        "kind": "Unit",
+        "name": "apps",
+        "details": {
+          "role": "variant",
+          "cluster": "staging-1",
+          "stage": "staging",
+          "sourcePath": "gitops/flux/expert-fleet/apps/staging"
+        },
+        "hub": {
+          "spaceSlug": "flux-apps-staging-1",
+          "unitSlug": "apps"
+        }
+      },
+      {
+        "id": "proposal-unit/flux-image-automation-base/image-automation",
+        "kind": "Unit",
+        "name": "image-automation",
+        "details": {
+          "role": "base",
+          "sourcePath": "gitops/flux/expert-fleet/image-automation"
+        },
+        "hub": {
+          "spaceSlug": "flux-image-automation-base",
+          "unitSlug": "image-automation"
+        }
+      },
+      {
+        "id": "proposal-unit/flux-image-automation-dev-1/image-automation",
+        "kind": "Unit",
+        "name": "image-automation",
+        "details": {
+          "role": "variant",
+          "cluster": "dev-1",
+          "stage": "dev",
+          "sourcePath": "gitops/flux/expert-fleet/image-automation"
+        },
+        "hub": {
+          "spaceSlug": "flux-image-automation-dev-1",
+          "unitSlug": "image-automation"
+        }
+      },
+      {
+        "id": "proposal-unit/flux-infrastructure-base/infrastructure",
+        "kind": "Unit",
+        "name": "infrastructure",
+        "details": {
+          "role": "base",
+          "sourcePath": "gitops/flux/expert-fleet/infrastructure/base"
+        },
+        "hub": {
+          "spaceSlug": "flux-infrastructure-base",
+          "unitSlug": "infrastructure"
+        }
+      },
+      {
+        "id": "proposal-unit/flux-infrastructure-dev-1/infrastructure",
+        "kind": "Unit",
+        "name": "infrastructure",
+        "details": {
+          "role": "variant",
+          "cluster": "dev-1",
+          "stage": "dev",
+          "sourcePath": "gitops/flux/expert-fleet/infrastructure/dev"
+        },
+        "hub": {
+          "spaceSlug": "flux-infrastructure-dev-1",
+          "unitSlug": "infrastructure"
+        }
+      },
+      {
+        "id": "proposal-unit/flux-infrastructure-prod-1/infrastructure",
+        "kind": "Unit",
+        "name": "infrastructure",
+        "details": {
+          "role": "variant",
+          "cluster": "prod-1",
+          "stage": "prod",
+          "sourcePath": "gitops/flux/expert-fleet/infrastructure/prod"
+        },
+        "hub": {
+          "spaceSlug": "flux-infrastructure-prod-1",
+          "unitSlug": "infrastructure"
+        }
+      },
+      {
+        "id": "proposal-unit/flux-infrastructure-staging-1/infrastructure",
+        "kind": "Unit",
+        "name": "infrastructure",
+        "details": {
+          "role": "variant",
+          "cluster": "staging-1",
+          "stage": "staging",
+          "sourcePath": "gitops/flux/expert-fleet/infrastructure/staging"
+        },
+        "hub": {
+          "spaceSlug": "flux-infrastructure-staging-1",
+          "unitSlug": "infrastructure"
+        }
+      },
+      {
+        "id": "proposal-unit/flux-tenants-base/tenants",
+        "kind": "Unit",
+        "name": "tenants",
+        "details": {
+          "role": "base",
+          "sourcePath": "gitops/flux/expert-fleet/tenants/base/team-checkout"
+        },
+        "hub": {
+          "spaceSlug": "flux-tenants-base",
+          "unitSlug": "tenants"
+        }
+      },
+      {
+        "id": "proposal-unit/flux-tenants-dev-1/tenants",
+        "kind": "Unit",
+        "name": "tenants",
+        "details": {
+          "role": "variant",
+          "cluster": "dev-1",
+          "stage": "dev",
+          "sourcePath": "gitops/flux/expert-fleet/tenants/dev"
+        },
+        "hub": {
+          "spaceSlug": "flux-tenants-dev-1",
+          "unitSlug": "tenants"
+        }
+      },
+      {
+        "id": "proposal-unit/flux-tenants-prod-1/tenants",
+        "kind": "Unit",
+        "name": "tenants",
+        "details": {
+          "role": "variant",
+          "cluster": "prod-1",
+          "stage": "prod",
+          "sourcePath": "gitops/flux/expert-fleet/tenants/prod"
+        },
+        "hub": {
+          "spaceSlug": "flux-tenants-prod-1",
+          "unitSlug": "tenants"
+        }
+      },
+      {
+        "id": "proposal-unit/flux-tenants-staging-1/tenants",
+        "kind": "Unit",
+        "name": "tenants",
+        "details": {
+          "role": "variant",
+          "cluster": "staging-1",
+          "stage": "staging",
+          "sourcePath": "gitops/flux/expert-fleet/tenants/staging"
+        },
+        "hub": {
+          "spaceSlug": "flux-tenants-staging-1",
+          "unitSlug": "tenants"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": "proposal-space/flux-apps-base",
+        "to": "proposal-unit/flux-apps-base/apps",
+        "relation": "contains"
+      },
+      {
+        "from": "proposal-space/flux-apps-dev-1",
+        "to": "proposal-target/flux-targets/dev-1",
+        "relation": "targets"
+      },
+      {
+        "from": "proposal-space/flux-apps-dev-1",
+        "to": "proposal-unit/flux-apps-dev-1/apps",
+        "relation": "contains"
+      },
+      {
+        "from": "proposal-space/flux-apps-prod-1",
+        "to": "proposal-target/flux-targets/prod-1",
+        "relation": "targets"
+      },
+      {
+        "from": "proposal-space/flux-apps-prod-1",
+        "to": "proposal-unit/flux-apps-prod-1/apps",
+        "relation": "contains"
+      },
+      {
+        "from": "proposal-space/flux-apps-staging-1",
+        "to": "proposal-target/flux-targets/staging-1",
+        "relation": "targets"
+      },
+      {
+        "from": "proposal-space/flux-apps-staging-1",
+        "to": "proposal-unit/flux-apps-staging-1/apps",
+        "relation": "contains"
+      },
+      {
+        "from": "proposal-space/flux-image-automation-base",
+        "to": "proposal-unit/flux-image-automation-base/image-automation",
+        "relation": "contains"
+      },
+      {
+        "from": "proposal-space/flux-image-automation-dev-1",
+        "to": "proposal-target/flux-targets/dev-1",
+        "relation": "targets"
+      },
+      {
+        "from": "proposal-space/flux-image-automation-dev-1",
+        "to": "proposal-unit/flux-image-automation-dev-1/image-automation",
+        "relation": "contains"
+      },
+      {
+        "from": "proposal-space/flux-infrastructure-base",
+        "to": "proposal-unit/flux-infrastructure-base/infrastructure",
+        "relation": "contains"
+      },
+      {
+        "from": "proposal-space/flux-infrastructure-dev-1",
+        "to": "proposal-target/flux-targets/dev-1",
+        "relation": "targets"
+      },
+      {
+        "from": "proposal-space/flux-infrastructure-dev-1",
+        "to": "proposal-unit/flux-infrastructure-dev-1/infrastructure",
+        "relation": "contains"
+      },
+      {
+        "from": "proposal-space/flux-infrastructure-prod-1",
+        "to": "proposal-target/flux-targets/prod-1",
+        "relation": "targets"
+      },
+      {
+        "from": "proposal-space/flux-infrastructure-prod-1",
+        "to": "proposal-unit/flux-infrastructure-prod-1/infrastructure",
+        "relation": "contains"
+      },
+      {
+        "from": "proposal-space/flux-infrastructure-staging-1",
+        "to": "proposal-target/flux-targets/staging-1",
+        "relation": "targets"
+      },
+      {
+        "from": "proposal-space/flux-infrastructure-staging-1",
+        "to": "proposal-unit/flux-infrastructure-staging-1/infrastructure",
+        "relation": "contains"
+      },
+      {
+        "from": "proposal-space/flux-targets",
+        "to": "proposal-target/flux-targets/dev-1",
+        "relation": "targets"
+      },
+      {
+        "from": "proposal-space/flux-targets",
+        "to": "proposal-target/flux-targets/prod-1",
+        "relation": "targets"
+      },
+      {
+        "from": "proposal-space/flux-targets",
+        "to": "proposal-target/flux-targets/staging-1",
+        "relation": "targets"
+      },
+      {
+        "from": "proposal-space/flux-tenants-base",
+        "to": "proposal-unit/flux-tenants-base/tenants",
+        "relation": "contains"
+      },
+      {
+        "from": "proposal-space/flux-tenants-dev-1",
+        "to": "proposal-target/flux-targets/dev-1",
+        "relation": "targets"
+      },
+      {
+        "from": "proposal-space/flux-tenants-dev-1",
+        "to": "proposal-unit/flux-tenants-dev-1/tenants",
+        "relation": "contains"
+      },
+      {
+        "from": "proposal-space/flux-tenants-prod-1",
+        "to": "proposal-target/flux-targets/prod-1",
+        "relation": "targets"
+      },
+      {
+        "from": "proposal-space/flux-tenants-prod-1",
+        "to": "proposal-unit/flux-tenants-prod-1/tenants",
+        "relation": "contains"
+      },
+      {
+        "from": "proposal-space/flux-tenants-staging-1",
+        "to": "proposal-target/flux-targets/staging-1",
+        "relation": "targets"
+      },
+      {
+        "from": "proposal-space/flux-tenants-staging-1",
+        "to": "proposal-unit/flux-tenants-staging-1/tenants",
+        "relation": "contains"
+      },
+      {
+        "from": "proposal-unit/flux-apps-dev-1/apps",
+        "to": "proposal-unit/flux-apps-base/apps",
+        "relation": "variantOf"
+      },
+      {
+        "from": "proposal-unit/flux-apps-prod-1/apps",
+        "to": "proposal-unit/flux-apps-base/apps",
+        "relation": "variantOf"
+      },
+      {
+        "from": "proposal-unit/flux-apps-staging-1/apps",
+        "to": "proposal-unit/flux-apps-base/apps",
+        "relation": "variantOf"
+      },
+      {
+        "from": "proposal-unit/flux-image-automation-dev-1/image-automation",
+        "to": "proposal-unit/flux-image-automation-base/image-automation",
+        "relation": "variantOf"
+      },
+      {
+        "from": "proposal-unit/flux-infrastructure-dev-1/infrastructure",
+        "to": "proposal-unit/flux-infrastructure-base/infrastructure",
+        "relation": "variantOf"
+      },
+      {
+        "from": "proposal-unit/flux-infrastructure-prod-1/infrastructure",
+        "to": "proposal-unit/flux-infrastructure-base/infrastructure",
+        "relation": "variantOf"
+      },
+      {
+        "from": "proposal-unit/flux-infrastructure-staging-1/infrastructure",
+        "to": "proposal-unit/flux-infrastructure-base/infrastructure",
+        "relation": "variantOf"
+      },
+      {
+        "from": "proposal-unit/flux-tenants-dev-1/tenants",
+        "to": "proposal-unit/flux-tenants-base/tenants",
+        "relation": "variantOf"
+      },
+      {
+        "from": "proposal-unit/flux-tenants-prod-1/tenants",
+        "to": "proposal-unit/flux-tenants-base/tenants",
+        "relation": "variantOf"
+      },
+      {
+        "from": "proposal-unit/flux-tenants-staging-1/tenants",
+        "to": "proposal-unit/flux-tenants-base/tenants",
+        "relation": "variantOf"
+      }
+    ]
+  },
+  "issues": []
+}
