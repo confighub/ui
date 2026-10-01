@@ -51,7 +51,8 @@ export const ChangeReviewPage = () => {
     where: `UnitID IN (${unitIDs})`,
     include: 'SpaceID,HeadRevisionNum,LastReleasedRevisionNum',
   });
-  const { data: user } = useGetUserQuery({ userId: userID });
+  const { data: extendedUser } = useGetUserQuery({ userId: userID });
+  const user = extendedUser?.User;
 
   const handleErrorClose = () => setErrorMessage([]);
 
@@ -78,7 +79,7 @@ export const ChangeReviewPage = () => {
 
   const usersMap = useMemo(() => {
     const map = new Map();
-    usersData.forEach((user) => {
+    usersData.forEach(({ User: user }) => {
       if (user?.UserID) {
         map.set(user.UserID, user);
       }

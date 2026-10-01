@@ -25,15 +25,16 @@ export const useOrganization = ({ ExternalOrganizationID }: IUseOrganizationProp
   useEffect(() => {
     if (!data) return;
 
-    setOrgs(data || []);
+    const organizations = data.flatMap((extendedOrg) =>
+      extendedOrg.Organization ? [extendedOrg.Organization] : [],
+    );
+    setOrgs(organizations);
 
-    if (data.length > 0) {
-      const org = data.find(
-        (org: OrganizationRead) => org.ExternalID === ExternalOrganizationID,
-      );
+    const org = organizations.find(
+      (org: OrganizationRead) => org.ExternalID === ExternalOrganizationID,
+    );
 
-      if (org) setCurrentOrg(org);
-    }
+    if (org) setCurrentOrg(org);
   }, [data, ExternalOrganizationID]);
 
   return { currentOrg, orgs };

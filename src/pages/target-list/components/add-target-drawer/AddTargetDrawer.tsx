@@ -13,7 +13,7 @@
  * - Space selection
  * - Granting a worker access to the target, so it can pull the target's releases
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Control, Controller, FieldErrors, useForm } from 'react-hook-form';
 
 import { CopyToClipboard } from '@/components/copy-to-clipboard/CopyToClipboard';
@@ -30,17 +30,18 @@ import {
   TargetRead,
   UpdateTargetApiArg,
   useCreateTargetMutation,
-  useListBridgeWorkersQuery,
+  useListAllBridgeWorkersQuery,
   useListSpacesQuery,
   useUpdateTargetMutation,
 } from '@confighub/rtk-query';
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
 import { ENTITY_TYPES } from '@/utility/analytics-constants';
-import { grantWorkerTargetAccess } from '@/utility/bridge-worker-utils';
+import { setWorkerTargetAccess, workerHasTargetAccess } from '@/utility/bridge-worker-utils';
 import Add from '@mui/icons-material/Add';
 import ArrowBack from '@mui/icons-material/ArrowBack';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
 import Drawer from '@mui/material/Drawer';
 import FormControl from '@mui/material/FormControl';
@@ -73,18 +74,18 @@ const BasicInfoCard = ({
   spaces,
   workers,
   isEditMode,
-  watchedSpaceId,
-  accessWorkerId,
-  setAccessWorkerId,
+  accessWorkerIds,
+  setAccessWorkerIds,
+  workerLabel,
 }: {
   control: Control<Target>;
   errors: FieldErrors<Target>;
   spaces: SpaceRead[];
   workers: BridgeWorkerRead[];
   isEditMode: boolean;
-  watchedSpaceId?: string;
-  accessWorkerId: string;
-  setAccessWorkerId: (workerId: string) => void;
+  accessWorkerIds: string[];
+  setAccessWorkerIds: (workerIds: string[]) => void;
+  workerLabel: (worker: BridgeWorkerRead) => string;
 }) => {
   return (
     <SectionCard title='Basic Information'>
@@ -142,30 +143,42 @@ const BasicInfoCard = ({
 
         <Grid size={{ xs: 6 }}>
           <FormControl fullWidth size='small'>
-            <InputLabel shrink>Grant access to worker (optional)</InputLabel>
+            <InputLabel shrink>Workers with access</InputLabel>
             <Select
-              value={accessWorkerId}
-              label='Grant access to worker (optional)'
-              input={<OutlinedInput label='Grant access to worker (optional)' notched />}
-              disabled={!watchedSpaceId}
+              multiple
+              value={accessWorkerIds}
+              label='Workers with access'
+              input={<OutlinedInput label='Workers with access' notched />}
               displayEmpty
-              onChange={(e) => setAccessWorkerId(e.target.value as string)}
+              data-testid='target-worker-access-select'
+              renderValue={(selected) =>
+                selected.length === 0 ? (
+                  <em>None</em>
+                ) : (
+                  workers
+                    .filter((worker) => selected.includes(worker.BridgeWorkerID || ''))
+                    .map(workerLabel)
+                    .join(', ')
+                )
+              }
+              onChange={(e) => {
+                const value = e.target.value;
+                setAccessWorkerIds(typeof value === 'string' ? value.split(',') : value);
+              }}
             >
-              <MenuItem value=''>
-                <em>None</em>
-              </MenuItem>
-              {workers?.map((worker) => (
+              {workers.map((worker) => (
                 <MenuItem key={worker.BridgeWorkerID} value={worker.BridgeWorkerID}>
-                  {worker.DisplayName}
+                  <Checkbox
+                    size='small'
+                    checked={accessWorkerIds.includes(worker.BridgeWorkerID || '')}
+                  />
+                  {workerLabel(worker)}
                 </MenuItem>
               ))}
             </Select>
-            {!watchedSpaceId && <FormHelperText>Select a space first</FormHelperText>}
-            {!!watchedSpaceId && (
-              <FormHelperText>
-                The worker can find the target and pull the releases published for it
-              </FormHelperText>
-            )}
+            <FormHelperText>
+              A worker with access can find the target and pull the releases published for it
+            </FormHelperText>
           </FormControl>
         </Grid>
       </Grid>
@@ -351,7 +364,7 @@ export const AddTargetDrawer = ({
     Array<{ id: string; key: string; value: string }>
   >([]);
   const [newDeleteGateKey, setNewDeleteGateKey] = useState('');
-  const [accessWorkerId, setAccessWorkerId] = useState('');
+  const [accessWorkerIds, setAccessWorkerIds] = useState<string[]>([]);
 
   const isEditMode = !!existingTarget;
 
@@ -377,21 +390,39 @@ export const AddTargetDrawer = ({
     },
   });
 
-  const watchedSpaceId = watch('SpaceID');
+  // A grant may be to a worker in another Space, so every worker in the organization is offered.
+  const { data: extendedBridgeWorkers = [] } = useListAllBridgeWorkersQuery({
+    include: 'SpaceID',
+  });
 
-  const { data: extendedBridgeWorkers = [] } = useListBridgeWorkersQuery(
-    { spaceId: watchedSpaceId || '' },
-    { skip: !watchedSpaceId },
+  // A worker without a bot user cannot be granted anything.
+  const bridgeWorkers = useMemo(
+    () =>
+      extendedBridgeWorkers
+        .map((ebw) => ebw.BridgeWorker)
+        .filter((bw): bw is BridgeWorkerRead => bw !== undefined && !!bw.UserID),
+    [extendedBridgeWorkers],
   );
 
-  const bridgeWorkers = extendedBridgeWorkers
-    .map((ebw) => ebw.BridgeWorker)
-    .filter((bw): bw is BridgeWorkerRead => bw !== undefined);
-
-  const accessWorker = useMemo(
-    () => bridgeWorkers.find((bw) => bw.BridgeWorkerID === accessWorkerId),
-    [bridgeWorkers, accessWorkerId],
+  // Workers in different Spaces may share a name, so each is shown with its Space.
+  const workerLabel = useCallback(
+    (worker: BridgeWorkerRead) => {
+      const space = extendedBridgeWorkers.find(
+        (ebw) => ebw.BridgeWorker?.BridgeWorkerID === worker.BridgeWorkerID,
+      )?.Space;
+      return space?.Slug ? `${space.Slug}/${worker.Slug}` : worker.Slug || '';
+    },
+    [extendedBridgeWorkers],
   );
+
+  // The field opens showing who has access now: the workers the target's Permissions grant.
+  const grantedWorkerKey = bridgeWorkers
+    .filter((bw) => workerHasTargetAccess(existingTarget?.Permissions, bw))
+    .map((bw) => bw.BridgeWorkerID || '')
+    .join(',');
+  useEffect(() => {
+    setAccessWorkerIds(grantedWorkerKey ? grantedWorkerKey.split(',') : []);
+  }, [grantedWorkerKey, existingTarget?.TargetID, isOpen]);
 
   const [createTarget, { isSuccess: isCreateSuccess, error: createError, data: createData }] =
     useCreateTargetMutation();
@@ -438,7 +469,6 @@ export const AddTargetDrawer = ({
       setLabels([]);
       setAnnotations([]);
     }
-    setAccessWorkerId('');
   }, [existingTarget, reset]);
 
   useApiErrorMessage(createError, isCreateSuccess, setServerError, {
@@ -545,7 +575,6 @@ export const AddTargetDrawer = ({
     setNewAnnotationKey('');
     setNewAnnotationValue('');
     setNewDeleteGateKey('');
-    setAccessWorkerId('');
     setServerError('');
     onClose();
   };
@@ -565,7 +594,11 @@ export const AddTargetDrawer = ({
             Labels: data.Labels,
             Annotations: data.Annotations,
             DeleteGates: data.DeleteGates,
-            Permissions: grantWorkerTargetAccess(existingTarget.Permissions, accessWorker),
+            Permissions: setWorkerTargetAccess(
+              existingTarget.Permissions,
+              bridgeWorkers,
+              accessWorkerIds,
+            ),
           },
         };
         await updateTarget(input);
@@ -583,7 +616,7 @@ export const AddTargetDrawer = ({
             Labels: data.Labels,
             Annotations: data.Annotations,
             DeleteGates: data.DeleteGates,
-            Permissions: grantWorkerTargetAccess(undefined, accessWorker),
+            Permissions: setWorkerTargetAccess(undefined, bridgeWorkers, accessWorkerIds),
           },
         };
         await createTarget(input);
@@ -658,9 +691,9 @@ export const AddTargetDrawer = ({
               spaces={spaces}
               workers={bridgeWorkers}
               isEditMode={isEditMode}
-              watchedSpaceId={watchedSpaceId}
-              accessWorkerId={accessWorkerId}
-              setAccessWorkerId={setAccessWorkerId}
+              accessWorkerIds={accessWorkerIds}
+              setAccessWorkerIds={setAccessWorkerIds}
+              workerLabel={workerLabel}
             />
             <LabelsAndAnnotationsCard
               newLabelKey={newLabelKey}

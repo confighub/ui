@@ -81,7 +81,23 @@ const ALL_VIEW_PARAMS = [
  */
 export const syncFilterStateToUrl = (
   state: FilterUrlState,
-  setSearchParams: SetURLSearchParams
+  setSearchParams: SetURLSearchParams,
+  /**
+   * Extra param names to delete in this SAME functional update (default none —
+   * every existing, Unit-list, caller is unaffected). A caller whose own
+   * selection state is derived purely from the URL (e.g. Components' `group`
+   * breadcrumb path) cannot clear a stale param with a second, separate
+   * `setSearchParams` call issued from a `useEffect` reacting to this one's
+   * result: that effect's own `searchParams` snapshot can predate the
+   * navigation this function just issued (the two calls come from different
+   * hook instances, and React Router does not guarantee the second one's
+   * `prev` reflects the first one's not-yet-committed result), so the second
+   * call's stale `prev` silently reverts everything written here — the same
+   * class of race documented on `useGroupByLevels`'s `clearParamsOnEdit`.
+   * Deleting extra keys HERE, inside the one update that also sets `viewId`,
+   * is the only way to guarantee both land in a single router-tracked write.
+   */
+  extraParamsToClear: readonly string[] = [],
 ): void => {
   setSearchParams((prevParams) => {
     const newParams = new URLSearchParams(prevParams);
@@ -113,6 +129,8 @@ export const syncFilterStateToUrl = (
     setOrDelete(VIEW_URL_PARAMS.ORDER_BY_DIRECTION, state.orderByDirection);
     setOrDelete(VIEW_URL_PARAMS.GROUP_BY, state.groupBy);
 
+    for (const key of extraParamsToClear) newParams.delete(key);
+
     return newParams;
   });
 };
@@ -125,7 +143,9 @@ export const syncFilterStateToUrl = (
  * @param setSearchParams - React Router's setSearchParams function
  */
 export const clearFilterStateFromUrl = (
-  setSearchParams: SetURLSearchParams
+  setSearchParams: SetURLSearchParams,
+  /** Extra param names to delete in this SAME update — see `syncFilterStateToUrl`'s doc comment for why a separate call can't do this safely. */
+  extraParamsToClear: readonly string[] = [],
 ): void => {
   setSearchParams((prevParams) => {
     const newParams = new URLSearchParams(prevParams);
@@ -137,6 +157,10 @@ export const clearFilterStateFromUrl = (
 
     // Clear all view params
     for (const param of ALL_VIEW_PARAMS) {
+      newParams.delete(param);
+    }
+
+    for (const param of extraParamsToClear) {
       newParams.delete(param);
     }
 

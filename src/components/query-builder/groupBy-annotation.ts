@@ -13,6 +13,17 @@ import type { ExtendedViewRead } from '@confighub/rtk-query';
 export const GROUP_BY_ANNOTATION_KEY = 'ui.confighub.io/group-by';
 
 /**
+ * Annotation key that flags a View as belonging to a non-default "kind" of
+ * saved view — e.g. the Components page's grouping+filter views, which share
+ * the same backend entity (`Filter.From = 'Space'`) as any other Space view
+ * but must never appear in a generic Space view picker. See
+ * `useQueryBuilder`'s `viewKind` option. Lives alongside `GROUP_BY_ANNOTATION_KEY`
+ * (both are UI-owned View annotations) so `useQueryBuilder.tsx` and
+ * `ViewTabs.tsx` share one definition without a circular import between them.
+ */
+export const VIEW_KIND_ANNOTATION_KEY = 'ui.confighub.io/view-kind';
+
+/**
  * Serialise the live `localGroupByColumns` array into the annotation value.
  *
  * Returns `null` when there are no non-empty levels so the PATCH body keeps

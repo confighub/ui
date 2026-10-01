@@ -73,8 +73,10 @@ interface ComponentFlowGraphProps {
   onUpgradeToggle?: (parentDeploymentId: string, childDeploymentId: string) => void;
   /** Deep-link a deployment's side pane to a tab from a status-chip peek (Stale → config, Unreleased/Gated → releases). `releaseNum`, when given (the release-stamp peek), asks the Releases tab to scroll to and highlight that specific release. */
   onOpenTab?: (deploymentId: string, tab: 'config' | 'releases', releaseNum?: number) => void;
-  /** Component name used to build the units filter link from deployment nodes */
-  appName?: string;
+  /** Identity of the open node graph — replaces a single Component name so a
+   * mixed-Component node graph still gets a stable `structuralKey` (any
+   * unique-per-graph string works; it is never displayed). */
+  graphKey?: string;
   /** Deployment IDs that have an error state */
   errorDeploymentIds?: Set<string>;
   /** Unit summaries per deployment for node display */
@@ -215,7 +217,7 @@ function ComponentFlowGraphInner({
   onDeploymentToggle,
   onUpgradeToggle,
   onOpenTab,
-  appName,
+  graphKey,
   errorDeploymentIds,
   unitSummariesByDeployment,
   fitViewTrigger,
@@ -294,12 +296,12 @@ function ComponentFlowGraphInner({
   // not when unit data within deployments changes (e.g. after apply/upgrade).
   const structuralKey = useMemo(
     () =>
-      (appName ?? '') +
+      (graphKey ?? '') +
       '|' +
       deployments.map((d) => d.deploymentId).sort().join(',') +
       '|' +
       stages.map((s) => s.label).join(','),
-    [appName, deployments, stages],
+    [graphKey, deployments, stages],
   );
   // Suppresses the generic "fit the whole graph" reflex while a variant
   // creation is in flight (suppressStructuralFitView, driven by the

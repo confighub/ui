@@ -41,26 +41,27 @@ interface GroupLabel {
   depth: number;
 }
 
-function collectGroupLabels(
-  units: ExtendedUnitRead[],
+function collectGroupLabels<T>(
+  items: T[],
   columns: string[],
   depth: number,
   out: GroupLabel[],
+  getValue: (item: T, column: string) => string,
 ): void {
   if (depth >= columns.length) return;
-  const buckets = new Map<string, ExtendedUnitRead[]>();
-  for (const u of units) {
-    const v = getCellValue(u, columns[depth]) || '(empty)';
+  const buckets = new Map<string, T[]>();
+  for (const item of items) {
+    const v = getValue(item, columns[depth]) || '(empty)';
     let b = buckets.get(v);
     if (!b) {
       b = [];
       buckets.set(v, b);
     }
-    b.push(u);
+    b.push(item);
   }
   for (const [label, bucket] of buckets.entries()) {
     out.push({ label, count: bucket.length, depth });
-    collectGroupLabels(bucket, columns, depth + 1, out);
+    collectGroupLabels(bucket, columns, depth + 1, out, getValue);
   }
 }
 
@@ -110,14 +111,18 @@ export function formatHeaderLabel(groupByColumns: string[]): string {
  * to measure (no grouping or no units). Caller is responsible for clamping
  * to a sensible MIN/MAX range.
  */
-export function measureGroupNavWidth(
-  units: ExtendedUnitRead[],
+export function measureGroupNavWidth<T = ExtendedUnitRead>(
+  units: T[],
   groupByColumns: string[],
+  getValue: (item: T, column: string) => string = getCellValue as unknown as (
+    item: T,
+    column: string,
+  ) => string,
 ): number {
   if (groupByColumns.length === 0 || units.length === 0) return 0;
 
   const items: GroupLabel[] = [];
-  collectGroupLabels(units, groupByColumns, 0, items);
+  collectGroupLabels(units, groupByColumns, 0, items, getValue);
 
   // Build batched text inputs so we only attach/measure the probe span twice.
   const labelTexts = [...items.map((i) => i.label), 'All'];

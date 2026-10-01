@@ -12,8 +12,14 @@ import { VIEW_URL_PARAMS } from '@/utility/constants/url-params';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Fallback grouping when the active view has no GroupBy configured. */
+/** Fallback grouping when the active view has no GroupBy configured, and the
+ * caller doesn't pass its own `fallbackLevels` (every existing — Unit-list —
+ * caller doesn't, so this stays the exact default it always was). */
 const FALLBACK_GROUP_BY_COLUMNS = ['Space'];
+
+/** Stable empty default for `clearParamsOnEdit` so callers that omit it don't
+ * churn `handleEditLevels`'s memoization with a fresh array every render. */
+const EMPTY_CLEAR_PARAMS: string[] = [];
 
 function shallowArrayEqual(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
@@ -21,15 +27,18 @@ function shallowArrayEqual(a: string[], b: string[]): boolean {
 
 /**
  * Resolve the committed (persisted) group-by columns from the active view,
- * falling back to the default ['Space'] grouping when none is configured.
+ * falling back to `fallbackLevels` (default `['Space']`) when none is configured.
  *
  * Uses `hydrateGroupByFromView` (annotation-aware) rather than the legacy
  * `getGroupByColumns` so that multi-level groupings stored in the
  * `ui.confighub.io/group-by` annotation are correctly read back after save.
  */
-export function resolveCommitted(activeView: ExtendedViewRead | null | undefined): string[] {
+export function resolveCommitted(
+  activeView: ExtendedViewRead | null | undefined,
+  fallbackLevels: string[] = FALLBACK_GROUP_BY_COLUMNS,
+): string[] {
   const cols = hydrateGroupByFromView(activeView ?? undefined);
-  return cols.length > 0 ? cols : FALLBACK_GROUP_BY_COLUMNS;
+  return cols.length > 0 ? cols : fallbackLevels;
 }
 
 /** Parse a `?viewGroupBy=` URL value into a levels array. Empty input → []. */
@@ -72,6 +81,33 @@ interface UseGroupByLevelsOptions {
   setSelectedGroups: (groups: string[]) => void;
   /** Clears ?group= params from the URL. Called alongside setSelectedGroups. */
   clearGroupUrlParams: () => void;
+  /**
+   * Grouping levels used when the active view has no GroupBy configured.
+   * Defaults to `['Space']`. The Components page passes
+   * `['Labels.Owner', 'Component']` so a view-less (or GroupBy-less)
+   * Components page never falls back to a Unit-list field.
+   */
+  fallbackLevels?: string[];
+  /**
+   * Extra URL param names to delete in the SAME `setSearchParams` update as
+   * the `?viewGroupBy=` write (default `[]` — every existing, Unit-list,
+   * caller is unaffected).
+   *
+   * Do not rely on a *separate* `clearGroupUrlParams` call (even one using a
+   * raw `window.history.replaceState`, bypassing `setSearchParams` entirely)
+   * to remove a param that must be gone by the time this function returns:
+   * with a React Router DATA router, a raw history write is invisible to the
+   * router's own state. The `setSearchParams` call below is not applied
+   * synchronously — it is a queued navigation — so the router's *next*
+   * internal update still starts from its own last-known `prev` (which never
+   * saw the raw write, param still present) and writes that back, silently
+   * undoing it. Components passes `['group']` here for exactly this reason:
+   * its tree selection is derived purely from the URL (no separate React
+   * state as backstop), so this race is user-visible there in a way it never
+   * was for the Unit list (which resets its own `selectedGroups` React state
+   * regardless of what the URL ends up saying).
+   */
+  clearParamsOnEdit?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -108,10 +144,15 @@ export function useGroupByLevels({
   setSearchParams,
   setSelectedGroups,
   clearGroupUrlParams,
+  fallbackLevels = FALLBACK_GROUP_BY_COLUMNS,
+  clearParamsOnEdit = EMPTY_CLEAR_PARAMS,
 }: UseGroupByLevelsOptions): UseGroupByLevelsResult {
   // Committed groupBy: the persisted baseline for the active view.  Used as
   // the default when the URL has no `?viewGroupBy=` and for dirty detection.
-  const committed = useMemo(() => resolveCommitted(activeView), [activeView]);
+  const committed = useMemo(
+    () => resolveCommitted(activeView, fallbackLevels),
+    [activeView, fallbackLevels],
+  );
 
   // Live groupBy: read from URL when present, otherwise fall back to committed.
   const localGroupByColumns = useMemo(() => {
@@ -134,6 +175,10 @@ export function useGroupByLevels({
           const next = new URLSearchParams(prev);
           if (csv) next.set(VIEW_URL_PARAMS.GROUP_BY, csv);
           else next.delete(VIEW_URL_PARAMS.GROUP_BY);
+          // Deleted in the SAME updater as the groupBy write — see
+          // `clearParamsOnEdit`'s doc comment for why a separate call
+          // (even `clearGroupUrlParams` below) cannot reliably do this.
+          for (const key of clearParamsOnEdit) next.delete(key);
           return next;
         },
         { replace: true },
@@ -143,7 +188,7 @@ export function useGroupByLevels({
       setSelectedGroups([]);
       clearGroupUrlParams();
     },
-    [setSearchParams, setSelectedGroups, clearGroupUrlParams],
+    [setSearchParams, setSelectedGroups, clearGroupUrlParams, clearParamsOnEdit],
   );
 
   /**

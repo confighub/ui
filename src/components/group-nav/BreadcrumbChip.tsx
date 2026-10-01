@@ -7,6 +7,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { alpha, styled } from '@mui/material/styles';
 
+import type { FieldIconKey } from '@/components/query-builder/field-icons';
+
 import { getChipIcon } from './field-icon';
 import { FieldPickerDropdown } from './FieldPickerDropdown';
 import type { GroupableCategory } from './groupable-fields';
@@ -133,6 +135,8 @@ interface BreadcrumbChipProps {
   onRemove: () => void;
   /** When true (drag in progress), hover effects are suppressed on all chips. */
   isDragActive?: boolean;
+  /** Icon overrides for the chip and its picker rows. Defaults to the Unit catalog's icons. */
+  iconMap?: Partial<Record<string, FieldIconKey>>;
 }
 
 /**
@@ -148,6 +152,7 @@ export function BreadcrumbChip({
   onChangeField,
   onRemove,
   isDragActive = false,
+  iconMap,
 }: BreadcrumbChipProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -187,7 +192,7 @@ export function BreadcrumbChip({
           onClick={handleLabelClick}
           type="button"
         >
-          <FieldSvgIcon $bloom={isBloom}>{getChipIcon(field)}</FieldSvgIcon>
+          <FieldSvgIcon $bloom={isBloom}>{getChipIcon(field, iconMap)}</FieldSvgIcon>
           {label}
           <ChipCaret $bloom={isBloom} $active={isActive} />
         </ChipLabelButton>
@@ -210,6 +215,7 @@ export function BreadcrumbChip({
           usedFields={usedFields}
           currentField={field}
           onSelect={handleSelect}
+          iconMap={iconMap}
         />
       )}
     </>

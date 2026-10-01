@@ -389,7 +389,10 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
   };
 
   return (
-    <Box sx={{ p: '22px 28px 60px', overflow: 'auto', flex: 1, bgcolor: 'background.default' }}>
+    <Box
+      data-testid='component-overview-matrix'
+      sx={{ p: '22px 28px 60px', overflow: 'auto', flex: 1, bgcolor: 'background.default' }}
+    >
       <Box sx={{ maxWidth: 1240, mx: 'auto' }}>
 
         {/* ── Page header ── */}

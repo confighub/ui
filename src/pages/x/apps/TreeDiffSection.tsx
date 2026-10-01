@@ -9,7 +9,7 @@ import { highlightText } from '@/components/entity-data-grid/utils/highlightText
 
 import { componentTheme } from './componentTheme';
 import type { DiffTreeNode } from './diffTree';
-import { buildContextTree, buildDiffTree, injectKeyContext, measureTruncation } from './diffTree';
+import { buildContextTree, buildDiffTree, injectKeyContext, measureTruncation, VALUE_PLACEHOLDER } from './diffTree';
 import { SECTION_LABEL_COLORS, VAL_COMPONENTS } from './diffConstants';
 import { getInlineDiffPair, type InlineDiffPair, type InlineDiffSegment } from './inlineDiff';
 import {
@@ -25,14 +25,6 @@ import {
 } from './diffStyles';
 
 const INDENT_PX = 12;
-
-/**
- * The stand-in a caller supplies for the side of a row that does not exist: the
- * "before" of an added path, and the "after" of a removed one. There is no real
- * value to diff against on that side, so such a row keeps its flat rendering
- * instead of reporting every token as added or removed.
- */
-const VALUE_PLACEHOLDER = '-';
 
 /**
  * Changed-token treatment per column: a subtle tint plus a hairline, mirroring the
@@ -75,19 +67,41 @@ const TOKEN_CHANGED_SX = {
 const TOKEN_KEPT_SX = { display: 'inline', color: componentTheme.fgMuted } as const;
 
 /**
+ * A cell holding a block of text keeps its line breaks, and so is never truncated to
+ * one line: there is no single line to truncate to.
+ */
+const PREFORMATTED_CELL_SX = { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } as const;
+
+/**
  * The text of one side-by-side value cell.
  *
  * Memoised because its props are reference-stable — the segment arrays come from
  * the inline-diff cache — while its parent row re-renders on every hover and every
  * wrap measurement.
  */
-const DiffCellValue = memo(({ value, segments, tone, filterText }: { value: string; segments?: InlineDiffSegment[]; tone: 'old' | 'new'; filterText: string }): ReactNode => {
+const DiffCellValue = memo(({ value, segments, tone, filterText, preformatted = false }: { value: string; segments?: InlineDiffSegment[]; tone: 'old' | 'new'; filterText: string; preformatted?: boolean }): ReactNode => {
   if (segments) {
     return (
       <>
-        {segments.map((seg, i) => (
-          <Box key={i} component="span" sx={seg.changed ? TOKEN_CHANGED_SX[tone] : TOKEN_KEPT_SX}>{seg.text}</Box>
-        ))}
+        {segments.map((seg, i) => {
+          if (!seg.changed) return <Box key={i} component="span" sx={TOKEN_KEPT_SX}>{seg.text}</Box>;
+          // A box that spans a line break is drawn once per line it touches, the
+          // empty end of the line before included. Boxing each line's own text keeps
+          // the highlight on the characters that changed.
+          if (preformatted && seg.text.includes('\n')) {
+            return (
+              <Fragment key={i}>
+                {seg.text.split('\n').map((line, j) => (
+                  <Fragment key={j}>
+                    {j > 0 && '\n'}
+                    {line && <Box component="span" sx={TOKEN_CHANGED_SX[tone]}>{line}</Box>}
+                  </Fragment>
+                ))}
+              </Fragment>
+            );
+          }
+          return <Box key={i} component="span" sx={TOKEN_CHANGED_SX[tone]}>{seg.text}</Box>;
+        })}
       </>
     );
   }
@@ -137,6 +151,13 @@ interface TreeDiffSectionProps {
   isDragging?: boolean;
   /** See {@link TreeDiffDomHooks}. Omit for today's exact DOM. */
   domHooks?: TreeDiffDomHooks;
+  /**
+   * A tree the caller built itself, rendered as given. For paths that cannot be
+   * rebuilt by splitting `fieldDiffs` on dots, such as a server-computed diff whose
+   * array elements are named by merge key. `entry.fieldDiffs`, `allPaths` and
+   * `filterText` are not consulted.
+   */
+  tree?: DiffTreeNode[];
 }
 
 const ChevronRightIcon = () => (
@@ -178,6 +199,7 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
 
   const isLeaf = node.type === 'leaf' && node.diff != null;
   const wrap = isLeaf && (autoWrap || hovered);
+  const preformatted = isLeaf && !!node.preformatted;
 
   const col1 = (columnStyle as Record<string, string>)['--col1-width'] ?? '40%';
   const col2 = (columnStyle as Record<string, string>)['--col2-width'] ?? '28%';
@@ -207,17 +229,17 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
    * added or removed path where one side is only a placeholder, a pair too long to
    * align (whose whole-value segments would render as a wall of per-line boxes), and
    * a pair whose tokens are all shared (dimming every token would signal a change
-   * that isn't there).
+   * that isn't there), and a pair the tree's builder marked as compared whole.
    */
   const inlineDiff: InlineDiffPair | null = useMemo(() => {
-    if (viewOnly || node.context || filterText) return null;
+    if (viewOnly || node.context || node.wholeValues || filterText) return null;
     if (!node.diff) return null;
     if (node.diff.oldValue === VALUE_PLACEHOLDER || node.diff.newValue === VALUE_PLACEHOLDER) return null;
     const pair = getInlineDiffPair(node.diff.oldValue, node.diff.newValue);
     if (pair.truncated) return null;
     if (!pair.old.some((s) => s.changed) && !pair.new.some((s) => s.changed)) return null;
     return pair;
-  }, [viewOnly, node.context, node.diff, filterText]);
+  }, [viewOnly, node.context, node.wholeValues, node.diff, filterText]);
 
   // Context expansion state for folder nodes (which segment is expanded)
   const [expandedSegment, setExpandedSegment] = useState<number | null>(null);
@@ -292,7 +314,7 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
         $striped={striped}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        sx={{ alignItems: autoWrap ? 'flex-start' : 'center' }}
+        sx={{ alignItems: autoWrap || preformatted ? 'flex-start' : 'center' }}
       >
         <PropertyCell
           sx={{ display: 'flex', alignItems: 'center', gap: 0, paddingLeft: `${16 + depth * INDENT_PX}px`, fontSize: 12, fontFamily: componentTheme.fontMono, color: componentTheme.fgMuted }}
@@ -302,10 +324,10 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
         </PropertyCell>
         <BeforeCell sx={{ fontSize: 12, fontFamily: componentTheme.fontMono }}>
           {overrides && overrides.length > 0 ? null : (
-            <Box ref={setCellRef0} sx={{ overflow: 'hidden', minWidth: 0, ...(wrap ? { whiteSpace: 'normal', overflowWrap: 'break-word' } : { whiteSpace: 'nowrap', textOverflow: 'ellipsis' }) }}>
+            <Box ref={setCellRef0} sx={{ overflow: 'hidden', minWidth: 0, ...(preformatted ? PREFORMATTED_CELL_SX : wrap ? { whiteSpace: 'normal', overflowWrap: 'break-word' } : { whiteSpace: 'nowrap', textOverflow: 'ellipsis' }) }}>
               <OldValue {...(domHooks ? { 'data-testid': `${domHooks.testIdPrefix}-old-value` } : {})}>
                 {domHooks?.srValuePrefix && <SrOnly>{domHooks.srValuePrefix.old}</SrOnly>}
-                <DiffCellValue value={node.diff.oldValue} segments={inlineDiff?.old} tone="old" filterText={filterText} />
+                <DiffCellValue value={node.diff.oldValue} segments={inlineDiff?.old} tone="old" filterText={filterText} preformatted={preformatted} />
               </OldValue>
             </Box>
           )}
@@ -314,10 +336,10 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
           {variants.map((v, vi) => {
             const ValComp = VAL_COMPONENTS[v];
             return (
-              <Box key={v} ref={vi === 0 ? setCellRef1 : undefined} sx={{ overflow: 'hidden', flex: 1, minWidth: 0, textAlign: 'left', ...(wrap ? { whiteSpace: 'normal', overflowWrap: 'break-word' } : { whiteSpace: 'nowrap', textOverflow: 'ellipsis' }) }}>
+              <Box key={v} ref={vi === 0 ? setCellRef1 : undefined} sx={{ overflow: 'hidden', flex: 1, minWidth: 0, textAlign: 'left', ...(preformatted ? PREFORMATTED_CELL_SX : wrap ? { whiteSpace: 'normal', overflowWrap: 'break-word' } : { whiteSpace: 'nowrap', textOverflow: 'ellipsis' }) }}>
                 <ValComp {...(domHooks ? { 'data-testid': `${domHooks.testIdPrefix}-new-value` } : {})}>
                   {domHooks?.srValuePrefix && <SrOnly>{domHooks.srValuePrefix.new}</SrOnly>}
-                  <DiffCellValue value={node.diff!.newValue} segments={inlineDiff?.new} tone="new" filterText={filterText} />
+                  <DiffCellValue value={node.diff!.newValue} segments={inlineDiff?.new} tone="new" filterText={filterText} preformatted={preformatted} />
                 </ValComp>
               </Box>
             );
@@ -514,7 +536,7 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
 TreeNodeRow.displayName = 'TreeNodeRow';
 
 /** Renders a section of field diffs as a collapsible tree with 3-column layout. */
-export const TreeDiffSection = memo(({ entry, allPaths, keyPrefix, label, variant = 'upgrade', filterText = '', variantOverrides, hideLabel = false, viewOnly = false, showAllContext = false, columnStyle, onDividerMouseDown, isDragging, domHooks }: TreeDiffSectionProps): ReactNode => {
+export const TreeDiffSection = memo(({ entry, allPaths, keyPrefix, label, variant = 'upgrade', filterText = '', variantOverrides, hideLabel = false, viewOnly = false, showAllContext = false, columnStyle, onDividerMouseDown, isDragging, domHooks, tree: suppliedTree }: TreeDiffSectionProps): ReactNode => {
   const changedPaths = useMemo(() => new Set(entry.fieldDiffs.map((d) => d.path)), [entry.fieldDiffs]);
   const changedDiffs = useMemo(() => {
     const m = new Map<string, { oldValue: string; newValue: string }>();
@@ -531,13 +553,14 @@ export const TreeDiffSection = memo(({ entry, allPaths, keyPrefix, label, varian
     : entry.fieldDiffs;
 
   const tree = useMemo(() => {
+    if (suppliedTree) return suppliedTree;
     if (showAllContext && allPaths) {
       return buildContextTree('', allPaths, changedPaths, changedDiffs);
     }
     const dt = buildDiffTree(filteredDiffs);
     if (!allPaths) return dt;
     return injectKeyContext(dt, allPaths);
-  }, [showAllContext, filteredDiffs, allPaths, changedPaths, changedDiffs]);
+  }, [suppliedTree, showAllContext, filteredDiffs, allPaths, changedPaths, changedDiffs]);
 
   const startIndices = useMemo(() => {
     const indices: number[] = [];
@@ -549,7 +572,7 @@ export const TreeDiffSection = memo(({ entry, allPaths, keyPrefix, label, varian
     return indices;
   }, [tree]);
 
-  if (filterText && filteredDiffs.length === 0) return null;
+  if (!suppliedTree && filterText && filteredDiffs.length === 0) return null;
 
   return (
     <>

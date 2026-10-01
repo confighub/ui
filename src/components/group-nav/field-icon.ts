@@ -3,11 +3,10 @@
 
 import type { ReactNode } from 'react';
 
-import { FIELD_ICONS } from '@/components/query-builder/field-icons';
-import type { FilterFieldType } from '@/components/query-builder/types';
+import { FIELD_ICONS, type FieldIconKey } from '@/components/query-builder/field-icons';
 
-/** Maps groupable field names to FIELD_ICONS keys. */
-const FIELD_TO_ICON_KEY: Partial<Record<string, FilterFieldType>> = {
+/** Maps groupable field names to FIELD_ICONS keys — the Unit catalog's default map. */
+export const UNIT_FIELD_TO_ICON_KEY: Partial<Record<string, FieldIconKey>> = {
   Space: 'space',
   Target: 'target',
   ToolchainType: 'toolchainType',
@@ -30,14 +29,26 @@ export function getSubmenuIcon(header: string): ReactNode {
 
 /**
  * Returns the correct FIELD_ICONS node for a groupable field key.
- * Labels.* and Space.Labels.* use the 'labels' icon.
+ * `iconMap` (a catalog-specific override, e.g. Components' special-label
+ * icons for `Component`/`Labels.Owner`/etc.) is checked FIRST, so a
+ * Labels.* key can still get its own icon instead of the generic one below.
+ * Labels.* and Space.Labels.* with no override use the 'labels' icon.
  * Unknown fields fall back to the generic 'where' icon.
+ *
+ * @param field - The groupable field key (e.g. `'Space'`, `'Labels.Owner'`).
+ * @param iconMap - Optional catalog-specific override map, consulted before
+ *   the Unit catalog's own map. Defaults to `UNIT_FIELD_TO_ICON_KEY` so every
+ *   existing (Unit-list) call site is unaffected.
  */
-export function getChipIcon(field: string): ReactNode {
+export function getChipIcon(
+  field: string,
+  iconMap: Partial<Record<string, FieldIconKey>> = UNIT_FIELD_TO_ICON_KEY,
+): ReactNode {
   if (!field) return FIELD_ICONS['where'];
+  const overrideKey = iconMap[field] ?? UNIT_FIELD_TO_ICON_KEY[field];
+  if (overrideKey) return FIELD_ICONS[overrideKey];
   if (field.startsWith('Labels.') || field.startsWith('Space.Labels.')) {
     return FIELD_ICONS['labels'];
   }
-  const key = FIELD_TO_ICON_KEY[field] ?? 'where';
-  return FIELD_ICONS[key];
+  return FIELD_ICONS['where'];
 }

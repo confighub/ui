@@ -1291,7 +1291,7 @@ export const UnitListPage = () => {
               >
                 <GroupNavPanel
                   groupByColumns={localGroupByColumns}
-                  units={filteredUnits}
+                  items={filteredUnits}
                   selectedGroups={selectedGroups}
                   onSelectGroups={handleSelectGroups}
                   width={sidebarWidth}

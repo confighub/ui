@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { DropdownMenu, MenuSection } from '@/components/query-builder/shared-styles';
+import type { FieldIconKey } from '@/components/query-builder/field-icons';
 import CheckIcon from '@mui/icons-material/Check';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import SearchIcon from '@mui/icons-material/Search';
@@ -32,6 +33,8 @@ interface FieldPickerDropdownProps {
   /** Current field of this chip — shows ✓. */
   currentField?: string;
   onSelect: (field: string) => void;
+  /** Icon overrides for the field rows. Defaults to the Unit catalog's icons. */
+  iconMap?: Partial<Record<string, FieldIconKey>>;
 }
 
 /**
@@ -51,6 +54,7 @@ export function FieldPickerDropdown({
   usedFields,
   currentField,
   onSelect,
+  iconMap,
 }: FieldPickerDropdownProps) {
   const theme = useTheme();
   const [searchStrings, setSearchStrings] = useState<Record<string, string>>({});
@@ -106,7 +110,7 @@ export function FieldPickerDropdown({
         }}
       >
         <ListItemIcon sx={{ minWidth: 24, '& svg': { fontSize: 15 } }}>
-          {getChipIcon(fieldOption.field)}
+          {getChipIcon(fieldOption.field, iconMap)}
         </ListItemIcon>
         <ListItemText
           primary={fieldOption.label}

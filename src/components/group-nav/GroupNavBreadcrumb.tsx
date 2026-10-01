@@ -11,9 +11,11 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import { alpha, styled, useTheme } from '@mui/material/styles';
 
+import type { FieldIconKey } from '@/components/query-builder/field-icons';
+
 import { BreadcrumbChip } from './BreadcrumbChip';
 import { FieldPickerDropdown } from './FieldPickerDropdown';
-import { getFieldLabel, getGroupableCategories } from './groupable-fields';
+import { type GroupableFieldCatalog, getFieldLabel, getGroupableCategories } from './groupable-fields';
 
 const HeaderGrid = styled(Box)(() => ({
   display: 'grid',
@@ -87,6 +89,12 @@ interface GroupNavBreadcrumbProps {
   spaceLabelKeyCounts?: Record<string, number>;
   /** When provided renders the collapse chevron in the right rail. */
   onToggleOpen?: () => void;
+  /** Field catalog for the add/change-field picker. Defaults to the Unit catalog. */
+  catalog?: GroupableFieldCatalog;
+  /** Label overrides for chips and picker rows. Defaults to the Unit catalog's labels. */
+  fieldLabels?: Record<string, string>;
+  /** Icon overrides for chips and picker rows. Defaults to the Unit catalog's icons. */
+  iconMap?: Partial<Record<string, FieldIconKey>>;
 }
 
 /**
@@ -103,6 +111,9 @@ export function GroupNavBreadcrumb({
   labelKeyCounts,
   spaceLabelKeyCounts,
   onToggleOpen,
+  catalog,
+  fieldLabels,
+  iconMap,
 }: GroupNavBreadcrumbProps) {
   const theme = useTheme();
 
@@ -165,8 +176,8 @@ export function GroupNavBreadcrumb({
   };
 
   const categories = useMemo(
-    () => getGroupableCategories(labelKeys, spaceLabelKeys, labelKeyCounts, spaceLabelKeyCounts),
-    [labelKeys, spaceLabelKeys, labelKeyCounts, spaceLabelKeyCounts],
+    () => getGroupableCategories(labelKeys, spaceLabelKeys, labelKeyCounts, spaceLabelKeyCounts, catalog),
+    [labelKeys, spaceLabelKeys, labelKeyCounts, spaceLabelKeyCounts, catalog],
   );
 
   const handleRemove = (index: number) => {
@@ -222,12 +233,13 @@ export function GroupNavBreadcrumb({
               >
                 <BreadcrumbChip
                   field={field}
-                  label={getFieldLabel(field)}
+                  label={getFieldLabel(field, fieldLabels)}
                   categories={categories}
                   usedFields={localLevels.filter((_, i) => i !== sourceIndex)}
                   onChangeField={(newField) => handleChangeField(sourceIndex, newField)}
                   onRemove={() => handleRemove(sourceIndex)}
                   isDragActive={dragIndex !== null}
+                  iconMap={iconMap}
                 />
                 <ChipSeparator>/</ChipSeparator>
               </Box>
@@ -255,6 +267,7 @@ export function GroupNavBreadcrumb({
               categories={categories}
               usedFields={localLevels}
               onSelect={handleAddField}
+              iconMap={iconMap}
             />
           )}
         </Box>

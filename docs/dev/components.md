@@ -128,7 +128,7 @@ Route `/components` → `AppsComponentPage`. Component tree:
 ```
 AppsComponentPage              page entry; useListSpacesQuery({summary}) + useListAllTargetsQuery
 └─ AppsComponentLayout         2-pane resizable; ?app=<name> URL; selectedDeploymentIds: Set<string>
-   ├─ AppNavigationTree        left: apps (Component label) grouped by Owner
+   ├─ AppNavigationTree        left: Components grouped by Owner (by default)
    └─ AppComponentView         CORE orchestrator (units, entries, all handlers)
       ├─ ComponentFlowGraph    center: reactflow DAG of deployment nodes by stage
       │  └─ DeploymentFlowNode  one node per Space; per-unit upgrade/apply badges
@@ -145,8 +145,9 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
 | `AppsComponentPage.tsx` | Page entry; top-level spaces/targets queries; breadcrumb header. |
 | `AppsComponentLayout.tsx` | 2-pane resizable layout; filters spaces to those with a `Component` label; `?app=` URL; lifts `selectedDeploymentIds`. |
 | `AppNavigationTree.tsx` | Left app/component picker, grouped by `Owner` label. |
-| `AppComponentView.tsx` | **Core orchestrator.** Fetches units, computes entries, owns upgrade/dry-run/`onCommitStaged` handlers, renders graph + side pane. |
-| `flow-graph/ComponentFlowGraph.tsx` | `reactflow` DAG by stage; fit-to-view; click selects a deployment. |
+| `AppComponentView.tsx` | **Core orchestrator.** Fetches units, computes entries, owns upgrade/dry-run/`onCommitStaged` handlers, renders the graph + side pane, or the Dashboard (`displayMode`), plus the `FlowViewControl` overlay either way. |
+| `flow-graph/ComponentFlowGraph.tsx` | `reactflow` DAG by stage; fit-to-view; click selects a deployment. No view-mode/Dashboard knowledge — that's `AppComponentView`'s. |
+| `flow-graph/FlowViewControl.tsx` | Graph / Dashboard segmented control. |
 | `flow-graph/DeploymentFlowNode.tsx` | One node per deployment/Space. Exports `NodeUnitSummary {slug, upgrading, applyStatus:'gated'\|'pending'\|null}`. |
 | `flow-graph/flowLayout.ts` | Stage-based node positioning. Exports `NODE_WIDTH`/`NODE_HEIGHT`/`STAGE_GAP`. |
 | `ComponentSidePane.tsx` | View toggle (Tree/Source), filter tabs, per-unit rows, footer Upgrade/Release/Discard buttons (Apply removed from the build — the "unapplied changes" diff/gate display remains); staging signal state (`stageAllSignal`, `clearStagedSignal`, `discardAllSignal`, `commitStagedSignal`); merges entries into `MergedUnit[]`. |
@@ -280,7 +281,18 @@ has no place here (a node is a real deployment, not something a keypress should 
 - **Units query is hand-narrowed** (`AppComponentView.tsx`): `select=UnitID,Slug,SpaceID,TargetID,
   UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ToolchainType,
   Data`, `where = SpaceID IN (...)`. Uses **`currentData`, not `data`** to avoid rendering new spaces
-  against stale units. Adding a field the UI reads means editing that select string.
+  against stale units. Adding a field the UI reads means editing that select string (`UNITS_QUERY_SELECT`/
+  `UNITS_QUERY_INCLUDE`, shared by every batch below). **Batched** at `ID_BATCH_SIZE` (50) Spaces per
+  request (a node graph's Space count is unbounded — it can span every Deployment under a tree node,
+  not just one Component's) — the first batch stays this same normal, polling hook call; extra
+  batches each mount their OWN normal, subscribed
+  `useListAllUnitsQuery` call too (`useBatchedQuery`, `useBatchedQuery.tsx`), not an imperative
+  fetch-into-local-state — so a mutation elsewhere that invalidates the Unit tag, and the same 2s
+  gate/upgrade poll, reach every batch, not just the first. A second, `UnitID IN (...)`-keyed batched
+  query (same mechanism, same select/include) fetches any `UpstreamUnitID` missing from the fetched
+  set, merged into `unitById` only (see "Navigation tree" → "Upstream-outside-set lookup"). Both kinds
+  of batch surface their own errors through the same error UI as the primary batch's, and the graph's
+  loading state waits for every batch (primary, extra, upstream) to settle before painting.
 - **Polling:** 2s interval while gates are pending; `refetchOnFocus`.
 - **Dry-run merge preview:** selecting a node fires `dryRunPatch({upgrade:true, dryRun:true, where:
   UnitID IN(...)})`. Results → `dryRunData: Map<unitId, base64Data>` and `dryRunConflicts:
@@ -330,6 +342,299 @@ No endpoint is promotion-specific; the view composes generic Unit + bulk-patch +
   button now calls `handleConfirmCommit` directly with no intermediate dialog. Do not rebuild it.
 - The design sessions never captured which Source-view mockup sections actually shipped vs. were only
   mocked. Treat the editable Source view as real (it exists) but the full section layout as unverified.
+
+---
+
+## Navigation tree: grouping, saved views, and node click opens a graph
+
+The left nav (`AppNavigationTree.tsx`) uses the **same grouping system as the Unit list**:
+`GroupNavPanel<T>` (`ui/src/components/group-nav/`), generified from its original
+`ExtendedUnitRead`-only shape to take a `getValue` getter and an
+item array of any type. The Unit list passes no new props and is byte-for-byte
+unchanged; Components is the second caller, passing `ExtendedSpaceRead[]`.
+
+### Terms
+
+- **Components view** — a saved `View` (`Filter.From = 'Space'`) carrying the
+  `ui.confighub.io/view-kind: components` annotation (`useQueryBuilder`'s
+  `viewKind` option, `groupBy-annotation.ts`). The annotation is what keeps
+  these views out of any generic Space view picker without a new backend
+  `EntityType` — `allViewsForEntity` filters on it, and it defaults to
+  "no annotation" so every pre-existing (Unit) caller is unaffected.
+- **Component field** (`COMPONENT_FIELD = 'Component'`,
+  `componentGroupFields.ts`) — a Space's Component ENTITY (`Space.ComponentID`),
+  shown by the Component's Slug (`useComponentSlugs().slugById`, passed in
+  as `SpaceGroupValueContext.slugById`). Not a label: a leftover `Component`
+  label on a Space means nothing to it. An ordinary, removable, movable
+  group-by level, with no locked chip, offered as its own top-level picker
+  row (not under Labels). The page's Space set (`appSpaces`) is every Space
+  whose Component Slug has loaded — a Space with no Component is not on this
+  page, and one whose Component list has not arrived yet is left out until
+  it does rather than shown in an `(empty)` Component bucket.
+  `componentGroupFields.ts` repeats `spaceComponentSlug`'s two-line lookup
+  instead of importing it, so `component-nav-fields.pure.spec.ts` can import
+  it in Node without loading the hook module's React/RTK Query code.
+- **Node graph** — the flow graph (`AppComponentView`, the same view that
+  always rendered one Component) opened with every Space under ONE tree
+  node, descendants included. A single-Space node opens a one-node graph.
+  **Component graph** is the special case where a node graph's Spaces are
+  exactly all Spaces of one Component — visually indistinguishable from
+  opening a Component the way this page has always supported.
+- **Dashboard** (`?display=dashboard`, `AppComponentView`'s `displayMode` prop,
+  `appTypes.ts`'s `ComponentDisplayMode`) — a node graph's alternate view: the
+  Overview root's own component (`ComponentOverviewMatrix` — KPI header,
+  matrix, activity feed), reused unmodified with the node's own `spaces`
+  instead of every Component Space on the page. Named `display`, not
+  `view`, so it isn't confused with the page's SAVED views
+  (`viewID`/`viewGroupBy`/`viewFilterID`, `type=view`). Selected via a
+  top-right Graph/Dashboard segmented control (`FlowViewControl`,
+  `flow-graph/FlowViewControl.tsx`), which lives in `AppComponentView`
+  (an overlay above whichever content is showing) since Dashboard
+  replaces the canvas outright — the control would vanish along with it if
+  it lived inside `ComponentFlowGraph` instead. In Graph mode it sits in the
+  canvas column (`GraphArea`), NOT over the whole view: the side pane is to
+  the right of that column, and an overlay over the full width covered the
+  pane header's Space settings cog (`component-space-settings.spec.ts`
+  clicks it).
+  **Sticky across node clicks**: `display=dashboard` is deliberately left
+  untouched (not reset) by every node-open URL writer
+  (`AppsComponentLayout.handleAppSelect`/`handleNodeOpen`'s `?group=` branch,
+  the "New component" create-redirect in `AppsComponentPage.tsx`) — clicking
+  a DIFFERENT node while Dashboard is open opens that node's Dashboard too,
+  not its graph. Only two things clear it: `FlowViewControl`'s Graph segment
+  (an explicit "show me the graph"), and `handleOverviewSelect`
+  (Overview breaks the stickiness chain — a node clicked after Overview
+  opens its graph, never carrying over a choice from a since-closed, unrelated
+  node graph; Overview itself always shows the full dashboard regardless of
+  `display`, since it never reads the param at all).
+- **Special label icons** (`componentGroupFields.ts`'s `SPECIAL_LABEL_ICONS`)
+  — Owner/Stage/Region/Department each get their own icon (picker
+  row, breadcrumb chip, tree node) instead of the generic Labels one every
+  other label key keeps; the Component field (not a label) gets its own
+  `component` icon directly in `COMPONENT_ICON_MAP`. A small, self-contained
+  `label name → icon key` map, re-keyed to `Labels.<key>` for
+  `COMPONENT_ICON_MAP`, so a later
+  user-facing icon-selector can replace individual entries without touching
+  anything else — a fixed default set until then. The new icon keys
+  (`component`/`owner`/`stage`/`region`/`department`) live in a separate
+  `FieldIconKey` union (`field-icons.tsx`), not `FilterFieldType` itself:
+  they're not real filterable field types, and `FilterFieldType` drives
+  OTHER exhaustive `Record`s (`operators.ts`'s `FIELD_CONFIGS`/
+  `FIELD_DESCRIPTIONS`) that a label-only icon key has nothing to fill in
+  for. `getChipIcon` checks its `iconMap` override BEFORE the generic
+  `Labels.*` fallback, so a Labels-prefixed field can still resolve to its
+  own icon — the Unit list's own `iconMap` has no `Labels.*` entries, so it
+  is unaffected either way. `iconMap` reaches every field-icon render site
+  (`GroupNavPanel`'s tree, `BreadcrumbChip`, `FieldPickerDropdown`) through a
+  chain of prop passes with no default — a `FieldPickerDropdown` mounted
+  without it (the "+ Add grouping level" button's own picker in
+  `GroupNavBreadcrumb.tsx`, once missing it) silently falls back to
+  `getChipIcon`'s own `UNIT_FIELD_TO_ICON_KEY` default and shows the generic
+  icon for every row, not an error — check any NEW `FieldPickerDropdown`
+  call site actually forwards it.
+- **Node click vs. chevron**: clicking a node's row (label/icon/count) opens
+  its node graph, at ANY depth and ANY field — there is no leaf/group-node
+  distinction left; every node behaves the same way. The chevron
+  (`GroupNavPanel`'s `expansionTrigger='iconContainer'` for Components only)
+  only expands/collapses — it never opens anything and never writes the URL.
+  The tree pane itself uses `GroupNavPanel`'s `fillContainer` option (also
+  Components-only): the page's own wrapper is a `react-resizable-panels`
+  `Panel` that already tracks drag width, so the tree stretches to `100%` of
+  it instead of sizing off the Unit list's `--group-nav-width` CSS-variable
+  mechanism, which nothing on this page ever sets.
+  Clicking **Overview** (the tree's `All`-equivalent root) opens the overview
+  dashboard, never narrowed by a tree click.
+- **`?app=` vs `?group=`** (`resolveNodeGraphTarget`, `componentGroupFields.ts`)
+  — decides which URL FORM a node's click writes: recompute the node's own
+  bucket against `appSpaces`; if that bucket is EXACTLY all Spaces of
+  one Component, write `?app=<name>` — every `?app=` deep link, tour, and
+  overview-tile click reads the URL the same way, regardless of which node
+  produced it; otherwise write `?group=<path>` (the
+  node's value path, repeated `group=` params). This is a single,
+  field-position-agnostic rule: a Component-field node in the MIDDLE of
+  `levels` still resolves to `{app}` when every Deployment of that Component
+  happens to share the bucket's other field values (e.g. one Owner); a field
+  one level below it resolving to a strict subset of that Component
+  resolves to `{group}` (a one-node graph, not the whole Component's).
+- **The deep-link / highlight rule** (`deriveComponentTreePath`,
+  `componentGroupFields.ts`) — `?group=` both selects a node graph AND
+  highlights that node; the only extra work is reconciling an open
+  Component graph (`?app=`) with it: if the levels end in Component, the
+  tree highlights `?group=` when it already ends in the open Component's
+  name, else derives the path from that Component's first Space (there is
+  no click to preserve — the Component was opened via `?app=` directly); if
+  the levels do NOT end in Component, it searches for a node (at the
+  Component field's depth, if `levels` has one) whose own bucket resolves
+  back to exactly this Component, and highlights it if found — else no tree
+  node is highlighted at all while the graph is open (a highlighted node
+  that isn't actually driving what's on screen would claim something not
+  there). "Not even the Overview root" required widening `GroupNavPanel`'s
+  `selectedGroups` prop from `string[]` to `string[] | null` — `[]` still
+  means "Overview/All is selected" (the Unit list's only case), `null` means
+  nothing is (MUI's `SimpleTreeView` accepts `null` for "no item selected"
+  natively). The Unit list never passes `null`, so this is additive, not a
+  behavior change there.
+- **Counts.** Every tree node counts Spaces — the number of graph nodes a
+  click on it will show. The header badge ("Components N") still counts
+  distinct Components; it names the header, not a node.
+- **No filter button.** The Components page has no `QueryBuilderElement` —
+  every Space here is already a Component Deployment, so a generic metadata
+  filter didn't answer a question this page's users actually had; narrowing
+  happens by clicking the tree instead. A saved Components view therefore
+  holds grouping only. The View API still requires a `FilterID`; every new
+  view auto-mints a condition-less Filter (`From: 'Space'`, no `Where`) the
+  same way an empty in-memory filter state already did before this page had
+  its own view-tabs strip — `createFilterForView`'s doc comment covers it.
+- **Upstream-outside-set lookup.** A node graph can hold a downstream Space
+  without its upstream in the set (e.g. grouped by Variant, or a Component
+  whose base lives in another Component) — without this, that Unit would
+  read as "not upgradable" and its upgrade diff would be empty: a WRONG
+  answer, not a missing one. `AppComponentView` collects `UpstreamUnitID`s
+  not already present in the fetched units, batch-fetches them
+  (`batchIds`/`ID_BATCH_SIZE`, below), and merges them into `unitById` ONLY
+  — never into `allUnits` — so they supply upstream HEAD/revision ids for
+  upgrade detection but create no graph node and no edge; the downstream
+  node just becomes a root (no incoming arrow).
+- **ID batching.** A node graph's `SpaceID IN (...)` units query (and the
+  upstream lookup's `UnitID IN (...)` query) is a GET query string with an
+  8192-byte server limit, ~39 bytes per quoted UUID. `batchIds` splits IDs
+  into `ID_BATCH_SIZE` (50)-sized, deduplicated chunks. The FIRST batch
+  stays a normal, cache-backed, polling `useListAllUnitsQuery` call — for
+  the common case (one batch) this is byte-for-byte the same query as
+  before. Every batch beyond the first (a node graph over 50 Spaces — rare)
+  is its OWN normal, subscribed `useListAllUnitsQuery` call too, mounted via
+  `useBatchedQuery` (`useBatchedQuery.tsx`) rather than fetched imperatively
+  into local state — cache-tag invalidation and the same 2s gate/upgrade
+  poll reach every batch, and a batch's own error surfaces through the same
+  error UI as the primary batch's, instead of being silently swallowed.
+  The Releases chip's `SpaceID IN (...)` query is batched and merged the
+  same way (via `useBatchedQuery`, no polling — a stale release chip is
+  cosmetic, not correctness-critical). The dry-run preview's
+  `UnitID IN (...)` PATCH is ALSO subject to this limit — the generated
+  client puts `where` in the request's query params even for a PATCH, not
+  the body — so it batches too, via `Promise.allSettled` rather than
+  `useBatchedQuery` (a mutation isn't a subscribable query); each batch is
+  an independent, self-contained dry run, so one batch failing doesn't drop
+  another batch's successful preview.
+
+### File map
+
+| Path | Responsibility |
+|---|---|
+| `AppNavigationTree.tsx` | Thin wrapper over `GroupNavPanel<ExtendedSpaceRead>`. One click handler (`onNodeOpen`) for every node — `GroupNavPanel` itself has no Components knowledge, and neither this file nor `GroupNavPanel` decides `?app=` vs `?group=` (that's `AppsComponentLayout`'s `resolveNodeGraphTarget` call). |
+| `componentGroupFields.ts` | Pure Space-side logic: the field catalog (`COMPONENT_CATALOG`), `getSpaceGroupValue`, `resolveNodeGraphTarget`, `deriveComponentTreePath`, `filterSpacesByGroupPath`, `batchIds`/`ID_BATCH_SIZE`. Covered by `tests/component-nav-fields.pure.spec.ts`. |
+| `AppsComponentLayout.tsx` | Derives `levels` (`useGroupByLevels` with `fallbackLevels: COMPONENT_DEFAULT_LEVELS`), `selectedGroups`, the open graph's Space set + `graphKey`, and owns the `?group=`/`?app` URL writes (`handleNodeOpen`, `handleAppSelect`). |
+| `AppsComponentPage.tsx` | Calls `useQueryBuilder({ entityType: 'Space', viewKind: 'components', defaultColumns: [] })` and renders the `ViewTabs` strip (no filter row) between the page header and the two-pane layout. |
+| `AppComponentView.tsx` | The one flow-graph/Dashboard view, driven by a Space SET rather than a Component name: `graphKey` (identity, since a node graph has no one Component name), `componentSpaces` (every Component-labelled Space on the page, for the variant composer's sibling-name check), and `displayMode` (graph vs. Dashboard). |
+| `flow-graph/FlowViewControl.tsx` | The Graph / Dashboard segmented control — a sibling overlay `AppComponentView` renders above whichever content is showing, not part of `ComponentFlowGraph` (which has no Dashboard/view-mode knowledge). |
+| `ui/src/components/group-nav/` (shared with the Unit list) | `GroupNavPanel<T>` (generic tree; `expansionTrigger` prop), `groupable-fields.ts` (`GroupableFieldCatalog`, `UNIT_CATALOG`), `field-icon.ts` (icon map override). |
+| `ui/src/components/query-builder/useQueryBuilder.tsx` | `viewKind` option (view-kind annotation filter + `storageNamespace`), `defaultColumns` option, `clearParamsOnViewSwitch` option (below). |
+| `ui/src/components/query-builder/ViewTabs.tsx` | `viewKind`/`defaultColumns`/`defaultGroupBy` props — written into a new view's create/duplicate payload. |
+
+### URL params added, and why Component navigation keeps them
+
+`?viewID`, `?viewGroupBy`, `?group`, and every `?filter*` param survive
+clicking a Component or Overview: `handleAppSelect` / `handleOverviewSelect`
+/ `AppsComponentPage`'s `onCreated` all write through `AppsComponentLayout`'s
+`updateParams`, a functional-updater merge over the CURRENT params — never a
+**plain object** passed to `setSearchParams`, which React Router replaces
+the ENTIRE query string with, silently dropping the active saved view on
+every Component click. `updateParams` accepts `{ push: true }` for the one
+deliberately-pushed navigation (opening a different Component) and writes
+`group` as repeated params, matching the Unit list's own `?group=`
+convention.
+
+**Gotcha: two `setSearchParams` calls in one handler do not compose, and a raw
+`window.history` write does not fix it either.** `useGroupByLevels`'s
+`handleEditLevels` (shared with the Unit list) writes the new `?viewGroupBy=`
+via `setSearchParams`. React Router's data router keeps its own model of the
+URL, updated only through its own navigations — a second `setSearchParams`
+call in the same handler is a SEPARATE queued navigation whose `prev` is not
+guaranteed to reflect the first one's result, and a raw
+`window.history.replaceState` call is invisible to the router entirely, so a
+later router-driven write can silently overwrite it. Concretely: clearing
+`?group=` after a level change has to happen INSIDE the same `setSearchParams`
+call as the level write, not via a follow-up call of either kind.
+`useGroupByLevels` takes an optional `clearParamsOnEdit: string[]` for exactly
+this — the Unit list passes nothing (its tree selection is separate React
+state, not derived from the URL, so it never depended on this); Components
+passes `['group']`, and `AppsComponentLayout`'s own `clearGroupUrlParams`
+callback is a no-op (kept only because `useGroupByLevels`'s interface
+requires one).
+
+The same reasoning applies to clearing `?group=` on a saved-view switch, and
+here the composing call is *further* away than it looks: an early version
+cleared it from an `AppsComponentLayout` effect reacting to `activeView`
+(mirroring `UnitListPage.tsx`'s own `lastActiveViewIdRef` pattern). That
+effect's `setSearchParams` call comes from a *different* `useSearchParams()`
+instance than the one that just switched the view (`useQueryBuilder`'s, inside
+`AppsComponentPage`) — React Router does not guarantee the second instance's
+`prev` reflects the first one's not-yet-committed result, so the effect's
+write could revert the view switch it was reacting to (observed as a
+newly-saved view's `?viewID=` vanishing right after creation). The fix is the
+same shape as `clearParamsOnEdit`: `useQueryBuilder` takes an optional
+`clearParamsOnViewSwitch: string[]`, deleted inside the SAME `setSearchParams`
+call that sets `viewId` (in `syncFilterStateToUrl`/`clearFilterStateFromUrl`,
+shared by every call site that switches, creates, or clears the active view).
+Components passes `['group']`; the Unit list passes nothing.
+
+**Gotcha: `expansionTrigger='iconContainer'` alone does not stop a chevron
+click from also opening a graph.** MUI's own content-click handler
+(`useTreeItem`) calls `handleSelection` UNCONDITIONALLY — it only gates
+`handleExpansion` on `expansionTrigger`. A click on the icon container, with
+no `stopPropagation`, bubbles up (native DOM event bubbling; the icon is a
+child of the content div) to that same content handler and selects the row
+regardless of which element triggers expansion. `GroupNavPanel` passes
+`slotProps={{ iconContainer: { onClick: stopPropagation } }}` on each
+`TreeItem`, but only when `expansionTrigger === 'iconContainer'` — the Unit
+list stays on the `'content'` default and is unaffected.
+
+### No Space filter on this page
+
+The Components page has no `QueryBuilderElement` and no filter row — see
+"No filter button" above. `AppsComponentLayout`'s Space sets (`appSpaces`
+for the tree, the overview matrix, and a `?group=` node graph;
+`selectedAppSpaces` for a whole-**Component** graph, `?app=`) are therefore
+never narrowed by anything but the tree and URL themselves.
+
+### The owning-Space rule, and its delete effect
+
+A saved Components view's `SpaceID` follows the same rule as the Unit list's:
+`activeView?.View?.SpaceID || appSpaces[0]?.Space?.SpaceID || ''` — the first
+Space in a Component, in the order the query returns it. This Space is
+arbitrary, and if it is later deleted, the saved view goes with it (a plain
+Space→View cascade). Accepted, same as the Unit list.
+
+### Dropped fields (and why), from the Space field catalog
+
+`COMPONENT_CATALOG` (`componentGroupFields.ts`) offers `Labels.<key>`
+(dynamic — every label key seen on the page's Spaces, `Component` included),
+`ReleaseTarget` (displayed as **"Target"** — Space.ReleaseTargetID, the
+Space's default Target for every Unit in it; the internal key stays
+`ReleaseTarget` so a saved view's GroupBy annotation or a `?group=` deep link
+keeps working, only the label changed), `UpgradeNeeded`,
+`UnreleasedChanges`, and `Gated`. Dropped,
+deliberately: `Slug`/`SpaceID`/`DisplayName` (unique per Space — one bucket
+per Space, a useless grouping); `CreatedAt`/`UpdatedAt` (near-unique
+timestamps); **Base vs. Deployment** (derived from the Units' targets in
+`buildComponentData`, `componentData.ts` — the nav tree has no Units loaded,
+only Spaces, so there is nothing to derive it from without a second query);
+toolchain (`TargetCountByToolchainType` is multi-valued per Space; group-nav
+buckets on one value per item); `Annotations` (machine metadata, e.g. live
+status JSON); `OrganizationID`/`EntityType`/`Version`/`Permissions`/
+`DeleteGates`/`Attribute*`/`Trigger*`/`Where*` (constant or internal config).
+The Unit-only "Space Labels" submenu never appears for Components — its own
+labels already ARE the Space labels, so `getGroupableCategories` is called
+with `spaceLabelKeys: []`.
+
+### Storage keys
+
+Components' saved-view tabs and per-tab drafts live under their own
+namespace, `${entityType}:${viewKind}` lower-cased
+(`useQueryBuilder`'s `storageNamespace`): `confighub:space:components:openViewTabs`
+and `confighub:space:components:viewDraft:<id>` — never colliding with a
+generic Space view picker's `confighub:space:openViewTabs`, nor with the Unit
+list's `confighub:unit:openViewTabs`.
 
 ---
 
@@ -521,10 +826,11 @@ Do not re-propose these — they were explicitly rejected by the people who buil
   `entryBuilders.ts:118`); never treat a no-data dry-run as mass deletions.
 - **`dryRunSettled` vs `!isDryRunLoading`.** Only `dryRunSettled` may gate the auto-switch off the
   Upgradable tab; at a node switch `isDryRunLoading` is momentarily `false`.
-- **StrictMode double-render trap** (`AppComponentView.tsx`): `prevAppNameRef` is updated in a
-  post-commit effect (not during render) so `isAppSwitch` stays correct. It drives `Slide timeout={0}`
-  so the side pane vanishes instantly on app switch — otherwise it steals layout width and the graph
-  mis-fits its zoom.
+- **StrictMode double-render trap** (`AppComponentView.tsx`): `prevGraphKeyRef` is updated in a
+  post-commit effect (not during render) so `isGraphSwitch` stays correct. It drives `Slide timeout={0}`
+  so the side pane vanishes instantly on a graph switch — otherwise it steals layout width and the
+  graph mis-fits its zoom. `graphKey` (not a Component name) is the identity compared, since a node
+  graph can span several Components.
 - **`currentData` not `data`** on the units query — avoids rendering new spaces against stale units.
 - **RTK merge-patch+json needs a pre-stringified body** → the repeated `// @ts-expect-error` +
   `JSON.stringify({})` on patch calls is deliberate.

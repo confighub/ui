@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { test, expect, newAuthorizedContext } from './fixtures/test';
+import { test, expect, newAuthorizedContext, hubApi } from './fixtures/test';
 
 import { ApiHelper } from './fixtures/api-helper';
 import { TargetDetailPage } from './fixtures/target-detail-page';
@@ -105,6 +105,70 @@ test.describe('target detail drawer', () => {
     await targetListPage.filterTargets(`Slug = '${editedTargetName}'`);
 
     await targetDetailPage.expectToBeVisibleByText(editedTargetName);
+  });
+
+  test('should show, grant and revoke worker access to a target', async ({ page }) => {
+    const targetName = `${seedSlug}-access-${RandomSlugGenerator.randomSlugName()}`;
+    const workerSlug = `${seedSlug}-worker`;
+    const workerLabel = `${seedSlug}/${workerSlug}`;
+
+    const api = new ApiHelper(page);
+    await page.goto('/');
+    await page.waitForResponse(
+      (r) => r.url().includes('/api/space') && r.request().method() === 'GET' && r.ok(),
+    );
+    const workerResponse = await hubApi.post(`/api/space/${seedSpaceId}/bridge_worker`, {
+      params: { allow_exists: 'true' },
+      data: { Slug: workerSlug },
+    });
+    expect(workerResponse.ok()).toBeTruthy();
+    const botUserId = ((await workerResponse.json()) as { UserID: string }).UserID;
+    const target = await api.createTarget({ spaceId: seedSpaceId, slug: targetName });
+
+    // The grants the worker's bot user holds on the target, read back from the server.
+    const grants = async () => {
+      const response = await hubApi.get(`/api/space/${seedSpaceId}/target/${target.TargetID}`);
+      const permissions = ((await response.json()) as {
+        Target: { Permissions?: Record<string, { UserIDs?: Record<string, boolean> }> };
+      }).Target.Permissions;
+      return ['View', 'ViewChildren'].filter((action) => permissions?.[action]?.UserIDs?.[botUserId]);
+    };
+    const saveAndWait = () =>
+      Promise.all([
+        page.waitForResponse(
+          (r) => r.url().includes('/target/') && ['PUT', 'PATCH'].includes(r.request().method()),
+        ),
+        page.getByRole('button', { name: 'Update Target' }).click(),
+      ]);
+
+    const targetListPage = new TargetListPage(page);
+    const accessSelect = page.getByTestId('target-worker-access-select');
+
+    await targetListPage.goto();
+    await targetListPage.filterTargets(`Slug = '${targetName}'`);
+    await targetListPage.goToDetailPageByRowClick(targetName);
+
+    // No worker has access yet.
+    await expect(accessSelect).toContainText('None');
+    await accessSelect.click();
+    await page.getByRole('option', { name: workerLabel }).click();
+    await page.keyboard.press('Escape');
+    await saveAndWait();
+    await expect(page.locator('.MuiBackdrop-root')).toHaveCount(0, { timeout: 10000 });
+    expect(await grants()).toEqual(['View', 'ViewChildren']);
+
+    // Reopened, the drawer shows the worker that has access, and deselecting it revokes both.
+    await targetListPage.goto();
+    await targetListPage.filterTargets(`Slug = '${targetName}'`);
+    await targetListPage.goToDetailPageByRowClick(targetName);
+    await expect(accessSelect).toContainText(workerLabel);
+    await accessSelect.click();
+    await page.getByRole('option', { name: workerLabel }).click();
+    await page.keyboard.press('Escape');
+    await expect(accessSelect).toContainText('None');
+    await saveAndWait();
+    await expect(page.locator('.MuiBackdrop-root')).toHaveCount(0, { timeout: 10000 });
+    expect(await grants()).toEqual([]);
   });
 
   test('should delete a target', async ({ page }) => {

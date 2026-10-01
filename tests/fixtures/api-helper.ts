@@ -20,6 +20,9 @@ import type {
   ExtendedReleaseRead,
   Filter,
   FilterRead,
+  View,
+  ViewRead,
+  ExtendedViewRead,
   ChangeSet,
   ChangeSetRead,
   ChangeOrder,
@@ -804,6 +807,25 @@ export class ApiHelper {
   }
 
   /**
+   * Delete a Filter within its Space (DELETE /api/space/{spaceId}/filter/{filterId}).
+   * Distinct from `deleteFilter` above, which hits an org-wide path that has no
+   * registered route for a single Filter — use this one for space-scoped Filters
+   * created via `createFilter`.
+   * @param spaceId - The Space that owns the Filter
+   * @param filterId - The Filter to delete
+   * @throws Error if the request fails
+   */
+  async deleteFilterInSpace(spaceId: string, filterId: string): Promise<void> {
+    const response = await hubApi.delete(`/api/space/${spaceId}/filter/${filterId}`);
+
+    if (!response.ok()) {
+      throw new Error(
+        `Failed to delete filter: ${response.status()} ${await response.text()}`
+      );
+    }
+  }
+
+  /**
    * List the Links in a Space (GET /api/space/{spaceId}/link).
    *
    * Read-only assertions need this: a view that claims to forbid editing has
@@ -977,5 +999,115 @@ export class ApiHelper {
     return body
       .map((entry) => entry.ChangeOrder)
       .filter((changeOrder): changeOrder is ChangeOrderRead => Boolean(changeOrder));
+  }
+
+  /**
+   * Create a View (POST /api/space/{spaceId}/view). Lets tests verify the
+   * real API accepts a Space-scoped View carrying the `viewKind`/`group-by`
+   * UI annotations, independent of any client-side assumption about them.
+   * @param params - Object containing spaceId, the View body, and allowExists
+   * @returns Promise resolving to the created ViewRead object
+   * @throws Error if the request fails or the response is missing a ViewID
+   */
+  async createView({
+    spaceId,
+    view,
+    allowExists = true,
+  }: {
+    spaceId: string;
+    view: View;
+    allowExists?: boolean;
+  }): Promise<ViewRead> {
+    const response = await hubApi.post(`/api/space/${spaceId}/view`, {
+      params: { allow_exists: allowExists ? 'true' : 'false' },
+      data: view,
+    });
+
+    if (!response.ok()) {
+      throw new Error(
+        `Failed to create view: ${response.status()} ${await response.text()}`
+      );
+    }
+
+    const result = await response.json();
+    if (!result?.ViewID) {
+      throw new Error('Invalid response: missing ViewID in created view');
+    }
+
+    return result as ViewRead;
+  }
+
+  /**
+   * List Views across all Spaces (GET /api/view), optionally including the
+   * related Filter so callers can assert `Filter.From` and annotations in one
+   * round trip — the same shape `useListAllViewsQuery({ include: 'FilterID' })`
+   * uses from the client.
+   * @param params - Optional where expression and include clause
+   * @returns Promise resolving to the raw ExtendedViewRead entries
+   * @throws Error if the request fails
+   */
+  async listViews(params?: { where?: string; include?: string }): Promise<ExtendedViewRead[]> {
+    const response = await hubApi.get('/api/view', {
+      params: {
+        ...(params?.where ? { where: params.where } : {}),
+        ...(params?.include ? { include: params.include } : {}),
+      },
+    });
+
+    if (!response.ok()) {
+      throw new Error(
+        `Failed to list views: ${response.status()} ${await response.text()}`
+      );
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Patch a View (PATCH /api/space/{spaceId}/view/{viewId}).
+   * @param params - Object containing spaceId, viewId, and the partial View body
+   * @returns Promise resolving to the updated ViewRead object
+   * @throws Error if the request fails
+   */
+  async patchView({
+    spaceId,
+    viewId,
+    body,
+  }: {
+    spaceId: string;
+    viewId: string;
+    body: Partial<View>;
+  }): Promise<ViewRead> {
+    const response = await hubApi.patch(`/api/space/${spaceId}/view/${viewId}`, {
+      data: body,
+      headers: {
+        'Content-Type': 'application/merge-patch+json',
+      },
+    });
+
+    if (!response.ok()) {
+      throw new Error(
+        `Failed to patch view: ${response.status()} ${await response.text()}`
+      );
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Delete a View (DELETE /api/space/{spaceId}/view/{viewId}).
+   * @param spaceId - The Space that owns the View
+   * @param viewId - The View to delete
+   * @returns Promise that resolves when the view is deleted
+   * @throws Error if the request fails
+   */
+  async deleteView(spaceId: string, viewId: string): Promise<void> {
+    const response = await hubApi.delete(`/api/space/${spaceId}/view/${viewId}`);
+
+    if (!response.ok()) {
+      throw new Error(
+        `Failed to delete view: ${response.status()} ${await response.text()}`
+      );
+    }
   }
 }

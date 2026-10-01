@@ -17,6 +17,14 @@ export const LABEL_OWNER = 'Owner';
  * slug when this label is unset.
  */
 export const LABEL_VARIANT = 'Variant';
+/**
+ * Special label keys the Components grouping catalog gives their own icon
+ * (`componentGroupFields.ts`'s `SPECIAL_LABEL_ICONS`) instead of the generic
+ * Labels icon. Exact-case, matching `LABEL_OWNER` above.
+ */
+export const LABEL_STAGE = 'Stage';
+export const LABEL_REGION = 'Region';
+export const LABEL_DEPARTMENT = 'Department';
 
 // ============================================================================
 // HELPERS

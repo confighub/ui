@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { CopyLinkButton } from '@/components/copy-link-button/CopyLinkButton';
 import { CodeEditor, type Language } from '@/components/code-editor/CodeEditor';
+import { ConfigDiffView } from '@/components/config-diff/ConfigDiffView';
+import { summarizeConfigDiff } from '@/components/config-diff/configDiffTree';
 import { DiffEditor } from '@/components/diff-editor/DiffEditor';
 import { useRevisionDataMap } from '@/hooks/useUnitData';
 import { buildUnitDiff } from '@/components/invoker/utils/diff-from-revisions';
@@ -13,12 +15,15 @@ import { TreeDiffSection } from '@/pages/x/apps/TreeDiffSection';
 import { useColumnResize } from '@/pages/x/apps/useColumnResize';
 import { type RevisionRow } from '@/types';
 import { TOP_NAV_HEIGHT } from '@/utility/constants';
+import { getApiErrorMessage } from '@/utility/error-functions';
+import { useGetUnitDiffQuery } from '@confighub/rtk-query';
 import CloseIcon from '@mui/icons-material/Close';
 import SwapVertIcon from '@mui/icons-material/SwapVert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
+import CircularProgress from '@mui/material/CircularProgress';
 import Drawer from '@mui/material/Drawer';
 import IconButton from '@mui/material/IconButton';
 import List from '@mui/material/List';
@@ -180,12 +185,49 @@ export const RevisionCompareDrawer = ({
 
   const activeRevision = selectedRevisions[0] || currentRevision;
 
-  // The configuration is not on the Revision. Both sides of the comparison, and the single
-  // Revision the non-compare view shows, come from one request.
-  const { dataFor } = useRevisionDataMap([
-    ...selectedRevisions.map((r) => r.Revision?.RevisionID),
-    activeRevision?.Revision?.RevisionID,
-  ]);
+  // The two Revisions being compared, older to newer unless swapped.
+  const comparison = useMemo(() => {
+    if (viewMode !== 'compare' || selectedRevisions.length !== 2) return null;
+    const [rev1, rev2] = selectedRevisions;
+    const older = (rev1.RevisionNum || 0) < (rev2.RevisionNum || 0) ? rev1 : rev2;
+    const newer = older === rev1 ? rev2 : rev1;
+    return isSwapped
+      ? { fromRevision: newer, toRevision: older }
+      : { fromRevision: older, toRevision: newer };
+  }, [viewMode, selectedRevisions, isSwapped]);
+
+  // The comparison's field tree is the server's diff, which matches array elements by merge
+  // key. Diffing the two documents here could only match them by position, and showed every
+  // element after an insertion as changed.
+  const diffSpaceId = comparison?.toRevision.Revision?.SpaceID;
+  const diffUnitId = comparison?.toRevision.Revision?.UnitID;
+  const {
+    currentData: unitDiff,
+    isFetching: isDiffFetching,
+    error: diffError,
+  } = useGetUnitDiffQuery(
+    {
+      spaceId: diffSpaceId as string,
+      unitId: diffUnitId as string,
+      from: String(comparison?.fromRevision.RevisionNum),
+      to: String(comparison?.toRevision.RevisionNum),
+    },
+    { skip: !comparison || !diffSpaceId || !diffUnitId },
+  );
+  const diffSummary = useMemo(
+    () => (unitDiff ? summarizeConfigDiff(unitDiff.Diff) : undefined),
+    [unitDiff],
+  );
+
+  // The configuration is not on the Revision. The comparison's source view needs both sides,
+  // and the single-Revision view needs its one; the comparison's field tree needs neither.
+  const { dataFor } = useRevisionDataMap(
+    comparison
+      ? showFieldTree
+        ? []
+        : [comparison.fromRevision.Revision?.RevisionID, comparison.toRevision.Revision?.RevisionID]
+      : [activeRevision?.Revision?.RevisionID],
+  );
 
   // Handle revision selection
   const handleRevisionClick = useCallback(
@@ -237,39 +279,8 @@ export const RevisionCompareDrawer = ({
 
   // Get data for rendering
   const renderData = useMemo(() => {
-    if (viewMode === 'compare' && selectedRevisions.length === 2) {
-      const [rev1, rev2] = selectedRevisions;
-      // Determine older and newer revisions
-      const older = (rev1.RevisionNum || 0) < (rev2.RevisionNum || 0) ? rev1 : rev2;
-      const newer = (rev1.RevisionNum || 0) < (rev2.RevisionNum || 0) ? rev2 : rev1;
-
-      // Apply swap if toggled
-      const fromRevision = isSwapped ? newer : older;
-      const toRevision = isSwapped ? older : newer;
-
-      const unitDiff = buildUnitDiff(
-        `${fromRevision.id}-${toRevision.id}`,
-        '',
-        '',
-        dataFor(fromRevision.Revision?.RevisionID),
-        dataFor(toRevision.Revision?.RevisionID),
-      );
-
-      const additions = unitDiff.diffs.filter((d) => d.oldValue === '-').length;
-      const deletions = unitDiff.diffs.filter((d) => d.newValue === '-').length;
-      const changes = unitDiff.diffs.filter((d) => d.oldValue !== '-' && d.newValue !== '-').length;
-      const totalChanges = additions + deletions + changes;
-
-      return {
-        type: 'compare' as const,
-        fromRevision,
-        toRevision,
-        unitDiff,
-        additions,
-        deletions,
-        changes,
-        totalChanges,
-      };
+    if (comparison) {
+      return { type: 'compare' as const, ...comparison };
     } else if (activeRevision) {
       const unitDiff = buildUnitDiff(
         activeRevision.id,
@@ -286,8 +297,7 @@ export const RevisionCompareDrawer = ({
       };
     }
     return null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, selectedRevisions, activeRevision, revisionData, isSwapped, dataFor]);
+  }, [comparison, activeRevision, revisionData, dataFor]);
 
   return (
     <Drawer
@@ -342,12 +352,14 @@ export const RevisionCompareDrawer = ({
                 Comparing revision {renderData.fromRevision.RevisionNum} to{' '}
                 {renderData.toRevision.RevisionNum}
               </Typography>
-              <Chip
-                label={`${renderData.totalChanges} ${renderData.totalChanges === 1 ? 'change' : 'changes'}`}
-                size='small'
-                color='primary'
-                variant='outlined'
-              />
+              {diffSummary && (
+                <Chip
+                  label={`${diffSummary.total} ${diffSummary.total === 1 ? 'change' : 'changes'}`}
+                  size='small'
+                  color='primary'
+                  variant='outlined'
+                />
+              )}
               <ToggleButtonGroup
                 value={showFieldTree ? 'fields' : 'source'}
                 exclusive
@@ -562,32 +574,34 @@ export const RevisionCompareDrawer = ({
                       {renderData.fromRevision.Revision?.Description ||
                         `Revision ${renderData.fromRevision.RevisionNum}`}
                     </Ellipses>
-                    <Stack direction='row' spacing={1}>
-                      {renderData.additions > 0 && (
-                        <Chip
-                          label={`+${renderData.additions}`}
-                          size='small'
-                          color='success'
-                          variant='outlined'
-                        />
-                      )}
-                      {renderData.deletions > 0 && (
-                        <Chip
-                          label={`-${renderData.deletions}`}
-                          size='small'
-                          color='error'
-                          variant='outlined'
-                        />
-                      )}
-                      {renderData.changes > 0 && (
-                        <Chip
-                          label={`~${renderData.changes}`}
-                          size='small'
-                          color='warning'
-                          variant='outlined'
-                        />
-                      )}
-                    </Stack>
+                    {diffSummary && (
+                      <Stack direction='row' spacing={1}>
+                        {diffSummary.additions > 0 && (
+                          <Chip
+                            label={`+${diffSummary.additions}`}
+                            size='small'
+                            color='success'
+                            variant='outlined'
+                          />
+                        )}
+                        {diffSummary.deletions > 0 && (
+                          <Chip
+                            label={`-${diffSummary.deletions}`}
+                            size='small'
+                            color='error'
+                            variant='outlined'
+                          />
+                        )}
+                        {diffSummary.changes > 0 && (
+                          <Chip
+                            label={`~${diffSummary.changes}`}
+                            size='small'
+                            color='warning'
+                            variant='outlined'
+                          />
+                        )}
+                      </Stack>
+                    )}
                     <Typography variant='body2' color='text.secondary'>
                       Rev {renderData.fromRevision.RevisionNum} →{' '}
                       {renderData.toRevision.RevisionNum}
@@ -595,26 +609,20 @@ export const RevisionCompareDrawer = ({
                   </Stack>
 
                   {showFieldTree ? (
-                    renderData.unitDiff.diffs.length > 0 ? (
-                      <TreeDiffSection
-                        entry={{
-                          unitId: renderData.unitDiff.unitId,
-                          fieldDiffs: renderData.unitDiff.diffs,
-                        }}
-                        allPaths={renderData.unitDiff.allPaths}
-                        keyPrefix='rev'
-                        label={`r${renderData.fromRevision.RevisionNum} → r${renderData.toRevision.RevisionNum}`}
-                        variant='data'
-                        showAllContext
-                        columnStyle={columnStyle}
-                        onDividerMouseDown={onDividerMouseDown}
-                        isDragging={isColumnDragging}
-                        hideLabel
-                      />
-                    ) : (
-                      <Typography variant='body2' color='text.secondary' fontStyle='italic'>
-                        Structured diff unavailable for this format
+                    unitDiff ? (
+                      diffSummary && diffSummary.total > 0 ? (
+                        <ConfigDiffView diff={unitDiff.Diff ?? {}} />
+                      ) : (
+                        <Typography variant='body2' color='text.secondary' fontStyle='italic'>
+                          No structured differences. Source compares the two Revisions as text.
+                        </Typography>
+                      )
+                    ) : diffError ? (
+                      <Typography variant='body2' color='error'>
+                        {getApiErrorMessage(diffError, 'The diff could not be loaded.')}
                       </Typography>
+                    ) : (
+                      isDiffFetching && <CircularProgress size={20} aria-label='Loading diff' />
                     )
                   ) : (
                     <DiffEditor

@@ -43,12 +43,13 @@ export interface UseViewModificationTrackingResult {
 export function buildLiveSnapshot(
   filters: FilterCondition[],
   searchParams: URLSearchParams,
+  defaultColumns: string[] = DEFAULT_UNIT_COLUMNS,
 ): ViewSnapshot {
   const { where, whereData, resourceType } = buildWhereClauses(filters);
   const columnsDeltaParam = searchParams.get(VIEW_URL_PARAMS.COLUMNS);
   const columns = columnsDeltaParam
     ? getColumnsFromDelta(columnsDeltaParam).map((c) => c.Name ?? '')
-    : DEFAULT_UNIT_COLUMNS;
+    : defaultColumns;
   return {
     filter: { Where: where, WhereData: whereData, ResourceType: resourceType },
     columns,
@@ -75,6 +76,7 @@ export function useViewModificationTracking(
   activeFilter: ExtendedFilterRead | null,
   filters: FilterCondition[],
   searchParams: URLSearchParams,
+  defaultColumns: string[] = DEFAULT_UNIT_COLUMNS,
 ): UseViewModificationTrackingResult {
   return useMemo(() => {
     // ── Sentinel tab ──────────────────────────────────────────────────────────
@@ -109,16 +111,16 @@ export function useViewModificationTracking(
     }
 
     // ── View tab — delegate to shared snapshot comparison ────────────────────
-    const snapshot = buildLiveSnapshot(filters, searchParams);
+    const snapshot = buildLiveSnapshot(filters, searchParams, defaultColumns);
     const dirtyFields = compareSnapshotToView(
       snapshot,
       activeView,
       activeFilter,
-      DEFAULT_UNIT_COLUMNS,
+      defaultColumns,
     );
     return {
       isViewModified: dirtyFields.filter || dirtyFields.viewFields,
       dirtyFields,
     };
-  }, [activeView, activeFilter, filters, searchParams]);
+  }, [activeView, activeFilter, filters, searchParams, defaultColumns]);
 }

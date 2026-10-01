@@ -30,6 +30,7 @@ import { ViewTabs, SENTINEL_TAB_ID, slugify } from './ViewTabs';
 import { clearFilterStateFromUrl, syncFilterStateToUrl } from './url-sync';
 import { computeNeedsGroupBySync } from './groupBy-url-sync';
 import {
+  VIEW_KIND_ANNOTATION_KEY,
   buildGroupByAnnotationValue,
   hydrateGroupByFromView,
   mergeGroupByAnnotation,
@@ -50,9 +51,10 @@ const EMPTY_STRING_ARRAY: string[] = [];
 const EMPTY_FILTER_CONDITIONS: FilterCondition[] = [];
 const EMPTY_LABEL_OPTIONS: LabelOptions = { keys: [], valuesByKey: {}, countByKey: {}, countByKeyValue: {} };
 
-/** Returns the localStorage key for persisting the open tabs list, namespaced by entity type. */
-const openTabsKey = (entityType: string) =>
-  `confighub:${entityType.toLowerCase()}:openViewTabs`;
+/** Returns the localStorage key for persisting the open tabs list, namespaced by entity type
+ * (or `entityType:viewKind` — see `useQueryBuilder`'s `storageNamespace`). */
+const openTabsKey = (namespace: string) =>
+  `confighub:${namespace.toLowerCase()}:openViewTabs`;
 
 /**
  * Returns true when a view is an initiative-owned view (flagged by
@@ -62,6 +64,15 @@ const openTabsKey = (entityType: string) =>
  */
 export const isInitiativeView = (view: ExtendedViewRead): boolean =>
   view.View?.Labels?.['initiative'] === 'true';
+
+/**
+ * Reads the `viewKind` annotation off a view, or `undefined` when absent — the
+ * value every pre-existing view (Unit or otherwise) satisfies, since it has no
+ * `[VIEW_KIND_ANNOTATION_KEY]` key at all. Used by `allViewsForEntity`'s
+ * filter, which is therefore a no-op until a caller opts in with `viewKind`.
+ */
+const viewKindOf = (v: ExtendedViewRead): string | undefined =>
+  v.View?.Annotations?.[VIEW_KIND_ANNOTATION_KEY];
 
 /**
  * Pure predicate — returns true when a keydown event should trigger the Cmd/Ctrl+S save action.
@@ -94,16 +105,22 @@ export function shouldTriggerCmdS(e: KeyboardEvent, activeView: ExtendedViewRead
  * Determine the final Columns payload for a view PATCH from a URL delta param.
  *
  * When a delta param is present it represents the user's explicit column
- * selection; otherwise we fall back to DEFAULT_UNIT_COLUMNS so the saved list
- * matches the default grid state.  GroupBy levels are intentionally never
- * injected here — GroupBy is sidebar-only since the view-tabs refactor.
+ * selection; otherwise we fall back to `defaultColumns` (default
+ * `DEFAULT_UNIT_COLUMNS`) so the saved list matches the default grid state.
+ * GroupBy levels are intentionally never injected here — GroupBy is
+ * sidebar-only since the view-tabs refactor.
  *
  * @param columnsDeltaParam - The `viewColumns` URL param value (or null).
+ * @param defaultColumns - Fallback column names when no delta param is present.
+ *   A Space view (no column-picker concept) passes `[]`.
  */
 // eslint-disable-next-line react-refresh/only-export-components
-export function buildSaveColumns(columnsDeltaParam: string | null): Column[] {
+export function buildSaveColumns(
+  columnsDeltaParam: string | null,
+  defaultColumns: string[] = DEFAULT_UNIT_COLUMNS,
+): Column[] {
   if (columnsDeltaParam) return getColumnsFromDelta(columnsDeltaParam);
-  return DEFAULT_UNIT_COLUMNS.map((col) => ({ Name: col }));
+  return defaultColumns.map((col) => ({ Name: col }));
 }
 
 /**
@@ -157,6 +174,46 @@ export interface UseQueryBuilderOptions {
    * Called when the unified Save fails so UnitListPage can surface the error.
    */
   onSaveError?: (message: string) => void;
+  /**
+   * Namespaces this hook instance's saved-view list and localStorage keys so
+   * a second "kind" of view over the same entity type never collides with the
+   * default one — e.g. the Components page's Space views (`viewKind:
+   * 'components'`) vs. a generic Space view picker, both `Filter.From ===
+   * 'Space'`. When set, `allViewsForEntity` keeps only views whose
+   * `ui.confighub.io/view-kind` annotation equals this value, and the
+   * localStorage namespace becomes `${entityType}:${viewKind}` instead of
+   * plain `entityType`. Omit for the default (unannotated) view list — every
+   * existing caller does, so this option changes nothing by default.
+   */
+  viewKind?: string;
+  /**
+   * Default column list used when a view of this kind has none of its own
+   * (Columns is empty/omitted) — both for the create-payload fallback and for
+   * dirty-tracking's baseline. Defaults to `DEFAULT_UNIT_COLUMNS`. The
+   * Components page passes `[]`: a Space view has no column-picker concept, so
+   * comparing against the Unit list's default columns would falsely mark a
+   * freshly-saved Components view as modified.
+   */
+  defaultColumns?: string[];
+  /**
+   * Extra URL param names to delete in the SAME `setSearchParams` update as
+   * every view-identity write this hook makes (selecting a saved view,
+   * creating one, switching tabs, or clearing back to the sentinel) — default
+   * `[]` (every existing, Unit-list, caller is unaffected).
+   *
+   * A caller whose own selection state is derived purely from the URL (the
+   * Components page's `?group=` breadcrumb path) cannot reliably clear a
+   * stale param from a *separate* effect that reacts to `activeView`
+   * changing: that effect's own `setSearchParams` call can read a `prev`
+   * snapshot that predates this hook's own navigation (they're issued from
+   * different components/hook instances, so React Router does not guarantee
+   * ordering between them), and the later call then silently reverts the
+   * view-identity write it was reacting to. Passing `['group']` here instead
+   * deletes it inside the one update that also sets `viewId`, so both changes
+   * land in a single router-tracked write — see `syncFilterStateToUrl`'s doc
+   * comment for the general pattern.
+   */
+  clearParamsOnViewSwitch?: string[];
 }
 
 /**
@@ -175,6 +232,22 @@ export interface ViewTabsRenderOptions {
   filterId?: string;
   /** Live groupBy columns (overrides the URL's groupBy param when saving). */
   localGroupByColumns?: string[];
+  /** Overrides the sentinel tab's label (default `"All <entity>s"`). */
+  sentinelLabel?: string;
+  /**
+   * Default Columns for a brand-new view's create payload when no `viewColumns`
+   * URL param is present. Default `DEFAULT_UNIT_COLUMNS`. Pass `[]` for an
+   * entity with no column-picker concept (e.g. Space).
+   */
+  defaultColumns?: string[];
+  /**
+   * Default GroupBy levels (comma-joined) for a brand-new view's create
+   * payload when neither `localGroupByColumns` nor the `viewGroupBy` URL
+   * param has a value. Default `DEFAULT_VIEW_GROUP_BY` ('Space'). The
+   * Components page passes its own `Labels.Owner,Component` default so
+   * a new Components view is never saved with the Unit list's `Space` field.
+   */
+  defaultGroupBy?: string;
 }
 
 /**
@@ -273,11 +346,21 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
     onUrlLoadError,
     initialFilters,
     onSaveError,
+    viewKind,
+    defaultColumns = DEFAULT_UNIT_COLUMNS,
+    clearParamsOnViewSwitch = EMPTY_STRING_ARRAY,
   } = options;
 
   // Get available fields for this entity type — used to disambiguate API field names
   // that map to multiple filter fields (e.g., TargetID → 'target' vs 'targetId')
   const availableFields = useMemo(() => getAvailableFieldsForEntity(entityType), [entityType]);
+
+  // Every localStorage key (open tabs + per-tab drafts) is namespaced by this
+  // value rather than by `entityType` alone, so a `viewKind` caller gets its
+  // own storage island — `confighub:space:components:openViewTabs` — while
+  // every existing (viewKind-less) caller keeps the exact byte-identical key
+  // it always had (`confighub:unit:openViewTabs`).
+  const storageNamespace = viewKind ? `${entityType}:${viewKind}` : entityType;
 
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -296,6 +379,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
     activeFilter,
     filters,
     searchParams,
+    defaultColumns,
   );
 
   // ─── Per-tab draft state ──────────────────────────────────────────────────
@@ -303,11 +387,11 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
   // the currently open tab IDs.
   const [draftedTabIds, setDraftedTabIds] = useState<Set<string>>(() => {
     try {
-      const raw = localStorage.getItem(openTabsKey(entityType));
+      const raw = localStorage.getItem(openTabsKey(storageNamespace));
       if (!raw) return new Set<string>();
       const parsed = JSON.parse(raw) as { version?: number; viewIds?: unknown };
       if (parsed.version === 1 && Array.isArray(parsed.viewIds)) {
-        return scanDraftedTabIds(parsed.viewIds as string[], entityType);
+        return scanDraftedTabIds(parsed.viewIds as string[], storageNamespace);
       }
       return new Set<string>();
     } catch {
@@ -519,10 +603,11 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
       allViewsData
         .filter((v) => v.Filter?.From === entityType)
         .filter((v) => !isInitiativeView(v))
+        .filter((v) => viewKindOf(v) === (viewKind ?? undefined))
         .sort((a, b) =>
           (a.View?.DisplayName ?? '').localeCompare(b.View?.DisplayName ?? ''),
         ),
-    [allViewsData, entityType],
+    [allViewsData, entityType, viewKind],
   );
 
   // ─── Open-tabs state ───────────────────────────────────────────────────────
@@ -530,7 +615,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
   // (only the sentinel visible) when the key is absent or the data is corrupt.
   const [openTabIds, setOpenTabIds] = useState<string[]>(() => {
     try {
-      const raw = localStorage.getItem(openTabsKey(entityType));
+      const raw = localStorage.getItem(openTabsKey(storageNamespace));
       if (!raw) return [SENTINEL_TAB_ID];
       const parsed = JSON.parse(raw) as { version?: number; viewIds?: unknown };
       if (parsed.version === 1 && Array.isArray(parsed.viewIds)) {
@@ -546,17 +631,17 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
   const persistOpenTabIds = useCallback((ids: string[]) => {
     setOpenTabIds(ids);
     try {
-      localStorage.setItem(openTabsKey(entityType), JSON.stringify({ version: 1, viewIds: ids }));
+      localStorage.setItem(openTabsKey(storageNamespace), JSON.stringify({ version: 1, viewIds: ids }));
     } catch { /* ignore — storage full or unavailable */ }
   }, []);
 
   // Silently drop persisted IDs that no longer exist or are no longer valid.
   // Initiative views and deleted views are both quietly removed from openTabIds.
   //
-  // `entityType` is included in deps to satisfy react-hooks/exhaustive-deps
+  // `storageNamespace` is included in deps to satisfy react-hooks/exhaustive-deps
   // and to match the dep shape of the sibling mount-time GC effect below
-  // (which also keys its localStorage I/O on entityType).  entityType is a
-  // stable prop per hook instance in practice, so this never triggers an
+  // (which also keys its localStorage I/O on storageNamespace).  storageNamespace
+  // is a stable value per hook instance in practice, so this never triggers an
   // unintended re-run.
   useEffect(() => {
     if (!allViewsData.length) return;
@@ -567,11 +652,11 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
       const filtered = prev.filter((id) => validViewIds.has(id));
       if (filtered.length === prev.length) return prev;
       try {
-        localStorage.setItem(openTabsKey(entityType), JSON.stringify({ version: 1, viewIds: filtered }));
+        localStorage.setItem(openTabsKey(storageNamespace), JSON.stringify({ version: 1, viewIds: filtered }));
       } catch { /* ignore */ }
       return filtered;
     });
-  }, [allViewsData, allViewsForEntity, entityType]);
+  }, [allViewsData, allViewsForEntity, storageNamespace]);
 
   // Derive whether we're waiting for async data needed for initialization
   // This prevents race conditions where the effect runs before data is available
@@ -730,7 +815,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
           if (prev.includes(viewIdToPin)) return prev;
           const next = [...prev, viewIdToPin];
           try {
-            localStorage.setItem(openTabsKey(entityType), JSON.stringify({ version: 1, viewIds: next }));
+            localStorage.setItem(openTabsKey(storageNamespace), JSON.stringify({ version: 1, viewIds: next }));
           } catch { /* ignore */ }
           return next;
         });
@@ -935,9 +1020,9 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
     if (syncToUrl) {
       // Mark as internal change to prevent re-initialization
       isInternalUrlChangeRef.current++;
-      clearFilterStateFromUrl(setSearchParams);
+      clearFilterStateFromUrl(setSearchParams, clearParamsOnViewSwitch);
     }
-  }, [syncToUrl, setSearchParams, initialFilters]);
+  }, [syncToUrl, setSearchParams, initialFilters, clearParamsOnViewSwitch]);
 
   // Shared helper to apply a filter (used by both saved filter and view selection)
   // This ensures consistent behavior regardless of how a filter is selected
@@ -991,10 +1076,10 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
           orderBy: options?.orderBy,
           orderByDirection: options?.orderByDirection,
           groupBy: options?.groupBy,
-        }, setSearchParams);
+        }, setSearchParams, clearParamsOnViewSwitch);
       }
     },
-    [spaces, syncToUrl, setSearchParams, availableFields]
+    [spaces, syncToUrl, setSearchParams, availableFields, clearParamsOnViewSwitch]
   );
 
 
@@ -1046,7 +1131,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
       const columnsDeltaParam = searchParams.get(VIEW_URL_PARAMS.COLUMNS);
       const columns = columnsDeltaParam
         ? getColumnsFromDelta(columnsDeltaParam).map((c) => c.Name ?? '')
-        : DEFAULT_UNIT_COLUMNS;
+        : defaultColumns;
       const draft: ViewDraft = {
         version: 1,
         savedAt: new Date().toISOString(),
@@ -1060,13 +1145,13 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
           orderByDirection: searchParams.get(VIEW_URL_PARAMS.ORDER_BY_DIRECTION) ?? '',
         },
       };
-      writeViewDraft(leavingId, draft, entityType);
+      writeViewDraft(leavingId, draft, storageNamespace);
       setDraftedTabIds((prev) => new Set([...prev, leavingId]));
     } else {
       // Clean — drop any stale draft so the tab is truly clean.  Counter-
       // symmetric to the write above: drafts only exist when there are
       // real unsaved edits.
-      deleteViewDraft(leavingId, entityType);
+      deleteViewDraft(leavingId, storageNamespace);
       setDraftedTabIds((prev) => {
         if (!prev.has(leavingId)) return prev;
         const n = new Set(prev);
@@ -1074,7 +1159,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
         return n;
       });
     }
-  }, [activeView, filters, searchParams, entityType, isViewModified]);
+  }, [activeView, filters, searchParams, storageNamespace, isViewModified, defaultColumns]);
 
   // ─── Persist active-tab draft on refresh / unload ─────────────────────────
   //
@@ -1123,7 +1208,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
    */
   const rehydrateArrivingDraft = useCallback(
     (tabId: string) => {
-      const draft = readViewDraft(tabId, entityType);
+      const draft = readViewDraft(tabId, storageNamespace);
       // No draft → nothing to restore.  The arriving tab's `?viewGroupBy=` was
       // already written to the URL by `handleSelectSavedView` (via
       // `syncFilterStateToUrl`), and `useGroupByLevels` derives
@@ -1203,7 +1288,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
       // GroupBy was already written to the URL inside the setSearchParams call
       // above (URL-first architecture); `useGroupByLevels` reads it from the URL.
     },
-    [entityType, spaces, availableFields, syncToUrl, setSearchParams],
+    [storageNamespace, spaces, availableFields, syncToUrl, setSearchParams],
   );
 
   // Handle saved view selection (from ViewTabs or FieldDropdown).
@@ -1251,7 +1336,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
             orderBy: filterlessView?.OrderBy || undefined,
             orderByDirection: filterlessView?.OrderByDirection || undefined,
             groupBy: committedGroupByParam,
-          }, setSearchParams);
+          }, setSearchParams, clearParamsOnViewSwitch);
         }
       } else {
         // Construct an ExtendedFilterRead from the view's filter data
@@ -1291,7 +1376,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
       const arrivingId = extendedView.View?.ViewID;
       if (arrivingId) rehydrateArrivingDraft(arrivingId);
     },
-    [applyFilter, syncToUrl, setSearchParams, serializeLeavingDraft, rehydrateArrivingDraft],
+    [applyFilter, syncToUrl, setSearchParams, serializeLeavingDraft, rehydrateArrivingDraft, clearParamsOnViewSwitch],
   );
 
   // Handle removing active view (sentinel selection or kebab "Remove from view").
@@ -1376,7 +1461,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
       // Deleting first would let that serialize step revive the very draft we
       // intended to discard.  Sentinel never carries a draft, so it's skipped.
       if (tabId !== SENTINEL_TAB_ID) {
-        deleteViewDraft(tabId, entityType);
+        deleteViewDraft(tabId, storageNamespace);
         setDraftedTabIds((prev) => {
           if (!prev.has(tabId)) return prev;
           const n = new Set(prev);
@@ -1385,7 +1470,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
         });
       }
     },
-    [openTabIds, persistOpenTabIds, activeView, allViewsForEntity, handleSelectSavedView, handleRemoveActiveView, entityType],
+    [openTabIds, persistOpenTabIds, activeView, allViewsForEntity, handleSelectSavedView, handleRemoveActiveView, storageNamespace],
   );
 
   /** Persist a drag-reordered tab sequence. The full new openTabIds array is
@@ -1459,7 +1544,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
       // Build columns from URL params.  GroupBy is now sidebar-only (GroupNavPanel) —
       // we no longer inject GroupBy levels into the Columns list.
       const columnsDeltaParam = searchParams.get(VIEW_URL_PARAMS.COLUMNS);
-      const finalColumns = buildSaveColumns(columnsDeltaParam);
+      const finalColumns = buildSaveColumns(columnsDeltaParam, defaultColumns);
       // Grouping is persisted only via the annotation.  We do NOT write
       // View.GroupBy because the backend validates it against the view's
       // Columns set, which rejects dotted dynamic columns like
@@ -1513,7 +1598,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
       if (updatedView) {
         setActiveView((prev) => (prev ? { ...prev, View: updatedView } : null));
       }
-      deleteViewDraft(viewId, entityType);
+      deleteViewDraft(viewId, storageNamespace);
       setDraftedTabIds((prev) => {
         const n = new Set(prev);
         n.delete(viewId);
@@ -1535,6 +1620,9 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
     patchFilter,
     patchViewMutation,
     onSaveError,
+    defaultColumns,
+    storageNamespace,
+    entityType,
   ]);
 
   // ─── Unified Revert handler ───────────────────────────────────────────────
@@ -1616,7 +1704,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
     // directly from the URL, so the sidebar updates automatically.
 
     // Clear the draft
-    deleteViewDraft(viewId, entityType);
+    deleteViewDraft(viewId, storageNamespace);
     setDraftedTabIds((prev) => {
       const n = new Set(prev);
       n.delete(viewId);
@@ -1630,6 +1718,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
     spaces,
     availableFields,
     syncFiltersToUrl,
+    storageNamespace,
   ]);
 
   // ─── Cmd/Ctrl+S keyboard shortcut ────────────────────────────────────────
@@ -1678,7 +1767,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
   const modifiedTabIds = useMemo(() => {
     const result = new Set<string>();
     for (const id of draftedTabIds) {
-      const draft = readViewDraft(id, entityType);
+      const draft = readViewDraft(id, storageNamespace);
       if (!draft) continue;
       // Sentinel uses the implicit null baseline; saved views use their entry
       // from allViewsForEntity.  A draft that references a view that has since
@@ -1688,10 +1777,10 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
         ? null
         : allViewsForEntity.find((v) => v.View?.ViewID === id) ?? null;
       if (id !== SENTINEL_TAB_ID && !view) continue;
-      if (compareDraftToView(draft, view, DEFAULT_UNIT_COLUMNS)) result.add(id);
+      if (compareDraftToView(draft, view, defaultColumns)) result.add(id);
     }
     return result;
-  }, [draftedTabIds, allViewsForEntity, entityType]);
+  }, [draftedTabIds, allViewsForEntity, storageNamespace, defaultColumns]);
 
   // ─── One-shot draft GC at mount ───────────────────────────────────────────
   //
@@ -1724,7 +1813,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
 
     const stale: string[] = [];
     for (const id of draftedTabIds) {
-      const draft = readViewDraft(id, entityType);
+      const draft = readViewDraft(id, storageNamespace);
       if (!draft) {
         // Set claimed this id had a draft but localStorage disagrees —
         // remove from the set so future scans are accurate.
@@ -1736,13 +1825,13 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
         : allViewsForEntity.find((v) => v.View?.ViewID === id) ?? null;
       // View deleted server-side?  Drop the orphan draft.
       if (id !== SENTINEL_TAB_ID && !view) {
-        deleteViewDraft(id, entityType);
+        deleteViewDraft(id, storageNamespace);
         stale.push(id);
         continue;
       }
-      if (!compareDraftToView(draft, view, DEFAULT_UNIT_COLUMNS)) {
+      if (!compareDraftToView(draft, view, defaultColumns)) {
         // Draft matches baseline — clean cruft from a prior session.
-        deleteViewDraft(id, entityType);
+        deleteViewDraft(id, storageNamespace);
         stale.push(id);
       }
     }
@@ -1753,7 +1842,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
         return n;
       });
     }
-  }, [allViewsData, allViewsForEntity, draftedTabIds, entityType, syncToUrl]);
+  }, [allViewsData, allViewsForEntity, draftedTabIds, storageNamespace, syncToUrl, defaultColumns]);
 
   // Mint a Filter from the current in-memory filter conditions so a brand-new
   // view can own its own filter even when the user has nothing selected yet.
@@ -1802,7 +1891,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
             if (prev.includes(newId)) return prev;
             const next = [...prev, newId];
             try {
-              localStorage.setItem(openTabsKey(entityType), JSON.stringify({ version: 1, viewIds: next }));
+              localStorage.setItem(openTabsKey(storageNamespace), JSON.stringify({ version: 1, viewIds: next }));
             } catch { /* ignore */ }
             return next;
           });
@@ -1824,6 +1913,10 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
           spaceId={renderOptions?.spaceId}
           filterId={renderOptions?.filterId}
           localGroupByColumns={renderOptions?.localGroupByColumns}
+          sentinelLabel={renderOptions?.sentinelLabel}
+          defaultColumns={renderOptions?.defaultColumns}
+          defaultGroupBy={renderOptions?.defaultGroupBy}
+          viewKind={viewKind}
           onViewCreated={wrappedOnViewCreated}
           openTabIds={openTabIds}
           allViews={allViewsForEntity}
@@ -1855,6 +1948,7 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
       handleSave,
       handleRevert,
       createFilterForView,
+      viewKind,
     ],
   );
 

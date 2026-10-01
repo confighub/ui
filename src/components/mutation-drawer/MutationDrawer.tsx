@@ -99,8 +99,12 @@ export const MutationDrawer = ({
     cleanString(mutation?.Value || ''),
   );
 
-  // Fetch resource data when revision changes
+  // Fetch resource data when the drawer shows a revision. The drawer is mounted while closed,
+  // and with no revision selected there is nothing to ask for: the server refuses a unit_id
+  // that comes with an empty revision_id.
   useEffect(() => {
+    if (!isMutationDrawerOpen || !revisionID) return;
+
     const getResources = async () => {
       const result = await invokeFunctionMutation({
         unitId: unitExtended?.Unit?.UnitID || '',
@@ -127,7 +131,7 @@ export const MutationDrawer = ({
     };
 
     getResources();
-  }, [revisionID]);
+  }, [revisionID, isMutationDrawerOpen]);
 
   const handleTabChange = (_: React.SyntheticEvent, newValue: number) => {
     setSelectedTab(newValue);

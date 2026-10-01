@@ -46,7 +46,6 @@ import Typography from '@mui/material/Typography';
 import { alpha, styled } from '@mui/material/styles';
 
 import { useAppDispatch } from '@/hooks/useApp';
-import { useAdvancedSearchQueryParams } from '@/hooks/useAdvancedSearchQueryParams';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
 import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
 import { getApiErrorMessage } from '@/utility/error-functions';
@@ -60,9 +59,11 @@ import {
 import { setAlert } from '@/state/slices/alert';
 import { DEFAULT_UNIT_COLUMNS, getColumnsFromDelta } from '@/utility/column-delta-functions';
 import { VIEW_URL_PARAMS } from '@/utility/constants/url-params';
+import { readLiveSearchParams } from '@/utility/live-search-params';
 import {
   DEFAULT_VIEW_GROUP_BY,
   GROUP_BY_ANNOTATION_KEY,
+  VIEW_KIND_ANNOTATION_KEY,
   buildGroupByAnnotationValue,
 } from './groupBy-annotation';
 
@@ -685,6 +686,18 @@ interface ViewTabsProps {
   /** Live groupBy columns (overrides the URL's groupBy param when saving). */
   localGroupByColumns?: string[];
   /**
+   * Namespaces the created View with a `ui.confighub.io/view-kind` annotation
+   * (see `useQueryBuilder`'s `viewKind` option). Written on both create and
+   * duplicate, since both flows share `buildViewPayloadFields`. Omit for the
+   * default (unannotated) view kind — every existing caller does.
+   */
+  viewKind?: string;
+  /** Default Columns for a new view's create payload (default `DEFAULT_UNIT_COLUMNS`). */
+  defaultColumns?: string[];
+  /** Default GroupBy levels (comma-joined) for a new view's create payload
+   * (default `DEFAULT_VIEW_GROUP_BY`). */
+  defaultGroupBy?: string;
+  /**
    * Ordered set of open tab IDs. SENTINEL_TAB_ID ('__all_units__') represents
    * the "All units" sentinel tab; all other values are saved-view ViewIDs.
    */
@@ -756,6 +769,9 @@ export const ViewTabs = ({
   filterId,
   sentinelLabel,
   localGroupByColumns,
+  viewKind,
+  defaultColumns = DEFAULT_UNIT_COLUMNS,
+  defaultGroupBy = DEFAULT_VIEW_GROUP_BY,
   openTabIds,
   allViews,
   onOpenTab,
@@ -767,7 +783,6 @@ export const ViewTabs = ({
   onCreateFilterForNewView,
 }: ViewTabsProps) => {
   const dispatch = useAppDispatch();
-  const { searchParams } = useAdvancedSearchQueryParams();
   const [deleteView, { error: deleteViewError, isSuccess: isDeleteViewSuccess }] =
     useDeleteViewMutation();
   const [patchView] = usePatchViewMutation();
@@ -785,35 +800,42 @@ export const ViewTabs = ({
   // CREATE-only path. PATCH lives in useQueryBuilder.handleSave; here we own
   // the whole annotation map on a brand-new entity, so we omit it when there's
   // no grouping rather than writing a null sentinel.
+  //
+  // Reads the LIVE URL when called, not render-time search params: a
+  // grouping edit made just before Save can still be waiting in a pending
+  // router transition, so this render's params would miss it — see
+  // `readLiveSearchParams`.
   const buildViewPayloadFields = useCallback(() => {
+    const searchParams = readLiveSearchParams();
     const groupBy = searchParams.get(VIEW_URL_PARAMS.GROUP_BY);
     const columns = searchParams.get(VIEW_URL_PARAMS.COLUMNS);
     const orderBy = searchParams.get(VIEW_URL_PARAMS.ORDER_BY);
     const orderByDirection = searchParams.get(VIEW_URL_PARAMS.ORDER_BY_DIRECTION);
     const finalColumns = columns
       ? getColumnsFromDelta(columns)
-      : DEFAULT_UNIT_COLUMNS.map((col) => ({ Name: col }));
+      : defaultColumns.map((col) => ({ Name: col }));
     // Live levels win over the URL param when present.  Fall back to the URL
     // param split on comma (handles the "saved view loaded straight into the
     // duplicate flow" case where the URL has the multi-level value).  New
-    // views without explicit grouping default to DEFAULT_VIEW_GROUP_BY so
-    // every saved view starts with a sensible grouping rather than empty.
+    // views without explicit grouping default to `defaultGroupBy` so every
+    // saved view starts with a sensible grouping rather than empty — the
+    // page's own default (e.g. Components' `Labels.Owner,Component`),
+    // not necessarily the Unit list's `Space`.
     const urlLevels = groupBy ? groupBy.split(',').map((s) => s.trim()).filter(Boolean) : [];
     const liveLevels = (localGroupByColumns && localGroupByColumns.length > 0)
       ? localGroupByColumns
-      : (urlLevels.length > 0 ? urlLevels : [DEFAULT_VIEW_GROUP_BY]);
+      : (urlLevels.length > 0 ? urlLevels : [defaultGroupBy]);
     const annotationValue = buildGroupByAnnotationValue(liveLevels);
-    const annotations: Record<string, string> | undefined =
-      annotationValue !== null
-        ? { [GROUP_BY_ANNOTATION_KEY]: annotationValue }
-        : undefined;
+    const annotations: Record<string, string> = {};
+    if (annotationValue !== null) annotations[GROUP_BY_ANNOTATION_KEY] = annotationValue;
+    if (viewKind) annotations[VIEW_KIND_ANNOTATION_KEY] = viewKind;
     return {
-      Annotations: annotations,
+      Annotations: Object.keys(annotations).length > 0 ? annotations : undefined,
       Columns: finalColumns,
       OrderBy: orderBy || undefined,
       OrderByDirection: (orderByDirection as 'ASC' | 'DESC') || undefined,
     };
-  }, [searchParams, localGroupByColumns]);
+  }, [localGroupByColumns, defaultColumns, defaultGroupBy, viewKind]);
 
   // Inline "New view" popover state
   const [newViewAnchor, setNewViewAnchor] = useState<HTMLElement | null>(null);

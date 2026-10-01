@@ -36,6 +36,19 @@ export interface GroupableCategory {
 }
 
 /**
+ * A field catalog: the static categories offered by the breadcrumb's
+ * add/change-field picker, plus the display-label overrides for those fields.
+ * `getGroupableCategories`/`getFieldLabel` default to {@link UNIT_CATALOG} so
+ * every pre-existing (Unit-list) caller is unaffected; a different page (e.g.
+ * Components) passes its own catalog through `GroupNavPanel`'s `catalog` /
+ * `fieldLabels` props.
+ */
+export interface GroupableFieldCatalog {
+  staticCategories: GroupableCategory[];
+  fieldLabels: Record<string, string>;
+}
+
+/**
  * The exact set of field names for which getCellValue returns a non-empty value
  * and that are meaningful as grouping dimensions.
  */
@@ -97,6 +110,12 @@ const STATIC_CATEGORIES: GroupableCategory[] = [
   },
 ];
 
+/** The Unit list's field catalog — the default for every catalog-taking helper. */
+export const UNIT_CATALOG: GroupableFieldCatalog = {
+  staticCategories: STATIC_CATEGORIES,
+  fieldLabels: FIELD_LABELS,
+};
+
 /**
  * Returns the ordered list of field categories for the FieldPickerDropdown.
  *
@@ -107,17 +126,20 @@ const STATIC_CATEGORIES: GroupableCategory[] = [
  *
  * @param labelKeyCounts    Optional map of label key → unit count (from filteredUnits).
  * @param spaceLabelKeyCounts Optional map of space label key → unit count.
+ * @param catalog - Field catalog whose static categories seed the result. Defaults to
+ *   {@link UNIT_CATALOG}.
  */
 export function getGroupableCategories(
   labelKeys: string[],
   spaceLabelKeys: string[],
   labelKeyCounts?: Record<string, number>,
   spaceLabelKeyCounts?: Record<string, number>,
+  catalog: GroupableFieldCatalog = UNIT_CATALOG,
 ): GroupableCategory[] {
   const result: GroupableCategory[] = [];
 
   // Static categories — omit empty ones
-  for (const cat of STATIC_CATEGORIES) {
+  for (const cat of catalog.staticCategories) {
     if (cat.fields.length > 0) {
       result.push(cat);
     }
@@ -167,10 +189,13 @@ export function getGroupableCategories(
  * Derives the human-readable display text for a groupable field key.
  *
  * - Strips `Labels.` / `Space.Labels.` prefixes for dynamic label fields.
- * - Looks up static catalog labels for known fields.
+ * - Looks up catalog labels for known fields.
  * - Falls back to the raw field name for anything not recognised.
+ *
+ * @param field - The groupable field key.
+ * @param fieldLabelMap - Label overrides, defaulting to the Unit catalog's own map.
  */
-export function getFieldLabel(field: string): string {
+export function getFieldLabel(field: string, fieldLabelMap: Record<string, string> = FIELD_LABELS): string {
   // Guard against null/undefined arriving from API responses whose types are
   // technically non-optional but may be missing in practice.
   if (!field) return '';
@@ -180,5 +205,5 @@ export function getFieldLabel(field: string): string {
   if (field.startsWith('Labels.')) {
     return field.slice('Labels.'.length);
   }
-  return FIELD_LABELS[field] ?? field;
+  return fieldLabelMap[field] ?? field;
 }

@@ -8,6 +8,14 @@ import type { FieldEntry, ResourceInfo } from './configParser';
 // TREE BUILDING FOR DIFFS
 // ============================================================================
 
+/**
+ * The stand-in a caller supplies for the side of a row that does not exist: the
+ * "before" of an added path, and the "after" of a removed one. There is no real
+ * value to diff against on that side, so such a row keeps its flat rendering
+ * instead of reporting every token as added or removed.
+ */
+export const VALUE_PLACEHOLDER = '-';
+
 /** A tree node representing either a folder (intermediate path segment) or a leaf (diff entry). */
 export interface DiffTreeNode {
   key: string;
@@ -17,6 +25,18 @@ export interface DiffTreeNode {
   diff?: { oldValue: string; newValue: string };
   /** True for nodes injected as surrounding context (rendered dimmed) */
   context?: boolean;
+  /**
+   * True for a leaf whose values are blocks of text -- a YAML map or list, or a
+   * multi-line string -- so the cells keep their line breaks instead of running the
+   * lines together.
+   */
+  preformatted?: boolean;
+  /**
+   * True for a leaf whose two values are shown whole, without highlighting the
+   * tokens that differ between them: the two orders of a list share every token,
+   * so what a token diff would highlight is where the line breaks fell.
+   */
+  wholeValues?: boolean;
   /**
    * True for the synthetic per-document wrapper folders produced by
    * {@link buildResourceGroupedTree}. Such a node is a DISPLAY-ONLY container: its

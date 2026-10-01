@@ -4,9 +4,12 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Alert from '@mui/material/Alert';
 
 import {
+  type ExtendedReleaseRead,
   type ExtendedSpaceRead,
   type ExtendedTargetRead,
   type ExtendedUnitRead,
+  type ListAllReleasesApiArg,
+  type ListAllUnitsApiArg,
   type MutationConflict,
   type ResourceProtection,
   type TargetRead,
@@ -28,6 +31,9 @@ import Slide from '@mui/material/Slide';
 import { styled } from '@mui/material/styles';
 
 import { ComponentFlowGraph } from './flow-graph/ComponentFlowGraph';
+import { FlowViewControl, type FlowViewControlValue } from './flow-graph/FlowViewControl';
+import type { ComponentDisplayMode, SelectedApp, ViewParamsPatch } from './appTypes';
+import { ComponentOverviewMatrix } from './ComponentOverviewMatrix';
 import type { NodeUnitSummary } from './flow-graph/DeploymentFlowNode';
 import { componentTheme } from './componentTheme';
 import { ComponentFlowGraphSkeleton } from './ComponentFlowGraphSkeleton';
@@ -37,6 +43,8 @@ import { useRevisionDataMap, useUnitDataMap, useUploadUnitData } from '@/hooks/u
 import { buildAllApplyEntries, buildUpgradeEntries, buildVariationEntries } from './entryBuilders';
 import { type SetValueResult } from './configParser';
 import { arrowKey, buildComponentData } from './componentData';
+import { batchIds } from './componentGroupFields';
+import { useBatchedQuery } from './useBatchedQuery';
 import { isYamlToolchain, useSetAttributesMutation } from './useSetAttributesMutation';
 import { type OverallPhase, useCreateVariantMutation } from './useCreateVariantMutation';
 import type { ComposerSubmitValues } from './flow-graph/ComposerNode';
@@ -49,8 +57,26 @@ import { useReleaseActions } from './useReleaseActions';
 // ============================================================================
 
 interface AppComponentViewProps {
+  /** The open node graph's Space set — every Deployment under the clicked
+   * tree node, descendants included. May span more than one Component. */
   spaces: ExtendedSpaceRead[];
+  /**
+   * Every Space on the page that belongs to a Component — the variant composer's
+   * sibling-name check needs a Component's full Deployment list, which can
+   * include Deployments the current node graph excludes (e.g. grouped by
+   * Variant, so a sibling variant sits in a different bucket / a different
+   * node graph entirely).
+   */
+  componentSpaces: ExtendedSpaceRead[];
   targets: ExtendedTargetRead[];
+  /**
+   * Identity of the open node graph, replacing a single Component name for
+   * the switch-reset effect and `ComponentFlowGraph`'s `structuralKey` — a
+   * mixed-Component node graph has no one Component name. Built by
+   * `AppsComponentLayout` from whichever URL form is active (`?app=<name>`
+   * or `?group=<path>`).
+   */
+  graphKey: string;
   /** Controlled selection state (lifted to parent for tree nav) */
   selectedDeploymentIds?: Set<string>;
   onSelectedDeploymentIdsChange?: (ids: Set<string>) => void;
@@ -71,6 +97,19 @@ interface AppComponentViewProps {
    * click still shouldn't re-pan the graph).
    */
   initialFocusDeploymentId?: string;
+  /**
+   * Whether this node graph shows the flow canvas or the Dashboard — CONTROLLED
+   * by `AppsComponentLayout`, derived from `?display=`.
+   */
+  displayMode: ComponentDisplayMode;
+  /**
+   * The ONE write path for the view's URL params. Built on
+   * `AppsComponentLayout`'s `updateParams`, so every gesture here that needs
+   * to change more than one of them atomically does so in a single URL write.
+   */
+  onViewParamsChange: (patch: ViewParamsPatch) => void;
+  /** Fires when a Dashboard tile is clicked — opens that Component's own graph, same as the Overview root's tiles. */
+  onComponentSelect: (app: SelectedApp) => void;
 }
 
 // ============================================================================
@@ -82,6 +121,19 @@ const DEFAULT_SIDE_PANE_WIDTH = 650;
 
 /** Stable empty units list, so the `?? []` fallback keeps one identity. */
 const EMPTY_UNITS: ExtendedUnitRead[] = [];
+
+/** Stable empty ID batch, so a graph with no Spaces yet doesn't churn `whereClause`'s memo. */
+const EMPTY_STRING_ARRAY: string[] = [];
+
+// Configuration is not a selectable field any more -- it is read from the data
+// endpoints -- so this asks only for the metadata, plus the Revision ids the data
+// and mutation-source reads are keyed by. Shared by every units-fetching batch
+// (the primary SpaceID batch, extra SpaceID batches, and the upstream-outside-set
+// UnitID lookup) so they all narrow the payload identically.
+const UNITS_QUERY_SELECT =
+  'UnitID,Slug,SpaceID,TargetID,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ToolchainType,DataHash,DataSize,'
+  + 'HeadRevision.RevisionID,HeadRevision.CreatedAt,HeadRevision.Description,LastReleasedRevision.RevisionID';
+const UNITS_QUERY_INCLUDE = 'SpaceID,TargetID,UpstreamUnitID,HeadRevisionNum,LastReleasedRevisionNum';
 
 // ============================================================================
 // STYLED COMPONENTS
@@ -129,7 +181,7 @@ const LoadingContainer = styled(Box)({
 // COMPONENT
 // ============================================================================
 
-export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: controlledSelectedIds, onSelectedDeploymentIdsChange, compareDeploymentIds: controlledCompareIds, onCompareSelectionChange, initialFocusDeploymentId }: AppComponentViewProps) => {
+export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphKey, selectedDeploymentIds: controlledSelectedIds, onSelectedDeploymentIdsChange, compareDeploymentIds: controlledCompareIds, onCompareSelectionChange, initialFocusDeploymentId, displayMode, onViewParamsChange, onComponentSelect }: AppComponentViewProps) => {
   // ── State ──
   const EMPTY_SET = useMemo(() => new Set<string>(), []);
   const selectedDeploymentIds = controlledSelectedIds ?? EMPTY_SET;
@@ -184,38 +236,45 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
   composerPhaseRef.current = composerVariant.overallPhase;
   const graphPaneRef = useRef<HTMLDivElement>(null);
 
-  // Derive component name from spaces (all spaces share the same Component)
-  const { slugById } = useComponentSlugs();
-  const appName = useMemo(
-    () => spaceComponentSlug(spaces.find((s) => s.Space?.ComponentID)?.Space, slugById),
-    [spaces, slugById],
+  // `displayMode` is a CONTROLLED prop — the URL (via AppsComponentLayout) is
+  // the sole source of truth, no localStorage fallback. `FlowViewControl`'s
+  // two segments each map to one write: Dashboard sets `display`; Graph
+  // clears it — that's the only way back to the canvas once Dashboard is open.
+  const handleFlowViewControlChange = useCallback(
+    (next: FlowViewControlValue) => {
+      onViewParamsChange({ display: next === 'dashboard' ? 'dashboard' : null });
+    },
+    [onViewParamsChange],
   );
 
-  // Detect a deployment/app switch (the graph's structure changes and the flow
+  // Detect a node-graph switch (the graph's structure changes and the flow
   // graph re-fits to view). On that render the side pane must vanish *instantly*
   // with no Slide exit transition: an animating, still-on-screen pane steals
   // layout width, so fit-to-view would measure a too-small viewport and leave
-  // the new graph mis-zoomed. A plain close/deselect (same app) keeps the
-  // normal animated exit. We compare against the previous appName during render
-  // (ahead of the graph's fit-to-view effects) so the pane is already zero-width
-  // when fit-to-view runs. The ref is updated in a post-commit effect, not during
-  // render: under StrictMode render runs twice, and mutating the ref in render
-  // would make the second pass read the new value and compute isAppSwitch=false,
+  // the new graph mis-zoomed. A plain close/deselect (same graph) keeps the
+  // normal animated exit. `graphKey` (not a Component name — a node graph can
+  // span several Components) is what identifies "the same graph" here; we
+  // compare against the previous one during render (ahead of the graph's
+  // fit-to-view effects) so the pane is already zero-width when fit-to-view
+  // runs. The ref is updated in a post-commit effect, not during render:
+  // under StrictMode render runs twice, and mutating the ref in render would
+  // make the second pass read the new value and compute isGraphSwitch=false,
   // animating the pane anyway. Updating post-commit keeps both render passes
-  // reading the still-old value, so isAppSwitch is correct in dev and prod.
-  const prevAppNameRef = useRef(appName);
-  const isAppSwitch = prevAppNameRef.current !== appName;
+  // reading the still-old value, so isGraphSwitch is correct in dev and prod.
+  const prevGraphKeyRef = useRef(graphKey);
+  const isGraphSwitch = prevGraphKeyRef.current !== graphKey;
 
   useEffect(() => {
-    prevAppNameRef.current = appName;
-    // Clear per-app dry-run state on app switch so stale data from the previous
-    // app never leaks into the new one. Both accumulate across app switches
-    // (unit IDs don't collide, but memory grows unboundedly in long sessions).
+    prevGraphKeyRef.current = graphKey;
+    // Clear per-graph dry-run state on a graph switch so stale data from the
+    // previous graph never leaks into the new one. Both accumulate across
+    // switches (unit IDs don't collide, but memory grows unboundedly in long
+    // sessions).
     setDryRunData(new Map());
     fetchedDryRunIds.current = new Set();
-    // Close any open variant composer when switching apps.
+    // Close any open variant composer when switching graphs.
     setComposerParentId(null);
-  }, [appName, isAppSwitch]);
+  }, [graphKey, isGraphSwitch]);
 
   const selectedSpaceUrl = useMemo(() => {
     const selectedId = selectedDeploymentIds.values().next().value;
@@ -234,9 +293,23 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
     [spaces],
   );
 
+  // A node graph (any tree node, not just a whole Component) can hold more
+  // Spaces than fit in one GET query string (`internal`'s 8192-byte limit,
+  // ~39 bytes per quoted UUID). Split into ID_BATCH_SIZE-sized batches; the
+  // FIRST batch stays a normal, cache-backed, polling `useListAllUnitsQuery`
+  // call — for the common case (one batch) this is the ONLY units query a
+  // single-Component graph ever issues. Batches beyond the first (a node
+  // graph over ID_BATCH_SIZE Spaces — rare) are each their own subscribed
+  // query too, via `useBatchedQuery` below.
+  const spaceIdBatches = useMemo(() => batchIds(spaceIds), [spaceIds]);
+  const primarySpaceIdBatch = spaceIdBatches[0] ?? EMPTY_STRING_ARRAY;
+
   const whereClause = useMemo(
-    () => (spaceIds.length > 0 ? `SpaceID IN (${spaceIds.map((id) => `'${id}'`).join(',')})` : ''),
-    [spaceIds],
+    () =>
+      primarySpaceIdBatch.length > 0
+        ? `SpaceID IN (${primarySpaceIdBatch.map((id) => `'${id}'`).join(',')})`
+        : '',
+    [primarySpaceIdBatch],
   );
 
   // Use currentData (not data) so that switching components doesn't briefly
@@ -274,16 +347,11 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
   } = useListAllUnitsQuery(
     {
       where: whereClause,
-      // Configuration is not a selectable field any more -- it is read from the data
-      // endpoints -- so this asks only for the metadata, plus the Revision ids the data
-      // and mutation-source reads are keyed by.
-      select:
-        'UnitID,Slug,SpaceID,TargetID,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ToolchainType,DataHash,DataSize,'
-        + 'HeadRevision.RevisionID,HeadRevision.CreatedAt,HeadRevision.Description,LastReleasedRevision.RevisionID',
-      include: 'SpaceID,TargetID,UpstreamUnitID,HeadRevisionNum,LastReleasedRevisionNum',
+      select: UNITS_QUERY_SELECT,
+      include: UNITS_QUERY_INCLUDE,
     },
     {
-      skip: spaceIds.length === 0,
+      skip: primarySpaceIdBatch.length === 0,
       pollingInterval: (hasPendingGatesRef.current || upgradingDeploymentIds.size > 0) ? 2000 : 0,
       // No refetchOnFocus: this query can return tens of MB for large units, so
       // re-fetching (and re-parsing / re-walking) the whole payload on every
@@ -292,6 +360,37 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
       // commits) are covered by the conditional pollingInterval above.
     },
   );
+
+  // Batches beyond the first (a node graph over ID_BATCH_SIZE Spaces — rare):
+  // each a REAL subscribed useListAllUnitsQuery call (via useBatchedQuery),
+  // not an imperative one-shot fetch into local state — so a mutation
+  // elsewhere that invalidates the Unit tag refreshes these too, and the
+  // same 2s gate/upgrade poll as the primary batch reaches them. `resetKey:
+  // graphKey` drops accumulated rows on a graph switch so the previous
+  // graph's Spaces 51+ don't linger while the new graph's batches load.
+  const unitsPollingInterval = (hasPendingGatesRef.current || upgradingDeploymentIds.size > 0) ? 2000 : 0;
+  const extraSpaceIdBatchArgs = useMemo(
+    () =>
+      spaceIdBatches.slice(1).map(
+        (batch): ListAllUnitsApiArg => ({
+          where: `SpaceID IN (${batch.map((id) => `'${id}'`).join(',')})`,
+          select: UNITS_QUERY_SELECT,
+          include: UNITS_QUERY_INCLUDE,
+        }),
+      ),
+    [spaceIdBatches],
+  );
+  const {
+    data: extraBatchUnits,
+    isLoading: extraBatchesLoading,
+    isError: extraBatchesError,
+    errors: extraBatchesErrors,
+    subscriptions: extraUnitsSubscriptions,
+  } = useBatchedQuery<ListAllUnitsApiArg, ExtendedUnitRead>(extraSpaceIdBatchArgs, useListAllUnitsQuery, {
+    pollingInterval: unitsPollingInterval,
+    resetKey: graphKey,
+  });
+
   /**
    * Memoised so the `?? []` fallback does not hand every downstream `useMemo` a
    * brand-new array identity on each render — the project's standard fix for
@@ -299,7 +398,10 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
    * separate memos over this list recompute every render even when the units
    * have not changed.
    */
-  const allUnits = useMemo(() => currentAllUnits ?? EMPTY_UNITS, [currentAllUnits]);
+  const allUnits = useMemo(
+    () => (extraBatchUnits.length > 0 ? [...(currentAllUnits ?? EMPTY_UNITS), ...extraBatchUnits] : (currentAllUnits ?? EMPTY_UNITS)),
+    [currentAllUnits, extraBatchUnits],
+  );
 
   // Configuration is read from the data endpoints, in one request for everything on screen,
   // and handed to the entry builders as accessors. The Revisions are the head and
@@ -318,8 +420,6 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
     () => ({ unitData: unitDataFor, revisionData: revisionDataFor }),
     [unitDataFor, revisionDataFor],
   );
-  const unitsLoading =
-    spaceIds.length > 0 && (unitsInitialLoading || (currentAllUnits === undefined && unitsFetching));
   // Drives a subtle in-place "refreshing" indicator in the side pane for
   // post-mutation invalidation / settle-window polling refetches. Whenever
   // this component reaches the side-pane render path below, unitsLoading is
@@ -411,14 +511,74 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
   }, [selectedDeploymentIds, deploymentSuccessMessages]);
 
   // ── Derived data ──
+  // A node graph can hold a downstream Space without its upstream in the set
+  // (e.g. grouped by Variant, or a Component whose base lives in another
+  // Component) — without this lookup that Unit reads as "not upgradable" and
+  // its upgrade diff is empty: a WRONG answer, not a missing one. Collect
+  // UpstreamUnitIDs not already present, batch-fetch them, and merge into
+  // `unitById` ONLY (never into `allUnits`): they supply the upstream
+  // HEAD/revision ids `buildUpgradeEntries` needs, but create no graph node
+  // and no edge — the downstream node just becomes a root (no incoming arrow).
+  const missingUpstreamIds = useMemo(() => {
+    const knownIds = new Set(allUnits.map((u) => u.Unit?.UnitID).filter(Boolean) as string[]);
+    const missing = new Set<string>();
+    for (const u of allUnits) {
+      const upstreamId = u.Unit?.UpstreamUnitID;
+      if (upstreamId && !knownIds.has(upstreamId)) missing.add(upstreamId);
+    }
+    return Array.from(missing).sort();
+  }, [allUnits]);
+
+  // Each batch is a REAL subscribed useListAllUnitsQuery call (same reasoning
+  // as the extra Space-ID batches above): a mutation elsewhere that
+  // invalidates the Unit tag must refresh an upstream-only lookup too, and a
+  // failed batch must be visible, not silently read as "not upgradable"
+  // with no explanation.
+  const upstreamIdBatchArgs = useMemo(
+    () =>
+      batchIds(missingUpstreamIds).map(
+        (batch): ListAllUnitsApiArg => ({
+          where: `UnitID IN (${batch.map((id) => `'${id}'`).join(',')})`,
+          select: UNITS_QUERY_SELECT,
+          include: UNITS_QUERY_INCLUDE,
+        }),
+      ),
+    [missingUpstreamIds],
+  );
+  const {
+    data: upstreamOnlyUnits,
+    isLoading: upstreamBatchesLoading,
+    isError: upstreamBatchesError,
+    errors: upstreamBatchesErrors,
+    subscriptions: upstreamUnitsSubscriptions,
+  } = useBatchedQuery<ListAllUnitsApiArg, ExtendedUnitRead>(upstreamIdBatchArgs, useListAllUnitsQuery, {
+    pollingInterval: unitsPollingInterval,
+    resetKey: graphKey,
+  });
+
+  // Waits for every batch (primary, extra Space-ID, and upstream-outside-set)
+  // to settle before the graph paints — a partial paint would show correct
+  // Spaces 1-50 next to Spaces 51+ (or an upstream lookup) that haven't
+  // resolved yet, and settle at an inconsistent moment per batch.
+  const unitsLoading =
+    spaceIds.length > 0 &&
+    (unitsInitialLoading ||
+      (currentAllUnits === undefined && unitsFetching) ||
+      extraBatchesLoading ||
+      upstreamBatchesLoading);
+
   const unitById = useMemo(() => {
     const m = new Map<string, ExtendedUnitRead>();
     for (const u of allUnits) {
       const uid = u.Unit?.UnitID;
       if (uid) m.set(uid, u);
     }
+    for (const u of upstreamOnlyUnits) {
+      const uid = u.Unit?.UnitID;
+      if (uid && !m.has(uid)) m.set(uid, u);
+    }
     return m;
-  }, [allUnits]);
+  }, [allUnits, upstreamOnlyUnits]);
 
   // Poll while any unit has gates still being evaluated by the resolve queue
   const computedHasPendingGates = useMemo(
@@ -566,19 +726,36 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
       });
     }
 
-    const where = `UnitID IN (${upgradeableUnitIds.map((id) => `'${id}'`).join(',')})`;
-    dryRunPatch({
-      upgrade: true,
-      dryRun: true,
-      where,
-      // A dry run stores nothing, so the configuration it would produce comes back on the
-      // response only when asked for. It is what this preview diffs against.
-      include: 'ConfigData',
-      // @ts-expect-error RTK Query merge-patch+json content type requires pre-stringified body
-      body: JSON.stringify({}),
-    })
-      .unwrap()
-      .then((results: UnitCreateOrUpdateResponseRead[]) => {
+    // `where` is a URL query param even on this PATCH endpoint (the
+    // generated client puts it in `params`, not the body), so a wide graph
+    // can overflow the same 8192-byte limit as any GET — split into batches
+    // and merge. Each batch is an independent, self-contained dry run (one
+    // unit's upgrade preview never depends on another's), so `Promise.allSettled`
+    // applies every batch that succeeds even if a sibling batch fails.
+    Promise.allSettled(
+      batchIds(upgradeableUnitIds).map((batch) =>
+        dryRunPatch({
+          upgrade: true,
+          dryRun: true,
+          where: `UnitID IN (${batch.map((id) => `'${id}'`).join(',')})`,
+          // A dry run stores nothing, so the configuration it would produce comes back on the
+          // response only when asked for. It is what this preview diffs against.
+          include: 'ConfigData',
+          // @ts-expect-error RTK Query merge-patch+json content type requires pre-stringified body
+          body: JSON.stringify({}),
+        }).unwrap(),
+      ),
+    ).then((settled) => {
+      const results: UnitCreateOrUpdateResponseRead[] = [];
+      let anyFailed = false;
+      for (const outcome of settled) {
+        if (outcome.status === 'fulfilled') {
+          results.push(...outcome.value);
+        } else {
+          anyFailed = true;
+        }
+      }
+      if (results.length > 0) {
         setDryRunData((prev) => {
           const next = new Map(prev);
           for (const r of results) {
@@ -596,22 +773,24 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
           }
           return next;
         });
-      })
-      .catch((err: unknown) => {
-        console.warn('Dry-run upgrade preview failed:', err);
-        const detail = getApiErrorMessage(err);
+      }
+      if (anyFailed) {
+        const failedReason = settled.find(
+          (o): o is PromiseRejectedResult => o.status === 'rejected',
+        )?.reason;
+        console.warn('Dry-run upgrade preview failed:', failedReason);
+        const detail = getApiErrorMessage(failedReason);
         const entry = { title: 'Upgrade preview failed', detail, timestamp: new Date() };
         setErrorsForDeployments(selectedDeploymentIdsRef.current, entry);
-      })
-      .finally(() => {
-        if (showLoading) {
-          setDryRunPendingIds((prev) => {
-            const next = new Set(prev);
-            for (const id of newIds) next.delete(id);
-            return next;
-          });
-        }
-      });
+      }
+      if (showLoading) {
+        setDryRunPendingIds((prev) => {
+          const next = new Set(prev);
+          for (const id of newIds) next.delete(id);
+          return next;
+        });
+      }
+    });
   }, [upgradeableUnitIds, dryRunPatch, setErrorsForDeployments]);
 
   const isDryRunLoading = dryRunPendingIds.size > 0;
@@ -723,24 +902,29 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
     () => releaseEnabledSpaceIds.slice().sort().join(','),
     [releaseEnabledSpaceIds],
   );
-  const latestReleasesArg = useMemo(
-    () => ({
-      // Published = true excludes withdrawn Releases — Withdraw only clears
-      // this flag, it doesn't delete the row (internal/core/release_core.go
-      // Withdraw vs Delete). Without this filter a withdrawn Release could
-      // still read as "latest" on the node's rel-N chip even though the
-      // pane's own release history (useReleaseActions.ts, same filter)
-      // correctly no longer shows it as active.
-      where: releaseEnabledSpaceIdsKey
-        ? `SpaceID IN (${releaseEnabledSpaceIdsKey.split(',').map((id) => `'${id}'`).join(',')}) AND Published = true`
-        : '',
-      select: 'ReleaseID,ReleaseNum,SpaceID,CreatedAt',
-    }),
+  // A whole-org node can have more release-enabled Spaces than fit in one
+  // GET query string, same reasoning as the units batching above — split
+  // and merge rather than risk a silently-truncated `where` clause.
+  const releaseSpaceIdBatchArgs = useMemo(
+    () =>
+      batchIds(releaseEnabledSpaceIdsKey ? releaseEnabledSpaceIdsKey.split(',') : []).map(
+        (batch): ListAllReleasesApiArg => ({
+          // Published = true excludes withdrawn Releases — Withdraw only clears
+          // this flag, it doesn't delete the row (internal/core/release_core.go
+          // Withdraw vs Delete). Without this filter a withdrawn Release could
+          // still read as "latest" on the node's rel-N chip even though the
+          // pane's own release history (useReleaseActions.ts, same filter)
+          // correctly no longer shows it as active.
+          where: `SpaceID IN (${batch.map((id) => `'${id}'`).join(',')}) AND Published = true`,
+          select: 'ReleaseID,ReleaseNum,SpaceID,CreatedAt',
+        }),
+      ),
     [releaseEnabledSpaceIdsKey],
   );
-  const { data: allReleasesData } = useListAllReleasesQuery(latestReleasesArg, {
-    skip: releaseEnabledSpaceIdsKey === '',
-  });
+  const { data: allReleasesData, subscriptions: releaseSubscriptions } = useBatchedQuery<
+    ListAllReleasesApiArg,
+    ExtendedReleaseRead
+  >(releaseSpaceIdBatchArgs, useListAllReleasesQuery, { resetKey: graphKey });
   const latestReleaseBySpaceId = useMemo(() => {
     const m = new Map<string, { num: number; createdAt?: string }>();
     for (const r of allReleasesData ?? []) {
@@ -794,9 +978,31 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
     [targets],
   );
 
-  const siblingVariantNames = useMemo(() => getSiblingVariantNames(spaces), [spaces]);
+  // A mixed-Component node graph has no one Component, so "create variant"
+  // derives its target Component from the PARENT node the composer is
+  // anchored to, not from the whole graph. Sibling names come from EVERY
+  // page Space of that Component (`componentSpaces`, unfiltered), not from
+  // `spaces` (the current node graph) — a sibling variant can sit in a
+  // different bucket, or a different node graph entirely, when grouped by
+  // something other than Component.
+  const { slugById } = useComponentSlugs();
+  const composerParentComponent = useMemo(() => {
+    if (!composerParentId) return null;
+    const parentSpace = spaces.find((s) => s.Space?.SpaceID === composerParentId);
+    return spaceComponentSlug(parentSpace?.Space, slugById) ?? null;
+  }, [composerParentId, spaces, slugById]);
 
-  const componentSlug = useMemo(() => sanitizeVariantSlug(appName ?? ''), [appName]);
+  const siblingVariantNames = useMemo(() => {
+    if (!composerParentComponent) return EMPTY_STRING_ARRAY;
+    return getSiblingVariantNames(
+      componentSpaces.filter((s) => spaceComponentSlug(s.Space, slugById) === composerParentComponent),
+    );
+  }, [composerParentComponent, componentSpaces, slugById]);
+
+  const componentSlug = useMemo(
+    () => sanitizeVariantSlug(composerParentComponent ?? ''),
+    [composerParentComponent],
+  );
 
   // Compute upstream info for the composer's current parent. Unlike the old
   // pane, the composer is a ReactFlow node that unmounts the instant
@@ -1321,14 +1527,47 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
   });
 
 
-  // ── Error state ──
-  if (unitsError) {
+  // ── Dashboard view ──
+  // Renders before the Units error/loading gates below: the Dashboard is the
+  // overview (KPI header, matrix, activity feed) scoped to this node's own
+  // `spaces` — the same component the Overview root renders, with a narrower
+  // Space set — and needs none of this view's own Units batches to do it.
+  // `FlowViewControl` stays mounted here too (not just in the graph branch
+  // further down) so Graph stays clickable to leave the Dashboard.
+  if (displayMode === 'dashboard') {
     return (
-      <LoadingContainer>
-        <Alert severity="error">
-          {getApiErrorMessage(unitsQueryError) || 'Failed to load units. Please try again.'}
-        </Alert>
-      </LoadingContainer>
+      <Container>
+        <FlowViewControl value="dashboard" onChange={handleFlowViewControlChange} />
+        <ComponentOverviewMatrix spaces={spaces} onComponentSelect={onComponentSelect} />
+      </Container>
+    );
+  }
+
+  // Mounted in every branch below (error, loading, success) so the batch
+  // subscriptions stay alive regardless of which one renders — an extra or
+  // upstream batch erroring or still loading must not unmount and lose its
+  // own subscription's cache/poll just because the PRIMARY batch's state
+  // happens to gate a different branch this render.
+  const batchSubscriptions = (
+    <>
+      {extraUnitsSubscriptions}
+      {upstreamUnitsSubscriptions}
+      {releaseSubscriptions}
+    </>
+  );
+
+  // ── Error state ──
+  if (unitsError || extraBatchesError || upstreamBatchesError) {
+    const firstError = unitsQueryError ?? extraBatchesErrors[0] ?? upstreamBatchesErrors[0];
+    return (
+      <>
+        {batchSubscriptions}
+        <LoadingContainer>
+          <Alert severity="error">
+            {getApiErrorMessage(firstError) || 'Failed to load units. Please try again.'}
+          </Alert>
+        </LoadingContainer>
+      </>
     );
   }
 
@@ -1337,23 +1576,32 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
   // (`unitsLoading` is isLoading / first-fetch, never a background refetch), so
   // the skeleton cannot flash over an already-painted graph. No side-pane
   // placeholder: the pane only mounts after a node is selected, and its Slide
-  // is driven by `prevAppNameRef` — nothing here participates in that path.
+  // is driven by `prevGraphKeyRef` — nothing here participates in that path.
   if (unitsLoading) {
     return (
-      <Container>
-        <GraphPane>
-          <GraphArea>
-            <ComponentFlowGraphSkeleton />
-          </GraphArea>
-        </GraphPane>
-      </Container>
+      <>
+        {batchSubscriptions}
+        <Container>
+          <GraphPane>
+            <GraphArea>
+              <ComponentFlowGraphSkeleton />
+            </GraphArea>
+          </GraphPane>
+        </Container>
+      </>
     );
   }
 
   return (
-    <Container>
+    <>
+      {batchSubscriptions}
+      <Container>
       <GraphPane ref={graphPaneRef}>
         <GraphArea>
+          {/* Inside the canvas column, not over the whole view: the side pane
+              sits to the right of it, and a control floated over the full
+              width would cover the pane header's buttons (the settings cog). */}
+          <FlowViewControl value="graph" onChange={handleFlowViewControlChange} />
           <ComponentFlowGraph
             deployments={deployments}
             stages={stages}
@@ -1362,7 +1610,7 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
             onDeploymentCompareToggle={handleDeploymentCompareToggle}
             onDeploymentToggle={handleDeploymentToggle}
             onOpenTab={handleOpenTab}
-            appName={appName}
+            graphKey={graphKey}
             errorDeploymentIds={errorDeploymentIds}
             unitSummariesByDeployment={unitSummariesByDeployment}
             upgradingDeploymentIds={upgradingDeploymentIds}
@@ -1413,7 +1661,7 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
             unmountOnExit
             // On an app/deployment switch, exit instantly (timeout 0) so the pane
             // is gone before the new graph runs fit-to-view; otherwise animate.
-            timeout={isAppSwitch ? 0 : undefined}
+            timeout={isGraphSwitch ? 0 : undefined}
           >
             <div style={{ position: 'absolute', inset: 0, display: 'flex' }}>
               <ComponentSidePane
@@ -1463,6 +1711,7 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
         </Box>
       </GraphPane>
     </Container>
+    </>
   );
 });
 

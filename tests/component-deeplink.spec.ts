@@ -89,8 +89,10 @@ test.describe('components view deeplinking', () => {
   });
 
   test('a bookmarked ?mode=custom link still renders the graph', async ({ page }) => {
-    // Saved links can carry a `mode` param the page does not read. It must
-    // be ignored: the graph renders as normal, with no layout toggle.
+    // Saved links can carry a `mode` param the page does not read any more
+    // (Custom layout mode was removed). It must be ignored: the graph
+    // renders as normal, with no "Custom" segment on the Graph/Dashboard
+    // toggle.
     await page.goto(`/components?app=${encodeURIComponent(APP_LABEL)}&mode=custom`);
     await page
       .waitForSelector('[role="progressbar"]', { state: 'hidden', timeout: 20000 })
