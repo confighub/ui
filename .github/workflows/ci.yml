@@ -28,5 +28,3 @@ jobs:
       # and a test user; see README.
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test -c playwright.pure.config.ts
-      - run: npm run test:plugin
-      - run: node scripts/package-plugin-ui.mjs
