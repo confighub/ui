@@ -94,7 +94,6 @@ export const UNIT_EXTRA_FIELDS = [
   'CreatedAt',
   'UpdatedAt',
   'LastChangeDescription',
-  'BridgeWorkerID',
 ] as const;
 export type UnitExtraField = (typeof UNIT_EXTRA_FIELDS)[number];
 

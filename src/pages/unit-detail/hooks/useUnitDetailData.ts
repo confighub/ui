@@ -22,7 +22,6 @@ import {
   useListLinksQuery,
 } from '@confighub/rtk-query';
 import { type RevisionRow } from '@/types';
-import { TOOLCHAIN_ANY } from '@/utility/constants';
 import { isIDInvalid } from '@/utility/validation-functions';
 
 import { LinkRow } from '../components/links-table/LinksTable';
@@ -134,11 +133,8 @@ export const useUnitDetailData = ({ id, spaceID, refresh }: IUseUnitDetailDataPr
   );
 
   const { targets = [] } = useListAllTargetsQuery(
+    {},
     {
-      where: `ToolchainType IN ('${currentUnit?.ToolchainType}', '${TOOLCHAIN_ANY}')`,
-    },
-    {
-      skip: !currentUnit?.ToolchainType,
       selectFromResult: ({ data }) => ({
         targets:
           data?.map((et) => et.Target).filter((t): t is TargetRead => t !== undefined) || [],

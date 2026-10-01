@@ -193,8 +193,6 @@ export function getCellValue(eu: ExtendedUnitRead, column: string): string {
       return eu.UpstreamUnit?.Slug ?? unit.UpstreamUnitID ?? '';
     case 'UpstreamSpaceSlug':
       return eu.UpstreamSpace?.Slug ?? unit.UpstreamSpaceID ?? '';
-    case 'BridgeWorkerID':
-      return unit.BridgeWorkerID ?? '';
     case 'ProviderType':
       return unit.ProviderType ?? '';
     case 'DisplayName':

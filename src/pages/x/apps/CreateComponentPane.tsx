@@ -250,11 +250,6 @@ interface DraftDoc {
 
 type UnitsMode = 'paste' | 'folder' | 'oci' | 'manual';
 
-// Target ProviderTypes that are never a real deploy destination: Noop is a
-// test/no-op bridge, None is the placeholder AppConfig Units are stamped
-// with. Excluded from the downstream-variant target picker.
-const NON_DEPLOYABLE_PROVIDER_TYPES = new Set(['Noop', 'None']);
-
 /** Summary of the most recent folder pick/drop, surfaced as a status line. */
 interface FolderNotice {
   filtered: number;
@@ -475,28 +470,13 @@ export function CreateComponentPane({
   // All org targets for the optional "create deployment variants" card on the
   // Review step. `ExtendedTargetRead[]` → `TargetRead[]`, mirroring the
   // established unwrap in useUnitForm.ts — DownstreamTargetPicker's contract
-  // is fixed to the bare `TargetRead`. Filtered to targets someone could
-  // plausibly deploy a variant to:
-  //   - ProviderType excludes Noop (a test/no-op bridge, not real infra) and
-  //     None (the placeholder provider AppConfig Units are stamped with —
-  //     never a deploy destination).
-  //   - A Target that names a worker is offered only while that worker is
-  //     Ready. NotReady/Unresponsive/Disconnected — or gone stale enough that
-  //     no worker record still matches — means a variant created against it
-  //     wouldn't deploy anywhere live. A Target that names no worker is a pull
-  //     destination with nothing to be Ready, so it is always offered.
-  // `include: 'BridgeWorkerID'` is what makes `et.BridgeWorker` populate at
-  // all (see target-list/TargetListPage.tsx for the same pattern).
+  // is fixed to the bare `TargetRead`. Every Target is a pull destination, so
+  // every one is offered.
   const { targets, isLoading: targetsLoading } = useListAllTargetsQuery(
-    { include: 'BridgeWorkerID' },
+    {},
     {
       selectFromResult: ({ data, isLoading }) => ({
-        targets:
-          data
-            ?.filter((et) => !et.Target?.BridgeWorkerID || et.BridgeWorker?.Condition === 'Ready')
-            .map((et) => et.Target)
-            .filter((t): t is TargetRead => t !== undefined && !NON_DEPLOYABLE_PROVIDER_TYPES.has(t.ProviderType)) ??
-          [],
+        targets: data?.map((et) => et.Target).filter((t): t is TargetRead => t !== undefined) ?? [],
         isLoading,
       }),
     },

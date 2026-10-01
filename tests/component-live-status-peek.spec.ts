@@ -47,7 +47,6 @@ test.describe('component view live-status peek', () => {
   test.use({ storageState: 'authentication.json' });
 
   const spaceSlug = `e2e-live-${RandomSlugGenerator.randomSlugName()}`;
-  const workerSlug = `e2e-live-worker-${RandomSlugGenerator.randomSlugName()}`;
   const targetSlug = `${spaceSlug}-tgt`;
 
   let spaceId: string;
@@ -92,36 +91,10 @@ test.describe('component view live-status peek', () => {
       },
     });
 
-    // A Target (reached via a Unit's TargetID) is what makes the Space a
-    // Deployment rather than a Base — `buildComponentData` drops live status
-    // entirely for a Base, so without one no chip renders at all.
-    const workerResp = await hubApi.post(`/api/space/${spaceId}/bridge_worker`, {
-      params: { allow_exists: 'true' },
-      data: {
-        Slug: workerSlug,
-        ProvidedInfo: {
-          BridgeWorkerInfo: {
-            SupportedConfigTypes: [
-              { ProviderType: 'Kubernetes', ToolchainType: 'Kubernetes/YAML', LiveStateType: 'Kubernetes/YAML' },
-            ],
-          },
-        },
-      },
-    });
-    if (!workerResp.ok()) {
-      throw new Error(
-        `Failed to create bridge worker: ${workerResp.status()} ${await workerResp.text()}`,
-      );
-    }
-    const workerData = (await workerResp.json()) as { BridgeWorkerID: string };
-
     const targetResp = await hubApi.post(`/api/space/${spaceId}/target`, {
       params: { allow_exists: 'true' },
       data: {
         Slug: targetSlug,
-        BridgeWorkerID: workerData.BridgeWorkerID,
-        ToolchainType: 'Kubernetes/YAML',
-        ProviderType: 'Kubernetes',
       },
     });
     if (!targetResp.ok()) {

@@ -48,7 +48,6 @@ export interface ResourceViewRow {
   UnitCreatedAt?: string;
   UnitUpdatedAt?: string;
   UnitLastChangeDescription?: string;
-  UnitBridgeWorkerID?: string;
   UnitLabels: Record<string, string>;
   // ── Space context ──────────────────────────────────────────────────────────
   SpaceID: string;

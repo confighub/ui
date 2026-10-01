@@ -42,7 +42,6 @@ export type FilterFieldType =
   | 'lastMessage'
   | 'ipAddress'
   // Target-specific fields
-  | 'providerType'
   | 'targetId'
   // Trigger-specific fields
   | 'event'

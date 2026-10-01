@@ -176,8 +176,6 @@ function getResourceCellValue(row: ResourceViewRow, column: string): string {
         return formatAbsolute(row.UnitUpdatedAt);
       case 'LastChangeDescription':
         return row.UnitLastChangeDescription ?? '';
-      case 'BridgeWorkerID':
-        return row.UnitBridgeWorkerID ?? '';
       case 'Target':
         return row.TargetSlug ?? '';
     }

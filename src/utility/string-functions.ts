@@ -153,24 +153,6 @@ export const getSyncStatusColor = (
   return syncStatusColorMap[status] || 'default';
 };
 
-export interface TargetParameters {
-  KubeContext?: string;
-  WaitTimeout?: string;
-}
-
-export const parseTargetParameters = (parameters: string): TargetParameters => {
-  try {
-    parameters = JSON.parse(parameters);
-    if (!parameters) {
-      return {};
-    }
-    return parameters as TargetParameters;
-  } catch (error) {
-    console.error('Failed to parse target parameters:', error);
-    return {};
-  }
-};
-
 export const parseResourceInfo = (parameters: string): Array<ResourceInfo> => {
   try {
     return JSON.parse(parameters) as Array<ResourceInfo>;

@@ -86,7 +86,7 @@ export interface ComponentSpacesResult {
 // ============================================================================
 
 /**
- * Overlay the summary-only fields (`TargetCountByToolchainType`,
+ * Overlay the summary-only fields (`TotalTargetCount`,
  * `UnreleasedUnitCount`, `GatedUnitCount`, `UpgradableUnitCount`, …) onto the
  * live rows, keeping only the live query's `Space` (Labels/Annotations) as
  * the freshly polled part.

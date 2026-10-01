@@ -427,7 +427,7 @@ export class UnitListPage extends EntityGridFixture {
     if (targetName) {
       await this.page.getByTestId('target-select').click();
       await this.page.waitForSelector('[role="listbox"]');
-      await this.page.getByRole('option', { name: `${targetName} Kubernetes/YAML` }).click();
+      await this.page.getByRole('option', { name: targetName, exact: true }).click();
     }
 
     // Add labels if provided

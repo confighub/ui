@@ -56,7 +56,6 @@ const RESOURCE_WHERE_FIELDS = [
   'Unit.LastReleasedRevisionNum',
   'Unit.UpstreamRevisionNum',
   'Unit.LastChangeDescription',
-  'Unit.BridgeWorkerID',
   'Space.Slug',
   'Space.DisplayName',
   'Space.Labels',

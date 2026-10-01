@@ -2,24 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { buildColumns } from '@/components/data-grid/cells';
-import { KeyValueListCell } from '@/components/entity-data-grid';
 import { ColumnGroup, DynamicGroupConfig } from '@/components/entity-data-grid/column-groups-types';
-import { CenteredTableCell } from '@/components/styled';
 import { ExtendedTargetRead } from '@confighub/rtk-query';
-import { parseTargetParameters } from '@/utility/string-functions';
 
 export const TARGET_COLUMN_GROUPS: ColumnGroup[] = [
   {
     header: 'Core Identity',
     columns: ['Slug', 'TargetID', 'Space', 'SpaceID'],
-  },
-  {
-    header: 'Configuration',
-    columns: ['ProviderType', 'Parameters'],
-  },
-  {
-    header: 'Infrastructure',
-    columns: ['BridgeWorkerSlug', 'BridgeWorkerID'],
   },
   {
     header: 'Timestamps',
@@ -40,13 +29,9 @@ export interface TargetRowItem {
   TargetID: string;
   Space: string;
   SpaceID: string;
-  ProviderType: string;
-  Parameters: string;
   Labels: {
     [key: string]: string;
   };
-  BridgeWorkerID: string;
-  BridgeWorkerSlug: string;
   CreatedAt: string;
   UpdatedAt: string;
   _extendedTarget?: ExtendedTargetRead; // Store original ExtendedTargetRead for callbacks
@@ -80,47 +65,6 @@ export const createTargetStaticColumns = () =>
     SpaceID: {
       type: 'uuid',
       headerName: 'Space ID',
-      minWidth: 300,
-      flex: 1.5,
-    },
-
-    ProviderType: {
-      type: 'string',
-      headerName: 'Provider Type',
-      minWidth: 150,
-      flex: 1,
-    },
-
-    Parameters: {
-      type: 'custom',
-      headerName: 'Parameters',
-      minWidth: 150,
-      flex: 1.5,
-      valueGetter: (row) => row.Parameters,
-      renderCell: (params) => {
-        const parametersObj = parseTargetParameters(params.row.Parameters || '');
-        const parameters = Object.entries(parametersObj)
-          .map(([key, value]) => `${key}=${value}`)
-          .join(', ');
-
-        return (
-          <CenteredTableCell>
-            <KeyValueListCell value={parameters} />
-          </CenteredTableCell>
-        );
-      },
-    },
-
-    BridgeWorkerSlug: {
-      type: 'string',
-      headerName: 'Worker Slug',
-      minWidth: 150,
-      flex: 1.5,
-    },
-
-    BridgeWorkerID: {
-      type: 'uuid',
-      headerName: 'Worker ID',
       minWidth: 300,
       flex: 1.5,
     },

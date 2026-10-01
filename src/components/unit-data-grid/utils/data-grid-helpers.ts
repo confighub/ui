@@ -58,10 +58,6 @@ export interface UnitRowItem {
   DeleteGates?: {
     [key: string]: boolean;
   };
-  // Infrastructure columns
-  BridgeWorkerID?: string;
-  TargetBridgeWorkerID?: string;
-  TargetBridgeWorkerSlug?: string;
   ChangeSetID?: string;
   ChangeSetSlug?: string;
   // Metadata columns
@@ -120,10 +116,6 @@ export const createUnitListRow = (unit: ExtendedUnitRead): UnitRowItem => {
     // Operations & Gates columns
     DestroyGates: unit?.Unit?.DestroyGates || {},
     DeleteGates: unit?.Unit?.DeleteGates || {},
-    // Infrastructure columns
-    BridgeWorkerID: unit?.Unit?.BridgeWorkerID || '',
-    TargetBridgeWorkerID: unit?.Target?.BridgeWorkerID || '',
-    TargetBridgeWorkerSlug: unit?.Target?.Slug || '',
     ChangeSetID: unit?.Unit?.ChangeSetID || '',
     ChangeSetSlug: unit?.ChangeSet?.Slug || '',
     // Metadata columns

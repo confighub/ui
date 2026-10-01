@@ -36,10 +36,6 @@ export const UNIT_COLUMN_GROUPS: ColumnGroup[] = [
     columns: ['ValidationErrors', 'ValidationWarnings', 'DestroyGates', 'DeleteGates'],
   },
   {
-    header: 'Infrastructure',
-    columns: ['TargetBridgeWorkerID', 'TargetBridgeWorkerSlug'],
-  },
-  {
     header: 'Other Details',
     columns: ['Annotations'],
   },

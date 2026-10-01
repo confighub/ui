@@ -156,7 +156,6 @@ export function useResourceViewRows({
           UnitCreatedAt: unit?.CreatedAt,
           UnitUpdatedAt: unit?.UpdatedAt,
           UnitLastChangeDescription: unit?.LastChangeDescription,
-          UnitBridgeWorkerID: unit?.BridgeWorkerID,
           UnitLabels: unit?.Labels ?? {},
           SpaceID: resource.SpaceID ?? '',
           SpaceSlug: resource.SpaceSlug ?? eu?.Space?.Slug ?? '',

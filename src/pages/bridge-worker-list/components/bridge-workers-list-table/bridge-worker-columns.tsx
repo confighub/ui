@@ -13,7 +13,7 @@ export const BRIDGE_WORKER_COLUMN_GROUPS: ColumnGroup[] = [
   },
   {
     header: 'Availability',
-    columns: ['TargetCount', 'AvailableFunctions'],
+    columns: ['AvailableFunctions'],
   },
   {
     header: 'Status',
@@ -43,7 +43,6 @@ export interface BridgeWorkerRowItem {
   Space: string;
   SpaceID: string;
   Condition: string;
-  TargetCount: number;
   AvailableFunctions: number;
   LastSeenAt: string;
   LastMessage: string;
@@ -91,13 +90,6 @@ export const createBridgeWorkerStaticColumns = () =>
       headerName: 'Space ID',
       minWidth: 300,
       flex: 1.5,
-    },
-
-    TargetCount: {
-      type: 'number',
-      headerName: 'Available Targets',
-      minWidth: 200,
-      flex: 1,
     },
 
     AvailableFunctions: {

@@ -60,7 +60,6 @@ export const FIELD_ICONS: Record<FilterFieldType, React.ReactNode> = {
   lastMessage: <ChatOutlined fontSize="small" />,
   ipAddress: <LanguageOutlined fontSize="small" />,
   // Target-specific fields
-  providerType: <SettingsOutlined fontSize="small" />,
   targetId: <TrackChangesOutlined fontSize="small" />,
   // Trigger-specific fields
   event: <FlashOnOutlined fontSize="small" />,

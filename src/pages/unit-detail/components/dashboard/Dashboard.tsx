@@ -36,7 +36,6 @@ import { useListAllTargetsQuery } from '@confighub/rtk-query';
 import { setAlert } from '@/state/slices/alert';
 import { Direction } from '@/types/enums';
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
-import { TOOLCHAIN_ANY } from '@/utility/constants';
 import { isIDInvalid } from '@/utility/validation-functions';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import TimelineIcon from '@mui/icons-material/Timeline';
@@ -250,13 +249,7 @@ export const Dashboard = ({
     data: extendedTargets = [],
     isError: isTargetsError,
     isLoading: isTargetsLoading,
-  } = useListAllTargetsQuery(
-    {
-      where: `ToolchainType IN ('${unit?.ToolchainType}', '${TOOLCHAIN_ANY}')`,
-      include: 'SpaceID',
-    },
-    { skip: !unit?.ToolchainType },
-  );
+  } = useListAllTargetsQuery({ include: 'SpaceID' });
 
   const sortedTargets = useMemo(() => {
     return [...extendedTargets].sort((a, b) => {

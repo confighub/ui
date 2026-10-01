@@ -27,18 +27,15 @@ import {
   BridgeWorker,
   BridgeWorkerRead,
   SpaceRead,
-  TargetRead,
   WorkerInfo,
   useCreateBridgeWorkerMutation,
   useListBridgeWorkerStatusesQuery,
   useListSpacesQuery,
-  useListTargetsQuery,
   useUpdateBridgeWorkerMutation,
 } from '@confighub/rtk-query';
 import { ENTITY_TYPES } from '@/utility/analytics-constants';
-import { getAvailableBridges, getAvailableFunctions } from '@/utility/bridge-worker-utils';
+import { getAvailableFunctions } from '@/utility/bridge-worker-utils';
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
-import { convertStringToObject } from '@/utility/schema-functions';
 import Add from '@mui/icons-material/Add';
 import ArrowBack from '@mui/icons-material/ArrowBack';
 import CloudIcon from '@mui/icons-material/Cloud';
@@ -70,80 +67,6 @@ export interface AddBridgeWorkerDrawerProps {
   /** The existing server-hosted worker for this org, if one already exists */
   existingServerHostedWorker?: BridgeWorkerRead;
 }
-
-const sampleProvidedInfo = {
-  BridgeWorkerInfo: {
-    SupportedConfigTypes: [
-      {
-        ToolchainType: 'Kubernetes/YAML',
-        ProviderType: 'Kubernetes',
-      },
-    ],
-  },
-  AvailableTargets: [],
-  FunctionWorkerInfo: {
-    SupportedFunctions: {
-      'Kubernetes/YAML': {
-        'vet-celexpr': {
-          FunctionName: 'vet-celexpr',
-          Parameters: [
-            {
-              ParameterName: 'validation-expr',
-              Description: 'CEL expression to validate each resource',
-              Required: true,
-              DataType: 'CEL',
-            },
-          ],
-          RequiredParameters: 1,
-          VarArgs: false,
-          OutputInfo: {
-            ResultName: 'passed',
-            Description: 'True if validation passed, false otherwise',
-            OutputType: 'ValidationResult',
-          },
-          Mutating: false,
-          Validating: true,
-          Hermetic: true,
-          Idempotent: true,
-          Description:
-            'Returns true if validation expression evaluates to true for all resources',
-        },
-        'compute-mutations': {
-          FunctionName: 'compute-mutations',
-          Parameters: [
-            {
-              ParameterName: 'yaml-doc-list',
-              Description: 'Document list with the previous config data',
-              Required: true,
-              DataType: 'YAML',
-            },
-            {
-              ParameterName: 'function-index',
-              Description:
-                'Index of the function from the invocation list that mutated the config data',
-              Required: true,
-              DataType: 'int',
-            },
-          ],
-          RequiredParameters: 2,
-          VarArgs: false,
-          OutputInfo: {
-            ResultName: 'mutations',
-            Description:
-              'List of resource mutations in the same order as the resources in the config data',
-            OutputType: 'ResourceMutationList',
-          },
-          Mutating: false,
-          Validating: false,
-          Hermetic: true,
-          Idempotent: true,
-          Description:
-            'Diffs the input with the config data and returns a list of resource mutations made to the config data',
-        },
-      },
-    },
-  },
-};
 
 /**
  * BasicInfoCard
@@ -386,63 +309,14 @@ const LabelsAndAnnotationsCard = ({
 };
 
 /**
- * ProvidedInfoCard
- *
- * Shows a readonly JSON view of the ProvidedInfo with available targets (Add mode only).
- */
-// const ProvidedInfoCard = ({
-//   sampleProvidedInfoWithTargets,
-// }: {
-//   sampleProvidedInfoWithTargets: Record<string, unknown>;
-// }) => {
-//   return (
-//     <HoverCard variant='outlined'>
-//       <Stack direction='row' spacing={2} alignItems='center' sx={{ mb: 1 }}>
-//         <Code color='primary' />
-//         <Typography variant='h6' sx={{ fontWeight: 600 }}>
-//           Provided Info
-//         </Typography>
-//       </Stack>
-
-//       <Grid container spacing={2}>
-//         <Grid size={{ xs: 12 }}>
-//           <TextField
-//             label='Provided Info (JSON)'
-//             value={JSON.stringify(sampleProvidedInfoWithTargets, null, 2)}
-//             size='small'
-//             fullWidth
-//             multiline
-//             rows={12}
-//             disabled
-//             slotProps={{
-//               input: {
-//                 readOnly: true,
-//               },
-//             }}
-//             helperText='Read-only view of the bridge worker provided info with available targets'
-//             sx={{
-//               '& .MuiInputBase-input': {
-//                 fontFamily: 'monospace',
-//                 fontSize: '0.875rem',
-//               },
-//             }}
-//           />
-//         </Grid>
-//       </Grid>
-//     </HoverCard>
-//   );
-// };
-
-/**
  * WorkerCapabilitiesCard
  *
- * Shows available functions and targets for existing workers (Edit mode only).
+ * Shows available functions for existing workers (Edit mode only).
  */
 const WorkerCapabilitiesCard = ({ providedInfo }: { providedInfo?: WorkerInfo }) => {
   const availableFunctions = providedInfo ? getAvailableFunctions(providedInfo) : undefined;
-  const availableBridges = providedInfo ? getAvailableBridges(providedInfo) : undefined;
 
-  if (!availableFunctions && (!availableBridges || availableBridges.length === 0)) {
+  if (!availableFunctions) {
     return (
       <SectionCard title='Worker Capabilities'>
         <Typography variant='body2' color='text.secondary'>
@@ -488,44 +362,6 @@ const WorkerCapabilitiesCard = ({ providedInfo }: { providedInfo?: WorkerInfo })
           </Grid>
         )}
 
-        {/* Available Bridges */}
-        {availableBridges && availableBridges.length > 0 && (
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Stack direction='row' spacing={1} alignItems='center'>
-              <Typography variant='subtitle1' sx={{ fontWeight: 500 }}>
-                Available Bridges
-              </Typography>
-            </Stack>
-            <Box
-              sx={{
-                maxHeight: 100,
-                overflowY: 'auto',
-                pr: 1,
-                '&::-webkit-scrollbar': {
-                  width: '8px',
-                },
-                '&::-webkit-scrollbar-track': {
-                  backgroundColor: 'action.hover',
-                  borderRadius: '4px',
-                },
-                '&::-webkit-scrollbar-thumb': {
-                  backgroundColor: 'grey.200',
-                  borderRadius: '4px',
-                },
-              }}
-            >
-              {availableBridges.map((bridge) => (
-                <Chip
-                  size='small'
-                  key={bridge}
-                  label={bridge}
-                  sx={{ m: 0.2, ml: 'auto' }}
-                  color='primary'
-                />
-              ))}
-            </Box>
-          </Grid>
-        )}
       </Grid>
     </SectionCard>
   );
@@ -609,7 +445,7 @@ const SuccessInstructionsView = ({
   onClose: () => void;
 }) => {
   const spaceName = space?.Slug || '<space>';
-  const kubectlCommand = `cub worker install ${worker.Slug} --space ${spaceName} --export --include-secret | kubectl apply -f -`;
+  const getEnvsCommand = `cub worker get-envs --space ${spaceName} ${worker.Slug}`;
 
   return (
     <Box
@@ -627,18 +463,18 @@ const SuccessInstructionsView = ({
             Next Steps
           </Typography>
           <Typography variant='body1' sx={{ mb: 3 }}>
-            You have registered a worker with ConfigHub, which creates an identity for it. Next
-            you need to run the worker.
+            You have registered a worker with ConfigHub, which creates an identity for it. Its
+            credentials are what a CI job, an event consumer, or a worker process running your
+            own functions authenticates with.
           </Typography>
 
           <Typography variant='subtitle1' sx={{ fontWeight: 500, mb: 2 }}>
-            To run our standard worker, you can bootstrap it in a Kubernetes cluster as
-            follows:
+            Fetch the credentials as environment variables:
           </Typography>
 
           <Box sx={{ position: 'relative' }}>
             <TextField
-              value={kubectlCommand}
+              value={getEnvsCommand}
               size='small'
               fullWidth
               multiline
@@ -661,7 +497,7 @@ const SuccessInstructionsView = ({
                 right: 8,
               }}
             >
-              <CopyToClipboard text={kubectlCommand} />
+              <CopyToClipboard text={getEnvsCommand} />
             </Box>
           </Box>
 
@@ -759,20 +595,6 @@ export const AddBridgeWorkerDrawer = ({
     },
   });
 
-  const watchedSpaceId = watch('SpaceID');
-
-  // Fetch targets for the selected space
-  const { data: targets = [] } = useListTargetsQuery(
-    { spaceId: watchedSpaceId || '' },
-    { skip: !isOpen || !watchedSpaceId },
-  );
-
-  // Extract TargetRead objects from ExtendedTargetRead
-  const availableTargets = useMemo(
-    () => targets.map((t) => t.Target).filter((t): t is TargetRead => !!t),
-    [targets],
-  );
-
   // Get bridge worker statuses
   const { data: statuses = [] } = useListBridgeWorkerStatusesQuery(
     {
@@ -789,18 +611,6 @@ export const AddBridgeWorkerDrawer = ({
       (a, b) => new Date(b.SeenAt || 0).getTime() - new Date(a.SeenAt || 0).getTime(),
     );
   }, [statuses]);
-
-  // Update sample provided info with available targets
-  const sampleProvidedInfoWithTargets = useMemo(
-    () => ({
-      ...sampleProvidedInfo,
-      AvailableTargets: availableTargets.map((target) => ({
-        Name: target?.DisplayName || '',
-        Params: convertStringToObject(target?.Parameters || '{}'),
-      })),
-    }),
-    [availableTargets],
-  );
 
   const [createWorker, { isSuccess: isCreateSuccess, error: createError, data: createData }] =
     useCreateBridgeWorkerMutation();
@@ -985,7 +795,6 @@ export const AddBridgeWorkerDrawer = ({
             Labels: data.Labels,
             Annotations: data.Annotations,
             DeleteGates: data.DeleteGates,
-            ProvidedInfo: sampleProvidedInfoWithTargets,
           },
         });
       } else {

@@ -25,13 +25,6 @@ export interface DeploymentTarget {
    * whatever UI manages the Target (e.g. ArgoCD, Flux, OpenTofu Cloud).
    */
   url?: string;
-  /**
-   * Raw `Target.ProviderType` (e.g. `OCI`, `Kubernetes`, `ArgoCDOCI`). Used
-   * ONLY as the legacy fallback for attributing live status to a delivery
-   * system when the live-status annotation carries no `source` — see
-   * `resolveLiveStatusProvider` in liveStatus.ts.
-   */
-  providerType?: string;
 }
 
 export interface ComponentDeployment {
@@ -69,10 +62,8 @@ export interface ComponentDeployment {
   /**
    * Which delivery system this node attributes its live status to, driving the
    * brand mark and the status vocabulary. Resolved primarily from the
-   * annotation's own `source` (who actually reported), falling back to the
-   * legacy `ProviderType` of the release Target only when no `source` is
-   * present. `'unknown'` whenever neither identifies a system — see
-   * `resolveLiveStatusProvider` in liveStatus.ts.
+   * annotation's own `source` (who actually reported); `'unknown'` when it
+   * carries none — see `resolveLiveStatusProvider` in liveStatus.ts.
    */
   liveStatusProvider: LiveStatusProvider;
   /**

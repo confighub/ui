@@ -18,6 +18,7 @@ import { useEditDrawerUrl } from '@/hooks/useEditDrawerUrl';
 import { AddTargetDrawer } from '@/pages/target-list/components/add-target-drawer/AddTargetDrawer';
 import { BulkEditTargetsDrawer } from '@/pages/target-list/components/bulk-edit-targets-drawer/BulkEditTargetsDrawer';
 import { EmptyTargetList } from '@/pages/target-list/components/empty-target-list/EmptyTargetList';
+import { getApiErrorMessage } from '@/utility/error-functions';
 import {
   TargetRead,
   useBulkDeleteTargetsMutation,
@@ -75,7 +76,7 @@ export const TargetListPage = () => {
 
   // Fetch all targets first (without filter) to get label options
   const { data: allTargets = [], isFetching: isFetchingAll, refetch: refetchAll } = useListAllTargetsQuery({
-    include: 'SpaceID,BridgeWorkerID',
+    include: 'SpaceID',
   }, { refetchOnFocus: true });
 
   // Extract label options from all targets for the Labels filter dropdown
@@ -104,14 +105,22 @@ export const TargetListPage = () => {
   });
 
   // Fetch filtered targets
-  const { data: filteredTargets = [], isFetching: isFetchingFiltered, refetch: refetchFiltered } = useListAllTargetsQuery(
-    { where: whereClause, include: 'SpaceID,BridgeWorkerID' },
+  const {
+    data: filteredTargets = [],
+    isFetching: isFetchingFiltered,
+    refetch: refetchFiltered,
+    error: filterError,
+  } = useListAllTargetsQuery(
+    { where: whereClause, include: 'SpaceID' },
     { skip: !whereClause, refetchOnFocus: true },
   );
 
   // Display filtered targets if filter is applied, otherwise all targets
   const targets = whereClause ? filteredTargets : allTargets;
   const isLoading = isFetchingAll || isFetchingFiltered;
+  // A filter the server rejects lists nothing; say why rather than show an empty result.
+  const filterErrorMessage =
+    whereClause && filterError ? getApiErrorMessage(filterError, 'Invalid filter.') : undefined;
 
   // Derive target to edit from URL param
   const targetToEdit = useMemo(() => {
@@ -224,7 +233,10 @@ export const TargetListPage = () => {
         }
       />
       <Main>
-        <ErrorList errors={errorMessage} onClose={() => setErrorMessage([])} />
+        <ErrorList
+          errors={filterErrorMessage ? [...errorMessage, filterErrorMessage] : errorMessage}
+          onClose={() => setErrorMessage([])}
+        />
         <TargetsTable
           targets={targets}
           onRowSelected={handleRowSelection}

@@ -9,14 +9,12 @@
  *
  * Features:
  * - Add new targets or edit existing ones
- * - Individual parameter fields (KubeContext, KubeNamespace, WaitTimeout)
  * - Labels and annotations management
- * - Space and Bridge Worker selection
- * - Provider and Toolchain type configuration
- * - Live preview of configuration
+ * - Space selection
+ * - Granting a worker access to the target, so it can pull the target's releases
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Control, Controller, FieldErrors, UseFormSetValue, useForm } from 'react-hook-form';
+import { Control, Controller, FieldErrors, useForm } from 'react-hook-form';
 
 import { CopyToClipboard } from '@/components/copy-to-clipboard/CopyToClipboard';
 import { ErrorList } from '@/components/error-list/ErrorList';
@@ -31,7 +29,6 @@ import {
   Target,
   TargetRead,
   UpdateTargetApiArg,
-  WorkerInfo,
   useCreateTargetMutation,
   useListBridgeWorkersQuery,
   useListSpacesQuery,
@@ -39,14 +36,7 @@ import {
 } from '@confighub/rtk-query';
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
 import { ENTITY_TYPES } from '@/utility/analytics-constants';
-import {
-  DEFAULT_WORKERLESS_PROVIDER,
-  DEFAULT_WORKERLESS_TOOLCHAIN,
-  WORKERLESS_PROVIDER_TYPES,
-  getAvailableBridges,
-  getToolchainsForProvider,
-  getWorkerlessToolchains,
-} from '@/utility/bridge-worker-utils';
+import { grantWorkerTargetAccess } from '@/utility/bridge-worker-utils';
 import Add from '@mui/icons-material/Add';
 import ArrowBack from '@mui/icons-material/ArrowBack';
 import Box from '@mui/material/Box';
@@ -64,8 +54,6 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 
-import { TargetParametersField } from '../target-parameters-field/TargetParametersField';
-
 export interface AddTargetDrawerProps {
   isOpen: boolean;
   onClose: () => void;
@@ -77,8 +65,7 @@ export interface AddTargetDrawerProps {
 /**
  * BasicInfoCard
  *
- * Handles basic target information including name, space, bridge worker,
- * provider type, and toolchain type.
+ * Handles basic target information: name, space, and a worker to grant access to.
  */
 const BasicInfoCard = ({
   control,
@@ -87,12 +74,8 @@ const BasicInfoCard = ({
   workers,
   isEditMode,
   watchedSpaceId,
-  providerOptions,
-  toolchainOptions,
-  workerSelected,
-  watchedProviderType,
-  setValue,
-  selectedWorkerProvidedInfo,
+  accessWorkerId,
+  setAccessWorkerId,
 }: {
   control: Control<Target>;
   errors: FieldErrors<Target>;
@@ -100,12 +83,8 @@ const BasicInfoCard = ({
   workers: BridgeWorkerRead[];
   isEditMode: boolean;
   watchedSpaceId?: string;
-  providerOptions: string[];
-  toolchainOptions: string[];
-  workerSelected: boolean;
-  watchedProviderType: string;
-  setValue: UseFormSetValue<Target>;
-  selectedWorkerProvidedInfo: WorkerInfo | undefined;
+  accessWorkerId: string;
+  setAccessWorkerId: (workerId: string) => void;
 }) => {
   return (
     <SectionCard title='Basic Information'>
@@ -162,183 +141,33 @@ const BasicInfoCard = ({
         </Grid>
 
         <Grid size={{ xs: 6 }}>
-          <Controller
-            name='BridgeWorkerID'
-            control={control}
-            render={({ field }) => (
-              <FormControl fullWidth size='small' error={!!errors.BridgeWorkerID}>
-                <InputLabel shrink>Worker (optional)</InputLabel>
-                <Select
-                  {...field}
-                  label='Worker (optional)'
-                  input={<OutlinedInput label='Worker (optional)' notched />}
-                  disabled={!watchedSpaceId}
-                  displayEmpty
-                  onChange={(e) => {
-                    const newWorkerId = e.target.value as string;
-                    field.onChange(newWorkerId);
-                    if (!newWorkerId) {
-                      // No worker: nothing validates the Target, so offer the pull-based
-                      // defaults rather than leaving the pickers empty.
-                      setValue('ProviderType', DEFAULT_WORKERLESS_PROVIDER);
-                      setValue('ToolchainType', DEFAULT_WORKERLESS_TOOLCHAIN);
-                      return;
-                    }
-                    const newWorker = workers.find((bw) => bw.BridgeWorkerID === newWorkerId);
-                    const newProviders = getAvailableBridges(newWorker?.ProvidedInfo);
-                    const autoProvider = newProviders.length === 1 ? newProviders[0] : '';
-                    setValue('ProviderType', autoProvider);
-                    if (autoProvider) {
-                      const newToolchains = getToolchainsForProvider(
-                        newWorker?.ProvidedInfo,
-                        autoProvider,
-                      );
-                      setValue(
-                        'ToolchainType',
-                        newToolchains.length === 1 ? newToolchains[0] : '',
-                      );
-                    } else {
-                      setValue('ToolchainType', '');
-                    }
-                  }}
-                >
-                  <MenuItem value=''>
-                    <em>None</em>
-                  </MenuItem>
-                  {workers?.map((worker) => (
-                    <MenuItem key={worker.BridgeWorkerID} value={worker.BridgeWorkerID}>
-                      {worker.DisplayName}
-                    </MenuItem>
-                  ))}
-                </Select>
-                {errors.BridgeWorkerID && (
-                  <FormHelperText>{errors.BridgeWorkerID.message}</FormHelperText>
-                )}
-                {!watchedSpaceId && <FormHelperText>Select a space first</FormHelperText>}
-                {!!watchedSpaceId && !workerSelected && (
-                  <FormHelperText>
-                    A target needs no worker; grant access to it with permissions
-                  </FormHelperText>
-                )}
-              </FormControl>
+          <FormControl fullWidth size='small'>
+            <InputLabel shrink>Grant access to worker (optional)</InputLabel>
+            <Select
+              value={accessWorkerId}
+              label='Grant access to worker (optional)'
+              input={<OutlinedInput label='Grant access to worker (optional)' notched />}
+              disabled={!watchedSpaceId}
+              displayEmpty
+              onChange={(e) => setAccessWorkerId(e.target.value as string)}
+            >
+              <MenuItem value=''>
+                <em>None</em>
+              </MenuItem>
+              {workers?.map((worker) => (
+                <MenuItem key={worker.BridgeWorkerID} value={worker.BridgeWorkerID}>
+                  {worker.DisplayName}
+                </MenuItem>
+              ))}
+            </Select>
+            {!watchedSpaceId && <FormHelperText>Select a space first</FormHelperText>}
+            {!!watchedSpaceId && (
+              <FormHelperText>
+                The worker can find the target and pull the releases published for it
+              </FormHelperText>
             )}
-          />
+          </FormControl>
         </Grid>
-
-        <Grid size={{ xs: 6 }}>
-          <Controller
-            name='ProviderType'
-            control={control}
-            rules={{ required: 'Provider Type is required' }}
-            render={({ field }) => (
-              <FormControl fullWidth size='small' error={!!errors.ProviderType}>
-                <InputLabel>Provider Type</InputLabel>
-                <Select
-                  {...field}
-                  label='Provider Type'
-                  input={<OutlinedInput label='Provider Type' />}
-                  disabled={!watchedSpaceId}
-                  onChange={(e) => {
-                    const newProvider = e.target.value as string;
-                    field.onChange(newProvider);
-                    const newToolchains = workerSelected
-                      ? getToolchainsForProvider(selectedWorkerProvidedInfo, newProvider)
-                      : getWorkerlessToolchains(newProvider);
-                    setValue(
-                      'ToolchainType',
-                      newToolchains.length >= 1 &&
-                        (newToolchains.length === 1 || !workerSelected)
-                        ? newToolchains[0]
-                        : '',
-                    );
-                  }}
-                >
-                  {providerOptions.map((type) => (
-                    <MenuItem key={type} value={type}>
-                      {type}
-                    </MenuItem>
-                  ))}
-                </Select>
-                {workerSelected && providerOptions.length === 0 && (
-                  <FormHelperText error>
-                    Selected bridge worker has not reported any supported config types — a
-                    target cannot be created against it
-                  </FormHelperText>
-                )}
-                {errors.ProviderType && (
-                  <FormHelperText>{errors.ProviderType.message}</FormHelperText>
-                )}
-              </FormControl>
-            )}
-          />
-        </Grid>
-
-        <Grid size={{ xs: 6 }}>
-          <Controller
-            name='ToolchainType'
-            control={control}
-            rules={{ required: 'Toolchain Type is required' }}
-            render={({ field }) => (
-              <FormControl fullWidth size='small' error={!!errors.ToolchainType}>
-                <InputLabel>Toolchain Type</InputLabel>
-                <Select
-                  {...field}
-                  label='Toolchain Type'
-                  input={<OutlinedInput label='Toolchain Type' />}
-                  disabled={!watchedSpaceId || !watchedProviderType}
-                >
-                  {toolchainOptions.map((type) => (
-                    <MenuItem key={type} value={type}>
-                      {type}
-                    </MenuItem>
-                  ))}
-                </Select>
-                {!!watchedSpaceId && !watchedProviderType && (
-                  <FormHelperText>Select a provider first</FormHelperText>
-                )}
-                {workerSelected && !!watchedProviderType && toolchainOptions.length === 0 && (
-                  <FormHelperText error>
-                    Selected bridge worker has not reported any toolchain types for this
-                    provider
-                  </FormHelperText>
-                )}
-                {errors.ToolchainType && (
-                  <FormHelperText>{errors.ToolchainType.message}</FormHelperText>
-                )}
-              </FormControl>
-            )}
-          />
-        </Grid>
-      </Grid>
-    </SectionCard>
-  );
-};
-
-/**
- * ParametersCard
- *
- * Handles target parameters with individual field inputs.
- */
-const ParametersCard = ({
-  control,
-  errors,
-  onParametersChange,
-  initialParameters,
-}: {
-  control: Control<Target>;
-  errors: FieldErrors<Target>;
-  onParametersChange: (params: string) => void;
-  initialParameters?: string;
-}) => {
-  return (
-    <SectionCard title='Configuration Parameters'>
-      <Grid container spacing={2}>
-        <TargetParametersField
-          control={control}
-          errors={errors}
-          onParametersChange={onParametersChange}
-          initialParameters={initialParameters}
-        />
       </Grid>
     </SectionCard>
   );
@@ -522,6 +351,7 @@ export const AddTargetDrawer = ({
     Array<{ id: string; key: string; value: string }>
   >([]);
   const [newDeleteGateKey, setNewDeleteGateKey] = useState('');
+  const [accessWorkerId, setAccessWorkerId] = useState('');
 
   const isEditMode = !!existingTarget;
 
@@ -540,11 +370,7 @@ export const AddTargetDrawer = ({
   } = useForm<Target>({
     defaultValues: {
       Slug: existingTarget?.Slug || '',
-      ProviderType: existingTarget?.ProviderType || DEFAULT_WORKERLESS_PROVIDER,
-      ToolchainType: existingTarget?.ToolchainType || DEFAULT_WORKERLESS_TOOLCHAIN,
       SpaceID: existingTarget?.SpaceID || '',
-      BridgeWorkerID: existingTarget?.BridgeWorkerID || '',
-      Parameters: existingTarget?.Parameters || '',
       Labels: existingTarget?.Labels || {},
       Annotations: existingTarget?.Annotations || {},
       DeleteGates: existingTarget?.DeleteGates || {},
@@ -552,8 +378,6 @@ export const AddTargetDrawer = ({
   });
 
   const watchedSpaceId = watch('SpaceID');
-  const watchedBridgeWorkerId = watch('BridgeWorkerID');
-  const watchedProviderType = watch('ProviderType');
 
   const { data: extendedBridgeWorkers = [] } = useListBridgeWorkersQuery(
     { spaceId: watchedSpaceId || '' },
@@ -564,61 +388,10 @@ export const AddTargetDrawer = ({
     .map((ebw) => ebw.BridgeWorker)
     .filter((bw): bw is BridgeWorkerRead => bw !== undefined);
 
-  const selectedWorker = useMemo(
-    () => bridgeWorkers.find((bw) => bw.BridgeWorkerID === watchedBridgeWorkerId),
-    [bridgeWorkers, watchedBridgeWorkerId],
+  const accessWorker = useMemo(
+    () => bridgeWorkers.find((bw) => bw.BridgeWorkerID === accessWorkerId),
+    [bridgeWorkers, accessWorkerId],
   );
-
-  const rawProviderOptions = useMemo(
-    () => getAvailableBridges(selectedWorker?.ProvidedInfo),
-    [selectedWorker],
-  );
-
-  // In edit mode, preserve the existing target's provider type even if the worker
-  // hasn't reported SupportedConfigTypes yet (e.g. it never connected).
-  const providerOptions = useMemo(() => {
-    if (!watchedBridgeWorkerId) {
-      return WORKERLESS_PROVIDER_TYPES;
-    }
-    if (
-      isEditMode &&
-      existingTarget?.ProviderType &&
-      watchedBridgeWorkerId === existingTarget?.BridgeWorkerID &&
-      !rawProviderOptions.includes(existingTarget.ProviderType)
-    ) {
-      return [...rawProviderOptions, existingTarget.ProviderType];
-    }
-    return rawProviderOptions;
-  }, [isEditMode, existingTarget, watchedBridgeWorkerId, rawProviderOptions]);
-
-  const rawToolchainOptions = useMemo(
-    () => getToolchainsForProvider(selectedWorker?.ProvidedInfo, watchedProviderType),
-    [selectedWorker, watchedProviderType],
-  );
-
-  // In edit mode, preserve the existing target's toolchain type similarly.
-  const toolchainOptions = useMemo(() => {
-    if (!watchedBridgeWorkerId) {
-      return getWorkerlessToolchains(watchedProviderType);
-    }
-    if (
-      isEditMode &&
-      existingTarget?.ToolchainType &&
-      watchedBridgeWorkerId === existingTarget?.BridgeWorkerID &&
-      !rawToolchainOptions.includes(existingTarget.ToolchainType)
-    ) {
-      return [...rawToolchainOptions, existingTarget.ToolchainType];
-    }
-    return rawToolchainOptions;
-  }, [
-    isEditMode,
-    existingTarget,
-    watchedBridgeWorkerId,
-    watchedProviderType,
-    rawToolchainOptions,
-  ]);
-
-  const workerSelected = !!watchedBridgeWorkerId;
 
   const [createTarget, { isSuccess: isCreateSuccess, error: createError, data: createData }] =
     useCreateTargetMutation();
@@ -632,11 +405,7 @@ export const AddTargetDrawer = ({
       // Reset form with existing target values
       reset({
         Slug: existingTarget.Slug || '',
-        ProviderType: existingTarget.ProviderType || '',
-        ToolchainType: existingTarget.ToolchainType || '',
         SpaceID: existingTarget.SpaceID || '',
-        BridgeWorkerID: existingTarget.BridgeWorkerID || '',
-        Parameters: existingTarget.Parameters || '',
         Labels: existingTarget.Labels || {},
         Annotations: existingTarget.Annotations || {},
         DeleteGates: existingTarget.DeleteGates || {},
@@ -661,11 +430,7 @@ export const AddTargetDrawer = ({
       // Reset to empty state for add mode
       reset({
         Slug: '',
-        ProviderType: DEFAULT_WORKERLESS_PROVIDER,
-        ToolchainType: DEFAULT_WORKERLESS_TOOLCHAIN,
         SpaceID: '',
-        BridgeWorkerID: '',
-        Parameters: '',
         Labels: {},
         Annotations: {},
         DeleteGates: {},
@@ -673,6 +438,7 @@ export const AddTargetDrawer = ({
       setLabels([]);
       setAnnotations([]);
     }
+    setAccessWorkerId('');
   }, [existingTarget, reset]);
 
   useApiErrorMessage(createError, isCreateSuccess, setServerError, {
@@ -682,8 +448,6 @@ export const AddTargetDrawer = ({
         trackEntityCreated({
           entity_type: ENTITY_TYPES.TARGET,
           entity_id: createData.TargetID || '',
-          provider_type: createData.ProviderType || '',
-          toolchain_type: createData.ToolchainType || '',
         });
         onTargetCreated(createData as TargetRead);
       }
@@ -772,10 +536,6 @@ export const AddTargetDrawer = ({
     setValue('Annotations', annotationsObject);
   };
 
-  const handleParametersChange = (params: string) => {
-    setValue('Parameters', params);
-  };
-
   const handleClose = () => {
     reset();
     setLabels([]);
@@ -785,6 +545,7 @@ export const AddTargetDrawer = ({
     setNewAnnotationKey('');
     setNewAnnotationValue('');
     setNewDeleteGateKey('');
+    setAccessWorkerId('');
     setServerError('');
     onClose();
   };
@@ -801,13 +562,10 @@ export const AddTargetDrawer = ({
           target: {
             ...existingTarget,
             Slug: data.Slug,
-            ProviderType: data.ProviderType,
-            ToolchainType: data.ToolchainType,
-            Parameters: data.Parameters,
             Labels: data.Labels,
             Annotations: data.Annotations,
             DeleteGates: data.DeleteGates,
-            BridgeWorkerID: data.BridgeWorkerID || undefined,
+            Permissions: grantWorkerTargetAccess(existingTarget.Permissions, accessWorker),
           },
         };
         await updateTarget(input);
@@ -820,15 +578,12 @@ export const AddTargetDrawer = ({
           spaceId: data.SpaceID || '',
           target: {
             Slug: data.Slug,
-            ProviderType: data.ProviderType,
-            ToolchainType: data.ToolchainType,
             SpaceID: data.SpaceID,
             OrganizationID: space.OrganizationID || '',
-            BridgeWorkerID: data.BridgeWorkerID || undefined,
-            Parameters: data.Parameters,
             Labels: data.Labels,
             Annotations: data.Annotations,
             DeleteGates: data.DeleteGates,
+            Permissions: grantWorkerTargetAccess(undefined, accessWorker),
           },
         };
         await createTarget(input);
@@ -839,12 +594,7 @@ export const AddTargetDrawer = ({
   };
 
   const watchedValues = watch();
-  // A worker is optional, so it plays no part in whether the form can be submitted.
-  const isFormValid =
-    watchedValues.Slug &&
-    watchedValues.ProviderType &&
-    watchedValues.ToolchainType &&
-    watchedValues.SpaceID;
+  const isFormValid = watchedValues.Slug && watchedValues.SpaceID;
 
   return (
     <Drawer
@@ -909,18 +659,8 @@ export const AddTargetDrawer = ({
               workers={bridgeWorkers}
               isEditMode={isEditMode}
               watchedSpaceId={watchedSpaceId}
-              providerOptions={providerOptions}
-              toolchainOptions={toolchainOptions}
-              workerSelected={workerSelected}
-              watchedProviderType={watchedProviderType}
-              setValue={setValue}
-              selectedWorkerProvidedInfo={selectedWorker?.ProvidedInfo}
-            />
-            <ParametersCard
-              control={control}
-              errors={errors}
-              onParametersChange={handleParametersChange}
-              initialParameters={existingTarget?.Parameters}
+              accessWorkerId={accessWorkerId}
+              setAccessWorkerId={setAccessWorkerId}
             />
             <LabelsAndAnnotationsCard
               newLabelKey={newLabelKey}

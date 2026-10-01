@@ -89,9 +89,6 @@ const TargetSelectionCard = ({
                     <Typography variant='body2' sx={{ fontWeight: 500 }}>
                       {target.Slug}
                     </Typography>
-                    <Typography variant='caption' color='text.secondary'>
-                      {target.ToolchainType}
-                    </Typography>
                   </Stack>
                 </MenuItem>
               ))}

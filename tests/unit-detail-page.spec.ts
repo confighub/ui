@@ -330,7 +330,7 @@ test.describe('unit detail page', () => {
       existingUnit: createdUnit!,
       spaceId: spaceId!,
       unitSlug: name,
-      toolchainType: 'ConfigHub/YAML',
+      toolchainType: 'AppConfig/YAML',
     });
 
     // Click refresh to reload the data and wait for the unit fetch to complete
@@ -346,7 +346,7 @@ test.describe('unit detail page', () => {
     // Verify sidebar is open with function search visible
     await expect(page.getByPlaceholder('Search functions')).toBeVisible({ timeout: 5000 });
 
-    // The toolchain filter pills should include 'ConfigHub/YAML' as the active filter
-    await expect(page.getByText('ConfigHub/YAML').first()).toBeVisible({ timeout: 5000 });
+    // The toolchain filter pills should include 'AppConfig/YAML' as the active filter
+    await expect(page.getByText('AppConfig/YAML').first()).toBeVisible({ timeout: 5000 });
   });
 });

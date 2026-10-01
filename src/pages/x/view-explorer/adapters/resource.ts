@@ -31,7 +31,6 @@ const RESOURCE_FILTER_FIELDS = [
   'Unit.LastReleasedRevisionNum',
   'Unit.UpstreamRevisionNum',
   'Unit.LastChangeDescription',
-  'Unit.BridgeWorkerID',
   'Space.Slug',
   'Space.DisplayName',
   'Space.Labels',
@@ -63,7 +62,6 @@ const ALL_RESOURCE_COLUMNS = [
   'Unit.CreatedAt',
   'Unit.UpdatedAt',
   'Unit.LastChangeDescription',
-  'Unit.BridgeWorkerID',
   // Space context
   'Space.Slug',
 ];

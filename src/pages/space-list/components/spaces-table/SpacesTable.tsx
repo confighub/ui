@@ -60,9 +60,6 @@ export const SpacesTable = ({ spaces = [], onRowSelected, filterElement, noRowsO
   // Convert spaces to row items
   const rows = useMemo<SpaceRow[]>(() => {
     return spaces.map((space) => {
-      const targetCount = space.TargetCountByToolchainType
-        ? Object.values(space.TargetCountByToolchainType).reduce((sum, count) => sum + count, 0)
-        : 0;
       const triggerCount = space.TriggerCountByEventType
         ? Object.values(space.TriggerCountByEventType).reduce((sum, count) => sum + count, 0)
         : 0;
@@ -76,7 +73,7 @@ export const SpacesTable = ({ spaces = [], onRowSelected, filterElement, noRowsO
         UpdatedAt: space.Space?.UpdatedAt || '',
         TotalUnitCount: space.TotalUnitCount || 0,
         TotalBridgeWorkerCount: space.TotalBridgeWorkerCount || 0,
-        TotalTargets: targetCount,
+        TotalTargets: space.TotalTargetCount || 0,
         TotalTriggers: triggerCount,
         _extendedSpace: space,
       };

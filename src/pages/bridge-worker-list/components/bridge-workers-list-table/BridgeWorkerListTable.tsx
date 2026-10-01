@@ -38,7 +38,6 @@ const GRID_DEFAULTS = {
     BridgeWorkerID: false,
     Space: true,
     SpaceID: false,
-    TargetCount: true,
     AvailableFunctions: true,
     Condition: true,
     LastSeenAt: true,
@@ -73,8 +72,8 @@ export const BridgeWorkerListTable = ({
       if (providedInfo) {
         // Handle any other top-level properties
         Object.entries(providedInfo).forEach(([key, value]) => {
-          // Skip the complex objects
-          if (key === 'BridgeWorkerInfo' || key === 'FunctionWorkerInfo') {
+          // Skip the complex object
+          if (key === 'FunctionWorkerInfo') {
             return;
           }
           providedInfoMap[key] = typeof value === 'string' ? value : JSON.stringify(value);
@@ -88,7 +87,6 @@ export const BridgeWorkerListTable = ({
         Space: worker.Space?.Slug || '',
         SpaceID: worker.Space?.SpaceID || '',
         Condition: worker.BridgeWorker?.Condition || '',
-        TargetCount: worker.TargetCount || 0,
         AvailableFunctions: functionCount,
         LastSeenAt: worker.BridgeWorker?.LastSeenAt || '',
         LastMessage: worker.BridgeWorker?.LastMessage || '',

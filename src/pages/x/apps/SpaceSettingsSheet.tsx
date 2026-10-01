@@ -28,7 +28,7 @@
  * Changing or clearing an ALREADY-SET release target is the opposite: a
  * retroactive bulk repoint of every unit on the OLD target, no per-unit
  * validation, no per-item result. `space-settings/ReleaseTargetRow.tsx` is
- * one always-editable picker (OCI-filtered, with "None" standing in for
+ * one always-editable picker (every Target, with "None" standing in for
  * clear) that shows a single compact consequence line only when a staged
  * pick would actually move units — `releaseTargetAffectedUnitCount` below is
  * that line's only data dependency.
@@ -69,7 +69,6 @@ import {
   useListAllUnitsQuery,
   usePatchSpaceMutation,
   type ExtendedTargetRead,
-  type TargetRead,
 } from '@confighub/rtk-query';
 import { getApiErrorMessage } from '@/utility/error-functions';
 
@@ -83,16 +82,6 @@ import { ShowMoreSection } from './space-settings/ShowMoreSection';
 // ============================================================================
 // HELPERS
 // ============================================================================
-
-/**
- * Whether a Target can be used as a Space's ReleaseTargetID. Mirrors
- * `Target.FindConfigType(ToolchainAny, ProviderOCI)` on the backend: match
- * either the Target's own top-level ProviderType or any entry in its
- * ConfigTypes list — a Target need not have OCI as its PRIMARY provider to be
- * a valid release target.
- */
-const isOciCapable = (target: TargetRead): boolean =>
-  target.ProviderType === 'OCI' || (target.ConfigTypes ?? []).some((ct) => ct.ProviderType === 'OCI');
 
 /** Shallow string-map equality, order-independent — used to detect a dirty Labels/Annotations draft. */
 const mapsEqual = (a: Record<string, string>, b: Record<string, string>): boolean => {
@@ -142,7 +131,7 @@ export interface SpaceSettingsSheetProps {
   spaceId: string;
   slug: string;
   unitCount: number;
-  /** Org-wide targets (from `useListAllTargetsQuery`). Filtered to OCI-capable ones for the release-target picker. */
+  /** Org-wide targets (from `useListAllTargetsQuery`), offered by the release-target picker. */
   targets: ExtendedTargetRead[];
   onClose: () => void;
   /** Fired after a successful delete — wired to the PANE's own close (clears selection, collapses the pane), not this sheet's local close. */
@@ -228,16 +217,14 @@ export const SpaceSettingsSheet = forwardRef<SpaceSettingsSheetHandle, SpaceSett
   // past this instance's lifetime and wrongly block the NEXT node's sheet.
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
-  // Org-wide targets, filtered to OCI-capable ones for the release-target
-  // picker (`validateReleaseTarget`, space.go:269-293, hard-requires
-  // ProviderType "OCI"). `targets` is still needed for this — it also feeds
-  // other, unrelated parts of the pane (target-switching in the treeview),
-  // so it stays a required prop even with the unit-targets row gone.
-  const ociTargetOptions: ReleaseTargetOption[] = useMemo(
+  // Org-wide targets for the release-target picker; any Target may be a
+  // Space's release Target. `targets` also feeds other, unrelated parts of the
+  // pane (target-switching in the treeview), so it stays a required prop even
+  // with the unit-targets row gone.
+  const targetOptions: ReleaseTargetOption[] = useMemo(
     () =>
       targets
         .flatMap((t) => (t.Target ? [t.Target] : []))
-        .filter(isOciCapable)
         .map((t) => ({ targetId: t.TargetID ?? '', name: t.DisplayName ?? t.Slug ?? t.TargetID ?? '' })),
     [targets],
   );
@@ -421,7 +408,7 @@ export const SpaceSettingsSheet = forwardRef<SpaceSettingsSheetHandle, SpaceSett
         <ReleaseTargetRow
           currentTargetId={currentReleaseTargetId}
           currentTargetName={currentReleaseTargetName}
-          ociTargetOptions={ociTargetOptions}
+          targetOptions={targetOptions}
           affectedUnitCount={releaseTargetAffectedUnitCount}
           draftTargetId={releaseTargetDraft}
           onChange={setReleaseTargetDraft}

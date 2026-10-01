@@ -272,18 +272,6 @@ export const FIELD_CONFIGS: Record<FilterFieldType, FieldConfig> = {
     placeholder: 'Enter IP address...',
   },
   // Target-specific fields
-  providerType: {
-    type: 'providerType',
-    label: 'Provider Type',
-    operators: MULTI_SELECT_OPERATORS,
-    valueType: 'select',
-    placeholder: 'Select providers...',
-    options: [
-      { value: 'Kubernetes', label: 'Kubernetes' },
-      { value: 'ConfigHub', label: 'ConfigHub' },
-      { value: 'ConfigMapRenderer', label: 'ConfigMap' },
-    ],
-  },
   targetId: {
     type: 'targetId',
     label: 'Target ID',
@@ -432,7 +420,6 @@ export const ENTITY_AVAILABLE_FIELDS: Record<EntityType, FilterFieldType[]> = {
     'createdAt',
     'updatedAt',
     // Entity-specific fields
-    'providerType',
     'targetId',
     // Advanced filters
     'where',
@@ -503,7 +490,6 @@ export const FIELD_DESCRIPTIONS: Record<FilterFieldType, string> = {
   ipAddress: 'Filter by the IP address the bridge worker connected from',
 
   // Target-specific fields
-  providerType: 'Filter by the cloud provider type',
   targetId: 'Filter by the unique target identifier',
 
 

@@ -984,68 +984,6 @@ export const useLabelColumnManager = (
         );
       },
     },
-    // Infrastructure columns
-    {
-      field: 'BridgeWorkerID',
-      headerName: 'Bridge Worker ID',
-      flex: 1,
-      width: 350,
-      valueGetter: (_, row) => row.BridgeWorkerID || '',
-      groupable: true,
-      renderCell: createIntelligentGroupRenderer(
-        rows,
-        (row) => row.BridgeWorkerID,
-        'Workers',
-        'Workers',
-        (params) => (
-          <CenteredTableCell>
-            <Tooltip title={params.value} arrow>
-              <Ellipses variant='body1'>{params.value}</Ellipses>
-            </Tooltip>
-          </CenteredTableCell>
-        ),
-      ),
-    },
-    {
-      field: 'TargetBridgeWorkerID',
-      headerName: 'Target Bridge Worker ID',
-      flex: 1,
-      width: 350,
-      valueGetter: (_, row) => row.TargetBridgeWorkerID || '',
-      groupable: true,
-      renderCell: createIntelligentGroupRenderer(
-        rows,
-        (row) => row.TargetBridgeWorkerID,
-        'Workers',
-        'Workers',
-        (params) => (
-          <CenteredTableCell>
-            <Tooltip title={params.value} arrow>
-              <Ellipses variant='body1'>{params.value}</Ellipses>
-            </Tooltip>
-          </CenteredTableCell>
-        ),
-      ),
-    },
-    {
-      field: 'TargetBridgeWorkerSlug',
-      headerName: 'Target Bridge Worker Slug',
-      flex: 1,
-      minWidth: 200,
-      valueGetter: (_, row) => row.TargetBridgeWorkerSlug || '',
-      groupable: true,
-      renderCell: createIntelligentGroupRenderer(
-        rows,
-        (row) => row.TargetBridgeWorkerSlug,
-        'Workers',
-        'Workers',
-        (params) => (
-          <CenteredTableCell>
-            <Ellipses variant='body1'>{params.value}</Ellipses>
-          </CenteredTableCell>
-        ),
-      ),
-    },
     {
       field: 'ChangeSetID',
       headerName: 'Change Set ID',

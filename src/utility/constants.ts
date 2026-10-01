@@ -107,7 +107,3 @@ export const COMPONENT_DIMENSIONS = {
 export const TOP_NAV_HEIGHT = 48;
 
 export const EMPTY_OUTPUT = 'W10=';
-
-// Wildcard ToolchainType value. A Target with this toolchain matches a Unit of any toolchain
-// (server-side semantics in Target.FindConfigType). Mirrors workerapi.ToolchainAny in Go.
-export const TOOLCHAIN_ANY = 'Any';

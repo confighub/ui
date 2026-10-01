@@ -52,7 +52,6 @@ test.describe('space settings sheet', () => {
   test.use({ storageState: 'authentication.json' });
 
   const spaceSlug = `e2e-space-settings-${RandomSlugGenerator.randomSlugName()}`;
-  const workerSlug = `e2e-worker-${RandomSlugGenerator.randomSlugName()}`;
   const targetSlug = `${spaceSlug}-tgt`;
 
   let spaceId: string;
@@ -70,26 +69,9 @@ test.describe('space settings sheet', () => {
     });
     spaceId = (space as { SpaceID: string }).SpaceID;
 
-    // A minimal worker + target + unit — the side pane (and its cog) needs a
-    // real deployment to resolve; a bare Space with no units doesn't reliably
-    // render one.
-    const workerResp = await hubApi.post(`/api/space/${spaceId}/bridge_worker`, {
-      params: { allow_exists: 'true' },
-      data: {
-        Slug: workerSlug,
-        ProvidedInfo: {
-          BridgeWorkerInfo: {
-            SupportedConfigTypes: [{ ProviderType: 'Kubernetes', ToolchainType: 'Kubernetes/YAML', LiveStateType: 'Kubernetes/YAML' }],
-          },
-        },
-      },
-    });
-    if (!workerResp.ok()) throw new Error(`Failed to create worker: ${workerResp.status()} ${await workerResp.text()}`);
-    const workerData = (await workerResp.json()) as { BridgeWorkerID: string };
-
     const targetResp = await hubApi.post(`/api/space/${spaceId}/target`, {
       params: { allow_exists: 'true' },
-      data: { Slug: targetSlug, BridgeWorkerID: workerData.BridgeWorkerID, ToolchainType: 'Kubernetes/YAML', ProviderType: 'Kubernetes' },
+      data: { Slug: targetSlug },
     });
     if (!targetResp.ok()) throw new Error(`Failed to create target: ${targetResp.status()} ${await targetResp.text()}`);
     const targetId = ((await targetResp.json()) as { TargetID: string }).TargetID;
@@ -195,7 +177,6 @@ test.describe('space settings sheet — mount invariant', () => {
   const prodSlug = `e2e-mount-prod-${RandomSlugGenerator.randomSlugName()}`;
   const devTargetSlug = `${devSlug}-tgt`;
   const prodTargetSlug = `${prodSlug}-tgt`;
-  const workerSlug = `e2e-mount-worker-${RandomSlugGenerator.randomSlugName()}`;
 
   let devSpaceId: string;
   let prodSpaceId: string;
@@ -216,26 +197,16 @@ test.describe('space settings sheet — mount invariant', () => {
     });
     prodSpaceId = (prodSpace as { SpaceID: string }).SpaceID;
 
-    const workerResp = await hubApi.post(`/api/space/${devSpaceId}/bridge_worker`, {
-      params: { allow_exists: 'true' },
-      data: {
-        Slug: workerSlug,
-        ProvidedInfo: { BridgeWorkerInfo: { SupportedConfigTypes: [{ ProviderType: 'Kubernetes', ToolchainType: 'Kubernetes/YAML', LiveStateType: 'Kubernetes/YAML' }] } },
-      },
-    });
-    if (!workerResp.ok()) throw new Error(`Failed to create worker: ${workerResp.status()} ${await workerResp.text()}`);
-    const bridgeWorkerId = ((await workerResp.json()) as { BridgeWorkerID: string }).BridgeWorkerID;
-
     const devTargetResp = await hubApi.post(`/api/space/${devSpaceId}/target`, {
       params: { allow_exists: 'true' },
-      data: { Slug: devTargetSlug, BridgeWorkerID: bridgeWorkerId, ToolchainType: 'Kubernetes/YAML', ProviderType: 'Kubernetes' },
+      data: { Slug: devTargetSlug },
     });
     if (!devTargetResp.ok()) throw new Error(`Failed to create dev target: ${devTargetResp.status()} ${await devTargetResp.text()}`);
     const devTargetId = ((await devTargetResp.json()) as { TargetID: string }).TargetID;
 
     const prodTargetResp = await hubApi.post(`/api/space/${prodSpaceId}/target`, {
       params: { allow_exists: 'true' },
-      data: { Slug: prodTargetSlug, BridgeWorkerID: bridgeWorkerId, ToolchainType: 'Kubernetes/YAML', ProviderType: 'Kubernetes' },
+      data: { Slug: prodTargetSlug },
     });
     if (!prodTargetResp.ok()) throw new Error(`Failed to create prod target: ${prodTargetResp.status()} ${await prodTargetResp.text()}`);
     const prodTargetId = ((await prodTargetResp.json()) as { TargetID: string }).TargetID;

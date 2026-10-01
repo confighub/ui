@@ -37,8 +37,7 @@ export interface GroupableCategory {
 
 /**
  * The exact set of field names for which getCellValue returns a non-empty value
- * and that are meaningful as grouping dimensions. TargetBridgeWorkerSlug is
- * intentionally omitted — it has no getCellValue case.
+ * and that are meaningful as grouping dimensions.
  */
 export const SUPPORTED_GROUPABLE_FIELDS: string[] = [
   'Space',
@@ -96,11 +95,6 @@ const STATIC_CATEGORIES: GroupableCategory[] = [
       .filter((f) => SUPPORTED_GROUPABLE_FIELDS.includes(f))
       .map((f) => ({ field: f, label: FIELD_LABELS[f] ?? f })),
   },
-  {
-    header: 'Infrastructure',
-    // Empty — TargetBridgeWorkerSlug has no getCellValue case.
-    fields: [],
-  },
 ];
 
 /**
@@ -122,7 +116,7 @@ export function getGroupableCategories(
 ): GroupableCategory[] {
   const result: GroupableCategory[] = [];
 
-  // Static categories — omit empty ones (e.g. Infrastructure)
+  // Static categories — omit empty ones
   for (const cat of STATIC_CATEGORIES) {
     if (cat.fields.length > 0) {
       result.push(cat);

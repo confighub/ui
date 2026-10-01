@@ -15,7 +15,6 @@ import AdjustIcon from '@mui/icons-material/Adjust';
 import CircleIcon from '@mui/icons-material/Circle';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import Box from '@mui/material/Box';
-import Chip from '@mui/material/Chip';
 import Collapse from '@mui/material/Collapse';
 import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
@@ -32,10 +31,6 @@ interface TargetSummary {
   targetId: string;
   slug: string;
   name: string;
-  toolchainType: string;
-  providerType: string;
-  liveStateType?: string;
-  bridgeHandle?: string;
   labels?: Record<string, string>;
   status: TargetStatus;
   unitCount: number;
@@ -65,10 +60,6 @@ const buildTargetSummaries = (units: ExtendedUnitRead[]): TargetSummary[] => {
         targetId,
         slug: target.Slug,
         name: target.DisplayName ?? target.Slug,
-        toolchainType: target.ToolchainType,
-        providerType: target.ProviderType,
-        liveStateType: target.LiveStateType,
-        bridgeHandle: target.BridgeHandle,
         labels:
           target.Labels && Object.keys(target.Labels).length > 0 ? target.Labels : undefined,
         status: 'success',
@@ -123,30 +114,6 @@ const TargetHoverContent = ({ summary }: { summary: TargetSummary }) => (
       </Typography>
     </HoverCardHeader>
 
-    <HoverCardMetadataRow>
-      <HoverCardMetadataLabel>Toolchain</HoverCardMetadataLabel>
-      <HoverCardMetadataValue>{summary.toolchainType}</HoverCardMetadataValue>
-    </HoverCardMetadataRow>
-
-    <HoverCardMetadataRow>
-      <HoverCardMetadataLabel>Provider</HoverCardMetadataLabel>
-      <HoverCardMetadataValue>{summary.providerType}</HoverCardMetadataValue>
-    </HoverCardMetadataRow>
-
-    {summary.liveStateType && (
-      <HoverCardMetadataRow>
-        <HoverCardMetadataLabel>Live State</HoverCardMetadataLabel>
-        <HoverCardMetadataValue>{summary.liveStateType}</HoverCardMetadataValue>
-      </HoverCardMetadataRow>
-    )}
-
-    {summary.bridgeHandle && (
-      <HoverCardMetadataRow>
-        <HoverCardMetadataLabel>Bridge</HoverCardMetadataLabel>
-        <HoverCardMetadataValue>{summary.bridgeHandle}</HoverCardMetadataValue>
-      </HoverCardMetadataRow>
-    )}
-
     {summary.labels && (
       <>
         <Divider sx={{ my: 0.75 }} />
@@ -195,14 +162,6 @@ const TargetRow = ({ summary }: { summary: TargetSummary }) => (
           </Typography>
         </Stack>
       </Stack>
-
-      {/* Right: toolchain chip */}
-      <Chip
-        size='small'
-        label={summary.toolchainType}
-        variant='outlined'
-        sx={{ fontSize: '0.65rem', height: 20, flexShrink: 0, ml: 1 }}
-      />
     </Stack>
   </HoverCardOverlay>
 );

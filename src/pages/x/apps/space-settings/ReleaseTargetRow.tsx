@@ -10,10 +10,9 @@
  * not lazy" reasoning). Rejected in review: "I don't like the change or
  * clear things. Just allow them to be changeable off the bat please." This
  * is the replacement — ONE always-editable picker, exactly like the Variant
- * name text field above it in `SpaceSettingsSheet.tsx`. Filtered to
- * OCI-provider targets only (`validateReleaseTarget`, space.go:269-293, hard
- * -requires ProviderType "OCI"), with a "None" option inside the SAME picker
- * standing in for clearing — not a separate mode, not a separate control.
+ * name text field above it in `SpaceSettingsSheet.tsx`. Offers every Target,
+ * with a "None" option inside the SAME picker standing in for clearing — not
+ * a separate mode, not a separate control.
  * Stages like every other row; nothing writes until Save.
  *
  * The one piece of ceremony kept from the old design, deliberately: changing
@@ -28,8 +27,7 @@
  * that case shows nothing at all, matching the instruction that this stay a
  * sentence, not a workflow.
  *
- * The unit-targets row this control's affected-unit count and OCI filtering
- * once shared visual DNA with (`UnitTargetsRow.tsx`, the enumerated
+ * The unit-targets row this control's affected-unit count once shared visual DNA with (`UnitTargetsRow.tsx`, the enumerated
  * affected-units surface, the partial-failure strip) was cut from the
  * feature entirely in review ("Get rid of the units target section
  * completely.") — this row is now the ONLY retarget-shaped control left in
@@ -54,7 +52,7 @@ export interface ReleaseTargetOption {
 export interface ReleaseTargetRowProps {
   currentTargetId: string | null;
   currentTargetName: string | null;
-  ociTargetOptions: ReleaseTargetOption[];
+  targetOptions: ReleaseTargetOption[];
   /**
    * Count of units currently sitting on `currentTargetId` — sizes the
    * consequence line only. Always 0 when `currentTargetId` is null: per
@@ -71,7 +69,7 @@ export interface ReleaseTargetRowProps {
 export function ReleaseTargetRow({
   currentTargetId,
   currentTargetName,
-  ociTargetOptions,
+  targetOptions,
   affectedUnitCount,
   draftTargetId,
   onChange,
@@ -80,7 +78,7 @@ export function ReleaseTargetRow({
   const effectiveTargetId = draftTargetId !== undefined ? draftTargetId : currentTargetId;
   const isDirty = draftTargetId !== undefined && draftTargetId !== currentTargetId;
   const movesUnits = isDirty && currentTargetId != null && affectedUnitCount > 0;
-  const newTargetName = effectiveTargetId == null ? null : (ociTargetOptions.find((t) => t.targetId === effectiveTargetId)?.name ?? effectiveTargetId);
+  const newTargetName = effectiveTargetId == null ? null : (targetOptions.find((t) => t.targetId === effectiveTargetId)?.name ?? effectiveTargetId);
 
   return (
     <Box sx={{ padding: '8px 16px', borderTop: `1px solid ${componentTheme.borderSubtle}` }}>
@@ -97,9 +95,9 @@ export function ReleaseTargetRow({
         )}
       </Box>
 
-      {ociTargetOptions.length === 0 ? (
+      {targetOptions.length === 0 ? (
         <Typography data-testid='space-settings-release-target-empty' sx={{ fontSize: 12, color: componentTheme.fgSubtle, fontStyle: 'italic' }}>
-          No OCI-provider targets exist yet — a release target must publish via OCI.
+          No targets exist yet.
         </Typography>
       ) : (
         <>
@@ -118,12 +116,12 @@ export function ReleaseTargetRow({
               '& .MuiSelect-select': { height: 30, boxSizing: 'border-box', display: 'flex', alignItems: 'center' },
               '& .MuiOutlinedInput-notchedOutline': { borderColor: componentTheme.borderDefault },
             }}
-            renderValue={(v) => (v === NONE_VALUE ? 'None' : (ociTargetOptions.find((t) => t.targetId === v)?.name ?? v))}
+            renderValue={(v) => (v === NONE_VALUE ? 'None' : (targetOptions.find((t) => t.targetId === v)?.name ?? v))}
           >
             <MenuItem value={NONE_VALUE} sx={{ fontStyle: 'italic', color: componentTheme.fgSubtle }}>
               None
             </MenuItem>
-            {ociTargetOptions.map((t) => (
+            {targetOptions.map((t) => (
               <MenuItem key={t.targetId} value={t.targetId}>
                 {t.name}
               </MenuItem>

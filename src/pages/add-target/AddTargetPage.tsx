@@ -19,14 +19,7 @@ import {
 } from '@confighub/rtk-query';
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
 import { ENTITY_TYPES } from '@/utility/analytics-constants';
-import {
-  DEFAULT_WORKERLESS_PROVIDER,
-  DEFAULT_WORKERLESS_TOOLCHAIN,
-  WORKERLESS_PROVIDER_TYPES,
-  getAvailableBridges,
-  getToolchainsForProvider,
-  getWorkerlessToolchains,
-} from '@/utility/bridge-worker-utils';
+import { grantWorkerTargetAccess } from '@/utility/bridge-worker-utils';
 // Removed service layer imports - using RTK Query directly
 import CloseIcon from '@mui/icons-material/Close';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
@@ -76,8 +69,6 @@ export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPagePr
         trackEntityCreated({
           entity_type: ENTITY_TYPES.TARGET,
           entity_id: createResponse.TargetID || '',
-          provider_type: createResponse.ProviderType || '',
-          toolchain_type: createResponse.ToolchainType || '',
         });
       }
       onTargetAdded?.(createResponse as TargetRead);
@@ -94,11 +85,7 @@ export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPagePr
     reset,
   } = useForm<Target>({
     defaultValues: {
-      BridgeWorkerID: '',
       Slug: '',
-      Parameters: '',
-      ProviderType: DEFAULT_WORKERLESS_PROVIDER,
-      ToolchainType: DEFAULT_WORKERLESS_TOOLCHAIN,
       SpaceID: '',
       Labels: {},
       Annotations: {},
@@ -108,8 +95,7 @@ export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPagePr
   const { labelHandlers, annotationHandlers } = useKeyValueHandlers(setValue, watch);
 
   const watchedSpaceId = watch('SpaceID');
-  const watchedBridgeWorkerId = watch('BridgeWorkerID');
-  const watchedProviderType = watch('ProviderType');
+  const [accessWorkerId, setAccessWorkerId] = useState('');
 
   const spaces = extendedSpaces
     .map((es) => es.Space)
@@ -126,55 +112,23 @@ export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPagePr
     .map((ebw) => ebw.BridgeWorker)
     .filter((bw): bw is BridgeWorkerRead => bw !== undefined);
 
-  const selectedWorker = useMemo(
-    () => bridgeWorkers.find((bw) => bw.BridgeWorkerID === watchedBridgeWorkerId),
-    [bridgeWorkers, watchedBridgeWorkerId],
-  );
-
-  const workerSelected = !!watchedBridgeWorkerId && !!selectedWorker;
-
-  // Without a worker there is no ProvidedInfo to derive the pickers from, so offer
-  // the pull-based defaults instead of disabling them.
-  const providerOptions = useMemo(
-    () =>
-      watchedBridgeWorkerId
-        ? getAvailableBridges(selectedWorker?.ProvidedInfo)
-        : WORKERLESS_PROVIDER_TYPES,
-    [watchedBridgeWorkerId, selectedWorker],
-  );
-
-  const toolchainOptions = useMemo(
-    () =>
-      watchedBridgeWorkerId
-        ? getToolchainsForProvider(selectedWorker?.ProvidedInfo, watchedProviderType)
-        : getWorkerlessToolchains(watchedProviderType),
-    [watchedBridgeWorkerId, selectedWorker, watchedProviderType],
+  const accessWorker = useMemo(
+    () => bridgeWorkers.find((bw) => bw.BridgeWorkerID === accessWorkerId),
+    [bridgeWorkers, accessWorkerId],
   );
 
   const onSubmit = async (data: Target) => {
     const space = spaces?.find((space) => space.SpaceID === data.SpaceID) || ({} as SpaceRead);
 
-    let parameters = '{}';
-
-    try {
-      // Attempt to parse the parameters to ensure it's valid JSON
-      parameters = JSON.stringify(JSON.parse(data.Parameters || ''));
-    } catch (error) {
-      console.log(error);
-    }
-
     const input = {
       spaceId: data.SpaceID,
       target: {
-        BridgeWorkerID: data.BridgeWorkerID || undefined,
         Labels: data.Labels,
         Annotations: data.Annotations,
-        Parameters: parameters,
         Slug: data.Slug,
         SpaceID: data.SpaceID,
         OrganizationID: space.OrganizationID || '',
-        ToolchainType: data.ToolchainType,
-        ProviderType: data.ProviderType,
+        Permissions: grantWorkerTargetAccess(undefined, accessWorker),
       },
     } as CreateTargetApiArg;
 
@@ -183,15 +137,12 @@ export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPagePr
 
   const handleClose = () => {
     reset({
-      BridgeWorkerID: '',
       Slug: '',
-      Parameters: '',
-      ProviderType: DEFAULT_WORKERLESS_PROVIDER,
-      ToolchainType: DEFAULT_WORKERLESS_TOOLCHAIN,
       SpaceID: '',
       Labels: {},
       Annotations: {},
     });
+    setAccessWorkerId('');
     setErrorMessage('');
     onClose();
   };
@@ -249,27 +200,6 @@ export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPagePr
             </Grid>
             <Grid size={{ xs: 12 }}>
               <Controller
-                name='Parameters'
-                control={control}
-                rules={{ required: 'Parameters is required' }}
-                render={({ field }) => (
-                  <TextField
-                    fullWidth
-                    label='Parameters'
-                    error={!!errors.Parameters}
-                    size='small'
-                    placeholder='{"KubeContext":"space-name-here"}'
-                    helperText={
-                      errors.Parameters?.message ||
-                      '{"KubeContext":"kind-space17005","KubeNamespace":"default","WaitTimeout":"2m0s"}'
-                    }
-                    {...field}
-                  />
-                )}
-              />
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <Controller
                 name='SpaceID'
                 control={control}
                 rules={{ required: 'Space is required' }}
@@ -294,155 +224,33 @@ export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPagePr
               />
             </Grid>
             <Grid size={{ xs: 12 }}>
-              <Controller
-                name='BridgeWorkerID'
-                control={control}
-                render={({ field }) => (
-                  <FormControl fullWidth size='small' error={!!errors.BridgeWorkerID}>
-                    <InputLabel shrink>Worker (optional)</InputLabel>
-                    <Select
-                      label='Worker (optional)'
-                      input={<OutlinedInput label='Worker (optional)' notched />}
-                      size='small'
-                      disabled={!watchedSpaceId}
-                      displayEmpty
-                      {...field}
-                      onChange={(e) => {
-                        const newWorkerId = e.target.value as string;
-                        field.onChange(newWorkerId);
-                        if (!newWorkerId) {
-                          setValue('ProviderType', DEFAULT_WORKERLESS_PROVIDER);
-                          setValue('ToolchainType', DEFAULT_WORKERLESS_TOOLCHAIN);
-                          return;
-                        }
-                        const newWorker = bridgeWorkers.find(
-                          (bw) => bw.BridgeWorkerID === newWorkerId,
-                        );
-                        const newProviders = getAvailableBridges(newWorker?.ProvidedInfo);
-                        const autoProvider = newProviders.length === 1 ? newProviders[0] : '';
-                        setValue('ProviderType', autoProvider);
-                        if (autoProvider) {
-                          const newToolchains = getToolchainsForProvider(
-                            newWorker?.ProvidedInfo,
-                            autoProvider,
-                          );
-                          setValue(
-                            'ToolchainType',
-                            newToolchains.length === 1 ? newToolchains[0] : '',
-                          );
-                        } else {
-                          setValue('ToolchainType', '');
-                        }
-                      }}
-                    >
-                      <MenuItem value=''>
-                        <em>None</em>
-                      </MenuItem>
-                      {bridgeWorkers?.map((worker) => (
-                        <MenuItem key={worker.BridgeWorkerID} value={worker.BridgeWorkerID}>
-                          {worker.DisplayName}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                    {errors.BridgeWorkerID && (
-                      <FormHelperText>{errors.BridgeWorkerID.message}</FormHelperText>
-                    )}
-                    {!watchedSpaceId && <FormHelperText>Select a space first</FormHelperText>}
-                    {!!watchedSpaceId && !workerSelected && (
-                      <FormHelperText>
-                        A target needs no worker; grant access to it with permissions
-                      </FormHelperText>
-                    )}
-                  </FormControl>
+              <FormControl fullWidth size='small'>
+                <InputLabel shrink>Grant access to worker (optional)</InputLabel>
+                <Select
+                  value={accessWorkerId}
+                  label='Grant access to worker (optional)'
+                  input={<OutlinedInput label='Grant access to worker (optional)' notched />}
+                  size='small'
+                  disabled={!watchedSpaceId}
+                  displayEmpty
+                  onChange={(e) => setAccessWorkerId(e.target.value as string)}
+                >
+                  <MenuItem value=''>
+                    <em>None</em>
+                  </MenuItem>
+                  {bridgeWorkers?.map((worker) => (
+                    <MenuItem key={worker.BridgeWorkerID} value={worker.BridgeWorkerID}>
+                      {worker.DisplayName}
+                    </MenuItem>
+                  ))}
+                </Select>
+                {!watchedSpaceId && <FormHelperText>Select a space first</FormHelperText>}
+                {!!watchedSpaceId && (
+                  <FormHelperText>
+                    The worker can find the target and pull the releases published for it
+                  </FormHelperText>
                 )}
-              />
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <Controller
-                name='ProviderType'
-                control={control}
-                rules={{ required: 'Provider Type is required' }}
-                render={({ field }) => (
-                  <FormControl fullWidth size='small' error={!!errors.ProviderType}>
-                    <InputLabel>Provider Type</InputLabel>
-                    <Select
-                      label='Provider Type'
-                      input={<OutlinedInput label='Provider Type' />}
-                      size='small'
-                      disabled={!watchedSpaceId}
-                      {...field}
-                      onChange={(e) => {
-                        const newProvider = e.target.value as string;
-                        field.onChange(newProvider);
-                        const newToolchains = workerSelected
-                          ? getToolchainsForProvider(selectedWorker?.ProvidedInfo, newProvider)
-                          : getWorkerlessToolchains(newProvider);
-                        setValue(
-                          'ToolchainType',
-                          newToolchains.length >= 1 &&
-                            (newToolchains.length === 1 || !workerSelected)
-                            ? newToolchains[0]
-                            : '',
-                        );
-                      }}
-                    >
-                      {providerOptions.map((type) => (
-                        <MenuItem key={type} value={type}>
-                          {type}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                    {workerSelected && providerOptions.length === 0 && (
-                      <FormHelperText error>
-                        Selected bridge worker has not reported any supported config types — a
-                        target cannot be created against it
-                      </FormHelperText>
-                    )}
-                    {errors.ProviderType && (
-                      <FormHelperText>{errors.ProviderType.message}</FormHelperText>
-                    )}
-                  </FormControl>
-                )}
-              />
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <Controller
-                name='ToolchainType'
-                control={control}
-                rules={{ required: 'Toolchain Type is required' }}
-                render={({ field }) => (
-                  <FormControl fullWidth size='small' error={!!errors.ToolchainType}>
-                    <InputLabel>Toolchain Type</InputLabel>
-                    <Select
-                      label='Toolchain Type'
-                      input={<OutlinedInput label='Toolchain Type' />}
-                      size='small'
-                      disabled={!watchedSpaceId || !watchedProviderType}
-                      {...field}
-                    >
-                      {toolchainOptions.map((type) => (
-                        <MenuItem key={type} value={type}>
-                          {type}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                    {!!watchedSpaceId && !watchedProviderType && (
-                      <FormHelperText>Select a provider first</FormHelperText>
-                    )}
-                    {workerSelected &&
-                      !!watchedProviderType &&
-                      toolchainOptions.length === 0 && (
-                        <FormHelperText error>
-                          Selected bridge worker has not reported any toolchain types for this
-                          provider
-                        </FormHelperText>
-                      )}
-                    {errors.ToolchainType && (
-                      <FormHelperText>{errors.ToolchainType.message}</FormHelperText>
-                    )}
-                  </FormControl>
-                )}
-              />
+              </FormControl>
             </Grid>
             <Grid size={{ xs: 12 }}>
               <LabelsAccordion

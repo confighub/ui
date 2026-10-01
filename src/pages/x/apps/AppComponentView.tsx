@@ -649,20 +649,6 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
     return m;
   }, [targets]);
 
-  // Build target → raw ProviderType map. This is only the LEGACY FALLBACK for
-  // attributing a node's live status to a delivery system: the annotation's own
-  // `source` is the primary signal and needs no Target at all. Free either way —
-  // `ProviderType` is already on the payload this view fetches.
-  const targetProviderTypeById = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const t of targets) {
-      const tid = t.Target?.TargetID;
-      const providerType = t.Target?.ProviderType;
-      if (tid && providerType) m.set(tid, providerType);
-    }
-    return m;
-  }, [targets]);
-
   const { deployments, stages } = useMemo(
     () =>
       buildComponentData(
@@ -671,9 +657,8 @@ export const AppComponentView = memo(({ spaces, targets, selectedDeploymentIds: 
         unitById,
         targetNameById,
         targetAnnotationsById,
-        targetProviderTypeById,
       ),
-    [spaces, allUnits, unitById, targetNameById, targetAnnotationsById, targetProviderTypeById],
+    [spaces, allUnits, unitById, targetNameById, targetAnnotationsById],
   );
 
   // Map deployment ID → display name, used by entry builders.

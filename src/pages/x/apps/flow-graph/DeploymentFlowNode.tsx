@@ -1019,13 +1019,8 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
   const liveProvider = deployment.liveStatusProvider;
   // A node that actually deploys somewhere (has a Target) but carries no
   // live-status reading says so explicitly, REGARDLESS of whether the
-  // delivery system was identifiable. Gating this on `liveProvider !==
-  // 'unknown'` was a bug: with no live status yet, the provider can only
-  // resolve to a NAMED system via the legacy ArgoCD*/Flux* `ProviderType`
-  // values — bridges being sunset (see liveStatus.ts). The modern replacement
-  // path (`cub cluster up`) creates Targets with the generic `ProviderType:
-  // "OCI"`, which resolves to `'unknown'` — so the old gate silently hid the
-  // very "not reported yet" state it exists to show for the go-forward case.
+  // delivery system was identifiable: with no live status yet, there is no
+  // `source` to name a system, so the provider is always `'unknown'`.
   // A Base (no Target) is correctly excluded: nothing is deployed from it, so
   // there is nothing that could have reported.
   const hasTargets = deployment.targets.length > 0;

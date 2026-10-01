@@ -94,26 +94,9 @@ test.describe('ComponentValuesSection auto-mode controls for U11', () => {
     });
     folderSpaceId = (folderSpace as { SpaceID: string }).SpaceID;
     const folderTargetSlug = `${folderSlug}-tgt`;
-    const folderWorkerResp = await hubApi.post(`/api/space/${folderSpaceId}/bridge_worker`, {
-      params: { allow_exists: 'true' },
-      data: {
-        Slug: `e2e-cvs-folder-worker-${RandomSlugGenerator.randomSlugName()}`,
-        ProvidedInfo: {
-          BridgeWorkerInfo: {
-            SupportedConfigTypes: [
-              { ProviderType: 'Kubernetes', ToolchainType: 'Kubernetes/YAML', LiveStateType: 'Kubernetes/YAML' },
-            ],
-          },
-        },
-      },
-    });
-    if (!folderWorkerResp.ok()) {
-      throw new Error(`folder worker: ${folderWorkerResp.status()} ${await folderWorkerResp.text()}`);
-    }
-    const folderBridgeWorkerId = ((await folderWorkerResp.json()) as { BridgeWorkerID: string }).BridgeWorkerID;
     const folderTargetResp = await hubApi.post(`/api/space/${folderSpaceId}/target`, {
       params: { allow_exists: 'true' },
-      data: { Slug: folderTargetSlug, BridgeWorkerID: folderBridgeWorkerId, ToolchainType: 'Kubernetes/YAML', ProviderType: 'Kubernetes' },
+      data: { Slug: folderTargetSlug },
     });
     if (!folderTargetResp.ok()) {
       throw new Error(`folder target: ${folderTargetResp.status()} ${await folderTargetResp.text()}`);

@@ -6,7 +6,6 @@ import { SpaceListPage } from './fixtures/space-list-page';
 import { TargetListPage } from './fixtures/target-list-page';
 import { UnitListPage } from './fixtures/unit-list-page';
 import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
-import { WorkerListPage } from './fixtures/worker-list-page';
 
 test.describe('unit list page', () => {
   // Apply this configuration to all tests and hooks within this describe block.
@@ -137,9 +136,7 @@ test.describe('unit list page', () => {
     await unitListPage.expectToBeVisibleByText('Add-context is required');
   });
 
-  // TODO: I don't know why this is having issues
-  // Workers require running first to be validated.  We can't run workers in the UI so creating a target will always break because a worker hasn't been run and validated yet.
-  test.skip('should bulk assign a target and labels to the selected units', async ({
+  test('should bulk assign a target and labels to the selected units', async ({
     page,
   }) => {
     test.setTimeout(90000);
@@ -147,17 +144,12 @@ test.describe('unit list page', () => {
     const basicDeploymentYml = 'basic-deployment';
     const unitName = RandomSlugGenerator.randomSlugName();
     const targetName = RandomSlugGenerator.randomSlugName();
-    const workerName = RandomSlugGenerator.randomSlugName();
 
     const unitListPage = new UnitListPage(page);
     const targetListPage = new TargetListPage(page);
-    const workerListPage = new WorkerListPage(page);
-
-    await workerListPage.goto();
-    await workerListPage.addWorker(workerName);
 
     await targetListPage.goto();
-    await targetListPage.addTarget({ targetName, workerName });
+    await targetListPage.addTarget({ targetName });
 
     await unitListPage.createUnitViaAPI({ unitType: basicDeploymentYml, slug: unitName });
 
@@ -298,11 +290,11 @@ test.describe('unit list page', () => {
     // Create a new test unit with a specific toolchain type
     const testUnitName = RandomSlugGenerator.randomSlugName();
 
-    // Add the unit with ConfigHub/YAML toolchain type
+    // Add the unit with AppConfig/YAML toolchain type
     await unitListPage.createUnitViaAPI({
       unitType: 'basic-deployment',
       slug: testUnitName,
-      toolchainType: 'ConfigHub/YAML',
+      toolchainType: 'AppConfig/YAML',
     });
 
     // Get the row (will automatically search if not visible)
@@ -311,10 +303,10 @@ test.describe('unit list page', () => {
     // Select the unit row so it becomes the active unit for the sidebar
     await row.getByLabel('Select row').click();
 
-    // Open the invoker sidebar and verify it shows 'ConfigHub/YAML' as the active toolchain filter
+    // Open the invoker sidebar and verify it shows 'AppConfig/YAML' as the active toolchain filter
     await unitListPage.openInvokerSidebar();
     await expect(page.getByPlaceholder('Search functions')).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText('ConfigHub/YAML').first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('AppConfig/YAML').first()).toBeVisible({ timeout: 5000 });
 
     // Clean up: Delete the test unit
     await unitListPage.deleteUnitByName(testUnitName);

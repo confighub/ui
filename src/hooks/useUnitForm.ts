@@ -9,7 +9,6 @@ import {
 } from '@/components/forms/add-label-modal/AddLabelModal';
 import { TargetRead, Unit } from '@confighub/rtk-query';
 import { useListAllTargetsQuery } from '@confighub/rtk-query';
-import { TOOLCHAIN_ANY } from '@/utility/constants';
 import { SelectChangeEvent } from '@mui/material/Select';
 
 type UnitFormData = Unit;
@@ -58,14 +57,9 @@ export const useUnitForm = ({
     mode,
   });
 
-  const formToolchainType = form.watch('ToolchainType');
-
   const { targets = [] } = useListAllTargetsQuery(
+    {},
     {
-      where: `ToolchainType IN ('${formToolchainType}', '${TOOLCHAIN_ANY}')`,
-    },
-    {
-      skip: !formToolchainType,
       selectFromResult: ({ data }) => ({
         targets:
           data?.map((et) => et.Target).filter((t): t is TargetRead => t !== undefined) || [],

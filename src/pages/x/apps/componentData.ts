@@ -56,7 +56,6 @@ function buildDeploymentTargets(
   targetIds: string[],
   targetNameById: Map<string, string>,
   targetAnnotationsById: Map<string, Record<string, string>>,
-  targetProviderTypeById: Map<string, string>,
   slug: string,
 ): DeploymentTarget[] {
   return targetIds
@@ -66,32 +65,9 @@ function buildDeploymentTargets(
         targetId: tid,
         name: targetNameById.get(tid) ?? tid,
         url: template ? template.replace(/\{slug\}/g, slug) : undefined,
-        providerType: targetProviderTypeById.get(tid),
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name) || a.targetId.localeCompare(b.targetId));
-}
-
-/**
- * Pick the Target whose `ProviderType` serves as the LEGACY FALLBACK for
- * attributing live status to a delivery system (used only when the annotation
- * carries no `source` — see `resolveLiveStatusProvider` in liveStatus.ts).
- *
- * `Space.ReleaseTargetID` wins whenever it is set: releases publish through
- * that Target, and it is that publish path an external reporter (argobot
- * watching ArgoCD today) observes. With no release Target, a Space with exactly
- * one Target has only one possible answer; a Space with several has no single
- * honest one, so it contributes nothing rather than guessing which of them the
- * annotation came from.
- */
-export function fallbackProviderType(
-  releaseTargetId: string | null | undefined,
-  targets: DeploymentTarget[],
-  targetProviderTypeById: Map<string, string>,
-): string | undefined {
-  if (releaseTargetId) return targetProviderTypeById.get(releaseTargetId);
-  if (targets.length === 1) return targets[0].providerType;
-  return undefined;
 }
 
 /**
@@ -108,7 +84,6 @@ export function buildComponentData(
   unitById: Map<string, ExtendedUnitRead>,
   targetNameById: Map<string, string>,
   targetAnnotationsById?: Map<string, Record<string, string>>,
-  targetProviderTypeById?: Map<string, string>,
 ): { deployments: ComponentDeployment[]; stages: Stage[] } {
   const unitToSpaceId = new Map<string, string>();
   for (const u of allUnits) {
@@ -191,8 +166,6 @@ export function buildComponentData(
     }
   }
 
-  const providerTypeById = targetProviderTypeById ?? new Map<string, string>();
-
   const deployments: ComponentDeployment[] = spaces
     .filter((s) => !!s.Space?.SpaceID)
     .map((s) => {
@@ -203,7 +176,6 @@ export function buildComponentData(
         targetIds,
         targetNameById,
         targetAnnotationsById ?? new Map(),
-        providerTypeById,
         slug,
       );
       const variant = s.Space?.Labels?.[LABEL_VARIANT];
@@ -233,12 +205,7 @@ export function buildComponentData(
         liveStatus,
         // Same reasoning as `liveStatus` above: a Base deploys nothing, so no
         // delivery system reports on it and it must not carry a brand mark.
-        liveStatusProvider: isBase
-          ? 'unknown'
-          : resolveLiveStatusProvider(
-              liveStatus,
-              fallbackProviderType(s.Space?.ReleaseTargetID, targets, providerTypeById),
-            ),
+        liveStatusProvider: isBase ? 'unknown' : resolveLiveStatusProvider(liveStatus),
         staleUpstreamChangedAt: staleChangedAtBySpace.get(sid),
         staleRevisionsBehind: staleBehindBySpace.get(sid),
       };

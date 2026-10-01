@@ -20,7 +20,6 @@ const UNIT_FILTER_FIELDS = [
   'UpstreamUnitID',
   'UpstreamSpaceID',
   'UpstreamRevisionNum',
-  'BridgeWorkerID',
   'ChangeSetID',
   'ProviderType',
 ];
@@ -38,7 +37,6 @@ const ALL_UNIT_COLUMNS = [
   'ChangeSetSlug',
   'UpstreamUnitSlug',
   'UpstreamSpaceSlug',
-  'BridgeWorkerID',
   'ProviderType',
   'DisplayName',
   'HeadRevisionCreatedAt',

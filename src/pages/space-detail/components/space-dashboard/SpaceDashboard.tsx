@@ -345,8 +345,8 @@ export const SpaceDashboard = ({
                   </Grid>
                   <Grid size={{ xs: 6, sm: 4 }}>
                     <StatCard
-                      title='Toolchain Targets'
-                      value={sumMap(extendedSpace?.TargetCountByToolchainType) || 0}
+                      title='Targets'
+                      value={extendedSpace?.TotalTargetCount || 0}
                       loading={isSpacesLoading}
                       onClick={handleNavigateToTargets}
                     />

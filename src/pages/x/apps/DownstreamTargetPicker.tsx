@@ -124,17 +124,9 @@ function variantNameErrorMessage(error: VariantNameError): string {
 
 /**
  * Checkbox list of Targets in the organization, each optionally producing one
- * deployment variant of the component being created.
- *
- * **No `ProviderType === 'OCI'` filter here** — a hard OCI filter renders an
- * empty list in most organizations, so every deployable provider is shown
- * with its type surfaced as a chip and the choice left to the user. The
- * `targets` prop IS pre-filtered by the caller, though: non-deployable
- * provider types (Noop, None) and targets that name a worker which isn't Ready
- * are excluded before they ever reach this component; targets with no worker
- * are kept — see NON_DEPLOYABLE_PROVIDER_TYPES and the worker filter in
- * CreateComponentPane.tsx's useListAllTargetsQuery call. Nothing is
- * selected by default: creating variants is opt-in.
+ * deployment variant of the component being created. Every Target is a pull
+ * destination, so every one is listed. Nothing is selected by default:
+ * creating variants is opt-in.
  */
 export function DownstreamTargetPicker({
   targets,
@@ -255,19 +247,6 @@ export function DownstreamTargetPicker({
                 </Typography>
               )}
               <Box sx={{ flex: 1 }} />
-              <Chip
-                label={target.ProviderType}
-                size='small'
-                sx={{
-                  height: 18,
-                  fontSize: 10,
-                  fontWeight: 600,
-                  flexShrink: 0,
-                  bgcolor: componentTheme.bgDefault,
-                  border: `1px solid ${componentTheme.borderDefault}`,
-                  color: componentTheme.fgMuted,
-                }}
-              />
             </Box>
 
             {/* ── Checked: inline variant name + slug preview ─────────────── */}

@@ -174,8 +174,6 @@ test.describe('component release flow', () => {
   const plainSlug = `e2e-plain-${RandomSlugGenerator.randomSlugName()}`;
   const ociTargetSlug = `${releaseSlug}-oci`;
   const plainTargetSlug = `${plainSlug}-tgt`;
-  const ociWorkerSlug = `e2e-oci-worker-${RandomSlugGenerator.randomSlugName()}`;
-  const plainWorkerSlug = `e2e-worker-${RandomSlugGenerator.randomSlugName()}`;
 
   let releaseSpaceId: string;
   let plainSpaceId: string;
@@ -201,26 +199,9 @@ test.describe('component release flow', () => {
     });
     releaseSpaceId = (releaseSpace as { SpaceID: string }).SpaceID;
 
-    // Server-hosted worker backing the OCI Target — Ready immediately, no
-    // external bridge process (see api-helper.ts's createOciTarget doc).
-    const ociWorkerResp = await hubApi.post(
-      `/api/space/${releaseSpaceId}/bridge_worker`,
-      {
-        params: { allow_exists: 'true' },
-        data: { Slug: ociWorkerSlug, ProvidedInfo: { IsServerWorker: true } },
-      },
-    );
-    if (!ociWorkerResp.ok()) {
-      throw new Error(
-        `Failed to create OCI server-hosted worker: ${ociWorkerResp.status()} ${await ociWorkerResp.text()}`,
-      );
-    }
-    const ociWorkerData = (await ociWorkerResp.json()) as { BridgeWorkerID: string };
-
-    const ociTarget = await api.createOciTarget({
+    const ociTarget = await api.createTarget({
       spaceId: releaseSpaceId,
       slug: ociTargetSlug,
-      bridgeWorkerId: ociWorkerData.BridgeWorkerID,
     });
     const ociTargetId = (ociTarget as { TargetID: string }).TargetID;
 
@@ -277,33 +258,10 @@ test.describe('component release flow', () => {
     });
     plainSpaceId = (plainSpace as { SpaceID: string }).SpaceID;
 
-    const plainWorkerResp = await hubApi.post(`/api/space/${plainSpaceId}/bridge_worker`, {
-      params: { allow_exists: 'true' },
-      data: {
-        Slug: plainWorkerSlug,
-        ProvidedInfo: {
-          BridgeWorkerInfo: {
-            SupportedConfigTypes: [
-              { ProviderType: 'Kubernetes', ToolchainType: 'Kubernetes/YAML', LiveStateType: 'Kubernetes/YAML' },
-            ],
-          },
-        },
-      },
-    });
-    if (!plainWorkerResp.ok()) {
-      throw new Error(
-        `Failed to create plain bridge worker: ${plainWorkerResp.status()} ${await plainWorkerResp.text()}`,
-      );
-    }
-    const plainWorkerData = (await plainWorkerResp.json()) as { BridgeWorkerID: string };
-
     const plainTargetResp = await hubApi.post(`/api/space/${plainSpaceId}/target`, {
       params: { allow_exists: 'true' },
       data: {
         Slug: plainTargetSlug,
-        BridgeWorkerID: plainWorkerData.BridgeWorkerID,
-        ToolchainType: 'Kubernetes/YAML',
-        ProviderType: 'Kubernetes',
       },
     });
     if (!plainTargetResp.ok()) {
@@ -559,7 +517,6 @@ test.describe('component release — height-encoded lane (v7)', () => {
 
   const historySlug = `e2e-hist-${RandomSlugGenerator.randomSlugName()}`;
   const historyTargetSlug = `${historySlug}-oci`;
-  const historyWorkerSlug = `e2e-hist-worker-${RandomSlugGenerator.randomSlugName()}`;
 
   let historySpaceId: string;
   let historyUnitId: string;
@@ -598,17 +555,9 @@ test.describe('component release — height-encoded lane (v7)', () => {
     });
     historySpaceId = (space as { SpaceID: string }).SpaceID;
 
-    const workerResp = await hubApi.post(`/api/space/${historySpaceId}/bridge_worker`, {
-      params: { allow_exists: 'true' },
-      data: { Slug: historyWorkerSlug, ProvidedInfo: { IsServerWorker: true } },
-    });
-    if (!workerResp.ok()) throw new Error(`Failed to create worker: ${workerResp.status()} ${await workerResp.text()}`);
-    const workerData = (await workerResp.json()) as { BridgeWorkerID: string };
-
-    const target = await api.createOciTarget({
+    const target = await api.createTarget({
       spaceId: historySpaceId,
       slug: historyTargetSlug,
-      bridgeWorkerId: workerData.BridgeWorkerID,
     });
     const targetId = (target as { TargetID: string }).TargetID;
 
@@ -1497,14 +1446,7 @@ test.describe('component release — container image rows', () => {
     });
     imageSpaceId = (space as { SpaceID: string }).SpaceID;
 
-    const workerResp = await hubApi.post(`/api/space/${imageSpaceId}/bridge_worker`, {
-      params: { allow_exists: 'true' },
-      data: { Slug: `${imageSlug}-w`, ProvidedInfo: { IsServerWorker: true } },
-    });
-    if (!workerResp.ok()) throw new Error(`worker: ${workerResp.status()} ${await workerResp.text()}`);
-    const workerId = ((await workerResp.json()) as { BridgeWorkerID: string }).BridgeWorkerID;
-
-    const target = await api.createOciTarget({ spaceId: imageSpaceId, slug: `${imageSlug}-oci`, bridgeWorkerId: workerId });
+    const target = await api.createTarget({ spaceId: imageSpaceId, slug: `${imageSlug}-oci` });
     const targetId = (target as { TargetID: string }).TargetID;
     await api.updateSpace({ spaceId: imageSpaceId, space: { ReleaseTargetID: targetId } });
 

@@ -38,7 +38,6 @@ test.describe('component page', () => {
   const prodSlug = `e2e-prod-${RandomSlugGenerator.randomSlugName()}`;
   const devTargetSlug = `${devSlug}-tgt`;
   const prodTargetSlug = `${prodSlug}-tgt`;
-  const workerSlug = `e2e-worker-${RandomSlugGenerator.randomSlugName()}`;
 
   let devSpaceId: string;
   let prodSpaceId: string;
@@ -87,39 +86,11 @@ test.describe('component page', () => {
     });
     prodSpaceId = (prodSpace as { SpaceID: string }).SpaceID;
 
-    // Create a bridge worker with SupportedConfigTypes so we can create targets
-    const workerResp = await hubApi.post(`/api/space/${devSpaceId}/bridge_worker`, {
-      params: { allow_exists: 'true' },
-      data: {
-        Slug: workerSlug,
-        ProvidedInfo: {
-          BridgeWorkerInfo: {
-            SupportedConfigTypes: [
-              {
-                ProviderType: 'Kubernetes',
-                ToolchainType: 'Kubernetes/YAML',
-                LiveStateType: 'Kubernetes/YAML',
-              },
-            ],
-          },
-        },
-      },
-    });
-    if (!workerResp.ok())
-      throw new Error(
-        `Failed to create bridge worker: ${workerResp.status()} ${await workerResp.text()}`,
-      );
-    const workerData = (await workerResp.json()) as { BridgeWorkerID: string };
-    const bridgeWorkerId = workerData.BridgeWorkerID;
-
     // Create target in dev space
     const devTargetResp = await hubApi.post(`/api/space/${devSpaceId}/target`, {
       params: { allow_exists: 'true' },
       data: {
         Slug: devTargetSlug,
-        BridgeWorkerID: bridgeWorkerId,
-        ToolchainType: 'Kubernetes/YAML',
-        ProviderType: 'Kubernetes',
         Labels: { TargetRole: 'Dev', TargetRegion: 'US' },
       },
     });
@@ -134,9 +105,6 @@ test.describe('component page', () => {
       params: { allow_exists: 'true' },
       data: {
         Slug: prodTargetSlug,
-        BridgeWorkerID: bridgeWorkerId,
-        ToolchainType: 'Kubernetes/YAML',
-        ProviderType: 'Kubernetes',
         Labels: { TargetRole: 'Prod', TargetRegion: 'US' },
       },
     });

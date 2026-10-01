@@ -45,7 +45,6 @@ export interface ResourceRow {
   CreatedAt?: string;
   UpdatedAt?: string;
   LastChangeDescription?: string;
-  BridgeWorkerID?: string;
   SpaceID: string;
   SpaceSlug: string;
   SpaceLabels: Record<string, string>;
@@ -215,7 +214,6 @@ export function useResourceRows(): UseResourceRowsResult {
             CreatedAt: unit?.CreatedAt,
             UpdatedAt: unit?.UpdatedAt,
             LastChangeDescription: unit?.LastChangeDescription,
-            BridgeWorkerID: unit?.BridgeWorkerID,
             SpaceID: resource.SpaceID ?? '',
             SpaceSlug: resource.SpaceSlug ?? eu?.Space?.Slug ?? '',
             SpaceLabels: eu?.Space?.Labels ?? {},

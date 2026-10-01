@@ -54,7 +54,6 @@ test.describe('component staging keeps the Upgradable narrowed view', () => {
   const prodSlug = `e2e-prod-${RandomSlugGenerator.randomSlugName()}`;
   const devTargetSlug = `${devSlug}-tgt`;
   const prodTargetSlug = `${prodSlug}-tgt`;
-  const workerSlug = `e2e-worker-${RandomSlugGenerator.randomSlugName()}`;
 
   let devSpaceId: string;
   let prodSpaceId: string;
@@ -87,32 +86,16 @@ test.describe('component staging keeps the Upgradable narrowed view', () => {
     });
     prodSpaceId = (prodSpace as { SpaceID: string }).SpaceID;
 
-    const workerResp = await hubApi.post(`/api/space/${devSpaceId}/bridge_worker`, {
-      params: { allow_exists: 'true' },
-      data: {
-        Slug: workerSlug,
-        ProvidedInfo: {
-          BridgeWorkerInfo: {
-            SupportedConfigTypes: [
-              { ProviderType: 'Kubernetes', ToolchainType: 'Kubernetes/YAML', LiveStateType: 'Kubernetes/YAML' },
-            ],
-          },
-        },
-      },
-    });
-    if (!workerResp.ok()) throw new Error(`worker: ${workerResp.status()} ${await workerResp.text()}`);
-    const bridgeWorkerId = ((await workerResp.json()) as { BridgeWorkerID: string }).BridgeWorkerID;
-
     const devTargetResp = await hubApi.post(`/api/space/${devSpaceId}/target`, {
       params: { allow_exists: 'true' },
-      data: { Slug: devTargetSlug, BridgeWorkerID: bridgeWorkerId, ToolchainType: 'Kubernetes/YAML', ProviderType: 'Kubernetes', Labels: { TargetRole: 'Dev', TargetRegion: 'US' } },
+      data: { Slug: devTargetSlug, Labels: { TargetRole: 'Dev', TargetRegion: 'US' } },
     });
     if (!devTargetResp.ok()) throw new Error(`dev target: ${devTargetResp.status()} ${await devTargetResp.text()}`);
     const devTargetData = (await devTargetResp.json()) as { TargetID: string };
 
     const prodTargetResp = await hubApi.post(`/api/space/${prodSpaceId}/target`, {
       params: { allow_exists: 'true' },
-      data: { Slug: prodTargetSlug, BridgeWorkerID: bridgeWorkerId, ToolchainType: 'Kubernetes/YAML', ProviderType: 'Kubernetes', Labels: { TargetRole: 'Prod', TargetRegion: 'US' } },
+      data: { Slug: prodTargetSlug, Labels: { TargetRole: 'Prod', TargetRegion: 'US' } },
     });
     if (!prodTargetResp.ok()) throw new Error(`prod target: ${prodTargetResp.status()} ${await prodTargetResp.text()}`);
     const prodTargetData = (await prodTargetResp.json()) as { TargetID: string };

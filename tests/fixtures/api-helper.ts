@@ -638,39 +638,23 @@ export class ApiHelper {
   }
 
   /**
-   * Create an OCI-provider Target — the only Target type a Space's
-   * ReleaseTargetID may reference (enforced server-side in release_core.go:
-   * "Space's ReleaseTarget must have provider type OCI to publish a
-   * Release"). Backed by a server-hosted worker (see
-   * test/scripts/test-setup.sh's `cub worker create --is-server-worker` +
-   * `cub target create --provider OCI` pattern) rather than an external
-   * bridge process, so it's Ready immediately with no external process —
-   * pass the BridgeWorkerID of a worker created with
-   * `ProvidedInfo: { IsServerWorker: true }`.
-   *
-   * ToolchainType defaults to 'Any' (workerapi.ToolchainAny) to mirror what
-   * `cub target create --provider OCI` defaults to client-side when no
-   * toolchain is given — the OCI transport accepts any toolchain.
-   * @param params - Object containing spaceId, slug, the backing server-hosted worker's ID, and optional allowExists flag
+   * Create a Target. A Space's ReleaseTargetID names one, and the Space's
+   * Releases are published for it.
+   * @param params - Object containing spaceId, slug, and optional allowExists flag
    * @returns Promise resolving to the created TargetRead object
    * @throws Error if the request fails or response is invalid
    */
-  async createOciTarget({
+  async createTarget({
     spaceId,
     slug,
-    bridgeWorkerId,
     allowExists = true,
   }: {
     spaceId: string;
     slug: string;
-    bridgeWorkerId: string;
     allowExists?: boolean;
   }): Promise<TargetRead> {
     const target: Partial<Target> = {
       Slug: slug,
-      BridgeWorkerID: bridgeWorkerId,
-      ProviderType: 'OCI',
-      ToolchainType: 'Any',
     };
 
     const response = await hubApi.post(`/api/space/${spaceId}/target`, {
@@ -682,7 +666,7 @@ export class ApiHelper {
 
     if (!response.ok()) {
       throw new Error(
-        `Failed to create OCI target: ${response.status()} ${await response.text()}`
+        `Failed to create target: ${response.status()} ${await response.text()}`
       );
     }
 
@@ -699,7 +683,7 @@ export class ApiHelper {
    * mirrors the UI's usePublishReleaseMutation. Freezes the Space's head
    * config (for Units assigned to the release Target) into an immutable
    * OCI bundle. Requires the Space to already have ReleaseTargetID set to
-   * an OCI-provider Target (see updateSpace + createOciTarget).
+   * a Target (see updateSpace + createTarget).
    * @param params - Object containing spaceId and an optional publish request body (defaults to {} — head, no TagID)
    * @returns Promise resolving to the created ReleaseRead object
    * @throws Error if the request fails

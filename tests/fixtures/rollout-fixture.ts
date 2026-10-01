@@ -746,7 +746,7 @@ export async function buildRolloutFixture(
               : {}),
           });
 
-    // ── An OCI Target per deployment Space ────────────────────────────────
+    // ── A Target per deployment Space ─────────────────────────────────────
     // Two jobs at once: it is what makes the Space a Deployment rather than a
     // Base (so live status renders), and what publishRelease publishes through.
     if (releasable) {
@@ -754,22 +754,9 @@ export async function buildRolloutFixture(
         if (!node.upstream) continue;
         const space = spaces[node.name];
 
-        const workerResp = await hubApi.post(`/api/space/${space.spaceId}/bridge_worker`, {
-          params: { allow_exists: 'true' },
-          data: { Slug: `${space.slug}-oci-worker`, ProvidedInfo: { IsServerWorker: true } },
-        });
-        if (!workerResp.ok()) {
-          throw new Error(
-            `Failed to create server-hosted worker in ${space.slug}: ` +
-              `${workerResp.status()} ${await workerResp.text()}`
-          );
-        }
-        const { BridgeWorkerID } = (await workerResp.json()) as { BridgeWorkerID: string };
-
-        const target = await api.createOciTarget({
+        const target = await api.createTarget({
           spaceId: space.spaceId,
           slug: `${space.slug}-oci`,
-          bridgeWorkerId: BridgeWorkerID,
         });
         space.targetId = (target as { TargetID: string }).TargetID;
 

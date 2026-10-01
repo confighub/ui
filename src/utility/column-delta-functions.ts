@@ -42,9 +42,6 @@ export const BASE_COLUMNS = {
   DeleteGates: false,
 
   // === Infrastructure === (Hidden by default)
-  BridgeWorkerID: false,
-  TargetBridgeWorkerID: false,
-  TargetBridgeWorkerSlug: false,
   TargetID: false,
 
   // === Other Details === (Hidden by default)
@@ -264,10 +261,6 @@ const COLUMN_TO_FIELD_MAP: Record<BaseColumnKeys, string | string[]> = {
   ValidationWarnings: 'ValidationWarnings',
   DestroyGates: 'DestroyGates',
   DeleteGates: 'DeleteGates',
-  // Infrastructure columns
-  BridgeWorkerID: 'BridgeWorkerID',
-  TargetBridgeWorkerID: 'Target.BridgeWorkerID',
-  TargetBridgeWorkerSlug: 'Target.Slug',
   // Other Details columns
   Annotations: 'Annotations'
 };
@@ -384,12 +377,6 @@ export function buildIncludeParameter(
   const needsUpstreamSpace = allColumns.some((col) => ['UpstreamSpaceSlug', 'UpstreamSpaceID'].includes(col));
   if (needsUpstreamSpace) {
     includes.add('UpstreamSpaceID');
-  }
-
-  // Check if any column needs BridgeWorker
-  const needsBridgeWorker = allColumns.some((col) => ['BridgeWorkerID'].includes(col));
-  if (needsBridgeWorker) {
-    includes.add('BridgeWorkerID');
   }
 
   // Check if any column needs ChangeSet

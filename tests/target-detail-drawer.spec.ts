@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { test, expect, newAuthorizedContext, hubApi } from './fixtures/test';
+import { test, expect, newAuthorizedContext } from './fixtures/test';
 
 import { ApiHelper } from './fixtures/api-helper';
 import { TargetDetailPage } from './fixtures/target-detail-page';
@@ -14,27 +14,14 @@ test.describe('target detail drawer', () => {
   test.use({ storageState: 'authentication.json' });
 
   // ── Seed data ────────────────────────────────────────────────────────────
-  // A real Bridge Worker only reports the ProviderType/ToolchainType it
-  // supports once an actual worker process connects and reports ProvidedInfo
-  // — something a UI e2e test cannot produce (see AddTargetDrawer.tsx:
-  // ProviderType/ToolchainType selects stay empty, and "Create Target" stays
-  // disabled, until a worker has connected). So a fresh worker created via
-  // WorkerListPage.addWorker() can never back a Target through the "Add
-  // Target" UI flow. Separately, TargetListPage's toolbar has no persistent
-  // "Add Target" button at all (it only appears in the chrome-free empty
-  // state, EmptyTargetList.tsx, which stops rendering once the org has any
-  // Target) — filed as a product bug, see #4939.
-  //
-  // Seed a server-hosted worker + OCI Target via API instead: server-hosted
-  // workers are Ready immediately with no external process (see
-  // api-helper.ts's createOciTarget doc), mirroring target-list-page.spec.ts
-  // and component-release.spec.ts. That unblocks testing what this file is
-  // actually meant to cover — the target *detail drawer's* edit/delete
-  // behavior — independent of the still-real "Add Target" gaps above.
+  // TargetListPage's toolbar has no persistent "Add Target" button (it only
+  // appears in the chrome-free empty state, EmptyTargetList.tsx, which stops
+  // rendering once the org has any Target) — filed as a product bug, see
+  // #4939. So each test seeds its Target via the API, in a Space afterAll
+  // deletes, and exercises what this file covers: the target *detail drawer's*
+  // edit/delete behavior.
   const seedSlug = `e2e-target-drawer-${RandomSlugGenerator.randomSlugName()}`;
-  const seedWorkerSlug = `${seedSlug}-worker`;
   let seedSpaceId: string;
-  let seedBridgeWorkerId: string;
 
   test.beforeAll(async ({ browser }) => {
     const context = await newAuthorizedContext(browser);
@@ -50,21 +37,6 @@ test.describe('target detail drawer', () => {
       const api = new ApiHelper(page);
       const space = await api.createSpace({ space: { Slug: seedSlug } });
       seedSpaceId = (space as { SpaceID: string }).SpaceID;
-
-      const workerResponse = await hubApi.post(
-        `/api/space/${seedSpaceId}/bridge_worker`,
-        {
-          params: { allow_exists: 'true' },
-          data: { Slug: seedWorkerSlug, ProvidedInfo: { IsServerWorker: true } },
-        },
-      );
-      if (!workerResponse.ok()) {
-        throw new Error(
-          `Failed to create seed bridge worker: ${workerResponse.status()} ${await workerResponse.text()}`,
-        );
-      }
-      const worker = (await workerResponse.json()) as { BridgeWorkerID: string };
-      seedBridgeWorkerId = worker.BridgeWorkerID;
     } finally {
       await context.close();
     }
@@ -81,7 +53,7 @@ test.describe('target detail drawer', () => {
       await page.waitForResponse(
         (r) => r.url().includes('/api/space') && r.request().method() === 'GET' && r.ok(),
       );
-      // Recursive: takes the seeded worker and any targets down with the Space.
+      // Recursive: takes any seeded targets down with the Space.
       await new ApiHelper(page).deleteSpace(seedSpaceId, true);
     } catch {
       // Best effort — a leaked seed Space must not fail an otherwise green run.
@@ -99,10 +71,9 @@ test.describe('target detail drawer', () => {
     await page.waitForResponse(
       (r) => r.url().includes('/api/space') && r.request().method() === 'GET' && r.ok(),
     );
-    await api.createOciTarget({
+    await api.createTarget({
       spaceId: seedSpaceId,
       slug: targetName,
-      bridgeWorkerId: seedBridgeWorkerId,
     });
 
     const targetListPage = new TargetListPage(page);
@@ -144,10 +115,9 @@ test.describe('target detail drawer', () => {
     await page.waitForResponse(
       (r) => r.url().includes('/api/space') && r.request().method() === 'GET' && r.ok(),
     );
-    await api.createOciTarget({
+    await api.createTarget({
       spaceId: seedSpaceId,
       slug: targetName,
-      bridgeWorkerId: seedBridgeWorkerId,
     });
 
     const targetDetailPage = new TargetDetailPage(page);
@@ -162,33 +132,4 @@ test.describe('target detail drawer', () => {
 
     await targetListPage.expectNotToBeVisibleByText(targetName);
   });
-
-  // test('should show an error when editing a target with non matching provider type and toolchain type', async ({
-  //   page,
-  // }) => {
-  //   const workerName = RandomSlugGenerator.randomSlugName();
-  //   const targetName = RandomSlugGenerator.randomSlugName();
-  //   const editedTargetName = RandomSlugGenerator.randomSlugName();
-
-  //   const targetDetailPage = new TargetDetailPage(page);
-  //   const targetListPage = new TargetListPage(page);
-  //   const workerListPage = new WorkerListPage(page);
-
-  //   await workerListPage.goto();
-  //   await workerListPage.addWorker(workerName);
-
-  //   await targetListPage.goto();
-  //   await targetListPage.addTarget({ targetName, workerName });
-
-  //   await targetListPage.editTarget({
-  //     targetName,
-  //     newTargetName: editedTargetName,
-  //     providerType: 'FluxOCIWriter',
-  //     toolchainType: 'OpenTofu/HCL',
-  //   });
-
-  //   await targetDetailPage.expectToBeVisibleByText(
-  //     'Error: For FluxOCIWriter provider, Toolchain Type must be Kubernetes/YAML.',
-  //   );
-  // });
 });

@@ -30,71 +30,22 @@ export class TargetListPage extends EntityGridFixture {
     await this.page.getByLabel(targetName, { exact: true }).click();
   }
 
-  async editTarget({
-    targetName,
-    newTargetName,
-    providerType,
-    toolchainType,
-  }: {
-    targetName: string;
-    newTargetName: string;
-    providerType?: string;
-    toolchainType?: string;
-  }) {
+  async editTarget({ targetName, newTargetName }: { targetName: string; newTargetName: string }) {
     await this.goToDetailPageByRowClick(targetName);
 
     await this.page.getByRole('textbox', { name: 'Name', exact: true }).fill(newTargetName);
 
-    if (providerType) {
-      await this.page.getByRole('combobox', { name: 'Kubernetes', exact: true }).click();
-      await this.page.getByRole('option', { name: providerType }).click();
-    }
-
-    if (toolchainType) {
-      await this.page.getByRole('combobox', { name: 'Kubernetes/YAML' }).click();
-      await this.page.getByRole('option', { name: toolchainType }).click();
-    }
-
     await this.page.getByRole('button', { name: 'Update Target' }).click();
   }
 
-  async addTarget({
-    targetName,
-    providerType,
-    workerName,
-    toolchainType,
-  }: {
-    targetName: string;
-    providerType?: string;
-    workerName?: string;
-    toolchainType?: string;
-  }) {
+  async addTarget({ targetName }: { targetName: string }) {
     await this.addTargetButton.click();
 
     // Fill in the name field
     await this.page.getByRole('textbox', { name: 'Name', exact: true }).fill(targetName);
 
-    // Select Provider Type if provided
-    if (providerType) {
-      await this.page.getByRole('combobox', { name: 'Kubernetes', exact: true }).click();
-      await this.page.getByRole('option', { name: providerType }).click();
-    }
-
-    // Select Toolchain Type if provided
-    if (toolchainType) {
-      await this.page.getByLabel('Toolchain Type').click();
-      await this.page.getByRole('option', { name: toolchainType }).click();
-    }
-
-    // Select Space - this must be done before selecting worker
     await this.page.locator('#mui-component-select-SpaceID').click();
     await this.page.getByRole('option', { name: 'Default' }).click();
-
-    // Select Bridge Worker (the option click below auto-waits for workers to load)
-    if (workerName) {
-      await this.page.locator('#mui-component-select-BridgeWorkerID').click();
-      await this.page.getByRole('option', { name: workerName }).click();
-    }
 
     // Click Create Target button
     await this.page.getByRole('button', { name: 'Create Target' }).click();
@@ -119,7 +70,7 @@ export class TargetListPage extends EntityGridFixture {
    */
   async filterTargets(filterText: string) {
     // Target placeholder from ENTITY_FILTER_EXAMPLES
-    await this.applyAdvancedFilter(filterText, "ProviderType = 'kubernetes'");
+    await this.applyAdvancedFilter(filterText, "Labels.environment = 'prod'");
   }
 
   /**
@@ -208,9 +159,12 @@ export class TargetListPage extends EntityGridFixture {
     await this.selectRow(name);
     await this.deleteTargetButton.click();
 
-    // Wait for the API error response
+    // A delete refused by its DeleteGates is a conflict.
     const responsePromise = this.page.waitForResponse(
-      (response) => response.url().includes('/api/target') && response.status() >= 500,
+      (response) =>
+        response.url().includes('/api/target') &&
+        response.request().method() === 'DELETE' &&
+        response.status() === 409,
     );
 
     await this.confirmButton.click();

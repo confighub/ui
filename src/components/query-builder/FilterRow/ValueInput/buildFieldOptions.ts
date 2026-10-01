@@ -64,7 +64,7 @@ export const buildCommonFieldOptions = (
     ];
   }
 
-  // Fields with predefined options (e.g., condition, providerType, event, disabled, validating)
+  // Fields with predefined options (e.g., condition, event, disabled, validating)
   if (config.options) {
     return config.options.map((option) => ({
       value: option.value,

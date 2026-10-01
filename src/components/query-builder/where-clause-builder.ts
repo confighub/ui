@@ -36,7 +36,6 @@ export const FIELD_TO_API_MAPPING: Record<string, string> = {
   lastMessage: 'LastMessage',
   ipAddress: 'IPAddress',
   // Target-specific fields
-  providerType: 'ProviderType',
   targetId: 'TargetID',
   // Trigger-specific fields
   event: 'Event',

@@ -32,7 +32,6 @@ const UNIT_COLUMN_MAPPING: Record<string, ColumnMapping> = {
   CreatedAt: { select: ['CreatedAt'] },
   UpdatedAt: { select: ['UpdatedAt'] },
   LastChangeDescription: { select: ['LastChangeDescription'] },
-  BridgeWorkerID: { select: ['BridgeWorkerID'] },
   ProviderType: { select: ['ProviderType'] },
   DisplayName: { select: ['DisplayName'] },
   UpstreamRevisionNum: { select: ['UpstreamRevisionNum'] },

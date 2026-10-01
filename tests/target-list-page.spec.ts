@@ -1,11 +1,10 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { test, expect, newAuthorizedContext, hubApi } from './fixtures/test';
+import { test, expect, newAuthorizedContext } from './fixtures/test';
 
 import { ApiHelper } from './fixtures/api-helper';
 import { TargetListPage } from './fixtures/target-list-page';
 import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
-import { WorkerListPage } from './fixtures/worker-list-page';
 
 test.describe('target list page', () => {
   // Apply this configuration to all tests and hooks within this describe block.
@@ -22,18 +21,12 @@ test.describe('target list page', () => {
   // a page that cannot be filtered, and would fail waiting for a "Filter" or
   // "Clear all" button that is never rendered.
   //
-  // Every target-creating test in this file is skipped (a worker must run
-  // before it validates, which the UI cannot do), so the list is empty in CI
-  // unless another spec happens to have targets alive at that moment. Seed one
-  // through the API instead: a server-hosted worker backing an OCI Target is
-  // Ready immediately with no external bridge process, mirroring
-  // component-release.spec.ts and test/scripts/test-setup.sh's
-  // `cub worker create --is-server-worker` + `cub target create --provider OCI`.
+  // Seed one through the API so the list is never empty, whatever else the org
+  // holds at that moment.
   //
   // The seed lives in its own Space that afterAll deletes recursively, so
   // repeat runs and other specs are unaffected.
   const seedSlug = `e2e-target-list-${RandomSlugGenerator.randomSlugName()}`;
-  const seedWorkerSlug = `${seedSlug}-worker`;
   const seedTargetSlug = `${seedSlug}-target`;
   let seedSpaceId: string;
 
@@ -52,24 +45,9 @@ test.describe('target list page', () => {
       const space = await api.createSpace({ space: { Slug: seedSlug } });
       seedSpaceId = (space as { SpaceID: string }).SpaceID;
 
-      const workerResponse = await hubApi.post(
-        `/api/space/${seedSpaceId}/bridge_worker`,
-        {
-          params: { allow_exists: 'true' },
-          data: { Slug: seedWorkerSlug, ProvidedInfo: { IsServerWorker: true } },
-        },
-      );
-      if (!workerResponse.ok()) {
-        throw new Error(
-          `Failed to create seed bridge worker: ${workerResponse.status()} ${await workerResponse.text()}`,
-        );
-      }
-      const worker = (await workerResponse.json()) as { BridgeWorkerID: string };
-
-      await api.createOciTarget({
+      await api.createTarget({
         spaceId: seedSpaceId,
         slug: seedTargetSlug,
-        bridgeWorkerId: worker.BridgeWorkerID,
       });
     } finally {
       await context.close();
@@ -87,7 +65,7 @@ test.describe('target list page', () => {
       await page.waitForResponse(
         (r) => r.url().includes('/api/space') && r.request().method() === 'GET' && r.ok(),
       );
-      // Recursive: takes the seeded worker and target down with the Space.
+      // Recursive: takes the seeded target down with the Space.
       await new ApiHelper(page).deleteSpace(seedSpaceId, true);
     } catch {
       // Best effort — a leaked seed Space must not fail an otherwise green run.
@@ -96,9 +74,7 @@ test.describe('target list page', () => {
     }
   });
 
-  // A Target needs no worker, so the form can be driven end to end without a worker
-  // process to validate against; the defaults (OCI/Any) are what the server accepts.
-  test('should add a target without a worker', async ({ page }) => {
+  test('should add a target', async ({ page }) => {
     const targetName = RandomSlugGenerator.randomSlugName();
 
     const targetListPage = new TargetListPage(page);
@@ -122,48 +98,15 @@ test.describe('target list page', () => {
     await targetListPage.expectNotToBeVisibleByText(targetName);
   });
 
-  // Workers require running first to be validated.  We can't run workers in the UI so creating a target will always break because a worker hasn't been run and validated yet.
-  test.skip('should filter the target list', async ({ page }) => {
-    const workerName = RandomSlugGenerator.randomSlugName();
-    const targetName = RandomSlugGenerator.randomSlugName();
-    const providerType = 'ConfigMap';
-    const additionalTargetname = RandomSlugGenerator.randomSlugName();
-
-    const targetListPage = new TargetListPage(page);
-    const workerListPage = new WorkerListPage(page);
-
-    await workerListPage.goto();
-    await workerListPage.addWorker(workerName);
-
-    await targetListPage.goto();
-    await targetListPage.addTarget({ targetName, workerName });
-    await targetListPage.addTarget({
-      targetName: additionalTargetname,
-      providerType,
-      workerName,
-    });
-
-    await targetListPage.filterTargets(`ProviderType = 'ConfigMap'`);
-
-    await targetListPage.expectNotToBeVisibleByText(targetName);
-    await targetListPage.expectToBeVisibleByText(additionalTargetname);
-  });
-
-  // Workers require running first to be validated.  We can't run workers in the UI so creating a target will always break because a worker hasn't been run and validated yet.
-  test.skip('should show an error when filtering the target list with an invalid query', async ({
+  test('should show an error when filtering the target list with an invalid query', async ({
     page,
   }) => {
-    const workerName = RandomSlugGenerator.randomSlugName();
     const targetName = RandomSlugGenerator.randomSlugName();
 
     const targetListPage = new TargetListPage(page);
-    const workerListPage = new WorkerListPage(page);
-
-    await workerListPage.goto();
-    await workerListPage.addWorker(workerName);
 
     await targetListPage.goto();
-    await targetListPage.addTarget({ targetName, workerName });
+    await targetListPage.addTarget({ targetName });
 
     await targetListPage.filterTargets(`Provider Type === 'ConfigMap'`);
 
@@ -172,22 +115,15 @@ test.describe('target list page', () => {
     );
   });
 
-  // Workers require running first to be validated.  We can't run workers in the UI so creating a target will always break because a worker hasn't been run and validated yet.
-  test.skip('should add delete gates to targets and prevent deletion', async ({ page }) => {
-    const workerName = RandomSlugGenerator.randomSlugName();
+  test('should add delete gates to targets and prevent deletion', async ({ page }) => {
     const targetName = RandomSlugGenerator.randomSlugName();
     const deleteGate = 'production-protection';
 
     const targetListPage = new TargetListPage(page);
-    const workerListPage = new WorkerListPage(page);
-
-    // Create a worker first
-    await workerListPage.goto();
-    await workerListPage.addWorker(workerName);
 
     // Create a target
     await targetListPage.goto();
-    await targetListPage.addTarget({ targetName, workerName });
+    await targetListPage.addTarget({ targetName });
 
     // Verify target exists
     await expect(page.getByRole('row', { name: targetName })).toBeVisible();

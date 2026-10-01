@@ -14,7 +14,7 @@ import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
 //
 // The bug: componentOverview.ts's `isBaseSpace` check tried to pre-filter out
 // "base/template" spaces before summing KPI counts, using Target assignment
-// as the signal (first `Space.TargetCountByToolchainType`, i.e. whether a
+// as the signal (first the Space's Target count, i.e. whether a
 // Target was created IN that space; a later attempt used
 // `Space.TargetedUnitCount`, i.e. whether any Unit in the space references a
 // Target at all). Both signals are unreliable: Targets are optional and

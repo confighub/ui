@@ -203,14 +203,6 @@ export function deriveHealthPresentation(status: LiveStatus | undefined): VitalP
 // today. Because it travels inside the same per-Space object the chips already
 // parse, the primary path needs no Target lookup whatsoever.
 //
-// A Target's `ProviderType` is only a LEGACY FALLBACK. It describes how the
-// Target was configured, not who reported — and the values that would identify
-// a system (`ArgoCDOCI`, `ArgoCDRenderer`, `FluxOCI`, `FluxRenderer`) belong to
-// bridges scheduled for deletion (docs/specs/bridge-sunset-plan.md). Their
-// pull-based replacement (`cub cluster up`) creates targets with a generic
-// `ProviderType: "OCI"` that cannot tell Argo from Flux, so `OCI` must resolve
-// to `'unknown'` rather than being guessed at.
-//
 // Anything unidentified is `'unknown'` — an EXPLICIT neutral state, never a
 // silent blank.
 //
@@ -251,46 +243,14 @@ export function providerFromSource(source: string | null | undefined): LiveStatu
 }
 
 /**
- * LEGACY FALLBACK ONLY — collapse a Target's raw `ProviderType` to a delivery
- * system, for Spaces whose live status predates a `source` (or that have no
- * live status yet at all). `ArgoCD*` → `'argocd'`, `Flux*` → `'flux'`.
- *
- * Everything else — notably the generic `OCI` that the current pull-based
- * `cub cluster up` path creates, plus `Kubernetes`, `ConfigHub`, `Noop`,
- * `None` and unset — is `'unknown'`. `OCI` is deliberately NOT read as Argo:
- * an OCI target is pulled by Argo or Flux with equal likelihood and the field
- * cannot tell them apart, so guessing would put a confidently wrong brand mark
- * on the card.
+ * Which delivery system a node should attribute its live status to: the one the
+ * annotation's own `source` names (who actually reported). With no live status,
+ * no `source`, or a `source` that is unrecognized, it is `'unknown'` — an
+ * unrecognized reporter is a reason to say nothing.
  */
-export function providerFromProviderType(
-  providerType: string | null | undefined,
-): LiveStatusProvider {
-  if (!providerType) return 'unknown';
-  if (providerType.startsWith('ArgoCD')) return 'argocd';
-  if (providerType.startsWith('Flux')) return 'flux';
-  return 'unknown';
-}
-
-/**
- * Which delivery system a node should attribute its live status to.
- *
- * Precedence:
- *   1. the annotation's own `source` (who actually reported) — no Target lookup;
- *   2. only when there is no live status, or it carries no `source`: the legacy
- *      `ProviderType` of the Space's release Target (see `componentData.ts` for
- *      how that Target is picked);
- *   3. `'unknown'` otherwise.
- *
- * A `source` that is present but unrecognized stops at step 1 and resolves to
- * `'unknown'` — an unrecognized reporter is a reason to say nothing, not a
- * reason to fall back to how the Target happens to be configured.
- */
-export function resolveLiveStatusProvider(
-  status: LiveStatus | undefined,
-  fallbackProviderType?: string | null,
-): LiveStatusProvider {
+export function resolveLiveStatusProvider(status: LiveStatus | undefined): LiveStatusProvider {
   if (status?.source) return providerFromSource(status.source);
-  return providerFromProviderType(fallbackProviderType);
+  return 'unknown';
 }
 
 /** Human name of the reporting system, for tooltips and peek copy. */
