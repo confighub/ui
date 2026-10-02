@@ -68,6 +68,8 @@ export interface DeploymentOption {
   label: string;
   /** The Space slug, carried alongside `label` only when `label` is a variant label — so it differs. */
   displayName?: string;
+  /** The Component, only when the graph spans several: each has its own "prod". */
+  componentName?: string;
   /** Everything in this deployment has been released to its target. */
   isCurrent?: boolean;
   /** This deployment holds configuration it has not released. */
@@ -80,6 +82,11 @@ export interface DeploymentOption {
   state?: 'ready' | 'pending' | 'unavailable';
   /** A caveat worth reading before picking, e.g. an oversized unit that was skipped. */
   note?: string;
+}
+
+/** The line under a name: the Component (if the graph has several), then the Space slug. */
+function nameDetail(option: DeploymentOption): string {
+  return [option.componentName, option.displayName].filter(Boolean).join(' · ');
 }
 
 export interface DeploymentSelectorsProps {
@@ -192,8 +199,8 @@ function Slot({ option, index, open, many, onToggle }: SlotProps): ReactElement 
       aria-label={
         option
           ? `Selector ${letter} holds ${option.label}${
-              option.displayName ? `, Space ${option.displayName}` : ''
-            }. Choose a different deployment.`
+              option.componentName ? `, Component ${option.componentName}` : ''
+            }${option.displayName ? `, Space ${option.displayName}` : ''}. Choose a different deployment.`
           : `Selector ${letter} is empty. Choose a deployment.`
       }
       onClick={onToggle}
@@ -228,7 +235,7 @@ function Slot({ option, index, open, many, onToggle }: SlotProps): ReactElement 
           {Chevron}
         </Box>
       </Box>
-      {option?.displayName ? <Box component="span" sx={NAME_SX}>{option.displayName}</Box> : null}
+      {option && nameDetail(option) ? <Box component="span" sx={NAME_SX}>{nameDetail(option)}</Box> : null}
       <Box component="span" sx={META_SX}>{option?.meta ?? '—'}</Box>
     </Box>
   );
@@ -309,7 +316,8 @@ function Picker({ options, selection, slotIndex, onPick, onClose }: PickerProps)
         ? options.filter(
             (option) =>
               option.label.toLowerCase().includes(needle) ||
-              (option.displayName?.toLowerCase().includes(needle) ?? false),
+              (option.displayName?.toLowerCase().includes(needle) ?? false) ||
+              (option.componentName?.toLowerCase().includes(needle) ?? false),
           )
         : options,
     [options, needle],
@@ -407,7 +415,7 @@ function Picker({ options, selection, slotIndex, onPick, onClose }: PickerProps)
                   {heldElsewhere ? `in selector ${letterFor(heldBy)}` : countLabel(option)}
                 </Box>
               </Box>
-              {option.displayName ? (
+              {nameDetail(option) ? (
                 <Box
                   component="span"
                   sx={{
@@ -420,7 +428,7 @@ function Picker({ options, selection, slotIndex, onPick, onClose }: PickerProps)
                     maxWidth: '100%',
                   }}
                 >
-                  {option.displayName}
+                  {nameDetail(option)}
                 </Box>
               ) : null}
               {option.meta ? (

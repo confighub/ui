@@ -5,6 +5,12 @@ import type { Edge, Node } from 'reactflow';
 import type { ComponentDeployment, Stage } from '../componentTypes';
 import { componentTheme } from '../componentTheme';
 import { arrowKey } from '../componentData';
+import {
+  type ComponentFrameActions,
+  type ComponentGroup,
+  buildComponentFrameNode,
+  placeFrames,
+} from './componentFrames';
 import { computeSubtreeCenteredY } from './treeCenterLayout';
 import type { DeploymentFlowNodeData, NodeUnitSummary } from './DeploymentFlowNode';
 import type { PromotionEdgeData } from './PromotionEdge';
@@ -26,6 +32,12 @@ export const STAGE_GAP = 100;
 // positions — it must match this module's own math pixel-for-pixel.
 export const NODE_GAP = 30;
 
+/**
+ * Whether an edge draws its sync badge: only when the node-to-node gap is the
+ * unfolded graph's STAGE_GAP, so the badge sits on the edge as it does there.
+ */
+export const showsPromotionBadge = (gap: number): boolean => gap === STAGE_GAP;
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -33,6 +45,100 @@ export const NODE_GAP = 30;
 interface LayoutResult {
   nodes: Node[];
   edges: Edge[];
+}
+
+// ============================================================================
+// NODE AND EDGE BUILDERS
+// ============================================================================
+
+/**
+ * What a Deployment card needs besides the Deployment itself. The unfolded
+ * layout and the folded one (fold/foldNodes.ts) build their cards from the
+ * same function, so a card says the same thing wherever it is drawn.
+ */
+export interface DeploymentNodeContext {
+  selectedDeploymentIds: ReadonlySet<string>;
+  activeUpgrades: ReadonlySet<string>;
+  onDeploymentToggle: (deploymentId: string) => void;
+  onUpgradeToggle: (parentDeploymentId: string, childDeploymentId: string) => void;
+  errorDeploymentIds?: ReadonlySet<string>;
+  unitSummariesByDeployment?: ReadonlyMap<string, NodeUnitSummary[]>;
+  upgradingDeploymentIds?: ReadonlySet<string>;
+  deploymentSuccessMessages?: ReadonlyMap<string, string>;
+  latestReleaseBySpaceId?: ReadonlyMap<string, { num: number; createdAt?: string }>;
+  releasingDeploymentIds?: ReadonlySet<string>;
+  onOpenTab?: (deploymentId: string, tab: 'config' | 'releases', releaseNum?: number) => void;
+  onComposerOpen?: (deploymentId: string) => void;
+}
+
+export function buildDeploymentNodeData(
+  deployment: ComponentDeployment,
+  ctx: DeploymentNodeContext,
+): DeploymentFlowNodeData {
+  const isSelected = ctx.selectedDeploymentIds.has(deployment.deploymentId);
+  const isUpgradeActive =
+    deployment.parentDeploymentId != null &&
+    ctx.activeUpgrades.has(arrowKey(deployment.parentDeploymentId, deployment.deploymentId));
+  return {
+    deployment,
+    isSelected,
+    isUpgradeActive,
+    onSelect: ctx.onDeploymentToggle,
+    onUpgradeToggle: ctx.onUpgradeToggle,
+    hasError: ctx.errorDeploymentIds?.has(deployment.deploymentId),
+    units: ctx.unitSummariesByDeployment?.get(deployment.deploymentId) ?? [],
+    isUpgrading: ctx.upgradingDeploymentIds?.has(deployment.deploymentId),
+    successMessage: ctx.deploymentSuccessMessages?.get(deployment.deploymentId),
+    latestRelease: ctx.latestReleaseBySpaceId?.get(deployment.deploymentId),
+    isReleasing: ctx.releasingDeploymentIds?.has(deployment.deploymentId),
+    onOpenTab: ctx.onOpenTab,
+    onComposerOpen: ctx.onComposerOpen,
+  };
+}
+
+/** What a promotion edge needs to pick its style and fetch its Link data. */
+export interface PromotionEdgeContext {
+  selectedDeploymentIds: ReadonlySet<string>;
+  activeUpgrades: ReadonlySet<string>;
+  /** The Space that just finished a publish; its outgoing edges pulse. */
+  pulseFromDeploymentId?: string | null;
+  deploymentSpaceIdsKey?: string;
+  deploymentById: ReadonlyMap<string, ComponentDeployment>;
+}
+
+/** The promotion edge from a parent into one child, idle or lit by selection or an upgrade. */
+export function buildPromotionEdge(
+  parentDeploymentId: string,
+  child: ComponentDeployment,
+  ctx: PromotionEdgeContext,
+  hideBadge = false,
+): Edge {
+  const childSel = ctx.selectedDeploymentIds.has(child.deploymentId);
+  const active = ctx.activeUpgrades.has(arrowKey(parentDeploymentId, child.deploymentId));
+  // This edge's source just published — pulse it toward the next stage.
+  const releasePulsing =
+    ctx.pulseFromDeploymentId != null && parentDeploymentId === ctx.pulseFromDeploymentId;
+
+  return {
+    id: `edge-${parentDeploymentId}-${child.deploymentId}`,
+    source: parentDeploymentId,
+    target: child.deploymentId,
+    type: 'promotionEdge',
+    className: releasePulsing ? 'release-pulse-edge' : undefined,
+    style: {
+      stroke: active || childSel ? componentTheme.done : componentTheme.borderDefault,
+      strokeWidth: active || childSel ? 2.5 : 1.5,
+      strokeDasharray: !active && !childSel ? '5 4' : undefined,
+    },
+    animated: active || childSel,
+    zIndex: active || childSel || releasePulsing ? 1 : 0,
+    data: {
+      deploymentSpaceIdsKey: ctx.deploymentSpaceIdsKey ?? '',
+      sourceLabel: ctx.deploymentById.get(parentDeploymentId)?.displayName ?? '',
+      targetLabel: child.displayName,
+      ...(hideBadge && { hideBadge }),
+    } satisfies PromotionEdgeData,
+  };
 }
 
 // ============================================================================
@@ -69,6 +175,9 @@ export function computeLayout(
   onComposerOpen?: (deploymentId: string) => void,
   /** Every deployment (Space) ID in this graph, comma-joined — each promotion edge uses this to fetch its own Link data (see PromotionEdge.tsx). */
   deploymentSpaceIdsKey?: string,
+  /** The Components of a graph of two or more: each tree is laid out in its own frame. */
+  components?: readonly ComponentGroup[],
+  frameActions?: ComponentFrameActions,
 ): LayoutResult {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
@@ -84,17 +193,6 @@ export function computeLayout(
 
   const roots = deployments.filter((d) => !d.parentDeploymentId);
 
-  // Subtree-centered Y per deployment — recursive fan-out centering. See
-  // treeCenterLayout.ts.
-  const yById = computeSubtreeCenteredY(
-    deployments.map((d) => d.deploymentId),
-    childrenOf,
-    roots.map((d) => d.deploymentId),
-    NODE_HEIGHT,
-    NODE_GAP,
-    20,
-  );
-
   const stageX = new Map<number, number>();
   let currentX = 0;
   stages.forEach((stage) => {
@@ -103,70 +201,104 @@ export function computeLayout(
   });
 
   const nodePositions = new Map<string, { x: number; y: number }>();
-  deployments.forEach((d) => {
-    const x = stageX.get(d.stage) ?? 0;
-    const y = yById.get(d.deploymentId) ?? 20;
-    nodePositions.set(d.deploymentId, { x, y });
-  });
+  const framed = components !== undefined && components.length > 0;
+
+  if (!framed) {
+    // Subtree-centered Y per deployment — recursive fan-out centering. See
+    // treeCenterLayout.ts.
+    const yById = computeSubtreeCenteredY(
+      deployments.map((d) => d.deploymentId),
+      childrenOf,
+      roots.map((d) => d.deploymentId),
+      NODE_HEIGHT,
+      NODE_GAP,
+      20,
+    );
+    deployments.forEach((d) => {
+      const x = stageX.get(d.stage) ?? 0;
+      const y = yById.get(d.deploymentId) ?? 20;
+      nodePositions.set(d.deploymentId, { x, y });
+    });
+  } else {
+    // Each Component's tree is centred on its own, then the trees stack in
+    // frames, so a tree never shares rows with another Component's.
+    const trees = components.map((c) => {
+      const own = new Set(c.deploymentIds);
+      const ownChildren = new Map<string, string[]>();
+      for (const [parent, kids] of childrenOf) {
+        if (own.has(parent)) ownChildren.set(parent, kids.filter((k) => own.has(k)));
+      }
+      const y = computeSubtreeCenteredY(
+        c.deploymentIds,
+        ownChildren,
+        c.rootIds,
+        NODE_HEIGHT,
+        NODE_GAP,
+        0,
+      );
+      let bottom = 0;
+      let right = 0;
+      for (const id of c.deploymentIds) {
+        bottom = Math.max(bottom, (y.get(id) ?? 0) + NODE_HEIGHT);
+        const d = deploymentById.get(id);
+        right = Math.max(right, (stageX.get(d?.stage ?? 0) ?? 0) + NODE_WIDTH);
+      }
+      return { y, size: { width: right, height: bottom } };
+    });
+    const placement = placeFrames(trees.map((t) => t.size));
+    components.forEach((c, i) => {
+      const offset = placement.offsets[i];
+      for (const id of c.deploymentIds) {
+        const d = deploymentById.get(id);
+        nodePositions.set(id, {
+          x: (stageX.get(d?.stage ?? 0) ?? 0) + offset.x,
+          y: (trees[i].y.get(id) ?? 0) + offset.y,
+        });
+      }
+      nodes.push(buildComponentFrameNode(c, placement.frames[i], frameActions ?? {}));
+    });
+  }
+
+  const nodeContext: DeploymentNodeContext = {
+    selectedDeploymentIds,
+    activeUpgrades,
+    onDeploymentToggle,
+    onUpgradeToggle,
+    errorDeploymentIds,
+    unitSummariesByDeployment,
+    upgradingDeploymentIds,
+    deploymentSuccessMessages,
+    latestReleaseBySpaceId,
+    releasingDeploymentIds,
+    onOpenTab,
+    onComposerOpen,
+  };
+  const edgeContext: PromotionEdgeContext = {
+    selectedDeploymentIds,
+    activeUpgrades,
+    pulseFromDeploymentId,
+    deploymentSpaceIdsKey,
+    deploymentById,
+  };
 
   deployments.forEach((deployment) => {
     const pos = nodePositions.get(deployment.deploymentId);
     if (!pos) return;
 
-    const isSelected = selectedDeploymentIds.has(deployment.deploymentId);
-    const isUpgradeActive =
-      deployment.parentDeploymentId != null &&
-      activeUpgrades.has(arrowKey(deployment.parentDeploymentId, deployment.deploymentId));
-
+    const data = buildDeploymentNodeData(deployment, nodeContext);
+    if (framed && deployment.type === 'Base' && deployment.componentName) {
+      data.componentName = deployment.componentName;
+    }
     nodes.push({
       id: deployment.deploymentId,
       type: 'deploymentNode',
       position: pos,
-      data: {
-        deployment,
-        isSelected,
-        isUpgradeActive,
-        onSelect: onDeploymentToggle,
-        onUpgradeToggle,
-        hasError: errorDeploymentIds?.has(deployment.deploymentId),
-        units: unitSummariesByDeployment?.get(deployment.deploymentId) ?? [],
-        isUpgrading: upgradingDeploymentIds?.has(deployment.deploymentId),
-        successMessage: deploymentSuccessMessages?.get(deployment.deploymentId),
-        latestRelease: latestReleaseBySpaceId?.get(deployment.deploymentId),
-        isReleasing: releasingDeploymentIds?.has(deployment.deploymentId),
-        onOpenTab,
-        onComposerOpen,
-      } satisfies DeploymentFlowNodeData,
+      data,
       draggable: false,
     });
 
     if (deployment.parentDeploymentId) {
-      const childSel = isSelected;
-      const active = activeUpgrades.has(
-        arrowKey(deployment.parentDeploymentId, deployment.deploymentId),
-      );
-      // This edge's source just published — pulse it toward the next stage.
-      const releasePulsing = pulseFromDeploymentId != null && deployment.parentDeploymentId === pulseFromDeploymentId;
-
-      edges.push({
-        id: `edge-${deployment.parentDeploymentId}-${deployment.deploymentId}`,
-        source: deployment.parentDeploymentId,
-        target: deployment.deploymentId,
-        type: 'promotionEdge',
-        className: releasePulsing ? 'release-pulse-edge' : undefined,
-        style: {
-          stroke: active || childSel ? componentTheme.done : componentTheme.borderDefault,
-          strokeWidth: active || childSel ? 2.5 : 1.5,
-          strokeDasharray: !active && !childSel ? '5 4' : undefined,
-        },
-        animated: active || childSel,
-        zIndex: active || childSel || releasePulsing ? 1 : 0,
-        data: {
-          deploymentSpaceIdsKey: deploymentSpaceIdsKey ?? '',
-          sourceLabel: deploymentById.get(deployment.parentDeploymentId)?.displayName ?? '',
-          targetLabel: deployment.displayName,
-        } satisfies PromotionEdgeData,
-      });
+      edges.push(buildPromotionEdge(deployment.parentDeploymentId, deployment, edgeContext));
     }
   });
 

@@ -10,12 +10,16 @@ import {
   useLazyDownloadReleaseDataQuery,
   useLazyDownloadUnitDataQuery,
   useLazySearchRevisionDataQuery,
-  useSearchRevisionDataQuery,
-  useSearchRevisionMutationSourcesQuery,
-  useSearchUnitDataQuery,
-  useSearchUnitMutationSourcesQuery,
   useUploadUnitDataMutation,
 } from '@confighub/rtk-query';
+
+import {
+  useSearchRevisionDataChunkedQuery,
+  useSearchRevisionMutationSourcesChunkedQuery,
+  useSearchUnitDataChunkedQuery,
+  useSearchUnitMutationSourcesChunkedQuery,
+} from './chunkedQueriesApi';
+import { chunkIds, inClause } from './inClauseChunks';
 
 /**
  * Configuration data and mutation sources are not fields of a Unit or a Revision. They are
@@ -25,6 +29,9 @@ import {
  *
  * Each returns '' (or undefined) while loading, which is what every caller wants: an editor
  * with nothing in it yet, a diff with nothing to compare, a body that has not arrived.
+ *
+ * The bulk ("Map") readers send their ids in chunks (see chunkedQueriesApi.ts): one IN
+ * clause over a large Component's Units is longer than the server accepts.
  */
 
 /** A Unit's configuration. Skipped until both ids are known. */
@@ -75,7 +82,7 @@ export const useRevisionMutationSources = (
 export const useUploadUnitData = useUploadUnitDataMutation;
 
 /**
- * The configuration of several Revisions in one request, keyed by RevisionID.
+ * The configuration of several Revisions in one bulk read, keyed by RevisionID.
  *
  * This is what a diff view needs. Fetching each Revision separately would be two requests
  * per Unit -- for a change review over a fleet, hundreds -- which is the cost the
@@ -85,9 +92,8 @@ export const useUploadUnitData = useUploadUnitDataMutation;
  */
 export const useRevisionDataMap = (revisionIds: (string | undefined)[]) => {
   const ids = revisionIds.filter((id): id is string => !!id);
-  const where = ids.length ? `RevisionID IN (${ids.map((id) => `'${id}'`).join(', ')})` : '';
-  const { data, isFetching } = useSearchRevisionDataQuery(
-    { where, distinctOn: 'Off', limit: Math.max(ids.length, 1) },
+  const { data, isFetching } = useSearchRevisionDataChunkedQuery(
+    { revisionIds: ids },
     { skip: ids.length === 0 },
   );
   // Memoized on the query result, so the accessor keeps its identity between renders. A
@@ -107,11 +113,13 @@ export const useRevisionDataMap = (revisionIds: (string | undefined)[]) => {
   return { dataFor, isFetching, ready };
 };
 
-/** The configuration of several Units in one request, keyed by UnitID. */
+/** The configuration of several Units in one bulk read, keyed by UnitID. */
 export const useUnitDataMap = (unitIds: (string | undefined)[]) => {
   const ids = unitIds.filter((id): id is string => !!id);
-  const where = ids.length ? `UnitID IN (${ids.map((id) => `'${id}'`).join(', ')})` : '';
-  const { data, isFetching } = useSearchUnitDataQuery({ where }, { skip: ids.length === 0 });
+  const { data, isFetching } = useSearchUnitDataChunkedQuery(
+    { unitIds: ids },
+    { skip: ids.length === 0 },
+  );
   // Memoized on the query result, so the accessor keeps its identity between renders. A
   // caller that reads configuration inside a useMemo has to list it as a dependency -- the
   // data arrives after the entities do -- and a fresh closure every render would turn that
@@ -127,14 +135,13 @@ export const useUnitDataMap = (unitIds: (string | undefined)[]) => {
 };
 
 /**
- * What set each value in several Revisions' configuration, in one request, keyed by
+ * What set each value in several Revisions' configuration, in one bulk read, keyed by
  * RevisionID. The bulk counterpart of useRevisionMutationSources, for a view over many Units.
  */
 export const useRevisionMutationSourcesMap = (revisionIds: (string | undefined)[]) => {
   const ids = revisionIds.filter((id): id is string => !!id);
-  const where = ids.length ? `RevisionID IN (${ids.map((id) => `'${id}'`).join(', ')})` : '';
-  const { data, isFetching } = useSearchRevisionMutationSourcesQuery(
-    { where, distinctOn: 'Off', limit: Math.max(ids.length, 1) },
+  const { data, isFetching } = useSearchRevisionMutationSourcesChunkedQuery(
+    { revisionIds: ids },
     { skip: ids.length === 0 },
   );
   // Memoized on the query result, so the accessor keeps its identity between renders. A
@@ -152,7 +159,7 @@ export const useRevisionMutationSourcesMap = (revisionIds: (string | undefined)[
 };
 
 /**
- * What set each value in several Units' configuration, in one request, keyed by UnitID. The
+ * What set each value in several Units' configuration, in one bulk read, keyed by UnitID. The
  * bulk counterpart of useUnitMutationSources -- for a Scope-row audit ("Kept on merge N of M")
  * spanning every unit currently expanded in the pane.
  *
@@ -161,8 +168,10 @@ export const useRevisionMutationSourcesMap = (revisionIds: (string | undefined)[
  */
 export const useUnitMutationSourcesMap = (unitIds: (string | undefined)[]) => {
   const ids = unitIds.filter((id): id is string => !!id);
-  const where = ids.length ? `UnitID IN (${ids.map((id) => `'${id}'`).join(', ')})` : '';
-  const { data, isFetching } = useSearchUnitMutationSourcesQuery({ where }, { skip: ids.length === 0 });
+  const { data, isFetching } = useSearchUnitMutationSourcesChunkedQuery(
+    { unitIds: ids },
+    { skip: ids.length === 0 },
+  );
   // Memoized on the query result, so the accessor keeps its identity between renders. A
   // caller that reads mutation sources inside a useMemo has to list it as a dependency -- the
   // data arrives after the entities do -- and a fresh closure every render would turn that
@@ -199,20 +208,27 @@ export const useLazyUnitData = () => {
 
 /**
  * Fetch several Revisions' configuration from inside an event handler or async flow, where a
- * query hook cannot be called. Returns a map keyed by RevisionID.
+ * query hook cannot be called. Returns a map keyed by RevisionID. The ids go in chunks the
+ * server accepts, one request each. If any chunk fails the result is empty, so a caller
+ * never diffs against half of the Revisions.
  */
 export const useLazyRevisionDataMap = () => {
   const [trigger] = useLazySearchRevisionDataQuery();
   return useCallback(
     async (revisionIds: (string | undefined)[]): Promise<Map<string, string>> => {
-      const ids = revisionIds.filter((id): id is string => !!id);
-      if (ids.length === 0) return new Map();
-      const where = `RevisionID IN (${ids.map((id) => `'${id}'`).join(', ')})`;
+      const chunks = chunkIds('RevisionID', revisionIds);
+      if (chunks.length === 0) return new Map();
       try {
-        const rows = await trigger({ where, distinctOn: 'Off', limit: ids.length }).unwrap();
         const byRevisionId = new Map<string, string>();
-        for (const row of rows) {
-          if (row.RevisionID) byRevisionId.set(row.RevisionID, row.Data ?? '');
+        for (const chunk of chunks) {
+          const rows = await trigger({
+            where: inClause('RevisionID', chunk),
+            distinctOn: 'Off',
+            limit: chunk.length,
+          }).unwrap();
+          for (const row of rows) {
+            if (row.RevisionID) byRevisionId.set(row.RevisionID, row.Data ?? '');
+          }
         }
         return byRevisionId;
       } catch {

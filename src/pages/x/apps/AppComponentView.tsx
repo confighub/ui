@@ -31,6 +31,7 @@ import Slide from '@mui/material/Slide';
 import { styled } from '@mui/material/styles';
 
 import { ComponentFlowGraph } from './flow-graph/ComponentFlowGraph';
+import { withComponents } from './flow-graph/componentFrames';
 import { FlowViewControl, type FlowViewControlValue } from './flow-graph/FlowViewControl';
 import type { ComponentDisplayMode, SelectedApp, ViewParamsPatch } from './appTypes';
 import { ComponentOverviewMatrix } from './ComponentOverviewMatrix';
@@ -38,8 +39,10 @@ import type { NodeUnitSummary } from './flow-graph/DeploymentFlowNode';
 import { componentTheme } from './componentTheme';
 import { ComponentFlowGraphSkeleton } from './ComponentFlowGraphSkeleton';
 import { ComponentSidePane } from './ComponentSidePane';
+import { usePreviewUnitUpgradeMutation } from './upgradePreviewApi';
 import type { StagedCommitPayload } from './ComponentValuesSection';
 import { useRevisionDataMap, useUnitDataMap, useUploadUnitData } from '@/hooks/useUnitData';
+import { useListAllUnitsChunkedQuery } from '@/hooks/chunkedQueriesApi';
 import { buildAllApplyEntries, buildUpgradeEntries, buildVariationEntries } from './entryBuilders';
 import { type SetValueResult } from './configParser';
 import { arrowKey, buildComponentData } from './componentData';
@@ -51,6 +54,8 @@ import type { ComposerSubmitValues } from './flow-graph/ComposerNode';
 import { getSiblingVariantNames, sanitizeVariantSlug } from './variantValidation';
 import { RELEASE_FRESH_SETTLE_MS, useFreshSignal } from './useFreshSignal';
 import { useReleaseActions } from './useReleaseActions';
+import { useWaveActions } from './useWaveActions';
+import { WaveActionDialog } from './WaveActionDialog';
 
 // ============================================================================
 // TYPES
@@ -103,6 +108,12 @@ interface AppComponentViewProps {
    */
   displayMode: ComponentDisplayMode;
   /**
+   * `?graphGroup=` as the URL holds it (null when absent): `off`, a label key, or
+   * nothing for Auto. The graph resolves it against the Component's Group by
+   * options.
+   */
+  groupParam?: string | null;
+  /**
    * The ONE write path for the view's URL params. Built on
    * `AppsComponentLayout`'s `updateParams`, so every gesture here that needs
    * to change more than one of them atomically does so in a single URL write.
@@ -122,14 +133,13 @@ const DEFAULT_SIDE_PANE_WIDTH = 650;
 /** Stable empty units list, so the `?? []` fallback keeps one identity. */
 const EMPTY_UNITS: ExtendedUnitRead[] = [];
 
-/** Stable empty ID batch, so a graph with no Spaces yet doesn't churn `whereClause`'s memo. */
+/** Stable empty ID list. */
 const EMPTY_STRING_ARRAY: string[] = [];
 
 // Configuration is not a selectable field any more -- it is read from the data
 // endpoints -- so this asks only for the metadata, plus the Revision ids the data
 // and mutation-source reads are keyed by. Shared by every units-fetching batch
-// (the primary SpaceID batch, extra SpaceID batches, and the upstream-outside-set
-// UnitID lookup) so they all narrow the payload identically.
+// (the chunked SpaceID read and the upstream-outside-set UnitID lookup) so they all narrow the payload identically.
 const UNITS_QUERY_SELECT =
   'UnitID,Slug,SpaceID,TargetID,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ToolchainType,DataHash,DataSize,'
   + 'HeadRevision.RevisionID,HeadRevision.CreatedAt,HeadRevision.Description,LastReleasedRevision.RevisionID';
@@ -181,7 +191,7 @@ const LoadingContainer = styled(Box)({
 // COMPONENT
 // ============================================================================
 
-export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphKey, selectedDeploymentIds: controlledSelectedIds, onSelectedDeploymentIdsChange, compareDeploymentIds: controlledCompareIds, onCompareSelectionChange, initialFocusDeploymentId, displayMode, onViewParamsChange, onComponentSelect }: AppComponentViewProps) => {
+export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphKey, selectedDeploymentIds: controlledSelectedIds, onSelectedDeploymentIdsChange, compareDeploymentIds: controlledCompareIds, onCompareSelectionChange, initialFocusDeploymentId, displayMode, groupParam, onViewParamsChange, onComponentSelect }: AppComponentViewProps) => {
   // ── State ──
   const EMPTY_SET = useMemo(() => new Set<string>(), []);
   const selectedDeploymentIds = controlledSelectedIds ?? EMPTY_SET;
@@ -247,6 +257,20 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     [onViewParamsChange],
   );
 
+  const handleGroupChange = useCallback(
+    (key: string | null) => {
+      onViewParamsChange({ graphGroup: key });
+    },
+    [onViewParamsChange],
+  );
+
+  // A click on a frame's name opens that Component's own graph, as a click on its
+  // row in the left nav does.
+  const handleComponentOpen = useCallback(
+    (name: string, owner: string) => onComponentSelect({ name, owner }),
+    [onComponentSelect],
+  );
+
   // Detect a node-graph switch (the graph's structure changes and the flow
   // graph re-fits to view). On that render the side pane must vanish *instantly*
   // with no Slide exit transition: an animating, still-on-screen pane steals
@@ -286,30 +310,11 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   // Sort + dedupe so the cache key depends only on the SET of SpaceIDs, not the
   // order they arrive in. The org-wide spaces query (which backfills the
   // priority-scoped one on `?app=` deep-links) has no ORDER BY, so the same
-  // app's spaces can return in a different order; an unsorted `where` string
-  // would change the units query cache key and flash the graph back to a spinner.
+  // app's spaces can return in a different order; a different key would
+  // refetch the units and flash the graph back to a spinner.
   const spaceIds = useMemo(
     () => Array.from(new Set(spaces.map((s) => s.Space?.SpaceID).filter(Boolean))).sort() as string[],
     [spaces],
-  );
-
-  // A node graph (any tree node, not just a whole Component) can hold more
-  // Spaces than fit in one GET query string (`internal`'s 8192-byte limit,
-  // ~39 bytes per quoted UUID). Split into ID_BATCH_SIZE-sized batches; the
-  // FIRST batch stays a normal, cache-backed, polling `useListAllUnitsQuery`
-  // call — for the common case (one batch) this is the ONLY units query a
-  // single-Component graph ever issues. Batches beyond the first (a node
-  // graph over ID_BATCH_SIZE Spaces — rare) are each their own subscribed
-  // query too, via `useBatchedQuery` below.
-  const spaceIdBatches = useMemo(() => batchIds(spaceIds), [spaceIds]);
-  const primarySpaceIdBatch = spaceIdBatches[0] ?? EMPTY_STRING_ARRAY;
-
-  const whereClause = useMemo(
-    () =>
-      primarySpaceIdBatch.length > 0
-        ? `SpaceID IN (${primarySpaceIdBatch.map((id) => `'${id}'`).join(',')})`
-        : '',
-    [primarySpaceIdBatch],
   );
 
   // Use currentData (not data) so that switching components doesn't briefly
@@ -326,6 +331,9 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   // buildAllApplyEntries / the Unapplied diff in entryBuilders.ts consume. The
   // configuration and its mutation sources are read separately, from the data and
   // mutation-source endpoints, keyed by the Revision ids selected here.
+  //
+  // The Spaces go in chunks (see chunkedQueriesApi.ts): one IN clause over a
+  // large Component's Spaces is longer than the query string the server accepts.
   const hasPendingGatesRef = useRef(false);
   const [upgradingDeploymentIds, setUpgradingDeploymentIds] = useState<Set<string>>(() => new Set());
   // Per in-flight staged-commit (handleCommitStaged): unitId → the HeadRevisionNum
@@ -344,14 +352,14 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     isFetching: unitsFetching,
     isError: unitsError,
     error: unitsQueryError,
-  } = useListAllUnitsQuery(
+  } = useListAllUnitsChunkedQuery(
     {
-      where: whereClause,
+      spaceIds,
       select: UNITS_QUERY_SELECT,
       include: UNITS_QUERY_INCLUDE,
     },
     {
-      skip: primarySpaceIdBatch.length === 0,
+      skip: spaceIds.length === 0,
       pollingInterval: (hasPendingGatesRef.current || upgradingDeploymentIds.size > 0) ? 2000 : 0,
       // No refetchOnFocus: this query can return tens of MB for large units, so
       // re-fetching (and re-parsing / re-walking) the whole payload on every
@@ -361,35 +369,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     },
   );
 
-  // Batches beyond the first (a node graph over ID_BATCH_SIZE Spaces — rare):
-  // each a REAL subscribed useListAllUnitsQuery call (via useBatchedQuery),
-  // not an imperative one-shot fetch into local state — so a mutation
-  // elsewhere that invalidates the Unit tag refreshes these too, and the
-  // same 2s gate/upgrade poll as the primary batch reaches them. `resetKey:
-  // graphKey` drops accumulated rows on a graph switch so the previous
-  // graph's Spaces 51+ don't linger while the new graph's batches load.
   const unitsPollingInterval = (hasPendingGatesRef.current || upgradingDeploymentIds.size > 0) ? 2000 : 0;
-  const extraSpaceIdBatchArgs = useMemo(
-    () =>
-      spaceIdBatches.slice(1).map(
-        (batch): ListAllUnitsApiArg => ({
-          where: `SpaceID IN (${batch.map((id) => `'${id}'`).join(',')})`,
-          select: UNITS_QUERY_SELECT,
-          include: UNITS_QUERY_INCLUDE,
-        }),
-      ),
-    [spaceIdBatches],
-  );
-  const {
-    data: extraBatchUnits,
-    isLoading: extraBatchesLoading,
-    isError: extraBatchesError,
-    errors: extraBatchesErrors,
-    subscriptions: extraUnitsSubscriptions,
-  } = useBatchedQuery<ListAllUnitsApiArg, ExtendedUnitRead>(extraSpaceIdBatchArgs, useListAllUnitsQuery, {
-    pollingInterval: unitsPollingInterval,
-    resetKey: graphKey,
-  });
 
   /**
    * Memoised so the `?? []` fallback does not hand every downstream `useMemo` a
@@ -398,10 +378,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
    * separate memos over this list recompute every render even when the units
    * have not changed.
    */
-  const allUnits = useMemo(
-    () => (extraBatchUnits.length > 0 ? [...(currentAllUnits ?? EMPTY_UNITS), ...extraBatchUnits] : (currentAllUnits ?? EMPTY_UNITS)),
-    [currentAllUnits, extraBatchUnits],
-  );
+  const allUnits = useMemo(() => currentAllUnits ?? EMPTY_UNITS, [currentAllUnits]);
 
   // Configuration is read from the data endpoints, in one request for everything on screen,
   // and handed to the entry builders as accessors. The Revisions are the head and
@@ -429,7 +406,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   const unitsBackgroundRefreshing = unitsFetching;
 
   const [bulkPatch] = useBulkPatchUnitsMutation();
-  const [dryRunPatch] = useBulkPatchUnitsMutation();
+  const [dryRunPatch] = usePreviewUnitUpgradeMutation();
   const [updateUnit] = useUpdateUnitMutation();
   const [uploadUnitData] = useUploadUnitData();
   const [getUnit] = useLazyGetUnitQuery();
@@ -564,7 +541,6 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     spaceIds.length > 0 &&
     (unitsInitialLoading ||
       (currentAllUnits === undefined && unitsFetching) ||
-      extraBatchesLoading ||
       upstreamBatchesLoading);
 
   const unitById = useMemo(() => {
@@ -735,8 +711,6 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     Promise.allSettled(
       batchIds(upgradeableUnitIds).map((batch) =>
         dryRunPatch({
-          upgrade: true,
-          dryRun: true,
           where: `UnitID IN (${batch.map((id) => `'${id}'`).join(',')})`,
           // A dry run stores nothing, so the configuration it would produce comes back on the
           // response only when asked for. It is what this preview diffs against.
@@ -828,7 +802,33 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     return m;
   }, [targets]);
 
-  const { deployments, stages } = useMemo(
+  // The slug of the Space each Target lives in. The Target list already
+  // carries it, so Targets that share a display name ("cluster") can be told
+  // apart without one more request per Target.
+  const targetSpaceSlugById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of targets) {
+      const tid = t.Target?.TargetID;
+      const spaceSlug = t.Target?.SpaceSlug;
+      if (tid && spaceSlug) m.set(tid, spaceSlug);
+    }
+    return m;
+  }, [targets]);
+
+  // The Facts of each Target (Cluster.KubernetesVersion, for example), from
+  // the same Target list, so the graph can group by them with no request.
+  const targetFactsById = useMemo(() => {
+    const m = new Map<string, Readonly<Record<string, string>>>();
+    for (const t of targets) {
+      const tid = t.Target?.TargetID;
+      const facts = t.Target?.Facts;
+      if (tid && facts && Object.keys(facts).length > 0) m.set(tid, facts);
+    }
+    return m;
+  }, [targets]);
+
+  const { slugById } = useComponentSlugs();
+  const { deployments: builtDeployments, stages } = useMemo(
     () =>
       buildComponentData(
         spaces,
@@ -836,8 +836,25 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
         unitById,
         targetNameById,
         targetAnnotationsById,
+        targetSpaceSlugById,
+        targetFactsById,
       ),
-    [spaces, allUnits, unitById, targetNameById, targetAnnotationsById],
+    [
+      spaces,
+      allUnits,
+      unitById,
+      targetNameById,
+      targetAnnotationsById,
+      targetSpaceSlugById,
+      targetFactsById,
+    ],
+  );
+
+  // The Component and Owner of each Deployment: the graph frames and names
+  // Components only when it spans two or more of them.
+  const deployments = useMemo(
+    () => withComponents(builtDeployments, spaces, slugById),
+    [builtDeployments, spaces, slugById],
   );
 
   // Map deployment ID → display name, used by entry builders.
@@ -958,15 +975,17 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   // so it never re-runs when nodes later populate). The ref captures the prop
   // at mount time so re-renders after the parent strips ?space= do not matter.
   // The once-guard (initialFocusFiredRef) ensures it fires exactly once even
-  // though the effect re-runs as deployments.length changes.
+  // though the effect re-runs as deployments.length changes. It is set only
+  // when the timer fires: a length change inside the 350ms clears the timer,
+  // and a guard set before that would leave the focus never sent.
   const initialFocusDeploymentIdRef = useRef(initialFocusDeploymentId);
   const initialFocusFiredRef = useRef(false);
   useEffect(() => {
     if (initialFocusFiredRef.current) return;
     const focusId = initialFocusDeploymentIdRef.current;
     if (!focusId || deployments.length === 0) return;
-    initialFocusFiredRef.current = true;
     const timer = setTimeout(() => {
+      initialFocusFiredRef.current = true;
       setFocusTrigger({ deploymentId: focusId });
     }, 350);
     return () => clearTimeout(timer);
@@ -985,7 +1004,6 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   // `spaces` (the current node graph) — a sibling variant can sit in a
   // different bucket, or a different node graph entirely, when grouped by
   // something other than Component.
-  const { slugById } = useComponentSlugs();
   const composerParentComponent = useMemo(() => {
     if (!composerParentId) return null;
     const parentSpace = spaces.find((s) => s.Space?.SpaceID === composerParentId);
@@ -1260,6 +1278,38 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     },
     [bulkPatch, uploadUnitData, flashSuccess, setErrorsForDeployments, unitById],
   );
+
+  // A wave's bulk Upgrade lands in many Spaces at once. As after one staged
+  // commit, their old errors go, and every cached merge preview is dropped
+  // because the upstream they were computed against has moved.
+  const handleWaveUpgradeLanded = useCallback((spaceIds: ReadonlySet<string>) => {
+    setDeploymentErrors((prev) => {
+      if (![...spaceIds].some((id) => prev.has(id))) return prev;
+      const next = new Map(prev);
+      for (const id of spaceIds) next.delete(id);
+      return next;
+    });
+    fetchedDryRunIds.current.clear();
+    setDryRunData(new Map());
+    setDryRunConflicts(new Map());
+  }, []);
+
+  // The one bulk action of a wave on a folded graph's fold header.
+  const waveActions = useWaveActions({
+    deployments,
+    allUnits,
+    unitById,
+    setUpgradingDeploymentIds,
+    upgradeSettleTargetsRef,
+    flashSuccess,
+    setErrorsForDeployments,
+    onUpgradeLanded: handleWaveUpgradeLanded,
+    onOpenTab: handleOpenTab,
+  });
+  const graphReleasingIds = useMemo(() => {
+    if (waveActions.releasingIds.size === 0) return releasingDeploymentIds;
+    return new Set([...releasingDeploymentIds, ...waveActions.releasingIds]);
+  }, [releasingDeploymentIds, waveActions.releasingIds]);
 
   // Commit ONE unit's STAGED PROTECTION batch via the dedicated SetUnitProtection
   // endpoint — a SEPARATE revision from handleCommitStaged above (see
@@ -1550,15 +1600,14 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   // happens to gate a different branch this render.
   const batchSubscriptions = (
     <>
-      {extraUnitsSubscriptions}
       {upstreamUnitsSubscriptions}
       {releaseSubscriptions}
     </>
   );
 
   // ── Error state ──
-  if (unitsError || extraBatchesError || upstreamBatchesError) {
-    const firstError = unitsQueryError ?? extraBatchesErrors[0] ?? upstreamBatchesErrors[0];
+  if (unitsError || upstreamBatchesError) {
+    const firstError = unitsQueryError ?? upstreamBatchesErrors[0];
     return (
       <>
         {batchSubscriptions}
@@ -1616,10 +1665,15 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
             upgradingDeploymentIds={upgradingDeploymentIds}
             deploymentSuccessMessages={deploymentSuccessMessages}
             latestReleaseBySpaceId={latestReleaseBySpaceId}
-            releasingDeploymentIds={releasingDeploymentIds}
+            releasingDeploymentIds={graphReleasingIds}
             releasePulseSourceId={releasePulseSourceId}
             focusTrigger={focusTrigger}
             suppressStructuralFitView={composerParentId != null || composerOverallPhase === 'inFlight'}
+            groupParam={groupParam ?? null}
+            onGroupChange={handleGroupChange}
+            onComponentOpen={handleComponentOpen}
+            onWaveAction={waveActions.onWaveAction}
+            runningWaveKeys={waveActions.runningWaveKeys}
             composerParentId={composerParentId}
             onComposerOpen={handleComposerOpen}
             composerData={
@@ -1638,6 +1692,11 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
                   }
                 : undefined
             }
+          />
+          <WaveActionDialog
+            pending={waveActions.pending}
+            onConfirm={waveActions.confirm}
+            onCancel={waveActions.cancel}
           />
         </GraphArea>
 

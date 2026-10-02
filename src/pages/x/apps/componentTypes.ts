@@ -20,12 +20,25 @@ export interface DeploymentTarget {
   /** Display label (Target.Labels.DisplayName ?? Target.Slug). Not unique. */
   name: string;
   /**
+   * The name that tells this Target apart from the other Targets of the
+   * Component: `name`, with " · " and the slug of the Space the Target lives
+   * in when another Target of the Component has the same `name` (Meridian
+   * names every cluster Target "cluster"). See `uniqueTargetLabels`.
+   */
+  label: string;
+  /**
    * External deep link derived from the Target's `URL-TargetUI` annotation
    * (with `{slug}` substituted), when the Target carries one. Links the name to
    * whatever UI manages the Target (e.g. ArgoCD, Flux, OpenTofu Cloud).
    */
   url?: string;
 }
+
+/**
+ * How long ago a Deployment was last released: since local midnight, in the
+ * last 7 days, in the last 30 days, or before that.
+ */
+export type ReleaseAge = 'today' | 'week' | 'month' | 'older';
 
 export interface ComponentDeployment {
   /** Stable id for the deployment node — equals the Space ID */
@@ -79,6 +92,54 @@ export interface ComponentDeployment {
    */
   staleUpstreamChangedAt?: string;
   staleRevisionsBehind?: number;
+  /**
+   * A copy of the Space's labels (`Space.Labels`); an empty object when it has
+   * none. A large Component's graph folds its quiet Deployments into stacks by
+   * one of these labels. The Space label `Stage` found here is a label value
+   * (the UI calls it Environment), not the DAG-depth field `stage` above.
+   */
+  labels: Readonly<Record<string, string>>;
+  /**
+   * The Facts of the Deployment's Target (`Target.Facts`), such as
+   * `Cluster.KubernetesVersion`: the release Target when the Space has one,
+   * else the first of `targets`. Undefined when that Target has no Facts, or
+   * when the Target list did not give them.
+   */
+  targetFacts?: Readonly<Record<string, string>>;
+  /**
+   * How long ago the Space's latest published Release was made, in the
+   * buckets Group by "Last released" shows. The flow graph sets it from the
+   * Releases it already loads and from a clock that moves once a minute (see
+   * `withReleaseAges`); undefined when the Space has no Release.
+   */
+  releaseAge?: ReleaseAge;
+  /**
+   * The Component this Deployment belongs to: its ID, its Slug (the name the
+   * left nav shows) and the Owner label of its Space. Set by the page; the
+   * graph uses it only when one graph spans two or more Components.
+   */
+  componentId?: string;
+  componentName?: string;
+  owner?: string;
+  /** Per-Space unit counts behind the card's config chips; see `ConfigSignals`. */
+  configSignals: ConfigSignals;
+}
+
+/**
+ * How many of a Space's units carry each config-side (desired-state) condition.
+ * The rules are the ones the card uses for its Stale / Unreleased changes /
+ * Gated chips, so a node that counts a condition here shows its chip:
+ *
+ * - stale: the unit has an upstream unit that is loaded, and the upstream
+ *   revision it merged is behind the upstream's head;
+ * - unreleased: the unit has a Target, a head revision, and a last-released
+ *   revision behind that head, and no validation errors;
+ * - gated: the same as unreleased, but with at least one validation error.
+ */
+export interface ConfigSignals {
+  staleUnits: number;
+  unreleasedUnits: number;
+  gatedUnits: number;
 }
 
 export interface Stage {

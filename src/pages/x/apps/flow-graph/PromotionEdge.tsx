@@ -59,6 +59,12 @@ export interface PromotionEdgeData {
   sourceLabel: string;
   /** Downstream (child) deployment's display name, for the popover header. */
   targetLabel: string;
+  /**
+   * Draw the line only. The folded and framed layouts hide the sync badge on
+   * an edge whose length differs from the unfolded graph's, where the badge's
+   * bend would not sit as it does there.
+   */
+  hideBadge?: boolean;
 }
 
 type BadgeState = 'on' | 'off' | 'mixed' | 'empty';
@@ -166,7 +172,7 @@ export function PromotionEdge({
       where: `SpaceID IN (${spaceIds.map((sid) => `'${sid}'`).join(',')}) AND UpdateType IN ('UpgradeUnit','MergeUnits')`,
       include: 'FromUnitID,ToUnitID',
     },
-    { skip: spaceIds.length === 0 },
+    { skip: spaceIds.length === 0 || data?.hideBadge === true },
   );
 
   // source = the upstream (parent) deployment's Space ID, target = the
@@ -252,6 +258,10 @@ export function PromotionEdge({
       });
     }
   };
+
+  if (data?.hideBadge) {
+    return <BaseEdge path={edgePath} style={style} markerEnd={markerEnd} />;
+  }
 
   const open = Boolean(anchorEl);
   const sourceLabel = data?.sourceLabel ?? '';

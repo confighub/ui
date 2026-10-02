@@ -76,6 +76,7 @@ import { isHeavyUnitData, shouldDeferUnitPaint, shouldShowUnitSizeChip } from '.
 import { computeTotalAllFields, countLogicalChanges, countUpgradableBadgeFields, hasRealUpgrade } from './entryBuilders';
 import { buildDeploymentMap } from './componentData';
 import { componentTheme } from './componentTheme';
+import { isMultiComponent } from './flow-graph/componentFrames';
 import { DECLARED_BAR_ID, ReleasesPane } from './ReleasesPane';
 import { NameInput, PaneButton } from './releasePaneStyles';
 import { useUnreleasedChanges } from './useUnreleasedChanges';
@@ -743,6 +744,10 @@ export const ComponentSidePane = memo(
       const id = selectedDeploymentIds.values().next().value;
       return id ? deploymentMap.get(id) : undefined;
     }, [selectedDeploymentIds, deploymentMap]);
+    // In a graph of several Components every Component has a "prod", so the
+    // header says which Component the open node belongs to.
+    const multiComponent = useMemo(() => isMultiComponent(deployments), [deployments]);
+    const headerComponent = multiComponent ? selectedDeployment?.componentName : undefined;
     const canRelease = !!selectedDeployment?.releaseTargetId;
     // also true for a same-Space upstream, which parentDeploymentId excludes
     const canUpgrade = selectedDeployment?.parentDeploymentId != null || !!hasUpgradableUnits;
@@ -785,6 +790,7 @@ export const ComponentSidePane = memo(
             id: deployment.deploymentId,
             label: shown,
             displayName: shown === deployment.slug ? undefined : deployment.slug,
+            componentName: multiComponent ? deployment.componentName : undefined,
             isCurrent: !!deployment.releaseTargetId && deployment.unappliedCount === 0,
             isDeclared: deployment.unappliedCount > 0,
             meta: `${deployment.unitCount} ${deployment.unitCount === 1 ? 'unit' : 'units'}`,
@@ -794,7 +800,7 @@ export const ComponentSidePane = memo(
             changedFields: units === undefined ? undefined : deployment.upgradeableCount,
           };
         }),
-      [deployments, unitsByDeployment],
+      [deployments, unitsByDeployment, multiComponent],
     );
 
     /**
@@ -1807,6 +1813,28 @@ export const ComponentSidePane = memo(
         />
 
         <PaneHeader>
+          {headerComponent && (
+            <Typography
+              component='span'
+              data-testid='component-side-pane-component'
+              title={headerComponent}
+              sx={{
+                flexShrink: 1,
+                minWidth: 0,
+                maxWidth: '45%',
+                fontSize: 12,
+                fontWeight: 600,
+                fontFamily: componentTheme.fontSans,
+                color: componentTheme.fgMuted,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                '&::after': { content: '" ›"', color: componentTheme.fgSubtle },
+              }}
+            >
+              {headerComponent}
+            </Typography>
+          )}
           {filterUrl ? (
             <Link
               href={filterUrl}
@@ -1843,9 +1871,9 @@ export const ComponentSidePane = memo(
               {selectedDeployment?.displayName ?? 'Component Review'}
             </Typography>
           )}
-          {selectedDeployment?.targets.map(({ targetId, name, url }) => {
+          {selectedDeployment?.targets.map(({ targetId, label, url }) => {
             return url ? (
-              <Tooltip key={targetId} title={`Open ${name}`} placement='top'>
+              <Tooltip key={targetId} title={`Open ${label}`} placement='top'>
                 <Link
                   href={url}
                   target='_blank'
@@ -1870,12 +1898,12 @@ export const ComponentSidePane = memo(
                     '&:hover svg': { color: 'primary.main' },
                   }}
                 >
-                  <TagBadge className='target-badge'>{name}</TagBadge>
+                  <TagBadge className='target-badge'>{label}</TagBadge>
                   <OpenInNewIcon />
                 </Link>
               </Tooltip>
             ) : (
-              <TagBadge key={targetId}>{name}</TagBadge>
+              <TagBadge key={targetId}>{label}</TagBadge>
             );
           })}
           {/* Single flex wrapper carrying the ONE `ml: 'auto'` for this button

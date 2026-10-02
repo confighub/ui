@@ -60,6 +60,12 @@ export const componentTheme = {
   bgDefault: '#ffffff',
   bgSubtle: '#f6f7f9',
   bgInset: '#f3f4f6',
+  // The region behind one Component's tree in a graph of several: a cool
+  // tint a step darker than the canvas (bgSubtle), so the frame reads as a
+  // region while healthy cards on white stay the loudest thing in it. Half
+  // opaque, so the canvas shows through and the frame stays quiet.
+  bgComponentFrame: 'rgba(236, 239, 244, 0.5)',
+  borderComponentFrame: 'rgba(230, 232, 236, 0.5)',
 
   // ── Border ──
   borderDefault: '#e6e8ec',

@@ -49,6 +49,15 @@ export interface ViewParamsPatch {
    * page's SAVED views (`viewID`/`viewGroupBy`/`viewFilterID`, `type=view`).
    */
   display?: 'dashboard' | null;
+  /**
+   * The user's canvas Group by choice: a Space label key turns the fold on and
+   * groups the quiet Deployments by it; `off` turns the fold off. Absent, the
+   * graph folds at 10 or more Deployments. Distinct from `group` above, which
+   * narrows the nav tree. In the URL so a shared link shows the same stacks; it
+   * changes only when someone picks another choice, never with screen size or
+   * health.
+   */
+  graphGroup?: string | null;
 }
 
 export const AUTOMATED_USER_ID = '00000000-0000-0000-0000-000000000000';

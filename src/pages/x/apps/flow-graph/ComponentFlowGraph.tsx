@@ -1,19 +1,26 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactFlow, {
   Background,
+  ControlButton,
   Controls,
+  type Edge,
   type EdgeTypes,
   type HandleType,
   type Node,
   type NodeTypes,
   type OnConnectStartParams,
+  Panel,
+  type ReactFlowState,
   ReactFlowProvider,
   useEdgesState,
   useNodesInitialized,
   useNodesState,
   useReactFlow,
+  useStore,
+  useStoreApi,
+  type Viewport,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -38,11 +45,57 @@ import {
   computeNudgeIntoView,
 } from './composerLayout';
 import { PromotionEdge } from './PromotionEdge';
+import { ExpandFrameNode } from './ExpandFrameNode';
+import { ComponentFrameNode } from './ComponentFrameNode';
+import { type ComponentFrameActions, componentGroups } from './componentFrames';
+import { FoldFrameNode } from './FoldFrameNode';
+import { FlowCanvasToolbar } from './FlowCanvasToolbar';
+import { TOGGLE_RESERVE } from './toolbarFit';
+import { MoreBelowCue } from './MoreBelowCue';
+import { StackNode } from './StackNode';
+import {
+  FIT_PAD_X,
+  MAX_ZOOM,
+  MIN_ZOOM_FOLDED,
+  MORE_BELOW_MIN_HIDDEN,
+  SEARCH_PULSE_MS,
+} from './fold/foldConstants';
+import { CLICK_PAN_THRESHOLD_PX, type PointerPoint, isClickAfterPan } from './fold/canvasSearch';
+import { type FoldLayout, type FrozenFoldParams, computeFoldedLayout, expandFrameId } from './fold/foldLayout';
+import type { WaveCondition } from './fold/deploymentCondition';
+import { withReleaseAges } from './fold/derivedGroupKeys';
+import { type FoldModel, closedStackOf, closedStacksOf, foldMembers, shouldFold } from './fold/foldModel';
+import { toFlowElements } from './fold/foldNodes';
+import {
+  type Rect,
+  type Size,
+  ensureVisibleViewport,
+  hiddenBelowPx,
+  panDownViewport,
+  solveFoldedFit,
+} from './fold/foldViewport';
+import { nextWheelZoom } from './fold/wheelZoom';
+import { groupByOptions, resolveGroupKey } from './fold/groupBy';
+import type { WaveActionRequest } from './fold/waveActions';
+import { useFoldStability } from './useFoldStability';
+import { useMinuteClock } from './useMinuteClock';
+import {
+  FOLD_ANIMATE_CLASS,
+  FOLD_GHOST_CLASS,
+  FOLD_GHOST_LEAVING_CLASS,
+  FOLD_TRANSITION_MS,
+  useFoldTransitions,
+  usePrefersReducedMotion,
+} from './useFoldTransitions';
 
 const nodeTypes: NodeTypes = {
   deploymentNode: DeploymentFlowNode,
   composerNode: ComposerNode,
   landingSlotNode: LandingSlotNode,
+  foldFrameNode: FoldFrameNode,
+  componentFrameNode: ComponentFrameNode,
+  stackNode: StackNode,
+  expandFrameNode: ExpandFrameNode,
 };
 
 const COMPOSER_NODE_ID_PREFIX = '__variant-composer__';
@@ -96,6 +149,28 @@ interface ComponentFlowGraphProps {
   releasingDeploymentIds?: Set<string>;
   /** The Space that just finished a publish — pulses its outgoing promotion edge toward the next stage. Cleared by the caller a moment after the publish resolves. */
   releasePulseSourceId?: string | null;
+
+  /**
+   * `?graphGroup=` as the URL holds it. `off` (any letter case) keeps the unfolded layout;
+   * a key the Group by menu offers folds, grouped by that key. Missing, or a
+   * value that is not an offered key, means Auto: fold at FOLD_THRESHOLD
+   * Deployments or more.
+   */
+  groupParam?: string | null;
+  /**
+   * Opens one Component's own graph, from a click on the name in its
+   * frame header in a graph of several Components. Without it the frame offers no such action.
+   */
+  onComponentOpen?: (name: string, owner: string) => void;
+  /** Writes `?graphGroup=`: a label key, or `off`. Called only when the user picks one. */
+  onGroupChange?: (key: string) => void;
+  /**
+   * The one bulk action of a wave on a fold header ("Upgrade 55"). Without
+   * it the header shows the wave but offers no action.
+   */
+  onWaveAction?: (request: WaveActionRequest) => void;
+  /** `waveKey`s of the waves whose bulk action is running; their button is disabled. */
+  runningWaveKeys?: ReadonlySet<string>;
 
   // ── Inline variant composer (Phase 1: on-canvas, single-variant) ──
   /** Deployment ID the composer is currently anchored to, or null/undefined when closed. At most one open at a time. */
@@ -186,6 +261,26 @@ const FlowContainer = styled(Box)({
     strokeDasharray: '6 10 !important',
     animation: 'releaseEdgeFlow 1.1s linear 2, releaseEdgePulseFade 1.9s ease-out forwards',
   },
+  // A folded graph moves its nodes when a poll adds or removes a card, so the
+  // eye can follow them (see useFoldTransitions; the class is never set when
+  // the user asks for reduced motion).
+  [`& .react-flow__node.${FOLD_ANIMATE_CLASS}`]: {
+    transition: `transform ${FOLD_TRANSITION_MS}ms ease, opacity ${FOLD_TRANSITION_MS}ms ease`,
+  },
+  // A card on its way into its stack is only a picture of the card.
+  [`& .react-flow__node.${FOLD_GHOST_CLASS}, & .react-flow__node.${FOLD_GHOST_CLASS} *`]: {
+    pointerEvents: 'none !important',
+  },
+  [`& .react-flow__node.${FOLD_GHOST_CLASS} > *`]: {
+    transition: `transform ${FOLD_TRANSITION_MS}ms ease`,
+    transformOrigin: 'center',
+  },
+  [`& .react-flow__node.${FOLD_GHOST_LEAVING_CLASS}`]: {
+    opacity: 0,
+  },
+  [`& .react-flow__node.${FOLD_GHOST_LEAVING_CLASS} > *`]: {
+    transform: 'scale(0.92)',
+  },
 });
 
 const EmptyState = styled(Box)({
@@ -201,7 +296,38 @@ const EmptyState = styled(Box)({
 // ============================================================================
 
 const EMPTY_SET = new Set<string>();
+const NO_GROUPS: ReadonlySet<string> = new Set();
+const NO_RECTS: ReadonlyMap<string, Rect> = new Map();
+// Auto mode: the wheel pans and a held Cmd or Ctrl turns it into zoom. A
+// trackpad pinch arrives as a wheel event with ctrlKey set, so it zooms too.
+const ZOOM_KEY_CODES = ['Meta', 'Control'];
+/**
+ * The canvas's top row spans its width but lets pointer events through
+ * between its tools, so the canvas under the gap still pans.
+ */
+const TOP_ROW_STYLE: CSSProperties = {
+  // Stops short of the Graph / Dashboard toggle that floats over the canvas.
+  right: TOGGLE_RESERVE,
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 12,
+  pointerEvents: 'none',
+};
+const prefersReducedMotion = (): boolean =>
+  typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const selectD3Zoom = (s: ReactFlowState) => s.d3Zoom;
 const NOOP = () => {};
+/** How long the first fit waits for nodes to be measured before it fits anyway. */
+const INITIAL_FIT_GIVE_UP_MS = 5000;
+
+const sizeOf = (el: HTMLElement): Size => ({ width: el.clientWidth, height: el.clientHeight });
+
+/** The same icon reactflow's own Fit control draws, so the folded Fit looks like it. */
+const FitViewIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 30" aria-hidden="true">
+    <path d="M3.692 4.63c0-.53.4-.938.939-.938h5.215V0H4.708C2.13 0 0 2.054 0 4.63v5.216h3.692V4.631zM27.354 0h-5.2v3.692h5.17c.53 0 .984.4.984.939v5.215H32V4.631A4.624 4.624 0 0027.354 0zm.954 24.83c0 .532-.4.94-.939.94h-5.215v3.768h5.215c2.577 0 4.631-2.13 4.631-4.707v-5.139h-3.692v5.139zm-23.677.94c-.531 0-.939-.4-.939-.94v-5.138H0v5.139c0 2.577 2.13 4.707 4.708 4.707h5.138V25.77H4.631z" />
+  </svg>
+);
 
 // ============================================================================
 // INNER COMPONENT (needs ReactFlowProvider)
@@ -228,6 +354,11 @@ function ComponentFlowGraphInner({
   latestReleaseBySpaceId,
   releasingDeploymentIds,
   releasePulseSourceId,
+  groupParam = null,
+  onGroupChange,
+  onComponentOpen,
+  onWaveAction,
+  runningWaveKeys,
   composerParentId,
   onComposerOpen,
   composerData,
@@ -281,6 +412,349 @@ function ComponentFlowGraphInner({
     return m;
   }, [deployments]);
 
+  // Two or more Components in one graph (a click on an Owner group or another
+  // high-level node): each one's tree gets a frame and a name. With one, empty.
+  const components = useMemo(() => componentGroups(deployments), [deployments]);
+
+  // ── Folding: the user's Group by choice, else 10 or more Deployments ──
+  // When `folding` is false, `foldModel` is null and every path in this file
+  // draws the unfolded graph.
+  // The Deployments that Group by reads: each with the bucket of its latest
+  // Release ("Last released"), against a clock that moves once a minute, so a
+  // poll does not move a Deployment between stacks.
+  const releaseClock = useMinuteClock();
+  const groupDeployments = useMemo(
+    () => withReleaseAges(deployments, latestReleaseBySpaceId, releaseClock),
+    [deployments, latestReleaseBySpaceId, releaseClock],
+  );
+  // The menu lists the options also when the graph does not fold, so the user
+  // can turn the fold on at any size.
+  const groupOptions = useMemo(
+    () => groupByOptions(foldMembers(groupDeployments)),
+    [groupDeployments],
+  );
+  const folding = shouldFold(
+    deployments,
+    groupParam,
+    groupOptions.map((o) => o.key),
+  );
+  const foldingRef = useRef(folding);
+  foldingRef.current = folding;
+  // The URL key wins when it is one of this Component's options; the default
+  // never depends on fit or health, so the stacks keep their shape between
+  // visits and on every screen.
+  const foldGroupKey = folding
+    ? resolveGroupKey(groupParam, groupOptions, groupOptions.find((o) => o.isDefault)?.key ?? null)
+    : null;
+  /** The fold on screen: off, or on with its grouping. */
+  const foldShape = folding ? `fold:${foldGroupKey ?? ''}` : 'off';
+  // Another Component or grouping is another graph: what was open, the
+  // columns chosen and the cards held for the old one mean nothing there.
+  const foldResetKey = `${graphKey ?? ''}|${foldShape}`;
+  // A poll may add or remove exception cards, but a card that just recovered
+  // stays for a while and the selected card stays for good, so what the user
+  // is reading does not jump back into a stack.
+  const {
+    model: foldModel,
+    holdUntilById,
+    keptSelectedIds,
+  } = useFoldStability({
+    deployments: groupDeployments,
+    groupKey: foldGroupKey,
+    selectedIds: visuallySelectedIds,
+    folding,
+    resetKey: foldResetKey,
+  });
+  const foldModelRef = useRef(foldModel);
+  foldModelRef.current = foldModel;
+  const [expandedGroupIds, setExpandedGroupIds] = useState<ReadonlySet<string>>(NO_GROUPS);
+  const expandedGroupIdsRef = useRef(expandedGroupIds);
+  expandedGroupIdsRef.current = expandedGroupIds;
+  // Stacks a search jump opened, so their frame says so: a stack that opened
+  // without the user clicking it must not look like their own choice.
+  const [openedBySearchIds, setOpenedBySearchIds] = useState<ReadonlySet<string>>(NO_GROUPS);
+  /** The card a search jump landed on; it pulses for SEARCH_PULSE_MS. */
+  const [pulseId, setPulseId] = useState<string | null>(null);
+  // The columns the last Fit chose. Every layout until the next Fit reuses
+  // them, so a status poll or an opened stack moves things down, never
+  // sideways.
+  const [frozen, setFrozen] = useState<FrozenFoldParams | null>(null);
+  // Nodes animate only after the first Fit of a graph: before it, every node
+  // would slide in from wherever reactflow first drew it.
+  const [foldFitted, setFoldFitted] = useState(false);
+  const foldResetKeyRef = useRef(foldResetKey);
+  foldResetKeyRef.current = foldResetKey;
+  const fitAnimateRafRef = useRef(0);
+  const [foldResetSeen, setFoldResetSeen] = useState(foldResetKey);
+  if (foldResetSeen !== foldResetKey) {
+    setFoldResetSeen(foldResetKey);
+    setExpandedGroupIds(NO_GROUPS);
+    setOpenedBySearchIds(NO_GROUPS);
+    setFrozen(null);
+    setFoldFitted(false);
+  }
+  /** Deployment id -> the closed stack it is in, where a folding card flies to. */
+  const [stackRectById, setStackRectById] = useState<ReadonlyMap<string, Rect>>(NO_RECTS);
+  const reducedMotion = usePrefersReducedMotion();
+
+  /** The folded layout on screen, for Fit, pans and "More below"; null when not folding. */
+  const foldLayoutRef = useRef<FoldLayout | null>(null);
+  /** A stack just opened: pan its frame into view once the new layout is on screen. */
+  const revealGroupRef = useRef<string | null>(null);
+  const [moreBelow, setMoreBelow] = useState(false);
+
+  const toggleStack = useCallback((groupId: string) => {
+    const opening = !expandedGroupIdsRef.current.has(groupId);
+    revealGroupRef.current = opening ? groupId : null;
+    setExpandedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+    // Whatever the user does with a stack by hand is their own choice from
+    // then on.
+    setOpenedBySearchIds((prev) => {
+      if (!prev.has(groupId)) return prev;
+      const next = new Set(prev);
+      next.delete(groupId);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Pan (never zoom) so a rectangle of the folded graph is in view. A folded
+   * graph never refits on a click, an opened stack or the side pane: a refit
+   * moves everything the user was reading.
+   */
+  const panToRect = useCallback(
+    (rect: Rect, opts: { center?: boolean }, duration: number) => {
+      const container = flowContainerRef.current;
+      if (!container) return;
+      const next = ensureVisibleViewport(rect, getViewport(), sizeOf(container), opts);
+      if (next) setViewport(next, { duration });
+    },
+    [getViewport, setViewport],
+  );
+  const panToDeployment = useCallback(
+    (deploymentId: string, opts: { center?: boolean }, duration: number) => {
+      const rect = foldLayoutRef.current?.nodes.find((n) => n.id === deploymentId);
+      if (rect) panToRect(rect, opts, duration);
+    },
+    [panToRect],
+  );
+
+  /** A node's box in flow coordinates, from whichever layout is on screen. */
+  const rectOfNode = useCallback((id: string): Rect | null => {
+    const layout = foldLayoutRef.current;
+    if (layout) return layout.nodes.find((n) => n.id === id) ?? null;
+    const node = nodesRef.current.find((n) => n.id === id);
+    if (!node) return null;
+    return {
+      x: node.position.x,
+      y: node.position.y,
+      width: node.width ?? NODE_WIDTH,
+      height: node.height ?? NODE_HEIGHT,
+    };
+  }, []);
+
+  /** A search jump waiting for its card to be in the committed layout. */
+  const pendingRevealRef = useRef<string | null>(null);
+  const pulseTimerRef = useRef(0);
+  useEffect(() => () => window.clearTimeout(pulseTimerRef.current), []);
+  const selectedIdsRef = useRef(selectedDeploymentIds);
+  selectedIdsRef.current = selectedDeploymentIds;
+
+  /**
+   * Bring one Deployment into view without moving anything else: open its
+   * stack in place (the frame says who opened it), select it so the side pane
+   * opens, pulse the card, and pan so it is in the middle. It never refits or
+   * zooms: the rest of the graph stays where the user left it.
+   */
+  const revealDeployment = useCallback(
+    (id: string, { openedBy, select = true }: { openedBy: 'search' | 'you'; select?: boolean }) => {
+      const loc = foldingRef.current ? foldModelRef.current?.location.get(id) : undefined;
+      if (loc?.kind === 'stack') {
+        const { groupId } = loc;
+        if (!expandedGroupIdsRef.current.has(groupId)) {
+          setExpandedGroupIds((prev) => new Set(prev).add(groupId));
+          setOpenedBySearchIds((prev) => {
+            const next = new Set(prev);
+            if (openedBy === 'search') next.add(groupId);
+            else next.delete(groupId);
+            return next;
+          });
+        }
+      }
+      // The pane's toggle would close an open pane; a jump only ever opens.
+      // A caller that opens the pane on a given tab selects it itself.
+      if (select && !selectedIdsRef.current.has(id)) callbacksRef.current.onDeploymentToggle(id);
+      window.clearTimeout(pulseTimerRef.current);
+      setPulseId(id);
+      pulseTimerRef.current = window.setTimeout(() => setPulseId(null), SEARCH_PULSE_MS);
+      // The card of a stack that is opening does not exist yet; the pan runs
+      // once the new layout is committed (see the effect on `nodes`).
+      revealGroupRef.current = null;
+      pendingRevealRef.current = id;
+    },
+    [],
+  );
+  // A Deployment named by a compare link may be quiet and sit in a closed
+  // stack, where it would have no card and no letter. Its stack opens in
+  // place, once per Deployment and graph: a stack the user closes afterwards
+  // stays closed. Nothing pans or zooms.
+  const compareOpenedRef = useRef<{ key: string; ids: Set<string> }>({ key: '', ids: new Set() });
+  useEffect(() => {
+    if (!folding || !foldModel || !compareLetterById || compareLetterById.size === 0) return;
+    if (compareOpenedRef.current.key !== foldResetKey) {
+      compareOpenedRef.current = { key: foldResetKey, ids: new Set() };
+    }
+    const done = compareOpenedRef.current.ids;
+    const fresh = [...compareLetterById.keys()].filter((id) => !done.has(id));
+    if (fresh.length === 0) return;
+    const groups = closedStacksOf(foldModel, fresh, expandedGroupIdsRef.current);
+    for (const id of fresh) if (foldModel.location.has(id)) done.add(id);
+    if (groups.length === 0) return;
+    setExpandedGroupIds((prev) => new Set([...prev, ...groups]));
+  }, [folding, foldModel, compareLetterById, foldResetKey]);
+  const revealFromSearch = useCallback(
+    (id: string) => revealDeployment(id, { openedBy: 'search' }),
+    [revealDeployment],
+  );
+  const handleGroupPick = useCallback((key: string) => onGroupChange?.(key), [onGroupChange]);
+
+  // The fold header names the wave by its condition; the page gets the wave
+  // as the model has it now, with its members, and the reveal it needs to
+  // show one of them.
+  const onWaveActionRef = useRef(onWaveAction);
+  onWaveActionRef.current = onWaveAction;
+  const hasWaveAction = !!onWaveAction;
+  const handleWaveAction = useCallback(
+    (baseId: string, condition: WaveCondition) => {
+      const wave = foldModelRef.current?.bases.get(baseId)?.waves.find((w) => w.condition === condition);
+      if (wave) onWaveActionRef.current?.({ baseId, wave, reveal: revealDeployment });
+    },
+    [revealDeployment],
+  );
+
+  // A frame's header Owner selects the Component's root Base, and its name
+  // goes to that Component's own graph.
+  const onComponentOpenRef = useRef(onComponentOpen);
+  onComponentOpenRef.current = onComponentOpen;
+  const hasComponentOpen = !!onComponentOpen;
+  const frameActions = useMemo<ComponentFrameActions>(
+    () => ({
+      onSelectRoot: (rootId) => revealDeployment(rootId, { openedBy: 'you' }),
+      onOpenComponent: hasComponentOpen
+        ? (name, owner) => onComponentOpenRef.current?.(name, owner)
+        : undefined,
+    }),
+    [revealDeployment, hasComponentOpen],
+  );
+
+  const updateMoreBelow = useCallback(
+    (viewport?: Viewport) => {
+      const layout = foldLayoutRef.current;
+      const container = flowContainerRef.current;
+      if (!foldingRef.current || !layout || !container) {
+        setMoreBelow(false);
+        return;
+      }
+      const hidden = hiddenBelowPx(viewport ?? getViewport(), layout.height, sizeOf(container));
+      setMoreBelow(hidden >= MORE_BELOW_MIN_HIDDEN);
+    },
+    [getViewport],
+  );
+  const handleMove = useCallback(
+    (_event: unknown, viewport: Viewport) => updateMoreBelow(viewport),
+    [updateMoreBelow],
+  );
+  const handleMoreBelow = useCallback(() => {
+    const layout = foldLayoutRef.current;
+    const container = flowContainerRef.current;
+    if (!layout || !container) return;
+    setViewport(panDownViewport(getViewport(), layout.height, sizeOf(container)), { duration: 300 });
+  }, [getViewport, setViewport]);
+
+  // Cmd or Ctrl + wheel on the Auto canvas zooms one step per notch (see
+  // wheelZoom.ts). The listener captures the event before React Flow's own
+  // wheel handler sees it, whichever of its two handlers is active.
+  const flowStore = useStoreApi();
+  const hasDeployments = deployments.length > 0;
+  useEffect(() => {
+    const container = flowContainerRef.current;
+    if (!hasDeployments || !container) return;
+    const isMac = navigator.userAgent.includes('Mac');
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target?.closest('.react-flow__renderer') || target.closest('.nowheel')) return;
+      const { d3Zoom, d3Selection, transform, minZoom, maxZoom } = flowStore.getState();
+      const pane = d3Selection?.node();
+      if (!d3Zoom || !d3Selection || !pane) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = pane.getBoundingClientRect();
+      const point: [number, number] = [event.clientX - rect.left, event.clientY - rect.top];
+      const zoom = nextWheelZoom(transform[2], event, isMac, minZoom, maxZoom);
+      // d3-zoom takes the source event as a fourth argument, as React Flow's
+      // own pinch zoom passes it, so onMove fires as for any wheel zoom. Its
+      // types leave that argument out.
+      const scaleTo = d3Zoom.scaleTo as (
+        selection: typeof d3Selection,
+        k: number,
+        p: [number, number],
+        sourceEvent: WheelEvent,
+      ) => void;
+      scaleTo(d3Selection, zoom, point, event);
+    };
+    container.addEventListener('wheel', onWheel, { capture: true, passive: false });
+    return () => container.removeEventListener('wheel', onWheel, { capture: true });
+  }, [hasDeployments, flowStore]);
+
+  /**
+   * Fit a folded graph: the zoom and the card and stack columns are chosen
+   * together, never below the readable floor, and the columns are frozen
+   * until the next Fit. Open stacks are left out of the choice, so opening
+   * one never changes what the next Fit picks.
+   */
+  const runFoldedFit = useCallback(
+    (duration: number) => {
+      const container = flowContainerRef.current;
+      if (!foldModel || !container) return;
+      const size = sizeOf(container);
+      if (size.width <= 0 || size.height <= 0) return;
+      const fit = solveFoldedFit(
+        (availableWidth) =>
+          computeFoldedLayout(deployments, foldModel, {
+            availableWidth,
+            expandedGroupIds: NO_GROUPS,
+            components,
+          }),
+        size,
+      );
+      setFrozen(fit.frozen);
+      setViewport(fit.viewport, { duration });
+      // The Fit's own layout (its columns) must be painted before nodes
+      // animate, or the first Fit would slide every node into its column.
+      const key = foldResetKeyRef.current;
+      cancelAnimationFrame(fitAnimateRafRef.current);
+      fitAnimateRafRef.current = requestAnimationFrame(() => {
+        fitAnimateRafRef.current = requestAnimationFrame(() => {
+          if (foldResetKeyRef.current === key) setFoldFitted(true);
+        });
+      });
+    },
+    [deployments, foldModel, components, setViewport],
+  );
+  useEffect(() => () => cancelAnimationFrame(fitAnimateRafRef.current), []);
+  /** The structural fit for whichever graph is on screen. */
+  const structuralFitRef = useRef<(duration: number) => void>(NOOP);
+  structuralFitRef.current = (duration: number) => {
+    if (foldingRef.current) runFoldedFit(duration);
+    else fitView({ padding: 0.15, duration });
+  };
+
   // Every promotion edge fetches its own Link data (see PromotionEdge.tsx) —
   // this is just enough of a key for its query's `where` clause. Deliberately
   // NOT the resolved links themselves, so this key (and therefore the edge
@@ -300,8 +774,10 @@ function ComponentFlowGraphInner({
       '|' +
       deployments.map((d) => d.deploymentId).sort().join(',') +
       '|' +
-      stages.map((s) => s.label).join(','),
-    [graphKey, deployments, stages],
+      stages.map((s) => s.label).join(',') +
+      '|' +
+      foldShape,
+    [graphKey, deployments, stages, foldShape],
   );
   // Suppresses the generic "fit the whole graph" reflex while a variant
   // creation is in flight (suppressStructuralFitView, driven by the
@@ -425,25 +901,87 @@ function ComponentFlowGraphInner({
       return;
     }
 
-    const { nodes: n, edges: e } = computeLayout(
-      deployments,
-      stages,
-      deploymentById,
-      visuallySelectedIds,
-      safeActiveUpgrades,
-      stableOnDeploymentToggle,
-      stableOnUpgradeToggle,
-      errorDeploymentIds,
-      unitSummariesByDeployment,
-      upgradingDeploymentIds,
-      deploymentSuccessMessages,
-      latestReleaseBySpaceId,
-      releasingDeploymentIds,
-      releasePulseSourceId,
-      stableOnOpenTab,
-      stableOnComposerOpen,
-      deploymentSpaceIdsKey,
-    );
+    function buildUnfoldedElements(): { nodes: Node[]; edges: Edge[] } {
+      foldLayoutRef.current = null;
+      setStackRectById(NO_RECTS);
+      return computeLayout(
+        deployments,
+        stages,
+        deploymentById,
+        visuallySelectedIds,
+        safeActiveUpgrades,
+        stableOnDeploymentToggle,
+        stableOnUpgradeToggle,
+        errorDeploymentIds,
+        unitSummariesByDeployment,
+        upgradingDeploymentIds,
+        deploymentSuccessMessages,
+        latestReleaseBySpaceId,
+        releasingDeploymentIds,
+        releasePulseSourceId,
+        stableOnOpenTab,
+        stableOnComposerOpen,
+        deploymentSpaceIdsKey,
+        components,
+        frameActions,
+      );
+    }
+
+    function buildFoldedElements(model: FoldModel): { nodes: Node[]; edges: Edge[] } {
+      const container = flowContainerRef.current;
+      const layout = computeFoldedLayout(deployments, model, {
+        // Until the first Fit freezes a width, fill the canvas at 100%.
+        availableWidth: frozen?.availableWidth ?? Math.max(0, (container?.clientWidth ?? 0) - 2 * FIT_PAD_X),
+        frozen,
+        expandedGroupIds,
+        components,
+      });
+      foldLayoutRef.current = layout;
+      const stackRects = new Map<string, Rect>();
+      for (const base of model.bases.values()) {
+        for (const group of base.groups) {
+          if (group.kind === 'loose' || expandedGroupIds.has(group.id)) continue;
+          const stack = layout.nodes.find((n) => n.id === group.id);
+          if (!stack) continue;
+          for (const id of group.memberIds) stackRects.set(id, stack);
+        }
+      }
+      setStackRectById(stackRects);
+      return toFlowElements(layout, model, deploymentById, {
+        node: {
+          selectedDeploymentIds: visuallySelectedIds,
+          activeUpgrades: safeActiveUpgrades,
+          onDeploymentToggle: stableOnDeploymentToggle,
+          onUpgradeToggle: stableOnUpgradeToggle,
+          errorDeploymentIds,
+          unitSummariesByDeployment,
+          upgradingDeploymentIds,
+          deploymentSuccessMessages,
+          latestReleaseBySpaceId,
+          releasingDeploymentIds,
+          onOpenTab: stableOnOpenTab,
+          onComposerOpen: stableOnComposerOpen,
+        },
+        edge: {
+          selectedDeploymentIds: visuallySelectedIds,
+          activeUpgrades: safeActiveUpgrades,
+          pulseFromDeploymentId: releasePulseSourceId,
+          deploymentSpaceIdsKey,
+          deploymentById,
+        },
+        expandedGroupIds,
+        openedBySearchIds,
+        onToggleStack: toggleStack,
+        recoveredUntilById: holdUntilById,
+        keptSelectedIds,
+        onWaveAction: hasWaveAction ? handleWaveAction : undefined,
+        runningWaveKeys,
+        components,
+        frameActions,
+      });
+    }
+
+    const { nodes: n, edges: e } = foldModel ? buildFoldedElements(foldModel) : buildUnfoldedElements();
 
     const nodesToRender = n.map((node) => {
       // The comparison letter is stamped on here rather than threaded through
@@ -451,7 +989,17 @@ function ComponentFlowGraphInner({
       // where anything sits, so it does not belong in a positioning argument
       // list that four other call sites share.
       const compareLetter = compareLetterById?.get(node.id);
-      return compareLetter ? { ...node, data: { ...node.data, compareLetter } } : node;
+      const isPulsing = node.type === 'deploymentNode' && node.id === pulseId;
+      return compareLetter || isPulsing
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              ...(compareLetter && { compareLetter }),
+              ...(isPulsing && { isPulsing }),
+            },
+          }
+        : node;
     });
 
     // ── Inline variant composer: append the landing-slot + composer ghost
@@ -532,6 +1080,19 @@ function ComponentFlowGraphInner({
     composerParentId,
     composerData,
     deploymentSpaceIdsKey,
+    foldModel,
+    frozen,
+    expandedGroupIds,
+    openedBySearchIds,
+    pulseId,
+    toggleStack,
+    holdUntilById,
+    keptSelectedIds,
+    hasWaveAction,
+    handleWaveAction,
+    runningWaveKeys,
+    components,
+    frameActions,
     setNodes,
     setEdges,
     setPendingFitView,
@@ -585,10 +1146,30 @@ function ComponentFlowGraphInner({
     callbacksRef.current.onComposerOpen?.(source.nodeId);
   }, []);
 
+  /** Where the last pointer went down on the canvas, to tell a click from a pan. */
+  const pointerDownRef = useRef<PointerPoint | null>(null);
+  const handlePointerDownCapture = useCallback((event: React.PointerEvent) => {
+    pointerDownRef.current = { x: event.clientX, y: event.clientY };
+  }, []);
+  // d3-zoom swallows the click after ANY pointer movement, so a click whose
+  // pointer drifted a pixel would never select.
+  const d3Zoom = useStore(selectD3Zoom);
+  useEffect(() => {
+    d3Zoom?.clickDistance(CLICK_PAN_THRESHOLD_PX);
+  }, [d3Zoom]);
+
   const handleNodeClick = useCallback(
     (event: React.MouseEvent, node: Node) => {
       // Only handle deployment nodes, not stage headers
       if (node.type !== 'deploymentNode') return;
+
+      // A drag on a card pans the canvas, and the browser still fires a
+      // click at the end of it; that click is the end of a pan, not a
+      // request to open the card. A keyboard click (detail 0) has no pointer.
+      const down = pointerDownRef.current;
+      if (event.detail > 0 && down && isClickAfterPan(down, { x: event.clientX, y: event.clientY })) {
+        return;
+      }
 
       const action = resolveNodeClick(event, selectedDeploymentIds.has(node.id));
       if (action === 'toggle-compare') {
@@ -597,6 +1178,15 @@ function ComponentFlowGraphInner({
       }
 
       callbacksRef.current.onDeploymentToggle(node.id);
+
+      // A folded graph pans only, and only as far as the card needs to be in
+      // view; closing the pane leaves the view where it is. Refitting here
+      // would move every stack the user was reading. The pane's own resize
+      // is handled by the ResizeObserver below.
+      if (foldingRef.current) {
+        if (!selectedDeploymentIds.has(node.id)) panToDeployment(node.id, {}, 300);
+        return;
+      }
 
       // Deselecting: fit all nodes into view
       if (action === 'deselect') {
@@ -664,6 +1254,7 @@ function ComponentFlowGraphInner({
       getViewport,
       setCenter,
       deploymentById,
+      panToDeployment,
     ],
   );
 
@@ -708,7 +1299,7 @@ function ComponentFlowGraphInner({
       cancelAnimationFrame(rafId);
       clearTimeout(fallbackId);
       setPendingFitView(false);
-      fitView({ padding: 0.15, duration: 200 });
+      structuralFitRef.current(200);
     };
 
     const tick = () => {
@@ -724,14 +1315,26 @@ function ComponentFlowGraphInner({
     };
 
     rafId = requestAnimationFrame(tick);
-    // Backstop in case the loop never reaches a fit (should rarely fire).
-    fallbackId = window.setTimeout(runFit, 600);
+    // Backstop in case the width never settles (should rarely fire). It must
+    // not fit before the nodes are measured: fitView then finds no bounds and
+    // leaves the view at 100%, and with the pending flag cleared nothing
+    // fits again, so a large graph would stay at scale 1. It waits for the
+    // measurement instead, and fits anyway after INITIAL_FIT_GIVE_UP_MS.
+    const startedAt = performance.now();
+    const fallback = () => {
+      if (!nodesInitializedRef.current && performance.now() - startedAt < INITIAL_FIT_GIVE_UP_MS) {
+        fallbackId = window.setTimeout(fallback, 200);
+        return;
+      }
+      runFit();
+    };
+    fallbackId = window.setTimeout(fallback, 600);
 
     return () => {
       cancelAnimationFrame(rafId);
       clearTimeout(fallbackId);
     };
-  }, [pendingFitView, fitView]);
+  }, [pendingFitView]);
 
   // Re-fit whenever the CONTAINER itself resizes.
   //
@@ -749,6 +1352,16 @@ function ComponentFlowGraphInner({
   // already carries a `fitViewTrigger` prop meant for this, but nothing has
   // ever passed it; a prop each caller must remember to bump is what failed
   // here, so this observes the real condition instead.
+  //
+  // A folded graph does not refit here: the columns were chosen at the last
+  // Fit, and a refit on every pane open would move all of them. It only pans
+  // the selected card back into view, the one thing the pane can hide.
+  const settleFoldedRef = useRef(NOOP);
+  settleFoldedRef.current = () => {
+    const selectedId = selectedDeploymentIds.values().next().value;
+    if (selectedId !== undefined) panToDeployment(selectedId, {}, 200);
+    updateMoreBelow();
+  };
   useEffect(() => {
     const container = flowContainerRef.current;
     if (!container) return;
@@ -772,7 +1385,8 @@ function ComponentFlowGraphInner({
       stableCount = changed ? 0 : stableCount + 1;
       if (stableCount >= STABLE_FRAMES && nodesInitializedRef.current) {
         rafId = 0;
-        fitView({ padding: 0.15, duration: 200 });
+        if (foldingRef.current) settleFoldedRef.current();
+        else fitView({ padding: 0.15, duration: 200 });
         return;
       }
       rafId = requestAnimationFrame(settleThenFit);
@@ -804,8 +1418,11 @@ function ComponentFlowGraphInner({
   // real click can land on a node's stale (pre-fit) or transiently-clipped
   // location and hit whatever is underneath instead. An instant snap removes
   // that window entirely rather than narrowing it.
+  //
+  // A folded graph ignores it: it refits only on load, on a new Component or
+  // grouping, and from its Fit control.
   useEffect(() => {
-    if (fitViewTrigger && reactFlowInitialized.current) {
+    if (fitViewTrigger && reactFlowInitialized.current && !foldingRef.current) {
       setTimeout(() => fitView({ padding: 0.15, duration: 0 }), 50);
     }
   }, [fitViewTrigger, fitView]);
@@ -823,9 +1440,26 @@ function ComponentFlowGraphInner({
   useEffect(() => {
     if (!focusTrigger || !reactFlowInitialized.current) return;
     if (handledFocusRef.current === focusTrigger) return;
+    // A Deployment in a closed stack has no node yet. Its stack opens in
+    // place and the pan waits for the new layout, so a Deployment opened in
+    // the side pane is never hidden on the canvas.
+    if (
+      foldingRef.current &&
+      closedStackOf(foldModelRef.current, focusTrigger.deploymentId, expandedGroupIdsRef.current)
+    ) {
+      handledFocusRef.current = focusTrigger;
+      revealDeployment(focusTrigger.deploymentId, { openedBy: 'you', select: false });
+      return;
+    }
     const node = nodes.find((n) => n.id === focusTrigger.deploymentId);
     if (!node) return;
     handledFocusRef.current = focusTrigger;
+    // A folded graph is too large to fit whole at a readable zoom, and its
+    // Fit already shows the Base tree; it pans the node to the middle instead.
+    if (foldingRef.current) {
+      panToDeployment(node.id, { center: true }, 350);
+      return;
+    }
     // Fits the WHOLE graph, not `setCenter` on just this one node: the
     // suppression effect above deliberately disables the generic
     // fit-to-everything for the duration of the create, specifically so this
@@ -842,7 +1476,46 @@ function ComponentFlowGraphInner({
     // `fitView` with no `nodes` restriction includes every node regardless
     // of how deep the just-created one sits in the tree.
     fitView({ padding: 0.15, duration: 350 });
-  }, [focusTrigger, nodes, fitView]);
+  }, [focusTrigger, nodes, fitView, panToDeployment, revealDeployment]);
+
+  // After a stack opens and the new layout is on screen, pan (never zoom) so
+  // the stack and its frame are in view. It waits for the frame to exist in
+  // the committed layout, because before that there is nothing to measure.
+  // "More below" is checked after every layout change too: an opened stack
+  // or a new card can make the graph taller than the canvas.
+  useEffect(() => {
+    updateMoreBelow();
+    const revealId = pendingRevealRef.current;
+    if (revealId) {
+      const rect = rectOfNode(revealId);
+      if (rect) {
+        pendingRevealRef.current = null;
+        panToRect(rect, { center: true }, prefersReducedMotion() ? 0 : 300);
+      }
+      return;
+    }
+    const groupId = revealGroupRef.current;
+    const layout = foldLayoutRef.current;
+    if (!groupId || !layout) return;
+    const frame = layout.nodes.find((n) => n.id === expandFrameId(groupId));
+    if (!frame) return;
+    revealGroupRef.current = null;
+    const stack = layout.nodes.find((n) => n.id === groupId);
+    const top = stack ? stack.y : frame.y;
+    panToRect({ x: frame.x, y: top, width: frame.width, height: frame.y + frame.height - top }, {}, 300);
+  }, [nodes, panToRect, rectOfNode, updateMoreBelow]);
+
+  // A jump that never found its card must not fire later in another graph.
+  useEffect(() => {
+    pendingRevealRef.current = null;
+  }, [graphKey]);
+
+  const renderedNodes = useFoldTransitions({
+    nodes,
+    stackRectById,
+    reducedMotion,
+    enabled: folding && foldFitted,
+  });
 
   if (deployments.length === 0) {
     return (
@@ -853,9 +1526,19 @@ function ComponentFlowGraphInner({
   }
 
   return (
-    <FlowContainer ref={flowContainerRef}>
+    <FlowContainer
+      ref={flowContainerRef}
+      onPointerDownCapture={handlePointerDownCapture}
+      // A drag on the canvas pans; without this it also selected the card
+      // names it crossed, and the selection fought the pan. Fields keep
+      // their text selection (the composer and the search have inputs).
+      sx={{
+        userSelect: 'none',
+        '& input, & textarea, & [contenteditable]': { userSelect: 'text' },
+      }}
+    >
       <ReactFlow
-        nodes={nodes}
+        nodes={renderedNodes}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
@@ -865,10 +1548,12 @@ function ComponentFlowGraphInner({
         onConnectStart={handleConnectStart}
         onConnectEnd={handleConnectEnd}
         onInit={handleInit}
+        onMove={folding ? handleMove : undefined}
+        onMoveEnd={folding ? handleMove : undefined}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        minZoom={0.3}
-        maxZoom={1.5}
+        minZoom={MIN_ZOOM_FOLDED}
+        maxZoom={MAX_ZOOM}
         proOptions={{ hideAttribution: true }}
         nodesDraggable={false}
         // React Flow's built-in drag-line visual (ConnectionLineWrapper in
@@ -886,10 +1571,41 @@ function ComponentFlowGraphInner({
         nodesConnectable
         elementsSelectable={false}
         deleteKeyCode={null}
-        zoomOnScroll
+        // The graph reads like a document: the wheel and a two-finger swipe
+        // pan, Cmd or Ctrl + wheel and a pinch zoom, and a drag on a card
+        // pans (see DeploymentFlowNode).
+        zoomOnScroll={false}
+        panOnScroll
+        zoomOnPinch
+        zoomActivationKeyCode={ZOOM_KEY_CODES}
       >
         <Background color={componentTheme.borderSubtle} gap={20} />
-        <Controls showInteractive={false} />
+        <Controls showInteractive={false} showFitView={!folding}>
+          {folding && (
+            <ControlButton onClick={() => runFoldedFit(300)} title="Fit" aria-label="fit view">
+              <FitViewIcon />
+            </ControlButton>
+          )}
+        </Controls>
+        {/* Spans the row so the toolbar can measure, and shrink into, its
+            available width as the side pane narrows the canvas. */}
+        <Panel position="top-left" style={TOP_ROW_STYLE}>
+          <FlowCanvasToolbar
+            componentName={'this graph'}
+            deployments={deployments}
+            model={foldModel}
+            folding={folding}
+            groupKey={foldGroupKey}
+            groupOptions={groupOptions}
+            onGroupChange={handleGroupPick}
+            onReveal={revealFromSearch}
+          />
+        </Panel>
+        {folding && moreBelow && (
+          <Panel position="bottom-center">
+            <MoreBelowCue onClick={handleMoreBelow} />
+          </Panel>
+        )}
       </ReactFlow>
     </FlowContainer>
   );

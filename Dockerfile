@@ -32,6 +32,8 @@ RUN mkdir -p /var/cache/nginx /var/log/nginx /tmp /usr/share/nginx/html && \
 
 # Copy built files and config
 COPY --from=builder /app/ui/dist /usr/share/nginx/html
+# The license, and the notices for the npm packages bundled into the app.
+COPY LICENSE THIRD_PARTY_LICENSES.txt /licenses/
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chown -R appuser:appgroup /usr/share/nginx/html /etc/nginx && \

@@ -1,13 +1,13 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { memo, useEffect, useState } from 'react';
-import { Handle, type NodeProps, Position, useStore } from 'reactflow';
+import { Handle, type NodeProps, Position, type ReactFlowState, useStore } from 'reactflow';
 
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import Link from '@mui/material/Link';
 import Tooltip from '@mui/material/Tooltip';
-import { keyframes, styled } from '@mui/material/styles';
+import { alpha, keyframes, styled } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
@@ -26,6 +26,8 @@ import {
   type VitalTone,
 } from '../liveStatus';
 import { LiveStatusProviderMark } from './LiveStatusProviderMark';
+import type { ConditionKind, WaveCondition } from './fold/deploymentCondition';
+import { MARK_LABEL, markStyle } from './fold/markStyle';
 import { INFO_PEEK_TOOLTIP_SX, InfoPeekCard, type InfoPeekSpec } from '@/components/info-peek/InfoPeek';
 
 // Config-side (desired) chip colors, and the Live/Synced tag color map.
@@ -146,6 +148,46 @@ export interface DeploymentFlowNodeData {
    * depends on never happening.
    */
   onComposerOpen?: (deploymentId: string) => void;
+  /**
+   * How much of the card to draw. Absent is the full card of the unfolded
+   * graph. A folded graph uses the other two:
+   * - `compact`: a card in a Base's block (attention card, quiet card, stack
+   *   member). Fixed 84 px high, a name row and a status row, and no floating
+   *   type and target labels, which would hit the row above in a dense grid.
+   * - `tree`: a node of the Base tree, 132 x 56: its name and what is below it.
+   */
+  density?: 'full' | 'compact' | 'tree';
+  /** Card width for `compact` (240 beside a Base, 226 in a fold cell). */
+  width?: number;
+  /**
+   * Config conditions that are a wave on this card's Base. The fold header
+   * shows them once for every member, so the card does not repeat them.
+   */
+  suppressedConditions?: ReadonlyArray<WaveCondition>;
+  /** `tree` only: variant Spaces downstream of this node, at every depth. */
+  variantCount?: number;
+  /**
+   * The Component's name, shown above a Base's name. Set only on a Base in a
+   * graph of two or more Components, where every Component's Bases are called
+   * "base", "prod" and so on.
+   */
+  componentName?: string;
+  /** `tree` only: this node's own worst attention condition, if it has one. */
+  treeMark?: ConditionKind;
+  /**
+   * The card a search jump just landed on. A ring pulses out twice so the eye
+   * finds it after the pan; it is a still ring for users who ask for reduced
+   * motion.
+   */
+  isPulsing?: boolean;
+  /**
+   * `compact` only: the card recovered and is held until this time (ms), so
+   * a status poll does not fold it away while the user reads it. The status
+   * row then says so and counts down.
+   */
+  recoveredUntil?: number;
+  /** `compact` only: a quiet card that stays a card only because it is selected. */
+  keptSelected?: boolean;
 }
 
 /** Which side-pane tab a status chip's peek deep-links to. */
@@ -185,9 +227,42 @@ const nodeRipple = keyframes`
   100% { opacity: 0; transform: scale(1.06); }
 `;
 
+/**
+ * Two rings expand and fade outside the selection halo. The inner white
+ * spread keeps a gap between the card and the ring so it reads as "here",
+ * not as a status border.
+ */
+const searchPulse = keyframes`
+  0%   { box-shadow: ${componentTheme.shadowSm}, 0 0 0 6px ${componentTheme.bgDefault}, 0 0 0 8px ${alpha(componentTheme.accent, 0.6)}; }
+  100% { box-shadow: ${componentTheme.shadowSm}, 0 0 0 6px ${alpha(componentTheme.bgDefault, 0)}, 0 0 0 24px ${alpha(componentTheme.accent, 0)}; }
+`;
+
+const selectNodesDraggable = (s: ReactFlowState) => s.nodesDraggable;
+
+const COMPACT_HEIGHT = 84;
+const TREE_WIDTH = 132;
+const TREE_HEIGHT = 56;
+
+type Density = NonNullable<DeploymentFlowNodeData['density']>;
+
 const NodeContainer = styled(Box, {
-  shouldForwardProp: (p) => p !== '$selected' && p !== '$publishing' && p !== '$isBase',
-})<{ $selected: boolean; $publishing?: boolean; $isBase?: boolean }>(({ theme, $selected, $publishing, $isBase }) => ({
+  shouldForwardProp: (p) =>
+    p !== '$selected' &&
+    p !== '$publishing' &&
+    p !== '$isBase' &&
+    p !== '$density' &&
+    p !== '$width' &&
+    p !== '$pulsing' &&
+    p !== '$recovered',
+})<{
+  $selected: boolean;
+  $publishing?: boolean;
+  $isBase?: boolean;
+  $density: Density;
+  $width?: number;
+  $pulsing?: boolean;
+  $recovered?: boolean;
+}>(({ theme, $selected, $publishing, $isBase, $density, $width, $pulsing, $recovered }) => ({
   display: 'flex',
   flexDirection: 'column',
   // $selected (app-level: this node is the pane's open deployment, or one of
@@ -207,22 +282,35 @@ const NodeContainer = styled(Box, {
       ? `2px solid ${theme.palette.primary.main}`
       : $isBase
         ? `1.5px dashed ${componentTheme.borderEmphasis}`
-        : `2px solid ${componentTheme.borderSubtle}`,
+        : $recovered
+          ? `2px dashed ${componentTheme.successEdge}`
+          : `2px solid ${componentTheme.borderSubtle}`,
   borderRadius: componentTheme.radiusLg,
   // Border-box: a 2px border on a 240px card renders 244 otherwise, which
   // `flowLayout`'s 260px slot currently absorbs and would not have to.
   boxSizing: 'border-box',
-  width: 240,
+  width: $density === 'tree' ? TREE_WIDTH : ($width ?? 240),
   // A calm minimum so a quiet (healthy, all-clear) card keeps presence and all
   // cards read as a tidy row; busier cards grow past this. The graph reserves a
   // fixed NODE_HEIGHT slot regardless, so growth here never shifts the layout.
-  minHeight: 84,
+  // A folded graph packs its cards in rows, so there the height is fixed and
+  // extra content is clipped instead.
+  ...($density === 'full'
+    ? { minHeight: 84 }
+    : { height: $density === 'tree' ? TREE_HEIGHT : COMPACT_HEIGHT }),
   overflow: 'hidden',
+  // The halo sits 3 px outside the rust border, so selection is an area
+  // around the card. No status uses an area halo, so a selected card never
+  // reads as Gated or Out of sync, which share the rust-brown attention tone.
+  outline: $selected ? `2px solid ${componentTheme.accentFocusRing}` : 'none',
+  outlineOffset: 3,
   cursor: 'pointer',
   fontFamily: componentTheme.fontSans,
   transition: 'border-color 0.2s, box-shadow 0.2s, background-color 0.2s',
   pointerEvents: 'all',
-  boxShadow: componentTheme.shadowSm,
+  // A held card is on its way back into its stack: it drops the lift every
+  // card has, so it reads as settled, not as a new problem.
+  boxShadow: $recovered ? 'none' : componentTheme.shadowSm,
   position: 'relative',
   '&:hover': {
     borderColor: $selected ? theme.palette.primary.main : $isBase ? componentTheme.borderEmphasis : componentTheme.borderMuted,
@@ -239,6 +327,13 @@ const NodeContainer = styled(Box, {
       border: `2px solid ${componentTheme.accent}`,
       pointerEvents: 'none',
       animation: `${nodeRipple} 1.15s cubic-bezier(0.16, 1, 0.3, 1) infinite`,
+    },
+  }),
+  ...($pulsing && {
+    animation: `${searchPulse} 1.3s cubic-bezier(0.16, 1, 0.3, 1) 2`,
+    '@media (prefers-reduced-motion: reduce)': {
+      animation: 'none',
+      boxShadow: `${componentTheme.shadowSm}, 0 0 0 6px ${componentTheme.bgDefault}, 0 0 0 8px ${alpha(componentTheme.accent, 0.6)}`,
     },
   }),
 }));
@@ -270,8 +365,12 @@ const NodeNameWrap = styled(Box)({
   minWidth: 0,
 });
 
-const NodeName = styled('span')({
-  fontSize: 13,
+const NodeName = styled('span', {
+  shouldForwardProp: (p) => p !== '$compact',
+})<{ $compact?: boolean }>(({ $compact }) => ({
+  // A folded graph fits at down to 80%; 14 px keeps a card's name about
+  // 11 px on screen there.
+  fontSize: $compact ? 14 : 13,
   fontWeight: 600,
   color: componentTheme.fgDefault,
   fontFamily: componentTheme.fontSans,
@@ -282,6 +381,20 @@ const NodeName = styled('span')({
   display: 'block',
   width: 'fit-content',
   maxWidth: '100%',
+}));
+
+/** The Component above a Base's name: a label that stays when the frame header is off screen. */
+const ComponentCaption = styled('span')({
+  display: 'block',
+  fontFamily: componentTheme.fontSans,
+  fontSize: 10,
+  fontWeight: 600,
+  lineHeight: '12px',
+  letterSpacing: '0.01em',
+  color: componentTheme.fgMuted,
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
 });
 
 const FloatingLabels = styled(Box)({
@@ -405,13 +518,28 @@ const ChipRow = styled(Box)({
  * calmest at 100% zoom and still the most findable signal at 45%; dropping
  * the outline lost almost nothing. See RECOMMENDATION.md.
  */
+/**
+ * A chip's shape, so status never depends on colour alone: Out of sync, Gated
+ * and Progressing can share one tone. Gated is a ring (nothing is filled in
+ * yet: it waits on a gate) and Progressing is hatched (it is on its way).
+ */
+type ChipShape = 'solid' | 'hatch' | 'ring';
+
+const chipBackground = (shape: ChipShape, tint: string): string => {
+  if (shape === 'ring') return 'transparent';
+  if (shape === 'hatch') return `repeating-linear-gradient(135deg, ${tint} 0 3px, transparent 3px 6px)`;
+  return tint;
+};
+
 const StatusChip = styled(Box, {
-  shouldForwardProp: (p) => p !== '$color' && p !== '$autoRight' && p !== '$tint' && p !== '$tintHover',
-})<{ $color: string; $tint: string; $tintHover: string; $autoRight?: boolean }>(({
+  shouldForwardProp: (p) =>
+    p !== '$color' && p !== '$autoRight' && p !== '$tint' && p !== '$tintHover' && p !== '$shape',
+})<{ $color: string; $tint: string; $tintHover: string; $autoRight?: boolean; $shape: ChipShape }>(({
   $color,
   $tint,
   $tintHover,
   $autoRight,
+  $shape,
 }) => ({
   display: 'inline-flex',
   alignItems: 'center',
@@ -425,15 +553,18 @@ const StatusChip = styled(Box, {
   color: $color,
   // The tint alone is the findable mark now there is no border. Pre-composited
   // by tone (see CHIP_TONE) rather than built by appending hex to `$color`.
-  background: $tint,
+  background: chipBackground($shape, $tint),
   border: 0,
-  borderRadius: 3,
+  // An inset ring draws the outline without a border, so a ring chip is the
+  // same size as a filled one and no row reflows.
+  boxShadow: $shape === 'ring' ? `inset 0 0 0 1.5px ${$color}` : undefined,
+  borderRadius: $shape === 'ring' ? 999 : 3,
   padding: '2px 7px',
   cursor: 'pointer',
   marginLeft: $autoRight ? 'auto' : undefined,
   transition: 'background-color 0.15s',
   '&:hover': {
-    background: $tintHover,
+    background: $shape === 'ring' ? $tint : chipBackground($shape, $tintHover),
   },
   '& svg': { width: 11, height: 11, flexShrink: 0 },
 }));
@@ -492,6 +623,7 @@ interface PeekSpec extends InfoPeekSpec {
  */
 const StatusChipWithPeek = ({
   tone,
+  shape = 'solid',
   autoRight,
   textColor,
   leading,
@@ -502,6 +634,7 @@ const StatusChipWithPeek = ({
 }: {
   /** The tone, not a colour — see `CHIP_TONE` for why the difference matters. */
   tone: ChipTone;
+  shape?: ChipShape;
   /** Pins this chip to the right edge of its row (used for Gated only). */
   autoRight?: boolean;
   /** Overrides the label's text color — the one earned exception to neutral
@@ -536,6 +669,7 @@ const StatusChipWithPeek = ({
         $tint={tint}
         $tintHover={tintHover}
         $autoRight={autoRight}
+        $shape={shape}
         className="nodrag nopan"
         onClick={handleGo}
         onMouseDown={(e) => e.stopPropagation()}
@@ -751,6 +885,25 @@ const TickIcon = () => (
   </svg>
 );
 
+/**
+ * "Recovered, folds in N s". It keeps its own one-second clock, so the
+ * countdown does not rebuild the whole graph every second.
+ */
+const RecoveredMark = ({ until }: { until: number }) => {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.ceil((until - now) / 1000));
+  return (
+    <RecoveredMarkRoot data-testid="flow-node-recovered">
+      <TickIcon />
+      Recovered <b>folds in {seconds} s</b>
+    </RecoveredMarkRoot>
+  );
+};
+
 // ============================================================================
 // LIVE STATE CHIP
 // ============================================================================
@@ -818,6 +971,7 @@ const LiveStateChip = ({
   return (
     <StatusChipWithPeek
       tone={presentation.tone}
+      shape={presentation.state === 'Progressing' ? 'hatch' : 'solid'}
       leading={<LiveDot $color={color} />}
       label={label}
       spec={spec}
@@ -898,6 +1052,99 @@ const CompareLetter = styled('span')(() => ({
   boxShadow: componentTheme.shadowSm,
 }));
 
+/**
+ * A compact card's status row: chips wrap to a second line, and anything past
+ * that is clipped, because the folded layout gives every card the same 84 px.
+ */
+const CompactStatusRow = styled(Box)({
+  flex: 1,
+  display: 'flex',
+  flexWrap: 'wrap',
+  alignItems: 'center',
+  alignContent: 'flex-start',
+  gap: 4,
+  maxHeight: 42,
+  overflow: 'hidden',
+  padding: '0 10px',
+  minWidth: 0,
+});
+
+/** A compact card's second row: its status on the left, its release on the right. */
+const CompactRow = styled(Box)({
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 6,
+  paddingRight: 10,
+  minWidth: 0,
+});
+
+/** "Live" on a quiet compact card: present, but quieter than any status. */
+const QuietMark = styled('span')({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 5,
+  fontSize: 12,
+  fontFamily: componentTheme.fontSans,
+  color: componentTheme.fgSubtle,
+  whiteSpace: 'nowrap',
+  '& svg': { width: 12, height: 12 },
+});
+
+/** The status row of a card held after it recovered: a quiet success mark and when it folds. */
+const RecoveredMarkRoot = styled('span')({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 5,
+  fontSize: 12,
+  fontWeight: 600,
+  fontFamily: componentTheme.fontSans,
+  color: componentTheme.success,
+  whiteSpace: 'nowrap',
+  '& svg': { width: 12, height: 12 },
+  '& b': {
+    fontFamily: componentTheme.fontMono,
+    fontSize: 11,
+    fontWeight: 600,
+    color: componentTheme.fgSubtle,
+  },
+});
+
+/** Says why a quiet card is not in its stack: it is the selected one. */
+const KeptMark = styled('span')({
+  fontFamily: componentTheme.fontMono,
+  fontSize: 11.5,
+  color: componentTheme.fgSubtle,
+  whiteSpace: 'nowrap',
+});
+
+const TreeBody = styled(Box)({
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'center',
+  gap: 3,
+  height: '100%',
+  padding: '0 10px',
+  minWidth: 0,
+});
+
+const TreeSub = styled('span')({
+  display: 'block',
+  fontFamily: componentTheme.fontMono,
+  fontSize: 10.5,
+  color: componentTheme.fgSubtle,
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+});
+
+/** A tree node's own attention mark, in the same shapes as a stack's strip. */
+const TreeMark = styled('span')({
+  width: 9,
+  height: 9,
+  borderRadius: 2,
+  flexShrink: 0,
+});
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -914,6 +1161,15 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
     isReleasing,
     compareLetter,
     onOpenTab,
+    density = 'full',
+    width,
+    suppressedConditions,
+    variantCount,
+    componentName,
+    treeMark,
+    isPulsing,
+    recoveredUntil,
+    keptSelected,
   } = data;
 
   const openTab = onOpenTab
@@ -940,6 +1196,11 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
   // badge keyed on it silently vanished from exactly the target-less base the
   // guided tour builds, and could label a child node BASE.
   const isBaseNode = !deployment.parentDeploymentId;
+
+  // A drag on a card that cannot be dragged pans the canvas, so a tall graph
+  // can be moved from anywhere; reactflow marks a draggable node `nopan`
+  // itself, so a node the user can drag still drags.
+  const nodesDraggable = useStore(selectNodesDraggable);
 
   const [isCardHovered, setIsCardHovered] = useState(false);
   const [isSourceHandleHovered, setIsSourceHandleHovered] = useState(false);
@@ -1003,7 +1264,11 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
   // reads as the card unsure whether it's stale. Suppress just the Stale
   // chip while the upgrade transient is showing; it reappears if any units
   // are still unupgraded once the settle window clears isTransient.
-  const showStaleChip = isStale && !isTransient;
+  // A wave on this card's Base is said once on the fold header, not on every card.
+  const suppressed = (condition: WaveCondition) => suppressedConditions?.includes(condition) ?? false;
+  const showStaleChip = isStale && !isTransient && !suppressed('stale');
+  const showUnreleasedChip = isUnreleased && !suppressed('unreleased');
+  const showGatedChip = isGated && !suppressed('gated');
 
   // Vitals — "is it synced" and "is it healthy" as two independent, always-on
   // facts (per the CTO's ask), read straight from the raw annotation rather
@@ -1110,6 +1375,177 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
     isUnreleased ||
     isGated;
 
+  const renderConfigChips = (pinGatedRight: boolean) => (
+    <>
+      {showStaleChip && (
+        <StatusChipWithPeek
+          tone="stale"
+          leading={<UpgradingIcon />}
+          label="Stale"
+          meta={staleMeta || undefined}
+          spec={staleSpec}
+          onGo={openTab}
+        />
+      )}
+      {showUnreleasedChip && (
+        <StatusChipWithPeek
+          tone="unreleased"
+          leading={<PendingIcon />}
+          label="Unreleased changes"
+          spec={unreleasedSpec}
+          onGo={openTab}
+        />
+      )}
+      {showGatedChip && (
+        <StatusChipWithPeek
+          tone="gated"
+          shape="ring"
+          leading={<GatedIcon />}
+          label="Gated"
+          spec={gatedSpec}
+          onGo={openTab}
+          autoRight={pinGatedRight}
+        />
+      )}
+    </>
+  );
+
+  const releaseChip = deployment.releaseTargetId && latestRelease && releaseSpec && (
+    <Tooltip
+      placement="bottom-start"
+      enterDelay={120}
+      leaveDelay={0}
+      disableInteractive
+      slotProps={{ tooltip: { sx: INFO_PEEK_TOOLTIP_SX }, transition: { timeout: { enter: 120, exit: 0 } } }}
+      title={<InfoPeekCard color={componentTheme.fgMuted} spec={releaseSpec} />}
+    >
+      <ReleaseChip
+        $fresh={!!localSuccess}
+        className="nodrag nopan"
+        onClick={handleReleaseGo}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <ReleaseChipDot $fresh={!!localSuccess} />
+        rel-{latestRelease.num}
+      </ReleaseChip>
+    </Tooltip>
+  );
+
+  // A compact card is narrow, so its release chip moves to the status row
+  // and the name keeps the full width: in an open stack, names that differ
+  // only at the end must not cut to the same text.
+  const componentCaption = componentName ? (
+    <ComponentCaption title={componentName} data-testid='flow-node-component'>
+      {componentName}
+    </ComponentCaption>
+  ) : null;
+
+  const header = (quiet: boolean) => (
+    <NodeHeader $selected={isSelected} $quiet={quiet}>
+      <NodeNameWrap>
+        {componentCaption}
+        <NodeName
+          $compact={density === 'compact'}
+          title={density === 'full' ? undefined : deployment.displayName}
+        >
+          {deployment.displayName}
+        </NodeName>
+      </NodeNameWrap>
+      {density !== 'compact' && releaseChip}
+      {hasError && <ErrorBadge>Error</ErrorBadge>}
+    </NodeHeader>
+  );
+
+  // A compact card shows live status only when it is not fine: in a grid of
+  // dozens of cards, a healthy tag on each is the noise the fold removes. A
+  // quiet card still says "Live" once, so it does not read as unreported.
+  const liveExceptionChips: React.ReactNode[] = [];
+  if (density === 'compact') {
+    const vitals: { axis: 'health' | 'sync'; presentation: VitalPresentation; eyebrowAxis?: string }[] = fluxVital
+      ? [{ ...fluxVital, eyebrowAxis: 'status' }]
+      : [
+          ...(healthVital ? [{ axis: 'health' as const, presentation: healthVital }] : []),
+          ...(syncVital ? [{ axis: 'sync' as const, presentation: syncVital }] : []),
+        ];
+    for (const vital of vitals) {
+      if (vital.presentation.tone === 'ok') continue;
+      liveExceptionChips.push(
+        <LiveStateChip
+          key={vital.axis}
+          axis={vital.axis}
+          eyebrowAxis={vital.eyebrowAxis}
+          status={deployment.liveStatus}
+          presentation={vital.presentation}
+          provider={liveProvider}
+          deploymentId={deployment.deploymentId}
+          onOpenTab={onOpenTab}
+        />,
+      );
+    }
+  }
+  const compactIsQuiet =
+    liveExceptionChips.length === 0 &&
+    !isTransient &&
+    !localSuccess &&
+    !showStaleChip &&
+    !showUnreleasedChip &&
+    !showGatedChip;
+
+  const compactBody = (
+    <>
+      {header(false)}
+      <CompactRow>
+        <CompactStatusRow>
+          {liveExceptionChips}
+          {isTransient && (
+            <TransientStat sx={{ color: componentTheme.upgrade }}>
+              <CircularProgress size={9} sx={{ color: 'inherit' }} /> upgrading…
+            </TransientStat>
+          )}
+          {!isTransient && localSuccess && (
+            <SuccessTick key={localSuccess.key}>
+              <TickIcon /> {localSuccess.msg}
+            </SuccessTick>
+          )}
+          {renderConfigChips(false)}
+          {recoveredUntil !== undefined && <RecoveredMark until={recoveredUntil} />}
+          {recoveredUntil === undefined && keptSelected && compactIsQuiet && (
+            <KeptMark>Kept as a card: selected</KeptMark>
+          )}
+          {recoveredUntil === undefined && !keptSelected && compactIsQuiet && (showUnreported || hasTargets) && (
+            <QuietMark>
+              <TickIcon />
+              {showUnreported ? 'Not reported yet' : 'Live'}
+            </QuietMark>
+          )}
+        </CompactStatusRow>
+        {recoveredUntil === undefined && releaseChip}
+      </CompactRow>
+    </>
+  );
+
+  const treeBody = (
+    <TreeBody>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+        <NodeNameWrap>
+          {componentCaption}
+          <NodeName title={deployment.displayName}>{deployment.displayName}</NodeName>
+        </NodeNameWrap>
+        {treeMark && (
+          <TreeMark
+            role="img"
+            aria-label={MARK_LABEL[treeMark]}
+            title={MARK_LABEL[treeMark]}
+            style={markStyle(treeMark)}
+          />
+        )}
+      </Box>
+      <TreeSub>
+        {variantCount ?? 0} {variantCount === 1 ? 'variant' : 'variants'}
+      </TreeSub>
+    </TreeBody>
+  );
+
   return (
     <>
       {/*
@@ -1146,7 +1582,7 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
             {compareLetter}
           </CompareLetter>
         ) : null}
-        {(deployment.targets.length > 0 || isBaseNode) && (
+        {density === 'full' && (deployment.targets.length > 0 || isBaseNode) && (
           <FloatingLabels>
             <TypeBadge
               $kind={isBaseNode ? 'Base' : deployment.type}
@@ -1207,36 +1643,17 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
           $selected={isSelected}
           $publishing={isReleasing}
           $isBase={deployment.type === 'Base'}
-          className="nopan"
+          $density={density}
+          $width={width}
+          $pulsing={isPulsing}
+          $recovered={density === 'compact' && recoveredUntil !== undefined && !isSelected}
+          className={nodesDraggable ? 'nopan' : undefined}
         >
-        <NodeHeader $selected={isSelected} $quiet={!hasBodyContent}>
-          <NodeNameWrap>
-            <NodeName>{deployment.displayName}</NodeName>
-          </NodeNameWrap>
-          {deployment.releaseTargetId && latestRelease && releaseSpec && (
-            <Tooltip
-              placement="bottom-start"
-              enterDelay={120}
-              leaveDelay={0}
-              disableInteractive
-              slotProps={{ tooltip: { sx: INFO_PEEK_TOOLTIP_SX }, transition: { timeout: { enter: 120, exit: 0 } } }}
-              title={<InfoPeekCard color={componentTheme.fgMuted} spec={releaseSpec} />}
-            >
-              <ReleaseChip
-                $fresh={!!localSuccess}
-                className="nodrag nopan"
-                onClick={handleReleaseGo}
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                <ReleaseChipDot $fresh={!!localSuccess} />
-                rel-{latestRelease.num}
-              </ReleaseChip>
-            </Tooltip>
-          )}
-          {hasError && <ErrorBadge>Error</ErrorBadge>}
-        </NodeHeader>
+        {density === 'compact' && compactBody}
+        {density === 'tree' && treeBody}
+        {density === 'full' && header(!hasBodyContent)}
 
-        {hasBodyContent && (
+        {density === 'full' && hasBodyContent && (
         <NodeBody>
           {/* Live status — always visible, including when fine. The first
               thing read on every card: is the cluster healthy and is it synced
@@ -1313,38 +1730,8 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
               Stale → Unreleased changes → Gated, with Gated right-anchored.
               Status by exception: every all-clear signal shows nothing, so a
               healthy card has no chips at all. */}
-          {(showStaleChip || isUnreleased || isGated) && (
-            <ChipRow>
-              {showStaleChip && (
-                <StatusChipWithPeek
-                  tone="stale"
-                  leading={<UpgradingIcon />}
-                  label="Stale"
-                  meta={staleMeta || undefined}
-                  spec={staleSpec}
-                  onGo={openTab}
-                />
-              )}
-              {isUnreleased && (
-                <StatusChipWithPeek
-                  tone="unreleased"
-                  leading={<PendingIcon />}
-                  label="Unreleased changes"
-                  spec={unreleasedSpec}
-                  onGo={openTab}
-                />
-              )}
-              {isGated && (
-                <StatusChipWithPeek
-                  tone="gated"
-                  leading={<GatedIcon />}
-                  label="Gated"
-                  spec={gatedSpec}
-                  onGo={openTab}
-                  autoRight
-                />
-              )}
-            </ChipRow>
+          {(showStaleChip || showUnreleasedChip || showGatedChip) && (
+            <ChipRow>{renderConfigChips(true)}</ChipRow>
           )}
         </NodeBody>
         )}
@@ -1377,11 +1764,13 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
             needs its SPOTLIGHT to visually cover the whole card without
             touching this click target, use TourStep's `spotlightAnchor`
             instead of trying to enlarge this element again. */}
-        <Box
-          data-testid="flow-node-select-target"
-          data-variant={deployment.parentDeploymentId ? deployment.displayName : 'base'}
-          sx={{ height: 18, flexShrink: 0 }}
-        />
+        {density === 'full' && (
+          <Box
+            data-testid="flow-node-select-target"
+            data-variant={deployment.parentDeploymentId ? deployment.displayName : 'base'}
+            sx={{ height: 18, flexShrink: 0 }}
+          />
+        )}
       </NodeContainer>
       </Box>
       {/* disableInteractive: MUI's Tooltip popper defaults to

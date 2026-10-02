@@ -307,7 +307,7 @@ export const AppsComponentLayout = ({
       // themselves (`FlowViewControl`, which does clear it) or returns to
       // Overview (`handleOverviewSelect`, which also clears it).
       updateParams(
-        { app: app.name, space: null, compare: null, group: null },
+        { app: app.name, space: null, compare: null, group: null, graphGroup: null },
         { push: true },
       );
     },
@@ -349,7 +349,7 @@ export const AppsComponentLayout = ({
       // comment on why the Graph/Dashboard choice is sticky across node
       // clicks.
       updateParams(
-        { app: null, space: null, compare: null, group: target.group },
+        { app: null, space: null, compare: null, group: target.group, graphGroup: null },
         { push: true },
       );
     },
@@ -393,6 +393,9 @@ export const AppsComponentLayout = ({
    * same rule `selectedDeploymentIds` follows.
    */
   const compareParam = searchParams.get('compare');
+  // Read as is: only the graph knows the Component's label options, so it
+  // resolves an unknown key to the default. Absent means Auto and stays absent.
+  const graphGroupParam = searchParams.get('graphGroup');
   const compareDeploymentIds = useMemo(
     () => (compareParam ? compareParam.split(',').filter(Boolean) : EMPTY_COMPARE),
     [compareParam],
@@ -450,7 +453,7 @@ export const AppsComponentLayout = ({
   // param at all), but a node clicked AFTER Overview should open its graph,
   // not carry over a choice from a now-closed, unrelated node graph.
   const handleOverviewSelect = useCallback(() => {
-    updateParams({ app: null, display: null, space: null, compare: null, group: null });
+    updateParams({ app: null, display: null, space: null, compare: null, group: null, graphGroup: null });
   }, [updateParams]);
 
   const handleToggleTree = useCallback(() => {
@@ -531,6 +534,7 @@ export const AppsComponentLayout = ({
                 onCompareSelectionChange={handleCompareSelectionChange}
                 initialFocusDeploymentId={spaceParam ?? undefined}
                 displayMode={componentDisplayMode}
+                groupParam={graphGroupParam}
                 onViewParamsChange={handleViewParamsChange}
                 onComponentSelect={handleAppSelect}
               />

@@ -30,7 +30,7 @@
  */
 
 import type {
-  ChangeOrder,
+  ChangeOrderRead,
   ChangeWorkflowPrerequisite,
   ChangeWorkflowSpec,
   ChangeWorkflowStage,
@@ -62,7 +62,7 @@ const UNGOVERNED: ChangeOrderWorkflow = { state: 'ungoverned' };
  * that has not arrived is `ungoverned` the same way one that names no workflow
  * is — the caller distinguishes them by whether it has an order at all.
  */
-export function changeOrderWorkflow(order: ChangeOrder | undefined): ChangeOrderWorkflow {
+export function changeOrderWorkflow(order: ChangeOrderRead | undefined): ChangeOrderWorkflow {
   const changeWorkflowId =
     order?.ChangeWorkflowID !== undefined && order.ChangeWorkflowID !== null && order.ChangeWorkflowID !== ''
       ? order.ChangeWorkflowID
