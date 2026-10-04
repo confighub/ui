@@ -3,7 +3,7 @@
 import type { ExtendedSpaceRead, ExtendedUnitRead } from '@confighub/rtk-query';
 
 import type { ComponentDeployment, ConfigSignals, DeploymentTarget, Stage } from './componentTypes';
-import { parseLiveStatus, resolveLiveStatusProvider } from './liveStatus';
+import { resolveLiveStatusProvider, type RunningRelease } from './liveStatus';
 
 // ============================================================================
 // LABEL CONSTANTS
@@ -177,6 +177,9 @@ export function unitConfigSignal(
  *
  * Identity is the SpaceID, so multiple Spaces deploying to the same Target
  * each get their own node, and Spaces with no Target (e.g. bases) still appear.
+ *
+ * `runningReleaseBySpaceId` is the Release each Space is running (see
+ * `useRunningReleases`), which carries its live status.
  */
 export function buildComponentData(
   spaces: ExtendedSpaceRead[],
@@ -186,6 +189,7 @@ export function buildComponentData(
   targetAnnotationsById?: Map<string, Record<string, string>>,
   targetSpaceSlugById?: Map<string, string>,
   targetFactsById?: ReadonlyMap<string, Readonly<Record<string, string>>>,
+  runningReleaseBySpaceId?: ReadonlyMap<string, RunningRelease>,
 ): { deployments: ComponentDeployment[]; stages: Stage[] } {
   const unitToSpaceId = new Map<string, string>();
   for (const u of allUnits) {
@@ -299,7 +303,8 @@ export function buildComponentData(
       );
       const variant = s.Space?.Labels?.[LABEL_VARIANT];
       const isBase = targets.length === 0;
-      const liveStatus = isBase ? undefined : (parseLiveStatus(s.Space?.Annotations) ?? undefined);
+      const runningRelease = isBase ? undefined : runningReleaseBySpaceId?.get(sid);
+      const liveStatus = runningRelease?.liveStatus ?? undefined;
       const factsTargetId = deploymentTargetId(s.Space?.ReleaseTargetID, targets);
       const targetFacts = factsTargetId ? targetFactsById?.get(factsTargetId) : undefined;
       return {
@@ -319,11 +324,16 @@ export function buildComponentData(
         unitCount: unitCountBySpace.get(sid) ?? 0,
         // A Base has no Target, so nothing is deployed from it and no live-infra
         // reporter (e.g. argobot) can be watching it. Forced here rather than left
-        // to convention: nothing stops a stray/leftover `live-status` annotation
-        // from persisting on a Space's annotations (e.g. a Space that lost its
-        // last Target) — without this guard that would incorrectly paint a Base
+        // to convention: a Space whose Units lost their Targets can still name a
+        // release Target with Releases behind it, and those would paint a Base
         // card with Live/Synced tags it structurally can't back up.
         liveStatus,
+        ...(runningRelease && {
+          runningRelease: {
+            releaseNum: runningRelease.releaseNum,
+            manifestDigest: runningRelease.manifestDigest,
+          },
+        }),
         // Same reasoning as `liveStatus` above: a Base deploys nothing, so no
         // delivery system reports on it and it must not carry a brand mark.
         liveStatusProvider: isBase ? 'unknown' : resolveLiveStatusProvider(liveStatus),

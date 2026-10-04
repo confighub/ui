@@ -18,6 +18,7 @@ import { test, expect } from './fixtures/test';
 
 import { deriveProgress, deriveSpaceState, deriveStageState } from '../src/pages/x/apps/rollout/rolloutState';
 import type { RolloutProgress, RolloutStage } from '../src/pages/x/apps/rollout/rolloutTypes';
+import { carryingReleases } from './fixtures/running-release';
 
 const BASE = 'base-1';
 const NO_SPACES: ReadonlySet<string> = new Set<string>();
@@ -35,6 +36,7 @@ function progressOf(fields: ProgressFields): RolloutProgress {
     // The base is always a member of a genuine answer, so every fixture carries it.
     resolvedSpaceIds: [BASE, ...(fields.resolved ?? [])],
     releasedSpaceIds: fields.released,
+    releases: carryingReleases(fields.released),
     restoredSpaceIds: fields.restored,
     releasedRestoredSpaceIds: fields.releasedRestored,
   });
@@ -186,6 +188,7 @@ test('absent restore fields leave every other verdict untouched', () => {
     changeOrderSpaceId: BASE,
     resolvedSpaceIds: [BASE, 'prod-1'],
     releasedSpaceIds: ['prod-1'],
+    releases: carryingReleases(['prod-1']),
     restoredSpaceIds: undefined,
     releasedRestoredSpaceIds: undefined,
   });

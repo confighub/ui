@@ -16,7 +16,8 @@
 import { test, expect } from './fixtures/test';
 
 import type { ChangeWorkflowSpec, ComponentRead, ExtendedSpaceRead } from '@confighub/rtk-query';
-import { LIVE_STATUS_ANNOTATION_KEY, type LiveStatus } from '../src/pages/x/apps/liveStatus';
+import type { LiveStatus } from '../src/pages/x/apps/liveStatus';
+import { carryingReleases, runningRelease } from './fixtures/running-release';
 import { stageWhereSpace } from '../src/pages/x/apps/rollout/changeOrderWorkflow';
 import {
   actionFor,
@@ -28,9 +29,9 @@ import {
 import type { RolloutProgress } from '../src/pages/x/apps/rollout/rolloutTypes';
 
 const HEALTHY: LiveStatus = {
-  syncStatus: 'Synced',
-  operationPhase: 'Succeeded',
-  healthStatus: 'Healthy',
+  Sync: 'Synced',
+  Operation: 'Succeeded',
+  Health: 'Healthy',
 };
 
 // ── What a row offers to END the rollout ──────────────────────────────
@@ -44,6 +45,7 @@ function progressWith(resolved: string[], restored: string[] = []): RolloutProgr
     availability: 'available',
     resolvedSpaceIds: new Set(resolved),
     releasedSpaceIds: new Set<string>(),
+    carryingReleases: new Map(),
     restoredSpaceIds: new Set(restored),
     releasedRestoredSpaceIds: new Set<string>(),
   };
@@ -53,6 +55,7 @@ const UNAVAILABLE: RolloutProgress = {
   availability: 'unavailable',
   resolvedSpaceIds: new Set<string>(),
   releasedSpaceIds: new Set<string>(),
+  carryingReleases: new Map(),
   restoredSpaceIds: new Set<string>(),
   releasedRestoredSpaceIds: new Set<string>(),
 };
@@ -182,7 +185,7 @@ function rowWithLateSpace(devSpaceIds: string[], abortedReason = '', stage = 'Co
         component: COMPONENT,
         labels: { Stage: stage },
         releaseTargetId: `target-${spaceId}`,
-        annotations: { [LIVE_STATUS_ANNOTATION_KEY]: JSON.stringify(HEALTHY) },
+        release: runningRelease(HEALTHY),
       }),
     ),
   ];
@@ -194,6 +197,7 @@ function rowWithLateSpace(devSpaceIds: string[], abortedReason = '', stage = 'Co
       spaceSlug: 'myapp-base',
       resolvedSpaceIds: [BASE, DEV_A, PROD],
       releasedSpaceIds: [DEV_A, PROD],
+      releases: carryingReleases([DEV_A, PROD]),
       inScopeSpaceIds: [BASE, ...devSpaceIds, PROD],
       governing: { state: 'governed', workflow: WORKFLOW, changeWorkflowId: 'wf-1' },
       abortedReason,

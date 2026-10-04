@@ -14,6 +14,7 @@ import {
   chunkInClause,
 } from '../src/hooks/inClauseChunks';
 import type { ComponentDeployment } from '../src/pages/x/apps/componentTypes';
+import type { LiveStatus } from '../src/pages/x/apps/liveStatus';
 import { RECOVERED_HOLD_MS } from '../src/pages/x/apps/flow-graph/fold/foldConstants';
 import {
   type FoldLayout,
@@ -56,8 +57,8 @@ function withChange(
   return deployments.map((d) => (d.deploymentId === id ? { ...d, ...change } : d));
 }
 
-const healthy = { source: 'argobot', syncStatus: 'Synced', healthStatus: 'Healthy' };
-const degraded = { source: 'argobot', syncStatus: 'Synced', healthStatus: 'Degraded' };
+const healthy: LiveStatus = { Reporter: 'argobot', Sync: 'Synced', Health: 'Healthy' };
+const degraded: LiveStatus = { Reporter: 'argobot', Sync: 'Synced', Health: 'Degraded' };
 
 /** Fit once, the way the graph does on load, and return the columns Fit froze. */
 function fitFrozen(

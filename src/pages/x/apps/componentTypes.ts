@@ -1,7 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
-import type { LiveStatus, LiveStatusProvider } from './liveStatus';
+import type { LiveStatus, LiveStatusProvider, RunningRelease } from './liveStatus';
 
 // ============================================================================
 // TYPES
@@ -67,16 +67,21 @@ export interface ComponentDeployment {
   unappliedCount: number;
   unitCount: number;
   /**
-   * Last observed live-infra status, parsed from the `confighub.com/live-status`
-   * Space annotation (written by a reporter such as argobot). Undefined when the
-   * Space carries no such annotation or it is malformed.
+   * Last observed live-infra status: the `LiveStatus` the deploying tool (such
+   * as argobot) reported on the Release this Space is running. Undefined when
+   * the Space runs no Release, or the tool has not reported on it yet.
    */
   liveStatus?: LiveStatus;
   /**
+   * The Release `liveStatus` describes, which identifies what was deployed.
+   * Present whenever the Space runs a Release, reported on or not.
+   */
+  runningRelease?: Pick<RunningRelease, 'releaseNum' | 'manifestDigest'>;
+  /**
    * Which delivery system this node attributes its live status to, driving the
-   * brand mark and the status vocabulary. Resolved primarily from the
-   * annotation's own `source` (who actually reported); `'unknown'` when it
-   * carries none — see `resolveLiveStatusProvider` in liveStatus.ts.
+   * brand mark and the status vocabulary. Resolved from the status's own
+   * `Reporter` (who actually reported); `'unknown'` when there is none — see
+   * `resolveLiveStatusProvider` in liveStatus.ts.
    */
   liveStatusProvider: LiveStatusProvider;
   /**

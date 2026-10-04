@@ -11,6 +11,7 @@
 import { expect, test } from '@playwright/test';
 
 import type { ComponentDeployment } from '../src/pages/x/apps/componentTypes';
+import type { LiveStatus } from '../src/pages/x/apps/liveStatus';
 import {
   cardSeverity,
   conditionsOf,
@@ -70,7 +71,7 @@ const QUIET_SIGNALS = { staleUnits: 0, unreleasedUnits: 0, gatedUnits: 0 };
 
 /** A root Base with the given leaf Deployments below it. */
 function syntheticComponent(
-  members: { name: string; labels?: Record<string, string>; health?: string }[],
+  members: { name: string; labels?: Record<string, string>; health?: LiveStatus['Health'] }[],
 ): ComponentDeployment[] {
   const root: ComponentDeployment = {
     deploymentId: 'root',
@@ -101,7 +102,7 @@ function syntheticComponent(
         upgradeableCount: 0,
         unappliedCount: 0,
         unitCount: 1,
-        liveStatus: { syncStatus: 'Synced', healthStatus: m.health ?? 'Healthy' },
+        liveStatus: { Sync: 'Synced', Health: m.health ?? 'Healthy' },
         liveStatusProvider: 'argocd',
         labels: m.labels ?? {},
         configSignals: QUIET_SIGNALS,
@@ -391,7 +392,7 @@ test.describe('a group of 1 is never a stack', () => {
 test.describe('the card cap', () => {
   test('15 Degraded -> 12 cards, 3 over the cap stay coloured in a stack', () => {
     const members = [
-      ...named(15, 'bad').map((m) => ({ ...m, health: 'Degraded', labels: { Region: 'eu' } })),
+      ...named(15, 'bad').map((m) => ({ ...m, health: 'Degraded' as const, labels: { Region: 'eu' } })),
       ...named(10, 'ok').map((m) => ({ ...m, labels: { Region: 'eu' } })),
     ];
     const model = buildFoldModel({
@@ -492,7 +493,7 @@ test.describe('stability over status polls', () => {
   const before = meridianComponent('traefik');
   const recoveredId = 'eu-central-payments-prod2';
   const after = withChange(before, recoveredId, {
-    liveStatus: { syncStatus: 'Synced', healthStatus: 'Healthy' },
+    liveStatus: { Sync: 'Synced', Health: 'Healthy' },
   });
   const previous = defaultModel(before);
   const next = defaultModel(after);

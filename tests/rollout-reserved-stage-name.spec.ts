@@ -17,7 +17,8 @@
 import { test, expect } from './fixtures/test';
 
 import type { ChangeWorkflowSpec, ComponentRead, ExtendedSpaceRead } from '@confighub/rtk-query';
-import { LIVE_STATUS_ANNOTATION_KEY, type LiveStatus } from '../src/pages/x/apps/liveStatus';
+import type { LiveStatus } from '../src/pages/x/apps/liveStatus';
+import { carryingReleases, runningRelease } from './fixtures/running-release';
 import { stageWhereSpace } from '../src/pages/x/apps/rollout/changeOrderWorkflow';
 import { blockingGates, buildGatesForStage, gatesOpen } from '../src/pages/x/apps/rollout/rolloutGates';
 import { previousStageDisplayName, rolloutCopy } from '../src/pages/x/apps/rollout/rolloutCopy';
@@ -34,9 +35,9 @@ const PROD = 'prod-1';
 const COMPONENT: ComponentRead = { ComponentID: '11111111-1111-1111-1111-111111111111', Slug: 'myapp' };
 
 const DEGRADED: LiveStatus = {
-  syncStatus: 'OutOfSync',
-  operationPhase: 'Failed',
-  healthStatus: 'Degraded',
+  Sync: 'OutOfSync',
+  Operation: 'Failed',
+  Health: 'Degraded',
 };
 
 function consoleSpaces(stages: { spaceId: string; stage: string; liveStatus: LiveStatus | null }[]): ConsoleSpace[] {
@@ -48,8 +49,7 @@ function consoleSpaces(stages: { spaceId: string; stage: string; liveStatus: Liv
       component: COMPONENT,
       labels: { Stage: stage },
       releaseTargetId: `target-${spaceId}`,
-      annotations:
-        liveStatus === null ? {} : { [LIVE_STATUS_ANNOTATION_KEY]: JSON.stringify(liveStatus) },
+      release: runningRelease(liveStatus),
     })),
   ];
 }
@@ -74,6 +74,7 @@ function rowFor(
       spaceSlug: 'myapp-base',
       resolvedSpaceIds: progress.resolved,
       releasedSpaceIds: progress.released,
+      releases: carryingReleases(progress.released),
       inScopeSpaceIds: [BASE, ...stageSpaceIds.flat()],
       governing: { state: 'governed', workflow, changeWorkflowId: 'wf-1' },
     },
@@ -113,12 +114,13 @@ test('a stage named after the source row does not ungate the stage behind it', (
   const gates = buildGatesForStage({
     stage: prod,
     previousStageSpaces: [
-      { spaceId: FIRST, loaded: true, variantName: 'myapp-first', liveStatus: DEGRADED, releaseTargetId: 'target-first' },
+      { spaceId: FIRST, loaded: true, variantName: 'myapp-first', release: runningRelease(DEGRADED), releaseTargetId: 'target-first' },
     ],
     progress: deriveProgress({
       changeOrderSpaceId: BASE,
       resolvedSpaceIds: [BASE, FIRST],
       releasedSpaceIds: [],
+      releases: carryingReleases([]),
       restoredSpaceIds: undefined,
       releasedRestoredSpaceIds: undefined,
     }),
@@ -181,6 +183,7 @@ test('the final health check of a stage named after the source row is still eval
       changeOrderSpaceId: BASE,
       resolvedSpaceIds: [BASE, PROD],
       releasedSpaceIds: [PROD],
+      releases: carryingReleases([PROD]),
       restoredSpaceIds: undefined,
       releasedRestoredSpaceIds: undefined,
     }),
@@ -188,7 +191,7 @@ test('the final health check of a stage named after the source row is still eval
       spaceId,
       loaded: true,
       variantName: `myapp-${spaceId}`,
-      liveStatus: DEGRADED,
+      release: runningRelease(DEGRADED),
       releaseTargetId: `target-${spaceId}`,
     }),
     componentName: COMPONENT.Slug,
@@ -288,7 +291,8 @@ const BASE_DEGRADED_SPACES: ConsoleSpace[] = [
     spaceId: BASE,
     slug: 'myapp-base',
     component: COMPONENT,
-    annotations: { [LIVE_STATUS_ANNOTATION_KEY]: JSON.stringify(DEGRADED) },
+    releaseTargetId: 'target-base',
+    release: runningRelease(DEGRADED),
   },
   {
     spaceId: PROD,
@@ -296,13 +300,7 @@ const BASE_DEGRADED_SPACES: ConsoleSpace[] = [
     component: COMPONENT,
     labels: { Stage: RESERVED },
     releaseTargetId: `target-${PROD}`,
-    annotations: {
-      [LIVE_STATUS_ANNOTATION_KEY]: JSON.stringify({
-        syncStatus: 'Synced',
-        operationPhase: 'Succeeded',
-        healthStatus: 'Healthy',
-      }),
-    },
+    release: runningRelease({ Sync: 'Synced', Operation: 'Succeeded', Health: 'Healthy' }),
   },
 ];
 

@@ -125,7 +125,11 @@ test.describe('revision compare drawer', () => {
         `&viewMode=compare&compareRev1=${from}&compareRev2=${to}`,
     );
 
-    await expect(page.getByText(`Comparing revision ${from} to ${to}`)).toBeVisible();
+    // The drawer opens only once the app has booted from the deep link and loaded the Unit
+    // and its Revisions, which takes longer than the default five seconds on a busy shard.
+    await expect(page.getByText(`Comparing revision ${from} to ${to}`)).toBeVisible({
+      timeout: 20000,
+    });
 
     const diff = page.getByTestId('config-diff');
     await expect(diff).toBeVisible();

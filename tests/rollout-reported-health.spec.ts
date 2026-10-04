@@ -10,22 +10,27 @@
 //      ReleaseTargetID cannot be health-checked at all, so the answer is "not
 //      evaluated", and an unknown holds the stage. That verdict is a gate.
 //
-//   Q2 IS THIS STAGE'S WORKLOAD HEALTHY RIGHT NOW?  The console's question. An
-//      annotation reporting OutOfSync/Failed/Degraded is evidence of a problem
-//      whether or not the Space has a release target. That answer is a report.
+//   Q2 IS THIS STAGE'S WORKLOAD HEALTHY RIGHT NOW?  The console's question. A
+//      live status reporting OutOfSync/Failed/Degraded is evidence of a problem
+//      whatever the gate could conclude. That answer is a report.
 //
-// One value cannot carry both. While it did, a targetless Space reporting
-// Degraded reached the console as "not evaluated", every degraded test read
-// `evaluated && !ok`, none of them fired, and the row drew the stage `done`,
-// called the rollout Complete and WITHDREW Abort from a rollout that was
-// actively failing.
+// One value cannot carry both. While it did, a Space reporting Degraded that
+// the gate could not judge reached the console as "not evaluated", every
+// degraded test read `evaluated && !ok`, none of them fired, and the row drew
+// the stage `done`, called the rollout Complete and WITHDREW Abort from a
+// rollout that was actively failing.
+//
+// The model is handed each Space's running Release, and the cases below hand
+// a targetless Space one. The data layer gives a targetless Space none
+// (`runningReleases`), but neither channel leans on that to stay correct.
 //
 // Pure derivation — no page, no browser.
 
 import { test, expect } from './fixtures/test';
 
 import type { ChangeWorkflowSpec, ComponentRead, ExtendedSpaceRead } from '@confighub/rtk-query';
-import { LIVE_STATUS_ANNOTATION_KEY, type LiveStatus } from '../src/pages/x/apps/liveStatus';
+import type { LiveStatus } from '../src/pages/x/apps/liveStatus';
+import { carryingReleases, runningRelease } from './fixtures/running-release';
 import { stageWhereSpace } from '../src/pages/x/apps/rollout/changeOrderWorkflow';
 import { reportedHealthOf } from '../src/pages/x/apps/rollout/rolloutReportedHealth';
 import {
@@ -35,16 +40,16 @@ import {
 } from '../src/pages/x/apps/rollout/rolloutsConsoleModel';
 
 const HEALTHY: LiveStatus = {
-  syncStatus: 'Synced',
-  operationPhase: 'Succeeded',
-  healthStatus: 'Healthy',
+  Sync: 'Synced',
+  Operation: 'Succeeded',
+  Health: 'Healthy',
 };
 
 /** The shape argobot writes when the workload is on fire. */
 const FAILING: LiveStatus = {
-  syncStatus: 'OutOfSync',
-  operationPhase: 'Failed',
-  healthStatus: 'Degraded',
+  Sync: 'OutOfSync',
+  Operation: 'Failed',
+  Health: 'Degraded',
 };
 
 const COMPONENT: ComponentRead = { ComponentID: '11111111-1111-1111-1111-111111111111', Slug: 'myapp' };
@@ -79,7 +84,7 @@ function row(devTargeted: boolean, devStatus: LiveStatus, stage?: string) {
       labels: { Stage: 'dev' },
       // The whole of the difference between the two cases below.
       releaseTargetId: devTargeted ? 'target-dev' : undefined,
-      annotations: { [LIVE_STATUS_ANNOTATION_KEY]: JSON.stringify(devStatus) },
+      release: runningRelease(devStatus),
     },
     {
       spaceId: PROD,
@@ -87,7 +92,7 @@ function row(devTargeted: boolean, devStatus: LiveStatus, stage?: string) {
       component: COMPONENT,
       labels: { Stage: 'prod' },
       releaseTargetId: 'target-prod',
-      annotations: { [LIVE_STATUS_ANNOTATION_KEY]: JSON.stringify(HEALTHY) },
+      release: runningRelease(HEALTHY),
     },
   ];
   return buildConsoleRow(
@@ -98,6 +103,7 @@ function row(devTargeted: boolean, devStatus: LiveStatus, stage?: string) {
       spaceSlug: 'myapp-base',
       resolvedSpaceIds: [BASE, DEV, PROD],
       releasedSpaceIds: [DEV, PROD],
+      releases: carryingReleases([DEV, PROD]),
       inScopeSpaceIds: [BASE, DEV, PROD],
       governing: { state: 'governed', workflow: WORKFLOW, changeWorkflowId: 'wf-1' },
       stage,
@@ -111,22 +117,22 @@ const toneOf = (built: ReturnType<typeof row>, stageId: string) =>
   built.stages.find((s) => s.stageId === stageId)?.segmentTone;
 
 /*
- * The control. With a release target, `cub` reaches a verdict on the same
- * annotation and the gate channel alone already reported it. Nothing here may
- * change: the gate verdict is the CLI's and stays the CLI's.
+ * The control. With a release target, the server reaches a verdict on the same
+ * status and the gate channel alone already reported it. Nothing here may
+ * change: the gate verdict is the server's and stays the server's.
  */
 test('a targeted Space reporting Degraded is reported degraded', () => {
   const built = row(true, FAILING);
   expect(built.state).toBe('degraded');
-  expect(built.blocker).toBe('myapp-dev is not synced.');
+  expect(built.blocker).toBe('myapp-dev release 1 is not synced (OutOfSync).');
   expect(toneOf(built, 'dev')).toBe('degraded');
 });
 
 /*
- * ⚠️ THE BUG THIS FILE EXISTS FOR. Same annotation, same failing workload, one
- * field cleared — `ReleaseTargetID` is mutable and clearable, and nothing
- * clears the live-status annotation with it. The gate correctly cannot judge
- * it; the reported status is unchanged and still says the workload is failing.
+ * ⚠️ THE BUG THIS FILE EXISTS FOR. Same status, same failing workload, one
+ * field cleared: the gate correctly cannot judge a Space with no
+ * `ReleaseTargetID`, and the reported status still says the workload is
+ * failing.
  */
 test('a targetless Space reporting Degraded is still a degraded rollout', () => {
   const built = row(false, FAILING);
@@ -195,7 +201,7 @@ test('a report over a Space nobody has read yet claims nothing', () => {
 });
 
 /*
- * NO ANNOTATION IS NOT A FAILURE ON THIS CHANNEL. "The workload is failing" and
+ * NO LIVE STATUS IS NOT A FAILURE ON THIS CHANNEL. "The workload is failing" and
  * "nothing reported" are different claims, and only the gate channel — which
  * asks `cub`'s question — turns the second into a refusal.
  */
@@ -204,13 +210,16 @@ test('a Space carrying no live status reports nothing, not a failure', () => {
 });
 
 test('each failing axis is named in the report, in the order the gate asks them', () => {
-  expect(reportedHealthOf([reportSpace({ ...HEALTHY, syncStatus: 'OutOfSync' })]).reason).toBe(
+  expect(reportedHealthOf([reportSpace({ ...HEALTHY, Sync: 'OutOfSync' })]).reason).toBe(
     'myapp-dev reports it is not synced.',
   );
-  expect(reportedHealthOf([reportSpace({ ...HEALTHY, operationPhase: 'Failed' })]).reason).toBe(
+  expect(reportedHealthOf([reportSpace({ ...HEALTHY, Operation: 'Running' })]).reason).toBe(
+    'myapp-dev reports its deployment is still running.',
+  );
+  expect(reportedHealthOf([reportSpace({ ...HEALTHY, Operation: 'Failed' })]).reason).toBe(
     'myapp-dev reports its deployment did not succeed.',
   );
-  expect(reportedHealthOf([reportSpace({ ...HEALTHY, healthStatus: 'Degraded' })]).reason).toBe(
+  expect(reportedHealthOf([reportSpace({ ...HEALTHY, Health: 'Degraded' })]).reason).toBe(
     'myapp-dev reports it is not healthy.',
   );
 });
@@ -219,6 +228,12 @@ test('a green report carries no reason to show', () => {
   const report = reportedHealthOf([reportSpace(HEALTHY)]);
   expect(report.reported).toBe('healthy');
   expect(report.reason).toBe('');
+});
+
+// Not every reporter runs an operation, so its absence is no failure.
+test('a green report with no operation is healthy', () => {
+  const noOperation: LiveStatus = { Sync: 'Synced', Health: 'Healthy' };
+  expect(reportedHealthOf([reportSpace(noOperation)]).reported).toBe('healthy');
 });
 
 /*

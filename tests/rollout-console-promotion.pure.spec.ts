@@ -27,6 +27,7 @@ import {
   promotionFor,
   type ConsoleSpace,
 } from '../src/pages/x/apps/rollout/rolloutsConsoleModel';
+import { carryingReleases } from './fixtures/running-release';
 
 const COMPONENT: ComponentRead = { ComponentID: '11111111-1111-1111-1111-111111111111', Slug: 'myapp' };
 const BASE = 'base-1';
@@ -85,6 +86,7 @@ function row({ resolved, withTargets, baseInDev = false, stage }: RowOptions) {
       spaceSlug: 'myapp-base',
       resolvedSpaceIds: resolved,
       releasedSpaceIds: [],
+      releases: carryingReleases([]),
       inScopeSpaceIds: [BASE, DEV, PROD],
       governing: { state: 'governed', workflow: WORKFLOW, changeWorkflowId: 'wf-1' },
       stage,

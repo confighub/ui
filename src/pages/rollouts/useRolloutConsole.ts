@@ -60,6 +60,7 @@ import {
   type ConsoleState,
 } from '../x/apps/rollout/rolloutsConsoleModel';
 import { changeOrderWorkflow } from '../x/apps/rollout/changeOrderWorkflow';
+import { useRunningReleases } from '../x/apps/useRunningReleases';
 import { useDistinctStageSpaces } from './useDistinctStageSpaces';
 
 
@@ -200,6 +201,9 @@ export function useRolloutConsole(): RolloutConsoleData {
         releasedSpaceIds: order.ReleasedSpaceIDs,
         restoredSpaceIds: order.RestoredSpaceIDs,
         releasedRestoredSpaceIds: order.ReleasedRestoredSpaceIDs,
+        // The Release that released the change in each Space, which the Healthy
+        // gate reads. Derived only for a read of the whole row, as this one is.
+        releases: order.Releases,
         // What the two above are measured against, and the third term of
         // stage membership — see `buildRolloutSequence`.
         inScopeSpaceIds: order.InScopeSpaceIDs,
@@ -230,12 +234,36 @@ export function useRolloutConsole(): RolloutConsoleData {
     consoleSpaces,
   );
 
+  // The Release each staged Space is running, for its live status: one search
+  // over the Spaces some stage names, rather than every Space in the org.
+  const stagedSpaces = useMemo(() => {
+    const bySpaceId = new Map(consoleSpaces.map((space) => [space.spaceId, space]));
+    const staged = new Map<string, ConsoleSpace>();
+    for (const members of Object.values(stageSpacesByClause)) {
+      for (const member of members) {
+        const space = member.Space?.SpaceID ? bySpaceId.get(member.Space.SpaceID) : undefined;
+        if (space) staged.set(space.spaceId, space);
+      }
+    }
+    return [...staged.values()];
+  }, [consoleSpaces, stageSpacesByClause]);
+  const releases = useRunningReleases(stagedSpaces);
+
+  const spacesWithReleases: ConsoleSpace[] = useMemo(() => {
+    if (!releases.loaded) return consoleSpaces;
+    return consoleSpaces.map((space) =>
+      space.releaseTargetId === undefined
+        ? space
+        : { ...space, release: releases.bySpaceId.get(space.spaceId) ?? null },
+    );
+  }, [consoleSpaces, releases.loaded, releases.bySpaceId]);
+
   const rows: readonly ConsoleRow[] = useMemo(() => {
-    if (consoleSpaces.length === 0 || built.length === 0) return NO_ROWS;
-    const rows = built.map((order) => buildConsoleRow(order, consoleSpaces, stageSpacesByClause));
+    if (spacesWithReleases.length === 0 || built.length === 0) return NO_ROWS;
+    const rows = built.map((order) => buildConsoleRow(order, spacesWithReleases, stageSpacesByClause));
     rows.sort((a, b) => createdAtSortValue(b.createdAt) - createdAtSortValue(a.createdAt));
     return rows;
-  }, [built, consoleSpaces, stageSpacesByClause]);
+  }, [built, spacesWithReleases, stageSpacesByClause]);
 
   const unreadable = useMemo(
     () => ({ orders: unreadableOrders, spaces: unreadableSpaces }),
@@ -271,10 +299,12 @@ export function useRolloutConsole(): RolloutConsoleData {
 
   // Stable identity, so a `memo()`'d consumer is not re-rendered by the mere act
   // of this hook running.
+  const refetchReleases = releases.refetch;
   const refetch = useCallback(() => {
     void orders.refetch();
     void spaces.refetch();
-  }, [orders, spaces]);
+    refetchReleases();
+  }, [orders, spaces, refetchReleases]);
 
   return useMemo(
     () => ({
@@ -286,8 +316,8 @@ export function useRolloutConsole(): RolloutConsoleData {
       // Workflow resolution counts as loading, so no row is ever shown against
       // stage Spaces that have not resolved yet.
       isLoading: orders.isLoading || spaces.isLoading || stageSpacesLoading,
-      isFetching: orders.isFetching || spaces.isFetching,
-      error: orders.error ?? spaces.error,
+      isFetching: orders.isFetching || spaces.isFetching || releases.isFetching,
+      error: orders.error ?? spaces.error ?? releases.error,
       lastLoadedAt,
       refetch,
     }),
@@ -302,8 +332,10 @@ export function useRolloutConsole(): RolloutConsoleData {
       spaces.isLoading,
       orders.isFetching,
       spaces.isFetching,
+      releases.isFetching,
       orders.error,
       spaces.error,
+      releases.error,
       lastLoadedAt,
       refetch,
     ],

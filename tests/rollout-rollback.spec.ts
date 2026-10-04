@@ -26,6 +26,7 @@ import {
 import { rolloutCopy } from '../src/pages/x/apps/rollout/rolloutCopy';
 import type { RolloutProgress } from '../src/pages/x/apps/rollout/rolloutTypes';
 import type { UnitCreateOrUpdateResponseRead } from '@confighub/rtk-query';
+import { carryingReleaseMap } from './fixtures/running-release';
 
 const BASE = 'space-base';
 const DEV = 'space-dev';
@@ -36,6 +37,7 @@ function progress(resolved: string[], restored: string[] = []): RolloutProgress 
     availability: 'available',
     resolvedSpaceIds: new Set(resolved),
     releasedSpaceIds: new Set(resolved),
+    carryingReleases: carryingReleaseMap(resolved),
     restoredSpaceIds: new Set(restored),
     releasedRestoredSpaceIds: new Set<string>(),
   };
@@ -86,6 +88,7 @@ test('a scope the server did not derive is unavailable, not empty', () => {
     availability: 'unavailable',
     resolvedSpaceIds: new Set<string>(),
     releasedSpaceIds: new Set<string>(),
+    carryingReleases: new Map(),
     restoredSpaceIds: new Set<string>(),
     releasedRestoredSpaceIds: new Set<string>(),
   };

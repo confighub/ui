@@ -59,15 +59,20 @@ import {
   type ExtendedSpaceRead,
 } from '@confighub/rtk-query';
 
-import { parseLiveStatus } from '../x/apps/liveStatus';
+import type { RunningRelease } from '../x/apps/liveStatus';
 import { buildGatesForStage } from '../x/apps/rollout/rolloutGates';
-import { buildConsoleRow, orderComponent } from '../x/apps/rollout/rolloutsConsoleModel';
+import {
+  buildConsoleRow,
+  consoleSpaceLoaded,
+  orderComponent,
+} from '../x/apps/rollout/rolloutsConsoleModel';
 import type { ConsoleRow, ConsoleSpace } from '../x/apps/rollout/rolloutsConsoleModel';
 import type { RolloutGateSpaceInput } from '../x/apps/rollout/rolloutGates';
 import { buildRolloutSequence, previousStageOf } from '../x/apps/rollout/rolloutStages';
 import { changeOrderWorkflow, stageWhereSpace } from '../x/apps/rollout/changeOrderWorkflow';
 import { ROLLOUT_POLL_INTERVAL_MS } from '../x/apps/rollout/useRolloutData';
 import { useWorkflowStageSpaces } from '../x/apps/rollout/useWorkflowStageSpaces';
+import { useRunningReleases } from '../x/apps/useRunningReleases';
 import {
   countPromotedStages,
   countReachableStages,
@@ -99,6 +104,11 @@ export interface RolloutSpace {
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
   releaseTargetId?: string;
+  /**
+   * The Release the Space is running, with its live status: `null` when it
+   * runs none, `undefined` while its Releases have not been read.
+   */
+  release?: RunningRelease | null;
   /** The Component the Space's ComponentID names. */
   component?: ComponentRead;
 }
@@ -253,9 +263,9 @@ export function gateSpaceInput(
 ): RolloutGateSpaceInput {
   return {
     spaceId,
-    loaded: space !== undefined,
+    loaded: consoleSpaceLoaded(space),
     variantName: space?.displayName ?? space?.slug ?? spaceId,
-    liveStatus: parseLiveStatus(space?.annotations),
+    release: space?.release ?? null,
     releaseTargetId: space?.releaseTargetId,
   };
 }
@@ -297,7 +307,7 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
   usePolling(refetchOne, ROLLOUT_POLL_INTERVAL_MS);
 
   const { componentById } = useComponentSlugs();
-  const allSpaces: RolloutSpace[] = useMemo(
+  const listedSpaces: RolloutSpace[] = useMemo(
     () =>
       (spaces.data ?? []).flatMap((entry) => {
         const space = entry.Space;
@@ -316,9 +326,9 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
       }),
     [spaces.data, componentById],
   );
-  const allSpaceById = useMemo(
-    () => new Map(allSpaces.map((space) => [space.spaceId, space])),
-    [allSpaces],
+  const listedSpaceById = useMemo(
+    () => new Map(listedSpaces.map((space) => [space.spaceId, space])),
+    [listedSpaces],
   );
 
   /*
@@ -335,8 +345,8 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
   // Component — the same `orderComponent` the fleet console uses, so the two
   // surfaces cannot resolve two different components for one ChangeOrder.
   const component = useMemo(
-    () => orderComponent({ spaceId: baseSpaceId }, allSpaceById as ReadonlyMap<string, ConsoleSpace>),
-    [baseSpaceId, allSpaceById],
+    () => orderComponent({ spaceId: baseSpaceId }, listedSpaceById as ReadonlyMap<string, ConsoleSpace>),
+    [baseSpaceId, listedSpaceById],
   );
   const componentName = component?.Slug;
 
@@ -356,10 +366,10 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
     () =>
       component === undefined
         ? []
-        : allSpaces
+        : listedSpaces
             .filter((space) => space.component?.ComponentID === component.ComponentID)
             .map((space) => space.spaceId),
-    [allSpaces, component],
+    [listedSpaces, component],
   );
   const { stageSpaces, isLoading: stageSpacesLoading } = useWorkflowStageSpaces(
     workflow?.Stages,
@@ -379,15 +389,45 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
     return byClause;
   }, [workflow, stageSpaces, component]);
 
+  // The Release each staged Space is running, for its live status, which the
+  // Healthy gate reads. Polled with the ChangeOrder, since a deploying tool
+  // reports onto the Release on its own schedule.
+  const stagedSpaces = useMemo(() => {
+    const staged = new Map<string, RolloutSpace>();
+    for (const members of Object.values(stageSpaces)) {
+      for (const member of members) {
+        const space = member.Space?.SpaceID ? listedSpaceById.get(member.Space.SpaceID) : undefined;
+        if (space) staged.set(space.spaceId, space);
+      }
+    }
+    return [...staged.values()];
+  }, [stageSpaces, listedSpaceById]);
+  const releases = useRunningReleases(stagedSpaces, { pollIntervalMs: ROLLOUT_POLL_INTERVAL_MS });
+
+  const allSpaces: RolloutSpace[] = useMemo(() => {
+    if (!releases.loaded) return listedSpaces;
+    return listedSpaces.map((space) =>
+      space.releaseTargetId === undefined
+        ? space
+        : { ...space, release: releases.bySpaceId.get(space.spaceId) ?? null },
+    );
+  }, [listedSpaces, releases.loaded, releases.bySpaceId]);
+  const allSpaceById = useMemo(
+    () => new Map(allSpaces.map((space) => [space.spaceId, space])),
+    [allSpaces],
+  );
+
   const isLoading = orders.isLoading || spaces.isLoading || stageSpacesLoading;
   const isFetching = orders.isFetching || spaces.isFetching || one.isFetching;
-  const error = orders.error ?? spaces.error ?? one.error;
+  const error = orders.error ?? spaces.error ?? one.error ?? releases.error;
 
+  const refetchReleases = releases.refetch;
   const refetch = useCallback(() => {
     void orders.refetch();
     void spaces.refetch();
     if (identity !== undefined) void one.refetch();
-  }, [orders, spaces, one, identity]);
+    refetchReleases();
+  }, [orders, spaces, one, identity, refetchReleases]);
 
   return useMemo<RolloutDetail>(() => {
     if (slug === undefined || order?.ChangeOrderID === undefined) {
@@ -403,6 +443,7 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
           releasedSpaceIds: undefined,
           restoredSpaceIds: undefined,
           releasedRestoredSpaceIds: undefined,
+          releases: undefined,
         }),
         stageStates: [],
         gatesByStageId: {},
@@ -426,6 +467,8 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
       releasedSpaceIds: order.ReleasedSpaceIDs,
       restoredSpaceIds: order.RestoredSpaceIDs,
       releasedRestoredSpaceIds: order.ReleasedRestoredSpaceIDs,
+      // Derived only for a read of the whole row; both reads here are.
+      releases: order.Releases,
     });
 
     // Stage membership comes from the governing ChangeWorkflow's own
@@ -511,6 +554,7 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
           releasedSpaceIds: order.ReleasedSpaceIDs,
           restoredSpaceIds: order.RestoredSpaceIDs,
           releasedRestoredSpaceIds: order.ReleasedRestoredSpaceIDs,
+          releases: order.Releases,
           inScopeSpaceIds: order.InScopeSpaceIDs,
           annotations: order.Annotations,
           governing,

@@ -620,8 +620,8 @@ timestamps); **Base vs. Deployment** (derived from the Units' targets in
 `buildComponentData`, `componentData.ts` — the nav tree has no Units loaded,
 only Spaces, so there is nothing to derive it from without a second query);
 toolchain (`TargetCountByToolchainType` is multi-valued per Space; group-nav
-buckets on one value per item); `Annotations` (machine metadata, e.g. live
-status JSON); `OrganizationID`/`EntityType`/`Version`/`Permissions`/
+buckets on one value per item); `Annotations` (free-form machine
+metadata); `OrganizationID`/`EntityType`/`Version`/`Permissions`/
 `DeleteGates`/`Attribute*`/`Trigger*`/`Where*` (constant or internal config).
 The Unit-only "Space Labels" submenu never appears for Components — its own
 labels already ARE the Space labels, so `getGroupableCategories` is called

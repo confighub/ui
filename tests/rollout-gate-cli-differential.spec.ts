@@ -40,8 +40,9 @@
 //   cub changeorder create --space gdx-base <co> --change-workflow gd-workflow/<wf>
 //   cub variant promote --change-order gdx-base/<co> --target-stage <stage> --dry-run
 //
-// A Space's live status is set by hand rather than by argobot:
-//   cub space update --patch <space> --annotation 'confighub.com/live-status={...}'
+// A Space's live status is set by hand rather than by argobot, by patching
+// `LiveStatus` onto the Release it is running:
+//   cub release update --patch <release-id> --from-stdin <<< '{"LiveStatus": {...}}'
 //
 // Cases needing a real ReleaseTargetID (a released, healthy previous stage)
 // cannot be built without a cluster; those `cub` verdicts are what
@@ -53,7 +54,8 @@
 import { test, expect } from './fixtures/test';
 
 import type { ChangeWorkflowSpec, ComponentRead, ExtendedSpaceRead } from '@confighub/rtk-query';
-import { LIVE_STATUS_ANNOTATION_KEY, type LiveStatus } from '../src/pages/x/apps/liveStatus';
+import type { LiveStatus } from '../src/pages/x/apps/liveStatus';
+import { carryingReleases, runningRelease } from './fixtures/running-release';
 import { stageWhereSpace } from '../src/pages/x/apps/rollout/changeOrderWorkflow';
 import { gatesOpen, blockingGateCount, gateStateFor } from '../src/pages/x/apps/rollout/rolloutGates';
 import {
@@ -65,14 +67,14 @@ import {
 } from '../src/pages/x/apps/rollout/rolloutsConsoleModel';
 
 const HEALTHY: LiveStatus = {
-  syncStatus: 'Synced',
-  operationPhase: 'Succeeded',
-  healthStatus: 'Healthy',
+  Sync: 'Synced',
+  Operation: 'Succeeded',
+  Health: 'Healthy',
 };
 const DEGRADED: LiveStatus = {
-  syncStatus: 'OutOfSync',
-  operationPhase: 'Failed',
-  healthStatus: 'Degraded',
+  Sync: 'OutOfSync',
+  Operation: 'Failed',
+  Health: 'Degraded',
 };
 
 const COMPONENT: ComponentRead = { ComponentID: '11111111-1111-1111-1111-111111111111', Slug: 'gdx' };
@@ -108,8 +110,9 @@ function consoleSpaces(
       slug: 'gdx-base',
       component: COMPONENT,
       labels: baseStage === null ? {} : { Stage: baseStage },
-      annotations:
-        baseStatus === null ? {} : { [LIVE_STATUS_ANNOTATION_KEY]: JSON.stringify(baseStatus) },
+      // The base has no release Target. It is handed a Release anyway, so the
+      // cases over it prove the gate refuses on the Target before it reads one.
+      release: runningRelease(baseStatus),
     },
     ...members.map(({ spaceId, stage, liveStatus, targeted = true, annotations = {} }) => ({
       spaceId,
@@ -117,10 +120,9 @@ function consoleSpaces(
       component: COMPONENT,
       labels: { Stage: stage },
       releaseTargetId: targeted ? `target-${spaceId}` : undefined,
-      annotations:
-        liveStatus === null
-          ? annotations
-          : { ...annotations, [LIVE_STATUS_ANNOTATION_KEY]: JSON.stringify(liveStatus) },
+      annotations,
+      // `null` is a published Release its deploying tool has not reported on.
+      release: targeted ? runningRelease(liveStatus) : undefined,
     })),
   ];
 }
@@ -130,7 +132,11 @@ function rowFor(
   spaces: ConsoleSpace[],
   /** Space ids each stage's selector resolves to, in stage order — what `stageSpaces` returns in `cub`. */
   stageSpaceIds: string[][],
-  progress: { resolved: string[]; released: string[] },
+  /**
+   * `carrying` is the Spaces `ChangeOrder.Releases` names, which is every
+   * released one unless a carrying Release was withdrawn.
+   */
+  progress: { resolved: string[]; released: string[]; carrying?: string[] },
   /** `ChangeOrder.Stage` as the server recorded it. Absent is no stage recorded. */
   stage?: string,
 ): ConsoleRow {
@@ -148,6 +154,7 @@ function rowFor(
       spaceSlug: 'gdx-base',
       resolvedSpaceIds: progress.resolved,
       releasedSpaceIds: progress.released,
+      releases: carryingReleases(progress.carrying ?? progress.released),
       inScopeSpaceIds: [BASE, ...stageSpaceIds.flat()],
       governing: { state: 'governed', workflow, changeWorkflowId: 'wf-1' },
       stage,
@@ -194,7 +201,7 @@ const UNGATED_TWO_STAGE: ChangeWorkflowSpec = {
  *   Failed: unable to promote to stage 'dev', Variant 'base' cannot have any
  *           released changes, missing ReleaseTargetID
  */
-test('case 1 — targetless previous stage with a green annotation: cub refuses, UI blocks', () => {
+test('case 1 — targetless previous stage with a green status: cub refuses, UI blocks', () => {
   const row = rowFor(
     GATED_TWO_STAGE,
     consoleSpaces(HEALTHY, [{ spaceId: 'dev-1', stage: 'Development', liveStatus: HEALTHY }]),
@@ -218,7 +225,7 @@ test('case 1 — targetless previous stage with a green annotation: cub refuses,
 
 /*
  * ══ CASE 2 ═════════════════════════════════════════════════════════════════
- * Same, but the annotation says DEGRADED. `cub` never reads it: the missing
+ * Same, but the status says DEGRADED. `cub` never reads it: the missing
  * ReleaseTargetID is answered first.
  *
  * cub:  REFUSE
@@ -236,7 +243,7 @@ test('case 2 — targetless previous stage reporting degraded: cub refuses, UI b
   expect(ui.decision).toBe('BLOCK'); // AGREES
   /*
    * The same reason as case 1, and `cub`'s: the missing release target is
-   * answered before anything reads the annotation, so the degraded report
+   * answered before anything reads the status, so the degraded report
    * changes no gate. It does reach the row's reported-health channel, which is
    * a separate question from what the gate decided.
    */
@@ -719,7 +726,7 @@ test('case 11 — previous stage selects no Space: cub refuses, UI blocks', () =
  * ══ CASE 12 — THE GATE QUANTIFIES OVER THE WHOLE PREVIOUS STAGE ════════════
  * Two Spaces in the previous stage, one healthy and one degraded.
  *
- * cub:  REFUSE — "Variant 'web-stg' is not synced"
+ * cub:  REFUSE — "Variant 'web-stg' release 1 is not synced (OutOfSync)"
  *       (per `evaluatePrerequisites`)
  */
 test('case 12 — one degraded Space in a two-Space previous stage: cub refuses, UI blocks', () => {
@@ -780,7 +787,10 @@ test('case 13 — previous stage took the change but has not released it: cub re
 
 /*
  * ══ CASE 14 — A TARGET, BUT NO LIVE STATUS AT ALL ══════════════════════════
- * cub:  REFUSE — "live-status not found for Variant 'web-dev'"
+ * The Release the previous stage is running carries the change, and its
+ * deploying tool has not reported on it.
+ *
+ * cub:  REFUSE — "Variant 'web-dev' has no live status for release 1 yet"
  *       (per `evaluatePrerequisites`)
  */
 test('case 14 — a targeted previous stage that reports nothing: cub refuses, UI blocks', () => {
@@ -806,6 +816,108 @@ test('case 14 — a targeted previous stage that reports nothing: cub refuses, U
   const ui = uiVerdict(row, 'staging');
   expect(ui.decision).toBe('BLOCK'); // AGREES
   expect(ui.gateState).toBe('held'); // a verdict: it reported nothing, which is an answer
+  expect(ui.reasons.join(' ')).toContain('gdx-dev-1 has no live status for release 1 yet');
+});
+
+/*
+ * ══ CASE 14b — AN OLDER RELEASE'S GREEN IS NOT THIS ONE'S ══════════════════
+ * The previous stage published a new Release after the one its deploying tool
+ * reported Healthy on. The status belongs to the Release, so the Space has not
+ * been shown healthy: the green is about a configuration it no longer runs.
+ *
+ * cub:  REFUSE — "Variant 'web-dev' has no live status for release 2 yet"
+ *       (per `evaluatePrerequisites`)
+ */
+test('case 14b — a newer Release not yet reported on: cub refuses, UI blocks', () => {
+  const workflow: ChangeWorkflowSpec = {
+    Stages: [
+      { Name: 'dev', WhereSpace: "Labels.Stage = 'Development'" },
+      { Name: 'staging', WhereSpace: "Labels.Stage = 'Staging'", Prerequisites: ['Healthy'] },
+    ],
+  };
+  const spaces = consoleSpaces(
+    HEALTHY,
+    [
+      { spaceId: 'dev-1', stage: 'Development', liveStatus: HEALTHY },
+      { spaceId: 'stg-1', stage: 'Staging', liveStatus: HEALTHY },
+    ],
+    null,
+  ).map((space) => (space.spaceId === 'dev-1' ? { ...space, release: runningRelease(null, 2) } : space));
+  const row = rowFor(workflow, spaces, [['dev-1'], ['stg-1']], {
+    resolved: [BASE, 'dev-1'],
+    released: ['dev-1'],
+  });
+  const ui = uiVerdict(row, 'staging');
+  expect(ui.decision).toBe('BLOCK'); // AGREES
+  expect(ui.reasons.join(' ')).toContain('gdx-dev-1 has no live status for release 2 yet');
+});
+
+/*
+ * ══ CASE 14c — HEALTHY, BUT THE CHANGE IS NOT IN A PUBLISHED RELEASE ═══════
+ * The stage declares only `Healthy`, so nothing else asks whether the change
+ * was released. The health gate does: the Release whose status it reads has to
+ * carry the change, or the green is about something else.
+ *
+ * cub:  REFUSE — "Variant 'web-dev' has not published a release carrying
+ *       change order 'co-gated'" (per `evaluatePrerequisites`)
+ */
+test('case 14c — healthy but not released: cub refuses, UI blocks', () => {
+  const workflow: ChangeWorkflowSpec = {
+    Stages: [
+      { Name: 'dev', WhereSpace: "Labels.Stage = 'Development'" },
+      { Name: 'staging', WhereSpace: "Labels.Stage = 'Staging'", Prerequisites: ['Healthy'] },
+    ],
+  };
+  const row = rowFor(
+    workflow,
+    consoleSpaces(
+      HEALTHY,
+      [
+        { spaceId: 'dev-1', stage: 'Development', liveStatus: HEALTHY },
+        { spaceId: 'stg-1', stage: 'Staging', liveStatus: HEALTHY },
+      ],
+      null,
+    ),
+    [['dev-1'], ['stg-1']],
+    { resolved: [BASE, 'dev-1'], released: [] },
+  );
+  const ui = uiVerdict(row, 'staging');
+  expect(ui.decision).toBe('BLOCK'); // AGREES
+  expect(ui.reasons.join(' ')).toContain(`gdx-dev-1 has not published a release carrying '${ORDER}'`);
+});
+
+/*
+ * ══ CASE 14d — RELEASED, BUT THE RELEASE THAT DID IT WAS WITHDRAWN ═════════
+ * The previous stage is in `ReleasedSpaceIDs`, but no published Release carries
+ * the change any more, so `ChangeOrder.Releases` has no entry for it. The
+ * Release it now runs is green, and is about something else.
+ *
+ * cub:  REFUSE — "Variant 'web-dev' has not published a release carrying
+ *       change order 'co-gated'" (per `evaluatePrerequisites`)
+ */
+test('case 14d — the carrying Release was withdrawn: cub refuses, UI blocks', () => {
+  const workflow: ChangeWorkflowSpec = {
+    Stages: [
+      { Name: 'dev', WhereSpace: "Labels.Stage = 'Development'" },
+      { Name: 'staging', WhereSpace: "Labels.Stage = 'Staging'", Prerequisites: ['Healthy'] },
+    ],
+  };
+  const row = rowFor(
+    workflow,
+    consoleSpaces(
+      HEALTHY,
+      [
+        { spaceId: 'dev-1', stage: 'Development', liveStatus: HEALTHY },
+        { spaceId: 'stg-1', stage: 'Staging', liveStatus: HEALTHY },
+      ],
+      null,
+    ),
+    [['dev-1'], ['stg-1']],
+    { resolved: [BASE, 'dev-1'], released: ['dev-1'], carrying: [] },
+  );
+  const ui = uiVerdict(row, 'staging');
+  expect(ui.decision).toBe('BLOCK'); // AGREES
+  expect(ui.reasons.join(' ')).toContain(`gdx-dev-1 has not published a release carrying '${ORDER}'`);
 });
 
 /*
@@ -826,10 +938,10 @@ test('case 14 — a targeted previous stage that reports nothing: cub refuses, U
  *       the taken-the-change check first (the change is in `dev`, so it
  *       passes) and then ranges over the prerequisite list, which is empty.
  *       `checkSpaceIsHealthy` is reached only from the `prerequisiteHealthy`
- *       arm of that loop, so the live-status annotation is never read and
- *       cannot refuse anything. The promotion goes ahead.
+ *       arm of that loop, so the live status is never read and cannot
+ *       refuse anything. The promotion goes ahead.
  *
- * THE UI MUST NOT WITHDRAW PROMOTE HERE. The annotation still colours the chip,
+ * THE UI MUST NOT WITHDRAW PROMOTE HERE. The status still colours the chip,
  * writes the Blocker sentence and tones the segment — a reader should see that
  * `dev` is unhealthy — but it decides no action. `ui/tests/
  * rollout-health-informs-gate-decides.spec.ts` holds the display half.

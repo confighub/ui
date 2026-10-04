@@ -9,7 +9,7 @@ import { type LiveStatusProvider } from '../liveStatus';
 
 /**
  * Small monochrome delivery-system marks shown immediately before a node's
- * live-status chips, so the card says WHICH system observed the cluster rather
+ * live status chips, so the card says WHICH system observed the cluster rather
  * than presenting the reading as ConfigHub's own.
  *
  * These are deliberately SIMPLIFIED marks, not the vendors' full logo path
@@ -80,7 +80,7 @@ const TOOLTIP_BY_PROVIDER: Record<LiveStatusProvider, string> = {
 };
 
 /**
- * The delivery-system mark that leads a node's live-status row. Always renders
+ * The delivery-system mark that leads a node's live status row. Always renders
  * something — an unrecognized provider gets the neutral mark and a tooltip
  * saying so, rather than silently disappearing and leaving the chips looking
  * like ConfigHub's own reading.

@@ -114,10 +114,10 @@ const BRIDGE_WORKER_WRITE: TagType[] = ['Target', 'Unit', 'BridgeWorkerStatus'];
 /**
  * Publishing a Release stamps the release onto each member Revision and its tag
  * (`ReleaseCore.addReleaseToRevision`), and emits a `release.published` event.
- * Live status from the deployment lands as an annotation on the Space, so the
- * Space is stale as well.
+ * The live status a deployment reports is the Release's own, so the generated
+ * self-tag already covers it.
  */
-const RELEASE_WRITE: TagType[] = ['Revision', 'Tag', 'Unit', 'Space'];
+const RELEASE_WRITE: TagType[] = ['Revision', 'Tag', 'Unit'];
 
 /**
  * Invoking a function against a Unit rewrites that Unit's config. The generated

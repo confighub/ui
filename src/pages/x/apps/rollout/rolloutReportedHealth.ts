@@ -10,22 +10,22 @@
  * A rollout stage is asked two things about one and the same Space:
  *
  *  Q1 MAY THIS PROMOTION PROCEED? `cub`'s question, answered by `rolloutGates.ts`
- *     and by nothing else. A Space with no `ReleaseTargetID` cannot be
- *     health-checked at all — `checkSpaceIsHealthy` refuses it before it reads
- *     the annotation — so the answer is "not evaluated", and an unknown holds
- *     the stage.
+ *     and by nothing else. Some Spaces cannot be health-checked at all — a
+ *     Space with no `ReleaseTargetID`, or one that has not taken the change —
+ *     so the answer is "not evaluated", and an unknown holds the stage.
  *
  *  Q2 IS THIS STAGE'S WORKLOAD HEALTHY RIGHT NOW? The console's question,
- *     answered here. An annotation reporting OutOfSync, Failed or Degraded is
- *     evidence of a problem whatever the Space's release target is, because the
- *     annotation is written by whatever watches the live cluster and is about
- *     the workload, not about the promotion.
+ *     answered here. A live status reporting OutOfSync, Failed or Degraded is
+ *     evidence of a problem whatever a gate concluded, because it is written by
+ *     whatever watches the live cluster and is about the workload, not about
+ *     the promotion.
  *
- * For a targetless Space reporting Degraded the two answers are "cannot be
- * determined" and "failing". Both are right. One value cannot carry both, and
- * while one did, the console read the gate's `evaluated: false` as "no problem
- * found", drew the stage as `done`, called the rollout Complete and withdrew
- * Abort from a rollout that was actively failing.
+ * Where a gate is not evaluated over a Space reporting Degraded, the two
+ * answers are "cannot be determined" and "failing". Both are right. One value
+ * cannot carry both, and while one did, the console read the gate's
+ * `evaluated: false` as "no problem found", drew the stage as `done`, called
+ * the rollout Complete and withdrew Abort from a rollout that was actively
+ * failing.
  *
  * So the display channel carries its own answer, in its own type. The gate
  * verdict is unchanged and stays `cub`'s.
@@ -89,7 +89,10 @@ export interface ReportedHealthSpaceInput {
   loaded: boolean;
   /** Variant name if the Space has one, else its slug — what `cub` calls the Variant. */
   variantName: string;
-  /** Parsed live-status annotation, or null when the Space carries none. */
+  /**
+   * The live status of the Release the Space is running, or null when it runs
+   * none or its deploying tool has not reported on it yet.
+   */
   liveStatus: LiveStatus | null;
   /**
    * Whether this Space is running the change being rolled out — `hasTakenChange`
@@ -97,7 +100,7 @@ export interface ReportedHealthSpaceInput {
    * and never true of the ChangeOrder's own Space, which no promotion judges
    * (`reportedSpaceInput`).
    *
-   * ⚠️ THE ONE FACT THAT MAKES AN ANNOTATION EVIDENCE. A Space that has not
+   * ⚠️ THE ONE FACT THAT MAKES A LIVE STATUS EVIDENCE. A Space that has not
    * taken the change is running somebody else's configuration, so its live
    * status is about that configuration and about nothing this rollout did. The
    * gate channel already refuses to judge such a Space; this channel has to
@@ -177,17 +180,13 @@ export type ReportedHealthChannel = MustNotCarry<StageHealthReport, VerdictField
 /** A gate verdict. Never a reported status. */
 export type GateVerdictChannel = MustNotCarry<RolloutGate, ReportFields>;
 
-const SYNCED = 'Synced';
-const SUCCEEDED = 'Succeeded';
-const HEALTHY = 'Healthy';
-
 const UNREPORTED: ReportedHealthChannel = { channel: 'reported-health', reported: 'unreported', reason: '' };
 
 /**
  * Why this Space's reported status is not green, or null when it is.
  *
  * The axes are read in the order `checkSpaceIsHealthy` reads them, so the
- * console names the same axis the CLI would name about the same annotation.
+ * console names the same axis the CLI would name about the same status.
  * The WORDING is deliberately not the CLI's: `cub` states a verdict it reached
  * ("is not synced"), and this states what a Space reported ("reports it is not
  * synced"). A reader must be able to tell a refusal from an observation.
@@ -195,11 +194,10 @@ const UNREPORTED: ReportedHealthChannel = { channel: 'reported-health', reported
 function failureOf(space: ReportedHealthSpaceInput): string | null {
   const status = space.liveStatus;
   if (status === null) return null;
-  if (status.syncStatus !== SYNCED) return rolloutCopy.reportedStatus.notSynced(space.variantName);
-  if (status.operationPhase !== SUCCEEDED) {
-    return rolloutCopy.reportedStatus.notSucceeded(space.variantName);
-  }
-  if (status.healthStatus !== HEALTHY) return rolloutCopy.reportedStatus.notHealthy(space.variantName);
+  if (status.Sync !== 'Synced') return rolloutCopy.reportedStatus.notSynced(space.variantName);
+  if (status.Operation === 'Running') return rolloutCopy.reportedStatus.stillDeploying(space.variantName);
+  if (status.Operation === 'Failed') return rolloutCopy.reportedStatus.notSucceeded(space.variantName);
+  if (status.Health !== 'Healthy') return rolloutCopy.reportedStatus.notHealthy(space.variantName);
   return null;
 }
 
@@ -224,8 +222,8 @@ export function reportedHealthOf(
   for (const space of spaces) {
     /*
      * A STAGE THE CHANGE HAS NOT ENTERED IS NOT EVIDENCE OF ANYTHING. Read
-     * before the annotation, because the annotation is exactly what must not be
-     * consulted here: it describes a workload running a different change. Such
+     * before the live status, because the live status is exactly what must not
+     * be consulted here: it describes a workload running a different change. Such
      * a Space is neither a failure nor a pass, which is why it also forfeits the
      * strict `healthy` answer below — a stage cannot be called healthy on behalf
      * of a Space that is not running this change.

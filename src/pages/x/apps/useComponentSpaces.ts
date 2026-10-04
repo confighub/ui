@@ -19,8 +19,8 @@ import { useListComponentSpacesQuery } from './componentSpacesApi';
  *
  * - `SpaceID` / `Slug` — identity (always returned, listed for clarity).
  * - `Labels` — `Component` / `Owner` grouping for the nav tree and the matrix.
- * - `Annotations` — live status written by reporters (e.g. argobot); this is the
- *   field that makes polling worth doing at all.
+ * - `Annotations` — free-form Space metadata, passed through to the views
+ *   built from these rows.
  * - `DisplayName`, `ReleaseTargetID` — read by the component graph / release UI.
  *
  * Deliberately does NOT set `summary=true`: that flag makes the server run ~18
@@ -29,7 +29,7 @@ import { useListComponentSpacesQuery } from './componentSpacesApi';
 export const COMPONENT_SPACE_SELECT = 'SpaceID,Slug,DisplayName,Labels,Annotations,ReleaseTargetID,ComponentID';
 
 /**
- * Poll cadence for the cheap identity/annotation query — this is what stays live.
+ * Poll cadence for the cheap identity/labels query — this is what stays live.
  * Driven by `usePolling` (see below), which pauses the interval while the tab is
  * backgrounded (`document.hidden`) instead of the raw RTK Query `pollingInterval`
  * option, which polls unconditionally even when nobody can see the result.
@@ -123,8 +123,9 @@ function mergeSummaryCounts(
  *
  * 1. A scoped query for `?app=<name>` deep-links, so the requested component can
  *    paint before the org-wide list resolves.
- * 2. A cheap org-wide query that polls every 5s — this is what keeps live status
- *    (Space.Annotations) fresh on the cards and graph.
+ * 2. A cheap org-wide query that polls every 5s — this is what keeps the
+ *    Spaces on the cards and graph fresh. Their live status is their Releases',
+ *    read separately (`useRunningReleases`).
  * 3. An expensive `summary=true` org-wide query that supplies the overview
  *    matrix's KPI counts, polled on a much slower timer.
  *

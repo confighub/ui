@@ -15,6 +15,7 @@ import {
   gateSpaceInput,
   previousStageGateSpaces,
 } from '../src/pages/rollouts/useRolloutDetail';
+import { runningRelease } from './fixtures/running-release';
 
 function stage(overrides: Partial<RolloutStage>): RolloutStage {
   return { id: 'staging', previousStageId: 'dev', spaceIds: ['s1'], index: 2, isSource: false, isFirst: false, prerequisites: [], ...overrides };
@@ -23,6 +24,7 @@ const progress: RolloutProgress = {
   availability: 'available',
   resolvedSpaceIds: new Set(['d1']),
   releasedSpaceIds: new Set(),
+  carryingReleases: new Map(),
   restoredSpaceIds: new Set(),
   releasedRestoredSpaceIds: new Set(),
 };
@@ -30,7 +32,7 @@ const progress: RolloutProgress = {
 test('a stage with no declared prerequisites only checks promoted', () => {
   const gates = buildGatesForStage({
     stage: stage({ prerequisites: [] }),
-    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', liveStatus: null }],
+    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', release: null }],
     progress,
     componentName: 'MyApp',
     changeOrderSlug: 'co-1',
@@ -57,8 +59,8 @@ test('the promoted gate fails when a previous-stage Space has not taken the chan
   const gates = buildGatesForStage({
     stage: stage({ prerequisites: [] }),
     previousStageSpaces: [
-      { spaceId: 'd1', loaded: true, variantName: 'dev', liveStatus: null },
-      { spaceId: 'd2', loaded: true, variantName: 'dev-canary', liveStatus: null },
+      { spaceId: 'd1', loaded: true, variantName: 'dev', release: null },
+      { spaceId: 'd2', loaded: true, variantName: 'dev-canary', release: null },
     ],
     progress,
     componentName: 'MyApp',
@@ -77,11 +79,12 @@ test('the promoted gate is not evaluated when progress is unavailable', () => {
   // would be a refusal built on data never read.
   const gates = buildGatesForStage({
     stage: stage({ prerequisites: [] }),
-    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', liveStatus: null }],
+    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', release: null }],
     progress: {
       availability: 'unavailable',
       resolvedSpaceIds: new Set(),
       releasedSpaceIds: new Set(),
+      carryingReleases: new Map(),
       restoredSpaceIds: new Set(),
       releasedRestoredSpaceIds: new Set(),
     },
@@ -108,7 +111,7 @@ test('the promoted gate reports a previous stage that selects no Space', () => {
 test('a Released prerequisite adds exactly the released gate', () => {
   const gates = buildGatesForStage({
     stage: stage({ prerequisites: ['Released'] }),
-    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', liveStatus: null, releaseTargetId: 't1' }],
+    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', release: null, releaseTargetId: 't1' }],
     progress,
     componentName: 'MyApp',
     changeOrderSlug: 'co-1',
@@ -119,7 +122,7 @@ test('a Released prerequisite adds exactly the released gate', () => {
 test('Released and Healthy both declared adds both gates', () => {
   const gates = buildGatesForStage({
     stage: stage({ prerequisites: ['Released', 'Healthy'] }),
-    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', liveStatus: null, releaseTargetId: 't1' }],
+    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', release: null, releaseTargetId: 't1' }],
     progress,
     componentName: 'MyApp',
     changeOrderSlug: 'co-1',
@@ -150,7 +153,7 @@ test('the source stage has no gates', () => {
 test('a lowercase built-in name is not the built-in', () => {
   const gates = buildGatesForStage({
     stage: stage({ prerequisites: ['released'] }),
-    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', liveStatus: null, releaseTargetId: 't1' }],
+    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', release: null, releaseTargetId: 't1' }],
     progress,
     componentName: 'MyApp',
     changeOrderSlug: 'co-1',
@@ -165,7 +168,7 @@ test('a lowercase built-in name is not the built-in', () => {
 test('a declared custom prerequisite is a gate of its own, carrying its description', () => {
   const gates = buildGatesForStage({
     stage: stage({ prerequisites: ['QA sign-off'] }),
-    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', liveStatus: null }],
+    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', release: null }],
     progress,
     componentName: 'MyApp',
     changeOrderSlug: 'co-1',
@@ -199,7 +202,7 @@ test('a declared custom prerequisite is a gate of its own, carrying its descript
 test('a stage gating only on a custom prerequisite is not clear to promote', () => {
   const gates = buildGatesForStage({
     stage: stage({ prerequisites: ['QA sign-off'] }),
-    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', liveStatus: null }],
+    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', release: null }],
     progress,
     componentName: 'MyApp',
     changeOrderSlug: 'co-1',
@@ -220,7 +223,7 @@ test('a stage gating only on a custom prerequisite is not clear to promote', () 
 test('a name neither built in nor declared is unrecognised, not custom', () => {
   const gates = buildGatesForStage({
     stage: stage({ prerequisites: ['Approved'] }),
-    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', liveStatus: null }],
+    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', release: null }],
     progress,
     componentName: 'MyApp',
     changeOrderSlug: 'co-1',
@@ -232,7 +235,7 @@ test('a name neither built in nor declared is unrecognised, not custom', () => {
 test('a declared custom prerequisite named on Final is classified the same way', () => {
   const gates = buildGatesForStage({
     stage: stage({ prerequisites: ['Released', 'QA sign-off'] }),
-    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', liveStatus: null, releaseTargetId: 't1' }],
+    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', release: null, releaseTargetId: 't1' }],
     progress,
     componentName: 'MyApp',
     changeOrderSlug: 'co-1',
@@ -325,7 +328,7 @@ const unreadSpace = (spaceId: string) => ({
   spaceId,
   loaded: false,
   variantName: spaceId,
-  liveStatus: null,
+  release: null,
 });
 
 test('a healthy gate over Spaces none of which have been read is not a pass', () => {
@@ -368,7 +371,7 @@ test('one unread Space among read ones is enough to withhold the verdict', () =>
     spaceId: 'd1',
     loaded: true,
     variantName: 'dev',
-    liveStatus: { syncStatus: 'Synced', operationPhase: 'Succeeded', healthStatus: 'Healthy' },
+    release: runningRelease({ Sync: 'Synced', Operation: 'Succeeded', Health: 'Healthy' }),
     releaseTargetId: 't1',
   } as const;
   const gates = buildGatesForStage({
@@ -403,7 +406,7 @@ test('a previous-stage Space missing from the index is carried as unread', () =>
   // given a display name it does not have.
   expect(detail.variantName).toBe('missing-1');
   expect(detail.releaseTargetId).toBeUndefined();
-  expect(detail.liveStatus).toBeNull();
+  expect(detail.release).toBeNull();
 });
 
 test('an unread Space withholds the gate rather than shrinking the stage', () => {
@@ -440,7 +443,7 @@ const readTargetless = {
   spaceId: 'd1',
   loaded: true,
   variantName: 'dev',
-  liveStatus: null,
+  release: null,
   releaseTargetId: undefined,
 } as const;
 
@@ -450,7 +453,7 @@ test('a read targetless Space reporting Degraded holds the healthy gate', () => 
     previousStageSpaces: [
       {
         ...readTargetless,
-        liveStatus: { syncStatus: 'OutOfSync', healthStatus: 'Degraded', operationPhase: 'Failed' },
+        release: runningRelease({ Sync: 'OutOfSync', Health: 'Degraded', Operation: 'Failed' }),
       },
     ],
     progress: { ...progress, resolvedSpaceIds: new Set(['d1']) },
@@ -470,13 +473,12 @@ test('a read targetless Space reporting Degraded holds the healthy gate', () => 
 /*
  * ⚠️ THE ORDER IS `checkSpaceIsHealthy`'s, AND THE TARGET COMES FIRST.
  *
- * `cub` refuses on `ReleaseTargetID == nil` BEFORE it reads the annotation at
- * all, so a live status carried by a targetless Space never decides anything:
- * whatever it says, health "cannot be determined". Reading the annotation first
- * and consulting the target only when none is reported inverts that, and a
- * STALE GREEN one then opens the gate — `ReleaseTargetID` is clearable and
- * nothing clears the annotation with it, so a production Space whose Target was
- * cleared keeps whatever it last reported.
+ * The server refuses on `ReleaseTargetID == nil` BEFORE it reads any Release,
+ * so a live status handed in for a targetless Space never decides anything:
+ * whatever it says, health "cannot be determined". Reading the status first and
+ * consulting the target only when none is reported inverts that, and a STALE
+ * GREEN one then opens the gate — a Release published before a production
+ * Space's Target was cleared still carries whatever was last reported on it.
  *
  * Both verdicts below hold the stage. They differ in what they claim, and only
  * one of them is a claim `cub` makes.
@@ -487,14 +489,14 @@ test('a targetless Space is not judged on the status it still reports', () => {
     previousStageSpaces: [
       {
         ...readTargetless,
-        liveStatus: { syncStatus: 'Synced', healthStatus: 'Healthy', operationPhase: 'Succeeded' },
+        release: runningRelease({ Sync: 'Synced', Health: 'Healthy', Operation: 'Succeeded' }),
       },
     ],
     progress: { ...progress, resolvedSpaceIds: new Set(['d1']) },
     componentName: 'MyApp',
     changeOrderSlug: 'co-1',
   }).find((g) => g.id === 'check/healthy');
-  // The bypass this pins: a green annotation on a targetless Space opening the
+  // The bypass this pins: a green status on a targetless Space opening the
   // one gate standing between a change and production.
   expect(green?.ok).toBe(false);
   expect(green?.evaluated).toBe(false);
@@ -505,14 +507,14 @@ test('a targetless Space is not judged on the status it still reports', () => {
     previousStageSpaces: [
       {
         ...readTargetless,
-        liveStatus: { syncStatus: 'Synced', healthStatus: 'Degraded', operationPhase: 'Succeeded' },
+        release: runningRelease({ Sync: 'Synced', Health: 'Degraded', Operation: 'Succeeded' }),
       },
     ],
     progress: { ...progress, resolvedSpaceIds: new Set(['d1']) },
     componentName: 'MyApp',
     changeOrderSlug: 'co-1',
   }).find((g) => g.id === 'check/healthy');
-  // Not "is not healthy": that verdict would be read off an annotation `cub`
+  // Not "is not healthy": that verdict would be read off a status the server
   // never reaches. Unknown, and unknown holds the stage just as firmly.
   expect(degraded?.ok).toBe(false);
   expect(degraded?.evaluated).toBe(false);
@@ -591,7 +593,7 @@ test('the healthy gate does not tick for a Space that never took the change', ()
         loaded: true,
         variantName: 'dev',
         releaseTargetId: 't1',
-        liveStatus: { syncStatus: 'Synced', healthStatus: 'Healthy', operationPhase: 'Succeeded' },
+        release: runningRelease({ Sync: 'Synced', Health: 'Healthy', Operation: 'Succeeded' }),
       },
     ],
     progress: { ...progress, resolvedSpaceIds: new Set() },
@@ -648,7 +650,7 @@ test('the healthy gate is not evaluated when progress is unavailable', () => {
         loaded: true,
         variantName: 'dev',
         releaseTargetId: 't1',
-        liveStatus: { syncStatus: 'Synced', healthStatus: 'Healthy', operationPhase: 'Succeeded' },
+        release: runningRelease({ Sync: 'Synced', Health: 'Healthy', Operation: 'Succeeded' }),
       },
     ],
     progress: { ...progress, availability: 'unavailable', resolvedSpaceIds: new Set() },
@@ -673,12 +675,27 @@ test('the healthy gate is not evaluated when progress is unavailable', () => {
  */
 test('every Space a stage names produces an input, read or not', () => {
   const index = new Map([
-    ['read-1', { spaceId: 'read-1', slug: 'dev-a', releaseTargetId: 't1' }],
+    ['read-1', { spaceId: 'read-1', slug: 'dev-a', releaseTargetId: 't1', release: runningRelease(null) }],
   ]);
   const inputs = previousStageGateSpaces(['read-1', 'missing-1', 'missing-2'], index);
   // Three named, three carried. Never two.
   expect(inputs.map((s) => s.spaceId)).toEqual(['read-1', 'missing-1', 'missing-2']);
   expect(inputs.map((s) => s.loaded)).toEqual([true, false, false]);
+});
+
+/*
+ * A Space with a release Target is not read until its Releases are: which one
+ * it is running is what the health gate reads, and "runs no Release" would be a
+ * refusal made before looking.
+ */
+test('a targeted Space whose Releases have not been read is unread', () => {
+  const index = new Map([
+    ['space-only', { spaceId: 'space-only', slug: 'dev-a', releaseTargetId: 't1' }],
+    ['targetless', { spaceId: 'targetless', slug: 'dev-b' }],
+  ]);
+  const inputs = previousStageGateSpaces(['space-only', 'targetless'], index);
+  // A targetless Space runs no Release, so there is nothing more to read.
+  expect(inputs.map((s) => s.loaded)).toEqual([false, true]);
 });
 
 test('a stage naming no Space produces no inputs', () => {
@@ -694,10 +711,7 @@ test('a partially-read previous stage withholds its gates rather than shrinking'
         spaceId: 'read-1',
         slug: 'dev-a',
         releaseTargetId: 't1',
-        annotations: {
-          'confighub.com/live-status':
-            '{"syncStatus":"Synced","healthStatus":"Healthy","operationPhase":"Succeeded"}',
-        },
+        release: runningRelease({ Sync: 'Synced', Health: 'Healthy', Operation: 'Succeeded' }),
       },
     ],
   ]);
@@ -747,12 +761,12 @@ function firstStageOf(prerequisites: string[]): RolloutStage {
   return first;
 }
 
-/** The base Space: no release target, no live-status annotation, ever. */
+/** The base Space: no release target, so no Release and no live status, ever. */
 const BASE_SPACE = {
   spaceId: 'base-1',
   loaded: true,
   variantName: 'myapp-base',
-  liveStatus: null,
+  release: null,
 } as const;
 
 test('the sequence really does make the base Space the first stage gate subject', () => {

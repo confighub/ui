@@ -7,27 +7,23 @@ import { ApiHelper } from './fixtures/api-helper';
 import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
 
 // ============================================================================
-// Live-status Peek E2E Test
+// Live Status Peek E2E Test
 //
-// Creates one deployment Space carrying a realistic `confighub.com/live-status`
-// annotation — the shape argobot writes, whose `revision` is the OCI digest
-// Argo pulled (`sha256:<64 hex>`) — and asserts the hover peek on the node's
-// live-status chips shows the hash itself.
+// Creates one release-enabled deployment Space, publishes a Release, and
+// reports a live status on it the way argobot does — a merge-patch of the
+// Release's `LiveStatus`. Asserts the hover peek on the node's live status
+// chips names the Release the status is about, with its manifest digest
+// abbreviated rather than cut down to its algorithm prefix.
 //
-// Regression guard for the peek truncating the WHOLE revision string to a
-// short-SHA width, which for a digest yields the algorithm prefix and none of
-// the hash ("revision: sha256:"). See `formatLiveRevision` in liveStatus.ts.
+// Regression guard for truncating the WHOLE digest to a short-hash width,
+// which yields the algorithm prefix and none of the hash ("sha256:"). See
+// `formatDigest` in liveStatus.ts.
 // ============================================================================
 
 const APP_LABEL = `e2e-livestatus-${RandomSlugGenerator.randomSlugName()}`;
 
-const LIVE_STATUS_ANNOTATION = 'confighub.com/live-status';
-
-/** A real OCI digest, the form argobot reports for an Argo app synced from an OCI source. */
-const REVISION = 'sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1';
-
-/** What the peek must show: the algorithm kept whole, the hash abbreviated. */
-const EXPECTED_REVISION_LINE = 'revision: sha256:4f4fb700ef54';
+/** What the peek must show: the Release's number, then its digest with the hash abbreviated. */
+const EXPECTED_RELEASE_LINE = /release 1 · sha256:[0-9a-f]{12}(?![0-9a-f])/;
 
 /**
  * Navigate to the component page filtered by app label, wait for loading to
@@ -43,7 +39,7 @@ async function navigateAndSelectApp(page: Page, appLabel: string): Promise<void>
   await page.getByText(appLabel).click();
 }
 
-test.describe('component view live-status peek', () => {
+test.describe('component view live status peek', () => {
   test.use({ storageState: 'authentication.json' });
 
   const spaceSlug = `e2e-live-${RandomSlugGenerator.randomSlugName()}`;
@@ -71,47 +67,60 @@ test.describe('component view live-status peek', () => {
     });
     spaceId = (space as { SpaceID: string }).SpaceID;
 
-    // The live-status annotation a reporter would have written back. Set by
-    // merge-patch (the same call argobot makes) rather than at create time.
-    await api.updateSpace({
-      spaceId,
-      space: {
-        Annotations: {
-          [LIVE_STATUS_ANNOTATION]: JSON.stringify({
-            source: 'argobot',
-            app: spaceSlug,
-            syncStatus: 'Synced',
-            healthStatus: 'Healthy',
-            operationPhase: 'Succeeded',
-            revision: REVISION,
-            message: 'successfully synced',
-            observedAt: '2026-01-01T00:00:00Z',
-          }),
-        },
-      },
-    });
+    // A live status belongs to a Release, so the Space publishes through a
+    // release Target.
+    const target = await api.createTarget({ spaceId, slug: targetSlug });
+    const targetId = (target as { TargetID: string }).TargetID;
+    await api.updateSpace({ spaceId, space: { ReleaseTargetID: targetId } });
 
-    const targetResp = await hubApi.post(`/api/space/${spaceId}/target`, {
-      params: { allow_exists: 'true' },
-      data: {
-        Slug: targetSlug,
-      },
-    });
-    if (!targetResp.ok()) {
-      throw new Error(`Failed to create target: ${targetResp.status()} ${await targetResp.text()}`);
-    }
-    const targetData = (await targetResp.json()) as { TargetID: string };
-
+    // A Release bundles the Units assigned to the release Target.
     const unitResp = await hubApi.post(`/api/space/${spaceId}/unit`, {
       params: { allow_exists: 'true' },
       data: {
         Slug: 'test-config',
         ToolchainType: 'Kubernetes/YAML',
-        TargetID: targetData.TargetID,
+        TargetID: targetId,
       },
     });
     if (!unitResp.ok()) {
       throw new Error(`Failed to create unit: ${unitResp.status()} ${await unitResp.text()}`);
+    }
+    const unitId = ((await unitResp.json()) as { Unit: { UnitID: string } }).Unit.UnitID;
+    await api.uploadUnitData({
+      spaceId,
+      unitId,
+      body: ['apiVersion: v1', 'kind: ConfigMap', 'metadata:', '  name: test-config'].join('\n'),
+    });
+
+    await api.publishRelease({ spaceId });
+    const listed = await hubApi.get(`/api/space/${spaceId}/release`, {
+      params: { where: 'Published = true' },
+    });
+    if (!listed.ok()) {
+      throw new Error(`Failed to list releases: ${listed.status()} ${await listed.text()}`);
+    }
+    const releaseId = ((await listed.json()) as { Release?: { ReleaseID?: string } }[])[0]?.Release
+      ?.ReleaseID;
+    if (!releaseId) throw new Error('The published Release was not listed');
+
+    // The status a reporter would have written back, by the same merge-patch
+    // argobot makes.
+    const reported = await hubApi.patch(`/api/space/${spaceId}/release/${releaseId}`, {
+      headers: { 'Content-Type': 'application/merge-patch+json' },
+      data: {
+        LiveStatus: {
+          Reporter: 'argobot',
+          DataSource: spaceSlug,
+          Sync: 'Synced',
+          Health: 'Healthy',
+          Operation: 'Succeeded',
+          Message: 'successfully synced',
+          ObservedAt: '2026-01-01T00:00:00Z',
+        },
+      },
+    });
+    if (!reported.ok()) {
+      throw new Error(`Failed to report live status: ${reported.status()} ${await reported.text()}`);
     }
 
     await context.close();
@@ -133,7 +142,7 @@ test.describe('component view live-status peek', () => {
     await context.close();
   });
 
-  test('the live-status peek shows the synced revision hash, not just its algorithm prefix', async ({
+  test('the live status peek names the Release and its digest, not just the algorithm prefix', async ({
     page,
   }) => {
     await navigateAndSelectApp(page, APP_LABEL);
@@ -142,14 +151,14 @@ test.describe('component view live-status peek', () => {
     await expect(node).toBeVisible({ timeout: 10000 });
 
     // ArgoCD reported both axes, so the node carries both of Argo's own words
-    // as separate chips (see `LiveStateChip`); either peek carries the
-    // revision, so assert on both.
+    // as separate chips (see `LiveStateChip`); either peek names the Release,
+    // so assert on both.
     for (const label of ['Healthy', 'Synced']) {
       await node.getByText(label, { exact: true }).hover();
 
       const peek = page.getByRole('tooltip');
       await expect(peek).toBeVisible({ timeout: 5000 });
-      await expect(peek).toContainText(EXPECTED_REVISION_LINE);
+      await expect(peek).toContainText(EXPECTED_RELEASE_LINE);
 
       // Move off the chip so the next iteration's peek is a fresh one.
       await page.mouse.move(0, 0);

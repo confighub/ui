@@ -17,11 +17,12 @@ import { formatRelative } from '@/utility/date-format';
 import {
   deriveHealthPresentation,
   deriveSyncPresentation,
-  formatLiveRevision,
+  formatDigest,
   LIVE_STATUS_PROVIDER_NAME,
   type LiveStatus,
   type LiveStatusProvider,
   liveStatusLabel,
+  reporterDetailLines,
   type VitalPresentation,
   type VitalTone,
 } from '../liveStatus';
@@ -44,7 +45,7 @@ const LIVE_TONE_COLOR: Record<VitalTone, string> = {
 };
 
 /**
- * Every tone a status chip can take — the live-status tones plus the three
+ * Every tone a status chip can take — the live status tones plus the three
  * config-side ones that are not live readings at all.
  */
 type ChipTone = VitalTone | 'stale' | 'unreleased' | 'gated';
@@ -204,8 +205,8 @@ export type ChipTab = 'config' | 'releases';
 //     `LiveStateChip`): "Live" for health ("are the workloads up") and
 //     "Synced" for sync ("does the cluster match what was released"), kept
 //     as INDEPENDENT axes per the CTO's ask to see both facts, not one
-//     collapsed word — see the defect noted on `deriveLiveStatusPresentation`
-//     in liveStatus.ts. This is the one deliberate exception to status-by-
+//     collapsed word — see the VITALS section of liveStatus.ts. This is the
+//     one deliberate exception to status-by-
 //     exception: per direct product direction, each tag renders — clearly,
 //     not faintly — even when its axis is reporting-and-fine, because a
 //     near-invisible healthy mark wasn't good enough to actually see. It
@@ -591,9 +592,8 @@ const LiveStateRow = styled(Box)({
   gap: 6,
 });
 
-/** Small solid dot leading a Live/Synced tag — same idiom the old live-status
- *  chip used before the vitals rework, brought back now that these are full
- *  chips again rather than borderless ticks. */
+/** Small solid dot leading a Live/Synced tag, marking it as a live reading
+ *  rather than a config-side signal. */
 const LiveDot = styled(Box, {
   shouldForwardProp: (p) => p !== '$color',
 })<{ $color: string }>(({ $color }) => ({
@@ -908,32 +908,36 @@ const RecoveredMark = ({ until }: { until: number }) => {
 // LIVE STATE CHIP
 // ============================================================================
 
-/** Build the peek card content for one live-status axis. `eyebrowAxis` is the
+/** Build the peek card content for one live status axis. `eyebrowAxis` is the
  *  word shown before the state in the peek's eyebrow — normally the same as
  *  the real `axis` ("sync · OutOfSync" for ArgoCD, "sync · Stalled" for
  *  Flux), but the Flux MERGED chip (see `deriveFluxVital` below) passes
  *  `'status'` instead, since a single collapsed chip calling itself "sync" or
  *  "health" would misstate what it represents. */
 const buildLiveStatePeek = (
+  axis: 'sync' | 'health',
   eyebrowAxis: string,
   status: LiveStatus | undefined,
+  release: ComponentDeployment['runningRelease'],
   presentation: VitalPresentation,
   label: string,
 ): PeekSpec => {
-  const lines: string[] = [presentation.desc];
-  // `formatLiveRevision` returns '' for a revision that is nothing but
-  // whitespace, which would render a bare "revision:" label with no value —
-  // the very thing this line exists to avoid.
-  const revision = status?.revision ? formatLiveRevision(status.revision) : '';
-  if (revision) lines.push(`revision: ${revision}`);
-  if (status?.message) lines.push(status.message);
-  if (status?.observedAt) lines.push(`observed ${formatRelative(status.observedAt)}`);
-  if (status?.source) lines.push(`via ${status.source}`);
+  const lines: string[] = [presentation.desc, ...reporterDetailLines(status, axis)];
+  // The status is about one Release, so the peek says which. `formatDigest`
+  // returns '' for a digest that is nothing but whitespace, which would leave
+  // a dangling separator.
+  if (release) {
+    const digest = release.manifestDigest ? formatDigest(release.manifestDigest) : '';
+    lines.push(digest ? `release ${release.releaseNum} · ${digest}` : `release ${release.releaseNum}`);
+  }
+  if (status?.Message) lines.push(status.Message);
+  if (status?.ObservedAt) lines.push(`observed ${formatRelative(status.ObservedAt)}`);
+  if (status?.Reporter) lines.push(`via ${status.Reporter}`);
   return { tab: 'config', eyebrow: `${eyebrowAxis} · ${label}`, lines, action: 'Open to inspect' };
 };
 
 /**
- * One always-visible live-status tag (sync or health). Renders NOTHING when
+ * One always-visible live status tag (sync or health). Renders NOTHING when
  * the axis isn't reported at all — there's genuinely nothing to show — but
  * ALWAYS renders otherwise, including when fine.
  *
@@ -948,6 +952,7 @@ const LiveStateChip = ({
   axis,
   eyebrowAxis,
   status,
+  release,
   presentation,
   provider,
   deploymentId,
@@ -959,6 +964,8 @@ const LiveStateChip = ({
   /** Word shown in the peek eyebrow; defaults to `axis`. See `buildLiveStatePeek`. */
   eyebrowAxis?: string;
   status: LiveStatus | undefined;
+  /** The Release `status` is about. */
+  release: ComponentDeployment['runningRelease'];
   presentation: VitalPresentation | null;
   provider: LiveStatusProvider;
   deploymentId: string;
@@ -966,7 +973,7 @@ const LiveStateChip = ({
 }) => {
   if (!presentation) return null;
   const label = liveStatusLabel(provider, axis, presentation);
-  const spec = buildLiveStatePeek(eyebrowAxis ?? axis, status, presentation, label);
+  const spec = buildLiveStatePeek(axis, eyebrowAxis ?? axis, status, release, presentation, label);
   const color = LIVE_TONE_COLOR[presentation.tone];
   return (
     <StatusChipWithPeek
@@ -1271,11 +1278,9 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
   const showGatedChip = isGated && !suppressed('gated');
 
   // Vitals — "is it synced" and "is it healthy" as two independent, always-on
-  // facts (per the CTO's ask), read straight from the raw annotation rather
-  // than through the rail's single collapsed severity (which folds
-  // OutOfSync into Progressing — see the defect note on
-  // deriveLiveStatusPresentation in liveStatus.ts). Each is null — and
-  // renders nothing — when that axis isn't reported at all.
+  // facts (per the CTO's ask), never collapsed into one severity (see the
+  // VITALS section of liveStatus.ts). Each is null — and renders nothing —
+  // when that axis isn't reported at all.
   const syncVital = deriveSyncPresentation(deployment.liveStatus);
   const healthVital = deriveHealthPresentation(deployment.liveStatus);
 
@@ -1283,9 +1288,9 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
   // mark and the vocabulary the chips speak.
   const liveProvider = deployment.liveStatusProvider;
   // A node that actually deploys somewhere (has a Target) but carries no
-  // live-status reading says so explicitly, REGARDLESS of whether the
+  // live status reading says so explicitly, REGARDLESS of whether the
   // delivery system was identifiable: with no live status yet, there is no
-  // `source` to name a system, so the provider is always `'unknown'`.
+  // `Reporter` to name a system, so the provider is always `'unknown'`.
   // A Base (no Target) is correctly excluded: nothing is deployed from it, so
   // there is nothing that could have reported.
   const hasTargets = deployment.targets.length > 0;
@@ -1297,6 +1302,13 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
       liveProvider === 'unknown'
         ? 'No live status has been reported for this deployment yet'
         : `${LIVE_STATUS_PROVIDER_NAME[liveProvider]} has not reported on this deployment yet`,
+      // A status describes one Release, so a newly published Release starts
+      // out unreported even where the one before it was healthy.
+      deployment.runningRelease
+        ? `Release ${deployment.runningRelease.releaseNum} is published and not reported on yet`
+        : deployment.releaseTargetId
+          ? 'No Release has been published to its release Target'
+          : 'It has no release Target, so no Release carries a live status',
     ],
     action: 'Open to inspect',
   };
@@ -1475,6 +1487,7 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
           axis={vital.axis}
           eyebrowAxis={vital.eyebrowAxis}
           status={deployment.liveStatus}
+          release={deployment.runningRelease}
           presentation={vital.presentation}
           provider={liveProvider}
           deploymentId={deployment.deploymentId}
@@ -1680,6 +1693,7 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
                   axis={fluxVital.axis}
                   eyebrowAxis="status"
                   status={deployment.liveStatus}
+                  release={deployment.runningRelease}
                   presentation={fluxVital.presentation}
                   provider={liveProvider}
                   deploymentId={deployment.deploymentId}
@@ -1690,6 +1704,7 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
                   <LiveStateChip
                     axis="health"
                     status={deployment.liveStatus}
+                    release={deployment.runningRelease}
                     presentation={healthVital}
                     provider={liveProvider}
                     deploymentId={deployment.deploymentId}
@@ -1698,6 +1713,7 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
                   <LiveStateChip
                     axis="sync"
                     status={deployment.liveStatus}
+                    release={deployment.runningRelease}
                     presentation={syncVital}
                     provider={liveProvider}
                     deploymentId={deployment.deploymentId}

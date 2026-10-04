@@ -32,19 +32,11 @@
  * The `Released` check is the exception: a Space with no release target can
  * never release, so it passes that check once it has taken the change.
  *
- * ⚠️ AND IT IS ASKED IN `cub`'s ORDER, WHICH IS FIRST. `checkSpaceIsHealthy`
- * refuses on the missing `ReleaseTargetID` BEFORE it reads anything else about
- * the Space, so no live status can decide the health gate for a targetless
- * Space. Reading those first and falling back to the target only when
- * they are absent is a different function: `ReleaseTargetID` is clearable and
- * nothing clears `confighub.com/live-status` alongside it, so such a Space keeps
- * whatever it last reported — and a stale green then opens the only gate
- * standing between a change and production.
- *
- * What that costs is a definite refusal turned into an unknown: a targetless
- * Space reporting Degraded reads as not-evaluated rather than as failed. It
- * holds the stage either way, and "nobody could check" is the claim `cub`
- * actually makes about it.
+ * ⚠️ AND IT IS ASKED FIRST. `checkSpaceIsHealthy` refuses on the missing
+ * `ReleaseTargetID` BEFORE it reads anything else about the Space, so no live
+ * status can decide the health gate for a targetless Space. A targetless Space
+ * runs no Release, so it has no live status to read: the Releases it published
+ * before its Target was cleared describe nothing it is running.
  *
  * A verdict must never be reported over a filtered-down set, either. A gate that
  * drops its targetless Spaces and then reports `ok: true, evaluated: true` over
@@ -97,26 +89,30 @@ import type {
   RolloutProgress,
   RolloutStage,
 } from './rolloutTypes';
-import type { LiveStatus } from '../liveStatus';
+import type { RunningRelease } from '../liveStatus';
 
 /** What a gate needs to know about one Space of the previous stage. */
 export interface RolloutGateSpaceInput {
   spaceId: string;
   /**
-   * Whether this Space's own data has arrived yet.
+   * Whether this Space's own data has arrived yet: the Space, and for a Space
+   * with a release Target, its Releases.
    *
-   * Separate from `liveStatus` being null, and the distinction is load-bearing.
-   * A Space that has loaded and reports no live status genuinely has none — that
-   * is a real, blocking answer. A Space whose data has not arrived tells us
-   * nothing, and reporting it as "live status not reported" is a confident
-   * refusal built on data we have not read. It renders a stage as Gated, with a
-   * reason naming a raw Space id, until the fetch lands.
+   * Separate from `release` being null, and the distinction is load-bearing.
+   * A Space that has loaded and runs no Release genuinely has none — that is a
+   * real, blocking answer. A Space whose data has not arrived tells us
+   * nothing, and reporting it as "no release" is a confident refusal built on
+   * data we have not read. It renders a stage as Gated, with a reason naming a
+   * raw Space id, until the fetch lands.
    */
   loaded: boolean;
   /** Variant name if the Space has one, else its slug — what `cub` calls the Variant. */
   variantName: string;
-  /** Parsed live-status annotation, or null when the Space carries none. */
-  liveStatus: LiveStatus | null;
+  /**
+   * The Release the Space is running — its latest published Release for its
+   * release Target — with its live status, or null when it runs none.
+   */
+  release: RunningRelease | null;
   /**
    * Space.ReleaseTargetID. A Space without one "releases nothing, ever … so
    * having taken the change is the whole of what it can be asked for"
@@ -141,11 +137,6 @@ export interface RolloutGateContext {
    */
   customPrerequisites?: readonly ChangeWorkflowPrerequisite[];
 }
-
-/** `cub` requires exactly these three values; anything else is a failure. */
-const SYNCED = 'Synced';
-const SUCCEEDED = 'Succeeded';
-const HEALTHY = 'Healthy';
 
 /**
  * Build the gates for one stage.
@@ -375,21 +366,26 @@ function promotedGate(context: RolloutGateContext): RolloutGate {
 
 /**
  * `checkSpaceIsHealthy`, per Space of the previous stage, in its order:
- * release target present, then the change taken, then the annotation present,
- * then Synced, then Succeeded, then Healthy — reported for the first Space that
- * fails.
+ * release target present, then the change taken, then a published Release
+ * carrying it, then the live status of the Release the Space is running —
+ * reported, Synced, no operation running or failed, Healthy. Reported for the
+ * first Space that fails.
  *
- * ⚠️ THE RELEASE TARGET IS ASKED FIRST, AND THAT IS THE WHOLE OF THE ORDER'S
- * POINT. `cub` refuses a targetless Variant before it reads the annotation at
- * all, so nothing the annotation says can decide this gate for such a Space.
- * `ReleaseTargetID` is clearable and nothing clears `confighub.com/live-status`
- * with it, so a Space whose Target was cleared while it was green keeps a status
- * that is no longer about anything — and consulting the annotation first hands
- * that stale green a pass over production.
+ * ⚠️ THE STATUS READ IS THE RUNNING RELEASE'S, NEVER AN OLDER ONE'S. A
+ * Release's live status is about that Release. When the newest Release has not
+ * been reported on yet, the Space has not been shown healthy, however green the
+ * Release before it was: that one is a configuration the Space is no longer
+ * running.
  *
- * A Space reporting Degraded with no target therefore reads as not evaluated
- * rather than as failed. Both hold the stage; only one of them is a verdict
- * `cub` reaches.
+ * ⚠️ THE RELEASE TARGET IS ASKED FIRST. `checkSpaceIsHealthy` refuses a
+ * targetless Variant before it reads any Release, so a targetless Space reads
+ * as not evaluated rather than as failed. Both hold the stage; only one of
+ * them is a verdict the server reaches.
+ *
+ * "A published Release carries the change" is read off `ChangeOrder.Releases`,
+ * the entry the server's own gate reads, never off `ReleasedSpaceIDs`: a Space
+ * stays released after the Release that released it is withdrawn, and then no
+ * published Release carries the change there.
  */
 function liveStatusGate(context: RolloutGateContext): RolloutGate {
   const { stage, previousStageSpaces, progress, changeOrderSlug } = context;
@@ -474,21 +470,14 @@ function liveStatusGate(context: RolloutGateContext): RolloutGate {
         reason: rolloutCopy.gateReasons.cubNotTaken(space.variantName, changeOrderSlug),
       };
     }
-    const status = space.liveStatus;
-    if (status === null) {
-      // A Space that has a target and still reports nothing failed to report:
-      // `cub`'s "live-status not found", which is a verdict, not an unknown.
-      return unsatisfiedLiveStatus(rolloutCopy.gateReasons.cubLiveStatusMissing(space.variantName));
+    const { release } = space;
+    if (!progress.carryingReleases.has(space.spaceId) || release === null) {
+      return unsatisfiedLiveStatus(
+        rolloutCopy.gateReasons.cubNoReleaseCarrying(space.variantName, changeOrderSlug),
+      );
     }
-    if (status.syncStatus !== SYNCED) {
-      return unsatisfiedLiveStatus(rolloutCopy.gateReasons.cubNotSynced(space.variantName));
-    }
-    if (status.operationPhase !== SUCCEEDED) {
-      return unsatisfiedLiveStatus(rolloutCopy.gateReasons.cubNotSucceeded(space.variantName));
-    }
-    if (status.healthStatus !== HEALTHY) {
-      return unsatisfiedLiveStatus(rolloutCopy.gateReasons.cubNotHealthy(space.variantName));
-    }
+    const failure = liveStatusFailure(space.variantName, release);
+    if (failure !== null) return unsatisfiedLiveStatus(failure);
   }
   return {
     id: rolloutCopy.gateNames.healthy,
@@ -512,6 +501,29 @@ function liveStatusGate(context: RolloutGateContext): RolloutGate {
  */
 function anyUnread(spaces: readonly RolloutGateSpaceInput[]): boolean {
   return spaces.some((space) => !space.loaded);
+}
+
+/**
+ * Why the live status of the Release a Space is running does not show it
+ * deployed, or null when it does. The server's order and terms: a Release not
+ * reported on yet is a verdict, not an unknown, since the Space has a Target
+ * and the Release is published; an operation that has not finished, or failed,
+ * is not a deployment; and an absent operation is fine, since not every
+ * reporter runs one.
+ */
+export function liveStatusFailure(variantName: string, release: RunningRelease): string | null {
+  const status = release.liveStatus;
+  const releaseNum = release.releaseNum;
+  if (status === null) return rolloutCopy.gateReasons.cubLiveStatusMissing(variantName, releaseNum);
+  if (status.Sync !== 'Synced') {
+    return rolloutCopy.gateReasons.cubNotSynced(variantName, releaseNum, status.Sync ?? '');
+  }
+  if (status.Operation === 'Running') return rolloutCopy.gateReasons.cubStillDeploying(variantName, releaseNum);
+  if (status.Operation === 'Failed') return rolloutCopy.gateReasons.cubDeployFailed(variantName, releaseNum);
+  if (status.Health !== 'Healthy') {
+    return rolloutCopy.gateReasons.cubNotHealthy(variantName, releaseNum, status.Health ?? '');
+  }
+  return null;
 }
 
 function unsatisfiedLiveStatus(reason: string): RolloutGate {

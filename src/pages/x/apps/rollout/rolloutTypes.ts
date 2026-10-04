@@ -92,7 +92,7 @@ export interface RolloutSequence {
 export interface RolloutGate {
   /** Stable slug used for `data-testid` and as the React key. Never an index. */
   id: string;
-  /** Display name, e.g. `check/live-status-green`. */
+  /** Display name, e.g. `check/healthy`. */
   name: string;
   /** Satisfied. Only meaningful when `evaluated` is true. */
   ok: boolean;
@@ -241,6 +241,20 @@ export interface RolloutProgress {
   restoredSpaceIds: ReadonlySet<string>;
   /** Spaces whose undoing has been released. A subset of `restoredSpaceIds`. */
   releasedRestoredSpaceIds: ReadonlySet<string>;
+  /**
+   * The published Release that released the change in each Space: the earliest
+   * one that carries it, as `ChangeOrder.Releases` names it. The server's gates
+   * read exactly this, so a Space released once whose carrying Release has since
+   * been withdrawn has no entry, although it stays in `releasedSpaceIds`. Empty
+   * when unavailable.
+   */
+  carryingReleases: ReadonlyMap<string, CarryingRelease>;
+}
+
+/** The Release that released a ChangeOrder's change in one Space. */
+export interface CarryingRelease {
+  releaseId?: string;
+  releaseNum?: number;
 }
 
 /** One resource's worth of incoming change, grouped for the treeview. */

@@ -5,13 +5,13 @@
 //
 // Reported health may never withdraw an action the gate permits.
 //
-// A stage's live-status annotation answers "is this workload healthy right
+// A stage's live status answers "is this workload healthy right
 // now". A gate answers "may this promotion proceed". They are different
 // questions, and a workflow that declares no health prerequisite never asks the
 // second one about health at all: `evaluatePrerequisites` over an empty
 // prerequisite list checks only that the change arrived
 // (internal/views/promote_gates.go), so `cub` promotes over a previous stage
-// reporting Degraded without reading the annotation.
+// reporting Degraded without reading its live status.
 //
 // A UI that refuses that promotion is over-strict, and over-strictness is a
 // real defect: an operator who is refused a correct action learns to distrust
@@ -24,7 +24,8 @@
 import { test, expect } from './fixtures/test';
 
 import type { ChangeWorkflowSpec, ComponentRead, ExtendedSpaceRead } from '@confighub/rtk-query';
-import { LIVE_STATUS_ANNOTATION_KEY, type LiveStatus } from '../src/pages/x/apps/liveStatus';
+import type { LiveStatus } from '../src/pages/x/apps/liveStatus';
+import { carryingReleases, runningRelease } from './fixtures/running-release';
 import { stageWhereSpace } from '../src/pages/x/apps/rollout/changeOrderWorkflow';
 import {
   actionFor,
@@ -34,16 +35,16 @@ import {
 } from '../src/pages/x/apps/rollout/rolloutsConsoleModel';
 
 const HEALTHY: LiveStatus = {
-  syncStatus: 'Synced',
-  operationPhase: 'Succeeded',
-  healthStatus: 'Healthy',
+  Sync: 'Synced',
+  Operation: 'Succeeded',
+  Health: 'Healthy',
 };
 
 /** What argobot writes when the workload is on fire. */
 const FAILING: LiveStatus = {
-  syncStatus: 'OutOfSync',
-  operationPhase: 'Failed',
-  healthStatus: 'Degraded',
+  Sync: 'OutOfSync',
+  Operation: 'Failed',
+  Health: 'Degraded',
 };
 
 const COMPONENT: ComponentRead = { ComponentID: '11111111-1111-1111-1111-111111111111', Slug: 'myapp' };
@@ -105,7 +106,7 @@ function rowFor(workflow: ChangeWorkflowSpec, devStatus: LiveStatus): ConsoleRow
       component: COMPONENT,
       labels: { Stage: 'dev' },
       releaseTargetId: 'target-dev',
-      annotations: { [LIVE_STATUS_ANNOTATION_KEY]: JSON.stringify(devStatus) },
+      release: runningRelease(devStatus),
     },
     {
       spaceId: STAGING,
@@ -113,7 +114,7 @@ function rowFor(workflow: ChangeWorkflowSpec, devStatus: LiveStatus): ConsoleRow
       component: COMPONENT,
       labels: { Stage: 'staging' },
       releaseTargetId: 'target-staging',
-      annotations: { [LIVE_STATUS_ANNOTATION_KEY]: JSON.stringify(HEALTHY) },
+      release: runningRelease(HEALTHY),
     },
     {
       spaceId: PROD,
@@ -121,7 +122,7 @@ function rowFor(workflow: ChangeWorkflowSpec, devStatus: LiveStatus): ConsoleRow
       component: COMPONENT,
       labels: { Stage: 'prod' },
       releaseTargetId: 'target-prod',
-      annotations: { [LIVE_STATUS_ANNOTATION_KEY]: JSON.stringify(HEALTHY) },
+      release: runningRelease(HEALTHY),
     },
   ];
   return buildConsoleRow(
@@ -132,6 +133,7 @@ function rowFor(workflow: ChangeWorkflowSpec, devStatus: LiveStatus): ConsoleRow
       spaceSlug: 'myapp-base',
       resolvedSpaceIds: [BASE, DEV],
       releasedSpaceIds: [DEV],
+      releases: carryingReleases([DEV]),
       inScopeSpaceIds: [BASE, DEV, STAGING, PROD],
       governing: { state: 'governed', workflow, changeWorkflowId: 'wf-1' },
       stage: 'dev',
@@ -196,11 +198,11 @@ test('the blocker sentence explains why an unhealthy rollout is still promotable
 
 /*
  * THE CONTROL, AND THE HALF OF THE RULE THAT MUST NOT MOVE. One prerequisite
- * added to `staging` and the same annotation becomes a GATE verdict: `cub`
+ * added to `staging` and the same status becomes a GATE verdict: `cub`
  * refuses the promotion, and so does this row. The display channel never opened
  * a gate and it must never close one either.
  */
-test('a declared health prerequisite still blocks, on the same failing annotation', () => {
+test('a declared health prerequisite still blocks, on the same failing status', () => {
   const row = rowFor(STAGING_NEEDS_HEALTH, FAILING);
   expect(row.stages.find((s) => s.stageId === 'staging')?.state.gatesOpen).toBe(false);
   expect(row.gateState.state).toBe('degraded');

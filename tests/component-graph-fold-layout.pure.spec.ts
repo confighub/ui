@@ -418,7 +418,7 @@ test.describe('frozen columns', () => {
     const broken = stack.memberIds[0];
     const polled = deployments.map((d) =>
       d.deploymentId === broken
-        ? { ...d, liveStatus: { ...d.liveStatus!, healthStatus: 'Degraded' } }
+        ? { ...d, liveStatus: { ...d.liveStatus!, Health: 'Degraded' as const } }
         : d,
     );
     const next = modelOf(polled, 'Department');
@@ -453,7 +453,7 @@ test.describe('frozen columns', () => {
     const broken = 'eu-central-logistics-test1';
     const polled = deployments.map((d) =>
       d.deploymentId === broken
-        ? { ...d, liveStatus: { ...d.liveStatus!, syncStatus: 'OutOfSync' } }
+        ? { ...d, liveStatus: { ...d.liveStatus!, Sync: 'OutOfSync' as const } }
         : d,
     );
     const next = modelOf(polled, 'Department');

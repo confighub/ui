@@ -33,10 +33,10 @@
  *     which is how unrelated rollouts used to end up gating against each other.
  */
 
-import type { ComponentRead, ExtendedSpaceRead } from '@confighub/rtk-query';
+import type { ChangeOrderRelease, ComponentRead, ExtendedSpaceRead } from '@confighub/rtk-query';
 
 import { ROUTE_COMPONENTS } from '../appTypes';
-import { parseLiveStatus } from '../liveStatus';
+import type { RunningRelease } from '../liveStatus';
 import { stageWhereSpace, type ChangeOrderWorkflow } from './changeOrderWorkflow';
 import { rolloutCopy } from './rolloutCopy';
 import { buildGatesForStage, gatesOpen } from './rolloutGates';
@@ -134,8 +134,23 @@ export interface ConsoleSpace {
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
   releaseTargetId?: string;
+  /**
+   * The Release the Space is running, with its live status: `null` when it
+   * runs none, `undefined` while its Releases have not been read. A Space with
+   * no release Target runs none, and needs no read to say so.
+   */
+  release?: RunningRelease | null;
   /** The Component the Space's ComponentID names. */
   component?: ComponentRead;
+}
+
+/**
+ * Whether everything the gates read about a Space has arrived: the Space, and
+ * for one with a release Target, which Release it is running.
+ */
+export function consoleSpaceLoaded(space: ConsoleSpace | undefined): boolean {
+  if (space === undefined) return false;
+  return space.releaseTargetId === undefined || space.release !== undefined;
 }
 
 export interface ConsoleChangeOrder {
@@ -155,6 +170,8 @@ export interface ConsoleChangeOrder {
    */
   restoredSpaceIds?: string[];
   releasedRestoredSpaceIds?: string[];
+  /** ChangeOrder.Releases: the published Release that released the change in each Space. */
+  releases?: ChangeOrderRelease[];
   /**
    * Where this ChangeOrder is headed, which is the third term of stage
    * membership — see `buildRolloutSequence`. Not part of progress: it is what
@@ -512,9 +529,9 @@ export function orderComponent(
 function gateSpaceInput(spaceId: string, space: ConsoleSpace | undefined): RolloutGateSpaceInput {
   return {
     spaceId,
-    loaded: space !== undefined,
+    loaded: consoleSpaceLoaded(space),
     variantName: space?.displayName ?? space?.slug ?? spaceId,
-    liveStatus: parseLiveStatus(space?.annotations),
+    release: space?.release ?? null,
     releaseTargetId: space?.releaseTargetId,
   };
 }
@@ -559,7 +576,7 @@ function relevantStageIndices(
  * ⚠️ THE SOURCE ROW IS NOT ONE OF THEM. The base holds the change, but `cub`
  * never evaluates it for any stage — `validateStageEntryGates` quantifies over
  * a previous STAGE, and the base is not one. Admitting it let the base Space's
- * own annotation withdraw Promote at every stage of every rollout: a degraded
+ * own live status withdraw Promote at every stage of every rollout: a degraded
  * base with dev promoted and prod ready read `degraded`, offering Resolve
  * instead of the promotion the CLI would have allowed. A gate that refuses
  * correct actions daily is a gate operators learn to disbelieve without reading.
@@ -627,12 +644,10 @@ function failingLiveStatusGate(
  *
  * THE SECOND CHANNEL, AND THE WHOLE REASON THERE ARE TWO. `failingLiveStatusGate`
  * above answers "did a check `cub` makes come back no", and it cannot answer
- * anything about a Space `cub` refuses to check at all: a Space with no
- * `ReleaseTargetID` is `evaluated: false` there however loudly its annotation is
- * reporting Degraded. `ReleaseTargetID` is clearable and nothing clears the
- * live-status annotation with it, so that is a shape the data really takes.
+ * anything about a Space `cub` refuses to check at all: a Space whose gate is
+ * `evaluated: false` there can still be reporting Degraded.
  *
- * This reads the annotation itself, per stage, and is never consulted about
+ * This reads the live status itself, per stage, and is never consulted about
  * whether a promotion may proceed — see `rolloutReportedHealth.ts`.
  */
 function failingReportedHealth(
@@ -672,7 +687,7 @@ function degradedReason(
 
 /**
  * What the report needs to know about one Space, which is what the gates need
- * plus the one fact that decides whether its annotation is evidence at all.
+ * plus the one fact that decides whether its live status is evidence at all.
  */
 function reportedSpaceInput(
   spaceId: string,
@@ -681,9 +696,9 @@ function reportedSpaceInput(
   baseSpaceId: string | undefined,
 ): ReportedHealthSpaceInput {
   return {
-    loaded: space !== undefined,
+    loaded: consoleSpaceLoaded(space),
     variantName: space?.displayName ?? space?.slug ?? spaceId,
-    liveStatus: parseLiveStatus(space?.annotations),
+    liveStatus: space?.release?.liveStatus ?? null,
     /*
      * ⚠️ THE CHANGEORDER'S OWN SPACE IS NEVER EVIDENCE, IN ANY STAGE.
      *
@@ -696,12 +711,10 @@ function reportedSpaceInput(
      * `reachedStageIndices` already keeps the SOURCE row out of this channel's
      * reach by verdict. That guard does nothing once a real stage's selector
      * covers the base — the ordinary `whole-component` shape, where the base is
-     * a member of a real, reached stage — and the base's own live-status
-     * annotation then travels `failingReportedHealth` → `degradedReason` →
+     * a member of a real, reached stage — and the base's own live status then
+     * travels `failingReportedHealth` → `degradedReason` →
      * `deriveConsoleState` → `actionFor` and withdraws Promote from a promotion
-     * `cub` performs. The annotation is stale there by construction: a base
-     * with no release target is never reconciled, so nothing ever updates what
-     * it last reported.
+     * `cub` performs.
      *
      * Otherwise the shipped predicate, never a re-derivation from the stage
      * verdict: a stage is `in-progress` precisely when some of its Spaces have
@@ -742,7 +755,7 @@ function reportedHealthByStage(
   // a statement about the Space the change was authored in, which is what the
   // display channel exists to make — and `reachedStageIndices` already keeps
   // the source row out of the row's verdict. Inside a real stage the same
-  // annotation IS read as evidence about a promotion, and that is the reach
+  // status IS read as evidence about a promotion, and that is the reach
   // `reportedSpaceInput` refuses.
   return stages.map((stage) =>
     reportedHealthOf(
@@ -886,7 +899,7 @@ function segmentToneFor(
  * The row's single state, from the shipped gate and stage derivations.
  *
  * Order is the design's: a row is labelled by the stage it is trying to enter,
- * except that a live-status failure in a stage it has already reached outranks
+ * except that a live status failure in a stage it has already reached outranks
  * that — a degraded prod is the thing to look at even while dev is promoting.
  *
  * `abortedReason` is checked FIRST, above even `progressUnavailable` — matching
@@ -1048,7 +1061,7 @@ function deriveBlocker(
    * A fully-promoted degraded rollout has no next stage, so it fell through to
    * `next === undefined` and rendered "No blocker." beside a Degraded chip.
    * (Not the `state === 'complete'` line above — that never fires here, because
-   * `deriveConsoleState` runs its live-status scan BEFORE its `nextStageId ===
+   * `deriveConsoleState` runs its live status scan BEFORE its `nextStageId ===
    * null` return, and so answers 'degraded' rather than 'complete'.)
    *
    * And a degraded rollout that DOES still have a next stage would otherwise
@@ -1156,6 +1169,7 @@ function stagelessRow(
       releasedSpaceIds: undefined,
       restoredSpaceIds: undefined,
       releasedRestoredSpaceIds: undefined,
+      releases: undefined,
     }),
     // No stages to read completion off. Not finished is the honest answer, and
     // the one that leaves the way out of the rollout offered.
@@ -1227,6 +1241,7 @@ export function buildConsoleRow(
     releasedSpaceIds: order.releasedSpaceIds,
     restoredSpaceIds: order.restoredSpaceIds,
     releasedRestoredSpaceIds: order.releasedRestoredSpaceIds,
+    releases: order.releases,
   });
   const progressUnavailable = progress.availability === 'unavailable';
 

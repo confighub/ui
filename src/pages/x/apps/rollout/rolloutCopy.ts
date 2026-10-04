@@ -251,11 +251,13 @@ export const rolloutCopy = {
    * it. A separate section because the two answer different questions and a
    * reader has to be able to tell them apart on screen: `cub` states a verdict
    * it reached ("myapp-dev is not synced."), and these state an observation
-   * carried by the live-status annotation ("myapp-dev reports it is not
-   * synced."). They are NOT CLI wording and must never be used for a gate.
+   * carried by the live status of the Release the Space is running
+   * ("myapp-dev reports it is not synced."). They are NOT CLI wording and must
+   * never be used for a gate.
    */
   reportedStatus: {
     notSynced: (variant: string) => `${variant} reports it is not synced.`,
+    stillDeploying: (variant: string) => `${variant} reports its deployment is still running.`,
     notSucceeded: (variant: string) => `${variant} reports its deployment did not succeed.`,
     notHealthy: (variant: string) => `${variant} reports it is not healthy.`,
   },
@@ -274,14 +276,24 @@ export const rolloutCopy = {
     stagePromotedReason: (previousStage: string, count: number) =>
       `${previousStage} is the previous stage and has ${count} ${count === 1 ? 'Space' : 'Spaces'}.`,
 
-    /** `cub`: "live-status not found for Variant '%s'" */
-    cubLiveStatusMissing: (variant: string) => `Live status is not reported for ${variant}.`,
-    /** `cub`: "Variant '%s' is not synced" */
-    cubNotSynced: (variant: string) => `${variant} is not synced.`,
-    /** `cub`: "Variant '%s' has not succeeded in deployment" */
-    cubNotSucceeded: (variant: string) => `${variant} has not succeeded in deployment.`,
-    /** `cub`: "Variant '%s' is not healthy" */
-    cubNotHealthy: (variant: string) => `${variant} is not healthy.`,
+    /** `cub`: "Variant '%s' has not published a release carrying change order '%s'" */
+    cubNoReleaseCarrying: (variant: string, changeOrder: string) =>
+      `${variant} has not published a release carrying '${changeOrder}'.`,
+    /** `cub`: "Variant '%s' has no live status for release %d yet" */
+    cubLiveStatusMissing: (variant: string, releaseNum: number) =>
+      `${variant} has no live status for release ${releaseNum} yet.`,
+    /** `cub`: "Variant '%s' release %d is not synced (%s)" */
+    cubNotSynced: (variant: string, releaseNum: number, sync: string) =>
+      `${variant} release ${releaseNum} is not synced (${sync}).`,
+    /** `cub`: "Variant '%s' release %d is still being deployed" */
+    cubStillDeploying: (variant: string, releaseNum: number) =>
+      `${variant} release ${releaseNum} is still being deployed.`,
+    /** `cub`: "Variant '%s' release %d failed to deploy" */
+    cubDeployFailed: (variant: string, releaseNum: number) =>
+      `${variant} release ${releaseNum} failed to deploy.`,
+    /** `cub`: "Variant '%s' release %d is not healthy (%s)" */
+    cubNotHealthy: (variant: string, releaseNum: number, health: string) =>
+      `${variant} release ${releaseNum} is not healthy (${health}).`,
     liveStatusGreen: (previousStage: string) =>
       `Every Space of ${previousStage} is synced, healthy and deployed.`,
     /**
@@ -292,9 +304,10 @@ export const rolloutCopy = {
     liveStatusTargetless: (variant: string) =>
       `Not evaluated. ${variant} has no release target, so its health cannot be determined.`,
     /**
-     * The previous stage's Spaces have not loaded yet. Distinct from their live
-     * status being absent — one is "we have not looked", the other is "we looked
-     * and nothing is reported" — and only the second is a reason to hold a stage.
+     * The previous stage's Spaces, or their Releases, have not loaded yet.
+     * Distinct from their live status being absent — one is "we have not
+     * looked", the other is "we looked and nothing is reported" — and only the
+     * second is a reason to hold a stage.
      */
     liveStatusLoading: (previousStage: string) =>
       `Not evaluated yet. Still reading the live status of ${previousStage}.`,

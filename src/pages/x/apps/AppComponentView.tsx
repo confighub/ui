@@ -4,11 +4,9 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Alert from '@mui/material/Alert';
 
 import {
-  type ExtendedReleaseRead,
   type ExtendedSpaceRead,
   type ExtendedTargetRead,
   type ExtendedUnitRead,
-  type ListAllReleasesApiArg,
   type ListAllUnitsApiArg,
   type MutationConflict,
   type ResourceProtection,
@@ -16,7 +14,6 @@ import {
   type UnitCreateOrUpdateResponseRead,
   useBulkPatchUnitsMutation,
   useLazyGetUnitQuery,
-  useListAllReleasesQuery,
   useListAllUnitsQuery,
   useSetUnitProtectionMutation,
   useUpdateUnitMutation,
@@ -54,6 +51,7 @@ import type { ComposerSubmitValues } from './flow-graph/ComposerNode';
 import { getSiblingVariantNames, sanitizeVariantSlug } from './variantValidation';
 import { RELEASE_FRESH_SETTLE_MS, useFreshSignal } from './useFreshSignal';
 import { useReleaseActions } from './useReleaseActions';
+import { useRunningReleases } from './useRunningReleases';
 import { useWaveActions } from './useWaveActions';
 import { WaveActionDialog } from './WaveActionDialog';
 
@@ -135,6 +133,9 @@ const EMPTY_UNITS: ExtendedUnitRead[] = [];
 
 /** Stable empty ID list. */
 const EMPTY_STRING_ARRAY: string[] = [];
+
+/** How often the Releases the nodes run are re-read, for their live status. */
+const RUNNING_RELEASE_POLL_MS = 5_000;
 
 // Configuration is not a selectable field any more -- it is read from the data
 // endpoints -- so this asks only for the metadata, plus the Revision ids the data
@@ -827,6 +828,21 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     return m;
   }, [targets]);
 
+  // The Release each Space is running, read once for every Space in view: its
+  // live status paints the node's vitals, and its number the node's release
+  // chip. Polled at the Spaces' own cadence, since a reporter writes the
+  // status onto the Release whenever it observes a change.
+  const releaseSpaces = useMemo(
+    () =>
+      spaces.flatMap((s) =>
+        s.Space?.SpaceID ? [{ spaceId: s.Space.SpaceID, releaseTargetId: s.Space.ReleaseTargetID }] : [],
+      ),
+    [spaces],
+  );
+  const { bySpaceId: runningReleaseBySpaceId } = useRunningReleases(releaseSpaces, {
+    pollIntervalMs: RUNNING_RELEASE_POLL_MS,
+  });
+
   const { slugById } = useComponentSlugs();
   const { deployments: builtDeployments, stages } = useMemo(
     () =>
@@ -838,6 +854,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
         targetAnnotationsById,
         targetSpaceSlugById,
         targetFactsById,
+        runningReleaseBySpaceId,
       ),
     [
       spaces,
@@ -847,6 +864,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
       targetAnnotationsById,
       targetSpaceSlugById,
       targetFactsById,
+      runningReleaseBySpaceId,
     ],
   );
 
@@ -902,59 +920,18 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     [releaseActions.isReleasing, selectedDeploymentId, EMPTY_SET],
   );
 
-  // ── Per-node release chip (U5a) — the DAG's "graph-forward" signature move ──
-  // Cross-space: unlike useReleaseActions' history query (selected Space
-  // only), every release-enabled node's header chip needs ITS OWN latest
-  // release, so this queries the cross-space release endpoint narrowed to
-  // just the release-enabled Space IDs and just the fields the chip renders.
-  const releaseEnabledSpaceIds = useMemo(
-    () => deployments.filter((d) => d.releaseTargetId).map((d) => d.deploymentId),
-    [deployments],
-  );
-  // Stable primitive key: `deployments` is rebuilt on every allUnits poll
-  // tick, but the SET of release-enabled Space IDs rarely changes — this
-  // keeps the query-arg object below from getting a new reference (and
-  // refiring) on every poll.
-  const releaseEnabledSpaceIdsKey = useMemo(
-    () => releaseEnabledSpaceIds.slice().sort().join(','),
-    [releaseEnabledSpaceIds],
-  );
-  // A whole-org node can have more release-enabled Spaces than fit in one
-  // GET query string, same reasoning as the units batching above — split
-  // and merge rather than risk a silently-truncated `where` clause.
-  const releaseSpaceIdBatchArgs = useMemo(
-    () =>
-      batchIds(releaseEnabledSpaceIdsKey ? releaseEnabledSpaceIdsKey.split(',') : []).map(
-        (batch): ListAllReleasesApiArg => ({
-          // Published = true excludes withdrawn Releases — Withdraw only clears
-          // this flag, it doesn't delete the row (internal/core/release_core.go
-          // Withdraw vs Delete). Without this filter a withdrawn Release could
-          // still read as "latest" on the node's rel-N chip even though the
-          // pane's own release history (useReleaseActions.ts, same filter)
-          // correctly no longer shows it as active.
-          where: `SpaceID IN (${batch.map((id) => `'${id}'`).join(',')}) AND Published = true`,
-          select: 'ReleaseID,ReleaseNum,SpaceID,CreatedAt',
-        }),
-      ),
-    [releaseEnabledSpaceIdsKey],
-  );
-  const { data: allReleasesData, subscriptions: releaseSubscriptions } = useBatchedQuery<
-    ListAllReleasesApiArg,
-    ExtendedReleaseRead
-  >(releaseSpaceIdBatchArgs, useListAllReleasesQuery, { resetKey: graphKey });
+  // ── Per-node release chip ──
+  // Every release-enabled node's header chip shows ITS OWN latest release,
+  // unlike useReleaseActions' history query (selected Space only). Read off
+  // the same Releases as the live status above, so the two cannot name
+  // different Releases for one node.
   const latestReleaseBySpaceId = useMemo(() => {
     const m = new Map<string, { num: number; createdAt?: string }>();
-    for (const r of allReleasesData ?? []) {
-      const sid = r.Release?.SpaceID;
-      const num = r.Release?.ReleaseNum;
-      if (!sid || num == null) continue;
-      const existing = m.get(sid);
-      if (!existing || num > existing.num) {
-        m.set(sid, { num, createdAt: r.Release?.CreatedAt });
-      }
+    for (const [spaceId, release] of runningReleaseBySpaceId) {
+      m.set(spaceId, { num: release.releaseNum, createdAt: release.createdAt });
     }
     return m;
-  }, [allReleasesData]);
+  }, [runningReleaseBySpaceId]);
 
   // Edge pulse toward the next stage, fired once when the selected node's
   // release list gets a genuinely NEW (recently-created) latest entry — see
@@ -1601,7 +1578,6 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   const batchSubscriptions = (
     <>
       {upstreamUnitsSubscriptions}
-      {releaseSubscriptions}
     </>
   );
 

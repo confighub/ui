@@ -57,7 +57,7 @@ function node(m: Member, parent: string | null): ComponentDeployment {
     upgradeableCount: behind > 0 ? 1 : 0,
     unappliedCount: 0,
     unitCount: 1,
-    liveStatus: { syncStatus: 'Synced', healthStatus: 'Healthy' },
+    liveStatus: { Sync: 'Synced', Health: 'Healthy' },
     liveStatusProvider: 'argocd',
     ...(behind > 0 && { staleRevisionsBehind: behind }),
     labels: m.labels ?? {},

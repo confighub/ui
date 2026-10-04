@@ -35,6 +35,7 @@ import {
 import type { RolloutGateSpaceInput } from '../src/pages/x/apps/rollout/rolloutGates';
 import type { RolloutSequence, RolloutStageState } from '../src/pages/x/apps/rollout/rolloutTypes';
 import type { ChangeWorkflowSpec } from '@confighub/rtk-query';
+import { carryingReleases } from './fixtures/running-release';
 
 const BASE = 'base-1';
 
@@ -84,6 +85,7 @@ function statesOf(
     changeOrderSpaceId: BASE,
     resolvedSpaceIds: [BASE, ...reported.resolved],
     releasedSpaceIds: reported.released,
+    releases: carryingReleases(reported.released),
     restoredSpaceIds: reported.restored,
     releasedRestoredSpaceIds: undefined,
   });
@@ -106,6 +108,7 @@ function completionInput(sequence: RolloutSequence, wf: ChangeWorkflowSpec, repo
       changeOrderSpaceId: BASE,
       resolvedSpaceIds: [BASE, ...reported],
       releasedSpaceIds: reported,
+      releases: carryingReleases(reported),
       restoredSpaceIds: undefined,
       releasedRestoredSpaceIds: undefined,
     }),
@@ -113,7 +116,7 @@ function completionInput(sequence: RolloutSequence, wf: ChangeWorkflowSpec, repo
       spaceId,
       loaded: true,
       variantName: spaceId,
-      liveStatus: null,
+      release: null,
       releaseTargetId: 'target-1',
     }),
     componentName: 'app',

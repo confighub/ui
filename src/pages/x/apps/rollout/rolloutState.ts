@@ -17,7 +17,7 @@
  * for "nothing has happened yet" is the single easiest way to make this view lie.
  */
 
-import type { ChangeWorkflowSpec } from '@confighub/rtk-query';
+import type { ChangeOrderRelease, ChangeWorkflowSpec } from '@confighub/rtk-query';
 import { rolloutCopy } from './rolloutCopy';
 import {
   buildGatesForStage,
@@ -28,6 +28,7 @@ import {
 import type { RolloutGateSpaceInput } from './rolloutGates';
 import { promotableStages } from './rolloutStages';
 import type {
+  CarryingRelease,
   RolloutGate,
   RolloutProgress,
   RolloutSequence,
@@ -39,6 +40,7 @@ import type {
 } from './rolloutTypes';
 
 const EMPTY_SET: ReadonlySet<string> = new Set<string>();
+const EMPTY_RELEASES: ReadonlyMap<string, CarryingRelease> = new Map();
 
 /** What `deriveProgress` needs off the ChangeOrder. */
 export interface RolloutProgressInput {
@@ -52,6 +54,12 @@ export interface RolloutProgressInput {
   restoredSpaceIds: string[] | undefined;
   /** ChangeOrderRead.ReleasedRestoredSpaceIDs. Absent is ordinary too. */
   releasedRestoredSpaceIds: string[] | undefined;
+  /**
+   * ChangeOrderRead.Releases. Absent is ordinary too: the field is omitted when
+   * no Space has a published Release carrying the change. The server derives it
+   * only for a read that selects it or the whole row.
+   */
+  releases: ChangeOrderRelease[] | undefined;
 }
 
 /**
@@ -84,8 +92,14 @@ export interface RolloutProgressInput {
  * `undefined` for every ChangeOrder).
  */
 export function deriveProgress(input: RolloutProgressInput): RolloutProgress {
-  const { changeOrderSpaceId, resolvedSpaceIds, releasedSpaceIds, restoredSpaceIds, releasedRestoredSpaceIds } =
-    input;
+  const {
+    changeOrderSpaceId,
+    resolvedSpaceIds,
+    releasedSpaceIds,
+    restoredSpaceIds,
+    releasedRestoredSpaceIds,
+    releases,
+  } = input;
 
   if (resolvedSpaceIds === undefined || resolvedSpaceIds.length === 0) {
     return unavailableProgress();
@@ -110,6 +124,13 @@ export function deriveProgress(input: RolloutProgressInput): RolloutProgress {
      */
     restoredSpaceIds: new Set(restoredSpaceIds ?? []),
     releasedRestoredSpaceIds: new Set(releasedRestoredSpaceIds ?? []),
+    carryingReleases: new Map(
+      (releases ?? []).flatMap((entry) =>
+        entry.SpaceID
+          ? [[entry.SpaceID, { releaseId: entry.ReleaseID, releaseNum: entry.ReleaseNum }] as const]
+          : [],
+      ),
+    ),
   };
 }
 
@@ -120,6 +141,7 @@ function unavailableProgress(): RolloutProgress {
     releasedSpaceIds: EMPTY_SET,
     restoredSpaceIds: EMPTY_SET,
     releasedRestoredSpaceIds: EMPTY_SET,
+    carryingReleases: EMPTY_RELEASES,
   };
 }
 

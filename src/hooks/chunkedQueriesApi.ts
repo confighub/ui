@@ -20,10 +20,12 @@ import {
   type BaseQueryFn,
   type FetchArgs,
   type FetchBaseQueryError,
+  type FetchBaseQueryMeta,
 } from '@reduxjs/toolkit/query';
 
 import {
   confighubApi,
+  type ListAllReleasesApiResponse,
   type ListAllUnitsApiResponse,
   type SearchRevisionDataApiResponse,
   type SearchRevisionMutationSourcesApiResponse,
@@ -40,6 +42,10 @@ export interface ListAllUnitsChunkedArg {
   spaceIds: string[];
   select?: string;
   include?: string;
+}
+
+export interface SpaceIdsArg {
+  spaceIds: string[];
 }
 
 export interface UnitIdsArg {
@@ -66,16 +72,48 @@ type ChunkResult<T> = { data: T[] } | { error: FetchBaseQueryError };
 const idSet = (ids: readonly (string | undefined | null)[] | undefined): string[] =>
   Array.from(new Set((ids ?? []).filter((id): id is string => !!id))).sort();
 
+/** The response header carrying the token for a list's next page. */
+const CONTINUE_HEADER = 'ConfigHub-Continue';
+
+/** The largest page a list returns. */
+const PAGE_LIMIT = 1000;
+
+/**
+ * Every page of one list request: the request is repeated with the token from the
+ * previous response's `ConfigHub-Continue` header until a response has none. A page can
+ * hold fewer rows than the limit, or none, and still be followed by more, so the header
+ * and not the row count says when the list is done.
+ */
+async function fetchAllPages<T>(
+  args: FetchArgs,
+  baseQuery: ChunkBaseQuery,
+): Promise<{ data: T[]; error?: undefined } | { error: FetchBaseQueryError }> {
+  const rows: T[] = [];
+  let token: string | undefined;
+  do {
+    const params: Record<string, unknown> = { ...args.params, limit: PAGE_LIMIT };
+    if (token) params.continue = token;
+    const result = await baseQuery({ ...args, params });
+    if (result.error) return { error: result.error };
+    rows.push(...((result.data as T[] | undefined) ?? []));
+    const meta = result.meta as FetchBaseQueryMeta | undefined;
+    token = meta?.response?.headers.get(CONTINUE_HEADER) ?? undefined;
+  } while (token);
+  return { data: rows };
+}
+
 /**
  * One request per chunk, at most MAX_PARALLEL_CHUNKS at a time, rows concatenated in
  * chunk order. When a chunk fails, the result is the error of the first failed chunk:
- * a partial list would look complete to every caller.
+ * a partial list would look complete to every caller. With `paged`, each chunk is read
+ * to its last page.
  */
 async function fetchChunks<T>(
   column: string,
   ids: readonly string[],
   request: (where: string, count: number) => FetchArgs,
   baseQuery: ChunkBaseQuery,
+  { paged = false }: { paged?: boolean } = {},
 ): Promise<ChunkResult<T>> {
   const chunks = chunkIds(column, ids);
   const results: ({ data: T[] } | { error: FetchBaseQueryError } | undefined)[] = new Array(
@@ -86,7 +124,10 @@ async function fetchChunks<T>(
     while (next < chunks.length) {
       const index = next++;
       const chunk = chunks[index];
-      const result = await baseQuery(request(inClause(column, chunk), chunk.length));
+      const args = request(inClause(column, chunk), chunk.length);
+      const result = paged
+        ? await fetchAllPages<T>(args, baseQuery)
+        : await baseQuery(args);
       results[index] = result.error
         ? { error: result.error }
         : { data: (result.data as T[] | undefined) ?? [] };
@@ -127,6 +168,32 @@ const chunkedQueriesApi = confighubApi.injectEndpoints({
           queryArgs: { ...queryArgs, spaceIds: idSet(queryArgs.spaceIds) },
         }),
       providesTags: ['Unit'],
+    }),
+    // Every published Release of the Spaces, narrowed to what picking each Space's
+    // running Release and drawing its live status needs. Releases accumulate with every
+    // publish, so unlike the reads above one chunk can run to several pages.
+    listPublishedReleasesChunked: build.query<ListAllReleasesApiResponse, SpaceIdsArg>({
+      queryFn: (arg, _api, _extra, baseQuery) =>
+        fetchChunks<ListAllReleasesApiResponse[number]>(
+          'SpaceID',
+          idSet(arg.spaceIds),
+          (where) => ({
+            url: `/release`,
+            params: {
+              where: `${where} AND Published = true`,
+              select: 'ReleaseID,SpaceID,TargetID,ReleaseNum,ManifestDigest,CreatedAt,Published,LiveStatus',
+            },
+          }),
+          baseQuery,
+          { paged: true },
+        ),
+      serializeQueryArgs: ({ endpointName, endpointDefinition, queryArgs }) =>
+        defaultSerializeQueryArgs({
+          endpointName,
+          endpointDefinition,
+          queryArgs: { spaceIds: idSet(queryArgs.spaceIds) },
+        }),
+      providesTags: ['Release'],
     }),
     searchUnitDataChunked: build.query<SearchUnitDataApiResponse, UnitIdsArg>({
       queryFn: (arg, _api, _extra, baseQuery) =>
@@ -212,6 +279,7 @@ const chunkedQueriesApi = confighubApi.injectEndpoints({
 
 export const {
   useListAllUnitsChunkedQuery,
+  useListPublishedReleasesChunkedQuery,
   useSearchUnitDataChunkedQuery,
   useSearchRevisionDataChunkedQuery,
   useSearchUnitMutationSourcesChunkedQuery,

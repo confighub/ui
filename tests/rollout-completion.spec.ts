@@ -12,25 +12,28 @@
 import { test, expect } from './fixtures/test';
 
 import type { ChangeWorkflowSpec, ComponentRead, ExtendedSpaceRead } from '@confighub/rtk-query';
-import { LIVE_STATUS_ANNOTATION_KEY, type LiveStatus } from '../src/pages/x/apps/liveStatus';
+import type { LiveStatus } from '../src/pages/x/apps/liveStatus';
 import { buildConsoleRow, canAbortRollout, type ConsoleSpace } from '../src/pages/x/apps/rollout/rolloutsConsoleModel';
 import { stageWhereSpace } from '../src/pages/x/apps/rollout/changeOrderWorkflow';
+import { carryingReleases, runningRelease } from './fixtures/running-release';
 
 const BASE = 'base-1';
 const DEV = 'dev-1';
 const PROD = 'prod-1';
 
 const HEALTHY: LiveStatus = {
-  syncStatus: 'Synced',
-  operationPhase: 'Succeeded',
-  healthStatus: 'Healthy',
+  Reporter: 'argobot',
+  Sync: 'Synced',
+  Operation: 'Succeeded',
+  Health: 'Healthy',
 };
 
-/** What a failing production actually reports, in `cub`'s three fields. */
+/** What a failing production actually reports, in the three fields the gate reads. */
 const DEGRADED: LiveStatus = {
-  syncStatus: 'OutOfSync',
-  operationPhase: 'Failed',
-  healthStatus: 'Degraded',
+  Reporter: 'argobot',
+  Sync: 'OutOfSync',
+  Operation: 'Failed',
+  Health: 'Degraded',
 };
 
 /**
@@ -74,8 +77,8 @@ function consoleSpaces(liveStatus: LiveStatus | null, prodReleaseTargetId: strin
       component: CONSOLE_COMPONENT,
       labels: { Stage: 'prod' },
       releaseTargetId: prodReleaseTargetId,
-      annotations:
-        liveStatus === null ? {} : { [LIVE_STATUS_ANNOTATION_KEY]: JSON.stringify(liveStatus) },
+      // `null` is a published Release its deploying tool has not reported on.
+      release: runningRelease(liveStatus),
     },
   ];
 }
@@ -99,6 +102,7 @@ function consoleRow(
       spaceSlug: 'myapp-base',
       resolvedSpaceIds: [BASE, DEV, PROD],
       releasedSpaceIds: progress.released ?? [DEV, PROD],
+      releases: carryingReleases(progress.released ?? [DEV, PROD]),
       inScopeSpaceIds: [BASE, DEV, PROD],
       // The workflow rides on the row, the way the frozen copy rides on the
       // ChangeOrder it was read from.
@@ -111,10 +115,11 @@ function consoleRow(
 }
 
 /*
- * ⚠️ A CLEARED RELEASE TARGET DOES NOT CLEAR THE ANNOTATION IT LEFT BEHIND.
+ * ⚠️ A RELEASE PUBLISHED BEFORE THE TARGET WAS CLEARED IS NOT EVIDENCE.
  *
  * The server refuses a health check over a targetless Space before it reads
- * `confighub.com/live-status` at all, so such a rollout is not completed.
+ * any Release at all, so such a rollout is not completed — even handed a green
+ * Release, which is what this fixture does to prove the gate never reads it.
  */
 test('a targetless last stage reporting green is not a complete rollout', () => {
   const row = consoleRow(FINAL_HEALTHY, HEALTHY, LAST_STAGE, { prodReleaseTargetId: undefined });
@@ -131,10 +136,10 @@ test('a console row is Complete only when the final prerequisites hold', () => {
   expect(done.state).toBe('complete');
   expect(done.blocker).toBe('No blocker.');
 
-  // The same rollout, held by a `healthy` its last stage does not report. The
-  // row must not say Complete, and must not say "No blocker." either — there is
-  // no next stage whose gate could be quoted, which is how the cell used to end
-  // up reassuring a reader beside a chip that says otherwise.
+  // The same rollout, held by a `healthy` its last stage's Release has not
+  // been reported on for. The row must not say Complete, and must not say "No
+  // blocker." either — there is no next stage whose gate could be quoted, and
+  // an empty blocker would reassure a reader beside a chip that says otherwise.
   const held = consoleRow(FINAL_HEALTHY, null, LAST_STAGE);
   expect(held.state).not.toBe('complete');
   expect(held.blocker).toMatch(/myapp-prod/);
@@ -168,7 +173,7 @@ test('a final prerequisite that is not about health still reports as held', () =
  *
  * ⚠️ AND WHAT IT REPORTS DEPENDS ON WHETHER ANYBODY REPORTED. "Nobody checked"
  * and "it is failing" are two different answers, and the second is available
- * here without any gate: the last stage's own live-status annotation says so.
+ * here without any gate: the last stage's own live status says so.
  * `complete-unverified` is the answer for a stage that reported NOTHING — the
  * test below — never for one that reported a failure.
  */
@@ -191,7 +196,7 @@ test('a rollout whose last stage reports a failure is degraded, not merely unver
 });
 
 test('a last stage reporting nothing at all is unverified, not done', () => {
-  // No annotation rather than a failing one. Nothing was checked and nothing
+  // No live status rather than a failing one. Nothing was checked and nothing
   // was reported, so the row withholds the health claim instead of making it —
   // and does not manufacture a failure it has no evidence for either.
   const unverified = consoleRow(NO_FINAL, null, COMPLETED);
@@ -273,7 +278,7 @@ function threeStageRow(statusBySpaceId: Record<string, LiveStatus>, stage: strin
       component: CONSOLE_COMPONENT,
       labels: { Stage: stageName },
       releaseTargetId: `target-${stageName}`,
-      annotations: { [LIVE_STATUS_ANNOTATION_KEY]: JSON.stringify(statusBySpaceId[spaceId]) },
+      release: runningRelease(statusBySpaceId[spaceId]),
     })),
   ];
   return buildConsoleRow(
@@ -284,6 +289,7 @@ function threeStageRow(statusBySpaceId: Record<string, LiveStatus>, stage: strin
       spaceSlug: 'myapp-base',
       resolvedSpaceIds: [BASE, DEV, STAGING, PROD],
       releasedSpaceIds: [DEV, STAGING, PROD],
+      releases: carryingReleases([DEV, STAGING, PROD]),
       inScopeSpaceIds: [BASE, DEV, STAGING, PROD],
       governing: { state: 'governed', workflow: THREE_STAGES, changeWorkflowId: 'wf-1' },
       stage,

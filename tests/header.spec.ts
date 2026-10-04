@@ -1,8 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { test, expect } from './fixtures/test';
-
 import { Header } from './fixtures/header';
+import { expect, hasIdentityProvider, test } from './fixtures/test';
 import { UnitListPage } from './fixtures/unit-list-page';
 
 const TEST_BASE_URL = process.env.TEST_BASE_URL ?? '';
@@ -63,6 +62,10 @@ test.describe('header', () => {
   });
 
   test('should navigate to logout when logout is clicked', async ({ page }) => {
+    // Without an identity provider there is no end-session redirect to observe:
+    // logout clears the session and returns to /, and the fixture restores the
+    // saved session on every load, so the page signs straight back in.
+    test.skip(!hasIdentityProvider(), 'RP-initiated logout needs an identity provider');
     // Logging out ends the identity provider's session, whose endpoint redirects
     // straight back. Answer it locally so the navigation settles on the logout URL
     // and the test does not end the session the saved login belongs to.
@@ -71,10 +74,7 @@ test.describe('header', () => {
     );
 
     // Click logout and wait for navigation
-    await Promise.all([
-      page.waitForURL((url) => isLogoutUrl(url.href)),
-      header.logout(),
-    ]);
+    await Promise.all([page.waitForURL((url) => isLogoutUrl(url.href)), header.logout()]);
 
     // Verify we navigated away from the app
     const currentUrl = page.url();
@@ -94,6 +94,10 @@ test.describe('header', () => {
   });
 
   test('should offer to switch organization from the menu', async () => {
+    test.skip(
+      !hasIdentityProvider(),
+      'switching organization is a login at the identity provider',
+    );
     // The menu carries no list of organizations: picking one is the identity
     // provider's job, so the only entry is the switch action itself.
     await header.openOrganizationMenu();
@@ -103,6 +107,10 @@ test.describe('header', () => {
   });
 
   test('should start a fresh login when switching organization', async ({ page }) => {
+    test.skip(
+      !hasIdentityProvider(),
+      'switching organization is a login at the identity provider',
+    );
     // Switching is a fresh login at the identity provider that sends no
     // organization hint, so the provider asks which one. Answer the authorize
     // request locally so the test asserts the URL the UI navigates to without
@@ -121,6 +129,8 @@ test.describe('header', () => {
     expect(scopes).toContain('organization');
     expect(scopes.some((scope) => scope.startsWith('organization:'))).toBe(false);
     expect(authorizeUrl.searchParams.get('code_challenge_method')).toBe('S256');
-    expect(authorizeUrl.searchParams.get('redirect_uri')).toBe(`${new URL(TEST_BASE_URL).origin}/`);
+    expect(authorizeUrl.searchParams.get('redirect_uri')).toBe(
+      `${new URL(TEST_BASE_URL).origin}/`,
+    );
   });
 });

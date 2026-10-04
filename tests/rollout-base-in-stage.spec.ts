@@ -13,8 +13,8 @@
  * one. Membership-for-gating is not membership-for-evidence, and neither is
  * membership-for-action:
  *
- *   EVIDENCE — the reported-health channel read the base's live-status
- *              annotation as this rollout's health and withdrew Promote.
+ *   EVIDENCE — the reported-health channel read the base's live status as
+ *              this rollout's health and withdrew Promote.
  *   ACTION   — the promote and release call sites wrote into the base, which
  *              `cub`'s own loop skips by name.
  *   POSITION — `viewerPositionIn` placed the base in the synthetic source row,
@@ -25,7 +25,8 @@
 import { test, expect } from './fixtures/test';
 
 import type { ChangeWorkflowSpec, ComponentRead, ExtendedSpaceRead } from '@confighub/rtk-query';
-import { LIVE_STATUS_ANNOTATION_KEY, type LiveStatus } from '../src/pages/x/apps/liveStatus';
+import type { LiveStatus } from '../src/pages/x/apps/liveStatus';
+import { carryingReleases, runningRelease } from './fixtures/running-release';
 import { stageWhereSpace } from '../src/pages/x/apps/rollout/changeOrderWorkflow';
 import { promotionTargets } from '../src/pages/x/apps/rollout/rolloutStages';
 import {
@@ -36,12 +37,12 @@ import {
   type ConsoleSpace,
 } from '../src/pages/x/apps/rollout/rolloutsConsoleModel';
 
-const HEALTHY: LiveStatus = { syncStatus: 'Synced', operationPhase: 'Succeeded', healthStatus: 'Healthy' };
-/** The shape argobot leaves behind on a Space nothing reconciles any more. */
-const STALE_FAILING: LiveStatus = {
-  syncStatus: 'OutOfSync',
-  operationPhase: 'Failed',
-  healthStatus: 'Degraded',
+const HEALTHY: LiveStatus = { Sync: 'Synced', Operation: 'Succeeded', Health: 'Healthy' };
+/** What argobot reports when the workload is failing. */
+const FAILING: LiveStatus = {
+  Sync: 'OutOfSync',
+  Operation: 'Failed',
+  Health: 'Degraded',
 };
 
 const COMPONENT: ComponentRead = { ComponentID: '11111111-1111-1111-1111-111111111111', Slug: 'gdx' };
@@ -62,8 +63,8 @@ function space(
     component: COMPONENT,
     labels: stage === null ? {} : { Stage: stage },
     releaseTargetId: targeted ? `target-${spaceId}` : undefined,
-    annotations:
-      liveStatus === null ? undefined : { [LIVE_STATUS_ANNOTATION_KEY]: JSON.stringify(liveStatus) },
+    // Only a Space with a release Target runs a Release that can report.
+    release: targeted ? runningRelease(liveStatus) : undefined,
   };
 }
 
@@ -87,6 +88,7 @@ function rowFor(
       spaceSlug: 'gdx-base',
       governing: { state: 'governed', workflow, changeWorkflowId: 'wf-1' },
       ...progress,
+      releases: carryingReleases(progress.releasedSpaceIds),
     },
     spaces,
     stageSpaces,
@@ -112,15 +114,15 @@ const BASE_IS_FIRST_STAGE: ChangeWorkflowSpec = {
   ],
 };
 
-// ── A1. THE BASE'S OWN ANNOTATION IS NOT THIS ROLLOUT'S HEALTH ──────────────
+// ── A1. THE BASE'S OWN LIVE STATUS IS NOT THIS ROLLOUT'S HEALTH ─────────────
 
 /*
  * ⚠️ THE REGRESSION. `reachedStageIndices` keeps the SOURCE ROW out of the
  * reported-health channel by verdict, and that guard does nothing once a real
- * stage's selector covers the base. The base has no release target — nothing
- * reconciles it, so its annotation is stale by construction — and the reported
- * channel read it as evidence, `degradedReason` took it, `deriveConsoleState`
- * answered 'degraded' and `actionFor` offered `Resolve`.
+ * stage's selector covers the base. The base's workload is not what any
+ * promotion asks about, and the reported channel read it as evidence,
+ * `degradedReason` took it, `deriveConsoleState` answered 'degraded' and
+ * `actionFor` offered `Resolve`.
  *
  * `cub` promotes here. `prod` is not the first stage, so `validateStageEntryGates`
  * runs over `dev`'s Spaces — and it never asks anything of the base's workload,
@@ -131,7 +133,7 @@ test('A1 — the base reporting Degraded from inside a stage does not withdraw P
     BASE_IS_FIRST_STAGE,
     [[BASE, DEV], [PROD]],
     [
-      space(BASE, 'gdx-base', 'Development', STALE_FAILING, false),
+      space(BASE, 'gdx-base', 'Development', FAILING, true),
       space(DEV, 'gdx-dev', 'Development', HEALTHY, true),
       space(PROD, 'gdx-prod', 'Production', HEALTHY, true),
     ],
@@ -153,7 +155,7 @@ test('A1 — a whole-component stage is not degraded by its own base', () => {
     WHOLE_COMPONENT,
     [[BASE, DEV]],
     [
-      space(BASE, 'gdx-base', null, STALE_FAILING, false),
+      space(BASE, 'gdx-base', null, FAILING, true),
       space(DEV, 'gdx-dev', null, HEALTHY, true),
     ],
     { resolvedSpaceIds: [BASE], inScopeSpaceIds: [BASE, DEV] },
@@ -168,7 +170,7 @@ test('A1 — a whole-component stage is not degraded by its own base', () => {
 });
 
 /*
- * THE OTHER HALF, so the fix cannot be "stop reading annotations". A Space that
+ * THE OTHER HALF, so the fix cannot be "stop reading live status". A Space that
  * is NOT the base and IS running this change still reports, from inside the
  * same stage the base sits in.
  */
@@ -178,7 +180,7 @@ test('A1 — a peer of the base in the same stage still reports its failure', ()
     [[BASE, DEV], [PROD]],
     [
       space(BASE, 'gdx-base', 'Development', HEALTHY, false),
-      space(DEV, 'gdx-dev', 'Development', STALE_FAILING, false),
+      space(DEV, 'gdx-dev', 'Development', FAILING, true),
       space(PROD, 'gdx-prod', 'Production', HEALTHY, true),
     ],
     { resolvedSpaceIds: [BASE, DEV], releasedSpaceIds: [DEV], inScopeSpaceIds: [BASE, DEV, PROD] },
@@ -193,7 +195,7 @@ test('A1 — a peer of the base in the same stage still reports its failure', ()
  * a statement about the Space the change was authored in, which is what the
  * display channel exists to make — and `reachedStageIndices` already keeps the
  * source row out of the row's verdict. What changed is its reach inside a real
- * stage, where the same annotation was being read as evidence about a
+ * stage, where the same status was being read as evidence about a
  * promotion.
  */
 test('A1 — the base still reports on its own segment', () => {
@@ -201,7 +203,7 @@ test('A1 — the base still reports on its own segment', () => {
     BASE_IS_FIRST_STAGE,
     [[BASE, DEV], [PROD]],
     [
-      space(BASE, 'gdx-base', 'Development', STALE_FAILING, false),
+      space(BASE, 'gdx-base', 'Development', FAILING, true),
       space(DEV, 'gdx-dev', 'Development', HEALTHY, true),
       space(PROD, 'gdx-prod', 'Production', HEALTHY, true),
     ],

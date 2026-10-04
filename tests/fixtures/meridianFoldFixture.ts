@@ -9,6 +9,7 @@
 // uat, prod) -> the Deployments of that environment. Every id, slug and
 // display name is the Space name, so a spec can name a node directly.
 import type { ComponentDeployment } from '../../src/pages/x/apps/componentTypes';
+import type { LiveStatus } from '../../src/pages/x/apps/liveStatus';
 
 export type MeridianComponentName = 'cert-manager' | 'traefik' | 'checkout' | 'fraud-scoring';
 
@@ -17,7 +18,18 @@ export type MeridianComponentName = 'cert-manager' | 'traefik' | 'checkout' | 'f
  * [name, environment, Region, Department ('' = no label), Stale units,
  *  Unreleased units, Gated units, sync status, health status, unit count].
  */
-type Row = [string, string, string, string, number, number, number, string, string, number];
+type Row = [
+  string,
+  string,
+  string,
+  string,
+  number,
+  number,
+  number,
+  NonNullable<LiveStatus['Sync']>,
+  NonNullable<LiveStatus['Health']>,
+  number,
+];
 
 const ENV_ORDER = ['dev', 'test', 'uat', 'prod'];
 const ROOT_ID = 'base';
@@ -1130,7 +1142,7 @@ function deployment(row: Row): ComponentDeployment {
     upgradeableCount: stale,
     unappliedCount: unreleased + gated,
     unitCount: units,
-    liveStatus: { source: 'argobot', syncStatus: sync, healthStatus: health },
+    liveStatus: { Reporter: 'argobot', Sync: sync, Health: health },
     liveStatusProvider: 'argocd',
     labels: {
       Region: region,

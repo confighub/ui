@@ -82,8 +82,8 @@ function node(
 function leaf(parent: string, stage: number, spec: Leaf): ComponentDeployment {
   const is = new Set(spec.is ?? []);
   const liveStatus: LiveStatus = {
-    syncStatus: is.has('outOfSync') ? 'OutOfSync' : 'Synced',
-    healthStatus: is.has('degraded')
+    Sync: is.has('outOfSync') ? 'OutOfSync' : 'Synced',
+    Health: is.has('degraded')
       ? 'Degraded'
       : is.has('progressing')
         ? 'Progressing'
@@ -723,7 +723,7 @@ test.describe('a recovered card stays 60 s; a selected card never folds', () => 
   ]);
   const recovered = broken.map((d) =>
     d.deploymentId === 'flaky'
-      ? { ...d, liveStatus: { syncStatus: 'Synced', healthStatus: 'Healthy' } }
+      ? { ...d, liveStatus: { Sync: 'Synced' as const, Health: 'Healthy' as const } }
       : d,
   );
   const noHolds: ReadonlyMap<string, number> = new Map();

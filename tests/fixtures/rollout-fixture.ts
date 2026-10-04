@@ -81,14 +81,13 @@ import { type Page, expect } from '@playwright/test';
 import type {
   ChangeWorkflow,
   ChangeWorkflowStage,
+  ExtendedReleaseRead,
+  ReleaseLiveStatus,
 } from '@confighub/rtk-query';
 
 import { ApiHelper } from './api-helper';
 import { RandomSlugGenerator } from './utils/random-slug-generator';
 import { hubApi } from './test';
-
-/** The annotation argobot writes, and the one three of the real gates read. */
-const LIVE_STATUS_ANNOTATION = 'confighub.com/live-status';
 
 /**
  * The stages this fixture's rollouts are governed by.
@@ -222,16 +221,17 @@ const MERGE_PATCH = { 'Content-Type': 'application/merge-patch+json' };
 const CLONE_READBACK_TIMEOUT_MS = 45_000;
 
 /**
- * What a Space's live status reports.
+ * What a Space's live status reports: the `LiveStatus` on the Release it is
+ * running, which is what the server's `Healthy` gate reads.
  *
- * `validatePreviousStageForPromotion` reads this annotation and makes FOUR
- * separate checks of it, each with its own message, so each value here buys a
- * distinct negative-path test rather than a single generic "unhealthy" one:
+ * The gate makes separate checks of it, each with its own message, so each
+ * value here buys a distinct negative-path test rather than a single generic
+ * "unhealthy" one:
  *
- *   absent     -> "live-status not found for Variant '<v>'"
- *   outofsync  -> "Variant '<v>' is not synced"
- *   failed     -> "has not succeeded in deployment"
- *   unhealthy  -> "is not healthy"
+ *   absent     -> "Variant '<v>' has no live status for release <n> yet"
+ *   outofsync  -> "Variant '<v>' release <n> is not synced (OutOfSync)"
+ *   failed     -> "Variant '<v>' release <n> failed to deploy"
+ *   unhealthy  -> "Variant '<v>' release <n> is not healthy (Degraded)"
  *   green      -> passes all four
  */
 export type LiveHealth = 'green' | 'outofsync' | 'failed' | 'unhealthy' | 'absent';
@@ -327,11 +327,18 @@ export interface RolloutFixture {
   /**
    * Rewrite one Space's live status, or remove it (`absent`).
    *
-   * This is how the four live-status gate messages are reached: the gate reads
-   * the annotation, so changing it changes the verdict without touching
-   * anything else. Cheap negative-path coverage.
+   * Written onto the Release the Space is running, as a deploying tool would,
+   * and remembered for the Releases `releaseStage` publishes after it. This is
+   * how the live status gate messages are reached: changing it changes the
+   * verdict without touching anything else. Cheap negative-path coverage.
    */
   setLiveStatus(spaceName: string, health: LiveHealth): Promise<void>;
+  /**
+   * The live status of the Release the Space is running, read back from the
+   * server: `null` when that Release carries none, `undefined` when the Space
+   * has published no Release.
+   */
+  liveStatusOf(spaceName: string): Promise<ReleaseLiveStatus | null | undefined>;
   /**
    * Where the ChangeOrder says it has got to.
    *
@@ -412,22 +419,59 @@ function render(resource: ResourceName, at: { version: string; memory: string })
 }
 
 /**
- * The annotation argobot writes. Returns null for `absent`, which is its own
- * gate case — a missing annotation is not the same as an unhealthy one.
+ * The `LiveStatus` argobot writes onto a Release. Returns null for `absent`,
+ * which is its own gate case — a Release nobody has reported on is not the
+ * same as an unhealthy one.
  */
-function liveStatus(spaceSlug: string, health: LiveHealth): string | null {
+function liveStatus(spaceSlug: string, health: LiveHealth): ReleaseLiveStatus | null {
   if (health === 'absent') return null;
 
-  return JSON.stringify({
-    source: 'argobot',
-    app: spaceSlug,
-    syncStatus: health === 'outofsync' ? 'OutOfSync' : 'Synced',
-    healthStatus: health === 'unhealthy' ? 'Degraded' : 'Healthy',
-    operationPhase: health === 'failed' ? 'Failed' : 'Succeeded',
-    revision: 'sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1',
-    message: health === 'green' ? 'successfully synced' : `reported ${health}`,
-    observedAt: '2026-01-01T00:00:00Z',
+  return {
+    Reporter: 'argobot',
+    DataSource: spaceSlug,
+    Sync: health === 'outofsync' ? 'OutOfSync' : 'Synced',
+    Health: health === 'unhealthy' ? 'Degraded' : 'Healthy',
+    Operation: health === 'failed' ? 'Failed' : 'Succeeded',
+    ...(health === 'failed' ? { ReporterOperation: 'Error' } : {}),
+    Message: health === 'green' ? 'successfully synced' : `reported ${health}`,
+    ObservedAt: '2026-01-01T00:00:00Z',
+  };
+}
+
+/** The published Release a Space is running: the one with the highest number. */
+async function latestPublishedRelease(spaceId: string): Promise<ExtendedReleaseRead | undefined> {
+  const resp = await hubApi.get(`/api/space/${spaceId}/release`, {
+    params: { where: 'Published = true' },
   });
+  if (!resp.ok()) {
+    throw new Error(`Failed to list the releases of ${spaceId}: ${resp.status()} ${await resp.text()}`);
+  }
+  const releases = (await resp.json()) as ExtendedReleaseRead[];
+  return releases.reduce<ExtendedReleaseRead | undefined>(
+    (latest, entry) =>
+      (entry.Release?.ReleaseNum ?? 0) > (latest?.Release?.ReleaseNum ?? 0) ? entry : latest,
+    undefined,
+  );
+}
+
+/**
+ * Report `health` on the Release a Space is running, as argobot does once it
+ * has deployed it. `absent` clears the status. A Space that has published no
+ * Release has nothing to report on, so nothing is written.
+ */
+async function reportLiveStatus(spaceId: string, spaceSlug: string, health: LiveHealth): Promise<void> {
+  const release = (await latestPublishedRelease(spaceId))?.Release;
+  if (!release?.ReleaseID) return;
+  const resp = await hubApi.patch(`/api/space/${spaceId}/release/${release.ReleaseID}`, {
+    headers: { 'Content-Type': 'application/merge-patch+json' },
+    data: { LiveStatus: liveStatus(spaceSlug, health) },
+  });
+  if (!resp.ok()) {
+    throw new Error(
+      `Failed to report live status on ${spaceSlug} release ${release.ReleaseNum}: ` +
+        `${resp.status()} ${await resp.text()}`
+    );
+  }
 }
 
 /**
@@ -633,6 +677,8 @@ export async function buildRolloutFixture(
   const seeded: ResourceName[] = resources === 'full' ? ALL_RESOURCES : ['app'];
   const TOPOLOGY = topologyFor(labelBaseStage, stageLabels, stageDepth);
   const spaces: Record<string, RolloutSpace> = {};
+  /** What each deployment Space's deploying tool reports, written onto each Release it publishes. */
+  const healthByName: Record<string, LiveHealth> = {};
   const createdSpaceIds: string[] = [];
 
   const teardown = async () => {
@@ -685,9 +731,9 @@ export async function buildRolloutFixture(
       const annotations: Record<string, string> = {};
       const upstream = node.upstream === undefined ? undefined : spaces[node.upstream];
       if (upstream !== undefined) annotations.UpstreamSpaceID = upstream.spaceId;
-      // The base has no live status: nothing deploys it.
-      const health = node.upstream ? liveStatus(slug, node.health) : undefined;
-      if (health) annotations[LIVE_STATUS_ANNOTATION] = health as string;
+      // The base has no live status: nothing deploys it. A deployment's is
+      // reported on each Release `releaseStage` publishes.
+      if (node.upstream) healthByName[node.name] = node.health;
 
       const created = await api.createSpace({
         space: {
@@ -1241,14 +1287,20 @@ export async function buildRolloutFixture(
             `No Space named '${spaceName}' in this fixture. Known: ${Object.keys(spaces).join(', ')}`
           );
         }
-        const value = liveStatus(space.slug, health);
-        await api.updateSpace({
-          spaceId: space.spaceId,
-          // A merge-patch null removes the key, which is what `absent` means —
-          // writing an empty string would leave a present-but-unparseable
-          // annotation and test a different gate path entirely.
-          space: { Annotations: { [LIVE_STATUS_ANNOTATION]: value } } as never,
-        });
+        healthByName[spaceName] = health;
+        await reportLiveStatus(space.spaceId, space.slug, health);
+      },
+
+      async liveStatusOf(spaceName: string) {
+        const space = spaces[spaceName];
+        if (!space) {
+          throw new Error(
+            `No Space named '${spaceName}' in this fixture. Known: ${Object.keys(spaces).join(', ')}`
+          );
+        }
+        const release = (await latestPublishedRelease(space.spaceId))?.Release;
+        if (!release) return undefined;
+        return release.LiveStatus ?? null;
       },
 
       async releaseStage(stage: string) {
@@ -1297,6 +1349,12 @@ export async function buildRolloutFixture(
             }
             await page.waitForTimeout(500);
           }
+
+          // The deploying tool reports on the Release it now runs. A new
+          // Release starts with no status of its own, whatever the last one's was.
+          const name = Object.keys(spaces).find((key) => spaces[key] === space);
+          const health = name === undefined ? undefined : healthByName[name];
+          if (health !== undefined) await reportLiveStatus(space.spaceId, space.slug, health);
         }
       },
 

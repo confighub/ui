@@ -31,11 +31,11 @@ const UNIT_SELECT =
   'HeadRevision.RevisionID,HeadRevision.CreatedAt,HeadRevision.Description,LastReleasedRevision.RevisionID';
 const UNIT_INCLUDE = 'SpaceID,TargetID,UpstreamUnitID,HeadRevisionNum,LastReleasedRevisionNum';
 
-/** The ids a `<column> IN ('a', 'b')` clause asks for. */
+/** The ids a `<column> IN ('a', 'b')` clause asks for, whatever is conjoined after it. */
 function idsIn(where: string): string[] {
   const open = where.indexOf('(');
   return where
-    .slice(open + 1, -1)
+    .slice(open + 1, where.indexOf(')', open))
     .split(', ')
     .map((quoted) => quoted.slice(1, -1));
 }
@@ -46,7 +46,7 @@ interface Sent {
   ids: string[];
 }
 
-type Respond = (sent: Sent) => { status: number; rows: unknown[] };
+type Respond = (sent: Sent) => { status: number; rows: unknown[]; headers?: Record<string, string> };
 
 const NativeRequest = globalThis.Request;
 const nativeFetch = globalThis.fetch;
@@ -73,10 +73,10 @@ test.beforeAll(() => {
     // Let the other chunk workers start before this one answers.
     await new Promise((resolve) => setTimeout(resolve, 2));
     inFlight--;
-    const { status, rows } = respond(s);
+    const { status, rows, headers = {} } = respond(s);
     return new Response(JSON.stringify(status === 200 ? rows : { message: 'boom' }), {
       status,
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...headers },
     });
   }) as typeof fetch;
 });
@@ -255,6 +255,60 @@ test.describe('the unit and revision reads by id', () => {
   });
 });
 
+test.describe('listPublishedReleasesChunked (the Releases the Spaces run)', () => {
+  test('reads each chunk to its last page, by the continue token', async () => {
+    const { run } = await newStore();
+    const ids = uuids(3, 80_000);
+    // The first page of the read ends with a token; the page it names ends without one.
+    respond = (s) =>
+      s.url.searchParams.get('continue') === null
+        ? { status: 200, rows: [{ page: 1 }], headers: { 'ConfigHub-Continue': 'page-2' } }
+        : { status: 200, rows: [{ page: 2 }] };
+    const result = await run<{ page: number }[]>('listPublishedReleasesChunked', { spaceIds: ids });
+    expect(result.error).toBeUndefined();
+    expect(result.data!.map((r) => r.page)).toEqual([1, 2]);
+    expect(sent).toHaveLength(2);
+    expect(sent[1].url.searchParams.get('continue')).toBe('page-2');
+    for (const s of sent) {
+      expect(s.url.pathname).toBe('/api/release');
+      expect(s.where).toMatch(/^SpaceID IN \(.*\) AND Published = true$/);
+      expect(s.url.searchParams.get('select')).toContain('LiveStatus');
+      expect(Number(s.url.searchParams.get('limit'))).toBe(DEFAULT_MAX_IN_ITEMS);
+    }
+    expectEachIdOnce([sent[0]], ids);
+  });
+
+  test('a page with no rows but a token is not the end', async () => {
+    const { run } = await newStore();
+    respond = (s) =>
+      s.url.searchParams.get('continue') === null
+        ? { status: 200, rows: [], headers: { 'ConfigHub-Continue': 'more' } }
+        : { status: 200, rows: [{ page: 2 }] };
+    const result = await run<unknown[]>('listPublishedReleasesChunked', { spaceIds: uuids(1, 81_000) });
+    expect(result.data).toHaveLength(1);
+  });
+
+  test('a failed page fails the whole read', async () => {
+    const { run } = await newStore();
+    respond = (s) =>
+      s.url.searchParams.get('continue') === null
+        ? { status: 200, rows: [{ page: 1 }], headers: { 'ConfigHub-Continue': 'page-2' } }
+        : { status: 500, rows: [] };
+    const result = await run<unknown[]>('listPublishedReleasesChunked', { spaceIds: uuids(1, 82_000) });
+    expect(result.data).toBeUndefined();
+    expect(result.error).toMatchObject({ status: 500 });
+  });
+
+  test('1,500 Spaces: split into several requests under the limits', async () => {
+    const { run } = await newStore();
+    const ids = uuids(1500, 83_000);
+    await run('listPublishedReleasesChunked', { spaceIds: ids });
+    expect(sent.length).toBeGreaterThan(1);
+    expectUnderLimits(sent);
+    expectEachIdOnce(sent, ids);
+  });
+});
+
 test.describe('a skipped read', () => {
   // A hook with `skip: true` (for example useUnitDataMap before any Unit is
   // known) makes RTK run the endpoint's serializeQueryArgs on skipToken. A
@@ -265,6 +319,7 @@ test.describe('a skipped read', () => {
     'searchRevisionDataChunked',
     'searchUnitMutationSourcesChunked',
     'searchRevisionMutationSourcesChunked',
+    'listPublishedReleasesChunked',
   ]) {
     test(`${endpoint}: selecting skipToken does not throw and sends nothing`, async () => {
       const { store, endpoints } = await newStore();

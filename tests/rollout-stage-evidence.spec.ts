@@ -17,7 +17,8 @@
 import { test, expect } from './fixtures/test';
 
 import type { ChangeWorkflowSpec, ComponentRead, ExtendedSpaceRead } from '@confighub/rtk-query';
-import { LIVE_STATUS_ANNOTATION_KEY, type LiveStatus } from '../src/pages/x/apps/liveStatus';
+import type { LiveStatus } from '../src/pages/x/apps/liveStatus';
+import { carryingReleases, runningRelease } from './fixtures/running-release';
 import { stageWhereSpace } from '../src/pages/x/apps/rollout/changeOrderWorkflow';
 import {
   actionFor,
@@ -28,16 +29,16 @@ import {
 } from '../src/pages/x/apps/rollout/rolloutsConsoleModel';
 
 const HEALTHY: LiveStatus = {
-  syncStatus: 'Synced',
-  operationPhase: 'Succeeded',
-  healthStatus: 'Healthy',
+  Sync: 'Synced',
+  Operation: 'Succeeded',
+  Health: 'Healthy',
 };
 
 /** What argobot writes over a workload that is on fire. */
 const DEGRADED: LiveStatus = {
-  syncStatus: 'OutOfSync',
-  operationPhase: 'Failed',
-  healthStatus: 'Degraded',
+  Sync: 'OutOfSync',
+  Operation: 'Failed',
+  Health: 'Degraded',
 };
 
 const COMPONENT: ComponentRead = { ComponentID: '11111111-1111-1111-1111-111111111111', Slug: 'myapp' };
@@ -57,8 +58,8 @@ function consoleSpaces(baseStatus: LiveStatus | null, members: SpaceFixture[]): 
       spaceId: BASE,
       slug: 'myapp-base',
       component: COMPONENT,
-      annotations:
-        baseStatus === null ? {} : { [LIVE_STATUS_ANNOTATION_KEY]: JSON.stringify(baseStatus) },
+      releaseTargetId: 'target-base',
+      release: runningRelease(baseStatus),
     },
     ...members.map(({ spaceId, stage, liveStatus, targeted = true }) => ({
       spaceId,
@@ -66,8 +67,8 @@ function consoleSpaces(baseStatus: LiveStatus | null, members: SpaceFixture[]): 
       component: COMPONENT,
       labels: { Stage: stage },
       releaseTargetId: targeted ? `target-${spaceId}` : undefined,
-      annotations:
-        liveStatus === null ? {} : { [LIVE_STATUS_ANNOTATION_KEY]: JSON.stringify(liveStatus) },
+      // Only a Space with a release Target runs a Release that can report.
+      release: targeted ? runningRelease(liveStatus) : undefined,
     })),
   ];
 }
@@ -94,6 +95,7 @@ function rowFor(
       spaceSlug: 'myapp-base',
       resolvedSpaceIds: progress.resolved,
       releasedSpaceIds: progress.released,
+      releases: carryingReleases(progress.released),
       inScopeSpaceIds: [BASE, ...stageSpaceIds.flat()],
       governing: { state: 'governed', workflow, changeWorkflowId: 'wf-1' },
       stage,
@@ -261,7 +263,7 @@ test('the left-behind stage is named, not an unrelated workloads health', () => 
  * one — it is where the change was authored — so `cub` never evaluates it for
  * any stage and no refusal it could produce exists.
  *
- * Judging it anyway meant one annotation on one Space withdrew Promote from
+ * Judging it anyway meant one live status on one Space withdrew Promote from
  * every stage of every rollout out of that base, daily, over a workload the
  * promotion does not depend on. A gate that refuses correct actions routinely
  * is a gate operators learn to override without reading, which costs far more

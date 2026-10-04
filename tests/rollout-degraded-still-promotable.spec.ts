@@ -17,7 +17,7 @@
  * reports `OutOfSync`. `validateStageEntryGates` reaches
  * `evaluatePrerequisites` with nothing to check
  * (`internal/views/promote_gates.go`), so `cub` promotes into `staging`
- * without ever reading the annotation.
+ * without ever reading its live status.
  *
  * So the row must say the workload is failing — state, blocker sentence and
  * `dev`'s own segment — AND still offer Promote. Before this rule was
@@ -35,7 +35,6 @@
 import { type Page } from '@playwright/test';
 import { test, expect, newAuthorizedPage } from './fixtures/test';
 
-import { LIVE_STATUS_ANNOTATION_KEY } from '../src/pages/x/apps/liveStatus';
 import { rolloutCopy } from '../src/pages/x/apps/rollout/rolloutCopy';
 import { rolloutsConsoleCopy } from '../src/pages/x/apps/rollout/rolloutsConsoleCopy';
 
@@ -68,9 +67,9 @@ test.describe('a degraded stage under a workflow that asks for no health check',
 
     await fx.promoteStage(REACHED_STAGE);
     await fx.releaseStage(REACHED_STAGE);
-    // Written by hand because no argobot runs against this server. `outofsync`
-    // is the first axis `checkSpaceIsHealthy` reads, so it is the axis the
-    // blocker sentence will name.
+    // Written by hand onto the Release `dev` now runs, because no argobot runs
+    // against this server. `outofsync` is the first axis `checkSpaceIsHealthy`
+    // reads, so it is the axis the blocker sentence will name.
     await fx.setLiveStatus(REACHED_STAGE, 'outofsync');
   });
 
@@ -94,7 +93,7 @@ test.describe('a degraded stage under a workflow that asks for no health check',
      *   3. `staging` has NOT taken it — promoting `dev` queues triggers that
      *      can carry a change onward, and if that happened the next stage would
      *      be `prod` and this case would not be under test at all;
-     *   4. `dev`'s annotation really does report a failure.
+     *   4. the Release `dev` is running really does report a failure.
      */
     const api = new ApiHelper(fixturePage);
     const order = await api.getChangeOrder({
@@ -125,11 +124,10 @@ test.describe('a degraded stage under a workflow that asks for no health check',
       ).not.toContain(space.spaceId);
     }
 
-    const devSpace = await api.getSpaceById(fx.spaces[REACHED_STAGE].spaceId);
     expect(
-      devSpace.Annotations?.[LIVE_STATUS_ANNOTATION_KEY],
+      (await fx.liveStatusOf(REACHED_STAGE))?.Sync,
       'dev reports no live status, so there is no failure for the row to display',
-    ).toContain('OutOfSync');
+    ).toBe('OutOfSync');
 
     // ══ NOW THE SCREEN ════════════════════════════════════════════════════
     await page.setViewportSize({ width: 1440, height: 900 });

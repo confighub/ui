@@ -40,7 +40,16 @@ export interface SavedSession {
   accessToken: string;
   /** The ConfigHub instance the UI talks to: its /config.json apiBaseUrl, else its origin. */
   apiUrl: string;
+  /** Whether that instance signs people in through an identity provider (it advertises AuthIssuer). */
+  hasIdentityProvider: boolean;
 }
+
+/**
+ * Whether the instance under test has an identity provider, as global setup found it.
+ * A spec asserting identity-provider behaviour (organization switching, RP-initiated
+ * logout) skips without one.
+ */
+export const hasIdentityProvider = (): boolean => savedSession()?.hasIdentityProvider ?? true;
 
 const savedSession = (): SavedSession | undefined =>
   existsSync(SESSION_FILE)
