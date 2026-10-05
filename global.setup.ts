@@ -50,9 +50,9 @@ async function discoverInstance(
 /**
  * The sign-in link for an instance with no identity provider: a single-use ticket
  * from `cub auth browser-session`, signed in as cub's current context, on the UI
- * under test. The link cub prints names the server's origin (or the context's UI
- * URL); the ticket is what matters, so it is moved onto TEST_BASE_URL's origin,
- * which also covers a UI served apart from the server.
+ * under test. The link cub prints names the UI the server is configured with, or
+ * the server's origin; the ticket is what matters, so it is moved onto
+ * TEST_BASE_URL's origin, which also covers a UI the server does not know about.
  */
 function cubSignInLink(baseOrigin: string): string {
   const cub = process.env.TEST_CUB || 'cub';

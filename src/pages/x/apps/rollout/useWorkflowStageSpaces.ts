@@ -3,15 +3,14 @@
 
 /**
  * Resolves each ChangeWorkflow stage's `WhereSpace` to the Spaces it
- * currently selects -- server-side, via the same `where` query param
- * `apiListSpaces` sends in `public/cmd/cub/variant_promote.go`. No
- * client-side expression evaluation.
+ * currently selects -- server-side, via the Space list's `where` query
+ * param. No client-side expression evaluation.
  *
- * The query is `stageWhereSpace(stage, component)`, not the stage's raw
- * selector: a stage selects within ONE component, and which one is the
- * ChangeOrder's rather than the definition's. Without that term every stage
- * would resolve to every component's Spaces at that stage, and the rollout
- * would gate on -- and promote into -- unrelated components.
+ * The query is the stage's own selector (`stageWhereSpace`), and what it
+ * returns is intersected with the ChangeOrder's `InScopeSpaceIDs`
+ * (`changeOrderStageMembers`): the rollout's scope is the ChangeOrder's, so a
+ * workflow shared by several components still resolves each rollout to its own
+ * Spaces, and a stage never reaches a Space the change is not headed for.
  *
  * NO `select`, DELIBERATELY -- not the `"*"` the CLI's own `apiListSpaces`
  * calls pass. That `"*"` is a CLI-internal sentinel `handleSelectParameter`
@@ -27,7 +26,9 @@
  * different ChangeOrder, a workflow edit), and React forbids a variable
  * number of hook calls. RTK Query's normalized cache still dedupes identical
  * `{ where }` args across every rollout sharing a workflow revision, so this
- * costs one request per DISTINCT whereSpace string, not per ChangeOrder.
+ * costs one request per DISTINCT whereSpace string, not per ChangeOrder. A
+ * stage naming no selector costs none: it takes the in-scope Spaces as they
+ * are.
  *
  * ⚠️ LOADING IS DERIVED FROM WHICH KEY THE STATE HOLDS, NOT FROM A `setState`
  * IN THE EFFECT — the same rule `useDistinctStageSpaces` states at length.
@@ -44,11 +45,10 @@ import { useEffect, useRef, useState } from 'react';
 import {
   useLazyListSpacesQuery,
   type ChangeWorkflowStage,
-  type ComponentRead,
   type ExtendedSpaceRead,
 } from '@confighub/rtk-query';
 
-import { stageSelectsWholeComponent, stageWhereSpace } from './changeOrderWorkflow';
+import { changeOrderStageMembers, stageSelectsWholeScope, stageWhereSpace } from './changeOrderWorkflow';
 
 /**
  * The key a resolution is recorded and compared under.
@@ -57,22 +57,25 @@ import { stageSelectsWholeComponent, stageWhereSpace } from './changeOrderWorkfl
  * contract, not a detail. The hook reports itself loading by comparing the key
  * it is being asked for against the key it last resolved, and the empty case is
  * recorded under `''`. A key built from anything else in that case — the
- * component's own Space ids, say — can never equal the one recorded, so the
- * hook reports loading for the rest of its life and the surface above it shows
- * a skeleton that never clears.
+ * in-scope Space ids, say — can never equal the one recorded, so the hook
+ * reports loading for the rest of its life and the surface above it shows a
+ * skeleton that never clears.
+ *
+ * Nothing to resolve is no stages, or no Space in scope: a ChangeOrder headed
+ * nowhere has empty stages whatever they select.
  *
  * Exported so that contract is tested rather than assumed, and used by both the
  * key and the effect's guard so there is one expression to get right.
  */
 export function stageResolutionKey(
-  component: ComponentRead | undefined,
   stages: ChangeWorkflowStage[] | undefined,
-  componentSpaceIds: readonly string[],
+  inScopeSpaceIds: readonly string[] | undefined,
 ): string {
-  if (component === undefined || stages === undefined || stages.length === 0) return '';
+  if (stages === undefined || stages.length === 0) return '';
+  if (inScopeSpaceIds === undefined || inScopeSpaceIds.length === 0) return '';
   return [
-    [...componentSpaceIds].sort().join(','),
-    ...stages.map((s) => `${component.ComponentID}::${s.Name}::${s.WhereSpace ?? ''}`),
+    [...inScopeSpaceIds].sort().join(','),
+    ...stages.map((s) => `${s.Name}::${stageWhereSpace(s)}`),
   ].join('|');
 }
 
@@ -85,23 +88,16 @@ export interface WorkflowStageSpacesResult {
 const EMPTY: Record<string, ExtendedSpaceRead[]> = {};
 
 /**
- * @param component The component the ChangeOrder belongs to, conjoined onto
- * every stage's selector. Undefined resolves nothing, deliberately: a rollout whose
- * base Space has no Component reaches here as `undefined`, and a stage
- * resolved without the component term would pull in every OTHER component's
- * Spaces at that stage. Resolving nothing is the honest answer; the caller
- * reports the missing label rather than rendering a rollout that is not there.
- * @param componentSpaceIds Every Space of that component, as the caller already
- * holds them. A stage naming no selector takes exactly this set, so it is
- * answered from here and costs no request — the caller has the list on screen
- * already, and asking the server to repeat it would be a query per stage for
- * data in hand. An id list is a complete answer because the only field read
- * downstream is the id (`buildRolloutSequence`).
+ * @param stages The stages of the ChangeOrder's own copy of its workflow.
+ * @param inScopeSpaceIds The ChangeOrder's `InScopeSpaceIDs`: every stage is
+ * narrowed to these, and a stage naming no selector takes exactly these, so it
+ * is answered from here and costs no request. An id list is a complete answer
+ * because the only field read downstream is the id (`buildRolloutSequence`).
+ * Empty or absent resolves nothing: the ChangeOrder is headed for no Space.
  */
 export function useWorkflowStageSpaces(
   stages: ChangeWorkflowStage[] | undefined,
-  component: ComponentRead | undefined,
-  componentSpaceIds: readonly string[],
+  inScopeSpaceIds: readonly string[] | undefined,
 ): WorkflowStageSpacesResult {
   const [trigger] = useLazyListSpacesQuery();
   /** The stage key `value` was resolved from, so loading is a comparison rather than a flag. */
@@ -115,15 +111,11 @@ export function useWorkflowStageSpaces(
   // previous one's stage queries are still in the air).
   const generationRef = useRef(0);
 
-  // The component is part of the key, not just the query: the same stages
-  // resolve to different Spaces under a different component. With no component
-  // the key is empty, which is the same "nothing to resolve" the empty stage
-  // list produces -- reported as resolved rather than as forever loading.
-  // The in-memory set is part of the key too: a stage answered from it resolves
-  // differently once the caller's Space list arrives, and a key that ignored it
-  // would report the empty first render as the settled answer.
-  const componentSpacesKey = [...componentSpaceIds].sort().join(',');
-  const stagesKey = stageResolutionKey(component, stages, componentSpaceIds);
+  // The in-scope set is part of the key, not just the intersection: the same
+  // stages resolve to different Spaces for a ChangeOrder headed elsewhere, and a
+  // key that ignored it would report the empty first render as the settled
+  // answer.
+  const stagesKey = stageResolutionKey(stages, inScopeSpaceIds);
 
   useEffect(() => {
     // Bumped unconditionally, before the empty check, so ANY effect
@@ -136,7 +128,7 @@ export function useWorkflowStageSpaces(
     // by its own reckoning could record `''` for a key that was not `''` — and
     // then the two never match again. That is not hypothetical: it is what
     // left rollouts with no workflow waiting forever on work already done.
-    if (stagesKey === '' || component === undefined) {
+    if (stagesKey === '') {
       // The empty state is a RESOLUTION of the empty key, recorded as one.
       // Leaving the previous key in place here would report a hook that has
       // nothing left to resolve as loading, forever.
@@ -145,24 +137,21 @@ export function useWorkflowStageSpaces(
       return;
     }
     setError(undefined);
-    const componentSpaces: ExtendedSpaceRead[] = componentSpacesKey === ''
-      ? []
-      : componentSpacesKey.split(',').map((SpaceID) => ({ Space: { SpaceID } }) as ExtendedSpaceRead);
     Promise.all(
       (stages ?? []).map((stage) =>
-        // A stage with no selector of its own takes every Space of the
-        // component, which the caller already holds. Answered from there.
-        stageSelectsWholeComponent(stage)
-          ? Promise.resolve([stage.Name, componentSpaces] as const)
+        // A stage with no selector of its own takes every in-scope Space,
+        // which the caller already holds. Answered from there.
+        stageSelectsWholeScope(stage)
+          ? Promise.resolve([stage.Name, changeOrderStageMembers(stage, undefined, inScopeSpaceIds)] as const)
           : // No `select`: the generated API only accepts a comma-separated field
             // list or omission -- "all fields are returned" when omitted. `'*'`
             // is not a wildcard here and the server 400s on it ("field '*' does
             // not exist on entity type Space"), which silently emptied every
             // stage's resolved Spaces (caught by the `.catch` below) and made
             // every rollout render as though no stage selected anything.
-            trigger({ where: stageWhereSpace(stage, component) })
+            trigger({ where: stageWhereSpace(stage) })
               .unwrap()
-              .then((spaces) => [stage.Name, spaces] as const),
+              .then((spaces) => [stage.Name, changeOrderStageMembers(stage, spaces, inScopeSpaceIds)] as const),
       ),
     )
       .then((entries) => {
@@ -177,8 +166,8 @@ export function useWorkflowStageSpaces(
         // a skeleton that never clears.
         setResolved({ key: stagesKey, value: EMPTY });
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on stagesKey, which encodes the stages, the component and the in-memory Space set, not on any array identity
-  }, [stagesKey, componentSpacesKey, trigger]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on stagesKey, which encodes the stages and the in-scope Space set, not on any array identity
+  }, [stagesKey, trigger]);
 
   return { stageSpaces: resolved.value, isLoading: resolved.key !== stagesKey, error };
 }

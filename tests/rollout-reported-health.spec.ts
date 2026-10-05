@@ -72,8 +72,8 @@ const WORKFLOW: ChangeWorkflowSpec = {
 
 function row(devTargeted: boolean, devStatus: LiveStatus, stage?: string) {
   const stageSpaces: Record<string, ExtendedSpaceRead[]> = {
-    [stageWhereSpace(WORKFLOW.Stages[0], COMPONENT)]: [{ Space: { SpaceID: DEV } } as ExtendedSpaceRead],
-    [stageWhereSpace(WORKFLOW.Stages[1], COMPONENT)]: [{ Space: { SpaceID: PROD } } as ExtendedSpaceRead],
+    [stageWhereSpace(WORKFLOW.Stages[0])]: [{ Space: { SpaceID: DEV } } as ExtendedSpaceRead],
+    [stageWhereSpace(WORKFLOW.Stages[1])]: [{ Space: { SpaceID: PROD } } as ExtendedSpaceRead],
   };
   const spaces: ConsoleSpace[] = [
     { spaceId: BASE, slug: 'myapp-base', component: COMPONENT },
@@ -161,13 +161,14 @@ test('a stage reporting Degraded never draws as done, targetless or not', () => 
  * The server permits abort in every state including Released, and `cub
  * variant demote` rolls a finished rollout back as readily as an in-flight
  * one, so completion is not a reason to withdraw the controls — undoing a
- * landed release needs an entry point in the UI. What this test pins is the
- * reported failure deciding the CHIP and nothing else. `workflowComplete` is
- * true here and not a term of the answer.
+ * landed release needs an entry point in the UI. The chip follows the
+ * server's "Completed", and the reported failure is named in the Blocker cell.
+ * `workflowComplete` is true here and not a term of the answer.
  */
-test('a reported failure decides the chip, not whether the rollout can be ended', () => {
+test('a reported failure on a finished rollout is named, and the rollout can be ended', () => {
   const built = row(false, FAILING, 'Completed');
-  expect(built.state).toBe('degraded');
+  expect(built.state).toBe('complete-unverified');
+  expect(built.blocker).toContain('myapp-dev');
   expect(built.workflowComplete).toBe(true);
   expect(canAbortRollout(built)).toBe(true);
   // The same failing report, on a rollout the workflow has NOT finished: the

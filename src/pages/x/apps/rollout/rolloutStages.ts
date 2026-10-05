@@ -12,7 +12,6 @@
 
 import type { ChangeWorkflowSpec } from '@confighub/rtk-query';
 
-import { LABEL_COMPONENT } from '../componentData';
 import type { ExtendedSpaceRead } from '@confighub/rtk-query';
 import type { RolloutSequence, RolloutSequenceProblem, RolloutStage } from './rolloutTypes';
 
@@ -35,13 +34,6 @@ import type { RolloutSequence, RolloutSequenceProblem, RolloutStage } from './ro
 export const SOURCE_STAGE_ID = '__rollout_source__';
 
 /**
- * Any mention of the component label in a stage's selector, whatever operator
- * it is used with: what a stage may not do is name the component at all, not
- * name it with a particular comparison.
- */
-const COMPONENT_PREDICATE = new RegExp(`\\bLabels\\.${LABEL_COMPONENT}\\b`, 'i');
-
-/**
  * Build the rollout sequence.
  *
  * `sourceSpaceId` is the Space the ChangeOrder resides in. It always gets its
@@ -50,9 +42,9 @@ const COMPONENT_PREDICATE = new RegExp(`\\bLabels\\.${LABEL_COMPONENT}\\b`, 'i')
  *
  * ⚠️ THE SOURCE ROW IS A SECOND VIEW OF THAT SPACE, NEVER A CLAIM ON IT. It is
  * drawn so the reader can see where the change came from; it does not take the
- * base Space out of the workflow. `stageSpaces` in
- * `public/cmd/cub/variant_promote.go` resolves a stage's selector and filters
- * by scope and nothing else, so a stage whose selector covers the base Space
+ * base Space out of the workflow. The server's promotion resolves a stage's
+ * selector and filters by scope and nothing else, so a stage whose selector
+ * covers the base Space
  * covers it — and that Space is then one of the Variants every entry gate to
  * the next stage quantifies over. Withholding it here made the UI decide
  * different questions from `cub` in both directions at once: a stage selecting
@@ -60,27 +52,17 @@ const COMPONENT_PREDICATE = new RegExp(`\\bLabels\\.${LABEL_COMPONENT}\\b`, 'i')
  * base sharing its stage with a released peer vanished from the gate, which
  * offered a promotion `cub` refuses.
  *
- * `inScopeSpaceIds` is the ChangeOrder's own `InScopeSpaceIDs`, and it is the
- * third term of stage membership: a stage covers its selector's Spaces, within
- * the ChangeOrder's component, that the ChangeOrder is actually headed for. The
- * first two terms are already in `stageSpaces` — they were the query — so this
- * is where the third is applied, mirroring `stageSpaces` in
- * `public/cmd/cub/variant_promote.go`. Applied here rather than in the queries
- * because those are shared by every rollout on the page: two ChangeOrders under
- * one workflow send one request and resolve to different stages from it.
- *
- * Empty means no restriction, not an empty stage: a ChangeOrder given no list
- * says nothing about where it is headed.
+ * `stageSpaces` is each stage's membership as `changeOrderStageMembers` gives
+ * it: the stage's selector narrowed to the ChangeOrder's `InScopeSpaceIDs`,
+ * the same rule the server applies. Nothing is narrowed again here.
  */
 export function buildRolloutSequence(
   workflow: ChangeWorkflowSpec,
   stageSpaces: Record<string, ExtendedSpaceRead[]>,
   sourceSpaceId: string,
-  inScopeSpaceIds: readonly string[] | undefined,
 ): RolloutSequence {
   const problems: RolloutSequenceProblem[] = [];
   const realStages: RolloutStage[] = [];
-  const inScope = inScopeSpaceIds !== undefined && inScopeSpaceIds.length > 0 ? new Set(inScopeSpaceIds) : undefined;
 
   /*
    * `Stages` is `json:",omitempty"` on the Go model, so the generated TS
@@ -97,26 +79,10 @@ export function buildRolloutSequence(
     for (const s of resolved) {
       const id = s.Space?.SpaceID;
       if (id === undefined) continue;
-      if (inScope !== undefined && !inScope.has(id)) continue;
       spaceIds.push(id);
     }
     if (spaceIds.length === 0) {
       problems.push({ kind: 'stage-selects-nothing', stageName: stageDef.Name });
-    }
-    /*
-     * The component belongs to the ChangeOrder, and `stageWhereSpace` conjoins
-     * it onto every stage's selector. A stage that restates it either agrees
-     * and changes nothing, or disagrees and selects no Space at all — which
-     * reads as a rollout with nothing in it rather than as a broken workflow.
-     *
-     * REPORTED, NOT REFUSED. The server rejects such a stage when the workflow
-     * is written (`validateStageWhereSpace`), so anything reaching here is a
-     * workflow the server already accepted; a screen that declines to draw it
-     * helps nobody. The sequence is built either way and the note says what is
-     * wrong with it.
-     */
-    if (COMPONENT_PREDICATE.test(stageDef.WhereSpace ?? '')) {
-      problems.push({ kind: 'stage-names-component', stageName: stageDef.Name });
     }
     realStages.push({
       id: stageDef.Name,

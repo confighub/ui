@@ -91,8 +91,8 @@ function consoleRow(
 ) {
   const wf = workflowWithFinal(final);
   const stageSpaces: Record<string, ExtendedSpaceRead[]> = {
-    [stageWhereSpace(wf.Stages[0], CONSOLE_COMPONENT)]: [{ Space: { SpaceID: DEV } } as ExtendedSpaceRead],
-    [stageWhereSpace(wf.Stages[1], CONSOLE_COMPONENT)]: [{ Space: { SpaceID: PROD } } as ExtendedSpaceRead],
+    [stageWhereSpace(wf.Stages[0])]: [{ Space: { SpaceID: DEV } } as ExtendedSpaceRead],
+    [stageWhereSpace(wf.Stages[1])]: [{ Space: { SpaceID: PROD } } as ExtendedSpaceRead],
   };
   return buildConsoleRow(
     {
@@ -174,12 +174,13 @@ test('a final prerequisite that is not about health still reports as held', () =
  * ⚠️ AND WHAT IT REPORTS DEPENDS ON WHETHER ANYBODY REPORTED. "Nobody checked"
  * and "it is failing" are two different answers, and the second is available
  * here without any gate: the last stage's own live status says so.
- * `complete-unverified` is the answer for a stage that reported NOTHING — the
- * test below — never for one that reported a failure.
+ * The chip follows the server's "Completed" either way; a reported failure is
+ * named in the Blocker cell and drawn on the stage's segment.
  */
-test('a rollout whose last stage reports a failure is degraded, not merely unverified', () => {
+test('a finished rollout whose last stage reports a failure reads complete and names the failure', () => {
   const failing = consoleRow(NO_FINAL, DEGRADED, COMPLETED);
-  expect(failing.state).toBe('degraded');
+  // The server called it finished, so the chip says so — as `cub` does.
+  expect(failing.state).toBe('complete-unverified');
   // Named, so the reader knows which Space to open.
   expect(failing.blocker).toMatch(/myapp-prod/);
   expect(failing.stages.at(-1)?.segmentTone).toBe('degraded');
@@ -195,15 +196,17 @@ test('a rollout whose last stage reports a failure is degraded, not merely unver
   expect(canAbortRollout(failing)).toBe(true);
 });
 
-test('a last stage reporting nothing at all is unverified, not done', () => {
+test('a last stage reporting nothing at all reads Complete, unverified', () => {
   // No live status rather than a failing one. Nothing was checked and nothing
-  // was reported, so the row withholds the health claim instead of making it —
-  // and does not manufacture a failure it has no evidence for either.
+  // was reported, so the row withholds the health claim in its label and its
+  // Blocker cell — and does not manufacture a failure it has no evidence for.
+  // The segment is done: the server calls the rollout finished, and a
+  // finished rollout fills every step of its path.
   const unverified = consoleRow(NO_FINAL, null, COMPLETED);
   expect(unverified.state).toBe('complete-unverified');
   expect(unverified.blocker).not.toBe('No blocker.');
   expect(unverified.blocker).toMatch(/no health check on its last stage/);
-  expect(unverified.stages.at(-1)?.segmentTone).toBe('unverified');
+  expect(unverified.stages.at(-1)?.segmentTone).toBe('done');
 });
 
 /*
@@ -262,7 +265,7 @@ const THREE_STAGES: ChangeWorkflowSpec = {
 function threeStageRow(statusBySpaceId: Record<string, LiveStatus>, stage: string) {
   const stageSpaces: Record<string, ExtendedSpaceRead[]> = {};
   [DEV, STAGING, PROD].forEach((spaceId, i) => {
-    stageSpaces[stageWhereSpace(THREE_STAGES.Stages[i], CONSOLE_COMPONENT)] = [
+    stageSpaces[stageWhereSpace(THREE_STAGES.Stages[i])] = [
       { Space: { SpaceID: spaceId } } as ExtendedSpaceRead,
     ];
   });

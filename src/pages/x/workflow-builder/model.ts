@@ -12,7 +12,6 @@
  */
 
 import { BUILTIN_NAMES, COMPLETE_LABEL, IMPLICIT_GATE } from './vocabulary';
-import { COMPONENT_IN_SELECTOR_MESSAGE, namesComponent } from './api/componentPredicate';
 import type { SpaceRow, StageResolution } from './api/resolution/stageResolution';
 import type { MessagePart, Problem, StageProblem, Stage, Workflow } from './types';
 
@@ -306,27 +305,11 @@ export function definitionFaults(wf: UnresolvedWorkflow): Problem[] {
 
 /**
  * Everything a save would refuse, plus what only a resolved selector can add.
- *
- * The component check is client-side on purpose and is the only judgement about
- * expression content that is: `listSpaces` resolves `Labels.Component = 'x'`
- * happily, so live resolution never reports it, and only a check here can say so
- * before the save is refused.
  */
 export function problems(wf: UnresolvedWorkflow, resolutions?: Resolutions): Problem[] {
   const out = definitionFaults(wf);
 
   wf.stages.forEach((st) => {
-    if (namesComponent(st.where)) {
-      out.push({
-        sev: 'problem',
-        msg: [
-          { text: 'Stage ' },
-          { text: (st.name || '').trim() || 'this Stage', code: true },
-          { text: ` names Labels.Component in its selector: ${COMPONENT_IN_SELECTOR_MESSAGE}` },
-        ],
-        go: { kind: 'stage', id: st.id },
-      });
-    }
     const r = stageResolutionFault(st, resolutions?.get(st.id));
     if (r) out.push({ sev: r.sev, msg: r.msg, go: { kind: 'stage', id: st.id } });
   });

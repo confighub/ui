@@ -17,9 +17,8 @@
  * SYNTHETIC, LIKE THE SOURCE ROW, AND FOR THE SAME REASON. `SOURCE_STAGE_ID`
  * (`rolloutStages.ts`) gives the LEADING node an identity without inventing a
  * stage in the workflow; `COMPLETE_STAGE_ID` does the same for the TRAILING
- * one. Neither is counted in `stagesDone`/`stagesTotal` — those are stage
- * counts, and a step that is not a stage would report every rollout one step
- * short of its own total.
+ * one. Both are counted in `stagesDone`/`stagesTotal`, which count the steps
+ * of the promotion path as it is drawn (`stagePathProgress`).
  *
  * PURE. No MUI, no JSX, no React: the tone ladder below is the whole claim this
  * step makes, and it is testable only while nothing needs a renderer to reach
@@ -68,11 +67,10 @@ export const COMPLETE_SEGMENT_STAGE_ID = COMPLETE_STEP_LABEL;
  * The tones this step can take — a subset of `SegmentTone`, never a parallel
  * union. `ready` and `progressing` are deliberately absent: they describe a
  * promotion under way, and nothing is ever promoted INTO the Complete step.
+ * `unverified` is absent too: a complete rollout draws every step done, and
+ * its label says when the last stage's health went unchecked.
  */
-export type CompleteStepTone = Extract<
-  SegmentTone,
-  'restored' | 'gated' | 'done' | 'unverified' | 'degraded' | 'blocked'
->;
+export type CompleteStepTone = Extract<SegmentTone, 'restored' | 'gated' | 'done' | 'degraded' | 'blocked'>;
 
 /** Exactly the fields the step reads — the same `Pick` shape `actionFor` uses. */
 export type CompleteStepRow = Pick<ConsoleRow, 'state' | 'nextStageId' | 'restored'>;
@@ -80,8 +78,8 @@ export type CompleteStepRow = Pick<ConsoleRow, 'state' | 'nextStageId' | 'restor
 /**
  * The step's state in words, for the tones the row state does not already name.
  *
- * `done`, `unverified` and `degraded` reuse `rolloutsConsoleCopy.states` rather
- * than restating it, so the step and the row's own chip cannot come to word one
+ * `done` and `degraded` reuse `rolloutsConsoleCopy.states` rather than
+ * restating it, so the step and the row's own chip cannot come to word one
  * verdict two ways.
  */
 const UNREACHED_LABEL = 'Not reached yet';
@@ -92,7 +90,6 @@ const STEP_LABELS: Record<CompleteStepTone, string> = {
   restored: RESTORED_LABEL,
   gated: UNREACHED_LABEL,
   done: rolloutsConsoleCopy.states.complete.label,
-  unverified: rolloutsConsoleCopy.states['complete-unverified'].label,
   degraded: rolloutsConsoleCopy.states.degraded.label,
   blocked: OUTSTANDING_LABEL,
 };
@@ -115,6 +112,10 @@ const STEP_LABELS: Record<CompleteStepTone, string> = {
  */
 export function completeStepLabel(row: CompleteStepRow): string {
   if (isCompleteStepAbandoned(row)) return rolloutsConsoleCopy.states.aborted.label;
+  // Drawn done like `complete`, so the words are what keep the caveat.
+  if (completeStepTone(row) === 'done' && row.state === 'complete-unverified') {
+    return rolloutsConsoleCopy.states['complete-unverified'].label;
+  }
   return STEP_LABELS[completeStepTone(row)];
 }
 
@@ -141,13 +142,16 @@ export function isCompleteStepAbandoned(row: CompleteStepRow): boolean {
  *    green `deriveSpaceVerdict` refuses by asking about restores first. A
  *    rollout that was taken back out is not complete, whatever the
  *    row state says.
- * 2. THEN "HAS IT EVEN GOT HERE". `nextStageId !== null` means a stage is still
+ * 2. THEN THE SERVER'S "FINISHED". `complete` / `complete-unverified` follow
+ *    the ChangeOrder's own `Stage` and `State`, so the step reads done even when
+ *    a stage is still named as next — a Space added to an earlier stage after
+ *    the rollout finished, which the row's Blocker cell names. Both read
+ *    `done`; `completeStepLabel` says which.
+ * 3. THEN "HAS IT EVEN GOT HERE". `nextStageId !== null` means a stage is still
  *    ahead, so `Final` has not been evaluated against anything: the checklist is
  *    not failing, it is unasked. `gated` is the tone for a step the change has
- *    not reached — the same tone every unreached stage takes.
- * 3. ONLY THEN THE ROW STATE. `complete` / `complete-unverified` / `degraded`
- *    are the three readings that say something about the last stage itself, and
- *    they map across unchanged.
+ *    not reached — the same tone every unreached stage takes. `degraded` maps
+ *    across unchanged only past this point, where it is about the last stage.
  * 4. THEN "CAN IT STILL FINISH AT ALL". `aborted` is a dead ChangeOrder — the
  *    state `deriveConsoleState` answers above every other derivation, from
  *    `AbortedReason` or from a restored stage. It has reached the last stage
@@ -161,9 +165,8 @@ export function isCompleteStepAbandoned(row: CompleteStepRow): boolean {
  */
 export function completeStepTone(row: CompleteStepRow): CompleteStepTone {
   if (row.restored) return 'restored';
+  if (row.state === 'complete' || row.state === 'complete-unverified') return 'done';
   if (row.nextStageId !== null) return 'gated';
-  if (row.state === 'complete') return 'done';
-  if (row.state === 'complete-unverified') return 'unverified';
   if (row.state === 'degraded') return 'degraded';
   if (row.state === 'aborted') return 'restored';
   return 'blocked';

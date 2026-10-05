@@ -63,10 +63,10 @@ interface RowOptions {
 function row({ resolved, withTargets, baseInDev = false, stage }: RowOptions) {
   const devSpaceIds = baseInDev ? [BASE, DEV] : [DEV];
   const stageSpaces: Record<string, ExtendedSpaceRead[]> = {
-    [stageWhereSpace(WORKFLOW.Stages[0], COMPONENT)]: devSpaceIds.map(
+    [stageWhereSpace(WORKFLOW.Stages[0])]: devSpaceIds.map(
       (id) => ({ Space: { SpaceID: id } }) as ExtendedSpaceRead,
     ),
-    [stageWhereSpace(WORKFLOW.Stages[1], COMPONENT)]: [
+    [stageWhereSpace(WORKFLOW.Stages[1])]: [
       { Space: { SpaceID: PROD } } as ExtendedSpaceRead,
     ],
   };

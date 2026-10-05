@@ -314,11 +314,11 @@ export const AppsComponentLayout = ({
     [updateParams],
   );
 
-  // Any tree node click (any depth, any field) opens the graph of every
-  // Space under it — `resolveNodeGraphTarget` decides whether that's
-  // indistinguishable from opening a whole Component (`?app=`) or a
-  // narrower node graph (`?group=`). Overview (`path.length === 0`) is
-  // handled by the caller directly.
+  // Any tree node click (any depth, any field) opens a graph —
+  // `resolveNodeGraphTarget` decides whether that's a whole Component
+  // (`?app=`: every Component-level node, and any node whose Spaces are
+  // exactly one whole Component) or a narrower node graph (`?group=`).
+  // Overview (`path.length === 0`) is handled by the caller directly.
   const handleNodeOpen = useCallback(
     (path: string[]) => {
       const target = resolveNodeGraphTarget(appSpaces, levels, path, valueCtx);

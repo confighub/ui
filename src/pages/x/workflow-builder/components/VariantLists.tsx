@@ -8,9 +8,8 @@
  * produce.
  *
  * ⚠️ NO PER-ROW REASON. Saying why a particular variant is left out would need
- * a client-side `where` matcher, which this codebase has already been bitten
- * by once (see `componentPredicate.ts`) and does not build a second time. A
- * row names the variant; it does not explain the filter.
+ * a client-side `where` matcher, which this codebase does not build. A row
+ * names the variant; it does not explain the filter.
  *
  * `StageRail` keeps its own mini `where`/count readout, which this duplicates.
  * That duplication is accepted, not fixed here.

@@ -49,6 +49,7 @@ const ORDER: ConsoleState[] = [
   'ready',
   'degraded',
   'blocked',
+  'held',
   'progressing',
   'complete',
   'complete-unverified',

@@ -142,7 +142,7 @@ function rowFor(
 ): ConsoleRow {
   const stageSpaces: Record<string, ExtendedSpaceRead[]> = {};
   workflow.Stages.forEach((stage, i) => {
-    stageSpaces[stageWhereSpace(stage, COMPONENT)] = stageSpaceIds[i].map(
+    stageSpaces[stageWhereSpace(stage)] = stageSpaceIds[i].map(
       (id) => ({ Space: { SpaceID: id } }) as ExtendedSpaceRead,
     );
   });
@@ -198,8 +198,8 @@ const UNGATED_TWO_STAGE: ChangeWorkflowSpec = {
  *
  * cub:  REFUSE
  *   $ cub variant promote --change-order gdx-base/co-gated --target-stage dev --dry-run
- *   Failed: unable to promote to stage 'dev', Variant 'base' cannot have any
- *           released changes, missing ReleaseTargetID
+ *   Failed: Variant 'base' has no ReleaseTargetID, so its health cannot be
+ *           determined
  */
 test('case 1 — targetless previous stage with a green status: cub refuses, UI blocks', () => {
   const row = rowFor(
@@ -226,11 +226,12 @@ test('case 1 — targetless previous stage with a green status: cub refuses, UI 
 /*
  * ══ CASE 2 ═════════════════════════════════════════════════════════════════
  * Same, but the status says DEGRADED. `cub` never reads it: the missing
- * ReleaseTargetID is answered first.
+ * ReleaseTargetID is answered first, by Healthy. Released passes the base,
+ * which has nothing to release.
  *
  * cub:  REFUSE
- *   Failed: unable to promote to stage 'dev', Variant 'base' cannot have any
- *           released changes, missing ReleaseTargetID
+ *   Failed: Variant 'base' has no ReleaseTargetID, so its health cannot be
+ *           determined
  */
 test('case 2 — targetless previous stage reporting degraded: cub refuses, UI blocks', () => {
   const row = rowFor(
@@ -310,8 +311,8 @@ test('case 2b — the ungated hop out of the base stage: cub passes, UI passes',
  *
  * cub:  REFUSE
  *   $ cub variant promote --change-order gdx-base/co-gated --target-stage dev --dry-run
- *   Failed: unable to promote to stage 'dev', Variant 'base' cannot have any
- *           released changes, missing ReleaseTargetID
+ *   Failed: Variant 'base' has no ReleaseTargetID, so its health cannot be
+ *           determined
  */
 test('case 15 — a base sharing its stage is judged, not skipped: cub refuses, UI blocks', () => {
   const row = rowFor(
@@ -335,7 +336,10 @@ test('case 15 — a base sharing its stage is judged, not skipped: cub refuses, 
    */
   expect(ui.decision).toBe('BLOCK'); // AGREES with cub's REFUSE
   expect(ui.reasons.join(' ')).toContain('gdx-base has no release target');
-  expect(row.state).toBe('blocked');
+  // The check that holds it is Healthy, not Released (a targetless Space passes
+  // `Released` on taking the change), so the chip does not claim a missing
+  // Release.
+  expect(row.state).toBe('held');
   expect(actionFor(row).label).toBe('Resolve'); // not 'Promote'
 });
 
@@ -447,8 +451,8 @@ test('case 5 — three-stage rollout mid-flight, everything healthy: cub passes,
  *
  * cub:  REFUSE
  *   $ cub variant promote --change-order gdx-base/co-rolloutsource --target-stage dev --dry-run
- *   Failed: unable to promote to stage 'dev', Variant 'base' cannot have any
- *           released changes, missing ReleaseTargetID
+ *   Failed: Variant 'base' has no ReleaseTargetID, so its health cannot be
+ *           determined
  */
 test('case 6 — a stage named __rollout_source__ does not disarm the next stage', () => {
   const workflow: ChangeWorkflowSpec = {
@@ -507,25 +511,20 @@ test('case 7 — no Final prerequisites: cub calls a degraded last stage complet
     'Completed',
   );
   /*
-   * ⚠️ DIVERGENCE, DECLARED IN THE MODEL, AND KEPT. `degradedReason` is asked
-   * ABOVE the `complete` return, so a reported-degraded last stage outranks the
-   * workflow's own reading. `cub changeorder get` prints `Completed true` for
-   * exactly this rollout. It is the safer direction — the failure is shown
-   * rather than hidden behind a Complete chip — and the blocker names the Space
-   * to open.
+   * AGREES WITH `cub`: the chip says what `cub changeorder get` says. No `Final`
+   * asked about the last stage's health, so the chip is the unverified half of
+   * Complete, and the failing workload is still named in the Blocker cell and
+   * drawn on its segment.
    */
-  expect(row.state).toBe('degraded'); // cub: Completed true
+  expect(row.state).toBe('complete-unverified'); // cub: Completed true
   expect(row.blocker).toContain('gdx-prod-1');
+  expect(row.stages.at(-1)?.segmentTone).toBe('degraded');
 
   /*
-   * WHAT THE DIVERGENCE MUST NOT COST. It is a DISPLAY choice, so it decides
-   * what the row SAYS and not what the reader may do. `workflowComplete`
-   * carries `cub`'s reading past the health chip, and both controls follow it
-   * rather than the chip:
+   * And the controls follow the same reading:
    *
    *  - the ACTION is `Open`, not `Resolve`. There is no stage left to enter, so
-   *    the gate channel offers no promotion, and the red chip withdraws nothing
-   *    it would otherwise have offered;
+   *    the gate channel offers no promotion;
    *  - ENDING THE ROLLOUT IS offered, because `cub` permits it: `cub variant
    *    demote` requires an `AbortedReason` and nothing else, so a finished
    *    rollout is exactly as abortable and exactly as rollback-able as an
@@ -571,16 +570,16 @@ test('case 8 — Final Healthy over a degraded last stage: cub says not complete
 
 /*
  * ══ CASE 9 — A PREVIOUS STAGE WITH AN EMPTY `WhereSpace` ═══════════════════
- * An empty selector is not an empty stage: `stageWhereSpace` falls back to the
- * component alone, so the stage covers EVERY Space of the component — including
- * ones further down the rollout that have not taken the change.
+ * An empty selector is not an empty stage: it covers EVERY Space the
+ * ChangeOrder is headed for — including ones further down the rollout that
+ * have not taken the change.
  *
  * cub:  REFUSE
  *   $ cub variant promote --change-order gdx-base/co-emptywhere --target-stage dev --dry-run
  *   Failed: unable to promote to stage 'dev', Variant 'dev' has not taken
  *           change order 'co-emptywhere'
  */
-test('case 9 — an empty WhereSpace widens the previous stage to the whole component', () => {
+test('case 9 — an empty WhereSpace widens the previous stage to the whole scope', () => {
   const workflow: ChangeWorkflowSpec = {
     Stages: [
       { Name: 'everything', WhereSpace: '' },
@@ -590,7 +589,7 @@ test('case 9 — an empty WhereSpace widens the previous stage to the whole comp
   const row = rowFor(
     workflow,
     consoleSpaces(HEALTHY, [{ spaceId: 'dev-1', stage: 'Development', liveStatus: HEALTHY }]),
-    // The empty selector returns every Space of the component, base included.
+    // The empty selector covers every in-scope Space, base included.
     [[BASE, 'dev-1'], ['dev-1']],
     { resolved: [BASE], released: [] },
   );

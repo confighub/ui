@@ -8,8 +8,8 @@
 // WHY THIS FILE IS THE WHOLE TEST FOR THE STEP. The Complete step is a
 // SYNTHETIC segment: it corresponds to no rollout stage, so nothing in the
 // stage derivations can vouch for it. Its only claim is the tone it picks, and
-// that claim is a precedence ladder — `restored` above `nextStageId` above
-// `state`. A ladder read in the wrong order is silent: every rung still
+// that claim is a precedence ladder — `restored`, then a complete `state`,
+// then `nextStageId`, then the rest of `state`. A ladder read in the wrong order is silent: every rung still
 // returns a legal `SegmentTone`, and the page still draws a segment. The two
 // reversals that actually change what a reader is told are asserted by name
 // below:
@@ -17,9 +17,11 @@
 //   - a rollout that was taken back out must read `restored`, not the `done`
 //     its `state === 'complete'` would otherwise earn — the false green
 //     `deriveSpaceVerdict` already refuses for the same reason.
-//   - a rollout with a stage still ahead of it must read `gated`, whatever
-//     `state` says, because `Final.Prerequisites` are evaluated over the LAST
-//     stage and a rollout that has not reached it has not been asked.
+//   - a rollout the server calls finished reads complete, even when a stage
+//     is still named as next: the page says what `cub changeorder get` says.
+//   - any other rollout with a stage still ahead of it must read `gated`,
+//     because `Final.Prerequisites` are evaluated over the LAST stage and a
+//     rollout that has not reached it has not been asked.
 //   - an `aborted` rollout must NOT fall to the catch-all: it can never satisfy
 //     `Final`, so the treatment that says "there is something to do here" is a
 //     lie about it. It takes the terminal treatment and its own word.
@@ -74,20 +76,25 @@ test.describe('completeStepTone — the precedence ladder, rung by rung', () => 
     );
   });
 
-  test('a stage still ahead reads `gated`, whatever the row state says', () => {
+  test('a stage still ahead reads `gated`, unless the row is complete', () => {
     expect(completeStepTone(row({ state: 'ready', nextStageId: 'prod' }))).toBe('gated');
     expect(completeStepTone(row({ state: 'progressing', nextStageId: 'staging' }))).toBe('gated');
     // The reversal that matters: `state` must NOT be consulted first here. A
     // degraded middle stage is a problem in a stage, not a verdict on the
     // final checklist — nothing has evaluated that yet.
     expect(completeStepTone(row({ state: 'degraded', nextStageId: 'prod' }))).toBe('gated');
-    // Nor may a `complete` state reached before the last stage claim `done`.
-    expect(completeStepTone(row({ state: 'complete', nextStageId: 'prod' }))).toBe('gated');
+    // A complete row reads complete: the server called the rollout finished,
+    // and the stage left behind is named in the row's Blocker cell instead.
+    expect(completeStepTone(row({ state: 'complete', nextStageId: 'prod' }))).toBe('done');
+    expect(completeStepTone(row({ state: 'complete-unverified', nextStageId: 'prod' }))).toBe('done');
   });
 
   test('at the last stage, the row state decides', () => {
     expect(completeStepTone(row({ state: 'complete' }))).toBe('done');
-    expect(completeStepTone(row({ state: 'complete-unverified' }))).toBe('unverified');
+    // Drawn done like `complete`: a complete rollout fills every step, and
+    // the label carries the unchecked health.
+    expect(completeStepTone(row({ state: 'complete-unverified' }))).toBe('done');
+    expect(completeStepLabel(row({ state: 'complete-unverified' }))).toBe('Complete, unverified');
     expect(completeStepTone(row({ state: 'degraded' }))).toBe('degraded');
   });
 

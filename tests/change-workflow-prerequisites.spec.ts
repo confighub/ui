@@ -79,11 +79,10 @@ test('a name neither built in nor declared is unrecognised', () => {
   expect(classifyPrerequisite('QA sign-off', undefined).kind).toBe('unrecognised');
 });
 
-test('a stage selector is conjoined with the component it is promoted within', () => {
-  const myapp = { ComponentID: '11111111-1111-1111-1111-111111111111', Slug: 'myapp' };
-  expect(stageWhereSpace({ Name: 'dev', WhereSpace: "Labels.Stage = 'dev'" }, myapp)).toBe(
-    `Labels.Stage = 'dev' AND ComponentID = '${myapp.ComponentID}'`,
-  );
+test('a stage selector is sent as written, with no component appended', () => {
+  // The rollout's scope is the ChangeOrder's InScopeSpaceIDs, applied to what
+  // the selector lists; a workflow may govern several components' rollouts.
+  expect(stageWhereSpace({ Name: 'dev', WhereSpace: "Labels.Stage = 'dev'" })).toBe("Labels.Stage = 'dev'");
 });
 
 // ── A frozen workflow that names no stage is not a governed one ─────────────

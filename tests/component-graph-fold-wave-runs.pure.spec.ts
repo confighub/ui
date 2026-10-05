@@ -124,7 +124,8 @@ test('a thrown request fails its Units and every later request, and runs no more
   expect(log.landed).toEqual([['s1']]);
 });
 
-function releaseHarness(results: Record<string, number | Error>) {
+// A number is the ReleaseNum published; 'unchanged' is a Space with nothing new to publish.
+function releaseHarness(results: Record<string, number | 'unchanged' | Error>) {
   const log = { flash: [] as unknown[], errors: [] as unknown[], published: [] as string[] };
   const held = new Set<string>();
   let releasing: ReadonlySet<string> = new Set();
@@ -133,7 +134,8 @@ function releaseHarness(results: Record<string, number | Error>) {
       log.published.push(id);
       const r = results[id];
       if (r instanceof Error) throw r;
-      return { ReleaseNum: r };
+      if (r === 'unchanged') return { Release: { ReleaseNum: 1 }, Message: 'no changes' };
+      return { Release: { ReleaseNum: r } };
     },
     errorDetail: (e) => (e as Error).message,
     setReleasing: (update) => {
@@ -158,6 +160,16 @@ test('a release that fails in one Space still publishes the others', async () =>
     { ids: ['c'], msg: 'Released rel-2' },
   ]);
   expect(getReleasing().size).toBe(0);
+});
+
+test('a Space unchanged since its latest release flashes no change', async () => {
+  const { deps, log } = releaseHarness({ a: 'unchanged', b: 2 });
+  await runWaveRelease(['a', 'b'], deps);
+  expect(log.errors).toEqual([]);
+  expect(log.flash).toEqual([
+    { ids: ['a'], msg: 'No change' },
+    { ids: ['b'], msg: 'Released rel-2' },
+  ]);
 });
 
 test('a Space that another run holds is not published twice', async () => {

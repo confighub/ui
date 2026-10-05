@@ -39,6 +39,7 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
+import RemoveIcon from '@mui/icons-material/Remove';
 import RestoreIcon from '@mui/icons-material/Restore';
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 
@@ -65,7 +66,7 @@ import { RolloutUnitHeader } from '../x/apps/rollout/RolloutUnitHeader';
 import Button from '@mui/material/Button';
 
 import { EndRolloutDialog } from '../x/apps/rollout/EndRolloutDialog';
-import { rolloutIntents } from '../x/apps/rollout/rolloutsConsoleModel';
+import { hasPromotionPath, rolloutIntents } from '../x/apps/rollout/rolloutsConsoleModel';
 import type { RolloutEndIntent } from '../x/apps/rollout/rolloutRollback';
 import { useEndRollout } from '../x/apps/rollout/useEndRollout';
 import { promoteAnnouncement, useRolloutActions } from '../x/apps/rollout/useRolloutActions';
@@ -102,6 +103,7 @@ import {
 } from './rolloutsTokens';
 import { RolloutBlockedResources, RolloutRefusals } from './rolloutRefusals';
 import { useRolloutDetail } from './useRolloutDetail';
+import { changeWorkflowHref, changeWorkflowLabel, useChangeWorkflowNames } from './useChangeWorkflowNames';
 
 /**
  * A sequence problem, said plainly.
@@ -117,8 +119,6 @@ function describeSequenceProblem(problem: RolloutSequenceProblem): string {
       return 'This ChangeOrder has no governing ChangeWorkflow, so no sequence could be built.';
     case 'stage-selects-nothing':
       return `Stage "${problem.stageName}" selects no Space.`;
-    case 'stage-names-component':
-      return `Stage "${problem.stageName}" names the component in its selector. The component comes from this rollout, so the stage may be selecting nothing.`;
   }
 }
 
@@ -181,6 +181,7 @@ const CONSOLE_STATE_TONE: Record<ConsoleState, string> = {
   ready: rolloutStatus.accent,
   degraded: rolloutStatus.danger,
   blocked: rolloutStatus.warn,
+  held: rolloutStatus.warn,
   progressing: rolloutStatus.accent,
   complete: rolloutStatus.success,
   'complete-unverified': rolloutInk.subtle,
@@ -382,13 +383,25 @@ function CollapsibleUnitGroup({
  * still to happen. `waiting` splits in two: the one stage the sequence would
  * promote next reads as "next" (a ready action), every later `waiting` stage
  * reads as the reference's untouched default (a future stage, locked).
+ *
+ * `passed` is the console row's own count (`stagePathProgress`): a stage the
+ * rollout has passed is drawn done, so the rail, its pips and "N of M" agree.
  */
-function railDot(state: RolloutStageState, isNext: boolean) {
+function railDot(state: RolloutStageState, isNext: boolean, passed: boolean) {
+  const done = { Icon: CheckIcon, bg: rolloutStatus.successGround, border: rolloutStatus.successLine, color: rolloutStatus.success };
+  if (passed && state.verdict !== 'restored' && state.verdict !== 'restore-released') return done;
+  // The stage selects no Space, so there is no workload of its own to report
+  // on: it is drawn neutral rather than in the danger tone of a failed gate.
+  // What it does to the stage after it — the server refuses to promote past a
+  // stage that selects no Space — is said on that stage's gate.
+  if (state.verdict !== 'source' && state.spaceCount === 0) {
+    return { Icon: RemoveIcon, bg: rolloutSurface.sunk, border: rolloutBorder.strong, color: rolloutInk.subtle };
+  }
   switch (state.verdict) {
     case 'source':
     case 'promoted':
     case 'released':
-      return { Icon: CheckIcon, bg: rolloutStatus.successGround, border: rolloutStatus.successLine, color: rolloutStatus.success };
+      return done;
     case 'in-progress':
       return { Icon: AutorenewIcon, bg: rolloutStatus.accentSoft, border: rolloutStatus.accentLine, color: rolloutStatus.accent };
     case 'gated':
@@ -416,16 +429,10 @@ function railDot(state: RolloutStageState, isNext: boolean) {
  * trailing node reads as one more node on the same rail rather than a second
  * vocabulary at the end of it.
  *
- * `unverified` is the OUTLINE of `done` rather than a hue of its own: the same
- * green ink and glyph, over a transparent fill where `done` carries
- * `successGround`. The rail's ticks report ARRIVAL, not health — every stage
- * node to the left draws a plain green tick off promote/release counts with no
- * health channel at all, so a neutral tick here would hold the trailing node to
- * a stricter rule than any node it follows. The empty fill is what keeps the
- * pair apart: filled means the last stage's health was read, hollow means it
- * was not. The console strip already draws this pair the same way
- * (`SEGMENT_TONES.unverified` in `RolloutsConsole.tsx`, legend "Landed, health
- * unchecked").
+ * A complete rollout reads `done` whether or not its last stage's health was
+ * checked. The rail's ticks report ARRIVAL, not health — every stage node to
+ * the left draws a plain green tick off promote/release counts — and the
+ * node's label ("Complete, unverified") says when health went unchecked.
  *
  * `blocked` takes the accent rather than the danger tone — something is
  * outstanding, which is a thing to do, not a thing that failed.
@@ -444,8 +451,6 @@ function completeRailDot(tone: CompleteStepTone, abandoned: boolean) {
   switch (tone) {
     case 'done':
       return { Icon: CheckIcon, bg: rolloutStatus.successGround, border: rolloutStatus.successLine, color: rolloutStatus.success };
-    case 'unverified':
-      return { Icon: CheckIcon, bg: 'transparent', border: rolloutStatus.success, color: rolloutStatus.success };
     case 'degraded':
       return { Icon: WarningAmberOutlinedIcon, bg: rolloutStatus.dangerSoft, border: rolloutKindLine.unknown, color: rolloutStatus.danger };
     case 'blocked':
@@ -494,8 +499,18 @@ function completeRailDot(tone: CompleteStepTone, abandoned: boolean) {
  * to satisfy a real query rather than to satisfy the harness's current
  * (imperfect) one.
  */
-function StageLink({ state, isNext }: { state: RolloutStageState; isNext: boolean }) {
-  const passed = state.verdict === 'promoted' || state.verdict === 'released' || state.verdict === 'source';
+function StageLink({
+  state,
+  isNext,
+  stagePassed = false,
+}: {
+  state: RolloutStageState;
+  isNext: boolean;
+  /** Whether the rollout has passed the stage on the right, by the console row's count. */
+  stagePassed?: boolean;
+}) {
+  const passed =
+    stagePassed || state.verdict === 'promoted' || state.verdict === 'released' || state.verdict === 'source';
   const open = !passed && isNext;
   const tone = passed
     ? { bg: rolloutStatus.successGround, border: rolloutStatus.successLine, color: rolloutStatus.success, Icon: LockOpenOutlinedIcon }
@@ -569,6 +584,7 @@ function StageLink({ state, isNext }: { state: RolloutStageState; isNext: boolea
  */
 function StageRail({
   stageStates,
+  stagesDone,
   selectedStageId,
   nextStageId,
   slug,
@@ -579,6 +595,8 @@ function StageRail({
   finalGates,
 }: {
   stageStates: RolloutStageState[];
+  /** The steps the rollout has passed: stage `i` is passed when `i < stagesDone`. */
+  stagesDone: number;
   selectedStageId: string | undefined;
   nextStageId: string | null;
   slug: string;
@@ -610,13 +628,15 @@ function StageRail({
          */
         const selected = !completeSelected && state.stageId === selectedStageId;
         const isSource = state.verdict === 'source';
-        const held = !isSource && state.gates.length > 0 && !state.gatesOpen;
-        const dot = railDot(state, state.stageId === nextStageId);
+        const held = !isSource && state.spaceCount > 0 && state.gates.length > 0 && !state.gatesOpen;
+        const dot = railDot(state, state.stageId === nextStageId, i < stagesDone);
         return (
           <Fragment key={state.stageId}>
             {/* One `StageLink` per pair, never before the first node — the
                 source has no gate of its own to describe. */}
-            {i > 0 && <StageLink state={state} isNext={state.stageId === nextStageId} />}
+            {i > 0 && (
+              <StageLink state={state} isNext={state.stageId === nextStageId} stagePassed={i < stagesDone} />
+            )}
             <Box
               component={RouterLink}
               to={`/rollouts/${slug}/${encodeURIComponent(state.stageId)}`}
@@ -919,6 +939,9 @@ export default function RolloutsPage() {
   const { slug, stage: stageParam } = useParams<{ slug?: string; stage?: string }>();
   const navigate = useNavigate();
   const detail = useRolloutDetail(slug);
+  const workflowNames = useChangeWorkflowNames();
+  const workflowId = detail.consoleRow?.changeWorkflowId;
+  const workflowHref = changeWorkflowHref(workflowId, workflowNames);
   /** `null` when the ChangeOrder names no component, which the Components view cannot be scoped to. */
   const componentDeepLink =
     detail.consoleRow?.appName === undefined
@@ -951,18 +974,26 @@ export default function RolloutsPage() {
   }, [detail.stageStates, detail.nextStageId, stageParam]);
 
   /**
-   * The Complete step, when there is a console row to read it from.
+   * The console row, when it has a promotion path. The rail, its pips and the
+   * "N of M" figure are all drawn from this one row, or not at all: a row with
+   * no stages counts "0 of 0", and a rail built from the workflow alone beside
+   * it would be a second path for one rollout.
+   */
+  const pathRow =
+    detail.consoleRow !== undefined && hasPromotionPath(detail.consoleRow) ? detail.consoleRow : undefined;
+
+  /**
+   * The Complete step, when there is a path to end it.
    *
    * ⚠️ READ FROM THE CONSOLE ROW, NOT RE-DERIVED. The step's tone follows the
    * row's own state, so the rail's trailing node and the console strip's
    * trailing segment cannot come to say two different things about one rollout.
    */
   const completeStage = useMemo(
-    () => (detail.consoleRow === undefined ? null : buildCompleteConsoleStage(detail.consoleRow)),
-    [detail.consoleRow],
+    () => (pathRow === undefined ? null : buildCompleteConsoleStage(pathRow)),
+    [pathRow],
   );
-  const completeTone: CompleteStepTone | null =
-    detail.consoleRow === undefined ? null : completeStepTone(detail.consoleRow);
+  const completeTone: CompleteStepTone | null = pathRow === undefined ? null : completeStepTone(pathRow);
   const completeAbandoned =
     detail.consoleRow !== undefined && isCompleteStepAbandoned(detail.consoleRow);
   /** The selected stage's name as a reader sees it. Empty when none is selected. */
@@ -1681,6 +1712,19 @@ export default function RolloutsPage() {
                   )}
                 </Fact>
                 {/*
+                  The workflow this rollout was created under, opened in the
+                  workflow builder to view or edit. The rollout keeps the copy
+                  it was created with, so an edit there governs later
+                  rollouts, not this one.
+                */}
+                <Fact term="Workflow">
+                  {workflowHref !== null ? (
+                    <FactLink href={workflowHref}>{changeWorkflowLabel(workflowId, workflowNames)}</FactLink>
+                  ) : (
+                    changeWorkflowLabel(workflowId, workflowNames)
+                  )}
+                </Fact>
+                {/*
                   The reference states this fact as "N variants in M Spaces" —
                   two figures, because its `stage.targets` can fan out past one
                   target per Space. This model has no such fan-out: a rollout
@@ -1891,7 +1935,13 @@ export default function RolloutsPage() {
                 identical payloads apart from the base Space, and guessing wrong
                 tells a reader a rollout has not moved when it may well have.
               */}
-              {detail.progress.availability === 'available' ? (
+              {detail.consoleRow !== undefined && pathRow === undefined ? (
+                // No stages to count, so the row's own reason is said instead,
+                // as the list says it.
+                <Box sx={{ fontSize: rolloutType.size.prose, color: rolloutInk.muted }}>
+                  {detail.consoleRow.blocker}
+                </Box>
+              ) : detail.progress.availability === 'available' ? (
                 <>
                   <Box
                     sx={{
@@ -1903,13 +1953,10 @@ export default function RolloutsPage() {
                     {detail.stagesDone}
                     <Box component="span" sx={{ fontSize: rolloutType.size.prose, fontWeight: 400, marginLeft: '6px' }}>
                       {/*
-                        NAMES WHAT IT COUNTS. The figure counts the stages
-                        there is something to promote into, and the chips below
-                        it draw every node of the rail — source, Complete and
-                        any stage selecting no Space included — so the two
-                        carry different totals by design. Unnamed, the smaller number
-                        reads as a count of the chips and the extra chips read
-                        as a bar that will not fill.
+                        The figure counts the nodes of the rail below: the
+                        source, every stage (one that selects no Space
+                        included) and Complete. The chips draw the same nodes,
+                        so the figure, the chips and the rail always agree.
                       */}
                       of {detail.stagesTotal} {detail.stagesTotal === 1 ? 'stage' : 'stages'}
                     </Box>
@@ -1927,17 +1974,14 @@ export default function RolloutsPage() {
                       above it says.
 
                       EVERY TONE COMES FROM THE RAIL'S OWN DOT HELPERS, never a
-                      second mapping — including the hollow green `unverified`
-                      Complete step, whose transparent fill is the whole
-                      distinction between "landed, health read" and "landed,
-                      health unread". The dot's ink is the chip's outline and
+                      second mapping. The dot's ink is the chip's outline and
                       the dot's fill is the chip's fill, so a chip cannot come
                       to claim something the node it faces does not.
                     */}
                     {[
-                      ...detail.stageStates.map((state) => ({
+                      ...detail.stageStates.map((state, i) => ({
                         key: state.stageId,
-                        dot: railDot(state, state.stageId === detail.nextStageId),
+                        dot: railDot(state, state.stageId === detail.nextStageId, i < detail.stagesDone),
                       })),
                       ...(completeTone === null
                         ? []
@@ -1963,15 +2007,13 @@ export default function RolloutsPage() {
                   <Box sx={{ fontSize: rolloutType.size.small, color: rolloutInk.muted, marginTop: '8px' }}>
                     {/*
                       `nextStageId === null` is also true when there was never a
-                      promotable stage to reach — the same vacuous-truth shape
-                      `rolloutsConsoleModel.ts` guards against with its own
-                      `promotable.length === 0` check (which is exactly what
-                      `stagesTotal` already counts). Without it, a rollout with
-                      nowhere to promote to reads as one that finished — the
-                      opposite of what `noStagesBlocker` tells the same reader
-                      one screen back, in the console row they clicked from.
+                      promotable stage to reach — the console row's `no-stages`.
+                      Without this, a rollout with nowhere to promote to reads
+                      as one that finished — the opposite of what
+                      `noStagesBlocker` tells the same reader one screen back,
+                      in the console row they clicked from.
                     */}
-                    {detail.stagesTotal === 0
+                    {detail.stagesTotal === 0 || detail.consoleRow?.state === 'no-stages'
                       ? rolloutsConsoleCopy.noStagesBlocker
                       : detail.nextStageId === null
                         ? 'Every stage has taken the change.'
@@ -2050,7 +2092,11 @@ export default function RolloutsPage() {
             >
               Promotion path
             </Box>
-            {detail.sequence.stages.length === 0 ? (
+            {detail.consoleRow !== undefined && pathRow === undefined ? (
+              <Box sx={{ fontSize: rolloutType.size.prose, color: rolloutInk.muted }}>
+                {detail.consoleRow.blocker}
+              </Box>
+            ) : detail.sequence.stages.length === 0 ? (
               <Box sx={{ fontSize: rolloutType.size.prose, color: rolloutInk.muted }}>
                 {detail.scopedSpaces === null
                   ? 'The server did not report which Spaces this rollout targets, so no sequence can be built.'
@@ -2059,6 +2105,7 @@ export default function RolloutsPage() {
             ) : (
               <StageRail
                 stageStates={detail.stageStates}
+                stagesDone={detail.stagesDone}
                 selectedStageId={selectedStage?.stageId}
                 nextStageId={detail.nextStageId}
                 slug={detail.slug}

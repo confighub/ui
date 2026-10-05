@@ -20,8 +20,8 @@
  */
 
 /**
- * One step of the promotion sequence: a stage name, and every Space of this
- * component that carries it.
+ * One step of the promotion sequence: a stage name, and every Space the stage
+ * selects that the ChangeOrder is headed for.
  */
 export interface RolloutStage {
   /** The ChangeWorkflow stage's `Name`, verbatim. Also the stage's identity. */
@@ -71,9 +71,7 @@ export interface RolloutStage {
  */
 export type RolloutSequenceProblem =
   | { kind: 'no-workflow' }
-  | { kind: 'stage-selects-nothing'; stageName: string }
-  /** The stage's selector names the component, which is the ChangeOrder's to supply. */
-  | { kind: 'stage-names-component'; stageName: string };
+  | { kind: 'stage-selects-nothing'; stageName: string };
 
 export interface RolloutSequence {
   stages: RolloutStage[];

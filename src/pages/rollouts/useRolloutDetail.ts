@@ -74,12 +74,9 @@ import { ROLLOUT_POLL_INTERVAL_MS } from '../x/apps/rollout/useRolloutData';
 import { useWorkflowStageSpaces } from '../x/apps/rollout/useWorkflowStageSpaces';
 import { useRunningReleases } from '../x/apps/useRunningReleases';
 import {
-  countPromotedStages,
-  countReachableStages,
   deriveProgress,
   deriveStageState,
   finalStageGates,
-  nextStageIndexFromChangeOrderStage,
 } from '../x/apps/rollout/rolloutState';
 import type {
   RolloutGate,
@@ -127,14 +124,10 @@ export interface RolloutDetail {
    * The row this rollout shows on the console — the SAME derivation, so the
    * detail head and the console row cannot disagree about one rollout.
    *
-   * ⚠️ NOT the server's `State` field, deliberately. `ChangeOrderState`
-   * (`internal/models/changeorder.go:30-48`) is derived purely from promotion
-   * and release counts and never consults gates or live status, so a rollout
-   * promoted through its last stage whose workload is unhealthy reports
-   * `Resolved` while the honest answer is Degraded. Preferring it would print a
-   * health claim over a live failure — regression `f3d5e56e0`, guarded by
-   * `rollouts-populated.spec.ts`. `State` is carried below for display beside
-   * the derived verdict, never in place of it.
+   * The row reads the server's `State` and `Stage` for the two things they
+   * are authoritative on: whether the rollout is finished (`Stage` Completed,
+   * or `State` Released / RestoreReleased) and whether it is waiting on a
+   * Release (`State` Resolved). Everything else on the row is derived.
    */
   consoleRow?: ConsoleRow;
   /** The server's own field, shown as itself and never as the headline verdict. */
@@ -176,7 +169,9 @@ export interface RolloutDetail {
   finalGates: RolloutGate[];
   /** Spaces in this rollout's scope, or `null` when scope cannot be known. */
   scopedSpaces: RolloutSpace[] | null;
+  /** `ConsoleRow.stagesDone`: the steps of the promotion path the rollout has passed. */
   stagesDone: number;
+  /** `ConsoleRow.stagesTotal`: every step of the promotion path, as the rail draws it. */
   stagesTotal: number;
   nextStageId: string | null;
 
@@ -341,9 +336,9 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
   const order = entry?.ChangeOrder;
   const baseSpaceId = order?.SpaceID;
 
-  // The component the stages select within, read off the base Space's own
-  // Component — the same `orderComponent` the fleet console uses, so the two
-  // surfaces cannot resolve two different components for one ChangeOrder.
+  // The component this rollout is named by, read off the base Space's own
+  // Component — the same `orderComponent` the fleet console uses. Display only:
+  // stage membership is the stage's selector and the ChangeOrder's scope.
   const component = useMemo(
     () => orderComponent({ spaceId: baseSpaceId }, listedSpaceById as ReadonlyMap<string, ConsoleSpace>),
     [baseSpaceId, listedSpaceById],
@@ -359,35 +354,22 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
    */
   const governing = useMemo(() => changeOrderWorkflow(order), [order]);
   const workflow = governing.state === 'governed' ? governing.workflow : undefined;
-  // Every Space of this rollout's component, off the org list this hook already
-  // reads. A stage that names no selector takes exactly this set, so answering
-  // it from here costs no request.
-  const componentSpaceIds = useMemo(
-    () =>
-      component === undefined
-        ? []
-        : listedSpaces
-            .filter((space) => space.component?.ComponentID === component.ComponentID)
-            .map((space) => space.spaceId),
-    [listedSpaces, component],
-  );
-  const { stageSpaces, isLoading: stageSpacesLoading } = useWorkflowStageSpaces(
-    workflow?.Stages,
-    component,
-    componentSpaceIds,
-  );
+  const inScopeSpaceIds = order?.InScopeSpaceIDs;
+  const { stageSpaces, isLoading: stageSpacesLoading } = useWorkflowStageSpaces(workflow?.Stages, inScopeSpaceIds);
 
-  // Re-keyed from stage NAME (what `buildRolloutSequence` wants) to the
-  // resolved clause (what `buildConsoleRow` wants) — done here instead of a
-  // second fetch, since this hook already resolved every stage's Spaces above.
+  // Re-keyed from stage NAME (what `buildRolloutSequence` wants) to the clause
+  // (what `buildConsoleRow` wants) — done here instead of a second fetch, since
+  // this hook already resolved every stage's Spaces above. They are already
+  // narrowed to `InScopeSpaceIDs`, which `buildConsoleRow` narrows to again
+  // without changing them.
   const stageSpacesByClause: Record<string, ExtendedSpaceRead[]> = useMemo(() => {
-    if (workflow === undefined || component === undefined) return {};
+    if (workflow === undefined) return {};
     const byClause: Record<string, ExtendedSpaceRead[]> = {};
     for (const stage of workflow.Stages) {
-      byClause[stageWhereSpace(stage, component)] = stageSpaces[stage.Name] ?? [];
+      byClause[stageWhereSpace(stage)] = stageSpaces[stage.Name] ?? [];
     }
     return byClause;
-  }, [workflow, stageSpaces, component]);
+  }, [workflow, stageSpaces]);
 
   // The Release each staged Space is running, for its live status, which the
   // Healthy gate reads. Polled with the ChangeOrder, since a deploying tool
@@ -479,7 +461,7 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
     const sequence =
       workflow === undefined || baseSpaceId === undefined
         ? EMPTY_SEQUENCE
-        : buildRolloutSequence(workflow, stageSpaces, baseSpaceId, order.InScopeSpaceIDs);
+        : buildRolloutSequence(workflow, stageSpaces, baseSpaceId);
 
     const gatesByStageId: Record<string, RolloutGate[]> = {};
     for (const stage of sequence.stages) {
@@ -508,8 +490,33 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
       }),
     );
 
-    const nextStageIndex = nextStageIndexFromChangeOrderStage(sequence, order.Stage);
-    const nextStageId = nextStageIndex === -1 ? null : sequence.stages[nextStageIndex].id;
+    const consoleRow = buildConsoleRow(
+      {
+        changeOrderId: order.ChangeOrderID,
+        slug: order.Slug ?? slug,
+        displayName: order.DisplayName,
+        spaceId: baseSpaceId,
+        spaceSlug: order.SpaceSlug ?? entry?.Space?.Slug,
+        createdAt: order.CreatedAt,
+        resolvedSpaceIds: order.ResolvedSpaceIDs,
+        releasedSpaceIds: order.ReleasedSpaceIDs,
+        restoredSpaceIds: order.RestoredSpaceIDs,
+        releasedRestoredSpaceIds: order.ReleasedRestoredSpaceIDs,
+        releases: order.Releases,
+        inScopeSpaceIds: order.InScopeSpaceIDs,
+        annotations: order.Annotations,
+        governing,
+        abortedReason: order.AbortedReason,
+        stage: order.Stage,
+        state: order.State,
+        restoreTagId: order.RestoreTagID,
+      },
+      allSpaces,
+      stageSpacesByClause,
+    );
+    // The console row's own answer, so the list and this page name the same
+    // next stage for one rollout.
+    const nextStageId = consoleRow.nextStageId;
 
     /*
      * The same gate machinery, the same inputs, one hop further on. `null` is
@@ -542,29 +549,7 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
       // thrown it away, substituting a derived label for an authoritative field
       // already in memory.
       serverState: order.State,
-      consoleRow: buildConsoleRow(
-        {
-          changeOrderId: order.ChangeOrderID,
-          slug: order.Slug ?? slug,
-          displayName: order.DisplayName,
-          spaceId: baseSpaceId,
-          spaceSlug: order.SpaceSlug ?? entry?.Space?.Slug,
-          createdAt: order.CreatedAt,
-          resolvedSpaceIds: order.ResolvedSpaceIDs,
-          releasedSpaceIds: order.ReleasedSpaceIDs,
-          restoredSpaceIds: order.RestoredSpaceIDs,
-          releasedRestoredSpaceIds: order.ReleasedRestoredSpaceIDs,
-          releases: order.Releases,
-          inScopeSpaceIds: order.InScopeSpaceIDs,
-          annotations: order.Annotations,
-          governing,
-          abortedReason: order.AbortedReason,
-          stage: order.Stage,
-          restoreTagId: order.RestoreTagID,
-        },
-        allSpaces,
-        stageSpacesByClause,
-      ),
+      consoleRow,
       componentName,
       startTagId: order.StartTagID,
       endTagId: order.EndTagID,
@@ -575,10 +560,9 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
       gatesByStageId,
       finalGates,
       scopedSpaces,
-      stagesDone: countPromotedStages(stageStates),
-      // Reaches the same total the console row reports, by the same helper —
-      // an empty stage is nowhere to promote to, so it is nowhere to count.
-      stagesTotal: countReachableStages(stageStates),
+      // The console row's counts, so the list and this page agree.
+      stagesDone: consoleRow.stagesDone,
+      stagesTotal: consoleRow.stagesTotal,
       nextStageId,
       isLoading,
       isFetching,

@@ -347,10 +347,17 @@ export function useReleaseActions({
         }
 
         try {
-          const release = await publishReleaseMutation({
+          const published = await publishReleaseMutation({
             spaceId,
             releasePublishRequest: tagId ? { TagID: tagId } : {},
           }).unwrap();
+          // Nothing changed since the latest Release, so none was created and
+          // there is nothing to settle on.
+          const release = published.Release;
+          if (published.Message || !release) {
+            onSuccess('No change: no Release was created');
+            return;
+          }
 
           // Start the settle window now — publish always creates a new
           // Release row (ReleaseNum higher than preLatestReleaseNum), empty

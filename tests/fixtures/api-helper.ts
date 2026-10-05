@@ -16,6 +16,7 @@ import type {
   Target,
   TargetRead,
   ReleasePublishRequest,
+  ReleasePublishResponseRead,
   ReleaseRead,
   ExtendedReleaseRead,
   Filter,
@@ -688,7 +689,8 @@ export class ApiHelper {
    * OCI bundle. Requires the Space to already have ReleaseTargetID set to
    * a Target (see updateSpace + createTarget).
    * @param params - Object containing spaceId and an optional publish request body (defaults to {} — head, no TagID)
-   * @returns Promise resolving to the created ReleaseRead object
+   * @returns Promise resolving to the created ReleaseRead object, or to the latest
+   * one when the Space is unchanged since it and no Release was created
    * @throws Error if the request fails
    */
   async publishRelease({
@@ -708,7 +710,11 @@ export class ApiHelper {
       );
     }
 
-    return response.json();
+    const published = (await response.json()) as ReleasePublishResponseRead;
+    if (!published.Release) {
+      throw new Error(`Publish returned no Release: ${JSON.stringify(published)}`);
+    }
+    return published.Release;
   }
 
   /**

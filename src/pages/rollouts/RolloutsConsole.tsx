@@ -287,6 +287,7 @@ const STATE_INK: Record<ConsoleState, string> = {
   ready: T.accent,
   degraded: T.bad,
   blocked: T.wait,
+  held: T.wait,
   progressing: T.accent,
   complete: T.ok,
   // Deliberately not the green of `complete`, and deliberately not a warning
@@ -574,8 +575,7 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
     [openRollout],
   );
 
-  // `nextStageIndexFromChangeOrderStage` never names the source row, so a next
-  // stage is always a real one and is named by the workflow's own word for it.
+  // The next stage is never the source row, so it is always a real one and is named by the workflow's own word for it.
   const stageKey = row.nextStageId === null ? '' : stageDisplayName(row.nextStageId, false);
 
   return (
@@ -694,10 +694,9 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
           the strip, which takes a plain `ConsoleStage[]` and knows nothing of a
           workflow's `Final`.
 
-          `stagesDone`/`stagesTotal` are passed through UNCHANGED: they count
-          stages, and the Complete step is not one. Folding it in would report
-          every rollout one step short of its own total, the same trap the
-          leading source segment is already excluded from.
+          `stagesDone`/`stagesTotal` are passed through UNCHANGED: they
+          already count every segment drawn here, the source and the
+          Complete step included (`stagePathProgress`).
         */}
         {row.stages.length > 0 && row.state !== 'no-stages' && (
           <RolloutStageStrip

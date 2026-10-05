@@ -10,23 +10,19 @@
  * hook resolves the DISTINCT set instead, with a fixed number of hook calls no
  * matter how many rows there are:
  *
- *   useDistinctStageSpaces(orders, spaces) → Record<resolved where clause, ExtendedSpaceRead[]>
+ *   useDistinctStageSpaces(orders) → Record<stage selector, ExtendedSpaceRead[]>
  *
- * A stage naming no selector is not among them: it takes every Space of its
- * component, which the caller's own Space index already answers, so it costs no
+ * A stage naming no selector is not among them: it takes every Space its
+ * ChangeOrder is headed for, which the row already carries, so it costs no
  * request at all.
  *
- * KEYED BY THE RESOLVED CLAUSE -- `stageWhereSpace(stage, component)`, the
- * string actually sent -- not by stage name and not by the stage's raw
- * selector. Stage names are only unique within one workflow, and a fleet-wide
- * list holds many, so two workflows each having a stage called `prod` must not
- * collide. The raw selector is no better a key: a stage selects within ONE
- * component, and which one is the ChangeOrder's, so two rollouts of different
- * components sharing a workflow resolve the same selector to different Spaces.
- * Keying by the clause that was sent keeps the dedup (one request per distinct
- * query, whoever asked for it) without merging two components' answers.
- * `buildConsoleRow` re-keys back to stage names per row, where the row's own
- * workflow makes that unambiguous.
+ * KEYED BY THE CLAUSE SENT -- `stageWhereSpace(stage)`, the stage's own
+ * selector -- not by stage name. Stage names are only unique within one
+ * workflow, and a fleet-wide list holds many, so two workflows each having a
+ * stage called `prod` must not collide. The clause depends on the stage alone,
+ * so rollouts sharing a workflow share one request per stage; what differs
+ * between them is their `InScopeSpaceIDs`, which `buildConsoleRow` applies per
+ * row (`changeOrderStageMembers`) when it re-keys back to stage names.
  *
  * SHARED BY BOTH CONSUMERS RATHER THAN COPIED INTO EACH. The console reads the
  * org, the component tab reads one component, but the resolution is identical
@@ -45,15 +41,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useLazyListSpacesQuery, type ExtendedSpaceRead } from '@confighub/rtk-query';
 
-import {
-  stageSelectsWholeComponent,
-  stageWhereSpace,
-} from '../x/apps/rollout/changeOrderWorkflow';
-import {
-  orderComponent,
-  type ConsoleChangeOrder,
-  type ConsoleSpace,
-} from '../x/apps/rollout/rolloutsConsoleModel';
+import { stageSelectsWholeScope, stageWhereSpace } from '../x/apps/rollout/changeOrderWorkflow';
+import { type ConsoleChangeOrder } from '../x/apps/rollout/rolloutsConsoleModel';
 
 /**
  * Key separator, NUL.
@@ -74,7 +63,10 @@ interface Resolved<T> {
 }
 
 export interface DistinctStageSpacesResult {
-  /** Keyed by the resolved clause — `stageWhereSpace(stage, component)`, the string sent. */
+  /**
+   * Keyed by the clause sent — `stageWhereSpace(stage)`. Not yet narrowed to any
+   * ChangeOrder's `InScopeSpaceIDs`; a stage naming no selector has no entry.
+   */
   stageSpacesByClause: Record<string, ExtendedSpaceRead[]>;
   isLoading: boolean;
 }
@@ -82,24 +74,11 @@ export interface DistinctStageSpacesResult {
 /**
  * Resolve every distinct stage clause these rows need.
  *
- * Server-side, via the same `where` query param `apiListSpaces` sends in
- * `variant_promote.go`. No client-side expression evaluation, and one request
- * per distinct clause rather than per stage or per row.
- *
- * READS EACH ROW'S OWN WORKFLOW, because a clause is not a property of a
- * workflow alone: it is the stage's selector conjoined with the component of the
- * ChangeOrder being resolved (`stageWhereSpace`). Two rollouts governed by one
- * workflow but based in different components therefore ask two different
- * questions of the same stage, and answering either one for both would put
- * another component's Spaces in this rollout's stage.
- *
- * `spaces` is the display index the caller already holds; only the `Component`
- * label of each ChangeOrder's own base Space is read from it.
+ * Server-side, via the Space list's `where` query param. No client-side
+ * expression evaluation, and one request per distinct clause rather than per
+ * stage or per row.
  */
-export function useDistinctStageSpaces(
-  orders: ConsoleChangeOrder[],
-  spaces: ConsoleSpace[],
-): DistinctStageSpacesResult {
+export function useDistinctStageSpaces(orders: ConsoleChangeOrder[]): DistinctStageSpacesResult {
   const [trigger] = useLazyListSpacesQuery();
   const [resolved, setResolved] = useState<Resolved<Record<string, ExtendedSpaceRead[]>>>({
     key: '',
@@ -107,38 +86,16 @@ export function useDistinctStageSpaces(
   });
   const generationRef = useRef(0);
 
-  /**
-   * The clauses that have to be asked for, and the ones already answerable.
-   *
-   * A stage naming no selector takes every Space of its component, and this
-   * hook's callers hand it the Space index those rows are drawn from — so that
-   * clause is resolved from memory and never reaches the server. Asking for it
-   * would be one request per such stage for a list already on the page.
-   */
-  const { whereKey, inMemory } = useMemo(() => {
-    const bySpaceId = new Map(spaces.map((s) => [s.spaceId, s]));
+  const whereKey = useMemo(() => {
     const wheres = new Set<string>();
-    const answered: Record<string, ExtendedSpaceRead[]> = {};
     for (const order of orders) {
       if (order.governing.state !== 'governed') continue;
-      // No component, no clause: a stage cannot be resolved without one, and
-      // `buildConsoleRow` reports such a row rather than showing it stages
-      // resolved some other way.
-      const component = orderComponent(order, bySpaceId);
-      if (component === undefined) continue;
       for (const stage of order.governing.workflow.Stages) {
-        const clause = stageWhereSpace(stage, component);
-        if (stageSelectsWholeComponent(stage)) {
-          answered[clause] = spaces
-            .filter((space) => space.component?.ComponentID === component.ComponentID)
-            .map((space) => ({ Space: { SpaceID: space.spaceId } }) as ExtendedSpaceRead);
-          continue;
-        }
-        wheres.add(clause);
+        if (!stageSelectsWholeScope(stage)) wheres.add(stageWhereSpace(stage));
       }
     }
-    return { whereKey: [...wheres].sort().join(SEP), inMemory: answered };
-  }, [orders, spaces]);
+    return [...wheres].sort().join(SEP);
+  }, [orders]);
 
   useEffect(() => {
     // Unconditional, for the same reason as above.
@@ -184,10 +141,5 @@ export function useDistinctStageSpaces(
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on whereKey, not the object identity
   }, [whereKey, trigger]);
 
-  const stageSpacesByClause = useMemo(
-    () => ({ ...inMemory, ...resolved.value }),
-    [inMemory, resolved.value],
-  );
-
-  return { stageSpacesByClause, isLoading: resolved.key !== whereKey };
+  return { stageSpacesByClause: resolved.value, isLoading: resolved.key !== whereKey };
 }

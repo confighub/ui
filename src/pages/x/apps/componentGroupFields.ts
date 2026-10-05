@@ -22,10 +22,9 @@ import { LABEL_DEPARTMENT, LABEL_OWNER, LABEL_REGION, LABEL_STAGE } from './comp
 
 /** The group-by level key for a Space's Component — the Slug of the
  * Component its `ComponentID` names (`spaceComponentSlug`), not a label. It
- * is an ordinary, removable, movable field like any other —
- * `resolveNodeGraphTarget` decides whether a node's click resolves to a whole
- * Component (`?app=`) from its own bucketed Space set, never from this
- * field's position in `levels`. */
+ * is an ordinary, removable, movable field like any other. A node AT this
+ * field's level always opens its whole Component (`?app=`), wherever the
+ * field sits in `levels` — see `resolveNodeGraphTarget`. */
 export const COMPONENT_FIELD = 'Component';
 
 /** Default grouping for a fresh Components nav / a Components view with no
@@ -231,12 +230,9 @@ export function getSpaceLabelKeyCounts(spaces: ExtendedSpaceRead[]): Record<stri
 // SELECTION / DEEP-LINK RULES
 // ============================================================================
 
-/** True when the Component field is the LAST configured level. Used only by
- * `deriveComponentTreePath` below, not exported further. */
-function levelsEndInComponent(levels: string[]): boolean {
-  const idx = levels.indexOf(COMPONENT_FIELD);
-  return idx !== -1 && idx === levels.length - 1;
-}
+/** The tree's bucket for a Space with no value for a level — the same
+ * placeholder `GroupNavPanel`'s own tree build uses. */
+const EMPTY_VALUE = '(empty)';
 
 /**
  * Narrows `spaces` to those matching a group-node's value path — the same
@@ -252,26 +248,27 @@ export function filterSpacesByGroupPath(
 ): ExtendedSpaceRead[] {
   if (path.length === 0) return spaces;
   return spaces.filter((space) =>
-    path.every((value, i) => i < levels.length && (getSpaceGroupValue(space, levels[i], ctx) || '(empty)') === value),
+    path.every((value, i) => i < levels.length && (getSpaceGroupValue(space, levels[i], ctx) || EMPTY_VALUE) === value),
   );
 }
 
 /**
  * A node click opens the graph of every Space under it. This resolves WHICH
  * kind of graph that is, for the URL (see `components.md`, "Node click opens
- * a graph"): when the node's own bucket — recomputed against `appSpaces` —
- * is exactly all Spaces of one Component, the click is indistinguishable
- * from opening that whole Component, so it writes `?app=<name>` (every
- * `?app=` deep link, tour, and overview-tile click reads this same way).
- * Anything else — a bucket spanning several
- * Components, or a strict subset of one — writes `?group=<path>` instead.
+ * a graph"):
  *
- * This is a single, field-position-agnostic rule: a Component-field node
- * still resolves to `{app}` even in the middle of `levels` (e.g.
- * Owner → Component → Variant), as long as every Deployment of that
- * Component happens to share the bucket's other field values; a Variant
- * node one level below it resolves to `{group}` because its bucket is a
- * strict subset (one Deployment, not the whole Component).
+ * - A node at the Component field's level writes `?app=<name>` — always the
+ *   WHOLE Component, whatever the levels above it. A Component whose Spaces
+ *   carry different values for a level above (two Owners, for example)
+ *   shows under several parent nodes, and each of those nodes holds only
+ *   part of it; the click still opens all of it, since the user clicked
+ *   the Component, not a part of it.
+ * - Any other node writes `?app=<name>` when its own bucket — recomputed
+ *   against `appSpaces` — is exactly all Spaces of one Component (the click
+ *   is indistinguishable from opening that Component), and `?group=<path>`
+ *   otherwise. A node one level below a Component node (e.g. Variant in
+ *   Owner → Component → Variant) is usually a strict subset of that
+ *   Component, so it opens a `?group=` graph of that part only.
  */
 export function resolveNodeGraphTarget(
   appSpaces: ExtendedSpaceRead[],
@@ -279,6 +276,10 @@ export function resolveNodeGraphTarget(
   path: string[],
   ctx: SpaceGroupValueContext,
 ): { app: string } | { group: string[] } {
+  const depth = path.length - 1;
+  if (depth >= 0 && levels[depth] === COMPONENT_FIELD && path[depth] !== EMPTY_VALUE) {
+    return { app: path[depth] };
+  }
   const bucket = filterSpacesByGroupPath(appSpaces, levels, path, ctx);
   const componentOf = (s: ExtendedSpaceRead) => componentSlugOf(s, ctx.slugById);
   const firstComponent = bucket[0] ? componentOf(bucket[0]) : undefined;
@@ -291,6 +292,17 @@ export function resolveNodeGraphTarget(
   return { group: path };
 }
 
+/** Tree order of two equal-length value paths: `GroupNavPanel` sorts the
+ * siblings at every depth with `localeCompare`, so a depth-first walk of
+ * the tree visits paths in this lexicographic order. */
+function compareTreePaths(a: string[], b: string[]): number {
+  for (let i = 0; i < a.length; i++) {
+    const cmp = a[i].localeCompare(b[i]);
+    if (cmp !== 0) return cmp;
+  }
+  return 0;
+}
+
 /**
  * Resolves the tree path that should be highlighted, reconciling an open
  * Component graph (`appName`, from `?app=`) with the `?group=` path — that
@@ -299,17 +311,17 @@ export function resolveNodeGraphTarget(
  *
  * - No Component open: the tree highlight is exactly `groupParam` (`[]`
  *   selects Overview; a non-empty path also IS the open group graph).
- * - Component open, levels end in Component: use `groupParam` when it is
- *   present and its last element is the open Component's name, so the exact
- *   path the user clicked through stays highlighted; otherwise derive the
- *   path from the FIRST Space in that Component, since there
- *   is no click to preserve (e.g. the Component was opened via `?app=`).
- * - Component open, levels do NOT end in Component: search for a node (at
- *   the Component field's depth, if `levels` has one) whose own bucket
- *   resolves to this exact Component (`resolveNodeGraphTarget`); highlight
- *   it if found. No Component field in `levels`, or no such node — select
- *   nothing (`null`): highlighting an unrelated node while the graph shows
- *   would claim something that isn't there.
+ * - Component open, no Component field in `levels`: select nothing
+ *   (`null`) — no node stands for the open Component, and highlighting an
+ *   unrelated node while the graph shows would claim something that isn't
+ *   there.
+ * - Component open, `groupParam` names a Component-level node of that
+ *   Component: keep it highlighted.
+ * - Otherwise: highlight the open Component's node at the Component
+ *   field's level. A Component split across several parent nodes (two
+ *   Owners, for example) has one such node under each; the FIRST one in
+ *   tree order is highlighted, so the choice does not depend on the order
+ *   the Spaces arrived in.
  */
 export function deriveComponentTreePath(
   levels: string[],
@@ -319,23 +331,19 @@ export function deriveComponentTreePath(
   ctx: SpaceGroupValueContext,
 ): string[] | null {
   if (!appName) return groupParam;
-  if (levelsEndInComponent(levels)) {
-    if (groupParam.length > 0 && groupParam[groupParam.length - 1] === appName) {
-      return groupParam;
-    }
-    const firstSpace = appSpaces.find((s) => componentSlugOf(s, ctx.slugById) === appName);
-    if (!firstSpace) return null;
-    return levels.map((level) => getSpaceGroupValue(firstSpace, level, ctx) || '(empty)');
-  }
   const componentIdx = levels.indexOf(COMPONENT_FIELD);
   if (componentIdx === -1) return null;
-  const firstSpace = appSpaces.find((s) => componentSlugOf(s, ctx.slugById) === appName);
-  if (!firstSpace) return null;
-  const candidatePath = levels
-    .slice(0, componentIdx + 1)
-    .map((level) => getSpaceGroupValue(firstSpace, level, ctx) || '(empty)');
-  const target = resolveNodeGraphTarget(appSpaces, levels, candidatePath, ctx);
-  return 'app' in target && target.app === appName ? candidatePath : null;
+  if (groupParam.length === componentIdx + 1 && groupParam[componentIdx] === appName) {
+    return groupParam;
+  }
+  const prefixLevels = levels.slice(0, componentIdx + 1);
+  let firstPath: string[] | null = null;
+  for (const space of appSpaces) {
+    if (componentSlugOf(space, ctx.slugById) !== appName) continue;
+    const path = prefixLevels.map((level) => getSpaceGroupValue(space, level, ctx) || EMPTY_VALUE);
+    if (!firstPath || compareTreePaths(path, firstPath) < 0) firstPath = path;
+  }
+  return firstPath;
 }
 
 // ============================================================================

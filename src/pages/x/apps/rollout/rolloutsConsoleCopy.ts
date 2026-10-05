@@ -51,6 +51,7 @@ export const rolloutsConsoleCopy = {
     ready: { label: 'Ready to Promote', hint: 'waiting on you' },
     degraded: { label: 'Degraded', hint: 'live status failing' },
     blocked: { label: 'Unreleased changes', hint: 'needs a Release' },
+    held: { label: 'Held', hint: 'a prerequisite is not met' },
     progressing: { label: 'Progressing', hint: 'no action needed' },
     complete: { label: 'Complete', hint: 'the workflow says done' },
     /*
@@ -104,6 +105,16 @@ export const rolloutsConsoleCopy = {
    */
   finalPrerequisitesHeld:
     "Every stage has taken the change, but the ChangeWorkflow's final prerequisites are not satisfied.",
+  /**
+   * The Blocker cell for a rollout the server reports `Resolved`: every Space
+   * in scope has taken the change, and not every one has released it.
+   */
+  notReleasedEverywhere: 'Every stage has taken the change, but not every Space has released it.',
+  /**
+   * The Blocker cell for a rollout with every stage done that the server does
+   * not call finished, when a Space it is headed for is in none of its stages.
+   */
+  inScopeSpaceNotInStage: 'Not every in-scope Space is in a stage yet.',
   /**
    * The Blocker cell when the row is Degraded but the failing check cannot be
    * named — which the state derivation makes unreachable, since 'degraded' is
@@ -229,17 +240,4 @@ export const rolloutsConsoleCopy = {
   workflowUnavailable:
     'This rollout names a ChangeWorkflow but carries no copy of its rules, so its stages cannot be shown.',
 
-  /**
-   * The Blocker cell when the rollout's base Space carries no `Component` label.
-   *
-   * A stage selects within one component, and the component is the rollout's own
-   * rather than anything the definition names, so without that label there is no
-   * stage membership to compute. Reported rather than resolved without the term:
-   * a stage resolved on `Labels.Stage` alone would pull in every other
-   * component's Spaces at that stage, which reads as a much larger rollout than
-   * exists. The label is what `cub variant promote` reads too, and it refuses
-   * outright for the same reason.
-   */
-  noComponent:
-    'The Space this rollout starts in has no Component label, so its ChangeWorkflow stages cannot be resolved to Spaces.',
 } as const;

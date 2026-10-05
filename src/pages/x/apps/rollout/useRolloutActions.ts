@@ -732,7 +732,14 @@ export function useRolloutActions(args: UseRolloutActionsArgs): RolloutActions {
     async (spaceId: string, deadline: number): Promise<void> => {
       for (;;) {
         try {
-          await publishRelease({ spaceId, releasePublishRequest: {} }).unwrap();
+          // Naming the ChangeOrder is what makes the server advance its Stage in
+          // the same transaction. Without it the Release lands, State reads
+          // Released, and Stage stays on the last stage it was promoted into.
+          // No TagID: that would change which Revision is bundled.
+          await publishRelease({
+            spaceId,
+            releasePublishRequest: { ChangeOrderID: changeOrderId },
+          }).unwrap();
           return;
         } catch (error) {
           if (!isGateReevaluation(error) || Date.now() > deadline) throw error;
@@ -740,7 +747,7 @@ export function useRolloutActions(args: UseRolloutActionsArgs): RolloutActions {
         }
       }
     },
-    [publishRelease],
+    [publishRelease, changeOrderId],
   );
 
   const release = useCallback(

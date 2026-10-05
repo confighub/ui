@@ -307,12 +307,17 @@ export function deriveStageState(input: RolloutStageStateInput): RolloutStageSta
     return open ? 'waiting' : 'gated';
   })();
 
+  // The verdict still drives gating and tone. The words cannot: with no Space
+  // in the stage, every verdict and count says something untrue about it.
+  const noSpaces = !stage.isSource && spaceCount === 0;
+
   return {
     stageId: stage.id,
     verdict,
-    label: rolloutCopy.stageVerdict[verdict],
-    progress:
-      verdict === 'source'
+    label: noSpaces ? rolloutCopy.stageHasNoSpaces : rolloutCopy.stageVerdict[verdict],
+    progress: noSpaces
+      ? ''
+      : verdict === 'source'
         ? rolloutCopy.sourceProgress
         : verdict === 'unknown'
           ? rolloutCopy.progressUnavailable
@@ -325,55 +330,6 @@ export function deriveStageState(input: RolloutStageStateInput): RolloutStageSta
     gateTally,
     gatesOpen: open,
   };
-}
-
-/**
- * How many stages are fully promoted, for the "N of M stages promoted" strip.
- *
- * The source row is not a stage and is never counted — it holds the change by
- * definition, and counting it would report a rollout as one stage further along
- * than it is. This is the same base-Space trap `deriveProgress` guards.
- */
-export function countPromotedStages(stageStates: RolloutStageState[]): number {
-  let count = 0;
-  for (const state of stageStates) {
-    if (state.verdict === 'source' || state.verdict === 'unknown') continue;
-    if (state.spaceCount > 0 && state.promotedCount === state.spaceCount) count += 1;
-  }
-  return count;
-}
-
-/**
- * How many stages the change CAN reach, for the "N of M stages" strip.
- *
- * ⚠️ NOT `promotableStages(sequence).length`, AND THE DIFFERENCE IS A TOTAL A
- * ROLLOUT CANNOT REACH. `buildRolloutSequence` pushes one entry per stage a
- * ChangeWorkflow DECLARES, whether or not its `whereSpace` selected any Space
- * (`rolloutStages.ts`), so a stage nothing is labelled for sits in the sequence
- * with `spaceCount === 0`. `countPromotedStages` can never count such a stage —
- * there is nothing in it to have taken the change — so a rollout that has
- * reached everywhere it can still reads "1 of 2" for ever, beside a caption
- * saying every stage has taken the change.
- *
- * DROPPED FROM THE TOTAL RATHER THAN COUNTED AS DONE, because a stage no Space
- * is in is not a destination the change arrived at: calling it done claims a
- * promotion that never happened, while leaving it out states the honest number
- * of places this rollout has to go. It is the same reading `deriveConsoleState`'s
- * `no-stages` already takes of an empty stage.
- *
- * SEPARATE FROM `promotableStages`, deliberately. That predicate answers "is
- * this the source row", and `finalStageGates` takes the LAST stage from it — a
- * workflow's declared last stage, empty or not. Narrowing it would silently
- * change which stage `Final` is checked over; this counts, and nothing else.
- */
-export function countReachableStages(stageStates: readonly RolloutStageState[]): number {
-  let count = 0;
-  for (const state of stageStates) {
-    if (state.verdict === 'source') continue;
-    if (state.spaceCount === 0) continue;
-    count += 1;
-  }
-  return count;
 }
 
 /** The collapsed step summary: state, progress, and gates, on one line. */
@@ -463,6 +419,21 @@ export function finalStageGates(input: RolloutCompletionInput): RolloutGate[] | 
     changeOrderSlug,
     customPrerequisites: workflow.CustomPrerequisites,
   });
+}
+
+/**
+ * The position of the first stage that still holds a Space the change has not
+ * reached, or `-1` when every stage that selects a Space has taken it.
+ *
+ * READ FROM PROGRESS, NOT FROM `ChangeOrder.Stage`. The server advances `Stage`
+ * only when a promotion or a Release names the ChangeOrder, so it can lag behind
+ * where the change actually is. A stage that selects no Space is skipped: it has
+ * nothing to promote into, so it can never be the next step.
+ */
+export function nextStageIndexFromProgress(stageStates: readonly RolloutStageState[]): number {
+  return stageStates.findIndex(
+    (s) => s.verdict !== 'source' && s.spaceCount > 0 && s.promotedCount < s.spaceCount,
+  );
 }
 
 /**

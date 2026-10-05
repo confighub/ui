@@ -131,6 +131,7 @@ const ZERO_COUNTS: Readonly<Record<ConsoleState, number>> = {
   ready: 0,
   degraded: 0,
   blocked: 0,
+  held: 0,
   progressing: 0,
   complete: 0,
   'complete-unverified': 0,
@@ -214,6 +215,7 @@ export function useRolloutConsole(): RolloutConsoleData {
         governing: changeOrderWorkflow(order),
         abortedReason: order.AbortedReason,
         stage: order.Stage,
+        state: order.State,
         restoreTagId: order.RestoreTagID,
         // What says which Units of a Space this rollout covers, and so what a
         // rollback restores there and what a promote clones. Every row-level
@@ -227,26 +229,26 @@ export function useRolloutConsole(): RolloutConsoleData {
   }, [orders.data]);
 
   // ONE REQUEST PER DISTINCT STAGE CLAUSE, NOT PER ROW. The rows go in rather
-  // than the workflows: a stage's clause carries the component of the
-  // ChangeOrder asking for it, read off its base Space here.
-  const { stageSpacesByClause, isLoading: stageSpacesLoading } = useDistinctStageSpaces(
-    built,
-    consoleSpaces,
-  );
+  // than the workflows, since only the governed ones have stages to ask about.
+  const { stageSpacesByClause, isLoading: stageSpacesLoading } = useDistinctStageSpaces(built);
 
   // The Release each staged Space is running, for its live status: one search
-  // over the Spaces some stage names, rather than every Space in the org.
+  // over the Spaces some rollout is headed for, rather than every Space in the
+  // org. A stage's members are always among its ChangeOrder's in-scope Spaces,
+  // and the clause answers are not yet narrowed to them, so this reads the
+  // in-scope sets of the governed rows instead.
   const stagedSpaces = useMemo(() => {
     const bySpaceId = new Map(consoleSpaces.map((space) => [space.spaceId, space]));
     const staged = new Map<string, ConsoleSpace>();
-    for (const members of Object.values(stageSpacesByClause)) {
-      for (const member of members) {
-        const space = member.Space?.SpaceID ? bySpaceId.get(member.Space.SpaceID) : undefined;
+    for (const order of built) {
+      if (order.governing.state !== 'governed') continue;
+      for (const spaceId of order.inScopeSpaceIds ?? []) {
+        const space = bySpaceId.get(spaceId);
         if (space) staged.set(space.spaceId, space);
       }
     }
     return [...staged.values()];
-  }, [consoleSpaces, stageSpacesByClause]);
+  }, [consoleSpaces, built]);
   const releases = useRunningReleases(stagedSpaces);
 
   const spacesWithReleases: ConsoleSpace[] = useMemo(() => {

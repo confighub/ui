@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The ChangeWorkflow governing a ChangeOrder, and the clause one of its stages
- * selects Spaces with.
+ * The ChangeWorkflow governing a ChangeOrder, and the Spaces one of its stages
+ * selects for it.
  *
  * A ChangeOrder carries two workflow fields, and they answer different
  * questions:
@@ -34,7 +34,7 @@ import type {
   ChangeWorkflowPrerequisite,
   ChangeWorkflowSpec,
   ChangeWorkflowStage,
-  ComponentRead,
+  ExtendedSpaceRead,
 } from '@confighub/rtk-query';
 
 /**
@@ -149,39 +149,54 @@ export function classifyPrerequisite(
  * A stage that names no selector at all.
  *
  * An empty `WhereSpace` is a DECLARATION, not an omission: it selects every
- * Space of the change order's component. Reading it as "match nothing" is the
- * quiet way to get this wrong — the stage draws as empty, the rollout looks
- * mis-configured, and no error is reported anywhere.
+ * Space the ChangeOrder is headed for (`InScopeSpaceIDs`). Reading it as "match
+ * nothing" is the quiet way to get this wrong — the stage draws as empty, the
+ * rollout looks mis-configured, and no error is reported anywhere.
  *
  * Whitespace counts as empty. A selector of spaces is not a predicate, and a
  * clause built from one is a syntax error rather than a stage.
  */
-export function stageSelectsWholeComponent(stage: ChangeWorkflowStage): boolean {
+export function stageSelectsWholeScope(stage: ChangeWorkflowStage): boolean {
   return (stage.WhereSpace ?? '').trim() === '';
 }
 
-/** Every Space of a component, as a `where` clause. */
-export function componentWhereSpace(component: ComponentRead): string {
-  return `ComponentID = '${component.ComponentID}'`;
+/**
+ * The `where` clause a stage's Spaces are listed with: the stage's own
+ * selector, and nothing else. Empty for a stage that names none.
+ *
+ * A stage's members are the Spaces this clause selects that the ChangeOrder is
+ * headed for — the clause intersected with `InScopeSpaceIDs`, as
+ * `changeOrderStageMembers` applies it — the same rule the server's promote and
+ * stage advancement use. The rollout's scope is the ChangeOrder's, not the
+ * workflow's: there is no component term, so one workflow can govern rollouts
+ * of several components, each narrowed by its own ChangeOrder. A stage may name
+ * a component itself if its author wants that; nothing appends or refuses one.
+ *
+ * Because the clause depends on the stage alone, rollouts sharing a workflow
+ * share its answer, and only the intersection is per ChangeOrder.
+ */
+export function stageWhereSpace(stage: ChangeWorkflowStage): string {
+  return stageSelectsWholeScope(stage) ? '' : (stage.WhereSpace ?? '').trim();
 }
 
 /**
- * The `where` clause that selects one stage's Spaces: the stage's own selector
- * conjoined with the component the ChangeOrder is for, or the component alone
- * where the stage names no selector.
+ * The Spaces of one stage for one ChangeOrder: those `selected` lists that are
+ * in `inScopeSpaceIds`, or every in-scope Space for a stage that names no
+ * selector. An empty or absent `InScopeSpaceIDs` selects no Space — the
+ * ChangeOrder is headed nowhere, and the stage cannot be wider than the rollout.
  *
- * Mirrors `stageWhereSpace` in `public/cmd/cub/variant_promote.go`, so the
- * console, the rollout detail page and `cub variant promote` resolve a stage to
- * the same Spaces. The component is declared once, by the change being promoted, which
- * is what lets one workflow govern another component's rollouts unchanged —
- * and why a stage naming `Labels.Component` itself is refused when the workflow
- * is written (`validateStageWhereSpace`, `internal/views/changeworkflow.go`).
- *
- * THE EMPTY BRANCH LIVES HERE AND NOWHERE ELSE. Four call sites build this
- * clause; a branch repeated at each of them is three chances for one of them to
- * keep reading an empty selector as a refusal.
+ * THE EMPTY BRANCH LIVES HERE AND NOWHERE ELSE, so no caller reads an empty
+ * selector as a stage with no Spaces.
  */
-export function stageWhereSpace(stage: ChangeWorkflowStage, component: ComponentRead): string {
-  const componentTerm = componentWhereSpace(component);
-  return stageSelectsWholeComponent(stage) ? componentTerm : `${stage.WhereSpace} AND ${componentTerm}`;
+export function changeOrderStageMembers(
+  stage: ChangeWorkflowStage,
+  selected: readonly ExtendedSpaceRead[] | undefined,
+  inScopeSpaceIds: readonly string[] | undefined,
+): ExtendedSpaceRead[] {
+  if (inScopeSpaceIds === undefined || inScopeSpaceIds.length === 0) return [];
+  if (stageSelectsWholeScope(stage)) {
+    return inScopeSpaceIds.map((SpaceID) => ({ Space: { SpaceID } }) as ExtendedSpaceRead);
+  }
+  const inScope = new Set(inScopeSpaceIds);
+  return (selected ?? []).filter((space) => space.Space?.SpaceID !== undefined && inScope.has(space.Space.SpaceID));
 }

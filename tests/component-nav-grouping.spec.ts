@@ -20,6 +20,11 @@ const COMPONENT_CHECKOUT = `e2e-nav-checkout-${RUN}`;
 const COMPONENT_BILLING = `e2e-nav-billing-${RUN}`;
 const COMPONENT_SEARCH = `e2e-nav-search-${RUN}`;
 const COMPONENT_ORPHAN = `e2e-nav-orphan-${RUN}`;
+// One Component whose two Spaces have DIFFERENT Owners, so it shows under two
+// Owner nodes. Its own Owners, so no other test's Owner counts change.
+const OWNER_SPLIT_1 = `e2e-nav-owner-split1-${RUN}`;
+const OWNER_SPLIT_2 = `e2e-nav-owner-split2-${RUN}`;
+const COMPONENT_SPLIT = `e2e-nav-split-${RUN}`;
 
 async function waitForTreeLoaded(page: Page) {
   await page
@@ -105,6 +110,8 @@ test.describe('Components nav grouping + saved views', () => {
       { slug: `${COMPONENT_SEARCH}-base`, component: COMPONENT_SEARCH, labels: { Owner: OWNER_B } },
       // No Owner label — the "Unassigned"/(empty) bucket.
       { slug: `${COMPONENT_ORPHAN}-base`, component: COMPONENT_ORPHAN, labels: {} },
+      { slug: `${COMPONENT_SPLIT}-base`, component: COMPONENT_SPLIT, labels: { Owner: OWNER_SPLIT_1 } },
+      { slug: `${COMPONENT_SPLIT}-prod`, component: COMPONENT_SPLIT, labels: { Owner: OWNER_SPLIT_2 } },
     ];
 
     for (const f of fixtures) {
@@ -200,7 +207,7 @@ test.describe('Components nav grouping + saved views', () => {
     await expect(page).not.toHaveURL(new RegExp(`app=${COMPONENT_BILLING}`));
     await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
     await expect(page.locator('table')).toHaveCount(0);
-    await expect(page.locator('.react-flow__node')).toHaveCount(3);
+    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(3);
   });
 
   test('3a. removing Component: no leaf testids; every click opens a node graph (not the overview); ?app= opens with no tree node selected', async ({ page }) => {
@@ -220,7 +227,7 @@ test.describe('Components nav grouping + saved views', () => {
     await expect(page).toHaveURL(/group=/);
     await expect(page).not.toHaveURL(/app=/);
     await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
-    await expect(page.locator('.react-flow__node')).toHaveCount(3);
+    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(3);
 
     // Deep link with Owner-only levels: graph opens, no tree node selected —
     // no node's bucket resolves back to exactly this Component without a
@@ -245,7 +252,7 @@ test.describe('Components nav grouping + saved views', () => {
     await expect(page).toHaveURL(new RegExp(`app=${COMPONENT_CHECKOUT}`));
     await expect(page).not.toHaveURL(/group=/);
     await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
-    await expect(page.locator('.react-flow__node')).toHaveCount(2);
+    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(2);
 
     // Checkout's own children (the Variant nodes) were never auto-expanded —
     // that only ever covers the top-level nodes at mount, not a node opened
@@ -258,7 +265,39 @@ test.describe('Components nav grouping + saved views', () => {
     await expect(page).toHaveURL(/group=/);
     await expect(page).not.toHaveURL(/app=/);
     await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
-    await expect(page.locator('.react-flow__node')).toHaveCount(1);
+    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(1);
+  });
+
+  test('3c. a Component split across two Owners: a click on either of its nodes opens the WHOLE Component (?app=); the first node in tree order is highlighted', async ({ page }) => {
+    await page.goto('/components');
+    await waitForTreeLoaded(page);
+
+    // One Component node under each Owner, in tree (localeCompare) order.
+    const splitNodes = page.getByTestId(`app-tree-item-${COMPONENT_SPLIT}`);
+    await expect(splitNodes).toHaveCount(2);
+
+    // The node under the SECOND Owner holds only one of the two Spaces, but
+    // the click names the Component, so the graph shows all of it.
+    await splitNodes.nth(1).click();
+    await expect(page).toHaveURL(new RegExp(`app=${COMPONENT_SPLIT}`));
+    await expect(page).not.toHaveURL(/group=/);
+    await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(2);
+    await expect(splitNodes.first()).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('[role="treeitem"][aria-selected="true"]')).toHaveCount(1);
+
+    // A deep link opens the same whole-Component graph with the same highlight.
+    await page.goto(`/components?app=${COMPONENT_SPLIT}`);
+    await waitForTreeLoaded(page);
+    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(2);
+    await expect(page.getByTestId(`app-tree-item-${COMPONENT_SPLIT}`).first()).toHaveAttribute('aria-selected', 'true');
+
+    // An Owner node above it holds only part of the Component — still a
+    // `?group=` graph of that part.
+    await clickTreeNode(page, OWNER_SPLIT_2);
+    await expect(page).toHaveURL(/group=/);
+    await expect(page).not.toHaveURL(/app=/);
+    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(1);
   });
 
   test('4-5. saving a view (grouping only) persists across reload; the Unit list never sees it', async ({ page }) => {
@@ -426,8 +465,8 @@ test.describe('Components nav grouping + saved views', () => {
     await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
     // The downstream Space is the ONLY node in this graph — its own upstream
     // (a different Variant bucket) is outside the set.
-    await expect(page.locator('.react-flow__node')).toHaveCount(1);
-    await expect(page.locator('.react-flow__node').getByText('Stale')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(1);
+    await expect(page.locator('.react-flow__node-deploymentNode').getByText('Stale')).toBeVisible({ timeout: 10000 });
   });
 
   test('6. no filter button on the Components page — a saved view holds grouping only', async ({ page }) => {
@@ -551,7 +590,7 @@ test.describe('Components nav grouping + saved views', () => {
 
     await expect(page).toHaveURL(/group=/);
     await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
-    await expect(page.locator('.react-flow__node')).toHaveCount(3);
+    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(3);
     await expect(page.locator('[role="treeitem"][aria-selected="true"]')).toContainText(OWNER_A);
   });
 
@@ -569,7 +608,7 @@ test.describe('Components nav grouping + saved views', () => {
 
     await page.goBack();
     await expect(page).toHaveURL(ownerGraphUrl);
-    await expect(page.locator('.react-flow__node')).toHaveCount(3);
+    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(3);
 
     // Re-clicking the node that's already open is a no-op — no new history
     // entry. If it wrongly pushed a duplicate entry here, a second Back
@@ -593,7 +632,7 @@ test.describe('Components nav grouping + saved views', () => {
     // `?group=` entry and Back can't reach the Overview.
     await page.locator('[role="tree"]').getByText(OWNER_A, { exact: false }).first().dblclick();
     await expect(page).toHaveURL(/group=/);
-    await expect(page.locator('.react-flow__node')).toHaveCount(3);
+    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(3);
 
     await page.goBack();
     await expect(page).toHaveURL(overviewUrl);

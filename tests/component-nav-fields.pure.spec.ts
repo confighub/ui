@@ -168,14 +168,42 @@ test.describe('componentGroupFields (pure)', () => {
     });
   });
 
-  test('resolveNodeGraphTarget: a Component split across two Owners never resolves to {app} from either Owner alone', () => {
+  test('resolveNodeGraphTarget: a Component split across two Owners resolves to {app} from either Owner\'s Component node', () => {
     const appSpaces = [
       space({ Component: 'shared', Labels: { Owner: 'a' } }),
       space({ Component: 'shared', Labels: { Owner: 'b' } }),
+      space({ Component: 'shared' }),
     ];
     const levels = ['Labels.Owner', 'Component'];
-    expect(resolveNodeGraphTarget(appSpaces, levels, ['a', 'shared'], ctx)).toEqual({
-      group: ['a', 'shared'],
+    expect(resolveNodeGraphTarget(appSpaces, levels, ['a', 'shared'], ctx)).toEqual({ app: 'shared' });
+    expect(resolveNodeGraphTarget(appSpaces, levels, ['b', 'shared'], ctx)).toEqual({ app: 'shared' });
+    expect(resolveNodeGraphTarget(appSpaces, levels, ['(empty)', 'shared'], ctx)).toEqual({ app: 'shared' });
+    // The Owner nodes themselves hold only part of the Component — still {group}.
+    expect(resolveNodeGraphTarget(appSpaces, levels, ['a'], ctx)).toEqual({ group: ['a'] });
+  });
+
+  test('resolveNodeGraphTarget: a split Component in the MIDDLE resolves to {app}; a node below it stays {group}', () => {
+    const appSpaces = [
+      space({ Component: 'shared', Labels: { Owner: 'a', Variant: 'base' } }),
+      space({ Component: 'shared', Labels: { Owner: 'b', Variant: 'dev' } }),
+      space({ Component: 'shared', Labels: { Owner: 'b', Variant: 'prod' } }),
+    ];
+    const levels = ['Labels.Owner', 'Component', 'Labels.Variant'];
+    expect(resolveNodeGraphTarget(appSpaces, levels, ['b', 'shared'], ctx)).toEqual({ app: 'shared' });
+    expect(resolveNodeGraphTarget(appSpaces, levels, ['b', 'shared', 'dev'], ctx)).toEqual({
+      group: ['b', 'shared', 'dev'],
+    });
+  });
+
+  test('resolveNodeGraphTarget: a Component at the TOP level resolves to {app}; a node below it stays {group}', () => {
+    const appSpaces = [
+      space({ Component: 'checkout', Labels: { Stage: 'dev' } }),
+      space({ Component: 'checkout', Labels: { Stage: 'prod' } }),
+    ];
+    const levels = ['Component', 'Labels.Stage'];
+    expect(resolveNodeGraphTarget(appSpaces, levels, ['checkout'], ctx)).toEqual({ app: 'checkout' });
+    expect(resolveNodeGraphTarget(appSpaces, levels, ['checkout', 'dev'], ctx)).toEqual({
+      group: ['checkout', 'dev'],
     });
   });
 
@@ -186,7 +214,7 @@ test.describe('componentGroupFields (pure)', () => {
     expect(deriveComponentTreePath(levels, null, ['a'], appSpaces, ctx)).toEqual(['a']);
   });
 
-  test('deriveComponentTreePath: levels end in Component — derives the path from the Component\'s first Space', () => {
+  test('deriveComponentTreePath: levels end in Component — derives the path from the Component\'s Spaces', () => {
     const appSpaces = [space({ Component: 'checkout', Labels: { Owner: 'a' } })];
     const levels = ['Labels.Owner', 'Component'];
     expect(deriveComponentTreePath(levels, 'checkout', [], appSpaces, ctx)).toEqual(['a', 'checkout']);
@@ -194,13 +222,34 @@ test.describe('componentGroupFields (pure)', () => {
     expect(deriveComponentTreePath(levels, 'checkout', ['a', 'checkout'], appSpaces, ctx)).toEqual(['a', 'checkout']);
   });
 
-  test('deriveComponentTreePath: Component in the middle — finds the node whose bucket is the whole Component', () => {
+  test('deriveComponentTreePath: Component in the middle — highlights the Component node, not a node below it', () => {
     const appSpaces = [
       space({ Component: 'checkout', Labels: { Owner: 'a', Variant: 'base' } }),
       space({ Component: 'checkout', Labels: { Owner: 'a', Variant: 'dev' } }),
     ];
     const levels = ['Labels.Owner', 'Component', 'Labels.Variant'];
     expect(deriveComponentTreePath(levels, 'checkout', [], appSpaces, ctx)).toEqual(['a', 'checkout']);
+  });
+
+  test('deriveComponentTreePath: a split Component highlights its FIRST node in tree order, whatever the Space order', () => {
+    const levels = ['Labels.Owner', 'Component'];
+    const spaces = [
+      space({ Component: 'shared', Labels: { Owner: 'b' } }),
+      space({ Component: 'shared' }),
+      space({ Component: 'shared', Labels: { Owner: 'a' } }),
+    ];
+    // The tree sorts siblings with localeCompare: "(empty)" < "a" < "b".
+    expect(deriveComponentTreePath(levels, 'shared', [], spaces, ctx)).toEqual(['(empty)', 'shared']);
+    expect(deriveComponentTreePath(levels, 'shared', [], [...spaces].reverse(), ctx)).toEqual(['(empty)', 'shared']);
+    // Component in the middle: the same rule, and the levels below it are ignored.
+    const middleLevels = ['Labels.Owner', 'Component', 'Labels.Variant'];
+    const middleSpaces = [
+      space({ Component: 'shared', Labels: { Owner: 'b', Variant: 'base' } }),
+      space({ Component: 'shared', Labels: { Owner: 'a', Variant: 'dev' } }),
+    ];
+    expect(deriveComponentTreePath(middleLevels, 'shared', [], middleSpaces, ctx)).toEqual(['a', 'shared']);
+    // A groupParam naming another of its Component nodes is kept.
+    expect(deriveComponentTreePath(middleLevels, 'shared', ['b', 'shared'], middleSpaces, ctx)).toEqual(['b', 'shared']);
   });
 
   test('deriveComponentTreePath: no Component field in levels — selects nothing', () => {

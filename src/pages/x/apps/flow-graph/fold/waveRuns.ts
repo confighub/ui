@@ -140,8 +140,13 @@ export async function runWaveUpgrade(
 }
 
 export interface WaveReleaseDeps {
-  /** The unnamed release of the side pane; resolves with its number. */
-  publish: (spaceId: string) => Promise<{ ReleaseNum?: number }>;
+  /**
+   * The unnamed release of the side pane; resolves with its number, or with a
+   * Message when the Space is unchanged since its latest Release.
+   */
+  publish: (
+    spaceId: string,
+  ) => Promise<{ Release?: { ReleaseNum?: number }; Message?: string }>;
   /** What a failed publish tells the user, given the thrown error. */
   errorDetail: (err: unknown) => string;
   setReleasing: (update: (prev: ReadonlySet<string>) => ReadonlySet<string>) => void;
@@ -167,8 +172,11 @@ export async function runWaveRelease(
   // one failure (a gate) must not stop the others.
   for (const spaceId of mine) {
     try {
-      const release = await deps.publish(spaceId);
-      deps.flashSuccess(new Set([spaceId]), `Released rel-${release.ReleaseNum ?? '?'}`);
+      const { Release: release, Message: message } = await deps.publish(spaceId);
+      deps.flashSuccess(
+        new Set([spaceId]),
+        message ? 'No change' : `Released rel-${release?.ReleaseNum ?? '?'}`,
+      );
     } catch (err: unknown) {
       deps.setErrors([spaceId], {
         title: 'Release failed',

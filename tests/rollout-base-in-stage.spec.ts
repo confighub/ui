@@ -4,8 +4,8 @@
  * THE CHANGEORDER'S OWN SPACE, INSIDE A REAL STAGE.
  *
  * `buildRolloutSequence` stopped withholding the base from a stage whose
- * selector covers it, because `stageSpaces` in
- * `public/cmd/cub/variant_promote.go` filters by scope and by nothing else.
+ * selector covers it, because the server's promotion filters a stage by scope
+ * and by nothing else.
  * That was right FOR GATING: the base is one of the Variants every entry gate
  * to the next stage quantifies over.
  *
@@ -76,7 +76,7 @@ function rowFor(
 ) {
   const stageSpaces: Record<string, ExtendedSpaceRead[]> = {};
   workflow.Stages.forEach((stage, i) => {
-    stageSpaces[stageWhereSpace(stage, COMPONENT)] = (stageMembers[i] ?? []).map(
+    stageSpaces[stageWhereSpace(stage)] = (stageMembers[i] ?? []).map(
       (spaceId) => ({ Space: { SpaceID: spaceId } }) as ExtendedSpaceRead,
     );
   });
@@ -97,8 +97,8 @@ function rowFor(
 
 /**
  * ONE STAGE, NO SELECTOR — the shipped `whole-component` shape, and the
- * product's simplest workflow. An empty `WhereSpace` means every Space of the
- * component, so the base is a member of the only stage there is.
+ * product's simplest workflow. An empty `WhereSpace` means every Space the
+ * ChangeOrder is headed for, so the base is a member of the only stage there is.
  */
 const WHOLE_COMPONENT: ChangeWorkflowSpec = { Stages: [{ Name: 'everywhere', WhereSpace: '' }] };
 

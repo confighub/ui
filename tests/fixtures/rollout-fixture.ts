@@ -92,10 +92,9 @@ import { hubApi } from './test';
 /**
  * The stages this fixture's rollouts are governed by.
  *
- * The selectors name no component. The component belongs to the ChangeOrder
- * and is conjoined onto every stage's selector by the promote path, so a
- * stage that named `Labels.Component` is refused outright
- * (`validateStageWhereSpace`, `internal/views/changeworkflow.go`).
+ * The selectors name no component. A stage's members are its selector's
+ * Spaces within the ChangeOrder's `InScopeSpaceIDs`, which this fixture sets to
+ * the Spaces it builds, so other runs' Spaces at the same stage stay out.
  *
  * The prerequisite names are the built-ins as the server spells them —
  * capitalised. A workflow naming `released` is refused before it is stored,

@@ -24,9 +24,11 @@
  *     legitimately have different stages and different counts. The strip
  *     therefore renders each rollout's own sequence at whatever length that is.
  *
- *  2. STAGE MEMBERSHIP IS THE WORKFLOW'S ANSWER, NOT THIS FILE'S. Each stage's
- *     `whereSpace` is resolved server-side (`useDistinctStageSpaces`), the same
- *     query `cub variant promote` runs, and this file only reads the result.
+ *  2. STAGE MEMBERSHIP IS THE WORKFLOW'S AND THE CHANGEORDER'S ANSWER, NOT
+ *     THIS FILE'S. Each stage's `whereSpace` is resolved server-side
+ *     (`useDistinctStageSpaces`) and narrowed to the ChangeOrder's
+ *     `InScopeSpaceIDs` (`changeOrderStageMembers`), as the server's promote
+ *     does, and this file only reads the result.
  *     `allSpaces` is a DISPLAY index — slug, live status, release target — never
  *     a membership test. A rollout whose ChangeWorkflow cannot be resolved is
  *     reported as such rather than given a sequence assembled from labels,
@@ -37,7 +39,7 @@ import type { ChangeOrderRelease, ComponentRead, ExtendedSpaceRead } from '@conf
 
 import { ROUTE_COMPONENTS } from '../appTypes';
 import type { RunningRelease } from '../liveStatus';
-import { stageWhereSpace, type ChangeOrderWorkflow } from './changeOrderWorkflow';
+import { changeOrderStageMembers, stageWhereSpace, type ChangeOrderWorkflow } from './changeOrderWorkflow';
 import { rolloutCopy } from './rolloutCopy';
 import { buildGatesForStage, gatesOpen } from './rolloutGates';
 import type { RolloutGateSpaceInput } from './rolloutGates';
@@ -52,13 +54,12 @@ import type {
 } from './rolloutReportedHealth';
 import { buildRolloutSequence, previousStageOf, promotionTargets } from './rolloutStages';
 import {
-  countPromotedStages,
-  countReachableStages,
   deriveProgress,
   deriveStageState,
   finalStageGates,
   hasTakenChange,
   nextStageIndexFromChangeOrderStage,
+  nextStageIndexFromProgress,
 } from './rolloutState';
 import type { RolloutCompletionInput } from './rolloutState';
 import type { RolloutGate, RolloutProgress, RolloutStage, RolloutStageState } from './rolloutTypes';
@@ -82,6 +83,13 @@ export type ConsoleState =
   | 'ready'
   | 'degraded'
   | 'blocked'
+  /**
+   * The stage being entered is held by a gate that is not a Release: a custom
+   * or unrecognised prerequisite, an unevaluated check, or a previous stage
+   * that selects no Space. Apart from `blocked` so that "needs a Release" is
+   * said only when a Release is what is missing.
+   */
+  | 'held'
   | 'progressing'
   | 'complete'
   /**
@@ -195,6 +203,13 @@ export interface ConsoleChangeOrder {
    */
   stage?: string;
   /**
+   * `ChangeOrder.State`, verbatim: New, InProgress, Resolved, Released,
+   * Restored, RestoreReleased or Aborted. The server derives it on each read
+   * from where the change has been taken and released, so it is current even
+   * when `stage` lags behind.
+   */
+  state?: string;
+  /**
    * `ChangeOrder.RestoreTagID` — the Tag marking the Revisions that undid this
    * change. Empty until something has been restored, and it is the server's own
    * test for the one thing an abort cannot be taken back from
@@ -230,7 +245,8 @@ export type SegmentTone =
    * The change landed here and nothing checked whether it is healthy. Only ever
    * the last stage: every earlier one was vouched for by the promotion out of
    * it. Distinct from `done`, which claims a green workload, and from
-   * `degraded`, which claims a failing one.
+   * `degraded`, which claims a failing one. Never on a complete rollout, which
+   * draws every step done and says "Complete, unverified" in words instead.
    */
   | 'unverified'
   /** The change reached this stage and was taken back out of it again. */
@@ -295,7 +311,14 @@ export interface ConsoleRow {
   /** '' when not aborted; non-empty IS the aborted state. Normalized from `ConsoleChangeOrder.abortedReason`. */
   abortedReason: string;
   stages: ConsoleStage[];
+  /**
+   * The steps of the promotion path the rollout has passed. Steps are counted
+   * in path order, so step `i` (a stage, or the Complete step at
+   * `stages.length`) is passed exactly when `i < stagesDone`. See
+   * `stagePathProgress`.
+   */
   stagesDone: number;
+  /** Every step of the promotion path: the source, each declared stage, and Complete. */
   stagesTotal: number;
   nextStageId: string | null;
   /** True when the server did not return the derived propagation fields. */
@@ -303,14 +326,10 @@ export interface ConsoleRow {
   /** The derived progress this row was built from — lets a viewer ask about one Space. */
   progress: RolloutProgress;
   /**
-   * The server's completion reading — `ChangeOrder.Stage` is `Completed` —
-   * carried apart from `state`.
-   *
-   * ⚠️ NOT DERIVABLE FROM `state`. `deriveConsoleState` answers 'degraded' ABOVE
-   * its `complete` return, deliberately, so a failing workload is shown rather
-   * than hidden behind a Complete chip. That makes 'degraded' cover two
-   * different rollouts — one still under way, one the workflow considers
-   * finished — and `canAbortRollout` has to tell them apart.
+   * The server's completion reading, carried apart from `state`: `Stage` is
+   * `Completed`, or `State` is Released or RestoreReleased — the finished
+   * readings of `IsFinished` (internal/models/changeorder.go) other than
+   * Aborted, which `abortedReason` carries.
    */
   workflowComplete: boolean;
   /**
@@ -355,7 +374,7 @@ export function actionFor(
 ): { label: 'Promote' | 'Resolve' | 'Open'; primary: boolean } {
   const state = row.gateState.state;
   if (state === 'ready') return { label: 'Promote', primary: true };
-  if (state === 'blocked' || state === 'degraded' || state === 'no-stages') {
+  if (state === 'blocked' || state === 'held' || state === 'degraded' || state === 'no-stages') {
     return { label: 'Resolve', primary: false };
   }
   /*
@@ -501,10 +520,10 @@ export function canAbortRollout(
  * label or is not in the index, which a fleet-wide rollout is not required to
  * have.
  *
- * Mirrors `changeOrderComponent` in `internal/views/promote_select.go`, and is
- * the ONE derivation of it on this side. The row's `appName`, its deep link and
- * the component appended to every stage's selector must name the same component,
- * or a row links to one component while its stages were resolved for another.
+ * Display only: the row's `appName` and its deep link. It plays no part in
+ * which Spaces a stage selects — that is the stage's selector and the
+ * ChangeOrder's `InScopeSpaceIDs` — so a rollout whose base has no Component
+ * still has stages.
  */
 export function orderComponent(
   order: Pick<ConsoleChangeOrder, 'spaceId'>,
@@ -848,6 +867,43 @@ function finalStageHealthVerified(
 }
 
 /**
+ * How far along its promotion path a rollout is, counted over the steps the
+ * path draws: the source, every stage the ChangeWorkflow declares, and the
+ * trailing Complete step.
+ *
+ * EVERY DRAWN STEP IS COUNTED, a stage that selects no Space included. The
+ * list strip, the detail rail and the detail pips all draw one mark per step,
+ * so a total over fewer steps reads as a bar that cannot fill.
+ *
+ * Done is the steps before the next stage: the rollout has passed them,
+ * empty ones included. With no next stage, every stage is done and the
+ * Complete step waits for the server to call the rollout finished. A complete
+ * row has passed everything. A row with nowhere to promote has passed only
+ * the source, where the change was made.
+ */
+export function stagePathProgress(
+  stageCount: number,
+  nextStageIndex: number,
+  state: ConsoleState,
+): { done: number; total: number } {
+  const total = stageCount + 1;
+  if (state === 'complete' || state === 'complete-unverified') return { done: total, total };
+  if (state === 'no-stages') return { done: Math.min(stageCount, 1), total };
+  return { done: nextStageIndex === -1 ? stageCount : nextStageIndex, total };
+}
+
+/**
+ * Whether the row has a promotion path to draw and count. A row whose stages
+ * cannot be shown — no workflow, no copy of its rules, or no component — has
+ * none: every surface withholds the rail, the pips and "N of M" for it and
+ * shows the row's Blocker instead, so no surface draws a path the row does
+ * not count.
+ */
+export function hasPromotionPath(row: Pick<ConsoleRow, 'stages'>): boolean {
+  return row.stages.length > 0;
+}
+
+/**
  * One stage's strip segment, read with the same gate checks `deriveConsoleState`
  * uses for the row as a whole — never a separate, looser read that could put a
  * segment and its own row's state at odds.
@@ -858,11 +914,26 @@ function segmentToneFor(
   health: GateVerdictChannel | undefined,
   isLastStage: boolean,
   reported: ReportedHealthChannel,
+  /** Whether the rollout has passed this stage, by `stagePathProgress`. */
+  passed: boolean,
+  /** Whether the row reads complete, which passes every stage. */
+  complete: boolean,
 ): SegmentTone {
   // Ahead of every other read, and never left to the catch-all below: a stage
   // the change has been taken back out of would otherwise fall through to
   // 'gated' and read as one still waiting its turn.
   if (stage.verdict === 'restored' || stage.verdict === 'restore-released') return 'restored';
+  /*
+   * A complete rollout draws every stage done, so the pips agree with its
+   * "N of N". A failing workload still shows on its own stage. Health that
+   * nothing checked is said by the row's "Complete, unverified" label and its
+   * Blocker cell, not by a hollow pip on a rollout the server calls finished.
+   */
+  if (complete) {
+    if (health !== undefined && health.evaluated && !health.ok) return 'degraded';
+    if (reported.reported === 'failing') return 'degraded';
+    return 'done';
+  }
   if (stage.verdict === 'source' || stage.verdict === 'promoted' || stage.verdict === 'released') {
     // A promoted stage can still be unhealthy where it landed, and `health` is
     // the verdict over THIS stage's Spaces rather than the one its own gates
@@ -887,6 +958,9 @@ function segmentToneFor(
     if (isLastStage && (health === undefined || !health.evaluated)) return 'unverified';
     return 'done';
   }
+  // A stage that selects no Space has nothing to promote, so once the rollout
+  // is past it, it is done: it counts toward "N of M", and is drawn that way.
+  if (passed && stage.spaceCount === 0) return 'done';
   if (stage.verdict === 'in-progress') return 'progressing';
   if (isNextStage) {
     if (gateFailing(stage.gates, rolloutCopy.gateNames.released)) return 'blocked';
@@ -902,11 +976,16 @@ function segmentToneFor(
  * except that a live status failure in a stage it has already reached outranks
  * that — a degraded prod is the thing to look at even while dev is promoting.
  *
- * `abortedReason` is checked FIRST, above even `progressUnavailable` — matching
- * `internal/models/changeorder.go:201`, where `AbortedReason` overrides every
- * other derivation of a ChangeOrder's state. Setting it is a decision someone
- * made, and it stands regardless of what the propagation graph does or does
- * not report.
+ * `abortedReason` is checked FIRST — matching `internal/models/changeorder.go`,
+ * where `AbortedReason` overrides every other derivation of a ChangeOrder's
+ * state. Setting it is a decision someone made, and it stands regardless of
+ * what the propagation graph does or does not report.
+ *
+ * THE SERVER'S "FINISHED" COMES NEXT, above every other reading. `complete` is
+ * `Stage = Completed` or `State` Released / RestoreReleased, the readings
+ * `cub changeorder get` prints, and the page says what the CLI says. A failing
+ * workload on a finished rollout is still shown, on its stage's segment and in
+ * the Blocker cell, but it does not turn the chip away from Complete.
  *
  * ⚠️ CALLED TWICE PER ROW, AND `unhealthy` IS THE ONLY DIFFERENCE. The display
  * answer counts both health channels; the gate answer (`GateChannelState`,
@@ -922,12 +1001,15 @@ function deriveConsoleState(
   progressUnavailable: boolean,
   abortedReason: string,
   complete: boolean,
+  /** `ChangeOrder.State`, verbatim, or `undefined` when the server sent none. */
+  serverState: string | undefined,
+  /** `Final.Prerequisites` over the last stage, or `null` when there is no last stage. */
+  finalGates: RolloutGate[] | null,
   healthByStageIndex: readonly (GateVerdictChannel | undefined)[],
   /** Whether a stage the change has REACHED is unhealthy, by the caller's channels. */
   unhealthy: boolean,
 ): ConsoleState {
   if (abortedReason !== '') return 'aborted';
-  if (progressUnavailable) return 'unknown';
 
   /*
    * A restored stage says the same thing `abortedReason` does, and says it from
@@ -935,11 +1017,22 @@ function deriveConsoleState(
    * narrowed away. Restoring is only permitted on a ChangeOrder somebody has
    * already given up on, so the two can never disagree; what differs is whether
    * the reason was fetched. Without this, an undone rollout falls through and is
-   * reported by the gates on stages it no longer occupies.
+   * reported by the gates on stages it no longer occupies. Above `complete`,
+   * so a State of RestoreReleased cannot read as a finished rollout.
    */
   if (stageStates.some((s) => s.verdict === 'restored' || s.verdict === 'restore-released')) {
     return 'aborted';
   }
+
+  // Complete says the WORKFLOW is done, which is `cub`'s reading. Whether the
+  // last stage is healthy is a second question, and a workflow declaring no
+  // final health check never asked it — so the answer is withheld rather than
+  // assumed. See `finalStageHealthVerified`.
+  const completeState = (): ConsoleState =>
+    finalStageHealthVerified(lastStageIndex, healthByStageIndex) ? 'complete' : 'complete-unverified';
+  if (complete) return completeState();
+
+  if (progressUnavailable) return 'unknown';
 
   const promotable = stageStates.filter((s) => s.verdict !== 'source');
   /*
@@ -958,12 +1051,6 @@ function deriveConsoleState(
    * `spaceCount === 0`: `promotable.length` is 3, not 0, and this check never
    * fired for the exact case it names. Checked here instead: no promotable
    * stage actually selected a Space, so there is genuinely nowhere to go.
-   *
-   * Still needed when `complete` below is `false`: without this early return
-   * the function falls through to `deriveBlocker`'s
-   * `'blocked'` default, which reports `finalPrerequisitesHeld`. That names a
-   * held gate that does not exist; there is nothing to hold because there is
-   * nothing to promote.
    */
   if (promotable.every((s) => s.spaceCount === 0)) return 'no-stages';
 
@@ -971,36 +1058,10 @@ function deriveConsoleState(
 
   // A workload that is unhealthy where the change already landed.
   //
-  // ⚠️ THIS MUST STAY ABOVE THE `nextStageId === null` RETURN BELOW. Having it
-  // the other way round meant a fully-promoted rollout could never be reported
-  // degraded: there is no next stage once `ChangeOrder.Stage` names the last
-  // stage or `Completed`, whatever the workloads report, so a rollout promoted
-  // through prod whose staging workload later degrades would return
-  // "Complete" — a chip the design uses to
-  // assert health ("live status Ready on 6 of 6 Units") — while hiding a real
-  // failure, and hiding it precisely on the rollouts nobody is watching any
-  // more. `relevantStages` covers every stage when nothing is next, because
-  // they are all promoted.
-  //
   // ⚠️ AND IT ASKS BOTH CHANNELS. A gate verdict alone cannot report a Space
-  // `cub` declines to judge, so a targetless Space reporting Degraded reached
-  // the `complete` return below and the rollout read as finished — with Abort
-  // withdrawn from it — while its workload was failing.
+  // `cub` declines to judge, so a targetless Space reporting Degraded would
+  // otherwise read as healthy while its workload was failing.
   if (unhealthy) return 'degraded';
-
-  // Done is the WORKFLOW's reading, not "there is no stage left to enter":
-  // `final.prerequisites` is evaluated against the last stage, so a rollout that
-  // has reached every stage can still be held open by a check that stage does
-  // not pass. Counting stages answered the easier question and printed Complete
-  // beside a rollout `cub changeorder get` still reports open.
-  //
-  // Complete says the WORKFLOW is done, which is `cub`'s reading and stays it.
-  // Whether the last stage is healthy is a second question, and a workflow
-  // declaring no final health check never asked it — so the answer is withheld
-  // rather than assumed. See `finalStageHealthVerified`.
-  if (complete) {
-    return finalStageHealthVerified(lastStageIndex, healthByStageIndex) ? 'complete' : 'complete-unverified';
-  }
 
   // Only the stage being entered can be "held on a Release". Any stage after it
   // is simply not its turn yet.
@@ -1009,9 +1070,32 @@ function deriveConsoleState(
   if (promotable.some((s) => s.verdict === 'in-progress')) return 'progressing';
   if (next !== undefined && gatesOpen(next.gates)) return 'ready';
 
-  // Held by a gate the design does not name. Reported as blocked rather than
-  // inventing a sixth state.
-  return 'blocked';
+  // Held by a gate on the stage being entered that is not a Release — the
+  // Release case returned above. The Blocker cell quotes that gate's own
+  // reason, so the reader is told which check holds it.
+  if (next !== undefined) return 'held';
+
+  /*
+   * Every stage has taken the change and the server has not called it finished.
+   * "Needs a Release" is said only when it is true: the server reports the
+   * change taken everywhere and not yet released, or the final checklist holds
+   * on a Release.
+   */
+  if (serverState === 'Resolved' || gateFailing(finalGates ?? [], rolloutCopy.gateNames.released)) {
+    return 'blocked';
+  }
+  // Inferred only when the server sent no State. A State that is not finished
+  // is the server's answer, and an in-scope Space no stage selects is invisible
+  // to the stages read here.
+  const finalOpen = finalGates === null || gatesOpen(finalGates);
+  if (serverState === undefined && finalOpen) return completeState();
+
+  // A final prerequisite that is not a Release holds it, as one on a stage
+  // being entered does.
+  if (!finalOpen) return 'held';
+
+  // Not finished, and no check this page can read holds it.
+  return 'progressing';
 }
 
 function deriveBlocker(
@@ -1021,8 +1105,11 @@ function deriveBlocker(
   nextStageIndex: number,
   nextStageId: string | null,
   abortedReason: string,
+  finalGates: RolloutGate[] | null,
   healthByStageIndex: readonly (GateVerdictChannel | undefined)[],
   reportedByStageIndex: readonly ReportedHealthChannel[],
+  /** Whether a Space this ChangeOrder is headed for is in none of its stages. */
+  inScopeOutsideStages: boolean,
 ): string {
   // The most useful single sentence about an abandoned rollout is the reason
   // someone gave for abandoning it — not a claim about stages or gates, which
@@ -1043,6 +1130,12 @@ function deriveBlocker(
   if ((state === 'complete' || state === 'complete-unverified') && nextStageId !== null) {
     return rolloutsConsoleCopy.stageLeftBehind(nextStageId);
   }
+  if (state === 'complete' || state === 'complete-unverified') {
+    // The chip follows the server's "finished", so a workload failing where the
+    // change landed is said here or nowhere on the row.
+    const failing = degradedReason(stageStates, nextStageIndex, healthByStageIndex, reportedByStageIndex);
+    if (failing !== null) return failing;
+  }
   if (state === 'complete') return rolloutsConsoleCopy.noBlocker;
   // Not "No blocker." — nothing is holding this rollout up, but the cell is the
   // only place the reader is told that its last stage's health went unchecked.
@@ -1060,9 +1153,6 @@ function deriveBlocker(
    *
    * A fully-promoted degraded rollout has no next stage, so it fell through to
    * `next === undefined` and rendered "No blocker." beside a Degraded chip.
-   * (Not the `state === 'complete'` line above — that never fires here, because
-   * `deriveConsoleState` runs its live status scan BEFORE its `nextStageId ===
-   * null` return, and so answers 'degraded' rather than 'complete'.)
    *
    * And a degraded rollout that DOES still have a next stage would otherwise
    * report that stage's first failing gate — naming a gate on a stage the
@@ -1096,15 +1186,21 @@ function deriveBlocker(
 
   const next = nextStageIndex === -1 ? undefined : stageStates[nextStageIndex];
   /*
-   * No stage left to enter, yet not complete: `final.prerequisites` is what
-   * holds it. There is no next stage to read a gate off, and "No blocker."
-   * beside a chip that says the rollout is held would be the same
-   * answer-to-the-wrong-question `degradedBlocker` exists to avoid.
+   * No stage left to enter, yet not complete. There is no next stage to read a
+   * gate off, and "No blocker." beside a chip that says the rollout is held
+   * would be the same answer-to-the-wrong-question `degradedBlocker` exists to
+   * avoid. Blocked here is either the final checklist holding on a Release or
+   * the server reporting the change taken everywhere but not yet released
+   * everywhere; the sentence says which. Held is a final prerequisite that is
+   * not a Release. Progressing names nothing the final checklist does not say.
    */
   if (next === undefined) {
-    return nextStageId === null && state === 'blocked'
-      ? rolloutsConsoleCopy.finalPrerequisitesHeld
-      : rolloutsConsoleCopy.noBlocker;
+    if (state === 'blocked' && !gateFailing(finalGates ?? [], rolloutCopy.gateNames.released)) {
+      return rolloutsConsoleCopy.notReleasedEverywhere;
+    }
+    if (state === 'blocked' || state === 'held') return rolloutsConsoleCopy.finalPrerequisitesHeld;
+    if (state === 'progressing' && inScopeOutsideStages) return rolloutsConsoleCopy.inScopeSpaceNotInStage;
+    return rolloutsConsoleCopy.noBlocker;
   }
 
   // The FIRST unsatisfied gate is the true root cause: gates are pushed in
@@ -1184,10 +1280,9 @@ function stagelessRow(
  *
  * The governing workflow rides on the order itself, so a row is built from one
  * argument and a shared index. `stageSpacesByClause` holds every clause any row
- * on the page resolved — keyed by the clause that was SENT, so this row rebuilds
- * its own with its own component rather than looking up the stage's raw
- * selector: two rollouts of different components share a workflow and ask two
- * different questions of the same stage.
+ * on the page resolved, keyed by the clause that was SENT and not yet narrowed
+ * to any ChangeOrder: two rollouts sharing a workflow ask the same question of
+ * a stage, and differ only in the Spaces each is headed for.
  */
 export function buildConsoleRow(
   order: ConsoleChangeOrder,
@@ -1215,25 +1310,27 @@ export function buildConsoleRow(
   }
   const workflow = order.governing.workflow;
 
-  // A stage selects within this rollout's own component, so a row without one
-  // has no stages to show. Reported rather than resolved without the term, which
-  // would put every other component's Spaces at that stage into this rollout.
-  const component = orderComponent(order, bySpaceId);
-  if (component === undefined) {
-    return stagelessRow(order, bySpaceId, 'unknown', rolloutsConsoleCopy.noComponent);
-  }
-
-  // The stage-space map is keyed by the resolved clause so two rows can share
-  // one request and two stages named `prod` cannot collide;
-  // `buildRolloutSequence` wants stage names. Re-keyed here, per row, where the
-  // workflow makes the stage names unambiguous.
+  // The stage-space map is keyed by the clause sent so two rows can share one
+  // request and two stages named `prod` cannot collide; `buildRolloutSequence`
+  // wants stage names. Re-keyed here, per row, where the workflow makes the
+  // stage names unambiguous. The clause map is shared by every row on the page,
+  // so the Spaces this ChangeOrder is headed for are applied here rather than
+  // to the query.
   const stageSpacesByStageName: Record<string, ExtendedSpaceRead[]> = {};
   for (const stage of workflow.Stages) {
-    stageSpacesByStageName[stage.Name] = stageSpacesByClause[stageWhereSpace(stage, component)] ?? [];
+    stageSpacesByStageName[stage.Name] = changeOrderStageMembers(
+      stage,
+      stageSpacesByClause[stageWhereSpace(stage)],
+      order.inScopeSpaceIds,
+    );
   }
-  // The clause map is shared by every row on the page, so the Spaces this
-  // ChangeOrder is headed for are applied here rather than to the query.
-  const sequence = buildRolloutSequence(workflow, stageSpacesByStageName, order.spaceId ?? '', order.inScopeSpaceIds);
+  const sequence = buildRolloutSequence(workflow, stageSpacesByStageName, order.spaceId ?? '');
+  // The server counts these toward `State` and no stage can promote into them,
+  // so a rollout can have every stage done and still not be finished.
+  const stagedSpaceIds = new Set(sequence.stages.flatMap((stage) => stage.spaceIds));
+  const inScopeOutsideStages = (order.inScopeSpaceIds ?? []).some(
+    (spaceId) => spaceId !== order.spaceId && !stagedSpaceIds.has(spaceId),
+  );
 
   const progress = deriveProgress({
     changeOrderSpaceId: order.spaceId,
@@ -1268,13 +1365,15 @@ export function buildConsoleRow(
   // name is the ChangeWorkflow author's to choose. `nextStageId` is what the
   // copy and the deep link print.
   //
-  // A `Completed` rollout has no stage left to enter, but a Space added to an
-  // earlier stage after it finished never took the change. The first stage
-  // holding one is named as next, so the row says it was left behind.
-  const workflowComplete = order.stage === 'Completed';
-  const nextStageIndex = workflowComplete
-    ? stageStates.findIndex((s) => s.verdict !== 'source' && s.promotedCount < s.spaceCount)
-    : nextStageIndexFromChangeOrderStage(sequence, order.stage);
+  // The next stage is the first one still holding a Space the change has not
+  // reached, which also names a stage left behind on a finished rollout.
+  // `ChangeOrder.Stage` is read only when progress is not reported, because the
+  // server advances it only on a promotion or Release that names the order.
+  const workflowComplete =
+    order.stage === 'Completed' || order.state === 'Released' || order.state === 'RestoreReleased';
+  const nextStageIndex = progressUnavailable
+    ? nextStageIndexFromChangeOrderStage(sequence, order.stage)
+    : nextStageIndexFromProgress(stageStates);
   const nextStageId = nextStageIndex === -1 ? null : stageStates[nextStageIndex].stageId;
 
   const completion: RolloutCompletionInput = {
@@ -1287,7 +1386,8 @@ export function buildConsoleRow(
   };
   // The same gates the completion verdict was taken from, so the row cannot
   // report one `Final` answer in its chip and a different one in its strip.
-  const healthByStageIndex = healthByStage(sequence.stages, stageStates, finalStageGates(completion));
+  const finalGates = finalStageGates(completion);
+  const healthByStageIndex = healthByStage(sequence.stages, stageStates, finalGates);
   // The display channel, derived once for the row and read by its state, its
   // blocker and every segment — the three surfaces that must never disagree
   // about whether a stage's workload is healthy.
@@ -1315,6 +1415,8 @@ export function buildConsoleRow(
     progressUnavailable,
     abortedReason,
     workflowComplete,
+    order.state,
+    finalGates,
     healthByStageIndex,
     degradedReason(stageStates, nextStageIndex, healthByStageIndex, reportedByStageIndex) !== null,
   );
@@ -1327,11 +1429,15 @@ export function buildConsoleRow(
       progressUnavailable,
       abortedReason,
       workflowComplete,
+      order.state,
+      finalGates,
       healthByStageIndex,
       failingLiveStatusGate(stageStates, nextStageIndex, healthByStageIndex) !== null,
     ),
   };
 
+  const path = stagePathProgress(sequence.stages.length, nextStageIndex, state);
+  const complete = state === 'complete' || state === 'complete-unverified';
   const stages: ConsoleStage[] = sequence.stages.map((stage, i) => ({
     stageId: stage.id,
     hasReleaseTargets: promotionTargets(stage.spaceIds, order.spaceId).some(
@@ -1350,6 +1456,8 @@ export function buildConsoleRow(
       healthByStageIndex[i],
       i === lastStageIndex,
       reportedByStageIndex[i] ?? NOTHING_REPORTED,
+      i < path.done,
+      complete,
     ),
   }));
 
@@ -1360,7 +1468,7 @@ export function buildConsoleRow(
     spaceId: order.spaceId,
     spaceSlug: order.spaceSlug,
     createdAt: order.createdAt,
-    appName: component.Slug,
+    appName: orderComponent(order, bySpaceId)?.Slug,
     state,
     gateState,
     blocker: deriveBlocker(
@@ -1370,20 +1478,15 @@ export function buildConsoleRow(
       nextStageIndex,
       nextStageId,
       abortedReason,
+      finalGates,
       healthByStageIndex,
       reportedByStageIndex,
+      inScopeOutsideStages,
     ),
     abortedReason,
     stages,
-    stagesDone: countPromotedStages(stageStates),
-    /*
-     * The stages there is something to promote into, not every stage the
-     * workflow declares: a stage whose selector matched no Space can never be
-     * counted done, so counting it here pins the strip below its own total.
-     * `promotableStages` still answers its own question for the completion
-     * verdict above — see `countReachableStages`.
-     */
-    stagesTotal: countReachableStages(stageStates),
+    stagesDone: path.done,
+    stagesTotal: path.total,
     nextStageId,
     progressUnavailable,
     progress,

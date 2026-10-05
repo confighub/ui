@@ -3,17 +3,17 @@
 /**
  * A stage that names no selector.
  *
- * `WhereSpace` is optional, and EMPTY MEANS EVERY SPACE OF THE COMPONENT. The
+ * `WhereSpace` is optional, and EMPTY MEANS EVERY SPACE THE CHANGEORDER IS
+ * HEADED FOR (`InScopeSpaceIDs`), which this fixture sets to the component's. The
  * KRM model it replaced refused an empty selector outright, so a port that
  * carried that reading forward would match nothing — silently. No error, no
  * problem entry, just a stage that draws empty and a rollout that looks
  * mis-configured. Nothing else in this suite can reach the shape, which is why
  * it is seeded here against a real server rather than asserted on a mock.
  *
- * AND IT MUST COST NOTHING. Every Space of the component is already on the
- * page — the console reads the org's Spaces and the component view reads its
- * own — so asking the server to repeat that list, once per such stage, would be
- * a request for data in hand. The second test is the one that keeps that true.
+ * AND IT MUST COST NOTHING. The in-scope Spaces arrive with the ChangeOrder,
+ * so asking the server for them, once per such stage, would be a request for
+ * data in hand. The second test is the one that keeps that true.
  */
 import { type Page } from '@playwright/test';
 import { test, expect, newAuthorizedContext } from './fixtures/test';
@@ -85,10 +85,7 @@ test.describe('a stage with no WhereSpace', () => {
     // name: "Skipping %s, the space the change order was created in". So the
     // count the dialog states is the stage's membership MINUS the base, and a
     // dialog naming one variant more than the promote writes into is the defect
-    // this pins. The workflow's own Space carries the component label for this
-    // run's isolation, but the ChangeOrder is not headed for it, so the
-    // in-scope term drops it — the third term of stage membership doing its job
-    // on a selector that named nothing.
+    // this pins.
     const expected = Object.keys(fx.spaces).filter((name) => name !== 'base').length;
     expect(expected).toBeGreaterThan(1);
 

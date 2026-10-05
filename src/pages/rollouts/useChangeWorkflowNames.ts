@@ -89,6 +89,23 @@ export function changeWorkflowLabel(
     : changeWorkflowNameCopy.deleted;
 }
 
+/**
+ * Where a rollout's workflow is viewed and edited: its page in the workflow
+ * builder. `null` when there is nothing to open — nothing governs the rollout,
+ * or the lookup succeeded and the workflow is not there any more.
+ *
+ * A lookup that failed or has not arrived still links: nothing says the
+ * workflow is gone, and the builder answers that itself.
+ */
+export function changeWorkflowHref(
+  changeWorkflowId: string | undefined,
+  names: ChangeWorkflowNames,
+): string | null {
+  if (changeWorkflowId === undefined) return null;
+  if (!names.byId.has(changeWorkflowId) && !names.isLoading && !names.failed) return null;
+  return `/x/workflow-builder/${encodeURIComponent(changeWorkflowId)}`;
+}
+
 export const changeWorkflowNameCopy = {
   ungoverned: 'No workflow',
   loading: 'Loading…',

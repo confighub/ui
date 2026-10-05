@@ -445,27 +445,30 @@ unchanged; Components is the second caller, passing `ExtendedSpaceRead[]`.
   Clicking **Overview** (the tree's `All`-equivalent root) opens the overview
   dashboard, never narrowed by a tree click.
 - **`?app=` vs `?group=`** (`resolveNodeGraphTarget`, `componentGroupFields.ts`)
-  — decides which URL FORM a node's click writes: recompute the node's own
-  bucket against `appSpaces`; if that bucket is EXACTLY all Spaces of
-  one Component, write `?app=<name>` — every `?app=` deep link, tour, and
+  — decides which URL FORM a node's click writes. A node at the Component
+  field's level always writes `?app=<name>` and opens the WHOLE Component,
+  wherever the field sits in `levels`. A Component whose Spaces have
+  different values for a level above it (two Owners, for example) shows
+  under each of those parent nodes with only part of its Spaces, but a
+  click on any of its nodes still opens all of it — the user clicked the
+  Component. Any other node recomputes its own bucket against `appSpaces`:
+  if that bucket is EXACTLY all Spaces of one Component, it writes
+  `?app=<name>` too (the click is indistinguishable from opening that
+  Component); otherwise it writes `?group=<path>` (the node's value path,
+  repeated `group=` params). Every `?app=` deep link, tour, and
   overview-tile click reads the URL the same way, regardless of which node
-  produced it; otherwise write `?group=<path>` (the
-  node's value path, repeated `group=` params). This is a single,
-  field-position-agnostic rule: a Component-field node in the MIDDLE of
-  `levels` still resolves to `{app}` when every Deployment of that Component
-  happens to share the bucket's other field values (e.g. one Owner); a field
-  one level below it resolving to a strict subset of that Component
-  resolves to `{group}` (a one-node graph, not the whole Component's).
+  produced it. A field one level below a Component node usually holds a
+  strict subset of that Component, so it resolves to `{group}` (a graph of
+  that part only — the user drilled down on purpose).
 - **The deep-link / highlight rule** (`deriveComponentTreePath`,
   `componentGroupFields.ts`) — `?group=` both selects a node graph AND
   highlights that node; the only extra work is reconciling an open
-  Component graph (`?app=`) with it: if the levels end in Component, the
-  tree highlights `?group=` when it already ends in the open Component's
-  name, else derives the path from that Component's first Space (there is
-  no click to preserve — the Component was opened via `?app=` directly); if
-  the levels do NOT end in Component, it searches for a node (at the
-  Component field's depth, if `levels` has one) whose own bucket resolves
-  back to exactly this Component, and highlights it if found — else no tree
+  Component graph (`?app=`) with it: the tree highlights `?group=` when it
+  already names a Component-level node of the open Component, else the
+  open Component's node at the Component field's level. A Component split
+  across several parent nodes has one such node under each; the FIRST one
+  in tree order is highlighted, so the highlight does not depend on the
+  order the Spaces loaded in. With no Component field in `levels`, no tree
   node is highlighted at all while the graph is open (a highlighted node
   that isn't actually driving what's on screen would claim something not
   there). "Not even the Overview root" required widening `GroupNavPanel`'s
@@ -475,7 +478,9 @@ unchanged; Components is the second caller, passing `ExtendedSpaceRead[]`.
   natively). The Unit list never passes `null`, so this is additive, not a
   behavior change there.
 - **Counts.** Every tree node counts Spaces — the number of graph nodes a
-  click on it will show. The header badge ("Components N") still counts
+  click on it will show, except a Component node of a split Component: it
+  counts only the Spaces under its parent node, and its click opens the
+  whole Component. The header badge ("Components N") still counts
   distinct Components; it names the header, not a node.
 - **No filter button.** The Components page has no `QueryBuilderElement` —
   every Space here is already a Component Deployment, so a generic metadata

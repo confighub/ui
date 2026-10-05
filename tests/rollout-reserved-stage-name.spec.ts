@@ -58,11 +58,11 @@ function rowFor(
   workflow: ChangeWorkflowSpec,
   spaces: ConsoleSpace[],
   stageSpaceIds: string[][],
-  progress: { resolved: string[]; released: string[] },
+  progress: { resolved: string[]; released: string[]; state?: string },
 ) {
   const stageSpaces: Record<string, ExtendedSpaceRead[]> = {};
   workflow.Stages.forEach((stage, i) => {
-    stageSpaces[stageWhereSpace(stage, COMPONENT)] = stageSpaceIds[i].map(
+    stageSpaces[stageWhereSpace(stage)] = stageSpaceIds[i].map(
       (id) => ({ Space: { SpaceID: id } }) as ExtendedSpaceRead,
     );
   });
@@ -77,6 +77,7 @@ function rowFor(
       releases: carryingReleases(progress.released),
       inScopeSpaceIds: [BASE, ...stageSpaceIds.flat()],
       governing: { state: 'governed', workflow, changeWorkflowId: 'wf-1' },
+      state: progress.state,
     },
     spaces,
     stageSpaces,
@@ -106,7 +107,6 @@ test('a stage named after the source row does not ungate the stage behind it', (
       prod: [{ Space: { SpaceID: PROD } } as ExtendedSpaceRead],
     },
     BASE,
-    undefined,
   );
   const prod = sequence.stages.find((s) => s.id === 'prod');
   if (prod === undefined) throw new Error('the sequence lost prod');
@@ -174,7 +174,6 @@ test('the final health check of a stage named after the source row is still eval
     ONE_COLLIDING_STAGE,
     { [RESERVED]: [{ Space: { SpaceID: PROD } } as ExtendedSpaceRead] },
     BASE,
-    undefined,
   );
   const gates = finalStageGates({
     workflow: ONE_COLLIDING_STAGE,
@@ -225,7 +224,6 @@ test('the row a stage is entered from is named by position, not by the name it h
       prod: [{ Space: { SpaceID: PROD } } as ExtendedSpaceRead],
     },
     BASE,
-    undefined,
   );
   const first = sequence.stages.find((s) => s.isFirst);
   const prod = sequence.stages.find((s) => s.id === 'prod');
@@ -305,9 +303,12 @@ const BASE_DEGRADED_SPACES: ConsoleSpace[] = [
 ];
 
 test("a stage named after the source row does not overwrite the base's own report", () => {
+  // Not finished by the server's reading: a finished rollout draws every step
+  // done, and the last-stage tone under test would not show.
   const row = rowFor(UNREACHED_COLLIDING_STAGE, BASE_DEGRADED_SPACES, [[PROD]], {
     resolved: [BASE, PROD],
     released: [PROD],
+    state: 'InProgress',
   });
 
   // Position 0 is the source row, whatever any stage is called. It draws what
@@ -334,7 +335,7 @@ test('the source row is not the last stage of a workflow that happens to use its
     UNREACHED_COLLIDING_STAGE,
     consoleSpaces([{ spaceId: PROD, stage: RESERVED, liveStatus: null }]),
     [[PROD]],
-    { resolved: [BASE, PROD], released: [PROD] },
+    { resolved: [BASE, PROD], released: [PROD], state: 'InProgress' },
   );
 
   expect(row.stages[0].isSource).toBe(true);

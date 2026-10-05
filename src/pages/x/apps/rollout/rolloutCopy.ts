@@ -412,6 +412,11 @@ export const rolloutCopy = {
    */
   sourceProgress: 'The change starts here',
   /**
+   * A stage whose selector matched no Space. Nothing can be promoted into it,
+   * so neither a verdict like "Ready to promote" nor a "0 of 0" count is true.
+   */
+  stageHasNoSpaces: 'No Spaces in this stage',
+  /**
    * A stage whose Spaces hold no resources yet. This is normal before the first
    * promote: the resources the change adds are cloned into the Space by the
    * promote itself, so there is genuinely nothing to diff against yet. Distinct

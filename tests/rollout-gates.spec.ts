@@ -754,7 +754,6 @@ function firstStageOf(prerequisites: string[]): RolloutStage {
     },
     { dev: [{ Space: { SpaceID: 'd1' } } as never], prod: [{ Space: { SpaceID: 'p1' } } as never] },
     'base-1',
-    undefined,
   );
   const first = sequence.stages.find((s) => s.id === 'dev');
   if (first === undefined) throw new Error('the sequence lost its first stage');

@@ -83,7 +83,7 @@ function rowFor(
 ): ConsoleRow {
   const stageSpaces: Record<string, ExtendedSpaceRead[]> = {};
   workflow.Stages.forEach((stage, i) => {
-    stageSpaces[stageWhereSpace(stage, COMPONENT)] = stageSpaceIds[i].map(
+    stageSpaces[stageWhereSpace(stage)] = stageSpaceIds[i].map(
       (id) => ({ Space: { SpaceID: id } }) as ExtendedSpaceRead,
     );
   });

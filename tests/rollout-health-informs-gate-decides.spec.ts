@@ -91,11 +91,11 @@ const STAGING_NEEDS_HEALTH: ChangeWorkflowSpec = {
  */
 function rowFor(workflow: ChangeWorkflowSpec, devStatus: LiveStatus): ConsoleRow {
   const stageSpaces: Record<string, ExtendedSpaceRead[]> = {
-    [stageWhereSpace(workflow.Stages[0], COMPONENT)]: [{ Space: { SpaceID: DEV } } as ExtendedSpaceRead],
-    [stageWhereSpace(workflow.Stages[1], COMPONENT)]: [
+    [stageWhereSpace(workflow.Stages[0])]: [{ Space: { SpaceID: DEV } } as ExtendedSpaceRead],
+    [stageWhereSpace(workflow.Stages[1])]: [
       { Space: { SpaceID: STAGING } } as ExtendedSpaceRead,
     ],
-    [stageWhereSpace(workflow.Stages[2], COMPONENT)]: [{ Space: { SpaceID: PROD } } as ExtendedSpaceRead],
+    [stageWhereSpace(workflow.Stages[2])]: [{ Space: { SpaceID: PROD } } as ExtendedSpaceRead],
   };
   const spaces: ConsoleSpace[] = [
     // The base is in no stage of this workflow, so nothing it reports is read.
