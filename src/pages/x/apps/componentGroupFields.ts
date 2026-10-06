@@ -2,68 +2,63 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Pure logic backing the Components page's left-nav grouping — the Space
- * analogue of `@/components/group-nav/groupable-fields.ts`'s Unit catalog.
- * See `ui/docs/dev/components.md` ("Navigation tree: node click opens a
- * graph") for the terms this file implements: Component field, node graph
- * vs. Component graph, the `?app=` vs `?group=` rule, and the dropped-field
- * list with reasons.
+ * Pure logic backing the Components page's left-nav grouping. The tree's
+ * leaves are Component entities (`ComponentNavItem`, `componentIndex.ts`),
+ * and every grouping level is a property of the Component: one of its own
+ * labels (`Labels.Owner` reads the owner rule of `componentOwner.ts`), or a
+ * roll-up of its Spaces' status. See `ui/docs/dev/components.md`
+ * ("Navigation tree") for the leaf rule, the `?app=` vs `?group=` rule, and
+ * how saved levels that name Space fields are read (`normalizeComponentLevels`).
  */
 
 import type { FieldIconKey } from '@/components/query-builder/field-icons';
 import type { GroupableCategory, GroupableFieldCatalog } from '@/components/group-nav';
-import type { ExtendedSpaceRead, ExtendedTargetRead } from '@confighub/rtk-query';
+import { EMPTY_GROUP_VALUE } from '@/components/group-nav/groupOrder';
+import type { ExtendedSpaceRead } from '@confighub/rtk-query';
 
-import { LABEL_DEPARTMENT, LABEL_OWNER, LABEL_REGION, LABEL_STAGE } from './componentData';
+import { LABEL_DEPARTMENT, LABEL_OWNER, LABEL_REGION, LABEL_STAGE, LABEL_VARIANT } from './componentData';
+import type { ComponentNavItem } from './componentIndex';
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
 
-/** The group-by level key for a Space's Component — the Slug of the
- * Component its `ComponentID` names (`spaceComponentSlug`), not a label. It
- * is an ordinary, removable, movable field like any other. A node AT this
- * field's level always opens its whole Component (`?app=`), wherever the
- * field sits in `levels` — see `resolveNodeGraphTarget`. */
+/** The icon key of a Component leaf in the tree. It is not a grouping
+ * level: `normalizeComponentLevels` drops it from saved levels, because a
+ * Component is always the leaf. */
 export const COMPONENT_FIELD = 'Component';
 
-/** Default grouping for a fresh Components nav / a Components view with no
- * GroupBy configured — the same tree shape the page always showed. */
-export const COMPONENT_DEFAULT_LEVELS = [`Labels.${LABEL_OWNER}`, COMPONENT_FIELD];
+/** The level key of the Component's owner, read with `componentOwner`. */
+const OWNER_FIELD = `Labels.${LABEL_OWNER}`;
+
+/** Default grouping for a fresh Components nav, or a Components view with no
+ * GroupBy configured: Components grouped by owner. */
+export const COMPONENT_DEFAULT_LEVELS = [OWNER_FIELD];
 
 /** `ui.confighub.io/view-kind` annotation value for Components' saved views —
  * see `useQueryBuilder`'s `viewKind` option. */
 export const COMPONENTS_VIEW_KIND = 'components';
 
-/** Non-label static fields offered by the Components field picker. */
-const RELEASE_TARGET_FIELD = 'ReleaseTarget';
+const LABEL_PREFIX = 'Labels.';
 const UPGRADE_NEEDED_FIELD = 'UpgradeNeeded';
 const UNRELEASED_CHANGES_FIELD = 'UnreleasedChanges';
 const GATED_FIELD = 'Gated';
 
+/** Status roll-up levels: "Yes" when any of the Component's Spaces has a
+ * Unit in that state. */
+const STATUS_FIELDS: ReadonlySet<string> = new Set([UPGRADE_NEEDED_FIELD, UNRELEASED_CHANGES_FIELD, GATED_FIELD]);
+
+/** `Labels.<key>` levels that are dropped although they look like labels:
+ * Variant names one Space of a Component, never the Component. */
+const DROPPED_LABEL_KEYS: ReadonlySet<string> = new Set([LABEL_VARIANT]);
+
 const COMPONENT_FIELD_LABELS: Record<string, string> = {
-  [COMPONENT_FIELD]: 'Component',
-  // Internal key stays `ReleaseTarget` (Space.ReleaseTargetID) — a saved
-  // view's GroupBy annotation or a `?group=` deep link stores this key, so
-  // renaming it would break existing links/views. Only the user-facing label
-  // changes, to "Target": what this page's users mean by "grouping by
-  // Target" is a Space's Release target (its default Target for every Unit
-  // in it), not any of its Units' individual TargetIDs.
-  [RELEASE_TARGET_FIELD]: 'Target',
   [UPGRADE_NEEDED_FIELD]: 'Upgrade needed',
   [UNRELEASED_CHANGES_FIELD]: 'Unreleased changes',
   [GATED_FIELD]: 'Gated',
 };
 
 const COMPONENT_STATIC_CATEGORIES: GroupableCategory[] = [
-  {
-    header: 'Component',
-    fields: [{ field: COMPONENT_FIELD, label: COMPONENT_FIELD_LABELS[COMPONENT_FIELD] }],
-  },
-  {
-    header: 'Release',
-    fields: [{ field: RELEASE_TARGET_FIELD, label: COMPONENT_FIELD_LABELS[RELEASE_TARGET_FIELD] }],
-  },
   {
     header: 'Status & health',
     fields: [
@@ -76,15 +71,11 @@ const COMPONENT_STATIC_CATEGORIES: GroupableCategory[] = [
 
 /**
  * The Components page's field catalog, passed to `GroupNavPanel`'s `catalog`
- * prop. Dropped fields (with reasons, so nobody re-adds them without Units
- * loaded in the nav): `Slug`/`SpaceID`/`DisplayName` (unique per Space — one
- * bucket per Space), `CreatedAt`/`UpdatedAt` (near-unique timestamps),
- * `Base vs Deployment` (derived from Units' targets in `componentData.ts`,
- * not from the Space — the nav has no Units loaded), toolchain
- * (`TargetCountByToolchainType` is multi-valued per Space; group-nav is one
- * value per item), `Annotations` (machine metadata, e.g. live status JSON),
- * `OrganizationID`/`EntityType`/`Version`/`Permissions`/`DeleteGates`/
- * `Attribute*`/`Trigger*`/`Where*` (constant or internal config).
+ * prop. The Component's label keys are the dynamic "Labels" section
+ * (`getComponentLabelKeys`). Only properties of the Component are offered:
+ * a Space property (its Release target, its Variant, any Space label) can
+ * differ between the Spaces of one Component, and would put one Component
+ * in several places in the tree.
  */
 export const COMPONENT_CATALOG: GroupableFieldCatalog = {
   staticCategories: COMPONENT_STATIC_CATEGORIES,
@@ -92,7 +83,7 @@ export const COMPONENT_CATALOG: GroupableFieldCatalog = {
 };
 
 /**
- * Icon overrides for Space label keys the user has singled out as special
+ * Icon overrides for label keys the user has singled out as special
  * enough to deserve their own icon, keyed by the plain label name (not the
  * `Labels.<key>` field key) — a small, self-contained map so a later
  * icon-selector UI can replace individual entries without touching anything
@@ -106,94 +97,99 @@ const SPECIAL_LABEL_ICONS: Partial<Record<string, FieldIconKey>> = {
   [LABEL_DEPARTMENT]: 'department',
 };
 
-/** Icon overrides for the Components catalog's non-label fields, plus the
- * special label keys (`SPECIAL_LABEL_ICONS`) re-keyed to their full
- * `Labels.<key>` field form — the shape `getChipIcon` actually looks up. */
+/** Icon overrides for the Components catalog's non-label fields and the
+ * Component leaf, plus the special label keys (`SPECIAL_LABEL_ICONS`)
+ * re-keyed to their full `Labels.<key>` field form — the shape
+ * `getChipIcon` actually looks up. */
 export const COMPONENT_ICON_MAP: Partial<Record<string, FieldIconKey>> = {
   [COMPONENT_FIELD]: 'component',
-  [RELEASE_TARGET_FIELD]: 'target',
   [UPGRADE_NEEDED_FIELD]: 'upgradeNeeded',
   [UNRELEASED_CHANGES_FIELD]: 'unreleasedChanges',
   // "Gated" is a locked term in this feature (node status); reuse the
   // check-style icon already in the Unit catalog's icon set.
   [GATED_FIELD]: 'checkResult',
   ...Object.fromEntries(
-    Object.entries(SPECIAL_LABEL_ICONS).map(([label, icon]) => [`Labels.${label}`, icon]),
+    Object.entries(SPECIAL_LABEL_ICONS).map(([label, icon]) => [`${LABEL_PREFIX}${label}`, icon]),
   ),
 };
+
+// ============================================================================
+// SAVED LEVELS
+// ============================================================================
+
+function isComponentLevel(level: string): boolean {
+  if (STATUS_FIELDS.has(level)) return true;
+  if (!level.startsWith(LABEL_PREFIX)) return false;
+  const key = level.slice(LABEL_PREFIX.length);
+  return key !== '' && !DROPPED_LABEL_KEYS.has(key);
+}
+
+/**
+ * Reads saved grouping levels (a saved view's annotation, a `?viewGroupBy=`
+ * link) as Component levels. They can name Space fields, which would put one
+ * Component in several places in the tree:
+ *
+ * - `Labels.Owner` stays, and reads the Component's owner.
+ * - Every other `Labels.<key>` stays, and reads the Component's own label.
+ * - The status levels stay, as roll-ups of the Component's Spaces.
+ * - `Component` (the leaf), `ReleaseTarget` and `Labels.Variant` (Space
+ *   properties), and any other key (for example `Space`) are dropped.
+ * - A repeated level is kept once, at its first position.
+ *
+ * The result can be empty (a view grouped only by `Component`): the tree
+ * then lists the Components with no group above them.
+ */
+export function normalizeComponentLevels(levels: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const level of levels) {
+    if (isComponentLevel(level) && !out.includes(level)) out.push(level);
+  }
+  return out;
+}
 
 // ============================================================================
 // VALUE GETTER
 // ============================================================================
 
-/** The Slug of the Component a Space belongs to — the same lookup as
- * `spaceComponentSlug` (`@/hooks/useComponentSlugs`), repeated here so this
- * file stays importable from a `.pure.spec.ts` in Node without loading that
- * module's React/RTK Query hook. */
-function componentSlugOf(space: ExtendedSpaceRead, slugById: ReadonlyMap<string, string>): string | undefined {
-  const componentId = space.Space?.ComponentID;
-  return componentId ? slugById.get(componentId) : undefined;
-}
-
-export interface SpaceGroupValueContext {
-  /** Component Slug by ComponentID (`useComponentSlugs().slugById`), for the
-   * `Component` field. */
-  slugById: ReadonlyMap<string, string>;
-  /** Target slug by TargetID, for the `ReleaseTarget` field when the Space's
-   * own `ReleaseTarget` relation wasn't expanded by the query. */
-  targetSlugById: Map<string, string>;
+export interface ComponentGroupValueContext {
   /**
    * True once the summary (`summary=true`) Spaces query has resolved at least
-   * once. `UpgradeNeeded` / `UnreleasedChanges` / `Gated` are summary-only
-   * fields — reading them before this is true would show a false "No" rather
-   * than "not loaded yet", so callers get `''` (renders `(empty)`) instead.
+   * once. The status levels are roll-ups of summary-only counts — reading
+   * them before this is true would show a false "No" rather than "not loaded
+   * yet", so callers get `''` (renders `(empty)`) instead.
    */
   isSummaryLoaded: boolean;
 }
 
-/** Builds `{targetId: slug}` from the page's Targets list, for `getSpaceGroupValue`'s
- * `ReleaseTarget` fallback path. */
-export function buildTargetSlugById(targets: ExtendedTargetRead[]): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const t of targets) {
-    const id = t.Target?.TargetID;
-    const slug = t.Target?.Slug;
-    if (id && slug) map.set(id, slug);
-  }
-  return map;
+function rollUp(item: ComponentNavItem, count: (space: ExtendedSpaceRead) => number | undefined): string {
+  const total = item.spaces.reduce((sum, space) => sum + (count(space) ?? 0), 0);
+  return total > 0 ? 'Yes' : 'No';
 }
 
 /**
- * Extract a display value for a groupable column from an `ExtendedSpaceRead`
- * — the Space analogue of `@/components/group-nav/utils.ts`'s `getCellValue`.
+ * The value of a grouping level for one Component. `Labels.Owner` is the
+ * owner rule's result; any other `Labels.<key>` is the Component's own label;
+ * a status level is "Yes" when the sum of that count over the Component's
+ * Spaces is above zero (the same sums as `buildOverviewData`). `''` means no
+ * value, shown as `(empty)`.
  */
-export function getSpaceGroupValue(
-  space: ExtendedSpaceRead,
+export function getComponentGroupValue(
+  item: ComponentNavItem,
   column: string,
-  ctx: SpaceGroupValueContext,
+  ctx: ComponentGroupValueContext,
 ): string {
   switch (column) {
-    case COMPONENT_FIELD:
-      return componentSlugOf(space, ctx.slugById) ?? '';
-    case RELEASE_TARGET_FIELD: {
-      const slug = space.ReleaseTarget?.Slug;
-      if (slug) return slug;
-      const targetId = space.Space?.ReleaseTargetID;
-      return targetId ? (ctx.targetSlugById.get(targetId) ?? '') : '';
-    }
+    case OWNER_FIELD:
+      return item.owner;
     case UPGRADE_NEEDED_FIELD:
-      if (!ctx.isSummaryLoaded) return '';
-      return (space.UpgradableUnitCount ?? 0) > 0 ? 'Yes' : 'No';
+      return ctx.isSummaryLoaded ? rollUp(item, (s) => s.UpgradableUnitCount) : '';
     case UNRELEASED_CHANGES_FIELD:
-      if (!ctx.isSummaryLoaded) return '';
-      return (space.UnreleasedUnitCount ?? 0) > 0 ? 'Yes' : 'No';
+      return ctx.isSummaryLoaded ? rollUp(item, (s) => s.UnreleasedUnitCount) : '';
     case GATED_FIELD:
-      if (!ctx.isSummaryLoaded) return '';
-      return (space.GatedUnitCount ?? 0) > 0 ? 'Yes' : 'No';
+      return ctx.isSummaryLoaded ? rollUp(item, (s) => s.GatedUnitCount) : '';
     default:
-      if (column.startsWith('Labels.')) {
-        const key = column.slice('Labels.'.length);
-        return space.Space?.Labels?.[key] ?? '';
+      if (column.startsWith(LABEL_PREFIX)) {
+        return item.labels[column.slice(LABEL_PREFIX.length)] ?? '';
       }
       return '';
   }
@@ -203,25 +199,28 @@ export function getSpaceGroupValue(
 // LABEL KEY DISCOVERY
 // ============================================================================
 
-/** Distinct Space label keys present across `spaces`, sorted. Feeds the
- * dynamic "Labels" category (Owner/Variant/env/team/region…) —
- * Components has no separate "Space Labels" submenu since its own labels
- * ARE the Space labels. */
-export function getSpaceLabelKeys(spaces: ExtendedSpaceRead[]): string[] {
-  const set = new Set<string>();
-  for (const s of spaces) {
-    for (const key of Object.keys(s.Space?.Labels ?? {})) set.add(key);
+/** Label keys the picker offers: every Component label key, plus `Owner`
+ * always (its value can come from the Spaces when the Component has no label
+ * of its own), less the dropped keys. Sorted. */
+export function getComponentLabelKeys(items: readonly ComponentNavItem[]): string[] {
+  const set = new Set<string>([LABEL_OWNER]);
+  for (const item of items) {
+    for (const key of Object.keys(item.labels)) {
+      if (!DROPPED_LABEL_KEYS.has(key)) set.add(key);
+    }
   }
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
-/** Per-label-key Space counts, for the picker's right-aligned count badges. */
-export function getSpaceLabelKeyCounts(spaces: ExtendedSpaceRead[]): Record<string, number> {
+/** Per-label-key Component counts, for the picker's count badges: the
+ * Components with a value for that level. */
+export function getComponentLabelKeyCounts(items: readonly ComponentNavItem[]): Record<string, number> {
   const counts: Record<string, number> = {};
-  for (const s of spaces) {
-    for (const [key, value] of Object.entries(s.Space?.Labels ?? {})) {
-      if (value) counts[key] = (counts[key] ?? 0) + 1;
+  for (const item of items) {
+    for (const [key, value] of Object.entries(item.labels)) {
+      if (key !== LABEL_OWNER && value && !DROPPED_LABEL_KEYS.has(key)) counts[key] = (counts[key] ?? 0) + 1;
     }
+    if (item.owner) counts[LABEL_OWNER] = (counts[LABEL_OWNER] ?? 0) + 1;
   }
   return counts;
 }
@@ -230,120 +229,93 @@ export function getSpaceLabelKeyCounts(spaces: ExtendedSpaceRead[]): Record<stri
 // SELECTION / DEEP-LINK RULES
 // ============================================================================
 
-/** The tree's bucket for a Space with no value for a level — the same
- * placeholder `GroupNavPanel`'s own tree build uses. */
-const EMPTY_VALUE = '(empty)';
-
 /**
- * Narrows `spaces` to those matching a group-node's value path — the same
- * bucketing `GroupNavPanel`'s own tree build uses, applied directly for the
- * overview matrix and for a node graph's Space set. An empty `path`
- * (Overview, unnarrowed) returns `spaces` unchanged.
+ * Narrows `items` to the Components under a group node's value path — the
+ * same bucketing `GroupNavPanel`'s own tree build uses. An empty `path`
+ * (Overview) returns `items` unchanged. A path longer than `levels` matches
+ * nothing.
  */
-export function filterSpacesByGroupPath(
-  spaces: ExtendedSpaceRead[],
-  levels: string[],
-  path: string[],
-  ctx: SpaceGroupValueContext,
-): ExtendedSpaceRead[] {
-  if (path.length === 0) return spaces;
-  return spaces.filter((space) =>
-    path.every((value, i) => i < levels.length && (getSpaceGroupValue(space, levels[i], ctx) || EMPTY_VALUE) === value),
+export function filterComponentsByGroupPath(
+  items: ComponentNavItem[],
+  levels: readonly string[],
+  path: readonly string[],
+  ctx: ComponentGroupValueContext,
+): ComponentNavItem[] {
+  if (path.length === 0) return items;
+  return items.filter((item) =>
+    path.every(
+      (value, i) => i < levels.length && (getComponentGroupValue(item, levels[i], ctx) || EMPTY_GROUP_VALUE) === value,
+    ),
   );
 }
 
+/** Every Space of `items`, in item order. */
+export function spacesOfComponents(items: readonly ComponentNavItem[]): ExtendedSpaceRead[] {
+  return items.flatMap((item) => item.spaces);
+}
+
 /**
- * A node click opens the graph of every Space under it. This resolves WHICH
- * kind of graph that is, for the URL (see `components.md`, "Node click opens
- * a graph"):
+ * A node click opens a graph. This resolves which URL form it writes:
  *
- * - A node at the Component field's level writes `?app=<name>` — always the
- *   WHOLE Component, whatever the levels above it. A Component whose Spaces
- *   carry different values for a level above (two Owners, for example)
- *   shows under several parent nodes, and each of those nodes holds only
- *   part of it; the click still opens all of it, since the user clicked
- *   the Component, not a part of it.
- * - Any other node writes `?app=<name>` when its own bucket — recomputed
- *   against `appSpaces` — is exactly all Spaces of one Component (the click
- *   is indistinguishable from opening that Component), and `?group=<path>`
- *   otherwise. A node one level below a Component node (e.g. Variant in
- *   Owner → Component → Variant) is usually a strict subset of that
- *   Component, so it opens a `?group=` graph of that part only.
+ * - A leaf (one level below the last grouping level) is one Component:
+ *   `?app=<slug>`, the whole Component.
+ * - A group node that holds exactly one Component also writes `?app=`: it
+ *   holds all of that Component, so the click cannot be told apart from a
+ *   click on the Component itself.
+ * - Any other group node writes `?group=<path>`: a graph of every Space of
+ *   every Component under it.
  */
 export function resolveNodeGraphTarget(
-  appSpaces: ExtendedSpaceRead[],
-  levels: string[],
+  items: ComponentNavItem[],
+  levels: readonly string[],
   path: string[],
-  ctx: SpaceGroupValueContext,
+  ctx: ComponentGroupValueContext,
 ): { app: string } | { group: string[] } {
-  const depth = path.length - 1;
-  if (depth >= 0 && levels[depth] === COMPONENT_FIELD && path[depth] !== EMPTY_VALUE) {
-    return { app: path[depth] };
-  }
-  const bucket = filterSpacesByGroupPath(appSpaces, levels, path, ctx);
-  const componentOf = (s: ExtendedSpaceRead) => componentSlugOf(s, ctx.slugById);
-  const firstComponent = bucket[0] ? componentOf(bucket[0]) : undefined;
-  if (firstComponent && bucket.every((s) => componentOf(s) === firstComponent)) {
-    const wholeComponentCount = appSpaces.filter((s) => componentOf(s) === firstComponent).length;
-    if (wholeComponentCount === bucket.length) {
-      return { app: firstComponent };
-    }
-  }
+  if (path.length === levels.length + 1) return { app: path[path.length - 1] };
+  const bucket = filterComponentsByGroupPath(items, levels, path, ctx);
+  if (bucket.length === 1) return { app: bucket[0].slug };
   return { group: path };
 }
 
-/** Tree order of two equal-length value paths: `GroupNavPanel` sorts the
- * siblings at every depth with `localeCompare`, so a depth-first walk of
- * the tree visits paths in this lexicographic order. */
-function compareTreePaths(a: string[], b: string[]): number {
-  for (let i = 0; i < a.length; i++) {
-    const cmp = a[i].localeCompare(b[i]);
-    if (cmp !== 0) return cmp;
-  }
-  return 0;
+/**
+ * The Slug of the Component the URL opens: `?app=`, else the last value of a
+ * `?group=` path one longer than `levels`. That path names a leaf, which is
+ * one Component (`resolveNodeGraphTarget`), so it opens the Component as
+ * `?app=` does. `null` when the URL opens no Component.
+ */
+export function resolveOpenComponentSlug(
+  levels: readonly string[],
+  appParam: string | null,
+  groupParam: readonly string[],
+): string | null {
+  if (appParam) return appParam;
+  if (groupParam.length === levels.length + 1) return groupParam[groupParam.length - 1];
+  return null;
 }
 
 /**
- * Resolves the tree path that should be highlighted, reconciling an open
- * Component graph (`appName`, from `?app=`) with the `?group=` path — that
- * SAME param also selects and opens a non-Component node graph, so this
- * only has extra work to do while a `?app=` graph is open:
- *
- * - No Component open: the tree highlight is exactly `groupParam` (`[]`
- *   selects Overview; a non-empty path also IS the open group graph).
- * - Component open, no Component field in `levels`: select nothing
- *   (`null`) — no node stands for the open Component, and highlighting an
- *   unrelated node while the graph shows would claim something that isn't
- *   there.
- * - Component open, `groupParam` names a Component-level node of that
- *   Component: keep it highlighted.
- * - Otherwise: highlight the open Component's node at the Component
- *   field's level. A Component split across several parent nodes (two
- *   Owners, for example) has one such node under each; the FIRST one in
- *   tree order is highlighted, so the choice does not depend on the order
- *   the Spaces arrived in.
+ * The tree path to highlight. With a Component open (`appSlug`, from
+ * `resolveOpenComponentSlug`), the path of its leaf: its value at each
+ * level, then its Slug. A Component is in exactly one place in the tree, so
+ * this path is the only one. `null` (nothing highlighted) when that
+ * Component is not in `items`. With no Component open, `groupParam` when a
+ * Component is under it (`[]` selects Overview), else `null`: a path that
+ * holds no Component has no node to highlight.
  */
 export function deriveComponentTreePath(
-  levels: string[],
-  appName: string | null,
+  levels: readonly string[],
+  appSlug: string | null,
   groupParam: string[],
-  appSpaces: ExtendedSpaceRead[],
-  ctx: SpaceGroupValueContext,
+  items: ComponentNavItem[],
+  ctx: ComponentGroupValueContext,
 ): string[] | null {
-  if (!appName) return groupParam;
-  const componentIdx = levels.indexOf(COMPONENT_FIELD);
-  if (componentIdx === -1) return null;
-  if (groupParam.length === componentIdx + 1 && groupParam[componentIdx] === appName) {
-    return groupParam;
+  if (!appSlug) {
+    if (groupParam.length === 0) return groupParam;
+    return filterComponentsByGroupPath(items, levels, groupParam, ctx).length > 0 ? groupParam : null;
   }
-  const prefixLevels = levels.slice(0, componentIdx + 1);
-  let firstPath: string[] | null = null;
-  for (const space of appSpaces) {
-    if (componentSlugOf(space, ctx.slugById) !== appName) continue;
-    const path = prefixLevels.map((level) => getSpaceGroupValue(space, level, ctx) || EMPTY_VALUE);
-    if (!firstPath || compareTreePaths(path, firstPath) < 0) firstPath = path;
-  }
-  return firstPath;
+  const item = items.find((i) => i.slug === appSlug);
+  if (!item) return null;
+  return [...levels.map((level) => getComponentGroupValue(item, level, ctx) || EMPTY_GROUP_VALUE), item.slug];
 }
 
 // ============================================================================

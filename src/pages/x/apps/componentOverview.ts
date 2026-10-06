@@ -1,9 +1,8 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { spaceComponentSlug } from '@/hooks/useComponentSlugs';
-import type { ExtendedSpaceRead } from '@confighub/rtk-query';
+import type { ComponentRead, ExtendedSpaceRead } from '@confighub/rtk-query';
 
-import { LABEL_OWNER } from './componentData';
+import { componentOwner } from './componentOwner';
 
 // ============================================================================
 // TYPES
@@ -70,27 +69,32 @@ export interface OverviewData {
  * cannot answer this. Checked against every one of a component's Spaces,
  * base included, since a ChangeOrder's SpaceID is where it resides, and that
  * space is typically the base.
+ *
+ * `owner` is read with `componentOwner`, from the Component and every one of
+ * its Spaces in `spaces`.
  */
 export function buildOverviewData(
   spaces: ExtendedSpaceRead[],
-  slugById: ReadonlyMap<string, string>,
+  componentById: ReadonlyMap<string, ComponentRead>,
   outstandingRolloutBaseSpaceIds?: ReadonlySet<string>,
 ): OverviewData {
-  // 1. Group component spaces by component name
-  const componentGroups = new Map<string, ExtendedSpaceRead[]>();
+  // 1. Group component spaces by Component
+  const componentGroups = new Map<string, { component: ComponentRead; spaces: ExtendedSpaceRead[] }>();
   for (const space of spaces) {
-    const name = spaceComponentSlug(space.Space, slugById);
-    if (!name) continue;
-    const arr = componentGroups.get(name) ?? [];
-    arr.push(space);
-    componentGroups.set(name, arr);
+    const componentId = space.Space?.ComponentID;
+    const component = componentId ? componentById.get(componentId) : undefined;
+    if (!componentId || !component) continue;
+    const group = componentGroups.get(componentId);
+    if (group) group.spaces.push(space);
+    else componentGroups.set(componentId, { component, spaces: [space] });
   }
 
   // 2. Build one row per component
   const rows: ComponentKpiRow[] = [];
 
-  for (const [componentName, compSpaces] of componentGroups) {
-    const owner = compSpaces[0].Space?.Labels?.[LABEL_OWNER] ?? '';
+  for (const { component, spaces: compSpaces } of componentGroups.values()) {
+    const componentName = component.Slug;
+    const owner = componentOwner(component, compSpaces.map((s) => s.Space));
 
     let totalSpaces = 0;
     let unapplied = 0;

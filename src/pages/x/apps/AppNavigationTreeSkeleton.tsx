@@ -80,12 +80,8 @@ interface AppNavigationTreeRowsSkeletonProps {
   groupCount?: number;
 }
 
-/**
- * Just the rows — owner groups each with two nested app children. Used on its
- * own as the nav tree's partial-load affordance (`isLoadingMore`), where real
- * rows are already on screen above it.
- */
-export const AppNavigationTreeRowsSkeleton = ({
+/** Just the rows — owner groups each with two nested app children. */
+const AppNavigationTreeRowsSkeleton = ({
   groupCount = 3,
 }: AppNavigationTreeRowsSkeletonProps) => (
   <Box aria-hidden>

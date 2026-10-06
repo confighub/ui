@@ -29,6 +29,7 @@ import { styled } from '@mui/material/styles';
 
 import { ComponentFlowGraph } from './flow-graph/ComponentFlowGraph';
 import { withComponents } from './flow-graph/componentFrames';
+import { buildOwnerByComponentId } from './componentOwner';
 import { FlowViewControl, type FlowViewControlValue } from './flow-graph/FlowViewControl';
 import type { ComponentDisplayMode, SelectedApp, ViewParamsPatch } from './appTypes';
 import { ComponentOverviewMatrix } from './ComponentOverviewMatrix';
@@ -843,7 +844,17 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     pollIntervalMs: RUNNING_RELEASE_POLL_MS,
   });
 
-  const { slugById } = useComponentSlugs();
+  const { componentById, slugById } = useComponentSlugs();
+  // Each Component's owner is read from all its Spaces on the page, since the
+  // graph can draw only some of them.
+  const ownerByComponentId = useMemo(
+    () =>
+      buildOwnerByComponentId(
+        componentById,
+        componentSpaces.flatMap((s) => (s.Space ? [s.Space] : [])),
+      ),
+    [componentById, componentSpaces],
+  );
   const { deployments: builtDeployments, stages } = useMemo(
     () =>
       buildComponentData(
@@ -871,8 +882,8 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   // The Component and Owner of each Deployment: the graph frames and names
   // Components only when it spans two or more of them.
   const deployments = useMemo(
-    () => withComponents(builtDeployments, spaces, slugById),
-    [builtDeployments, spaces, slugById],
+    () => withComponents(builtDeployments, spaces, slugById, ownerByComponentId),
+    [builtDeployments, spaces, slugById, ownerByComponentId],
   );
 
   // Map deployment ID → display name, used by entry builders.

@@ -128,7 +128,7 @@ Route `/components` → `AppsComponentPage`. Component tree:
 ```
 AppsComponentPage              page entry; useListSpacesQuery({summary}) + useListAllTargetsQuery
 └─ AppsComponentLayout         2-pane resizable; ?app=<name> URL; selectedDeploymentIds: Set<string>
-   ├─ AppNavigationTree        left: Components grouped by Owner (by default)
+   ├─ AppNavigationTree        left: Component leaves, grouped by Owner (by default)
    └─ AppComponentView         CORE orchestrator (units, entries, all handlers)
       ├─ ComponentFlowGraph    center: reactflow DAG of deployment nodes by stage
       │  └─ DeploymentFlowNode  one node per Space; per-unit upgrade/apply badges
@@ -143,8 +143,8 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
 | Path (`src/pages/x/apps/`) | Responsibility |
 |---|---|
 | `AppsComponentPage.tsx` | Page entry; top-level spaces/targets queries; breadcrumb header. |
-| `AppsComponentLayout.tsx` | 2-pane resizable layout; filters spaces to those with a `Component` label; `?app=` URL; lifts `selectedDeploymentIds`. |
-| `AppNavigationTree.tsx` | Left app/component picker, grouped by `Owner` label. |
+| `AppsComponentLayout.tsx` | 2-pane resizable layout; keeps the Spaces whose Component (`Space.ComponentID`) has loaded; builds the tree items; `?app=` URL; lifts `selectedDeploymentIds`. |
+| `AppNavigationTree.tsx` | Left Component picker: one leaf per Component, grouped by the Component's owner by default. |
 | `AppComponentView.tsx` | **Core orchestrator.** Fetches units, computes entries, owns upgrade/dry-run/`onCommitStaged` handlers, renders the graph + side pane, or the Dashboard (`displayMode`), plus the `FlowViewControl` overlay either way. |
 | `flow-graph/ComponentFlowGraph.tsx` | `reactflow` DAG by stage; fit-to-view; click selects a deployment. No view-mode/Dashboard knowledge — that's `AppComponentView`'s. |
 | `flow-graph/FlowViewControl.tsx` | Graph / Dashboard segmented control. |
@@ -351,7 +351,77 @@ The left nav (`AppNavigationTree.tsx`) uses the **same grouping system as the Un
 `GroupNavPanel<T>` (`ui/src/components/group-nav/`), generified from its original
 `ExtendedUnitRead`-only shape to take a `getValue` getter and an
 item array of any type. The Unit list passes no new props and is byte-for-byte
-unchanged; Components is the second caller, passing `ExtendedSpaceRead[]`.
+unchanged; Components is the second caller, passing `ComponentNavItem[]`
+(`componentIndex.ts`) and the `leaf` prop.
+
+### Tree items are Components
+
+- **Leaves.** Each tree item is one Component ENTITY (`ComponentNavItem`:
+  `id`, `slug`, the Component's own `labels`, `owner`, and its `spaces` on
+  the page). `buildComponentNavItems` makes one item per Component in
+  `useComponentSlugs().componentById`, sorted by Slug, so a Component with
+  no variants (no Spaces) is in the tree too. `GroupNavPanel`'s `leaf` prop
+  adds each item as its own node one level below the last grouping level
+  (at the root when there are no levels), labelled by its Slug, with the
+  `component` icon, and the testid `app-tree-item-<slug>`. Group nodes get
+  the testid `components-tree-node`.
+- **Order.** Leaves sort by Slug. Group nodes sort by name, but the
+  `(empty)` node is last at every level: real groups come first. The rule is
+  `compareGroupValues` in `components/group-nav/groupOrder.ts`, and every
+  group tree uses it (`GroupNavPanel`, so also the Unit list, and the
+  Resource Explorer and View Explorer group panels).
+- **Levels are properties of the Component, never of a Space.** A level is
+  `Labels.Owner` (the owner rule below), any other `Labels.<key>` (the
+  Component's own label), or a status roll-up (`UpgradeNeeded`,
+  `UnreleasedChanges`, `Gated`: "Yes" when the sum of that summary count
+  over the Component's Spaces is above zero, the same sums as
+  `buildOverviewData`; `''` until the summary query has loaded). So a
+  Component is in exactly one place in the tree. Default levels
+  (`COMPONENT_DEFAULT_LEVELS`, no saved view or a view with no GroupBy):
+  `['Labels.Owner']`.
+- **Level picker.** `COMPONENT_CATALOG` offers the "Status & health" fields
+  plus a dynamic "Labels" section: every Component label key on the page,
+  and `Owner` always (its value can come from the Spaces), less `Variant`
+  (`getComponentLabelKeys`). The count badge of a key is the number of
+  Components with a value for it (`getComponentLabelKeyCounts`; for
+  `Owner`, the Components whose owner rule gives a value). The Unit-only
+  "Space Labels" submenu never appears.
+
+### The Owner rule (`componentOwner.ts`)
+
+The owner of a Component is a property of the Component. `componentOwner`
+reads it in this order:
+
+1. The Component's own `Owner` label, if set.
+2. Else the `Owner` label that ALL the Component's Spaces carry with the
+   same value.
+3. Else `""` — shown as `(empty)` in the tree and "Unassigned" elsewhere.
+   Spaces that disagree, one Space with no `Owner` label, or no Spaces at
+   all give `""`.
+
+There is no data migration: older Components carry the owner only on their
+Spaces, and rule 2 reads it. `buildOwnerByComponentId` applies the rule to
+every Component (the overview matrix, the flow-graph frames, and the create
+dialog's owner list use it). `cub component list`/`get` apply the same rule.
+Writes go to the Component only: `cub variant create --owner`,
+`cub variant upload --owner`, and the UI create flows (inline and OCI) set
+the Component's `Owner` label, and give the new Space no `Owner` label.
+`ownerWrite` decides the write: an unset owner is set; the same owner is
+written only when the Component has no label of its own; a different owner
+is a conflict, and the create stops before it writes anything
+(`ownerConflictMessage`). An owner the server would refuse as a label value
+(`ownerValueProblem`, the `LABEL_VALUE_PATTERN` and length rule of
+`@confighub/api`) also stops the create before any write, for both sources:
+an OCI upload creates the variant before the owner is set, so a refusal found
+then would leave the variant without its owner. The create dialog shows that
+message on the owner field and keeps Continue and Create disabled. When the
+owner write fails after the variant exists, the "Owner not set" warning gives
+the `cub component update` command to set it later (`ownerSetCommand`), with
+the `Owner=<value>` argument quoted for a POSIX shell by the rule `cub` uses
+(`shellQuoteArg`, `src/utility/shell-quote.ts`). The tree reads owners only
+after every Space has loaded (`isTreeLoading`): an owner read from a part of
+a Component's Spaces can be wrong. If the Component list fails to load, the
+tree and the detail pane show `QueryErrorState` with Retry, not a skeleton.
 
 ### Terms
 
@@ -361,25 +431,19 @@ unchanged; Components is the second caller, passing `ExtendedSpaceRead[]`.
   these views out of any generic Space view picker without a new backend
   `EntityType` — `allViewsForEntity` filters on it, and it defaults to
   "no annotation" so every pre-existing (Unit) caller is unaffected.
-- **Component field** (`COMPONENT_FIELD = 'Component'`,
-  `componentGroupFields.ts`) — a Space's Component ENTITY (`Space.ComponentID`),
-  shown by the Component's Slug (`useComponentSlugs().slugById`, passed in
-  as `SpaceGroupValueContext.slugById`). Not a label: a leftover `Component`
-  label on a Space means nothing to it. An ordinary, removable, movable
-  group-by level, with no locked chip, offered as its own top-level picker
-  row (not under Labels). The page's Space set (`appSpaces`) is every Space
-  whose Component Slug has loaded — a Space with no Component is not on this
-  page, and one whose Component list has not arrived yet is left out until
-  it does rather than shown in an `(empty)` Component bucket.
-  `componentGroupFields.ts` repeats `spaceComponentSlug`'s two-line lookup
-  instead of importing it, so `component-nav-fields.pure.spec.ts` can import
-  it in Node without loading the hook module's React/RTK Query code.
+- **`COMPONENT_FIELD`** (`'Component'`, `componentGroupFields.ts`) — only
+  the icon key of a Component leaf. It is not a grouping level:
+  `normalizeComponentLevels` drops it from saved levels. The page's Space
+  set (`appSpaces`) is every Space whose Component (`Space.ComponentID`)
+  Slug has loaded — a Space with no Component is not on this page. A
+  leftover `Component` label on a Space means nothing.
+  `componentGroupFields.ts` and `componentIndex.ts` import no React or RTK
+  Query code, so `component-nav-fields.pure.spec.ts` can import them in
+  Node.
 - **Node graph** — the flow graph (`AppComponentView`, the same view that
-  always rendered one Component) opened with every Space under ONE tree
-  node, descendants included. A single-Space node opens a one-node graph.
-  **Component graph** is the special case where a node graph's Spaces are
-  exactly all Spaces of one Component — visually indistinguishable from
-  opening a Component the way this page has always supported.
+  renders one Component) opened with every Space of every Component under
+  ONE group node (`spacesOfComponents(filterComponentsByGroupPath(...))`).
+  **Component graph** (`?app=`) is the graph of all Spaces of one Component.
 - **Dashboard** (`?display=dashboard`, `AppComponentView`'s `displayMode` prop,
   `appTypes.ts`'s `ComponentDisplayMode`) — a node graph's alternate view: the
   Overview root's own component (`ComponentOverviewMatrix` — KPI header,
@@ -410,8 +474,8 @@ unchanged; Components is the second caller, passing `ExtendedSpaceRead[]`.
 - **Special label icons** (`componentGroupFields.ts`'s `SPECIAL_LABEL_ICONS`)
   — Owner/Stage/Region/Department each get their own icon (picker
   row, breadcrumb chip, tree node) instead of the generic Labels one every
-  other label key keeps; the Component field (not a label) gets its own
-  `component` icon directly in `COMPONENT_ICON_MAP`. A small, self-contained
+  other label key keeps; a Component leaf (`COMPONENT_FIELD`, not a label)
+  gets its own `component` icon directly in `COMPONENT_ICON_MAP`. A small, self-contained
   `label name → icon key` map, re-keyed to `Labels.<key>` for
   `COMPONENT_ICON_MAP`, so a later
   user-facing icon-selector can replace individual entries without touching
@@ -433,8 +497,7 @@ unchanged; Components is the second caller, passing `ExtendedSpaceRead[]`.
   icon for every row, not an error — check any NEW `FieldPickerDropdown`
   call site actually forwards it.
 - **Node click vs. chevron**: clicking a node's row (label/icon/count) opens
-  its node graph, at ANY depth and ANY field — there is no leaf/group-node
-  distinction left; every node behaves the same way. The chevron
+  a graph, for a group node and a leaf alike (the URL form is below). The chevron
   (`GroupNavPanel`'s `expansionTrigger='iconContainer'` for Components only)
   only expands/collapses — it never opens anything and never writes the URL.
   The tree pane itself uses `GroupNavPanel`'s `fillContainer` option (also
@@ -445,43 +508,48 @@ unchanged; Components is the second caller, passing `ExtendedSpaceRead[]`.
   Clicking **Overview** (the tree's `All`-equivalent root) opens the overview
   dashboard, never narrowed by a tree click.
 - **`?app=` vs `?group=`** (`resolveNodeGraphTarget`, `componentGroupFields.ts`)
-  — decides which URL FORM a node's click writes. A node at the Component
-  field's level always writes `?app=<name>` and opens the WHOLE Component,
-  wherever the field sits in `levels`. A Component whose Spaces have
-  different values for a level above it (two Owners, for example) shows
-  under each of those parent nodes with only part of its Spaces, but a
-  click on any of its nodes still opens all of it — the user clicked the
-  Component. Any other node recomputes its own bucket against `appSpaces`:
-  if that bucket is EXACTLY all Spaces of one Component, it writes
-  `?app=<name>` too (the click is indistinguishable from opening that
-  Component); otherwise it writes `?group=<path>` (the node's value path,
-  repeated `group=` params). Every `?app=` deep link, tour, and
-  overview-tile click reads the URL the same way, regardless of which node
-  produced it. A field one level below a Component node usually holds a
-  strict subset of that Component, so it resolves to `{group}` (a graph of
-  that part only — the user drilled down on purpose).
+  — decides which URL FORM a node's click writes:
+  - A leaf (path one entry longer than `levels`) is one Component: it
+    writes `?app=<slug>` and opens the WHOLE Component.
+  - A group node that holds EXACTLY ONE Component writes `?app=<slug>` too:
+    it holds all of that Component (a Component is in one place only), so
+    the click cannot be told apart from a click on the leaf.
+  - Any other group node writes `?group=<path>` (the node's value path,
+    repeated `group=` params): a graph of every Space of every Component
+    under it.
+
+  Every `?app=` deep link, tour, and overview-tile click reads the URL the
+  same way, regardless of which node produced it. `selectedApp` comes from
+  the Component list (`itemBySlug`), so a Component with no Spaces can be
+  open. A `?group=` path one entry longer than `levels` names a leaf, so it
+  opens that Component as `?app=<last value>` does
+  (`resolveOpenComponentSlug`); the URL is not rewritten. Any other
+  `?group=` path that no Component matches (a renamed label, a deleted
+  Component) shows the overview, and no node is highlighted.
+- **Empty state.** An open graph with no Spaces to draw (`?app=` of a
+  Component with no variants, or a `?group=` node whose Components have
+  none) shows `NoVariants` (`data-testid='component-no-variants'`,
+  `AppsComponentLayout.tsx`): "<slug> has no variants yet" and the
+  `cub variant upload --component <slug> --variant base <dir>` hint. While
+  the URL opens a Component (`?app=`, or a `?group=` leaf path) and the
+  Components have not loaded, the pane shows the graph skeleton instead.
 - **The deep-link / highlight rule** (`deriveComponentTreePath`,
-  `componentGroupFields.ts`) — `?group=` both selects a node graph AND
-  highlights that node; the only extra work is reconciling an open
-  Component graph (`?app=`) with it: the tree highlights `?group=` when it
-  already names a Component-level node of the open Component, else the
-  open Component's node at the Component field's level. A Component split
-  across several parent nodes has one such node under each; the FIRST one
-  in tree order is highlighted, so the highlight does not depend on the
-  order the Spaces loaded in. With no Component field in `levels`, no tree
-  node is highlighted at all while the graph is open (a highlighted node
-  that isn't actually driving what's on screen would claim something not
-  there). "Not even the Overview root" required widening `GroupNavPanel`'s
+  `componentGroupFields.ts`) — with `?app=` set, the tree highlights the
+  open Component's leaf: its value at each level, then its Slug. A
+  Component is in exactly one place in the tree, so this path is the only
+  one. With no Component open, the tree highlights `?group=` (`[]` selects
+  Overview) when at least one Component is under it, else nothing. When `?app=` names a Component that is not in the list,
+  `deriveComponentTreePath` returns `null` and no node is highlighted (a
+  highlighted node that does not drive what is on screen would claim
+  something not there). "Not even the Overview root" required widening `GroupNavPanel`'s
   `selectedGroups` prop from `string[]` to `string[] | null` — `[]` still
   means "Overview/All is selected" (the Unit list's only case), `null` means
   nothing is (MUI's `SimpleTreeView` accepts `null` for "no item selected"
   natively). The Unit list never passes `null`, so this is additive, not a
   behavior change there.
-- **Counts.** Every tree node counts Spaces — the number of graph nodes a
-  click on it will show, except a Component node of a split Component: it
-  counts only the Spaces under its parent node, and its click opens the
-  whole Component. The header badge ("Components N") still counts
-  distinct Components; it names the header, not a node.
+- **Counts.** A group node counts Components (its number of leaves). A
+  leaf counts the Component's variants (its Spaces on the page; `0` for a
+  Component with no variants). The Overview root counts all Components.
 - **No filter button.** The Components page has no `QueryBuilderElement` —
   every Space here is already a Component Deployment, so a generic metadata
   filter didn't answer a question this page's users actually had; narrowing
@@ -491,8 +559,8 @@ unchanged; Components is the second caller, passing `ExtendedSpaceRead[]`.
   same way an empty in-memory filter state already did before this page had
   its own view-tabs strip — `createFilterForView`'s doc comment covers it.
 - **Upstream-outside-set lookup.** A node graph can hold a downstream Space
-  without its upstream in the set (e.g. grouped by Variant, or a Component
-  whose base lives in another Component) — without this, that Unit would
+  without its upstream in the set (e.g. a Component whose base lives in
+  another Component) — without this, that Unit would
   read as "not upgradable" and its upgrade diff would be empty: a WRONG
   answer, not a missing one. `AppComponentView` collects `UpstreamUnitID`s
   not already present in the fetched units, batch-fetches them
@@ -526,13 +594,15 @@ unchanged; Components is the second caller, passing `ExtendedSpaceRead[]`.
 
 | Path | Responsibility |
 |---|---|
-| `AppNavigationTree.tsx` | Thin wrapper over `GroupNavPanel<ExtendedSpaceRead>`. One click handler (`onNodeOpen`) for every node — `GroupNavPanel` itself has no Components knowledge, and neither this file nor `GroupNavPanel` decides `?app=` vs `?group=` (that's `AppsComponentLayout`'s `resolveNodeGraphTarget` call). |
-| `componentGroupFields.ts` | Pure Space-side logic: the field catalog (`COMPONENT_CATALOG`), `getSpaceGroupValue`, `resolveNodeGraphTarget`, `deriveComponentTreePath`, `filterSpacesByGroupPath`, `batchIds`/`ID_BATCH_SIZE`. Covered by `tests/component-nav-fields.pure.spec.ts`. |
-| `AppsComponentLayout.tsx` | Derives `levels` (`useGroupByLevels` with `fallbackLevels: COMPONENT_DEFAULT_LEVELS`), `selectedGroups`, the open graph's Space set + `graphKey`, and owns the `?group=`/`?app` URL writes (`handleNodeOpen`, `handleAppSelect`). |
+| `AppNavigationTree.tsx` | Thin wrapper over `GroupNavPanel<ComponentNavItem>` with the `leaf` option (`COMPONENT_LEAF`: id = Slug, count = variants, icon = `COMPONENT_FIELD`). One click handler (`onNodeOpen`) for every node — `GroupNavPanel` itself has no Components knowledge, and neither this file nor `GroupNavPanel` decides `?app=` vs `?group=` (that's `AppsComponentLayout`'s `resolveNodeGraphTarget` call). |
+| `componentGroupFields.ts` | Pure Component-side logic: the field catalog (`COMPONENT_CATALOG`), `COMPONENT_DEFAULT_LEVELS`, `normalizeComponentLevels`, `getComponentGroupValue`, `getComponentLabelKeys`/`getComponentLabelKeyCounts`, `filterComponentsByGroupPath`, `spacesOfComponents`, `resolveNodeGraphTarget`, `deriveComponentTreePath`, `batchIds`/`ID_BATCH_SIZE`. Covered by `tests/component-nav-fields.pure.spec.ts`. |
+| `componentIndex.ts` | `ComponentNavItem` and `buildComponentNavItems(componentById, appSpaces)`: one tree item per Component, Components with no Spaces included. Pure. |
+| `componentOwner.ts` | The Owner rule: `componentOwner`, `buildOwnerByComponentId`, `ownerWrite`, `ownerConflictMessage`, `ownerValueProblem`, `ownerSetCommand`. Pure. Covered by `tests/component-owner.pure.spec.ts`. |
+| `AppsComponentLayout.tsx` | Builds the tree items once (`buildComponentNavItems`); derives `levels` (`useGroupByLevels` with `fallbackLevels: COMPONENT_DEFAULT_LEVELS`, then `normalizeComponentLevels`), `selectedGroups`, the open graph's Space set + `graphKey`, the `NoVariants` empty state, and owns the `?group=`/`?app` URL writes (`handleNodeOpen`, `handleAppSelect`). |
 | `AppsComponentPage.tsx` | Calls `useQueryBuilder({ entityType: 'Space', viewKind: 'components', defaultColumns: [] })` and renders the `ViewTabs` strip (no filter row) between the page header and the two-pane layout. |
-| `AppComponentView.tsx` | The one flow-graph/Dashboard view, driven by a Space SET rather than a Component name: `graphKey` (identity, since a node graph has no one Component name), `componentSpaces` (every Component-labelled Space on the page, for the variant composer's sibling-name check), and `displayMode` (graph vs. Dashboard). |
+| `AppComponentView.tsx` | The one flow-graph/Dashboard view, driven by a Space SET rather than a Component name: `graphKey` (identity, since a node graph has no one Component name), `componentSpaces` (every Space of a Component on the page, for the variant composer's sibling-name check), and `displayMode` (graph vs. Dashboard). |
 | `flow-graph/FlowViewControl.tsx` | The Graph / Dashboard segmented control — a sibling overlay `AppComponentView` renders above whichever content is showing, not part of `ComponentFlowGraph` (which has no Dashboard/view-mode knowledge). |
-| `ui/src/components/group-nav/` (shared with the Unit list) | `GroupNavPanel<T>` (generic tree; `expansionTrigger` prop), `groupable-fields.ts` (`GroupableFieldCatalog`, `UNIT_CATALOG`), `field-icon.ts` (icon map override). |
+| `ui/src/components/group-nav/` (shared with the Unit list) | `GroupNavPanel<T>` (generic tree; `expansionTrigger` prop; optional `leaf` prop, `GroupNavLeafOptions<T>`, that adds each item as a leaf under the last group level — without it the Unit list's tree is unchanged), `groupable-fields.ts` (`GroupableFieldCatalog`, `UNIT_CATALOG`), `field-icon.ts` (icon map override). |
 | `ui/src/components/query-builder/useQueryBuilder.tsx` | `viewKind` option (view-kind annotation filter + `storageNamespace`), `defaultColumns` option, `clearParamsOnViewSwitch` option (below). |
 | `ui/src/components/query-builder/ViewTabs.tsx` | `viewKind`/`defaultColumns`/`defaultGroupBy` props — written into a new view's create/duplicate payload. |
 
@@ -597,10 +667,11 @@ list stays on the `'content'` default and is unaffected.
 ### No Space filter on this page
 
 The Components page has no `QueryBuilderElement` and no filter row — see
-"No filter button" above. `AppsComponentLayout`'s Space sets (`appSpaces`
-for the tree, the overview matrix, and a `?group=` node graph;
-`selectedAppSpaces` for a whole-**Component** graph, `?app=`) are therefore
-never narrowed by anything but the tree and URL themselves.
+"No filter button" above. `AppsComponentLayout`'s sets (`items`, every
+Component, for the tree; `appSpaces` for the overview matrix;
+`spacesOfComponents` of the node's Components for a `?group=` node graph;
+the Component's own `spaces` for a whole-**Component** graph, `?app=`) are
+therefore never narrowed by anything but the tree and URL themselves.
 
 ### The owning-Space rule, and its delete effect
 
@@ -610,27 +681,35 @@ Space in a Component, in the order the query returns it. This Space is
 arbitrary, and if it is later deleted, the saved view goes with it (a plain
 Space→View cascade). Accepted, same as the Unit list.
 
-### Dropped fields (and why), from the Space field catalog
+### Fields offered, and saved levels that name Space fields
 
-`COMPONENT_CATALOG` (`componentGroupFields.ts`) offers `Labels.<key>`
-(dynamic — every label key seen on the page's Spaces, `Component` included),
-`ReleaseTarget` (displayed as **"Target"** — Space.ReleaseTargetID, the
-Space's default Target for every Unit in it; the internal key stays
-`ReleaseTarget` so a saved view's GroupBy annotation or a `?group=` deep link
-keeps working, only the label changed), `UpgradeNeeded`,
-`UnreleasedChanges`, and `Gated`. Dropped,
-deliberately: `Slug`/`SpaceID`/`DisplayName` (unique per Space — one bucket
-per Space, a useless grouping); `CreatedAt`/`UpdatedAt` (near-unique
-timestamps); **Base vs. Deployment** (derived from the Units' targets in
-`buildComponentData`, `componentData.ts` — the nav tree has no Units loaded,
-only Spaces, so there is nothing to derive it from without a second query);
-toolchain (`TargetCountByToolchainType` is multi-valued per Space; group-nav
-buckets on one value per item); `Annotations` (free-form machine
-metadata); `OrganizationID`/`EntityType`/`Version`/`Permissions`/
-`DeleteGates`/`Attribute*`/`Trigger*`/`Where*` (constant or internal config).
-The Unit-only "Space Labels" submenu never appears for Components — its own
-labels already ARE the Space labels, so `getGroupableCategories` is called
-with `spaceLabelKeys: []`.
+`COMPONENT_CATALOG` (`componentGroupFields.ts`) offers only properties of the
+Component: `Labels.<key>` (dynamic — every Component label key on the page,
+plus `Owner` always, less `Variant`), `UpgradeNeeded`, `UnreleasedChanges`,
+and `Gated`. A Space property (its Release target, its Variant, any Space
+label, its Slug) can differ between the Spaces of one Component, and would
+put one Component in several places in the tree, so none is offered.
+**Base vs. Deployment** and toolchain are not offered either: the nav tree
+has no Units loaded.
+
+Saved views and `?viewGroupBy=` links can still carry levels from the
+Space-based tree. `normalizeComponentLevels` reads them on every render; it
+does not rewrite the URL or the view (the view changes only when the user
+edits its levels):
+
+| Saved level | Read as |
+|---|---|
+| `Labels.Owner` | Kept. Reads the Owner rule (Component label, else the Owner all Spaces share, else empty). |
+| Any other `Labels.<key>` | Kept. Reads the Component's own label `<key>`. |
+| `UpgradeNeeded`, `UnreleasedChanges`, `Gated` | Kept. Roll-ups of the Component's Spaces. |
+| `Component` | Dropped — the Component is the leaf. |
+| `ReleaseTarget` | Dropped — a Space property. |
+| `Labels.Variant` | Dropped — names one Space of a Component. |
+| Any other key (for example `Space`) | Dropped. |
+
+A level that repeats is kept once, at its first position. The result can be
+empty (for example a view grouped only by `Component`): the tree then lists
+the Components at the root, with no group above them.
 
 ### Storage keys
 

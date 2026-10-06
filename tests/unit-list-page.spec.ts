@@ -1,7 +1,8 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { test, expect } from './fixtures/test';
+import { test, expect, newAuthorizedContext } from './fixtures/test';
 
+import { ApiHelper } from './fixtures/api-helper';
 import { SpaceListPage } from './fixtures/space-list-page';
 import { TargetListPage } from './fixtures/target-list-page';
 import { UnitListPage } from './fixtures/unit-list-page';
@@ -1552,6 +1553,61 @@ test.describe('unit list page', () => {
   });
 
   test.describe('Table Grouping', () => {
+    const groupingSpaceIds: string[] = [];
+
+    test.afterAll(async ({ browser }) => {
+      if (groupingSpaceIds.length === 0) return;
+      const context = await newAuthorizedContext(browser);
+      const page = await context.newPage();
+      await page.goto('/');
+      const api = new ApiHelper(page);
+      for (const spaceId of groupingSpaceIds) {
+        await api.deleteSpace(spaceId, true).catch(() => {});
+      }
+      await context.close();
+    });
+
+    test('the (empty) group is the last group at its level', async ({ page }) => {
+      const run = RandomSlugGenerator.randomSlugName();
+      const spaceSlug = `pw-group-order-${run}`;
+      // A key of this run only: every Unit outside this Space is under (empty).
+      const labelKey = `pw-order-${run}`;
+      const api = new ApiHelper(page);
+      const space = await api.createSpace({ space: { Slug: spaceSlug } });
+      groupingSpaceIds.push(space.SpaceID);
+      await api.createUnit({
+        spaceId: space.SpaceID,
+        unit: { Slug: `${run}-labelled`, ToolchainType: 'Kubernetes/YAML', Labels: { [labelKey]: 'alpha' } },
+      });
+      await api.createUnit({
+        spaceId: space.SpaceID,
+        unit: { Slug: `${run}-unlabelled`, ToolchainType: 'Kubernetes/YAML' },
+      });
+
+      const unitListPage = new UnitListPage(page);
+      await page.goto('/units');
+      await unitListPage.waitForGridLoad();
+
+      // Space, then the label: this Space holds an "alpha" group and an
+      // (empty) group. In localeCompare order "(empty)" comes first.
+      await page.getByRole('button', { name: 'Add grouping level' }).click();
+      const labelsTrigger = page.getByRole('menuitem', { name: 'Labels', exact: true });
+      await labelsTrigger.hover();
+      const labelItem = page.getByRole('menuitem', { name: labelKey });
+      await labelItem.hover();
+      await labelItem.click();
+      await expect(page).toHaveURL(new RegExp(`viewGroupBy=Space%2CLabels\\.${labelKey}`));
+
+      const spaceNode = page.getByRole('treeitem', { name: new RegExp(spaceSlug) });
+      if ((await spaceNode.getAttribute('aria-expanded')) !== 'true') {
+        await spaceNode.locator('.MuiTreeItem-iconContainer').first().click();
+      }
+      const labelGroups = spaceNode.getByRole('treeitem');
+      await expect(labelGroups).toHaveCount(2);
+      await expect(labelGroups.first().locator('.MuiTreeItem-content').first()).toContainText('alpha');
+      await expect(labelGroups.last().locator('.MuiTreeItem-content').first()).toContainText('(empty)');
+    });
+
     test('should show default Space grouping and allow adding a second grouping level via sidebar', async ({
       page,
     }) => {

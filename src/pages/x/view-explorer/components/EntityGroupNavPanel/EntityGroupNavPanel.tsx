@@ -15,6 +15,7 @@ import { TreeItem, treeItemClasses } from '@mui/x-tree-view/TreeItem';
 
 import { ALL_GROUPS, formatHeaderLabel } from '@/components/group-nav';
 import { getChipIcon } from '@/components/group-nav/field-icon';
+import { EMPTY_GROUP_VALUE, compareGroupValues } from '@/components/group-nav/groupOrder';
 
 import { GroupNavRow, getCellValue } from '../../cell-value';
 
@@ -129,7 +130,7 @@ function buildGroupTree(
   const column = groupByColumns[depth];
   const buckets = new Map<string, GroupNavRow[]>();
   for (const row of rows) {
-    const val = getCellValue(row, column) || '(empty)';
+    const val = getCellValue(row, column) || EMPTY_GROUP_VALUE;
     let bucket = buckets.get(val);
     if (!bucket) {
       bucket = [];
@@ -139,7 +140,7 @@ function buildGroupTree(
   }
 
   return Array.from(buckets.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => compareGroupValues(a, b))
     .map(([value, bucketRows]) => {
       const path = [...parentPath, value];
       return {

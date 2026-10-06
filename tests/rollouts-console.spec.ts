@@ -39,6 +39,7 @@ import { test, expect, newAuthorizedContext } from './fixtures/test';
 
 import { rolloutsConsoleCopy } from '../src/pages/x/apps/rollout/rolloutsConsoleCopy';
 
+import { ApiHelper } from './fixtures/api-helper';
 import { type RolloutFixture, buildRolloutFixture } from './fixtures/rollout-fixture';
 
 const CONSOLE_PATH = '/rollouts';
@@ -505,6 +506,96 @@ test.describe('the Complete step on the console strip', () => {
       expect(row.state).toBe('no-stages');
       expect(row.titles.filter((title) => COMPLETE_SEGMENT_TITLE.test(title))).toEqual([]);
     });
+  });
+});
+
+/**
+ * The Component column and the Component filter, over two rollouts seeded for
+ * the purpose: one whose Space is in a Component, and one whose Space is in
+ * none. The second is the one the empty marker and the filter's exclusion are
+ * about, and the fixture always puts its Spaces in a Component.
+ */
+test.describe('the Component column and filter', () => {
+  test.use({ storageState: 'authentication.json' });
+
+  let fx: RolloutFixture;
+  let fixturePage: Page;
+  let looseSpaceId: string | undefined;
+  let looseOrderSlug: string;
+
+  test.beforeAll(async ({ browser }) => {
+    const context = await newAuthorizedContext(browser);
+    fixturePage = await context.newPage();
+    await fixturePage.goto('/', { waitUntil: 'domcontentloaded' });
+    fx = await buildRolloutFixture(fixturePage, { resources: 'minimal', releasable: false, workflow: 'none' });
+
+    const api = new ApiHelper(fixturePage);
+    const looseSpace = await api.createSpace({
+      space: { Slug: `${fx.appLabel}-loose`, Labels: { Owner: 'E2E' } } as never,
+    });
+    looseSpaceId = (looseSpace as { SpaceID: string }).SpaceID;
+    looseOrderSlug = `${fx.appLabel}-loose-order`;
+    await api.createChangeOrder({
+      spaceId: looseSpaceId,
+      changeOrder: { Slug: looseOrderSlug, InScopeSpaceIDs: [looseSpaceId] } as never,
+    });
+  });
+
+  test.afterAll(async () => {
+    try {
+      if (looseSpaceId) await new ApiHelper(fixturePage).deleteSpace(looseSpaceId, true);
+    } catch (error) {
+      console.warn(`[rollouts-console] could not delete Space ${looseSpaceId}: ${String(error)}`);
+    }
+    try {
+      if (fx) await fx.teardown();
+    } finally {
+      if (fixturePage) await fixturePage.close();
+    }
+  });
+
+  const rowOf = (consoleRegion: Locator, slug: string) => consoleRegion.locator(`[data-rollout-slug="${slug}"]`);
+
+  test('shows the Component of each rollout, and a dash where there is none', async ({ page }) => {
+    // Both seeded slugs start with the Component's slug, so one search shows both rows.
+    const consoleRegion = await assertOurConsole(page);
+    await consoleRegion
+      .getByRole('searchbox', { name: rolloutsConsoleCopy.filters.searchPlaceholder })
+      .fill(fx.appLabel);
+    await expect(rowOf(consoleRegion, fx.changeOrderSlug)).toBeVisible({ timeout: 20_000 });
+    await expect(rowOf(consoleRegion, looseOrderSlug)).toBeVisible();
+
+    await expect(
+      consoleRegion.getByRole('row').getByText(rolloutsConsoleCopy.columns.component, { exact: true }),
+    ).toBeVisible();
+
+    const component = rowOf(consoleRegion, fx.changeOrderSlug).getByTestId('rollout-component');
+    const link = component.getByRole('link', { name: fx.appLabel, exact: true });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('href', `/components?app=${encodeURIComponent(fx.appLabel)}`);
+
+    await expect(rowOf(consoleRegion, looseOrderSlug).getByTestId('rollout-component')).toHaveText('—');
+    await expect(rowOf(consoleRegion, looseOrderSlug).getByTestId('rollout-component').getByRole('link')).toHaveCount(0);
+  });
+
+  test('the Component filter shows only that Component’s rollouts, and Clear resets it', async ({ page }) => {
+    const consoleRegion = await assertOurConsole(page);
+    await expect(rowOf(consoleRegion, looseOrderSlug)).toBeVisible({ timeout: 20_000 });
+
+    const select = consoleRegion.getByRole('combobox', { name: rolloutsConsoleCopy.filters.component, exact: true });
+    await expect(select).toHaveValue('all');
+    await select.selectOption(fx.appLabel);
+
+    // The org is shared, but this Component is the fixture's own and holds one rollout.
+    const rows = consoleRegion.locator('[data-rollout-slug]');
+    await expect(rows).toHaveCount(1);
+    await expect(rowOf(consoleRegion, fx.changeOrderSlug)).toBeVisible();
+    await expect(rowOf(consoleRegion, looseOrderSlug)).toHaveCount(0);
+
+    await consoleRegion.getByRole('button', { name: rolloutsConsoleCopy.filters.clear }).click();
+    await expect(select).toHaveValue('all');
+    await expect(rowOf(consoleRegion, looseOrderSlug)).toBeVisible();
+    await expect(rowOf(consoleRegion, fx.changeOrderSlug)).toBeVisible();
   });
 });
 

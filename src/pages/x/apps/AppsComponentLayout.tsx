@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
+import { QueryErrorState } from '@/components/query-error-state/QueryErrorState';
 import { spaceComponentSlug, useComponentSlugs } from '@/hooks/useComponentSlugs';
 import {
   type ExtendedSpaceRead,
@@ -13,6 +14,7 @@ import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
+import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
 import { Group, Panel, type PanelSize, Separator, usePanelRef } from 'react-resizable-panels';
 
@@ -23,17 +25,20 @@ import { AppNavigationTree } from './AppNavigationTree';
 import { AppComponentView } from './AppComponentView';
 import { ComponentOverviewMatrix } from './ComponentOverviewMatrix';
 import { ComponentOverviewMatrixSkeleton } from './ComponentOverviewMatrixSkeleton';
-import { LABEL_OWNER } from './componentData';
+import { ComponentFlowGraphSkeleton } from './ComponentFlowGraphSkeleton';
 import { type ComponentDisplayMode, type SelectedApp, type ViewParamsPatch } from './appTypes';
 import {
   COMPONENT_DEFAULT_LEVELS,
-  buildTargetSlugById,
   deriveComponentTreePath,
-  filterSpacesByGroupPath,
-  getSpaceLabelKeyCounts,
-  getSpaceLabelKeys,
+  filterComponentsByGroupPath,
+  getComponentLabelKeyCounts,
+  getComponentLabelKeys,
+  normalizeComponentLevels,
   resolveNodeGraphTarget,
+  resolveOpenComponentSlug,
+  spacesOfComponents,
 } from './componentGroupFields';
+import { buildComponentNavItems, type ComponentNavItem } from './componentIndex';
 
 /** Stable identity so a bare `/components` render doesn't hand every
  * downstream `useMemo` a brand-new empty Set each time (components.md risk
@@ -72,6 +77,55 @@ const CollapsedSidebar = styled(Box)(({ theme }) => ({
   backgroundColor: theme.palette.background.paper,
 }));
 
+const EmptyGraph = styled(Box)(({ theme }) => ({
+  flex: 1,
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: theme.spacing(1),
+  padding: theme.spacing(4),
+  textAlign: 'center',
+}));
+
+/** Centres `QueryErrorState` in the tree panel or the detail pane. */
+const ErrorPanel = styled(Box)(({ theme }) => ({
+  flex: 1,
+  height: '100%',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: theme.spacing(2),
+}));
+
+const CommandHint = styled('code')(({ theme }) => ({
+  fontFamily: 'var(--font-mono)',
+  fontSize: '0.8125rem',
+  color: theme.palette.text.primary,
+  backgroundColor: theme.palette.action.hover,
+  borderRadius: theme.shape.borderRadius,
+  padding: theme.spacing(0.75, 1.5),
+  marginTop: theme.spacing(1),
+}));
+
+/**
+ * The detail pane for an open node with no Spaces to draw: a Component with
+ * no variants yet, or a group node whose Components have none.
+ */
+const NoVariants = ({ componentSlug }: { componentSlug: string | null }) => (
+  <EmptyGraph data-testid='component-no-variants'>
+    <Typography variant='subtitle1' fontWeight={600}>
+      {componentSlug ? `${componentSlug} has no variants yet` : 'These components have no variants yet'}
+    </Typography>
+    <Typography variant='body2' color='text.secondary'>
+      A variant is a Space of the component. Upload its configuration to add one:
+    </Typography>
+    <CommandHint>
+      cub variant upload --component {componentSlug ?? '<component>'} --variant base &lt;dir&gt;
+    </CommandHint>
+  </EmptyGraph>
+);
+
 const StyledSeparator = styled(Separator)(({ theme }) => ({
   width: 1,
   backgroundColor: theme.palette.divider,
@@ -94,8 +148,8 @@ interface AppsComponentLayoutProps {
   spaces: ExtendedSpaceRead[];
   targets: ExtendedTargetRead[];
   /** True while `spaces` is still the priority-scoped (single-app) set on a `?app=` deep-link,
-   * before the org-wide list has resolved — lets the nav tree show a "more loading" affordance
-   * instead of silently looking like the requested app is the only one that exists. */
+   * before the org-wide list has resolved. The nav tree shows its skeleton until then: the
+   * other Components' owners are read from Spaces that have not arrived. */
   isLoadingFullAppList?: boolean;
   /** True while the overview matrix's KPI counts (the `summary=true` spaces query) are still
    * in flight. Only the matrix reads those fields, so the nav tree and the component graph
@@ -174,29 +228,35 @@ export const AppsComponentLayout = ({
   // arrives a Space has no Component name to group, open, or link by, so it
   // is left out rather than shown in a misleading `(empty)` Component
   // bucket — the same rule the overview matrix applies.
-  const { slugById } = useComponentSlugs();
+  const {
+    componentById,
+    slugById,
+    isLoaded: isComponentsLoaded,
+    isError: isComponentsError,
+    error: componentsError,
+    refetch: refetchComponents,
+  } = useComponentSlugs();
   const appSpaces = useMemo(
     () => spaces.filter((s) => spaceComponentSlug(s.Space, slugById) !== undefined),
     [spaces, slugById],
   );
 
-  // selectedApp is derived from the URL so browser Back/Forward work correctly
-  const selectedApp = useMemo((): SelectedApp | null => {
-    const appName = searchParams.get('app');
-    if (!appName) return null;
-    const space = appSpaces.find((s) => spaceComponentSlug(s.Space, slugById) === appName);
-    if (!space) return null;
-    return { name: appName, owner: space.Space?.Labels?.[LABEL_OWNER] ?? 'Unassigned' };
-  }, [searchParams, appSpaces, slugById]);
+  // The tree's leaves: every Component, with its Spaces and its owner,
+  // including Components with no Spaces yet.
+  const items = useMemo(() => buildComponentNavItems(componentById, appSpaces), [componentById, appSpaces]);
+  const itemBySlug = useMemo(() => {
+    const map = new Map<string, ComponentNavItem>();
+    for (const item of items) map.set(item.slug, item);
+    return map;
+  }, [items]);
+  const ownerOfComponent = useCallback(
+    (slug: string): string => itemBySlug.get(slug)?.owner || 'Unassigned',
+    [itemBySlug],
+  );
 
-  // Get spaces for the selected component. A Component graph always shows
-  // its full set of Deployments and upstream DAG — every Space in this
-  // Component, not narrowed by whatever the tree happens to be grouped or
-  // scrolled to.
-  const selectedAppSpaces = useMemo(() => {
-    if (!selectedApp) return EMPTY_SPACES;
-    return appSpaces.filter((s) => spaceComponentSlug(s.Space, slugById) === selectedApp.name);
-  }, [appSpaces, selectedApp, slugById]);
+  // The tree needs every Space: an owner read from part of a Component's
+  // Spaces can differ from the one read from all of them.
+  const isTreeLoading = !isComponentsLoaded || isLoadingFullAppList;
 
   // ── Grouping levels (URL-first, same architecture as the Unit list) ──────
   const setSelectedGroupsNoop = useCallback(() => {}, []);
@@ -217,7 +277,7 @@ export const AppsComponentLayout = ({
   // never actually depended on that write succeeding.
   const clearGroupUrlParams = useCallback(() => {}, []);
 
-  const { localGroupByColumns: levels, handleEditLevels } = useGroupByLevels({
+  const { localGroupByColumns: rawLevels, handleEditLevels } = useGroupByLevels({
     activeView,
     searchParams,
     setSearchParams,
@@ -226,6 +286,11 @@ export const AppsComponentLayout = ({
     fallbackLevels: COMPONENT_DEFAULT_LEVELS,
     clearParamsOnEdit: CLEAR_GROUP_PARAM,
   });
+
+  // Levels from a saved view or a link can name Space fields. They are read
+  // here, not rewritten in the URL or the view: the view is not modified
+  // until the user changes its levels.
+  const levels = useMemo(() => normalizeComponentLevels(rawLevels), [rawLevels]);
 
   // `?group=` is also cleared when the active saved-view tab changes, but
   // NOT here: an effect in this component reacting to `activeView` would run
@@ -238,32 +303,46 @@ export const AppsComponentLayout = ({
 
   const groupParam = useMemo(() => searchParams.getAll('group'), [searchParams]);
 
-  const valueCtx = useMemo(
-    () => ({ targetSlugById: buildTargetSlugById(targets), isSummaryLoaded, slugById }),
-    [targets, isSummaryLoaded, slugById],
+  // selectedApp is derived from the URL so browser Back/Forward work
+  // correctly. It comes from the Component list, so a Component with no
+  // Spaces can be open too. A `?group=` path that ends at a leaf opens that
+  // Component, the same as a click on the leaf; the URL is not rewritten.
+  const appParam = searchParams.get('app');
+  const openSlug = resolveOpenComponentSlug(levels, appParam, groupParam);
+  const selectedItem = openSlug ? itemBySlug.get(openSlug) : undefined;
+  const selectedApp = useMemo(
+    (): SelectedApp | null => (selectedItem ? { name: selectedItem.slug, owner: selectedItem.owner || 'Unassigned' } : null),
+    [selectedItem],
   );
 
-  // The tree's highlighted path. Reconciles an open Component graph with
-  // `?group=` so the tree never highlights a node that contradicts what's on
-  // screen — see `deriveComponentTreePath`'s own doc comment for the exact
-  // rule.
+  // A Component graph always shows its full set of Deployments and upstream
+  // DAG — every Space in this Component, not narrowed by whatever the tree
+  // happens to be grouped or scrolled to.
+  const selectedAppSpaces = selectedItem?.spaces ?? EMPTY_SPACES;
+
+  const valueCtx = useMemo(() => ({ isSummaryLoaded }), [isSummaryLoaded]);
+
+  // The tree's highlighted path: the open Component's leaf, else `?group=`
+  // when Components are under it.
   const selectedGroups = useMemo(
-    () => deriveComponentTreePath(levels, selectedApp?.name ?? null, groupParam, appSpaces, valueCtx),
-    [levels, selectedApp, groupParam, appSpaces, valueCtx],
+    () => deriveComponentTreePath(levels, selectedApp?.name ?? null, groupParam, items, valueCtx),
+    [levels, selectedApp, groupParam, items, valueCtx],
   );
 
-  // A non-Component node graph's Space set — every Space matching the
-  // node's value path. Ignored while `?app=` is set (a whole-Component
-  // graph always shows that Component's full Deployment set instead).
-  // Empty when `?group=` names a path with no Spaces (a renamed label, a
-  // deleted Space) — `isGraphOpen` below then falls back to the overview
-  // instead of showing an empty graph.
-  const groupGraphSpaces = useMemo(() => {
-    if (selectedApp || groupParam.length === 0) return EMPTY_SPACES;
-    return filterSpacesByGroupPath(appSpaces, levels, groupParam, valueCtx);
-  }, [selectedApp, groupParam, appSpaces, levels, valueCtx]);
+  // A group node's Components. Ignored while `?app=` is set. Empty when
+  // `?group=` names a path no Component has (a renamed label, a deleted
+  // Component) — `isGraphOpen` below then falls back to the overview.
+  const groupComponents = useMemo(() => {
+    if (openSlug || groupParam.length === 0) return [];
+    return filterComponentsByGroupPath(items, levels, groupParam, valueCtx);
+  }, [openSlug, groupParam, items, levels, valueCtx]);
+  // The node graph shows every Space of every Component under the node.
+  const groupGraphSpaces = useMemo(
+    () => (groupComponents.length > 0 ? spacesOfComponents(groupComponents) : EMPTY_SPACES),
+    [groupComponents],
+  );
 
-  const isGroupGraphOpen = !selectedApp && groupGraphSpaces.length > 0;
+  const isGroupGraphOpen = !selectedApp && groupComponents.length > 0;
   const isGraphOpen = selectedApp !== null || isGroupGraphOpen;
 
   // The open graph's Space set and identity — a whole Component (`?app=`)
@@ -278,8 +357,8 @@ export const AppsComponentLayout = ({
       ? `group:${groupParam.join('/')}`
       : '';
 
-  const labelKeys = useMemo(() => getSpaceLabelKeys(appSpaces), [appSpaces]);
-  const labelKeyCounts = useMemo(() => getSpaceLabelKeyCounts(appSpaces), [appSpaces]);
+  const labelKeys = useMemo(() => getComponentLabelKeys(items), [items]);
+  const labelKeyCounts = useMemo(() => getComponentLabelKeyCounts(items), [items]);
 
   // Deliberately a PUSH, not `{ replace: true }` — out of scope for the
   // replace-everywhere rule, which was answering a question about rapid
@@ -314,19 +393,15 @@ export const AppsComponentLayout = ({
     [updateParams],
   );
 
-  // Any tree node click (any depth, any field) opens a graph —
-  // `resolveNodeGraphTarget` decides whether that's a whole Component
-  // (`?app=`: every Component-level node, and any node whose Spaces are
-  // exactly one whole Component) or a narrower node graph (`?group=`).
-  // Overview (`path.length === 0`) is handled by the caller directly.
+  // Any tree node click opens a graph — `resolveNodeGraphTarget` decides
+  // whether that's a whole Component (`?app=`: a leaf, or a group node
+  // holding exactly one Component) or a node graph (`?group=`). Overview
+  // (`path.length === 0`) is handled by the caller directly.
   const handleNodeOpen = useCallback(
     (path: string[]) => {
-      const target = resolveNodeGraphTarget(appSpaces, levels, path, valueCtx);
+      const target = resolveNodeGraphTarget(items, levels, path, valueCtx);
       if ('app' in target) {
-        const ownerSpace = appSpaces.find(
-          (s) => spaceComponentSlug(s.Space, slugById) === target.app,
-        );
-        handleAppSelect({ name: target.app, owner: ownerSpace?.Space?.Labels?.[LABEL_OWNER] ?? 'Unassigned' });
+        handleAppSelect({ name: target.app, owner: ownerOfComponent(target.app) });
         return;
       }
       // Re-clicking the node that already drives the open group graph is a
@@ -353,7 +428,7 @@ export const AppsComponentLayout = ({
         { push: true },
       );
     },
-    [appSpaces, levels, valueCtx, slugById, updateParams, handleAppSelect],
+    [items, levels, valueCtx, ownerOfComponent, updateParams, handleAppSelect],
   );
 
   // ── URL-derived view state ──────────────────────────────────────────────
@@ -499,9 +574,18 @@ export const AppsComponentLayout = ({
               </IconButton>
             </Tooltip>
           </CollapsedSidebar>
+        ) : isComponentsError ? (
+          <ErrorPanel>
+            <QueryErrorState
+              error={componentsError}
+              onRetry={refetchComponents}
+              context='components'
+              endpoint='GET /component'
+            />
+          </ErrorPanel>
         ) : (
           <AppNavigationTree
-            spaces={appSpaces}
+            items={items}
             levels={levels}
             onEditLevels={handleEditLevels}
             selectedGroups={selectedGroups}
@@ -509,7 +593,7 @@ export const AppsComponentLayout = ({
             selectionCount={selectedDeploymentIds.size}
             onClearSelection={handleClearSelection}
             onOverviewSelect={handleOverviewSelect}
-            isLoadingMore={isLoadingFullAppList}
+            isLoading={isTreeLoading}
             labelKeys={labelKeys}
             labelKeyCounts={labelKeyCounts}
             valueCtx={valueCtx}
@@ -522,7 +606,26 @@ export const AppsComponentLayout = ({
       {/* Detail Panel */}
       <Panel minSize='30%' style={{ position: 'relative' }}>
         <DetailPanelInner>
-          {isGraphOpen ? (
+          {isComponentsError ? (
+            // Every graph and the overview read the Components, so none of
+            // them can be drawn without the list.
+            <ErrorPanel>
+              <QueryErrorState
+                error={componentsError}
+                onRetry={refetchComponents}
+                context='components'
+                endpoint='GET /component'
+              />
+            </ErrorPanel>
+          ) : openSlug && !isComponentsLoaded ? (
+            // The URL names a Component by Slug, and the Components have not
+            // loaded: draw the graph's shape, not the overview.
+            <ComponentFlowGraphSkeleton />
+          ) : isGraphOpen && graphSpaces.length === 0 ? (
+            // A Component's own Spaces arrive with the first Space list, so
+            // an empty list after that means it has no variants.
+            <NoVariants componentSlug={selectedApp?.name ?? null} />
+          ) : isGraphOpen ? (
               <AppComponentView
                 spaces={graphSpaces}
                 componentSpaces={appSpaces}

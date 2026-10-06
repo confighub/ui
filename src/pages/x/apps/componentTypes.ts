@@ -120,7 +120,7 @@ export interface ComponentDeployment {
   releaseAge?: ReleaseAge;
   /**
    * The Component this Deployment belongs to: its ID, its Slug (the name the
-   * left nav shows) and the Owner label of its Space. Set by the page; the
+   * left nav shows) and the Component's owner (`componentOwner.ts`). Set by the page; the
    * graph uses it only when one graph spans two or more Components.
    */
   componentId?: string;

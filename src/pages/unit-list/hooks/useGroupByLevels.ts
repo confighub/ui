@@ -83,9 +83,9 @@ interface UseGroupByLevelsOptions {
   clearGroupUrlParams: () => void;
   /**
    * Grouping levels used when the active view has no GroupBy configured.
-   * Defaults to `['Space']`. The Components page passes
-   * `['Labels.Owner', 'Component']` so a view-less (or GroupBy-less)
-   * Components page never falls back to a Unit-list field.
+   * Defaults to `['Space']`. The Components page passes `['Labels.Owner']`
+   * so a view-less (or GroupBy-less) Components page never falls back to a
+   * Unit-list field.
    */
   fallbackLevels?: string[];
   /**

@@ -27,6 +27,7 @@ import {
   confighubApi,
   type ListAllReleasesApiResponse,
   type ListAllUnitsApiResponse,
+  type ListUsersApiResponse,
   type SearchRevisionDataApiResponse,
   type SearchRevisionMutationSourcesApiResponse,
   type SearchUnitDataApiResponse,
@@ -55,6 +56,17 @@ export interface UnitIdsArg {
 export interface RevisionIdsArg {
   revisionIds: string[];
 }
+
+export interface ReleaseIdsArg {
+  releaseIds: string[];
+}
+
+export interface UserIdsArg {
+  userIds: string[];
+}
+
+/** Ids for each request of a by-id read that a page fires on its own, kept short. */
+export const BY_ID_CHUNK_SIZE = 50;
 
 /** The base query RTK hands a `queryFn`: the API's own, with its auth handling. */
 type ChunkBaseQuery = (
@@ -113,9 +125,9 @@ async function fetchChunks<T>(
   ids: readonly string[],
   request: (where: string, count: number) => FetchArgs,
   baseQuery: ChunkBaseQuery,
-  { paged = false }: { paged?: boolean } = {},
+  { paged = false, maxItems }: { paged?: boolean; maxItems?: number } = {},
 ): Promise<ChunkResult<T>> {
-  const chunks = chunkIds(column, ids);
+  const chunks = chunkIds(column, ids, { maxItems });
   const results: ({ data: T[] } | { error: FetchBaseQueryError } | undefined)[] = new Array(
     chunks.length,
   );
@@ -194,6 +206,40 @@ const chunkedQueriesApi = confighubApi.injectEndpoints({
           queryArgs: { spaceIds: idSet(queryArgs.spaceIds) },
         }),
       providesTags: ['Release'],
+    }),
+    listReleasesByIdChunked: build.query<ListAllReleasesApiResponse, ReleaseIdsArg>({
+      queryFn: (arg, _api, _extra, baseQuery) =>
+        fetchChunks<ListAllReleasesApiResponse[number]>(
+          'ReleaseID',
+          idSet(arg.releaseIds),
+          (where) => ({ url: `/release`, params: { where } }),
+          baseQuery,
+          { maxItems: BY_ID_CHUNK_SIZE },
+        ),
+      serializeQueryArgs: ({ endpointName, endpointDefinition, queryArgs }) =>
+        defaultSerializeQueryArgs({
+          endpointName,
+          endpointDefinition,
+          queryArgs: { releaseIds: idSet(queryArgs.releaseIds) },
+        }),
+      providesTags: ['Release'],
+    }),
+    listUsersByIdChunked: build.query<ListUsersApiResponse, UserIdsArg>({
+      queryFn: (arg, _api, _extra, baseQuery) =>
+        fetchChunks<ListUsersApiResponse[number]>(
+          'UserID',
+          idSet(arg.userIds),
+          (where) => ({ url: `/user`, params: { where } }),
+          baseQuery,
+          { maxItems: BY_ID_CHUNK_SIZE },
+        ),
+      serializeQueryArgs: ({ endpointName, endpointDefinition, queryArgs }) =>
+        defaultSerializeQueryArgs({
+          endpointName,
+          endpointDefinition,
+          queryArgs: { userIds: idSet(queryArgs.userIds) },
+        }),
+      providesTags: ['User'],
     }),
     searchUnitDataChunked: build.query<SearchUnitDataApiResponse, UnitIdsArg>({
       queryFn: (arg, _api, _extra, baseQuery) =>
@@ -280,6 +326,8 @@ const chunkedQueriesApi = confighubApi.injectEndpoints({
 export const {
   useListAllUnitsChunkedQuery,
   useListPublishedReleasesChunkedQuery,
+  useListReleasesByIdChunkedQuery,
+  useListUsersByIdChunkedQuery,
   useSearchUnitDataChunkedQuery,
   useSearchRevisionDataChunkedQuery,
   useSearchUnitMutationSourcesChunkedQuery,

@@ -328,13 +328,14 @@ export class ApiHelper {
   /**
    * Create a component, or return the existing one with the same slug
    * @param slug - The slug identifier for the component
+   * @param labels - Labels for a new component. An existing one keeps its own.
    * @returns Promise resolving to the Component object
    * @throws Error if the request fails
    */
-  async createComponent(slug: string): Promise<ComponentRead> {
+  async createComponent(slug: string, labels?: Record<string, string>): Promise<ComponentRead> {
     const response = await hubApi.post('/api/component', {
       params: { allow_exists: 'true' },
-      data: { Slug: slug, DisplayName: slug },
+      data: { Slug: slug, DisplayName: slug, ...(labels ? { Labels: labels } : {}) },
     });
     if (!response.ok()) {
       throw new Error(`Failed to create component: ${response.status()} ${await response.text()}`);
@@ -344,6 +345,19 @@ export class ApiHelper {
       throw new Error(`Create component ${slug} returned no ComponentID`);
     }
     return component;
+  }
+
+  /**
+   * Delete a component (DELETE /api/component/{componentId}). Delete its
+   * Spaces first.
+   * @param componentId - The component to delete
+   * @throws Error if the request fails
+   */
+  async deleteComponent(componentId: string): Promise<void> {
+    const response = await hubApi.delete(`/api/component/${componentId}`);
+    if (!response.ok()) {
+      throw new Error(`Failed to delete component: ${response.status()} ${await response.text()}`);
+    }
   }
 
   /**

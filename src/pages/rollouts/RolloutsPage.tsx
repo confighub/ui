@@ -25,10 +25,11 @@
  * full beside the promote state below, where the affordance is.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
+import Tooltip from '@mui/material/Tooltip';
 import type { BoxProps } from '@mui/material/Box';
 import AutorenewIcon from '@mui/icons-material/Autorenew';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
@@ -43,6 +44,7 @@ import RemoveIcon from '@mui/icons-material/Remove';
 import RestoreIcon from '@mui/icons-material/Restore';
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 
+import { INFO_PEEK_TOOLTIP_SX } from '@/components/info-peek/InfoPeek';
 import { RolloutGateList } from '../x/apps/rollout/RolloutGateList';
 import { gateStateFor, gatesOpen, partitionBlockingGates, tallyGates } from '../x/apps/rollout/rolloutGates';
 import { gatesBlockPromotion } from '../x/apps/rollout/rolloutFooterModel';
@@ -55,6 +57,7 @@ import type {
   RolloutGate,
   RolloutGateTally,
   RolloutSequenceProblem,
+  RolloutStage,
   RolloutStageState,
 } from '../x/apps/rollout/rolloutTypes';
 import { TreeDiffSection } from '../x/apps/TreeDiffSection';
@@ -71,6 +74,7 @@ import type { RolloutEndIntent } from '../x/apps/rollout/rolloutRollback';
 import { useEndRollout } from '../x/apps/rollout/useEndRollout';
 import { promoteAnnouncement, useRolloutActions } from '../x/apps/rollout/useRolloutActions';
 import { PromoteDialog } from './components/PromoteDialog';
+import { RolloutHistory, RolloutLastActivity } from './components/RolloutHistory';
 import { RolloutsConsole } from './RolloutsConsole';
 import {
   COMPLETE_STAGE_ID,
@@ -102,7 +106,8 @@ import {
   rolloutType,
 } from './rolloutsTokens';
 import { RolloutBlockedResources, RolloutRefusals } from './rolloutRefusals';
-import { useRolloutDetail } from './useRolloutDetail';
+import { useRolloutDetail, type RolloutSpace } from './useRolloutDetail';
+import { useRolloutHistory } from './useRolloutHistory';
 import { changeWorkflowHref, changeWorkflowLabel, useChangeWorkflowNames } from './useChangeWorkflowNames';
 
 /**
@@ -248,9 +253,9 @@ function FactLink({ href, children }: { href: string; children: React.ReactNode 
   );
 }
 
-function Fact({ term, children }: { term: string; children: React.ReactNode }) {
+function Fact({ term, children, wide = false }: { term: string; children: React.ReactNode; wide?: boolean }) {
   return (
-    <Box sx={{ minWidth: 0 }}>
+    <Box sx={{ minWidth: 0, gridColumn: wide ? 'span 2' : undefined }}>
       <Box
         component="dt"
         sx={{ fontSize: rolloutType.size.micro, letterSpacing: '.07em', color: rolloutInk.subtle, margin: 0 }}
@@ -264,6 +269,145 @@ function Fact({ term, children }: { term: string; children: React.ReactNode }) {
         {children}
       </Box>
     </Box>
+  );
+}
+
+/**
+ * The Scope fact: how many Spaces the rollout is headed for, with the Spaces
+ * themselves one hover or keyboard focus away.
+ *
+ * The list reads in the order the rollout travels. A Space sorts by the first
+ * stage whose `WhereSpace` selected it, the same membership the rest of this
+ * page draws, so the base Space (the source stage's one member) comes first.
+ * A Space no stage selected comes last. Slug orders the Spaces within each
+ * group. The muted text names the stage, or the Space's `Stage` label when no
+ * stage selected it.
+ *
+ * The popper renders in place rather than in a portal, so Tab from the count
+ * moves into the links. `open` is controlled so the list stays open while focus
+ * is inside it: MUI closes a tooltip when its trigger loses focus, and would
+ * otherwise close it under the link that just took the focus.
+ */
+function ScopeSpaces({ spaces, stages }: { spaces: RolloutSpace[]; stages: RolloutStage[] }) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  const rows = useMemo(() => {
+    const firstStage = new Map<string, RolloutStage>();
+    for (const stage of stages) {
+      for (const spaceId of stage.spaceIds) {
+        if (!firstStage.has(spaceId)) firstStage.set(spaceId, stage);
+      }
+    }
+    return spaces
+      .map((space) => {
+        const stage = firstStage.get(space.spaceId);
+        return {
+          space,
+          rank: stage?.index ?? Number.MAX_SAFE_INTEGER,
+          stageName: stage ? stageDisplayName(stage.id, stage.isSource) : space.labels?.Stage,
+        };
+      })
+      .sort((a, b) => a.rank - b.rank || a.space.slug.localeCompare(b.space.slug));
+  }, [spaces, stages]);
+
+  const label = `${spaces.length} ${spaces.length === 1 ? 'Space' : 'Spaces'}`;
+  if (spaces.length === 0) return <>{label}</>;
+
+  const inList = (node: EventTarget | null) => node instanceof Node && (listRef.current?.contains(node) ?? false);
+
+  const handleClose = (event: Event | React.SyntheticEvent) => {
+    if (event.type === 'keydown') {
+      // Escape. Focus goes back to the count before the list unmounts under it.
+      if (inList(document.activeElement)) triggerRef.current?.focus();
+      setOpen(false);
+      return;
+    }
+    const next = event.type === 'blur' ? (event as React.FocusEvent).relatedTarget : document.activeElement;
+    if (!inList(next)) setOpen(false);
+  };
+
+  const handleListBlur = (event: React.FocusEvent) => {
+    const next = event.relatedTarget;
+    if (inList(next) || next === triggerRef.current) return;
+    setOpen(false);
+  };
+
+  const list = (
+    <Box
+      component="ul"
+      ref={listRef}
+      data-testid="rollout-scope-spaces-list"
+      aria-label="In-scope Spaces"
+      onBlur={handleListBlur}
+      sx={{
+        listStyle: 'none',
+        margin: 0,
+        padding: '6px 0',
+        maxHeight: 320,
+        overflowY: 'auto',
+        minWidth: 200,
+        fontFamily: rolloutFontSans,
+        fontSize: rolloutType.size.body,
+        lineHeight: rolloutType.lineHeight.body,
+      }}
+    >
+      {rows.map(({ space, stageName }) => (
+        <Box
+          component="li"
+          key={space.spaceId}
+          sx={{ display: 'flex', alignItems: 'baseline', gap: '12px', padding: '3px 12px' }}
+        >
+          <Box sx={{ minWidth: 0, flex: 1, color: rolloutInk.default, overflowWrap: 'anywhere' }}>
+            <FactLink href={`/spaces/${space.spaceId}`}>{space.displayName || space.slug}</FactLink>
+          </Box>
+          {stageName && (
+            <Box component="span" sx={{ fontSize: rolloutType.size.small, color: rolloutInk.subtle }}>
+              {stageName}
+            </Box>
+          )}
+        </Box>
+      ))}
+    </Box>
+  );
+
+  return (
+    <Tooltip
+      title={list}
+      open={open}
+      onOpen={() => setOpen(true)}
+      onClose={handleClose}
+      describeChild
+      placement="bottom-start"
+      slotProps={{ tooltip: { sx: INFO_PEEK_TOOLTIP_SX }, popper: { disablePortal: true } }}
+    >
+      <Box
+        component="button"
+        ref={triggerRef}
+        type="button"
+        data-testid="rollout-scope-spaces"
+        aria-label={`Show the ${label} in scope`}
+        sx={{
+          font: 'inherit',
+          color: 'inherit',
+          background: 'none',
+          border: 0,
+          padding: 0,
+          cursor: 'help',
+          textDecoration: 'underline dotted',
+          textDecorationColor: rolloutBorder.strong,
+          textUnderlineOffset: '3px',
+          '&:focus-visible': {
+            outline: `2px solid ${rolloutStatus.accent}`,
+            outlineOffset: 2,
+            borderRadius: `${rolloutShape.radius.xs}px`,
+          },
+        }}
+      >
+        {label}
+      </Box>
+    </Tooltip>
   );
 }
 
@@ -939,6 +1083,7 @@ export default function RolloutsPage() {
   const { slug, stage: stageParam } = useParams<{ slug?: string; stage?: string }>();
   const navigate = useNavigate();
   const detail = useRolloutDetail(slug);
+  const history = useRolloutHistory(detail);
   const workflowNames = useChangeWorkflowNames();
   const workflowId = detail.consoleRow?.changeWorkflowId;
   const workflowHref = changeWorkflowHref(workflowId, workflowNames);
@@ -1736,11 +1881,16 @@ export default function RolloutsPage() {
                   figure stays a fact; a duplicated one would be a claim.
                 */}
                 <Fact term="Scope">
-                  {detail.scopedSpaces === null
-                    ? 'Not reported by the server'
-                    : `${detail.scopedSpaces.length} Spaces`}
+                  {detail.scopedSpaces === null ? (
+                    'Not reported by the server'
+                  ) : (
+                    <ScopeSpaces spaces={detail.scopedSpaces} stages={detail.sequence.stages} />
+                  )}
                 </Fact>
                 <Fact term="Opened">{detail.createdAt ?? '—'}</Fact>
+                <Fact term="Last activity" wide>
+                  <RolloutLastActivity history={history} />
+                </Fact>
                 {/*
                   `detail.serverState` (the raw `ChangeOrder.State`) is
                   deliberately NOT shown here. The design's fact row has no
@@ -2958,6 +3108,9 @@ export default function RolloutsPage() {
           {completeSelected && completeStage !== null ? (
             <CompleteStepDetail label={completeStage.state.label} gates={detail.finalGates} />
           ) : null}
+
+          {/* Last: the record of what happened, below what the selected step does now. */}
+          <RolloutHistory history={history} />
         </>
       ) : null}
     </Box>

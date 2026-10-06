@@ -4,9 +4,11 @@
 // The Components page's left-nav grouping (same system as the Unit list's
 // `GroupNavPanel`) plus the ViewTabs saved-views strip (grouping only — no
 // filter row on this page), namespaced away from the Unit list via
-// `viewKind: 'components'`. See `ui/docs/dev/components.md` ("Navigation
-// tree: node click opens a graph") for the terms this spec exercises: node
-// graph, Component graph, and the `?app=` vs `?group=` rule.
+// `viewKind: 'components'`. The tree's leaves are Component entities, grouped
+// by properties of the Component (by default its owner). See
+// `ui/docs/dev/components.md` ("Navigation tree") for the terms this spec
+// exercises: leaf, node graph, Component graph, and the `?app=` vs `?group=`
+// rule.
 import { type Page } from '@playwright/test';
 import { test, expect, hubApi, newAuthorizedContext } from './fixtures/test';
 
@@ -20,11 +22,45 @@ const COMPONENT_CHECKOUT = `e2e-nav-checkout-${RUN}`;
 const COMPONENT_BILLING = `e2e-nav-billing-${RUN}`;
 const COMPONENT_SEARCH = `e2e-nav-search-${RUN}`;
 const COMPONENT_ORPHAN = `e2e-nav-orphan-${RUN}`;
-// One Component whose two Spaces have DIFFERENT Owners, so it shows under two
-// Owner nodes. Its own Owners, so no other test's Owner counts change.
+// One Component whose two Spaces have DIFFERENT Owners and no Owner of its
+// own: it has no owner, so it is one leaf under "(empty)".
 const OWNER_SPLIT_1 = `e2e-nav-owner-split1-${RUN}`;
 const OWNER_SPLIT_2 = `e2e-nav-owner-split2-${RUN}`;
 const COMPONENT_SPLIT = `e2e-nav-split-${RUN}`;
+// A Component with its own Owner label, whose Space has Owner B: its own
+// label wins, so it is under Owner C, and Owner B keeps one Component.
+const OWNER_C = `e2e-nav-owner-c-${RUN}`;
+const COMPONENT_OWNED = `e2e-nav-owned-${RUN}`;
+// A Component with no Spaces (no variants yet), and an Owner of its own.
+const OWNER_E = `e2e-nav-owner-e-${RUN}`;
+const COMPONENT_EMPTY = `e2e-nav-empty-${RUN}`;
+// An ordinary Component label key, on Checkout only.
+const TIER_KEY = 'Tier';
+
+/** Component labels for the fixtures that have any. */
+const COMPONENT_LABELS: Record<string, Record<string, string>> = {
+  [COMPONENT_CHECKOUT]: { [TIER_KEY]: 'gold' },
+  [COMPONENT_OWNED]: { Owner: OWNER_C },
+  [COMPONENT_EMPTY]: { Owner: OWNER_E },
+};
+
+/**
+ * The flow graph's Deployment nodes. Not `.react-flow__node`: a graph can
+ * also hold frame, stack and composer nodes, which are not Deployments.
+ */
+function deploymentNodes(page: Page) {
+  return page.locator('.react-flow__node-deploymentNode');
+}
+
+/** A tree node by the text of its own label. */
+function treeNode(page: Page, label: string) {
+  return page.getByRole('treeitem', { name: new RegExp(label) });
+}
+
+/** The count badge of a tree node: the last text of its own row. */
+function nodeCount(node: ReturnType<Page['locator']>) {
+  return node.locator('.MuiTreeItem-content').first().locator('p').last();
+}
 
 async function waitForTreeLoaded(page: Page) {
   await page
@@ -51,6 +87,13 @@ async function addLabelGroupingLevel(page: Page, labelKey: string, expectedUrlPa
   await item.waitFor({ state: 'visible', timeout: 5000 });
   await item.hover();
   await item.click();
+  await expect(page).toHaveURL(expectedUrlPattern, { timeout: 5000 });
+}
+
+/** Opens the field picker and adds a top-level (non-label) field. */
+async function addStaticGroupingLevel(page: Page, field: string, expectedUrlPattern: RegExp) {
+  await page.getByRole('button', { name: 'Add grouping level' }).click();
+  await page.getByRole('menuitem', { name: field }).click();
   await expect(page).toHaveURL(expectedUrlPattern, { timeout: 5000 });
 }
 
@@ -90,6 +133,7 @@ test.describe('Components nav grouping + saved views', () => {
   test.use({ storageState: 'authentication.json' });
 
   const spaceIds: string[] = [];
+  const componentIds: string[] = [];
   const filterIds: string[] = [];
   const viewIds: string[] = [];
   let ownerSpaceId = ''; // one Space to own saved views (rule b)
@@ -112,12 +156,19 @@ test.describe('Components nav grouping + saved views', () => {
       { slug: `${COMPONENT_ORPHAN}-base`, component: COMPONENT_ORPHAN, labels: {} },
       { slug: `${COMPONENT_SPLIT}-base`, component: COMPONENT_SPLIT, labels: { Owner: OWNER_SPLIT_1 } },
       { slug: `${COMPONENT_SPLIT}-prod`, component: COMPONENT_SPLIT, labels: { Owner: OWNER_SPLIT_2 } },
+      { slug: `${COMPONENT_OWNED}-base`, component: COMPONENT_OWNED, labels: { Owner: OWNER_B } },
     ];
 
+    const componentIdBySlug = new Map<string, string>();
+    for (const slug of [...new Set(fixtures.map((f) => f.component)), COMPONENT_EMPTY]) {
+      const component = await api.createComponent(slug, COMPONENT_LABELS[slug]);
+      componentIdBySlug.set(slug, component.ComponentID as string);
+      componentIds.push(component.ComponentID as string);
+    }
+
     for (const f of fixtures) {
-      const component = await api.createComponent(f.component);
       const space = await api.createSpace({
-        space: { Slug: f.slug, ComponentID: component.ComponentID, Labels: f.labels },
+        space: { Slug: f.slug, ComponentID: componentIdBySlug.get(f.component), Labels: f.labels },
       });
       spaceIds.push(space.SpaceID);
       if (f.component === COMPONENT_CHECKOUT && f.labels.Variant === 'prod') {
@@ -135,169 +186,235 @@ test.describe('Components nav grouping + saved views', () => {
       (r) => r.url().includes('/api/space') && r.request().method() === 'GET' && r.ok(),
     );
     const api = new ApiHelper(page);
+    // A failed delete leaves a fixture in the shared org, where later runs
+    // and other specs see it, so say which one.
+    const warn = (what: string) => (error: unknown) => console.warn(`cleanup: ${what}: ${error}`);
     for (const viewId of viewIds) {
-      await api.deleteView(ownerSpaceId, viewId).catch(() => {});
+      await api.deleteView(ownerSpaceId, viewId).catch(warn(`View ${viewId}`));
     }
     for (const filterId of filterIds) {
-      await api.deleteFilterInSpace(ownerSpaceId, filterId).catch(() => {});
+      await api.deleteFilterInSpace(ownerSpaceId, filterId).catch(warn(`Filter ${filterId}`));
     }
     for (const spaceId of spaceIds) {
-      await api.deleteSpace(spaceId, true).catch(() => {});
+      await api.deleteSpace(spaceId, true).catch(warn(`Space ${spaceId}`));
+    }
+    // After their Spaces. The org has a Component quota, so a run must not
+    // leave its Components behind.
+    for (const componentId of componentIds) {
+      await api.deleteComponent(componentId).catch(warn(`Component ${componentId}`));
     }
     await context.close();
   });
 
-  test('1. default tree: Overview, Owner nodes, Component leaves; leaf testid present', async ({ page }) => {
+  test('1. default tree: Overview, Owner nodes, Component leaves under them; counts are Components, then variants', async ({ page }) => {
     await page.goto('/components');
     await waitForTreeLoaded(page);
 
     await expect(page.getByRole('treeitem', { name: /Overview/ })).toBeVisible();
-    await expect(page.getByRole('treeitem', { name: new RegExp(OWNER_A) })).toBeVisible();
-    await expect(page.getByRole('treeitem', { name: new RegExp(OWNER_B) })).toBeVisible();
-    await expect(page.getByTestId(`app-tree-item-${COMPONENT_CHECKOUT}`)).toBeVisible();
-    await expect(page.getByTestId(`app-tree-item-${COMPONENT_BILLING}`)).toBeVisible();
-    await expect(page.getByTestId(`app-tree-item-${COMPONENT_SEARCH}`)).toBeVisible();
+    const ownerA = treeNode(page, OWNER_A);
+    await expect(ownerA).toBeVisible();
+    await expect(treeNode(page, OWNER_B)).toBeVisible();
+    // The leaves are under their Owner node.
+    await expect(ownerA.getByTestId(`app-tree-item-${COMPONENT_CHECKOUT}`)).toBeVisible();
+    await expect(ownerA.getByTestId(`app-tree-item-${COMPONENT_BILLING}`)).toBeVisible();
+    await expect(treeNode(page, OWNER_B).getByTestId(`app-tree-item-${COMPONENT_SEARCH}`)).toBeVisible();
 
-    // Every non-Component-field node gets the generic `components-tree-node`
-    // testid instead, so a spec can target a group node without matching its
-    // label text. Scoped to our own two Owner nodes rather than a global
-    // count: the org can have other pre-existing Owner (or "(empty)") buckets
-    // outside this test's fixtures, and this only needs to show OUR nodes
-    // get the generic testid, not that they're the only ones on the page.
-    await expect(page.getByRole('treeitem', { name: new RegExp(OWNER_A) })).toHaveAttribute(
-      'data-testid',
-      'components-tree-node',
-    );
-    await expect(page.getByRole('treeitem', { name: new RegExp(OWNER_B) })).toHaveAttribute(
-      'data-testid',
-      'components-tree-node',
-    );
+    // A group node counts Components; a leaf counts its variants (Spaces).
+    await expect(nodeCount(ownerA)).toHaveText('2');
+    await expect(nodeCount(page.getByTestId(`app-tree-item-${COMPONENT_CHECKOUT}`))).toHaveText('2');
+    await expect(nodeCount(page.getByTestId(`app-tree-item-${COMPONENT_BILLING}`))).toHaveText('1');
+
+    // Component is not a grouping level any more: there is no chip for it.
+    await expect(page.getByRole('button', { name: /Change Owner grouping/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Change Component grouping/i })).toHaveCount(0);
+
+    // Every group node gets the generic `components-tree-node` testid
+    // instead, so a spec can target a group node without matching its label
+    // text. Scoped to our own two Owner nodes rather than a global count: the
+    // org can have other Owner (or "(empty)") nodes outside these fixtures.
+    await expect(ownerA).toHaveAttribute('data-testid', 'components-tree-node');
+    await expect(treeNode(page, OWNER_B)).toHaveAttribute('data-testid', 'components-tree-node');
+
+    // The (empty) group (Orphan and Split have no owner) is the last
+    // top-level group, after every real Owner.
+    const topLevelGroups = page.locator('[role="tree"] > [data-testid="components-tree-node"]');
+    await expect(topLevelGroups.last().locator('.MuiTreeItem-content').first()).toContainText('(empty)');
+    await expect(topLevelGroups.first().locator('.MuiTreeItem-content').first()).not.toContainText('(empty)');
   });
 
-  test('2. adding Variant via the picker appends it and updates ?viewGroupBy=', async ({ page }) => {
+  test('2. the picker offers only Component fields; adding a status level appends it and updates ?viewGroupBy=', async ({ page }) => {
     await page.goto('/components');
     await waitForTreeLoaded(page);
 
-    // The picker's "+" always appends; the field is then free to move (drag)
-    // — see test 3b for the same three-level order reached directly via the
-    // URL, and its "Component moved to the middle is a group node" behavior,
-    // which is exactly what appending Variant after Component produces here.
-    await addLabelGroupingLevel(
-      page,
-      'Variant',
-      /viewGroupBy=Labels\.Owner%2CComponent%2CLabels\.Variant/,
+    await page.getByRole('button', { name: 'Add grouping level' }).click();
+    const gated = page.getByRole('menuitem', { name: 'Gated' });
+    await gated.waitFor({ state: 'visible', timeout: 5000 });
+    // A Space property can differ between the Spaces of one Component, so
+    // neither the Component itself nor a Release target is offered.
+    await expect(page.getByRole('menuitem', { name: /^Component/ })).toHaveCount(0);
+    await expect(page.getByRole('menuitem', { name: /^Target/ })).toHaveCount(0);
+    await gated.click();
+    await expect(page).toHaveURL(/viewGroupBy=Labels\.Owner%2CGated/, { timeout: 5000 });
+    await expect(page.getByRole('button', { name: /Change Gated grouping/i })).toBeVisible();
+    // Owner A now holds Gated group nodes; the leaves are one level lower.
+    await expect(treeNode(page, OWNER_A).getByRole('treeitem').first()).toHaveAttribute(
+      'data-testid',
+      'components-tree-node',
     );
-    await expect(page.getByRole('button', { name: /Change Variant grouping/i })).toBeVisible();
   });
 
-  test('3. leaf opens the Component graph (?app=); an Owner click opens a node graph of every Space under it, not the overview', async ({ page }) => {
+  test('2b. a Component label level groups by the Component\'s own label', async ({ page }) => {
+    await page.goto('/components');
+    await waitForTreeLoaded(page);
+
+    await addLabelGroupingLevel(page, TIER_KEY, /viewGroupBy=Labels\.Owner%2CLabels\.Tier/);
+    // Checkout carries Tier=gold; Billing (same Owner) has no Tier. The new
+    // level's nodes start collapsed, so open them by their chevrons.
+    const ownerA = treeNode(page, OWNER_A);
+    const gold = ownerA.getByRole('treeitem', { name: /^gold/ });
+    const noTier = ownerA.getByRole('treeitem', { name: /^\(empty\)/ });
+    await gold.locator('.MuiTreeItem-iconContainer').first().click();
+    await noTier.locator('.MuiTreeItem-iconContainer').first().click();
+    await expect(gold.getByTestId(`app-tree-item-${COMPONENT_CHECKOUT}`)).toBeVisible();
+    await expect(noTier.getByTestId(`app-tree-item-${COMPONENT_BILLING}`)).toBeVisible();
+    // (empty) is last at the second level too.
+    const tierGroups = ownerA.locator('[data-testid="components-tree-node"]');
+    await expect(tierGroups).toHaveCount(2);
+    await expect(tierGroups.last().locator('.MuiTreeItem-content').first()).toContainText('(empty)');
+  });
+
+  test('3. a leaf opens the Component graph (?app=); an Owner click opens a node graph of every Space under it, not the overview', async ({ page }) => {
     await page.goto('/components');
     await waitForTreeLoaded(page);
 
     await page.getByTestId(`app-tree-item-${COMPONENT_BILLING}`).click();
     await expect(page).toHaveURL(new RegExp(`app=${COMPONENT_BILLING}`));
     await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
+    await expect(page.getByTestId(`app-tree-item-${COMPONENT_BILLING}`)).toHaveAttribute('aria-selected', 'true');
 
-    // Owner A has Deployments in TWO Components (Checkout's 2 Variants +
-    // Billing) — its bucket is never one whole Component, so the click opens
-    // a `?group=` node graph of all 3, not `?app=`, and the overview matrix
-    // is gone (a graph is on screen, not the dashboard).
+    // Owner A has two Components (Checkout's 2 Variants + Billing), so the
+    // click opens a `?group=` node graph of all 3 Spaces, not `?app=`, and
+    // the overview matrix is gone (a graph is on screen, not the dashboard).
     await clickTreeNode(page, OWNER_A);
     await expect(page).toHaveURL(/group=/);
     await expect(page).not.toHaveURL(new RegExp(`app=${COMPONENT_BILLING}`));
     await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
     await expect(page.locator('table')).toHaveCount(0);
-    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(3);
+    await expect(deploymentNodes(page)).toHaveCount(3);
   });
 
-  test('3a. removing Component: no leaf testids; every click opens a node graph (not the overview); ?app= opens with no tree node selected', async ({ page }) => {
-    await page.goto('/components');
+  test('3a. an old ?viewGroupBy=Labels.Owner,Component link reads as Owner only', async ({ page }) => {
+    await page.goto(`/components?viewGroupBy=${encodeURIComponent('Labels.Owner,Component')}`);
     await waitForTreeLoaded(page);
 
-    // Remove the Component chip, leaving Owner-only levels. Hover the chip
-    // first — the remove (x) button only becomes hit-testable on hover.
-    await page.getByRole('button', { name: /Change Component grouping/i }).hover();
-    await page.getByRole('button', { name: /Remove Component grouping/i }).click();
-    await expect(page).toHaveURL(/viewGroupBy=Labels\.Owner(?!.*Component)/, { timeout: 5000 });
-    await expect(page.getByTestId(`app-tree-item-${COMPONENT_CHECKOUT}`)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Change Owner grouping/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Change Component grouping/i })).toHaveCount(0);
+    // One leaf per Component, directly under its Owner node.
+    await expect(page.getByTestId(`app-tree-item-${COMPONENT_CHECKOUT}`)).toHaveCount(1);
+    await expect(treeNode(page, OWNER_A).getByTestId(`app-tree-item-${COMPONENT_CHECKOUT}`)).toBeVisible();
 
-    // With no Component field in levels, no node's bucket can ever equal a
-    // whole Component — every click opens a `?group=` node graph, never `?app=`.
     await clickTreeNode(page, OWNER_A);
     await expect(page).toHaveURL(/group=/);
-    await expect(page).not.toHaveURL(/app=/);
-    await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
-    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(3);
+    await expect(deploymentNodes(page)).toHaveCount(3);
 
-    // Deep link with Owner-only levels: graph opens, no tree node selected —
-    // no node's bucket resolves back to exactly this Component without a
-    // Component field to search at.
-    await page.goto(`/components?app=${COMPONENT_BILLING}&viewGroupBy=Labels.Owner`);
+    // A Component deep link with the old levels highlights the Component's leaf.
+    await page.goto(`/components?app=${COMPONENT_BILLING}&viewGroupBy=${encodeURIComponent('Labels.Owner,Component')}`);
     await waitForTreeLoaded(page);
     await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
-    await expect(page.locator('[role="treeitem"][aria-selected="true"]')).toHaveCount(0);
+    await expect(page.getByTestId(`app-tree-item-${COMPONENT_BILLING}`)).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('[role="treeitem"][aria-selected="true"]')).toHaveCount(1);
   });
 
-  test('3b. Component in the middle: its own node still opens the Component graph (?app=); a Variant node under it opens a one-node graph', async ({ page }) => {
-    await page.goto(`/components?viewGroupBy=${encodeURIComponent('Labels.Owner,Component,Labels.Variant')}`);
-    await waitForTreeLoaded(page);
-
-    // The `app-tree-item-<name>` testid is on every Component-field node,
-    // regardless of its depth — Component in the middle still gets it.
-    await expect(page.getByTestId(`app-tree-item-${COMPONENT_CHECKOUT}`)).toHaveCount(1);
-    // Its OWN bucket (Owner A ∩ Checkout) is still exactly the whole
-    // Checkout Component (both Variants), so a click on it still opens
-    // `?app=` — field position alone never decides the URL form.
-    await clickTreeNode(page, COMPONENT_CHECKOUT);
-    await expect(page).toHaveURL(new RegExp(`app=${COMPONENT_CHECKOUT}`));
-    await expect(page).not.toHaveURL(/group=/);
-    await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
-    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(2);
-
-    // Checkout's own children (the Variant nodes) were never auto-expanded —
-    // that only ever covers the top-level nodes at mount, not a node opened
-    // by a later click — so expand it via its chevron first.
-    await expandTreeNode(page, COMPONENT_CHECKOUT);
-
-    // A Variant node one level below IS a strict subset (one Deployment) —
-    // a one-node `?group=` graph, not `?app=`.
-    await clickTreeNode(page, 'prod');
-    await expect(page).toHaveURL(/group=/);
-    await expect(page).not.toHaveURL(/app=/);
-    await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
-    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(1);
-  });
-
-  test('3c. a Component split across two Owners: a click on either of its nodes opens the WHOLE Component (?app=); the first node in tree order is highlighted', async ({ page }) => {
+  test('3b. a Component with no Spaces is a leaf; it opens an empty state with the upload command', async ({ page }) => {
     await page.goto('/components');
     await waitForTreeLoaded(page);
 
-    // One Component node under each Owner, in tree (localeCompare) order.
-    const splitNodes = page.getByTestId(`app-tree-item-${COMPONENT_SPLIT}`);
-    await expect(splitNodes).toHaveCount(2);
+    const leaf = page.getByTestId(`app-tree-item-${COMPONENT_EMPTY}`);
+    await expect(treeNode(page, OWNER_E).getByTestId(`app-tree-item-${COMPONENT_EMPTY}`)).toBeVisible();
+    await expect(nodeCount(leaf)).toHaveText('0');
 
-    // The node under the SECOND Owner holds only one of the two Spaces, but
-    // the click names the Component, so the graph shows all of it.
-    await splitNodes.nth(1).click();
+    await leaf.click();
+    await expect(page).toHaveURL(new RegExp(`app=${COMPONENT_EMPTY}`));
+    const empty = page.getByTestId('component-no-variants');
+    await expect(empty).toBeVisible();
+    await expect(empty).toContainText(`${COMPONENT_EMPTY} has no variants yet`);
+    await expect(empty).toContainText(`cub variant upload --component ${COMPONENT_EMPTY}`);
+    await expect(page.locator('.react-flow')).toHaveCount(0);
+    await expect(leaf).toHaveAttribute('aria-selected', 'true');
+
+    // A deep link shows the same, and the Owner node above it (one
+    // Component) opens that Component too.
+    await page.goto(`/components?app=${COMPONENT_EMPTY}`);
+    await waitForTreeLoaded(page);
+    await expect(page.getByTestId('component-no-variants')).toBeVisible();
+    await page.goto('/components');
+    await waitForTreeLoaded(page);
+    await clickTreeNode(page, OWNER_E);
+    await expect(page).toHaveURL(new RegExp(`app=${COMPONENT_EMPTY}`));
+    await expect(page.getByTestId('component-no-variants')).toBeVisible();
+  });
+
+  test('3c. a Component whose Spaces have different Owners has no owner: one leaf under (empty), which opens the WHOLE Component', async ({ page }) => {
+    await page.goto('/components');
+    await waitForTreeLoaded(page);
+
+    const splitLeaf = page.getByTestId(`app-tree-item-${COMPONENT_SPLIT}`);
+    await expect(splitLeaf).toHaveCount(1);
+    // The Space Owners make no node of their own.
+    await expect(treeNode(page, OWNER_SPLIT_1)).toHaveCount(0);
+    await expect(treeNode(page, OWNER_SPLIT_2)).toHaveCount(0);
+    await expect(
+      page.getByRole('treeitem', { name: /^\(empty\)/ }).getByTestId(`app-tree-item-${COMPONENT_SPLIT}`),
+    ).toHaveCount(1);
+
+    await splitLeaf.click();
     await expect(page).toHaveURL(new RegExp(`app=${COMPONENT_SPLIT}`));
     await expect(page).not.toHaveURL(/group=/);
     await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
-    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(2);
-    await expect(splitNodes.first()).toHaveAttribute('aria-selected', 'true');
+    await expect(deploymentNodes(page)).toHaveCount(2);
+    await expect(splitLeaf).toHaveAttribute('aria-selected', 'true');
     await expect(page.locator('[role="treeitem"][aria-selected="true"]')).toHaveCount(1);
+  });
 
-    // A deep link opens the same whole-Component graph with the same highlight.
-    await page.goto(`/components?app=${COMPONENT_SPLIT}`);
+  test('3d. a Component\'s own Owner label wins over the Owner label of its Spaces', async ({ page }) => {
+    await page.goto('/components');
     await waitForTreeLoaded(page);
-    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(2);
-    await expect(page.getByTestId(`app-tree-item-${COMPONENT_SPLIT}`).first()).toHaveAttribute('aria-selected', 'true');
 
-    // An Owner node above it holds only part of the Component — still a
-    // `?group=` graph of that part.
-    await clickTreeNode(page, OWNER_SPLIT_2);
-    await expect(page).toHaveURL(/group=/);
-    await expect(page).not.toHaveURL(/app=/);
-    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(1);
+    await expect(treeNode(page, OWNER_C).getByTestId(`app-tree-item-${COMPONENT_OWNED}`)).toBeVisible();
+    await expect(treeNode(page, OWNER_B).getByTestId(`app-tree-item-${COMPONENT_OWNED}`)).toHaveCount(0);
+    await expect(nodeCount(treeNode(page, OWNER_B))).toHaveText('1');
+  });
+
+  test('3e. a saved view whose levels include Component reads as Owner only, and shows unmodified', async ({ page }) => {
+    const api = new ApiHelper(page);
+    const filter = await api.createFilter({
+      spaceId: ownerSpaceId,
+      filter: { Slug: `e2e-components-old-filter-${RUN}`, From: 'Space' },
+    });
+    filterIds.push(filter.FilterID as string);
+    const viewName = `e2e-components-old-view-${RUN}`;
+    const view = await api.createView({
+      spaceId: ownerSpaceId,
+      view: {
+        Slug: viewName,
+        FilterID: filter.FilterID,
+        Annotations: {
+          'ui.confighub.io/view-kind': 'components',
+          'ui.confighub.io/group-by': 'Labels.Owner,Component',
+        },
+      },
+    });
+    viewIds.push(view.ViewID as string);
+
+    await page.goto(`/components?viewID=${view.ViewID}&type=view`);
+    await waitForTreeLoaded(page);
+    const tab = page.getByTestId('view-tabs').getByRole('tab', { name: new RegExp(viewName) });
+    await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 10000 });
+    await expect(page.getByRole('button', { name: /Change Owner grouping/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Change Component grouping/i })).toHaveCount(0);
+    await expect(treeNode(page, OWNER_A).getByTestId(`app-tree-item-${COMPONENT_CHECKOUT}`)).toBeVisible();
+    // Reading the old levels changes nothing in the view.
+    await expect(tab.getByTestId('view-tab-modified-dot')).toHaveCount(0);
   });
 
   test('4-5. saving a view (grouping only) persists across reload; the Unit list never sees it', async ({ page }) => {
@@ -309,12 +426,8 @@ test.describe('Components nav grouping + saved views', () => {
     // accepts and round-trips an auto-minted, condition-less Filter
     // (`From: 'Space'`, no `Where`) attached to a components-kind View.
 
-    // Add a grouping level (Variant) so the saved view carries non-default grouping.
-    await addLabelGroupingLevel(
-      page,
-      'Variant',
-      /viewGroupBy=Labels\.Owner%2CComponent%2CLabels\.Variant/,
-    );
+    // Add a grouping level (Gated) so the saved view carries non-default grouping.
+    await addStaticGroupingLevel(page, 'Gated', /viewGroupBy=Labels\.Owner%2CGated/);
 
     // Save as a new view.
     await page.getByTestId('view-tabs-add-tab').click();
@@ -340,7 +453,7 @@ test.describe('Components nav grouping + saved views', () => {
       'aria-selected',
       'true',
     );
-    await expect(page).toHaveURL(/Labels\.Variant/);
+    await expect(page).toHaveURL(/Gated/);
 
     // Isolation: this view must never show in the Unit list's own tab strip.
     // Wait for the Unit list's OWN tab strip to be fully loaded (the
@@ -369,11 +482,7 @@ test.describe('Components nav grouping + saved views', () => {
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 6 });
     try {
-      await addLabelGroupingLevel(
-        page,
-        'Variant',
-        /viewGroupBy=Labels\.Owner%2CComponent%2CLabels\.Variant/,
-      );
+      await addStaticGroupingLevel(page, 'Gated', /viewGroupBy=Labels\.Owner%2CGated/);
 
       const createResponse = page.waitForResponse(
         (r) => r.request().method() === 'POST' && /\/api\/space\/[^/]+\/view$/.test(new URL(r.url()).pathname),
@@ -388,20 +497,19 @@ test.describe('Components nav grouping + saved views', () => {
       if (created?.ViewID) viewIds.push(created.ViewID);
 
       const body = response.request().postDataJSON() as { Annotations?: Record<string, string> };
-      expect(body.Annotations?.['ui.confighub.io/group-by']).toBe(
-        'Labels.Owner,Component,Labels.Variant',
-      );
+      expect(body.Annotations?.['ui.confighub.io/group-by']).toBe('Labels.Owner,Gated');
     } finally {
       await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
     }
   });
 
-  test('13. a Variant-grouped node graph still detects an upstream Space outside the set as upgradable', async ({ page, browser }) => {
-    // Dedicated Owner/Component so this test's Deployments never change any
-    // other test's node/Deployment counts. Grouped by Variant ALONE — the
-    // "downstream" node graph excludes its own upstream (a different
-    // Variant bucket), which is exactly the gap the upstream-outside-set
-    // lookup (`AppComponentView`'s second, UnitID-keyed units query) fixes.
+  test('13. a node graph still detects an upstream Space outside the set as upgradable', async ({ page, browser }) => {
+    // The downstream Space is in a Component of its own, whose upstream is in
+    // another Component under another Owner — so the Owner node's graph
+    // excludes its own upstream, which is exactly the gap the
+    // upstream-outside-set lookup (`AppComponentView`'s second, UnitID-keyed
+    // units query) fixes. Dedicated Owners and Components, so no other
+    // test's counts change.
     const context = await newAuthorizedContext(browser);
     const setupPage = await context.newPage();
     await setupPage.goto('/');
@@ -410,19 +518,24 @@ test.describe('Components nav grouping + saved views', () => {
     );
     const api = new ApiHelper(setupPage);
 
-    const owner = `e2e-nav-owner-up-${RUN}`;
+    const upstreamOwner = `e2e-nav-owner-up-${RUN}`;
+    const downstreamOwner = `e2e-nav-owner-down-${RUN}`;
     const upstreamComponent = `e2e-nav-upstream-${RUN}`;
-    const upstreamVariant = `e2e-upstream-variant-${RUN}`;
-    const downstreamVariant = `e2e-downstream-variant-${RUN}`;
+    const downstreamComponent = `e2e-nav-downstream-${RUN}`;
 
     const { ComponentID: upstreamComponentId } = await api.createComponent(upstreamComponent);
+    const { ComponentID: downstreamComponentId } = await api.createComponent(downstreamComponent);
+    componentIds.push(upstreamComponentId as string, downstreamComponentId as string);
     const upstreamSpace = await api.createSpace({
-      space: { Slug: `${upstreamComponent}-up`, ComponentID: upstreamComponentId, Labels: { Owner: owner, Variant: upstreamVariant } },
+      space: { Slug: `${upstreamComponent}-up`, ComponentID: upstreamComponentId, Labels: { Owner: upstreamOwner } },
     });
     const downstreamSpace = await api.createSpace({
-      space: { Slug: `${upstreamComponent}-down`, ComponentID: upstreamComponentId, Labels: { Owner: owner, Variant: downstreamVariant } },
+      space: { Slug: `${downstreamComponent}-down`, ComponentID: downstreamComponentId, Labels: { Owner: downstreamOwner } },
     });
-    spaceIds.push(upstreamSpace.SpaceID, downstreamSpace.SpaceID);
+    // afterAll deletes in this order. Downstream first: its Unit's Link
+    // references the upstream Unit, and the server refuses to delete a Space
+    // whose Units a Link still references.
+    spaceIds.push(downstreamSpace.SpaceID, upstreamSpace.SpaceID);
 
     const yamlV1 = [
       'apiVersion: v1',
@@ -460,13 +573,15 @@ test.describe('Components nav grouping + saved views', () => {
     await api.uploadUnitData({ spaceId: upstreamSpace.SpaceID, unitId: upstreamUnit.UnitID, body: yamlV2 });
     await context.close();
 
-    await page.goto(`/components?group=${encodeURIComponent(downstreamVariant)}&viewGroupBy=Labels.Variant`);
+    await page.goto(`/components?group=${encodeURIComponent(downstreamOwner)}`);
     await waitForTreeLoaded(page);
     await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
     // The downstream Space is the ONLY node in this graph — its own upstream
-    // (a different Variant bucket) is outside the set.
-    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(1);
-    await expect(page.locator('.react-flow__node-deploymentNode').getByText('Stale')).toBeVisible({ timeout: 10000 });
+    // (another Owner's Component) is outside the set.
+    await expect(deploymentNodes(page)).toHaveCount(1);
+    await expect(deploymentNodes(page).getByText('Stale', { exact: true })).toBeVisible({
+      timeout: 10000,
+    });
   });
 
   test('6. no filter button on the Components page — a saved view holds grouping only', async ({ page }) => {
@@ -524,13 +639,10 @@ test.describe('Components nav grouping + saved views', () => {
     await expect(page).toHaveURL(/group=/);
     await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
 
-    // Change levels — remove the Component field. The stale ?group= (an
-    // Owner value) means nothing once levels no longer include Owner at
-    // that position, and must be cleared in the SAME URL write as the
-    // level change (see `useGroupByLevels`'s `clearParamsOnEdit`).
-    await page.getByRole('button', { name: /Change Component grouping/i }).hover();
-    await page.getByRole('button', { name: /Remove Component grouping/i }).click();
-    await expect(page).toHaveURL(/viewGroupBy=Labels\.Owner(?!.*Component)/, { timeout: 5000 });
+    // Change levels — add a level. The ?group= path was chosen under the old
+    // levels and is cleared in the SAME URL write as the level change (see
+    // `useGroupByLevels`'s `clearParamsOnEdit`).
+    await addStaticGroupingLevel(page, 'Gated', /viewGroupBy=Labels\.Owner%2CGated/);
     await expect(page).not.toHaveURL(/group=/);
 
     // The graph closed and the overview is showing again, NOT empty — it
@@ -590,8 +702,49 @@ test.describe('Components nav grouping + saved views', () => {
 
     await expect(page).toHaveURL(/group=/);
     await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
-    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(3);
+    await expect(deploymentNodes(page)).toHaveCount(3);
     await expect(page.locator('[role="treeitem"][aria-selected="true"]')).toContainText(OWNER_A);
+  });
+
+  test('11b. a ?group= path that ends at a leaf opens that Component; a path with no Component highlights nothing', async ({ page }) => {
+    // One value longer than the levels (Owner): the leaf of Billing. The pane
+    // shows Billing's graph, not the overview, and only its leaf is selected.
+    await page.goto(`/components?group=${encodeURIComponent(OWNER_A)}&group=${encodeURIComponent(COMPONENT_BILLING)}`);
+    await waitForTreeLoaded(page);
+    await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('table')).toHaveCount(0);
+    await expect(deploymentNodes(page)).toHaveCount(1);
+    await expect(page.getByTestId(`app-tree-item-${COMPONENT_BILLING}`)).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('[role="treeitem"][aria-selected="true"]')).toHaveCount(1);
+
+    // A path no Component has: the overview, and no node selected.
+    await page.goto(`/components?group=${encodeURIComponent(`e2e-nav-no-owner-${RUN}`)}`);
+    await waitForTreeLoaded(page);
+    await expect(page.locator('table')).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('.react-flow')).toHaveCount(0);
+    await expect(page.locator('[role="treeitem"][aria-selected="true"]')).toHaveCount(0);
+  });
+
+  test('11c. a failed Component list shows an error with Retry in the tree and the pane, not a skeleton', async ({ page }) => {
+    let failList = true;
+    // Only the list request: `/api/component/<id>` reads are left alone.
+    await page.route(/\/api\/component(\?.*)?$/, async (route) => {
+      if (failList && route.request().method() === 'GET') {
+        await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'list failed' }) });
+        return;
+      }
+      await route.continue();
+    });
+    await page.goto(`/components?app=${COMPONENT_BILLING}`);
+    const errors = page.getByTestId('query-error-state');
+    await expect(errors).toHaveCount(2, { timeout: 20000 });
+
+    failList = false;
+    await errors.first().getByTestId('query-error-retry').click();
+    await expect(errors).toHaveCount(0, { timeout: 20000 });
+    await waitForTreeLoaded(page);
+    await expect(page.getByTestId(`app-tree-item-${COMPONENT_BILLING}`)).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
   });
 
   test('12. Back after Owner graph -> Component graph returns to the Owner graph; re-clicking the open node adds no history entry', async ({ page }) => {
@@ -608,7 +761,7 @@ test.describe('Components nav grouping + saved views', () => {
 
     await page.goBack();
     await expect(page).toHaveURL(ownerGraphUrl);
-    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(3);
+    await expect(deploymentNodes(page)).toHaveCount(3);
 
     // Re-clicking the node that's already open is a no-op — no new history
     // entry. If it wrongly pushed a duplicate entry here, a second Back
@@ -632,7 +785,7 @@ test.describe('Components nav grouping + saved views', () => {
     // `?group=` entry and Back can't reach the Overview.
     await page.locator('[role="tree"]').getByText(OWNER_A, { exact: false }).first().dblclick();
     await expect(page).toHaveURL(/group=/);
-    await expect(page.locator('.react-flow__node-deploymentNode')).toHaveCount(3);
+    await expect(deploymentNodes(page)).toHaveCount(3);
 
     await page.goBack();
     await expect(page).toHaveURL(overviewUrl);
@@ -672,30 +825,28 @@ test.describe('Components nav grouping + saved views', () => {
     await expect(page.locator('.react-flow')).not.toBeVisible();
   });
 
-  test('15. the Component field and special label keys (Owner) get their own icon in the "Add grouping level" picker; an ordinary label key (Variant) gets the generic one', async ({ page }) => {
+  test('15. a Component leaf and special label keys (Owner) get their own icon; an ordinary label key gets the generic one; Variant is not offered', async ({ page }) => {
     // MUI's icon components carry a `data-testid="<Name>Icon"` unconditionally
     // (createSvgIcon), so this distinguishes the actual rendered icon without
     // needing a visual/screenshot diff.
     await page.goto('/components');
     await waitForTreeLoaded(page);
+    await expect(page.getByTestId(`app-tree-item-${COMPONENT_CHECKOUT}`).getByTestId('WidgetsOutlinedIcon')).toBeVisible();
+
     await page.getByRole('button', { name: 'Add grouping level' }).click();
-
-    // Component is a top-level field (a Space's Component entity), not a
-    // label — checked before the Labels submenu opens.
-    const componentRow = page.getByRole('menuitem', { name: /^Component/ });
-    await componentRow.waitFor({ state: 'visible', timeout: 5000 });
-    await expect(componentRow.getByTestId('WidgetsOutlinedIcon')).toBeVisible();
-
     const labelsTrigger = page.getByRole('menuitem', { name: 'Labels', exact: true });
+    await labelsTrigger.waitFor({ state: 'visible', timeout: 5000 });
     await labelsTrigger.hover();
 
-    const ownerRow = page.getByRole('menuitem', { name: 'Owner' });
+    const ownerRow = page.getByRole('menuitem', { name: /^Owner/ });
     await expect(ownerRow.getByTestId('PersonOutlineOutlinedIcon')).toBeVisible();
 
-    // Variant is an ordinary label key (not one of the 5 special ones) — it
-    // keeps the generic Labels icon, not one of its own.
-    const variantRow = page.getByRole('menuitem', { name: 'Variant' });
-    await expect(variantRow.getByTestId('LocalOfferOutlinedIcon')).toBeVisible();
+    // Tier is an ordinary Component label key — it keeps the generic Labels icon.
+    const tierRow = page.getByRole('menuitem', { name: new RegExp(`^${TIER_KEY}`) });
+    await expect(tierRow.getByTestId('LocalOfferOutlinedIcon')).toBeVisible();
+
+    // Variant names a Space, never a Component.
+    await expect(page.getByRole('menuitem', { name: /^Variant/ })).toHaveCount(0);
   });
 
   test('16. Dashboard mode is sticky across node clicks; Back keeps it too', async ({ page }) => {

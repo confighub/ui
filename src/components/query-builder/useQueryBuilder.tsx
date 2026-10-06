@@ -244,7 +244,7 @@ export interface ViewTabsRenderOptions {
    * Default GroupBy levels (comma-joined) for a brand-new view's create
    * payload when neither `localGroupByColumns` nor the `viewGroupBy` URL
    * param has a value. Default `DEFAULT_VIEW_GROUP_BY` ('Space'). The
-   * Components page passes its own `Labels.Owner,Component` default so
+   * Components page passes its own `Labels.Owner` default so
    * a new Components view is never saved with the Unit list's `Space` field.
    */
   defaultGroupBy?: string;

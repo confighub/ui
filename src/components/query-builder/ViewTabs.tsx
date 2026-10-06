@@ -819,7 +819,7 @@ export const ViewTabs = ({
     // duplicate flow" case where the URL has the multi-level value).  New
     // views without explicit grouping default to `defaultGroupBy` so every
     // saved view starts with a sensible grouping rather than empty — the
-    // page's own default (e.g. Components' `Labels.Owner,Component`),
+    // page's own default (e.g. Components' `Labels.Owner`),
     // not necessarily the Unit list's `Space`.
     const urlLevels = groupBy ? groupBy.split(',').map((s) => s.trim()).filter(Boolean) : [];
     const liveLevels = (localGroupByColumns && localGroupByColumns.length > 0)

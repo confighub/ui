@@ -302,10 +302,10 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const outstandingRolloutBaseSpaceIds = useOutstandingRolloutBaseSpaceIds();
-  const { slugById } = useComponentSlugs();
+  const { componentById } = useComponentSlugs();
   const { rows, org } = useMemo(
-    () => buildOverviewData(spaces, slugById, outstandingRolloutBaseSpaceIds),
-    [spaces, slugById, outstandingRolloutBaseSpaceIds],
+    () => buildOverviewData(spaces, componentById, outstandingRolloutBaseSpaceIds),
+    [spaces, componentById, outstandingRolloutBaseSpaceIds],
   );
 
 

@@ -37,6 +37,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import FormHelperText from '@mui/material/FormHelperText';
 import FormLabel from '@mui/material/FormLabel';
 import IconButton from '@mui/material/IconButton';
 import Radio from '@mui/material/Radio';
@@ -58,6 +59,7 @@ import {
 } from '@confighub/rtk-query';
 import { type QueryErrorDisplay, describeQueryError, isAbortedRequestError } from '@/utility/error-functions';
 
+import { ownerValueProblem } from './componentOwner';
 import { componentTheme } from './componentTheme';
 import { type Granularity, effectiveUnitCount, groupDraftsForDisplay } from './createComponentInput';
 import { DownstreamTargetPicker, buildDownstreamSpecs } from './DownstreamTargetPicker';
@@ -207,6 +209,11 @@ export interface CreateComponentPaneProps {
   onCreated?: (componentName: string) => void;
   /** Owner options to group the component under (nav tree grouping). */
   owners: string[];
+  /**
+   * The owner of each existing Component by Slug, "" for one with no owner.
+   * A name that matches an owned Component locks the owner to its owner.
+   */
+  ownerByComponentSlug?: ReadonlyMap<string, string>;
   /**
    * Existing Space slugs, used to pre-flight the derived `<slug>-base` collision
    * inline before submit (a backstop to the server's own 409 handling).
@@ -462,6 +469,7 @@ export function CreateComponentPane({
   onClose,
   onCreated,
   owners,
+  ownerByComponentSlug,
   existingSpaceSlugs,
 }: CreateComponentPaneProps) {
   const hook = useCreateComponentMutation();
@@ -585,8 +593,11 @@ export function CreateComponentPane({
   const unitMetaRows = useWatch({ control, name: 'unitMeta' });
   const spaceSlugOverride = watch('spaceSlugOverride');
 
-  const effectiveOwner = owner === CUSTOM_OWNER ? customOwner.trim() : owner;
   const componentSlug = slugify(componentName);
+  // A Component that exists with an owner keeps it: a create cannot give it
+  // another one, so the owner is shown and locked.
+  const lockedOwner = componentSlug ? ownerByComponentSlug?.get(componentSlug) || undefined : undefined;
+  const effectiveOwner = lockedOwner ?? (owner === CUSTOM_OWNER ? customOwner.trim() : owner);
   const baseSlug = componentSlug ? `${componentSlug}-base` : '';
 
   // The Space the create actually writes to. The OCI request builder resolves
@@ -634,7 +645,6 @@ export function CreateComponentPane({
         form: effectiveOciForm,
         componentSlug,
         baseSlug,
-        owner: effectiveOwner,
         labels: extraLabels,
         // The key is built from the same request the preview sends, so the two
         // cannot drift apart. The key builder drops the metadata fields, so an
@@ -642,7 +652,7 @@ export function CreateComponentPane({
         unitLabels,
         unitAnnotations,
       }),
-    [effectiveOciForm, componentSlug, baseSlug, effectiveOwner, extraLabels, unitLabels, unitAnnotations],
+    [effectiveOciForm, componentSlug, baseSlug, extraLabels, unitLabels, unitAnnotations],
   );
   const currentOciPreview = ociPreview && ociPreview.key === ociKey ? ociPreview.result : null;
   const ociBlocker = ociPreviewBlocker(currentOciPreview, effectiveSpaceSlug);
@@ -671,7 +681,6 @@ export function CreateComponentPane({
         form: effectiveOciForm,
         componentSlug,
         baseSlug,
-        owner: effectiveOwner,
         unitLabels,
         unitAnnotations,
         labels: extraLabels,
@@ -698,7 +707,6 @@ export function CreateComponentPane({
     effectiveOciForm,
     componentSlug,
     baseSlug,
-    effectiveOwner,
     extraLabels,
     unitLabels,
     unitAnnotations,
@@ -734,18 +742,19 @@ export function CreateComponentPane({
     spaceSlugOverrideProblem ??
     (spaceSlugOverride.trim() && slugCollision ? `A space named "${effectiveSpaceSlug}" already exists` : '');
 
+  // An owner the server would refuse as a label value. A locked owner is the
+  // existing Component's own, so it is not checked again.
+  const ownerError = lockedOwner ? '' : ownerValueProblem(effectiveOwner) ?? '';
+
   // Owner is optional: it only groups the component in the nav tree (see the
-  // field's own subtitle), and the rest of this feature already treats an
-  // empty Owner label as "ungrouped" (AppsComponentPage.tsx's `owners` list
-  // skips falsy values). Requiring it here used to silently strand a org's
-  // very first component: with no existing Owner labels to pick from,
-  // `defaultOwner` falls back to `CUSTOM_OWNER`, which needs its own "New
-  // owner" text field filled in -- a field this step's own copy never
-  // mentions, and `nameError` above never surfaces any message for. The
-  // Continue button just stayed disabled with nothing on screen explaining
-  // why. Confirmed live: this is exactly what a from-scratch org (or this
-  // repo's CI database) hits, since it has zero pre-existing components.
-  const step0Valid = !!componentSlug && slugFormatValid && !slugCollision && !spaceSlugOverrideProblem;
+  // field's own subtitle), and a Component with no owner is "ungrouped"
+  // (AppsComponentPage.tsx's `owners` list skips empty values). An org with no
+  // Components has no owners to pick from, so `defaultOwner` is
+  // `CUSTOM_OWNER` with an empty "New owner" field; requiring an owner would
+  // block Continue there with no message on screen. A refused owner blocks it,
+  // and its message is shown on the owner field.
+  const step0Valid =
+    !!componentSlug && slugFormatValid && !slugCollision && !spaceSlugOverrideProblem && !ownerError;
 
   const canCreate = step0Valid && hasSource && !inFlight;
 
@@ -912,7 +921,8 @@ export function CreateComponentPane({
   const buildInput = useCallback(
     (values: ComponentFormValues): CreateComponentInput => {
       const resolvedOwner =
-        values.owner === CUSTOM_OWNER ? values.customOwner.trim() : values.owner;
+        ownerByComponentSlug?.get(slugify(values.componentName)) ||
+        (values.owner === CUSTOM_OWNER ? values.customOwner.trim() : values.owner);
       const labels: Record<string, string> = {};
       for (const row of values.labels) {
         if (row.key.trim() && row.value.trim()) labels[row.key.trim()] = row.value.trim();
@@ -941,7 +951,7 @@ export function CreateComponentPane({
         changeDescription: changeDescription || undefined,
       };
     },
-    [docs, granularity, unitsMode, ociForm, currentOciPreview],
+    [docs, granularity, unitsMode, ociForm, currentOciPreview, ownerByComponentSlug],
   );
 
   // Chain downstream-variant creation after a CLEAN create — never after a
@@ -1067,6 +1077,13 @@ export function CreateComponentPane({
       </DialogTitle>
 
       <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {hook.ownerWarning && (
+          <Alert severity='warning' icon={<ErrorOutlineIcon fontSize='small' />} data-testid='create-component-owner-warning'>
+            <AlertTitle sx={{ fontSize: 13, fontWeight: 700 }}>Owner not set</AlertTitle>
+            {hook.ownerWarning}
+          </Alert>
+        )}
+
         {/* ── Success receipt ──────────────────────────────────────────── */}
         {showSuccess ? (
           <SuccessReceipt
@@ -1203,13 +1220,14 @@ export function CreateComponentPane({
                   control={control}
                   owners={owners}
                   owner={owner}
+                  lockedOwner={lockedOwner}
+                  ownerError={ownerError}
                   nameError={nameError}
                   baseSlug={baseSlug}
                   effectiveSpaceSlug={effectiveSpaceSlug}
                   spaceSlugError={spaceSlugError}
                   onIdentityChange={hook.clearSpaceError}
                   componentName={componentName}
-                  effectiveOwner={effectiveOwner}
                   labelFields={labelFields}
                   appendLabel={() => appendLabel({ key: '', value: '' })}
                   removeLabel={removeLabel}
@@ -1387,6 +1405,10 @@ interface StepComponentProps {
   control: ReturnType<typeof useForm<ComponentFormValues>>['control'];
   owners: string[];
   owner: string;
+  /** The owner of the existing Component the name matches; the select is locked to it. */
+  lockedOwner?: string;
+  /** Why the server would refuse the selected owner, or '' when it accepts it. */
+  ownerError: string;
   nameError: string;
   baseSlug: string;
   /** The Space slug that will be written: the override, or `baseSlug`. */
@@ -1397,8 +1419,6 @@ interface StepComponentProps {
   onIdentityChange: () => void;
   /** For the read-only `Component = <slug>` chip in the labels disclosure. */
   componentName: string;
-  /** For the read-only `Owner = <owner>` chip in the labels disclosure. */
-  effectiveOwner: string;
   labelFields: Array<{ id: string }>;
   appendLabel: () => void;
   removeLabel: (index: number) => void;
@@ -1408,13 +1428,14 @@ function StepComponent({
   control,
   owners,
   owner,
+  lockedOwner,
+  ownerError,
   nameError,
   baseSlug,
   effectiveSpaceSlug,
   spaceSlugError,
   onIdentityChange,
   componentName,
-  effectiveOwner,
   labelFields,
   appendLabel,
   removeLabel,
@@ -1428,9 +1449,9 @@ function StepComponent({
       <Box>
         <Typography sx={{ fontSize: 15, fontWeight: 700, mb: 0.5 }}>Name your component</Typography>
         <Typography sx={{ fontSize: 12.5, color: componentTheme.fgSubtle }}>
-          ConfigHub creates a first <strong>base space</strong> labelled with this component and
-          owner. The base has <strong>no target</strong>, so it never deploys directly — it's the
-          source you clone into dev / staging / prod variants.
+          ConfigHub creates the component, owned by this owner, and a first{' '}
+          <strong>base space</strong> in it. The base has <strong>no target</strong>, so it never
+          deploys directly — it's the source you clone into dev / staging / prod variants.
         </Typography>
       </Box>
 
@@ -1464,7 +1485,9 @@ function StepComponent({
           Owner
         </FormLabel>
         <Typography sx={{ fontSize: 11, color: componentTheme.fgSubtle, mb: 1 }}>
-          Groups the component in the nav tree.
+          {lockedOwner
+            ? 'This component already exists, and has this owner.'
+            : 'Set on the component. Groups it in the nav tree.'}
         </Typography>
         <Controller
           name='owner'
@@ -1473,7 +1496,9 @@ function StepComponent({
             <ToggleButtonGroup
               exclusive
               aria-label='Owner'
-              value={field.value}
+              data-testid='create-component-owner-select'
+              value={lockedOwner ?? field.value}
+              disabled={!!lockedOwner}
               onChange={(_e, val) => {
                 if (val !== null) field.onChange(val);
               }}
@@ -1492,7 +1517,7 @@ function StepComponent({
             </ToggleButtonGroup>
           )}
         />
-        {owner === CUSTOM_OWNER && (
+        {owner === CUSTOM_OWNER && !lockedOwner && (
           <Controller
             name='customOwner'
             control={control}
@@ -1500,13 +1525,21 @@ function StepComponent({
               <TextField
                 {...field}
                 label='New owner'
+                data-testid='create-component-custom-owner-input'
                 size='small'
                 sx={{ mt: 1.5 }}
                 fullWidth
+                error={!!ownerError}
+                helperText={ownerError || undefined}
                 inputProps={{ autoComplete: 'off', spellCheck: false }}
               />
             )}
           />
+        )}
+        {owner !== CUSTOM_OWNER && ownerError && (
+          <FormHelperText error data-testid='create-component-owner-error'>
+            {ownerError}
+          </FormHelperText>
         )}
       </Box>
 
@@ -1575,11 +1608,6 @@ function StepComponent({
               <Chip
                 size='small'
                 label={`Component = ${slugify(componentName) || 'component-name'}`}
-                sx={{ fontFamily: componentTheme.fontMono, fontSize: 11 }}
-              />
-              <Chip
-                size='small'
-                label={`Owner = ${effectiveOwner || 'owner'}`}
                 sx={{ fontFamily: componentTheme.fontMono, fontSize: 11 }}
               />
             </Box>

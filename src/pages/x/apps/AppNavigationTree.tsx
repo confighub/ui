@@ -4,74 +4,81 @@ import { memo, useCallback } from 'react';
 
 import {
   type GroupNavItemProps,
+  type GroupNavLeafOptions,
   type GroupNavNodeContext,
   GroupNavPanel,
 } from '@/components/group-nav';
-import { type ExtendedSpaceRead } from '@confighub/rtk-query';
 
-import { AppNavigationTreeRowsSkeleton } from './AppNavigationTreeSkeleton';
 import {
   COMPONENT_CATALOG,
   COMPONENT_FIELD,
   COMPONENT_ICON_MAP,
-  type SpaceGroupValueContext,
-  getSpaceGroupValue,
+  type ComponentGroupValueContext,
+  getComponentGroupValue,
 } from './componentGroupFields';
+import type { ComponentNavItem } from './componentIndex';
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
 interface AppNavigationTreeProps {
-  /** Spaces to build the tree from — every Space on the page in a Component.
-   * Never the open graph's own Space set (that's a separate prop on
-   * `AppComponentView`), so the tree always shows the full org regardless
-   * of which node graph happens to be open. */
-  spaces: ExtendedSpaceRead[];
-  /** Current grouping levels (e.g. `['Labels.Owner', 'Component']`). */
+  /** Every Component on the page, including those with no Spaces. Never
+   * narrowed by the open graph, so the tree always shows the whole org. */
+  items: ComponentNavItem[];
+  /** Current grouping levels, already normalized (e.g. `['Labels.Owner']`). */
   levels: string[];
   /** Called on every chip add/remove/change (picker interaction). */
   onEditLevels: (newLevels: string[]) => void;
   /** The tree path to highlight (see `deriveComponentTreePath`) — `null` when
-   * nothing should be selected (an open graph whose levels don't resolve
-   * back to a highlightable node). */
+   * nothing should be selected. */
   selectedGroups: string[] | null;
-  /** Called when any tree node (any depth, any field) is clicked — opens the
-   * graph of every Space under it. `AppsComponentLayout` resolves whether
-   * that's a whole-Component `?app=` or a `?group=` node graph. */
+  /** Called when any node except Overview is clicked. `AppsComponentLayout`
+   * resolves whether that opens `?app=` or a `?group=` node graph. */
   onNodeOpen: (path: string[]) => void;
   selectionCount?: number;
   onClearSelection?: () => void;
   /** Called when Overview (the tree's `All`-equivalent root) is selected. */
   onOverviewSelect: () => void;
-  /** True while `spaces` is a partial (single-app) set from a `?app=` deep-link's priority
-   * query — the full org-wide app list is still loading in the background. */
-  isLoadingMore?: boolean;
-  /** Distinct Space label keys across the page's Spaces, for the field picker's dynamic "Labels" section. */
+  /** True until the Components and every Space have loaded. The tree shows a
+   * skeleton until then, since an owner read from a part of the Spaces can
+   * be wrong, and the tree would move once the rest arrived. */
+  isLoading?: boolean;
+  /** Component label keys, for the field picker's dynamic "Labels" section. */
   labelKeys: string[];
-  /** Per-label-key Space counts, for the picker's count badges. */
+  /** Per-label-key Component counts, for the picker's count badges. */
   labelKeyCounts: Record<string, number>;
-  /** Context `getSpaceGroupValue` needs for the ReleaseTarget / summary-only fields. */
-  valueCtx: SpaceGroupValueContext;
+  /** Context `getComponentGroupValue` needs for the status levels. */
+  valueCtx: ComponentGroupValueContext;
 }
+
+const EMPTY_ITEMS: ComponentNavItem[] = [];
+
+/** Each Component is a leaf, labelled by its Slug, counting its variants. */
+const COMPONENT_LEAF: GroupNavLeafOptions<ComponentNavItem> = {
+  getId: (item) => item.slug,
+  getCount: (item) => item.spaces.length,
+  iconField: COMPONENT_FIELD,
+};
 
 // ============================================================================
 // COMPONENT
 // ============================================================================
 
 /**
- * Left-nav Space picker. A thin wrapper over the shared
- * `GroupNavPanel<ExtendedSpaceRead>` (the same tree the Unit list uses) — see
- * `ui/docs/dev/components.md` ("Navigation tree: node click opens a graph").
+ * Left-nav Component picker. A thin wrapper over the shared
+ * `GroupNavPanel<ComponentNavItem>` (the same tree the Unit list uses) — see
+ * `ui/docs/dev/components.md` ("Navigation tree").
  *
- * Every node click opens a graph (`onNodeOpen`) — there is no leaf/group-node
- * branching left here; `AppsComponentLayout` decides the URL FORM (`?app=`
- * vs `?group=`) from the node's own Space set. The chevron (icon container)
- * is the only way to expand/collapse (`expansionTrigger='iconContainer'`),
- * so a content click never fights with drilling into the tree.
+ * The leaves are the Components; the group nodes above them are grouping
+ * levels read from each Component. Every node click opens a graph
+ * (`onNodeOpen`); `AppsComponentLayout` decides the URL form. The chevron
+ * (icon container) is the only way to expand/collapse
+ * (`expansionTrigger='iconContainer'`), so a content click never fights with
+ * drilling into the tree.
  */
 export const AppNavigationTree = memo(({
-  spaces,
+  items,
   levels,
   onEditLevels,
   selectedGroups,
@@ -79,13 +86,13 @@ export const AppNavigationTree = memo(({
   selectionCount = 0,
   onClearSelection,
   onOverviewSelect,
-  isLoadingMore = false,
+  isLoading = false,
   labelKeys,
   labelKeyCounts,
   valueCtx,
 }: AppNavigationTreeProps) => {
   const getValue = useCallback(
-    (space: ExtendedSpaceRead, column: string) => getSpaceGroupValue(space, column, valueCtx),
+    (item: ComponentNavItem, column: string) => getComponentGroupValue(item, column, valueCtx),
     [valueCtx],
   );
 
@@ -100,23 +107,20 @@ export const AppNavigationTree = memo(({
     [onNodeOpen, onOverviewSelect],
   );
 
-  // A Component-field node gets `app-tree-item-<name>` (the tour spec's
-  // testid, kept at any depth); every other node gets the generic
-  // `components-tree-node`, so a spec can target a group node without
-  // matching its label text. The selection ring / re-click-to-clear
-  // behavior compares against `selectedGroups` (the resolved highlight
-  // path), not a Component-specific check — any node, at any depth or
-  // field, can be the one whose click opened the currently-open graph.
+  // A Component leaf gets `app-tree-item-<slug>` (the tour spec's testid);
+  // every group node gets the generic `components-tree-node`, so a spec can
+  // target a group node without matching its label text. The selection ring
+  // and re-click-to-clear compare against `selectedGroups` (the resolved
+  // highlight path): any node can be the one whose click opened the graph.
   const getItemProps = useCallback(
-    ({ path, depth }: GroupNavNodeContext): GroupNavItemProps => {
-      const isComponentField = levels[depth] === COMPONENT_FIELD;
+    ({ path, isLeaf }: GroupNavNodeContext): GroupNavItemProps => {
       const isThisNodeOpen =
         selectedGroups !== null &&
         selectedGroups.length === path.length &&
         selectedGroups.every((v, i) => v === path[i]);
       const hasSelections = isThisNodeOpen && selectionCount > 0;
       return {
-        'data-testid': isComponentField ? `app-tree-item-${path[depth]}` : 'components-tree-node',
+        'data-testid': isLeaf ? `app-tree-item-${path[path.length - 1]}` : 'components-tree-node',
         $hasSelections: hasSelections,
         onClick: (e) => {
           // Re-clicking the already-open node while it has deployment
@@ -128,14 +132,18 @@ export const AppNavigationTree = memo(({
         },
       };
     },
-    [levels, selectedGroups, selectionCount, onClearSelection],
+    [selectedGroups, selectionCount, onClearSelection],
   );
 
   return (
-    <GroupNavPanel<ExtendedSpaceRead>
+    <GroupNavPanel<ComponentNavItem>
       groupByColumns={levels}
-      items={spaces}
+      // No items while loading: the panel applies its first expansion when
+      // its tree first has nodes, and that must be the complete tree.
+      items={isLoading ? EMPTY_ITEMS : items}
       getValue={getValue}
+      leaf={COMPONENT_LEAF}
+      isLoading={isLoading}
       selectedGroups={selectedGroups}
       onSelectGroups={handleTreeSelectGroups}
       allLabel='Overview'
@@ -147,7 +155,6 @@ export const AppNavigationTree = memo(({
       iconMap={COMPONENT_ICON_MAP}
       getItemProps={getItemProps}
       expansionTrigger='iconContainer'
-      footer={isLoadingMore ? <AppNavigationTreeRowsSkeleton groupCount={2} /> : undefined}
       // The Components page's own wrapper is a react-resizable-panels `Panel`
       // that already tracks the drag width — fill it instead of sizing off
       // the Unit list's `--group-nav-width` CSS-variable mechanism, which

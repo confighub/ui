@@ -3,10 +3,14 @@
 import { useCallback, useRef, useState } from 'react';
 
 import {
+  type ComponentRead,
   confighubApi,
   useCreateComponentMutation as useCreateComponentEntityMutation,
   useCreateSpaceMutation,
   useCreateUnitMutation,
+  useLazyListComponentsQuery,
+  useLazyListSpacesQuery,
+  usePatchComponentMutation,
   useUploadMutation,
 } from '@confighub/rtk-query';
 import { useAppDispatch } from '@/hooks/useApp';
@@ -14,6 +18,13 @@ import { describeQueryError, getApiErrorMessage } from '@/utility/error-function
 import { slugify } from '@/components/query-builder/ViewTabs';
 
 import { LABEL_OWNER, LABEL_VARIANT } from './componentData';
+import {
+  type OwnerWrite,
+  ownerConflictMessage,
+  ownerSetCommand,
+  ownerValueProblem,
+  ownerWrite,
+} from './componentOwner';
 import { type PlannableDoc, buildUnitPlan } from './createComponentInput';
 import {
   type OciSourceForm,
@@ -55,6 +66,7 @@ export type CreateComponentSource =
 
 export interface CreateComponentInput {
   componentName: string;
+  /** Set on the Component, never on the Space. Empty sets no owner. */
   owner: string;
   source: CreateComponentSource;
   granularity: 'minimal' | 'per-resource' | 'per-file';
@@ -137,6 +149,11 @@ export interface UseCreateComponentMutationResult {
   itemErrors: CreateComponentItemError[];
   error: CreateComponentError | null;
   isNameCollision: boolean;
+  /**
+   * Set when the variant was created but the Component's owner could not be
+   * set. It says how to set the owner later.
+   */
+  ownerWarning: string | null;
 }
 
 // ============================================================================
@@ -148,14 +165,26 @@ function isAlreadyExistsMessage(msg: string): boolean {
   return msg.toLowerCase().includes('already exists');
 }
 
+function ownerConflictError(componentSlug: string, current: string, requested: string): CreateComponentError {
+  return { title: 'The component has another owner', detail: ownerConflictMessage(componentSlug, current, requested) };
+}
+
+function ownerNotSetMessage(spaceSlug: string, componentSlug: string, owner: string, err: unknown): string {
+  return (
+    `The variant "${spaceSlug}" was created, but the owner of component "${componentSlug}" was not set: ` +
+    `${getApiErrorMessage(err)}. Set it with: ${ownerSetCommand(componentSlug, owner)}`
+  );
+}
+
 // ============================================================================
 // HOOK
 // ============================================================================
 
 /**
  * Orchestrates the component-create sequence:
- *   Step 1: createSpace — a new, un-targeted base Space labeled `Component`/`Owner`
- *           (plus any caller-supplied extra labels), slug `<slugified-name>-base`.
+ *   Step 1: createComponent (unless it exists), then createSpace — a new,
+ *           un-targeted base Space in it with the `Variant` label (plus any
+ *           caller-supplied extra labels), slug `<slugified-name>-base`.
  *   Step 2: plan the source's documents into Units client-side (buildUnitPlan)
  *           and create each with the generic, pre-existing createUnit mutation —
  *           one call per Unit, so a single failure doesn't abort the batch.
@@ -174,6 +203,11 @@ function isAlreadyExistsMessage(msg: string): boolean {
  *     or it would collide on the slug and orphan the first one.
  *   - `partialFailure`: some createUnit calls succeeded, some failed.
  *
+ * The owner is a label on the Component, never on the Space
+ * (`componentOwner.ts`). An owner the server would refuse as a label value,
+ * or a Component that already has another owner, stops the create before
+ * anything is written. A Component with no owner gets the requested one.
+ *
  * Mirrors `useCreateVariantMutation.ts`.
  */
 export function useCreateComponentMutation(): UseCreateComponentMutationResult {
@@ -182,6 +216,9 @@ export function useCreateComponentMutation(): UseCreateComponentMutationResult {
   const [createUnit] = useCreateUnitMutation();
   const [uploadUnitData] = useUploadUnitData();
   const [upload] = useUploadMutation();
+  const [patchComponent] = usePatchComponentMutation();
+  const [listComponents] = useLazyListComponentsQuery();
+  const [listSpaces] = useLazyListSpacesQuery();
   const dispatch = useAppDispatch();
 
   // ── State ─────────────────────────────────────────────────────────────────
@@ -194,6 +231,7 @@ export function useCreateComponentMutation(): UseCreateComponentMutationResult {
   const [itemErrors, setItemErrors] = useState<CreateComponentItemError[]>([]);
   const [error, setError] = useState<CreateComponentError | null>(null);
   const [isNameCollision, setIsNameCollision] = useState(false);
+  const [ownerWarning, setOwnerWarning] = useState<string | null>(null);
 
   // Retained so retryUnits() can re-drive step 2 against the existing Space
   // without re-creating it. The retry INPUT is re-derived from live pane state at
@@ -203,6 +241,52 @@ export function useCreateComponentMutation(): UseCreateComponentMutationResult {
   // on success without depending on the (possibly stale, closed-over) `createdSpaceSlug`
   // state value.
   const spaceSlugRef = useRef<string | null>(null);
+
+  // ── Owner ─────────────────────────────────────────────────────────────────
+  // What the requested owner needs written to the Component. Its Spaces are
+  // read only when its own label does not already hold the owner, because the
+  // owner falls back to their labels.
+  const decideOwnerWrite = useCallback(
+    async (component: ComponentRead, owner: string): Promise<OwnerWrite> => {
+      if (!owner || component.Labels?.[LABEL_OWNER]?.trim() === owner) return { kind: 'none' };
+      const spaces = await listSpaces({
+        where: `ComponentID = '${component.ComponentID}'`,
+        select: 'Labels',
+      }).unwrap();
+      return ownerWrite(
+        component,
+        spaces.flatMap((s) => (s.Space ? [s.Space] : [])),
+        owner,
+      );
+    },
+    [listSpaces],
+  );
+
+  const findComponent = useCallback(
+    async (slug: string): Promise<ComponentRead | undefined> => {
+      const found = await listComponents({ where: `Slug = '${slug}'` }).unwrap();
+      return found[0]?.Component;
+    },
+    [listComponents],
+  );
+
+  // Sets the owner after the variant exists. A failure here does not undo the
+  // create: it is reported with the command that sets the owner later.
+  const setComponentOwner = useCallback(
+    async (component: ComponentRead, spaceSlug: string, owner: string) => {
+      const componentSlug = component.Slug;
+      try {
+        if (!component.ComponentID) throw new Error('the component has no ID');
+        await patchComponent({
+          componentId: component.ComponentID,
+          body: { Labels: { [LABEL_OWNER]: owner } },
+        }).unwrap();
+      } catch (err) {
+        setOwnerWarning(ownerNotSetMessage(spaceSlug, componentSlug, owner, err));
+      }
+    },
+    [patchComponent],
+  );
 
   // ── Step 2: author Units from the given source ──────────────────────────────
   // Returns the outcome ONLY on a clean success; `null` on unitsError or
@@ -306,7 +390,29 @@ export function useCreateComponentMutation(): UseCreateComponentMutationResult {
       // What the request asks for, so the fallbacks below name the Space the
       // server was told to write, not the default it was told to replace.
       const spaceSlug = ociSpaceSlug(form, baseSlug);
+      const owner = input.owner.trim();
       setPhase('creatingUnits');
+
+      // The upload creates the Component when it is new. One that exists is
+      // checked for another owner before the upload writes anything.
+      let existing: ComponentRead | undefined;
+      let write: OwnerWrite = { kind: owner ? 'set' : 'none' };
+      if (owner) {
+        try {
+          existing = await findComponent(componentSlug);
+          if (existing) write = await decideOwnerWrite(existing, owner);
+        } catch (err) {
+          setError({ title: 'Failed to read the component', detail: getApiErrorMessage(err) });
+          setPhase('spaceError');
+          return null;
+        }
+        if (write.kind === 'conflict') {
+          setError(ownerConflictError(componentSlug, write.current, owner));
+          setPhase('spaceError');
+          return null;
+        }
+      }
+
       let result;
       try {
         result = await upload({
@@ -314,7 +420,6 @@ export function useCreateComponentMutation(): UseCreateComponentMutationResult {
             form,
             componentSlug,
             baseSlug,
-            owner: input.owner,
             labels: input.labels,
             unitLabels: input.unitLabels,
             unitAnnotations: input.unitAnnotations,
@@ -344,7 +449,19 @@ export function useCreateComponentMutation(): UseCreateComponentMutationResult {
       setCreatedUnits(created);
       setSkippedSecrets(uploadSkippedSecrets(result));
       setItemErrors(errors);
-      dispatch(confighubApi.util.invalidateTags(['Unit', 'Space']));
+
+      if (space?.SpaceID && write.kind === 'set') {
+        const createdSpaceSlug = space.SpaceSlug ?? spaceSlug;
+        try {
+          const component = existing ?? (await findComponent(componentSlug));
+          if (!component) throw new Error(`component "${componentSlug}" not found`);
+          await setComponentOwner(component, createdSpaceSlug, owner);
+        } catch (err) {
+          setOwnerWarning(ownerNotSetMessage(createdSpaceSlug, componentSlug, owner, err));
+        }
+      }
+      // The upload creates the Component when it is new.
+      dispatch(confighubApi.util.invalidateTags(['Unit', 'Space', 'Component']));
 
       if (errors.length > 0 || !space?.SpaceID) {
         setPhase('partialFailure');
@@ -353,13 +470,14 @@ export function useCreateComponentMutation(): UseCreateComponentMutationResult {
       setPhase('success');
       return { spaceId: space.SpaceID, spaceSlug: space.SpaceSlug ?? spaceSlug };
     },
-    [upload, dispatch],
+    [upload, dispatch, findComponent, decideOwnerWrite, setComponentOwner],
   );
 
   // ── submit ────────────────────────────────────────────────────────────────
   const submit = useCallback(
     async (input: CreateComponentInput): Promise<CreateComponentOutcome | null> => {
-      const { componentName, owner, labels } = input;
+      const { componentName, labels } = input;
+      const owner = input.owner.trim();
 
       setPhase('creatingSpace');
       setCreatedSpaceId(null);
@@ -370,6 +488,17 @@ export function useCreateComponentMutation(): UseCreateComponentMutationResult {
       setError(null);
       setIsNameCollision(false);
       setCreatedComponentName(null);
+      setOwnerWarning(null);
+
+      // Checked before either source writes: an OCI upload creates the
+      // variant before the owner is set, so a refused owner found then would
+      // leave the variant without one.
+      const ownerProblem = ownerValueProblem(owner);
+      if (ownerProblem) {
+        setError({ title: 'The owner is not valid', detail: ownerProblem });
+        setPhase('spaceError');
+        return null;
+      }
 
       if (input.source.kind === 'oci') {
         return submitOci(input, input.source.form, input.source.digest);
@@ -381,23 +510,34 @@ export function useCreateComponentMutation(): UseCreateComponentMutationResult {
       let spaceId: string;
       try {
         // The Component with this slug, created unless it already exists, as
-        // an upload does for the OCI path.
+        // an upload does for the OCI path. A new one is created with the owner.
+        // The server refuses an empty label value, so no owner sends no label.
         const componentSlug = slugify(componentName);
         const component = await createComponent({
-          component: { Slug: componentSlug, DisplayName: componentName },
+          component: {
+            Slug: componentSlug,
+            DisplayName: componentName,
+            ...(owner ? { Labels: { [LABEL_OWNER]: owner } } : {}),
+          },
           allowExists: 'true',
         }).unwrap();
+
+        // An existing Component keeps its labels, so its owner is checked
+        // before the Space is created.
+        const write = await decideOwnerWrite(component, owner);
+        if (write.kind === 'conflict') {
+          setError(ownerConflictError(componentSlug, write.current, owner));
+          setPhase('spaceError');
+          return null;
+        }
 
         const spaceResponse = await createSpace({
           space: {
             Slug: spaceSlug,
             ComponentID: component.ComponentID,
             Labels: {
-              // Spread caller labels first so the reserved keys below always win
+              // Spread caller labels first so the reserved key below always wins
               ...(labels ?? {}),
-              // Owner is optional, and the server refuses an empty label value, so a
-              // component with no owner carries no Owner label, as an upload's does.
-              ...(owner ? { [LABEL_OWNER]: owner } : {}),
               // The Component view names the card from this label, and the
               // server matches a dependency to the same variant of another
               // component by it. An upload and `cub` both write it, so the
@@ -418,6 +558,10 @@ export function useCreateComponentMutation(): UseCreateComponentMutationResult {
         setCreatedComponentName(component.Slug);
         setCreatedSpaceId(spaceId);
         setCreatedSpaceSlug(spaceResponse.Slug ?? spaceSlug);
+
+        if (write.kind === 'set') {
+          await setComponentOwner(component, spaceResponse.Slug ?? spaceSlug, owner);
+        }
       } catch (err) {
         const detail = getApiErrorMessage(err);
         const collision = isAlreadyExistsMessage(detail);
@@ -430,7 +574,7 @@ export function useCreateComponentMutation(): UseCreateComponentMutationResult {
       // ── Step 2: author the Space's Units from the given source ────────────
       return authorUnits(spaceId, input);
     },
-    [createComponent, createSpace, authorUnits, submitOci],
+    [createComponent, createSpace, authorUnits, submitOci, decideOwnerWrite, setComponentOwner],
   );
 
   // ── retryUnits ──────────────────────────────────────────────────────────────
@@ -468,6 +612,7 @@ export function useCreateComponentMutation(): UseCreateComponentMutationResult {
     setItemErrors([]);
     setError(null);
     setIsNameCollision(false);
+    setOwnerWarning(null);
     spaceIdRef.current = null;
     spaceSlugRef.current = null;
   }, []);
@@ -486,5 +631,6 @@ export function useCreateComponentMutation(): UseCreateComponentMutationResult {
     itemErrors,
     error,
     isNameCollision,
+    ownerWarning,
   };
 }

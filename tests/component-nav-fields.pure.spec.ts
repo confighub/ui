@@ -1,260 +1,271 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 //
-// Pure logic backing the Components left-nav grouping (`componentGroupFields.ts`).
-// No page, no browser, no fixtures — the same pattern as
-// `component-compare-model.pure.spec.ts`.
+// Pure logic backing the Components left-nav tree (`componentIndex.ts`,
+// `componentGroupFields.ts`). No page, no browser, no fixtures — the same
+// pattern as `component-compare-model.pure.spec.ts`.
 
 import { expect, test } from '@playwright/test';
 
-import type { ExtendedSpaceRead, ExtendedTargetRead } from '@confighub/rtk-query';
+import type { ComponentRead, ExtendedSpaceRead } from '@confighub/rtk-query';
 import {
   COMPONENT_CATALOG,
   COMPONENT_DEFAULT_LEVELS,
-  COMPONENT_FIELD,
   ID_BATCH_SIZE,
   batchIds,
-  buildTargetSlugById,
   deriveComponentTreePath,
-  getSpaceGroupValue,
-  getSpaceLabelKeyCounts,
-  getSpaceLabelKeys,
+  filterComponentsByGroupPath,
+  getComponentGroupValue,
+  getComponentLabelKeyCounts,
+  getComponentLabelKeys,
+  normalizeComponentLevels,
   resolveNodeGraphTarget,
+  resolveOpenComponentSlug,
+  spacesOfComponents,
 } from '../src/pages/x/apps/componentGroupFields';
+import { EMPTY_GROUP_VALUE, compareGroupValues } from '../src/components/group-nav/groupOrder';
+import { type ComponentNavItem, buildComponentNavItems } from '../src/pages/x/apps/componentIndex';
 
-/** Component Slug by ComponentID, as `useComponentSlugs().slugById` gives it. */
-const slugById = new Map(['checkout', 'billing', 'shared'].map((slug) => [`cid-${slug}`, slug]));
+/** A Component entity. */
+function component(slug: string, labels: Record<string, string> = {}): ComponentRead {
+  return { ComponentID: `cid-${slug}`, Slug: slug, Labels: labels } as ComponentRead;
+}
 
-/** A Space; `Component` (a Slug from `slugById`) sets its `ComponentID`. */
+/** A Space of the Component `componentSlug`. */
 function space(
-  overrides: Partial<ExtendedSpaceRead> & { Labels?: Record<string, string>; Component?: string },
+  componentSlug: string,
+  labels: Record<string, string> = {},
+  counts: Partial<Pick<ExtendedSpaceRead, 'UpgradableUnitCount' | 'UnreleasedUnitCount' | 'GatedUnitCount'>> = {},
 ): ExtendedSpaceRead {
-  const { Labels, Component, ...rest } = overrides;
   return {
-    Space: {
-      SpaceID: 'sid',
-      Slug: 'slug',
-      Labels: Labels ?? {},
-      ...(Component ? { ComponentID: `cid-${Component}` } : {}),
-    },
-    ...rest,
+    Space: { SpaceID: `sid-${componentSlug}-${Math.random()}`, Slug: 'slug', Labels: labels, ComponentID: `cid-${componentSlug}` },
+    ...counts,
   };
 }
 
+function items(components: ComponentRead[], spaces: ExtendedSpaceRead[]): ComponentNavItem[] {
+  return buildComponentNavItems(new Map(components.map((c) => [c.ComponentID as string, c])), spaces);
+}
+
+const loaded = { isSummaryLoaded: true };
+
+test.describe('componentIndex (pure)', () => {
+  test('buildComponentNavItems: one item per Component, sorted by Slug, including Components with no Spaces', () => {
+    const spaces = [space('checkout', { Owner: 'a' }), space('checkout', { Owner: 'a' })];
+    const result = items([component('empty'), component('checkout')], spaces);
+    expect(result.map((i) => i.slug)).toEqual(['checkout', 'empty']);
+    expect(result[0].spaces).toHaveLength(2);
+    expect(result[1].spaces).toEqual([]);
+  });
+
+  test('buildComponentNavItems: the owner follows the owner rule (own label, else the label all Spaces share, else "")', () => {
+    const result = items(
+      [component('own', { Owner: 'team-c' }), component('shared'), component('split'), component('none')],
+      [
+        space('own', { Owner: 'team-a' }),
+        space('shared', { Owner: 'team-a' }),
+        space('shared', { Owner: 'team-a' }),
+        space('split', { Owner: 'team-a' }),
+        space('split', { Owner: 'team-b' }),
+      ],
+    );
+    const owner = Object.fromEntries(result.map((i) => [i.slug, i.owner]));
+    expect(owner).toEqual({ own: 'team-c', shared: 'team-a', split: '', none: '' });
+  });
+});
+
 test.describe('componentGroupFields (pure)', () => {
-  test('COMPONENT_DEFAULT_LEVELS is Owner then Component', () => {
-    expect(COMPONENT_DEFAULT_LEVELS).toEqual(['Labels.Owner', 'Component']);
-    expect(COMPONENT_FIELD).toBe('Component');
+  test('COMPONENT_DEFAULT_LEVELS is Owner only', () => {
+    expect(COMPONENT_DEFAULT_LEVELS).toEqual(['Labels.Owner']);
   });
 
-  test('getSpaceGroupValue reads dynamic Labels.<key> fields', () => {
-    const s = space({ Component: 'checkout', Labels: { Owner: 'team-a', Variant: 'prod' } });
-    expect(getSpaceGroupValue(s, 'Labels.Owner', { targetSlugById: new Map(), isSummaryLoaded: true, slugById })).toBe('team-a');
-    expect(getSpaceGroupValue(s, 'Labels.Missing', { targetSlugById: new Map(), isSummaryLoaded: true, slugById })).toBe('');
+  test('COMPONENT_CATALOG offers only the status roll-ups as static fields (no Component, no Target)', () => {
+    const fields = COMPONENT_CATALOG.staticCategories.flatMap((c) => c.fields.map((f) => f.field));
+    expect(fields.sort()).toEqual(['Gated', 'UnreleasedChanges', 'UpgradeNeeded']);
   });
 
-  test('getSpaceGroupValue: Component is the Slug of the Space\'s Component entity, not a label', () => {
-    const ctx = { targetSlugById: new Map<string, string>(), isSummaryLoaded: true, slugById };
-    expect(getSpaceGroupValue(space({ Component: 'checkout' }), COMPONENT_FIELD, ctx)).toBe('checkout');
-    // A leftover `Component` LABEL means nothing to the field.
-    expect(getSpaceGroupValue(space({ Labels: { Component: 'checkout' } }), COMPONENT_FIELD, ctx)).toBe('');
-    // A ComponentID whose Component has not loaded has no name yet.
-    expect(getSpaceGroupValue(space({ Component: 'not-loaded' }), COMPONENT_FIELD, ctx)).toBe('');
+  const normalizationTable: Array<{ saved: string[]; read: string[]; why: string }> = [
+    { saved: ['Labels.Owner', 'Component'], read: ['Labels.Owner'], why: 'the old default' },
+    { saved: ['Component'], read: [], why: 'Component is the leaf now' },
+    { saved: ['Labels.Owner', 'Component', 'Labels.Variant'], read: ['Labels.Owner'], why: 'Variant names a Space' },
+    { saved: ['ReleaseTarget', 'Labels.Team'], read: ['Labels.Team'], why: 'a Release target belongs to a Space' },
+    { saved: ['Space', 'Labels.Stage', 'Slug'], read: ['Labels.Stage'], why: 'unknown keys are dropped' },
+    { saved: ['Gated', 'UpgradeNeeded', 'UnreleasedChanges'], read: ['Gated', 'UpgradeNeeded', 'UnreleasedChanges'], why: 'status levels stay' },
+    { saved: ['Labels.Owner', 'Component', 'Labels.Owner'], read: ['Labels.Owner'], why: 'a repeated level is kept once' },
+    { saved: ['Labels.', 'Space.Labels.Owner'], read: [], why: 'an empty key and a Space label key are dropped' },
+  ];
+  for (const { saved, read, why } of normalizationTable) {
+    test(`normalizeComponentLevels: ${saved.join(',')} -> [${read.join(',')}] (${why})`, () => {
+      expect(normalizeComponentLevels(saved)).toEqual(read);
+    });
+  }
+
+  test('getComponentGroupValue: Labels.Owner is the owner rule; other Labels.<key> are the Component\'s own labels, not its Spaces\'', () => {
+    const [item] = items(
+      [component('checkout', { Team: 'payments' })],
+      [space('checkout', { Owner: 'team-a', Stage: 'prod' }), space('checkout', { Owner: 'team-a', Stage: 'dev' })],
+    );
+    expect(getComponentGroupValue(item, 'Labels.Owner', loaded)).toBe('team-a');
+    expect(getComponentGroupValue(item, 'Labels.Team', loaded)).toBe('payments');
+    expect(getComponentGroupValue(item, 'Labels.Stage', loaded)).toBe('');
+    expect(getComponentGroupValue(item, 'Space', loaded)).toBe('');
   });
 
-  test('getSpaceGroupValue: ReleaseTarget prefers the expanded relation, falls back to the target map', () => {
-    const withRelation = space({ ReleaseTarget: { Slug: 'us-east-1' } });
-    expect(getSpaceGroupValue(withRelation, 'ReleaseTarget', { targetSlugById: new Map(), isSummaryLoaded: true, slugById })).toBe('us-east-1');
-
-    const withIdOnly = space({ Space: { SpaceID: 's1', Slug: 'slug', Labels: {}, ReleaseTargetID: 'tgt-1' } });
-    const targetSlugById = new Map([['tgt-1', 'us-west-2']]);
-    expect(getSpaceGroupValue(withIdOnly, 'ReleaseTarget', { targetSlugById, isSummaryLoaded: true, slugById })).toBe('us-west-2');
-
-    // No relation, no id, no map entry — '(empty)' upstream, '' here.
-    const bare = space({});
-    expect(getSpaceGroupValue(bare, 'ReleaseTarget', { targetSlugById: new Map(), isSummaryLoaded: true, slugById })).toBe('');
-  });
-
-  test('getSpaceGroupValue: summary-only fields return "" (never a false "No") until isSummaryLoaded', () => {
-    const s = space({ UpgradableUnitCount: 3, UnreleasedUnitCount: 0, GatedUnitCount: 1 });
+  test('getComponentGroupValue: status levels sum the Spaces\' counts, and are "" until the summary has loaded', () => {
+    const [stale, quiet, empty] = items(
+      [component('a-stale'), component('b-quiet'), component('c-empty')],
+      [
+        space('a-stale', {}, { UpgradableUnitCount: 0, UnreleasedUnitCount: 0, GatedUnitCount: 0 }),
+        space('a-stale', {}, { UpgradableUnitCount: 2, UnreleasedUnitCount: 0, GatedUnitCount: 1 }),
+        space('b-quiet', {}, { UpgradableUnitCount: 0, UnreleasedUnitCount: 0, GatedUnitCount: 0 }),
+      ],
+    );
+    expect(getComponentGroupValue(stale, 'UpgradeNeeded', loaded)).toBe('Yes');
+    expect(getComponentGroupValue(stale, 'UnreleasedChanges', loaded)).toBe('No');
+    expect(getComponentGroupValue(stale, 'Gated', loaded)).toBe('Yes');
+    expect(getComponentGroupValue(quiet, 'UpgradeNeeded', loaded)).toBe('No');
+    expect(getComponentGroupValue(empty, 'Gated', loaded)).toBe('No');
     for (const field of ['UpgradeNeeded', 'UnreleasedChanges', 'Gated']) {
-      expect(getSpaceGroupValue(s, field, { targetSlugById: new Map(), isSummaryLoaded: false, slugById })).toBe('');
-    }
-    expect(getSpaceGroupValue(s, 'UpgradeNeeded', { targetSlugById: new Map(), isSummaryLoaded: true, slugById })).toBe('Yes');
-    expect(getSpaceGroupValue(s, 'UnreleasedChanges', { targetSlugById: new Map(), isSummaryLoaded: true, slugById })).toBe('No');
-    expect(getSpaceGroupValue(s, 'Gated', { targetSlugById: new Map(), isSummaryLoaded: true, slugById })).toBe('Yes');
-  });
-
-  test('buildTargetSlugById maps TargetID to Slug, skipping incomplete entries', () => {
-    const targets: ExtendedTargetRead[] = [
-      { Target: { TargetID: 't1', Slug: 'prod' } },
-      { Target: { TargetID: 't2' } } as ExtendedTargetRead,
-      {},
-    ];
-    const map = buildTargetSlugById(targets);
-    expect(map.get('t1')).toBe('prod');
-    expect(map.has('t2')).toBe(false);
-    expect(map.size).toBe(1);
-  });
-
-  test('getSpaceLabelKeys / getSpaceLabelKeyCounts: dropped fields never appear (only Space.Labels keys)', () => {
-    const spaces = [
-      space({ Component: 'checkout', Labels: { Owner: 'a' } }),
-      space({ Component: 'billing', Labels: { Owner: 'a', Variant: 'prod' } }),
-      space({ Component: 'checkout', Labels: {} }), // no Owner
-    ];
-    expect(getSpaceLabelKeys(spaces)).toEqual(['Owner', 'Variant']);
-    const counts = getSpaceLabelKeyCounts(spaces);
-    expect(counts).toEqual({ Owner: 2, Variant: 1 });
-    // Dropped fields (Slug, SpaceID, CreatedAt, ...) are structurally absent —
-    // they can never appear since this only ever reads `Space.Labels`.
-  });
-
-  test('COMPONENT_CATALOG has no Space-Labels-only Unit-list fields (Slug/CreatedAt/ToolchainType/…)', () => {
-    const allFields = COMPONENT_CATALOG.staticCategories.flatMap((c) => c.fields.map((f) => f.field));
-    expect(allFields.sort()).toEqual(['Component', 'Gated', 'ReleaseTarget', 'UnreleasedChanges', 'UpgradeNeeded'].sort());
-    for (const dropped of ['Slug', 'SpaceID', 'DisplayName', 'CreatedAt', 'UpdatedAt', 'ToolchainType', 'Annotations']) {
-      expect(allFields).not.toContain(dropped);
+      expect(getComponentGroupValue(stale, field, { isSummaryLoaded: false })).toBe('');
     }
   });
 
-  test('the ReleaseTarget field displays as "Target" — the internal key stays ReleaseTarget so a saved view\'s GroupBy annotation or a ?group= deep link keeps working', () => {
-    expect(COMPONENT_CATALOG.fieldLabels?.['ReleaseTarget']).toBe('Target');
+  test('getComponentLabelKeys / Counts: Component label keys, Owner always, Variant never', () => {
+    const list = items(
+      [component('a', { Team: 'x', Variant: 'base' }), component('b', { Owner: 'o' }), component('c')],
+      [space('c', { Owner: 'o2', Stage: 'prod' })],
+    );
+    expect(getComponentLabelKeys(list)).toEqual(['Owner', 'Team']);
+    expect(getComponentLabelKeys([])).toEqual(['Owner']);
+    expect(getComponentLabelKeyCounts(list)).toEqual({ Owner: 2, Team: 1 });
   });
 
-  // Icon identity (the Component field, Owner/Stage/Region/Department vs.
-  // the generic Labels icon) is covered by `component-nav-grouping.spec.ts`
-  // test 15 instead of here: it needs a real rendered `data-testid`
-  // (MUI's `createSvgIcon`) to tell icons apart, and importing the icon
-  // components directly into this Node-run pure spec trips a Node ESM
-  // resolution error in `@mui/icons-material`'s own `createSvgIcon.js`
-  // (a directory import of `@mui/material/utils`) that has nothing to do
-  // with the logic under test.
-
-  const ctx = { targetSlugById: new Map<string, string>(), isSummaryLoaded: true, slugById };
-
-  test('resolveNodeGraphTarget: a leaf whose bucket is exactly one whole Component resolves to {app}', () => {
-    const appSpaces = [
-      space({ Component: 'checkout', Labels: { Owner: 'a' } }),
-      space({ Component: 'checkout', Labels: { Owner: 'a' } }),
-      space({ Component: 'billing', Labels: { Owner: 'a' } }),
-    ];
-    const levels = ['Labels.Owner', 'Component'];
-    expect(resolveNodeGraphTarget(appSpaces, levels, ['a', 'checkout'], ctx)).toEqual({ app: 'checkout' });
+  test('filterComponentsByGroupPath / spacesOfComponents: a group node holds every Space of every Component under it', () => {
+    const list = items(
+      [component('checkout'), component('billing'), component('search'), component('empty', { Owner: 'a' })],
+      [
+        space('checkout', { Owner: 'a' }),
+        space('checkout', { Owner: 'a' }),
+        space('billing', { Owner: 'a' }),
+        space('search', { Owner: 'b' }),
+      ],
+    );
+    const levels = ['Labels.Owner'];
+    const underA = filterComponentsByGroupPath(list, levels, ['a'], loaded);
+    expect(underA.map((i) => i.slug)).toEqual(['billing', 'checkout', 'empty']);
+    expect(spacesOfComponents(underA)).toHaveLength(3);
+    expect(filterComponentsByGroupPath(list, levels, [], loaded)).toBe(list);
+    // A stale path (longer than levels, or a value nobody has) matches nothing.
+    expect(filterComponentsByGroupPath(list, levels, ['a', 'checkout'], loaded)).toEqual([]);
+    expect(filterComponentsByGroupPath(list, levels, ['gone'], loaded)).toEqual([]);
   });
 
-  test('resolveNodeGraphTarget: an Owner bucket spanning several Components resolves to {group}', () => {
-    const appSpaces = [
-      space({ Component: 'checkout', Labels: { Owner: 'a' } }),
-      space({ Component: 'billing', Labels: { Owner: 'a' } }),
-    ];
-    const levels = ['Labels.Owner', 'Component'];
-    expect(resolveNodeGraphTarget(appSpaces, levels, ['a'], ctx)).toEqual({
-      group: ['a'],
-    });
+  test('resolveNodeGraphTarget: a leaf opens its Component; a group of several Components opens ?group=; a group of one opens that Component', () => {
+    const list = items(
+      [component('checkout'), component('billing'), component('search')],
+      [space('checkout', { Owner: 'a' }), space('billing', { Owner: 'a' }), space('search', { Owner: 'b' })],
+    );
+    const levels = ['Labels.Owner'];
+    expect(resolveNodeGraphTarget(list, levels, ['a', 'checkout'], loaded)).toEqual({ app: 'checkout' });
+    expect(resolveNodeGraphTarget(list, levels, ['a'], loaded)).toEqual({ group: ['a'] });
+    expect(resolveNodeGraphTarget(list, levels, ['b'], loaded)).toEqual({ app: 'search' });
+    // No levels: every node is a leaf at the root.
+    expect(resolveNodeGraphTarget(list, [], ['billing'], loaded)).toEqual({ app: 'billing' });
+    // Two levels: the leaf is at depth 2.
+    expect(resolveNodeGraphTarget(list, ['Labels.Owner', 'Gated'], ['a', 'No', 'billing'], loaded)).toEqual({ app: 'billing' });
+    expect(resolveNodeGraphTarget(list, ['Labels.Owner', 'Gated'], ['a', 'No'], loaded)).toEqual({ group: ['a', 'No'] });
   });
 
-  test('resolveNodeGraphTarget: a Component field in the MIDDLE still resolves to {app} when its bucket is the whole Component', () => {
-    const appSpaces = [
-      space({ Component: 'checkout', Labels: { Owner: 'a', Variant: 'base' } }),
-      space({ Component: 'checkout', Labels: { Owner: 'a', Variant: 'dev' } }),
-    ];
-    const levels = ['Labels.Owner', 'Component', 'Labels.Variant'];
-    // Owner -> Component bucket = both Spaces = the whole "checkout" Component.
-    expect(resolveNodeGraphTarget(appSpaces, levels, ['a', 'checkout'], ctx)).toEqual({ app: 'checkout' });
-    // One level deeper (Variant), the bucket is a strict subset — a group (one-node) graph.
-    expect(resolveNodeGraphTarget(appSpaces, levels, ['a', 'checkout', 'base'], ctx)).toEqual({
-      group: ['a', 'checkout', 'base'],
-    });
+  test('resolveNodeGraphTarget: a split-owner Component is under (empty) once, and its leaf opens the whole Component', () => {
+    const list = items([component('split')], [space('split', { Owner: 'a' }), space('split', { Owner: 'b' })]);
+    expect(getComponentGroupValue(list[0], 'Labels.Owner', loaded)).toBe('');
+    expect(resolveNodeGraphTarget(list, ['Labels.Owner'], ['(empty)', 'split'], loaded)).toEqual({ app: 'split' });
   });
 
-  test('resolveNodeGraphTarget: a Component split across two Owners resolves to {app} from either Owner\'s Component node', () => {
-    const appSpaces = [
-      space({ Component: 'shared', Labels: { Owner: 'a' } }),
-      space({ Component: 'shared', Labels: { Owner: 'b' } }),
-      space({ Component: 'shared' }),
-    ];
-    const levels = ['Labels.Owner', 'Component'];
-    expect(resolveNodeGraphTarget(appSpaces, levels, ['a', 'shared'], ctx)).toEqual({ app: 'shared' });
-    expect(resolveNodeGraphTarget(appSpaces, levels, ['b', 'shared'], ctx)).toEqual({ app: 'shared' });
-    expect(resolveNodeGraphTarget(appSpaces, levels, ['(empty)', 'shared'], ctx)).toEqual({ app: 'shared' });
-    // The Owner nodes themselves hold only part of the Component — still {group}.
-    expect(resolveNodeGraphTarget(appSpaces, levels, ['a'], ctx)).toEqual({ group: ['a'] });
+  test('deriveComponentTreePath: with ?app= the path of that Component\'s leaf; without it, groupParam', () => {
+    const list = items(
+      [component('checkout', { Team: 'payments' }), component('empty')],
+      [space('checkout', { Owner: 'a' }, { GatedUnitCount: 1 })],
+    );
+    expect(deriveComponentTreePath(['Labels.Owner'], null, [], list, loaded)).toEqual([]);
+    expect(deriveComponentTreePath(['Labels.Owner'], null, ['a'], list, loaded)).toEqual(['a']);
+    expect(deriveComponentTreePath(['Labels.Owner'], 'checkout', [], list, loaded)).toEqual(['a', 'checkout']);
+    expect(deriveComponentTreePath(['Labels.Owner', 'Labels.Team', 'Gated'], 'checkout', [], list, loaded)).toEqual([
+      'a',
+      'payments',
+      'Yes',
+      'checkout',
+    ]);
+    // A Component with no Spaces has a leaf too.
+    expect(deriveComponentTreePath(['Labels.Owner'], 'empty', [], list, loaded)).toEqual(['(empty)', 'empty']);
+    expect(deriveComponentTreePath([], 'empty', [], list, loaded)).toEqual(['empty']);
+    // An unknown Component highlights nothing.
+    expect(deriveComponentTreePath(['Labels.Owner'], 'gone', [], list, loaded)).toBeNull();
   });
 
-  test('resolveNodeGraphTarget: a split Component in the MIDDLE resolves to {app}; a node below it stays {group}', () => {
-    const appSpaces = [
-      space({ Component: 'shared', Labels: { Owner: 'a', Variant: 'base' } }),
-      space({ Component: 'shared', Labels: { Owner: 'b', Variant: 'dev' } }),
-      space({ Component: 'shared', Labels: { Owner: 'b', Variant: 'prod' } }),
-    ];
-    const levels = ['Labels.Owner', 'Component', 'Labels.Variant'];
-    expect(resolveNodeGraphTarget(appSpaces, levels, ['b', 'shared'], ctx)).toEqual({ app: 'shared' });
-    expect(resolveNodeGraphTarget(appSpaces, levels, ['b', 'shared', 'dev'], ctx)).toEqual({
-      group: ['b', 'shared', 'dev'],
-    });
+  test('deriveComponentTreePath: a ?group= path that holds no Component highlights nothing', () => {
+    const list = items([component('checkout')], [space('checkout', { Owner: 'a' })]);
+    expect(deriveComponentTreePath(['Labels.Owner'], null, ['b'], list, loaded)).toBeNull();
+    // Longer than the levels, with no Component open: no node has this path.
+    expect(deriveComponentTreePath(['Labels.Owner'], null, ['a', 'checkout', 'x'], list, loaded)).toBeNull();
+    expect(deriveComponentTreePath(['Labels.Owner'], null, ['a'], list, loaded)).toEqual(['a']);
   });
 
-  test('resolveNodeGraphTarget: a Component at the TOP level resolves to {app}; a node below it stays {group}', () => {
-    const appSpaces = [
-      space({ Component: 'checkout', Labels: { Stage: 'dev' } }),
-      space({ Component: 'checkout', Labels: { Stage: 'prod' } }),
-    ];
-    const levels = ['Component', 'Labels.Stage'];
-    expect(resolveNodeGraphTarget(appSpaces, levels, ['checkout'], ctx)).toEqual({ app: 'checkout' });
-    expect(resolveNodeGraphTarget(appSpaces, levels, ['checkout', 'dev'], ctx)).toEqual({
-      group: ['checkout', 'dev'],
-    });
+  test('compareGroupValues: (empty) sorts after its siblings; other names keep localeCompare order', () => {
+    const names = ['team-b', EMPTY_GROUP_VALUE, 'Team-a', 'alpha'];
+    const localeOrder = [...names].sort((a, b) => a.localeCompare(b));
+    expect(localeOrder[0]).toBe(EMPTY_GROUP_VALUE);
+    expect([...names].sort(compareGroupValues)).toEqual([
+      ...localeOrder.filter((n) => n !== EMPTY_GROUP_VALUE),
+      EMPTY_GROUP_VALUE,
+    ]);
+    expect(compareGroupValues(EMPTY_GROUP_VALUE, EMPTY_GROUP_VALUE)).toBe(0);
+    expect(compareGroupValues('alpha', 'beta')).toBeLessThan(0);
   });
 
-  test('deriveComponentTreePath: no app open — the highlight is exactly groupParam', () => {
-    const appSpaces = [space({ Component: 'checkout', Labels: { Owner: 'a' } })];
-    const levels = ['Labels.Owner', 'Component'];
-    expect(deriveComponentTreePath(levels, null, [], appSpaces, ctx)).toEqual([]);
-    expect(deriveComponentTreePath(levels, null, ['a'], appSpaces, ctx)).toEqual(['a']);
+  test('deriveComponentTreePath: a Component under (empty) highlights a path whose (empty) node is last at each level', () => {
+    const levels = ['Labels.Owner', 'Labels.Team'];
+    const list = items(
+      [component('checkout', { Team: 'payments' }), component('cart'), component('orphan')],
+      [space('checkout', { Owner: 'a' }), space('cart', { Owner: 'a' })],
+    );
+    const paths = list.map((item) => deriveComponentTreePath(levels, item.slug, [], list, loaded) as string[]);
+    expect(paths).toEqual([
+      ['a', EMPTY_GROUP_VALUE, 'cart'],
+      ['a', 'payments', 'checkout'],
+      [EMPTY_GROUP_VALUE, EMPTY_GROUP_VALUE, 'orphan'],
+    ]);
+    const byLevel = (depth: number, parent: string[]) =>
+      Array.from(
+        new Set(paths.filter((p) => parent.every((v, i) => p[i] === v)).map((p) => p[depth])),
+      ).sort(compareGroupValues);
+    expect(byLevel(0, [])).toEqual(['a', EMPTY_GROUP_VALUE]);
+    expect(byLevel(1, ['a'])).toEqual(['payments', EMPTY_GROUP_VALUE]);
   });
 
-  test('deriveComponentTreePath: levels end in Component — derives the path from the Component\'s Spaces', () => {
-    const appSpaces = [space({ Component: 'checkout', Labels: { Owner: 'a' } })];
-    const levels = ['Labels.Owner', 'Component'];
-    expect(deriveComponentTreePath(levels, 'checkout', [], appSpaces, ctx)).toEqual(['a', 'checkout']);
-    // A matching groupParam (the click that opened it) is preserved as-is.
-    expect(deriveComponentTreePath(levels, 'checkout', ['a', 'checkout'], appSpaces, ctx)).toEqual(['a', 'checkout']);
+  test('resolveOpenComponentSlug: ?app=, else the last value of a ?group= path that ends at a leaf', () => {
+    const levels = ['Labels.Owner'];
+    expect(resolveOpenComponentSlug(levels, 'checkout', [])).toBe('checkout');
+    // ?app= wins over ?group=.
+    expect(resolveOpenComponentSlug(levels, 'checkout', ['a', 'billing'])).toBe('checkout');
+    // One value longer than the levels: a leaf, so its Component opens.
+    expect(resolveOpenComponentSlug(levels, null, ['a', 'billing'])).toBe('billing');
+    expect(resolveOpenComponentSlug([], null, ['billing'])).toBe('billing');
+    expect(resolveOpenComponentSlug(['Labels.Owner', 'Gated'], null, ['a', 'No', 'billing'])).toBe('billing');
+    // A group node, Overview, or a path too long to be any node opens no Component.
+    expect(resolveOpenComponentSlug(levels, null, ['a'])).toBeNull();
+    expect(resolveOpenComponentSlug(levels, null, [])).toBeNull();
+    expect(resolveOpenComponentSlug(levels, null, ['a', 'billing', 'x'])).toBeNull();
   });
 
-  test('deriveComponentTreePath: Component in the middle — highlights the Component node, not a node below it', () => {
-    const appSpaces = [
-      space({ Component: 'checkout', Labels: { Owner: 'a', Variant: 'base' } }),
-      space({ Component: 'checkout', Labels: { Owner: 'a', Variant: 'dev' } }),
-    ];
-    const levels = ['Labels.Owner', 'Component', 'Labels.Variant'];
-    expect(deriveComponentTreePath(levels, 'checkout', [], appSpaces, ctx)).toEqual(['a', 'checkout']);
-  });
-
-  test('deriveComponentTreePath: a split Component highlights its FIRST node in tree order, whatever the Space order', () => {
-    const levels = ['Labels.Owner', 'Component'];
-    const spaces = [
-      space({ Component: 'shared', Labels: { Owner: 'b' } }),
-      space({ Component: 'shared' }),
-      space({ Component: 'shared', Labels: { Owner: 'a' } }),
-    ];
-    // The tree sorts siblings with localeCompare: "(empty)" < "a" < "b".
-    expect(deriveComponentTreePath(levels, 'shared', [], spaces, ctx)).toEqual(['(empty)', 'shared']);
-    expect(deriveComponentTreePath(levels, 'shared', [], [...spaces].reverse(), ctx)).toEqual(['(empty)', 'shared']);
-    // Component in the middle: the same rule, and the levels below it are ignored.
-    const middleLevels = ['Labels.Owner', 'Component', 'Labels.Variant'];
-    const middleSpaces = [
-      space({ Component: 'shared', Labels: { Owner: 'b', Variant: 'base' } }),
-      space({ Component: 'shared', Labels: { Owner: 'a', Variant: 'dev' } }),
-    ];
-    expect(deriveComponentTreePath(middleLevels, 'shared', [], middleSpaces, ctx)).toEqual(['a', 'shared']);
-    // A groupParam naming another of its Component nodes is kept.
-    expect(deriveComponentTreePath(middleLevels, 'shared', ['b', 'shared'], middleSpaces, ctx)).toEqual(['b', 'shared']);
-  });
-
-  test('deriveComponentTreePath: no Component field in levels — selects nothing', () => {
-    const appSpaces = [space({ Component: 'checkout', Labels: { Owner: 'a' } })];
-    expect(deriveComponentTreePath(['Labels.Owner'], 'checkout', [], appSpaces, ctx)).toBeNull();
+  test('a ?group= leaf link highlights that Component\'s leaf, the same as ?app=', () => {
+    const list = items([component('checkout'), component('ui-preview')], [space('ui-preview', { Owner: 'Engineering' })]);
+    const levels = ['Labels.Owner'];
+    const slug = resolveOpenComponentSlug(levels, null, ['Engineering', 'ui-preview']);
+    expect(deriveComponentTreePath(levels, slug, ['Engineering', 'ui-preview'], list, loaded)).toEqual([
+      'Engineering',
+      'ui-preview',
+    ]);
   });
 
   test('batchIds: splits into ID_BATCH_SIZE-sized chunks, deduplicating and dropping falsy entries', () => {

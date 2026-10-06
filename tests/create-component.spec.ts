@@ -54,6 +54,14 @@ test.describe('create component flow', () => {
     } catch {
       // Space may not exist if the test failed before Create — nothing to clean up.
     }
+    // After its Space. The org has a Component quota, so a run must not leave
+    // its Component behind.
+    try {
+      const component = await api.getComponentBySlug(componentName);
+      await api.deleteComponent(component.ComponentID as string);
+    } catch {
+      // The Component may not exist if the test failed before Create.
+    }
 
     await context.close();
   });
@@ -159,8 +167,8 @@ test.describe('create component flow', () => {
     // ── Labels regression guard ──────────────────────────────────────────
     // The only end-to-end proof that relocating labels into Step 0's
     // "Advanced" disclosure didn't silently drop them: read the real created
-    // Space back and check the typed label survived alongside the
-    // always-set Owner label, and that the Space is in the new Component.
+    // Space back and check the typed label survived, and that the Space is in
+    // the new Component. The owner is set on the Component, not the Space.
     const api = new ApiHelper(page);
     const createdSpace = (await api.getSpaceBySlug(baseSlug)) as {
       SpaceID: string;
@@ -168,9 +176,11 @@ test.describe('create component flow', () => {
       ComponentID?: string;
       Labels?: Record<string, string>;
     };
+    const createdComponent = await api.getComponentBySlug(componentName);
     expect(createdSpace.Labels?.tier).toBe('backend');
-    expect(createdSpace.ComponentID).toBe((await api.getComponentBySlug(componentName)).ComponentID);
-    expect(createdSpace.Labels?.Owner).toBe(ownerName);
+    expect(createdSpace.ComponentID).toBe(createdComponent.ComponentID);
+    expect(createdComponent.Labels?.Owner).toBe(ownerName);
+    expect(createdSpace.Labels?.Owner).toBeUndefined();
   });
 
   test('OCI reference is a selectable import mode with its own source panel', async ({ page }) => {
@@ -356,6 +366,39 @@ test.describe('create component flow', () => {
     // origin and kind-bucketing.
     await granularityGroup.getByRole('radio', { name: 'per-resource' }).click();
     await expect(dialog.getByText('Units to create · 4')).toBeVisible({ timeout: 5000 });
+
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+  });
+
+  test('an owner the server refuses is shown on the owner field and blocks Continue', async ({ page }) => {
+    await page.goto('/components');
+    await page
+      .waitForSelector('[role="progressbar"]', { state: 'hidden', timeout: 20000 })
+      .catch(() => {});
+    await expect(page.getByRole('button', { name: 'New component' })).toBeVisible({ timeout: 10000 });
+    await page.getByRole('button', { name: 'New component' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText('New component', { exact: true })).toBeVisible({ timeout: 10000 });
+
+    // Nothing is written in this test: the refused owner stops the wizard on
+    // its first step, before any request.
+    await dialog.getByLabel('Component name').fill(`pw-bad-owner-${RandomSlugGenerator.randomSlugName()}`);
+    await dialog.getByRole('button', { name: 'New owner' }).click();
+    const ownerInput = dialog.getByLabel('New owner');
+    const next = dialog.getByTestId('create-component-next-button');
+
+    // A wildcard is not allowed in a label value.
+    await ownerInput.fill('Team*');
+    await expect(dialog.getByText(/The owner is not valid/)).toBeVisible({ timeout: 5000 });
+    await expect(ownerInput).toHaveAttribute('aria-invalid', 'true');
+    await expect(next).toBeDisabled();
+    await expect(dialog.getByRole('button', { name: 'Units' })).toBeDisabled();
+
+    // A space inside the value is allowed.
+    await ownerInput.fill('Team A');
+    await expect(dialog.getByText(/The owner is not valid/)).toHaveCount(0);
+    await expect(ownerInput).toHaveAttribute('aria-invalid', 'false');
+    await expect(next).toBeEnabled();
 
     await dialog.getByRole('button', { name: 'Cancel' }).click();
   });

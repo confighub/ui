@@ -18,7 +18,9 @@ import { useListComponentSpacesQuery } from './componentSpacesApi';
  * Base `Space` columns the Components view actually reads, as a `select` clause.
  *
  * - `SpaceID` / `Slug` — identity (always returned, listed for clarity).
- * - `Labels` — `Component` / `Owner` grouping for the nav tree and the matrix.
+ * - `ComponentID` — the Component the Space is a variant of.
+ * - `Labels` — the `Owner` label a Component's owner falls back to
+ *   (`componentOwner.ts`), and the graph's label grouping.
  * - `Annotations` — free-form Space metadata, passed through to the views
  *   built from these rows.
  * - `DisplayName`, `ReleaseTargetID` — read by the component graph / release UI.

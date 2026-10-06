@@ -38,7 +38,7 @@ import type { FilterFieldType } from './types';
  * `FilterFieldType` itself (which drives exhaustive `Record`s of actual
  * filter config, e.g. `FIELD_CONFIGS`/`FIELD_DESCRIPTIONS` in `operators.ts`,
  * that a non-filterable label key has nothing meaningful to fill in for).
- * Space label keys the Components page singles out for their own icon
+ * Label keys the Components page singles out for their own icon
  * instead of the generic 'labels' one (`componentGroupFields.ts`'s
  * `SPECIAL_LABEL_ICONS`) — a later icon-selector UI replaces this fixed set.
  */

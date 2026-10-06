@@ -3,6 +3,8 @@
 import { useMemo } from 'react';
 
 import { type ComponentRead, type SpaceRead, useListComponentsQuery } from '@confighub/rtk-query';
+import type { SerializedError } from '@reduxjs/toolkit';
+import type { FetchBaseQueryError } from '@reduxjs/toolkit/query';
 
 export interface ComponentSlugs {
   /** Component keyed by Component.ComponentID. */
@@ -13,6 +15,12 @@ export interface ComponentSlugs {
   idBySlug: ReadonlyMap<string, string>;
   /** True once the Components have loaded. */
   isLoaded: boolean;
+  /** True when the last request for the Components failed. `isLoaded` then stays false. */
+  isError: boolean;
+  /** The failure, for `QueryErrorState`. */
+  error: FetchBaseQueryError | SerializedError | undefined;
+  /** Fetches the Components again. */
+  refetch: () => void;
 }
 
 /**
@@ -34,7 +42,7 @@ export function spaceComponentSlug(
  * name can be queried by ID.
  */
 export function useComponentSlugs(): ComponentSlugs {
-  const { data } = useListComponentsQuery({});
+  const { data, refetch, isError, error } = useListComponentsQuery({});
   return useMemo(() => {
     const componentById = new Map<string, ComponentRead>();
     const slugById = new Map<string, string>();
@@ -48,6 +56,6 @@ export function useComponentSlugs(): ComponentSlugs {
         idBySlug.set(component.Slug, componentId);
       }
     }
-    return { componentById, slugById, idBySlug, isLoaded: data !== undefined };
-  }, [data]);
+    return { componentById, slugById, idBySlug, isLoaded: data !== undefined, isError, error, refetch };
+  }, [data, isError, error, refetch]);
 }

@@ -3,7 +3,6 @@
 import type { ExtendedSpaceRead } from '@confighub/rtk-query';
 import type { Node } from 'reactflow';
 
-import { LABEL_OWNER } from '../componentData';
 import type { ComponentDeployment } from '../componentTypes';
 
 /**
@@ -15,7 +14,7 @@ import type { ComponentDeployment } from '../componentTypes';
  * graph draws as it always did.
  */
 
-/** The Owner the left nav shows for a Component with no Owner label. */
+/** The Owner the left nav shows for a Component with no owner (`componentOwner.ts`). */
 export const UNASSIGNED_OWNER = 'Unassigned';
 
 // ── Geometry (model px) ────────────────────────────────────────────────────
@@ -164,11 +163,16 @@ export function placeFrames(
   return { frames, offsets, width, height: Math.max(0, y - FRAME_GAP) };
 }
 
-/** The Deployments of a graph, with the Component each Space belongs to. */
+/**
+ * The Deployments of a graph, with the Component each Space belongs to.
+ * `ownerByComponentId` holds each Component's owner (`componentOwner.ts`),
+ * read from all of its Spaces, not only the ones this graph draws.
+ */
 export function withComponents(
   deployments: readonly ComponentDeployment[],
   spaces: readonly ExtendedSpaceRead[],
   slugById: ReadonlyMap<string, string>,
+  ownerByComponentId: ReadonlyMap<string, string>,
 ): ComponentDeployment[] {
   const bySpace = new Map<string, { id: string; name: string; owner: string }>();
   for (const s of spaces) {
@@ -179,7 +183,7 @@ export function withComponents(
     bySpace.set(spaceId, {
       id,
       name,
-      owner: s.Space?.Labels?.[LABEL_OWNER]?.trim() || UNASSIGNED_OWNER,
+      owner: ownerByComponentId.get(id) || UNASSIGNED_OWNER,
     });
   }
   return deployments.map((d) => {

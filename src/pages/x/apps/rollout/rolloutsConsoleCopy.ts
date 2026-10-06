@@ -79,13 +79,16 @@ export const rolloutsConsoleCopy = {
     searchPlaceholder: `Search ${featureNamePlural}`,
     state: 'State',
     space: 'Space',
+    component: 'Component',
     allStates: 'All states',
     allSpaces: 'All Spaces',
+    allComponents: 'All Components',
     clear: 'Clear filters',
   },
 
   columns: {
     name: featureName,
+    component: 'Component',
     stages: 'Stages',
     blocker: 'Blocker',
     age: 'Age',

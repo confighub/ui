@@ -90,6 +90,8 @@ export interface RolloutConsoleData {
   stateCounts: Readonly<Record<ConsoleState, number>>;
   /** Every Space slug that appears on a row, for the Space filter. */
   spaceSlugs: readonly string[];
+  /** Every Component slug that appears on a row, for the Component filter. */
+  componentSlugs: readonly string[];
   /**
    * Space id -> the slug a reader recognises, for the Spaces a rollback names.
    *
@@ -285,6 +287,13 @@ export function useRolloutConsole(): RolloutConsoleData {
     return [...slugs].sort((a, b) => a.localeCompare(b));
   }, [rows]);
 
+  const componentSlugs: readonly string[] = useMemo(() => {
+    const slugs = new Set<string>();
+    for (const row of rows) if (row.appName !== undefined) slugs.add(row.appName);
+    if (slugs.size === 0) return NO_SLUGS;
+    return [...slugs].sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
   const spaceLabel = useMemo(() => {
     const slugBySpaceId = new Map(consoleSpaces.map((space) => [space.spaceId, space.slug]));
     return (spaceId: string) => slugBySpaceId.get(spaceId) ?? spaceId;
@@ -313,6 +322,7 @@ export function useRolloutConsole(): RolloutConsoleData {
       rows,
       stateCounts,
       spaceSlugs,
+      componentSlugs,
       spaceLabel,
       unreadable,
       // Workflow resolution counts as loading, so no row is ever shown against
@@ -327,6 +337,7 @@ export function useRolloutConsole(): RolloutConsoleData {
       rows,
       stateCounts,
       spaceSlugs,
+      componentSlugs,
       spaceLabel,
       unreadable,
       stageSpacesLoading,

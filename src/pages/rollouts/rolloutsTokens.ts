@@ -103,9 +103,13 @@ export const rolloutStatus = {
   danger: '#ad2b2b',
   /** `--bad-soft`. A held dot's own fill. */
   dangerSoft: '#fbeaea',
+  /** `--bad-line`. The border of a failure's tile, tag or chip. */
+  dangerLine: '#eec5c5',
   warn: '#8a6100',
   /** `--wait-soft`. A "differs" outcome badge's own fill. */
   warnSoft: '#fbf1dc',
+  /** `--wait-line`. The border of an override's tile or a Blocked tag, and a Reason's edge. */
+  warnLine: '#e8d5a6',
   accent: '#234ba6',
   /** `--accent-soft`. A next/promoting dot's own fill. */
   accentSoft: '#eaf0fd',

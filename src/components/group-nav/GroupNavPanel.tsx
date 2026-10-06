@@ -21,6 +21,7 @@ import { TreeItem, treeItemClasses } from '@mui/x-tree-view/TreeItem';
 import { GroupNavBreadcrumb } from './GroupNavBreadcrumb';
 import { GroupNavSkeleton } from './GroupNavSkeleton';
 import { getChipIcon } from './field-icon';
+import { EMPTY_GROUP_VALUE, compareGroupValues } from './groupOrder';
 import type { GroupableFieldCatalog } from './groupable-fields';
 import { ALL_GROUPS } from './types';
 import { formatHeaderLabel, getCellValue } from './utils';
@@ -35,8 +36,25 @@ export interface GroupNavNodeContext {
   path: string[];
   /** 0-indexed level of this node in `groupByColumns`. */
   depth: number;
-  /** True when this node is the deepest configured level (a leaf, not a group). */
+  /**
+   * True for a leaf. With {@link GroupNavPanelProps.leaf}, a leaf is one item,
+   * one level below the last group level. Without it, a leaf is a node at the
+   * deepest configured level.
+   */
   isLeaf: boolean;
+}
+
+/**
+ * Shows each item as its own node (a leaf) under the last group level, or at
+ * the root when there are no group levels. See {@link GroupNavPanelProps.leaf}.
+ */
+export interface GroupNavLeafOptions<T> {
+  /** The leaf's label and the last entry of its path. Unique per item. */
+  getId: (item: T) => string;
+  /** The leaf's count badge. Defaults to 1. */
+  getCount?: (item: T) => number;
+  /** The field whose icon the leaf shows (looked up through `iconMap`). */
+  iconField?: string;
 }
 
 /** Extra DOM/interaction props {@link GroupNavPanelProps.getItemProps} may attach to a node. */
@@ -114,11 +132,17 @@ interface GroupNavPanelProps<T> {
   isLoading?: boolean;
   /**
    * Extra DOM/interaction props for a specific node — e.g. the Components tree
-   * gives a Component LEAF a `data-testid` and the selection ring, and nothing
-   * to a group node. Keep this narrow (attribute + click override); it is not
+   * gives a Component leaf a `data-testid` of its own, and the open node the
+   * selection ring. Keep this narrow (attribute + click override); it is not
    * a general render slot.
    */
   getItemProps?: (node: GroupNavNodeContext) => GroupNavItemProps | undefined;
+  /**
+   * When set, every item is also a node of its own (a leaf) under the last
+   * group level, sorted by `getId`, and a group node's count is its number of
+   * items. When not set, the deepest group level is the bottom of the tree.
+   */
+  leaf?: GroupNavLeafOptions<T>;
   /** Rendered at the end of the tree body — e.g. a partial-load skeleton row. */
   footer?: ReactNode;
   /** Field catalog for the breadcrumb's add/change-field picker. Defaults to the Unit catalog. */
@@ -154,6 +178,8 @@ interface GroupTreeNode<T> {
   count: number;
   path: string[];
   depth: number;
+  /** True for an item's own node (see {@link GroupNavPanelProps.leaf}). */
+  isItem: boolean;
   children: GroupTreeNode<T>[];
 }
 
@@ -285,14 +311,32 @@ function buildGroupTree<T>(
   depth: number,
   parentPath: string[],
   getValue: (item: T, column: string) => string,
+  leaf?: GroupNavLeafOptions<T>,
 ): GroupTreeNode<T>[] {
-  if (depth >= groupByColumns.length) return [];
+  if (depth >= groupByColumns.length) {
+    if (!leaf) return [];
+    return items
+      .map((item) => {
+        const label = leaf.getId(item);
+        const path = [...parentPath, label];
+        return {
+          id: path.join('\0'),
+          label,
+          count: leaf.getCount ? leaf.getCount(item) : 1,
+          path,
+          depth,
+          isItem: true,
+          children: [],
+        };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
 
   const column = groupByColumns[depth];
   const buckets = new Map<string, T[]>();
 
   for (const item of items) {
-    const val = getValue(item, column) || '(empty)';
+    const val = getValue(item, column) || EMPTY_GROUP_VALUE;
     let bucket = buckets.get(val);
     if (!bucket) {
       bucket = [];
@@ -302,7 +346,7 @@ function buildGroupTree<T>(
   }
 
   return Array.from(buckets.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => compareGroupValues(a, b))
     .map(([value, bucketItems]) => {
       const path = [...parentPath, value];
       const id = path.join('\0');
@@ -312,7 +356,8 @@ function buildGroupTree<T>(
         count: bucketItems.length,
         path,
         depth,
-        children: buildGroupTree(bucketItems, groupByColumns, depth + 1, path, getValue),
+        isItem: false,
+        children: buildGroupTree(bucketItems, groupByColumns, depth + 1, path, getValue, leaf),
       };
     });
 }
@@ -350,6 +395,7 @@ function GroupNavPanelInner<T>({
   availableSpaceLabelKeyCounts,
   isLoading = false,
   getItemProps,
+  leaf,
   footer,
   catalog,
   fieldLabels,
@@ -365,8 +411,8 @@ function GroupNavPanelInner<T>({
     (defaultGetValue as unknown as (item: T, column: string) => string));
 
   const tree = useMemo(
-    () => buildGroupTree(items, groupByColumns, 0, [], resolvedGetValue),
-    [items, groupByColumns, resolvedGetValue],
+    () => buildGroupTree(items, groupByColumns, 0, [], resolvedGetValue, leaf),
+    [items, groupByColumns, resolvedGetValue, leaf],
   );
 
   const allCount = items.length;
@@ -442,8 +488,8 @@ function GroupNavPanelInner<T>({
 
   function renderTree(nodes: GroupTreeNode<T>[], isSelected: (id: string) => boolean) {
     return nodes.map((node) => {
-      const column = groupByColumns[node.depth] ?? '';
-      const isLeaf = node.depth === groupByColumns.length - 1;
+      const column = node.isItem ? (leaf?.iconField ?? '') : (groupByColumns[node.depth] ?? '');
+      const isLeaf = leaf ? node.isItem : node.depth === groupByColumns.length - 1;
       const extraProps = getItemProps?.({ path: node.path, depth: node.depth, isLeaf });
       return (
         <SelectableTreeItem

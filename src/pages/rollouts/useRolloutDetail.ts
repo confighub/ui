@@ -55,6 +55,10 @@ import {
   useGetChangeOrderQuery,
   useListAllChangeOrdersQuery,
   useListSpacesQuery,
+  type ChangeOrderPromotion,
+  type ChangeOrderPromotionFailure,
+  type ChangeOrderPromotionOverride,
+  type ChangeOrderRelease,
   type ComponentRead,
   type ExtendedSpaceRead,
 } from '@confighub/rtk-query';
@@ -144,6 +148,13 @@ export interface RolloutDetail {
    */
   skippedUnits: Record<string, string>;
 
+  /** The ChangeOrder's own records of who promoted, forced and failed, for the History card. */
+  promotions: ChangeOrderPromotion[];
+  promotionOverrides: ChangeOrderPromotionOverride[];
+  promotionFailures: ChangeOrderPromotionFailure[];
+  /** `ChangeOrder.Releases`: one Release for each Space that carries the change. No publisher or time. */
+  changeOrderReleases: ChangeOrderRelease[];
+
   sequence: RolloutSequence;
   progress: RolloutProgress;
   stageStates: RolloutStageState[];
@@ -182,6 +193,10 @@ export interface RolloutDetail {
 }
 
 const EMPTY_SEQUENCE: RolloutSequence = { stages: [], problems: [] };
+const EMPTY_PROMOTIONS: ChangeOrderPromotion[] = [];
+const EMPTY_OVERRIDES: ChangeOrderPromotionOverride[] = [];
+const EMPTY_FAILURES: ChangeOrderPromotionFailure[] = [];
+const EMPTY_RELEASES: ChangeOrderRelease[] = [];
 
 /**
  * Which Spaces count for this rollout, or `null` when that cannot be known.
@@ -418,6 +433,10 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
         slug: slug ?? '',
         abortedReason: '',
         skippedUnits: {},
+        promotions: EMPTY_PROMOTIONS,
+        promotionOverrides: EMPTY_OVERRIDES,
+        promotionFailures: EMPTY_FAILURES,
+        changeOrderReleases: EMPTY_RELEASES,
         sequence: EMPTY_SEQUENCE,
         progress: deriveProgress({
           changeOrderSpaceId: undefined,
@@ -554,6 +573,10 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
       startTagId: order.StartTagID,
       endTagId: order.EndTagID,
       skippedUnits: order.SkippedUnits ?? {},
+      promotions: order.Promotions ?? EMPTY_PROMOTIONS,
+      promotionOverrides: order.PromotionOverrides ?? EMPTY_OVERRIDES,
+      promotionFailures: order.PromotionFailures ?? EMPTY_FAILURES,
+      changeOrderReleases: order.Releases ?? EMPTY_RELEASES,
       sequence,
       progress,
       stageStates,

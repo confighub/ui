@@ -56,6 +56,7 @@
  */
 
 import { memo, useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
@@ -67,6 +68,7 @@ import type { SxProps, Theme } from '@mui/material/styles';
 import RefreshIcon from '@mui/icons-material/Cached';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 
+import { ROUTE_COMPONENTS } from '../x/apps/appTypes';
 import { componentTheme } from '../x/apps/componentTheme';
 import { EndRolloutDialog } from '../x/apps/rollout/EndRolloutDialog';
 import { RolloutStageStrip } from '../x/apps/rollout/RolloutStageStrip';
@@ -178,9 +180,10 @@ const T = {
 
 /**
  * The row grid, shared by the column head and every row so the two cannot drift
- * apart. This is the reference's own template, verbatim
- * (`7-typographic.html`, `.grid`), and it is a member of the contract's closed
- * `grid-columns-vocabulary`, so it is not a value to round off.
+ * apart. This is the reference's own template (`7-typographic.html`, `.grid`)
+ * with one track added: the Component, second, which the reference does not
+ * have. The reference's own tracks are members of the contract's closed
+ * `grid-columns-vocabulary`, so they are not values to round off.
  *
  * ⚠️ NO BARE `auto` OR CONTENT-SIZED TRACK. Each row is its OWN grid — they
  * share this string, not a grid container — so a track sized from content
@@ -197,9 +200,9 @@ const GRID = {
   padding: '0 14px',
   display: 'grid',
   alignItems: 'center',
-  gridTemplateColumns: 'minmax(190px, 1.5fr) 198px minmax(190px, 1.4fr) 56px 186px',
+  gridTemplateColumns: 'minmax(190px, 1.5fr) minmax(120px, .8fr) 198px minmax(190px, 1.4fr) 56px 186px',
   '@media (max-width: 1150px)': {
-    gridTemplateColumns: 'minmax(170px, 1.4fr) 180px minmax(180px, 1.3fr) 168px',
+    gridTemplateColumns: 'minmax(170px, 1.4fr) minmax(80px, .7fr) 180px minmax(180px, 1.3fr) 168px',
   },
   '@media (max-width: 860px)': {
     gridTemplateColumns: 'minmax(150px, 1.4fr) 170px minmax(160px, 1.3fr)',
@@ -209,6 +212,7 @@ const GRID = {
 /** Hidden at the same widths the grid stops reserving a track for them. */
 const HIDE_AGE = { '@media (max-width: 1150px)': { display: 'none' } } as const;
 const HIDE_ACTION = { '@media (max-width: 860px)': { display: 'none' } } as const;
+const HIDE_COMPONENT = HIDE_ACTION;
 
 /**
  * The reference's radii, by name. `componentTheme.radiusSm` is 5px and
@@ -648,6 +652,38 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
         </Typography>
       </Box>
 
+      <Box data-testid="rollout-component" sx={{ ...HIDE_COMPONENT, minWidth: 0 }}>
+        {row.appName === undefined ? (
+          <Typography component="span" sx={{ fontSize: 12.5, lineHeight: T.lh, color: T.ink3 }}>
+            —
+          </Typography>
+        ) : (
+          <Typography
+            component={RouterLink}
+            to={`${ROUTE_COMPONENTS}?app=${encodeURIComponent(row.appName)}`}
+            title={row.appName}
+            // The row navigates on click; this link goes somewhere else.
+            onClick={(event: React.MouseEvent) => event.stopPropagation()}
+            sx={{
+              display: 'block',
+              fontFamily: T.mono,
+              fontSize: 12.5,
+              lineHeight: T.lh,
+              color: T.ink2,
+              textDecoration: 'underline',
+              textDecorationColor: T.lineStrong,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              '&:hover': { color: T.accentInk, textDecorationColor: T.accentInk },
+              '&:focus-visible': { outline: `2px solid ${T.accent}`, outlineOffset: 1, borderRadius: R_MICRO },
+            }}
+          >
+            {row.appName}
+          </Typography>
+        )}
+      </Box>
+
       <Stack
         sx={{
           minWidth: 0,
@@ -920,7 +956,19 @@ const SELECT_SX: SxProps<Theme> = {
 };
 
 /**
- * Search, Space, Clear — the console's own filter bar.
+ * A native `<select>` sizes itself to its widest option, which leaves the
+ * label pressed against the arrow. A floor gives both filters the same width
+ * and room around their text; the filter bar wraps rather than shrinking them.
+ */
+const FILTER_SELECT_SX: SxProps<Theme> = {
+  ...SELECT_SX,
+  minWidth: 180,
+  flexShrink: 0,
+  padding: '0 10px',
+};
+
+/**
+ * Search, Space, Component, Clear — the console's own filter bar.
  *
  * ⚠️ NO SOURCE CONTROL, AND THAT IS A DECISION ALREADY MADE, NOT A GAP. The
  * reference renders a Source select (GitHub release / CI pipeline) beside a
@@ -936,12 +984,11 @@ const SELECT_SX: SxProps<Theme> = {
  * A second control driving the same value is not a second way to filter, it
  * is two places a reader has to check to find out what is currently applied.
  *
- * ⚠️ "SPACE", NOT THE REFERENCE'S "COMPONENT". A rollout scopes to Spaces, not
- * to the reference's fixture-only `checkout-api` style groupings, and
- * `rolloutsConsoleCopy.filters.space` already settled this translation —
- * consistent with "ChangeOrder" becoming "Rollout" elsewhere in this file.
- * `spaceSlugs` is data the hook already computed for exactly this control; no
- * second derivation is added here.
+ * A rollout scopes to Spaces, so the Space control filters by the Space the
+ * rollout lives in. The Component control filters by that Space's Component —
+ * a real entity, not the reference's fixture-only `checkout-api` groupings — and
+ * a rollout whose Space has no Component matches no Component. `spaceSlugs` and
+ * `componentSlugs` are computed by the hook; no second derivation is added here.
  */
 function FilterBar({
   search,
@@ -949,6 +996,9 @@ function FilterBar({
   spaceFilter,
   onSpaceFilter,
   spaceSlugs,
+  componentFilter,
+  onComponentFilter,
+  componentSlugs,
   onClear,
   clearDisabled,
 }: {
@@ -957,10 +1007,14 @@ function FilterBar({
   spaceFilter: 'all' | string;
   onSpaceFilter: (v: 'all' | string) => void;
   spaceSlugs: readonly string[];
+  componentFilter: 'all' | string;
+  onComponentFilter: (v: 'all' | string) => void;
+  componentSlugs: readonly string[];
   onClear: () => void;
   clearDisabled: boolean;
 }) {
   const spaceId = useId();
+  const componentId = useId();
   return (
     <Stack
       direction="row"
@@ -997,10 +1051,28 @@ function FilterBar({
           id={spaceId}
           value={spaceFilter}
           onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onSpaceFilter(e.target.value)}
-          sx={SELECT_SX}
+          sx={FILTER_SELECT_SX}
         >
           <option value="all">{rolloutsConsoleCopy.filters.allSpaces}</option>
           {spaceSlugs.map((slug) => (
+            <option key={slug} value={slug}>
+              {slug}
+            </option>
+          ))}
+        </Box>
+      </Stack>
+
+      <Stack direction="row" alignItems="center" sx={{ gap: '6px' }}>
+        <FieldLabel htmlFor={componentId}>{rolloutsConsoleCopy.filters.component}</FieldLabel>
+        <Box
+          component="select"
+          id={componentId}
+          value={componentFilter}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onComponentFilter(e.target.value)}
+          sx={FILTER_SELECT_SX}
+        >
+          <option value="all">{rolloutsConsoleCopy.filters.allComponents}</option>
+          {componentSlugs.map((slug) => (
             <option key={slug} value={slug}>
               {slug}
             </option>
@@ -1078,6 +1150,7 @@ function Legend() {
  */
 const COLUMNS = [
   { key: 'name', label: rolloutsConsoleCopy.columns.name, sx: {} },
+  { key: 'component', label: rolloutsConsoleCopy.columns.component, sx: HIDE_COMPONENT },
   { key: 'stages', label: rolloutsConsoleCopy.columns.stages, sx: {} },
   { key: 'blocker', label: rolloutsConsoleCopy.columns.blocker, sx: {} },
   { key: 'age', label: rolloutsConsoleCopy.columns.age, sx: { ...HIDE_AGE, textAlign: 'right' } },
@@ -1155,23 +1228,26 @@ export function RolloutsConsoleView({
    */
   onEndRequest?: (intent: RolloutEndIntent, row: ConsoleRow) => void;
 }) {
-  const { rows, spaceSlugs, stateCounts, isLoading, isFetching, error, lastLoadedAt, refetch, unreadable } = data;
+  const { rows, spaceSlugs, componentSlugs, stateCounts, isLoading, isFetching, error, lastLoadedAt, refetch, unreadable } = data;
   // One org-wide list, shared with every other console reading the same names.
   const workflowNames = useChangeWorkflowNames();
 
   /*
-   * The filter bar's three controls. `'all'` is the sentinel for "no filter",
+   * The filter bar's controls, and the KPI strip's State filter. `'all'` is the sentinel for "no filter",
    * matching the option every select renders first — never the empty string,
    * which would collide with a Space slug or a search box cleared to nothing.
    */
   const [search, setSearch] = useState('');
   const [stateFilter, setStateFilter] = useState<'all' | ConsoleState>('all');
   const [spaceFilter, setSpaceFilter] = useState<'all' | string>('all');
-  const filtersActive = search !== '' || stateFilter !== 'all' || spaceFilter !== 'all';
+  const [componentFilter, setComponentFilter] = useState<'all' | string>('all');
+  const filtersActive =
+    search !== '' || stateFilter !== 'all' || spaceFilter !== 'all' || componentFilter !== 'all';
   const clearFilters = useCallback(() => {
     setSearch('');
     setStateFilter('all');
     setSpaceFilter('all');
+    setComponentFilter('all');
   }, []);
 
   /*
@@ -1231,10 +1307,11 @@ export function RolloutsConsoleView({
     return rows.filter((row) => {
       if (stateFilter !== 'all' && row.state !== stateFilter) return false;
       if (spaceFilter !== 'all' && row.spaceSlug !== spaceFilter) return false;
+      if (componentFilter !== 'all' && row.appName !== componentFilter) return false;
       if (needle === '') return true;
-      return `${row.slug} ${row.spaceSlug ?? ''}`.toLowerCase().includes(needle);
+      return `${row.slug} ${row.spaceSlug ?? ''} ${row.appName ?? ''}`.toLowerCase().includes(needle);
     });
-  }, [rows, search, stateFilter, spaceFilter]);
+  }, [rows, search, stateFilter, spaceFilter, componentFilter]);
 
   const headingId = 'rollouts-console-heading';
   const freshness = freshnessFrom(lastLoadedAt, now);
@@ -1386,6 +1463,9 @@ export function RolloutsConsoleView({
         spaceFilter={spaceFilter}
         onSpaceFilter={setSpaceFilter}
         spaceSlugs={spaceSlugs}
+        componentFilter={componentFilter}
+        onComponentFilter={setComponentFilter}
+        componentSlugs={componentSlugs}
         onClear={clearFilters}
         clearDisabled={!filtersActive}
       />

@@ -171,7 +171,6 @@ export interface OciUploadParams {
   componentSlug: string;
   /** The default Space slug, used unless the form overrides it. */
   baseSlug: string;
-  owner: string;
   /** Space labels. The reserved `Variant` key is always set, and always wins. */
   labels?: Record<string, string>;
   /** Labels the server sets on every Unit the upload writes. */
@@ -193,7 +192,6 @@ export function buildOciUploadRequest({
   form,
   componentSlug,
   baseSlug,
-  owner,
   labels,
   unitLabels,
   unitAnnotations,
@@ -226,7 +224,6 @@ export function buildOciUploadRequest({
     ],
     SpaceLabels: {
       ...(labels ?? {}),
-      ...(owner ? { Owner: owner } : {}),
       // Reserved, so it is set last and wins over a label of the same name. The
       // Component view reads it to name the card, and the server needs it to
       // match a dependency to the same variant of another component.

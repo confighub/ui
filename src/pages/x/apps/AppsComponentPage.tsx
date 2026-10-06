@@ -6,6 +6,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Header } from '@/components/header/Header';
 import { QueryErrorState } from '@/components/query-error-state/QueryErrorState';
 import { useQueryBuilder } from '@/components/query-builder';
+import { useComponentSlugs } from '@/hooks/useComponentSlugs';
 import { useListAllTargetsQuery } from '@confighub/rtk-query';
 import RefreshIcon from '@mui/icons-material/Cached';
 import Box from '@mui/material/Box';
@@ -15,7 +16,7 @@ import Tooltip from '@mui/material/Tooltip';
 
 import { AppsComponentLayout } from './AppsComponentLayout';
 import { AppsComponentPageSkeleton } from './AppsComponentPageSkeleton';
-import { LABEL_OWNER } from './componentData';
+import { buildOwnerByComponentId } from './componentOwner';
 import {
   COMPONENT_DEFAULT_LEVELS,
   COMPONENTS_VIEW_KIND,
@@ -90,17 +91,25 @@ export const AppsComponentPage = memo(() => {
     [spaces],
   );
 
-  // Distinct non-empty Owner labels among component (deployment) spaces —
-  // mirrors the population AppNavigationTree groups by.
-  const owners = useMemo(() => {
-    const set = new Set<string>();
-    for (const s of spaces) {
-      if (!s.Space?.ComponentID) continue;
-      const owner = s.Space?.Labels?.[LABEL_OWNER]?.trim();
-      if (owner) set.add(owner);
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [spaces]);
+  // The owner of each Component by its Slug ("" when it has none), and the
+  // distinct owners for the create dialog to offer.
+  const { componentById, refetch: refetchComponents } = useComponentSlugs();
+  const ownerByComponentSlug = useMemo(() => {
+    const ownerById = buildOwnerByComponentId(
+      componentById,
+      spaces.flatMap((s) => (s.Space ? [s.Space] : [])),
+    );
+    const bySlug = new Map<string, string>();
+    for (const [id, component] of componentById) bySlug.set(component.Slug, ownerById.get(id) ?? '');
+    return bySlug;
+  }, [componentById, spaces]);
+  const owners = useMemo(
+    () =>
+      Array.from(new Set([...ownerByComponentSlug.values()].filter(Boolean))).sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [ownerByComponentSlug],
+  );
 
   const existingSpaceSlugs = useMemo(
     () => spaces.map((s) => s.Space?.Slug).filter((slug): slug is string => !!slug),
@@ -149,12 +158,15 @@ export const AppsComponentPage = memo(() => {
   const targets = useMemo(() => targetsData ?? [], [targetsData]);
 
   // Same scope as the other list pages' refresh button: the queries this
-  // page itself owns (spaces, targets), not the graph's own unit/dry-run
-  // data further down — that already has its own background polling.
+  // page itself owns (Components, Spaces, Targets), not the graph's own
+  // unit/dry-run data further down — that already has its own background
+  // polling. The Component list does not poll, so this is how a Component
+  // made elsewhere (for example with `cub`) appears in the tree.
   const handleRefresh = useCallback(() => {
+    refetchComponents();
     retrySpaces();
     refetchTargets();
-  }, [retrySpaces, refetchTargets]);
+  }, [refetchComponents, retrySpaces, refetchTargets]);
 
   // Paint as soon as ANY space list resolves. Targets and the summary counts
   // backfill into their own consumers without re-gating the whole page.
@@ -254,6 +266,7 @@ export const AppsComponentPage = memo(() => {
           });
         }}
         owners={owners}
+        ownerByComponentSlug={ownerByComponentSlug}
         existingSpaceSlugs={existingSpaceSlugs}
       />
     </Container>

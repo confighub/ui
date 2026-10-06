@@ -14,6 +14,8 @@ import { styled } from '@mui/material/styles';
 import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
 import { TreeItem, treeItemClasses } from '@mui/x-tree-view/TreeItem';
 
+import { EMPTY_GROUP_VALUE, compareGroupValues } from '@/components/group-nav/groupOrder';
+
 import { ResourceRow } from '../../hooks/useResourceRows';
 import { ALL_GROUPS, ResourceColumn } from '../../types';
 import { getCellValue } from '../../utils';
@@ -115,7 +117,7 @@ function buildGroupTree(
   const buckets = new Map<string, ResourceRow[]>();
 
   for (const row of rows) {
-    const val = getCellValue(row, col) || '(empty)';
+    const val = getCellValue(row, col) || EMPTY_GROUP_VALUE;
     let bucket = buckets.get(val);
     if (!bucket) {
       bucket = [];
@@ -125,7 +127,7 @@ function buildGroupTree(
   }
 
   return Array.from(buckets.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => compareGroupValues(a, b))
     .map(([value, bucketRows]) => {
       const path = [...parentPath, value];
       return {
