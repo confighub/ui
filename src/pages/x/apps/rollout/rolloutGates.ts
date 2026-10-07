@@ -4,30 +4,26 @@
 /**
  * Gates governing entry to a rollout stage.
  *
- * THERE IS NO GATE ENTITY IN THE BACKEND. No `Gate` model, no approver list on a
- * ChangeOrder, no gate endpoint. ("Gate" in the backend means `DeleteGates`, a
- * delete-block map, or `ValidationErrors`, which block *apply*.) Nothing server-side
- * enforces stage ordering either — a grep for `PreviousStage` in `internal/`
- * returns nothing.
+ * The server enforces them. `POST /promote` evaluates every gate of the stage
+ * being entered over every Space of the stage ahead of it
+ * (`evaluatePrerequisites`, internal/views/promote_gates.go), refuses with 409
+ * when one does not hold, and reports every verdict, per Space and per
+ * prerequisite, on a dry run as well as on a refusal. `cub variant promote`
+ * prints the same messages, and rolloutCopy.ts reuses their wording.
  *
- * The ordering IS specified, though, in exactly one place: the `cub` CLI, in
- * `validateStageEntryGates` (public/cmd/cub/variant_promote.go), which folds
- * in the release check formerly split out as `validateReleasedChangeOrder`.
- * This module is a faithful port of that function, and rolloutCopy.ts reuses
- * its wording verbatim.
- *
- * That fidelity is the point. A user refused by this UI and then refused by
- * `cub variant promote` must be told the same thing about the same refusal. If
- * you change a check here, change it there — and if the two ever disagree, the
- * CLI is right and this file is wrong.
+ * This module evaluates the gates it can from data the page already holds, so
+ * that a list of rollouts can say which are ready without asking the server
+ * about each one. The gates it cannot evaluate are reported as not evaluated,
+ * and a page showing one ChangeOrder fills them in from the server's dry run
+ * (`applyServerGates`). Where the two disagree, the server is right and this
+ * file is wrong.
  *
  * ── A SPACE WITH NO RELEASE TARGET IS UNKNOWN, NOT EXEMPT ──────────────────
  *
  * `cub` refuses a `Healthy` promote outright when a previous-stage Space
  * carries no `ReleaseTargetID`: its health "cannot be determined". This module
  * says the same thing in its own vocabulary —
- * `evaluated: false`, which renders as not-checked and holds the stage — rather
- * than granting such a Space a pass it was never tested for.
+ * `evaluated: false`, which renders as not-checked — rather than granting such a Space a pass it was never tested for.
  *
  * The `Released` check is the exception: a Space with no release target can
  * never release, so it passes that check once it has taken the change.
@@ -43,46 +39,47 @@
  * the remainder is reporting a verdict about nothing, and a reader cannot tell
  * it apart from a verdict about everything.
  *
- * The cost is that a targetless base Space ahead of a stage that requires
- * `Healthy` holds that stage until the check can be made — the same refusal `cub` gives,
- * and with no more way past it here than there. Blocking on an unknown is the
- * behaviour every other unknown in this module already has.
+ * So a targetless base Space ahead of a stage that requires `Healthy` keeps that
+ * stage from reading as ready here, and the server refuses to promote into it,
+ * which is what the server's verdict says once it replaces this one.
  *
  * What we do NOT do is invent gates. The design mockup showed `approval/*` and
  * `window/change-freeze` rows; neither has any backing model, so neither is
  * rendered. The renderer supports approvers and richer statuses so a real model
  * drops in later without redesign, but the product path shows only what is true.
  *
- * ── WHAT THIS FILE EVALUATES, AND WHAT IT REFUSES TO GUESS ────────────────
+ * ── WHAT THIS FILE EVALUATES, AND WHAT IT LEAVES TO THE SERVER ───────────
  *
  * A workflow's stages gate on named prerequisites. Three of those names are
- * built in. `Released` and `Healthy` are evaluated here, against the previous
- * stage's Spaces, in `cub`'s own terms and words. `Validated` reads the
- * ValidationErrors of every Revision the change order's end Tag marks, which
- * this page does not load, so it is reported as not evaluated, the same as a
- * custom check.
+ * built in, and like every prerequisite each is a condition on every Space of
+ * the previous stage. `Released` and `Healthy` are evaluated here. `Validated`
+ * reads the ValidationErrors of every Revision the change order's end Tag marks
+ * in those Spaces, which this page does not load.
  *
- * A workflow may also declare prerequisites of its own, each a CEL expression
- * evaluated against the Space, the ChangeOrder and that Space's Release. THIS
- * APP DOES NOT EVALUATE THEM, and will not: CEL in the browser would be a
- * second implementation of the product's gating language, and two
- * implementations of a gating language disagree. So a declared check is
- * reported by name and marked `evaluated: false`, which is the true thing to
- * say about it — neither a pass nor a failure.
+ * A workflow may also declare prerequisites of its own: custom checks, each a
+ * CEL expression evaluated against the Space, the ChangeOrder and that Space's
+ * Release, and Attestation requirements, which read the Attestations recorded
+ * on the change's Revisions. THIS APP DOES NOT EVALUATE THEM: CEL in the
+ * browser would be a second implementation of the product's gating language,
+ * and the Attestations are not loaded. So `Validated` and every declared check
+ * are reported by name and marked `evaluated: false` until the server's verdict
+ * replaces them.
  *
- * That distinction is load-bearing in three places, and all three are here so
- * they cannot drift: `gatesOpen` refuses an unevaluated gate, `blockingGates`
- * counts it, and `gateStateFor` draws it as `unknown` rather than as `held`.
- * A gate nobody checked must never reach a reader as one that passed.
- *
- * `evaluatePrerequisite` is the seam a server-side evaluator would replace —
- * see its own note.
+ * That distinction is load-bearing. `gatesOpen` refuses an unevaluated gate, so
+ * a stage is never drawn ready on a check nobody made, and `gateStateFor` draws
+ * it as `unknown` rather than as `held`. But it does not stop a promotion: only
+ * a gate that was evaluated and failed does (`gatesBlockPromotion`), and the
+ * server decides the rest.
  */
 
-import type { ChangeWorkflowPrerequisite } from '@confighub/rtk-query';
+import type {
+  ChangeWorkflowAttestationPrerequisite,
+  ChangeWorkflowPrerequisite,
+  PromoteGateResult,
+} from '@confighub/rtk-query';
 
 import { BUILT_IN_PREREQUISITES, classifyPrerequisite } from './changeOrderWorkflow';
-import { rolloutCopy } from './rolloutCopy';
+import { previousStageDisplayName, rolloutCopy } from './rolloutCopy';
 import type {
   RolloutGate,
   RolloutGateTally,
@@ -131,11 +128,13 @@ export interface RolloutGateContext {
   componentName: string;
   changeOrderSlug: string;
   /**
-   * The checks the governing workflow declared beyond the built-in two, so a
+   * The checks the governing workflow declared beyond the built-in ones, so a
    * name a stage gates on can be told apart from one nothing declares. Absent
    * is a workflow that declared none, which is the common case.
    */
   customPrerequisites?: readonly ChangeWorkflowPrerequisite[];
+  /** The Attestation requirements the governing workflow declared, likewise. */
+  attestationPrerequisites?: readonly ChangeWorkflowAttestationPrerequisite[];
 }
 
 /**
@@ -159,8 +158,8 @@ export interface RolloutGateContext {
  * ⚠️ WHICH STAGE IS FIRST IS READ OFF `isFirst`, NEVER OFF A NAME. The stage
  * names in a ChangeWorkflow are user data and the server accepts
  * `__rollout_source__` among them, so `previousStageId === SOURCE_STAGE_ID` let
- * a workflow author hand the stage after it an empty gate list — and this app's
- * gate is the only one a promotion passes.
+ * a workflow author hand the stage after it an empty gate list, which draws it
+ * as ready to promote whatever the server would say.
  *
  * Returns an empty list in both cases. No prerequisite means no gate, not an
  * unsatisfied one.
@@ -168,9 +167,12 @@ export interface RolloutGateContext {
  * `promoted` is mandatory whenever a previous stage is named at all — the
  * previous stage has to be there AND to have taken the change, regardless of
  * which optional checks the ChangeWorkflow declared. Everything else the stage
- * names is classified: the two built-ins are evaluated here, a check the
- * workflow declared is reported as not evaluated, and a name neither accounts
- * for is reported as unrecognised.
+ * names is classified: `Released` and `Healthy` are evaluated here, `Validated`
+ * and a check the workflow declared are reported as not evaluated, and a name
+ * nothing accounts for is reported as unrecognised.
+ *
+ * Each gate carries the prerequisite name the server reports it under, which is
+ * what `applyServerGates` matches the server's verdicts by.
  *
  * ⚠️ EVERY ONE OF THEM IS A MEMBER OF THIS ONE ARRAY. A custom prerequisite
  * routed to some separate informational list would leave a stage gating only on
@@ -188,42 +190,49 @@ export function buildGatesForStage(context: RolloutGateContext): RolloutGate[] {
   if (stage.isFirst) return [];
 
   return [
-    promotedGate(context),
-    ...stage.prerequisites.map((name) => evaluatePrerequisite(name, context)),
+    { ...promotedGate(context), prerequisite: PROMOTED_PREREQUISITE },
+    ...stage.prerequisites.map((name) => ({ ...evaluatePrerequisite(name, context), prerequisite: name })),
   ];
 }
 
 /**
- * One named prerequisite, evaluated.
+ * What the server reports the mandatory gate under: every Space of the previous
+ * stage has taken the change (`promotePrerequisitePromoted`).
+ */
+const PROMOTED_PREREQUISITE = 'Promoted';
+
+/**
+ * One named prerequisite, evaluated as far as this page can.
  *
- * ⚠️ THE SEAM. There is no server-side gate evaluation today — `cub`'s
- * `validateStageEntryGates` is the only implementation of stage gating — so
- * every verdict below is derived client-side. When an endpoint arrives it will
- * return per-Space, per-prerequisite verdicts, which is exactly this function's
- * shape: the swap replaces THIS and what feeds it, and leaves `tallyGates`,
- * `gatesOpen`, `blockingGates`, `gateStateFor` and everything that draws a gate
- * row untouched. That is why the dispatch lives here rather than being spread
- * through `buildGatesForStage` as a chain of conditions.
+ * The four answers are different things and must stay so:
  *
- * The three answers are three different things and must stay so:
- *
- *  - a BUILT-IN is evaluated here, and reports pass or fail;
- *  - a CUSTOM is a CEL expression this app cannot evaluate, and reports
- *    neither — `evaluated: false`, which is the truth about it;
- *  - an UNRECOGNISED name is a failure, because `cub` refuses the promotion
- *    outright on one and a page that ignored it would permit what the CLI
- *    refuses.
+ *  - `Released` and `Healthy` are evaluated here, and report pass or fail;
+ *  - `Validated` reads Revisions this page does not load, and reports neither;
+ *  - a declared check (a CEL expression or an Attestation requirement) cannot be
+ *    evaluated here, and reports neither — `evaluated: false`, which is the
+ *    truth about it until the server's verdict replaces it;
+ *  - an UNRECOGNISED name is a failure, because the server refuses the
+ *    promotion outright on one.
  */
 export function evaluatePrerequisite(name: string, context: RolloutGateContext): RolloutGate {
-  const classified = classifyPrerequisite(name, context.customPrerequisites);
+  const classified = classifyPrerequisite(name, context.customPrerequisites, context.attestationPrerequisites);
+  // The stage whose Spaces the check is a condition on, which is what the
+  // sentences about checks this page cannot make name.
+  const evaluatedStage = previousStageDisplayName(context.stage) ?? '';
   switch (classified.kind) {
     case 'built-in':
       if (classified.name === BUILT_IN_PREREQUISITES.released) return releasedGate(context);
       if (classified.name === BUILT_IN_PREREQUISITES.healthy) return liveStatusGate(context);
-      return validatedGate(context.stage.id);
+      return validatedGate(evaluatedStage);
     case 'custom':
       return customPrerequisiteGate(
-        context.stage.id,
+        evaluatedStage,
+        classified.name,
+        classified.description,
+      );
+    case 'attestation':
+      return attestationPrerequisiteGate(
+        evaluatedStage,
         classified.name,
         classified.description,
       );
@@ -233,39 +242,56 @@ export function evaluatePrerequisite(name: string, context: RolloutGateContext):
 }
 
 /**
- * The built-in `Validated` check, which this build does not evaluate.
+ * Whether a prerequisite is one only the server evaluates: `Validated`, or a
+ * check the workflow declared. A stage naming one is a stage whose gates a page
+ * asks the server about (`useServerStageGates`).
+ */
+export function onlyTheServerEvaluates(
+  name: string,
+  customPrerequisites: readonly ChangeWorkflowPrerequisite[] | undefined,
+  attestationPrerequisites: readonly ChangeWorkflowAttestationPrerequisite[] | undefined,
+): boolean {
+  const classified = classifyPrerequisite(name, customPrerequisites, attestationPrerequisites);
+  switch (classified.kind) {
+    case 'built-in':
+      return classified.name === BUILT_IN_PREREQUISITES.validated;
+    case 'custom':
+    case 'attestation':
+      return true;
+    case 'unrecognised':
+      return false;
+  }
+}
+
+/**
+ * The built-in `Validated` check, which this page does not evaluate.
  *
  * The server answers it from the ValidationErrors on each Revision the change
  * order's end Tag marks in the previous stage. Reading those here would mean
  * listing Revisions for every Space of that stage, so the gate is reported as
- * not evaluated: `gatesOpen` refuses it, as it does a custom check.
+ * not evaluated until the server's verdict replaces it.
  */
-function validatedGate(stageId: string): RolloutGate {
+function validatedGate(evaluatedStage: string): RolloutGate {
   return {
     id: 'validated',
     name: rolloutCopy.gateNames.validated,
     ok: false,
     evaluated: false,
-    reason: rolloutCopy.gateReasons.validated(stageId),
+    reason: rolloutCopy.gateReasons.validated(evaluatedStage),
   };
 }
 
 /**
- * A check the workflow declared, which this build cannot evaluate.
+ * A check the workflow declared, which this page cannot evaluate.
  *
  * Custom prerequisites are CEL expressions, evaluated against the Space, the
  * ChangeOrder and that Space's Release. `ui/` has no CEL evaluator and no CEL
  * dependency, and adding one would be a second implementation of the product's
- * gating language rather than a port of it. So the honest answer is that this
- * check has not been made — reported by name, with the author's own
- * description, and never as a verdict.
- *
- * `evaluated: false` is what carries that into every reader: `gatesOpen`
- * refuses it and `blockingGates` counts it, so a stage held up only by a check
- * nobody made is not clear to promote, and there is no way past that.
+ * gating language rather than a port of it. So the gate is reported by name,
+ * with the author's own description, and never as a verdict of this page's.
  */
 function customPrerequisiteGate(
-  stageId: string,
+  evaluatedStage: string,
   name: string,
   description: string | undefined,
 ): RolloutGate {
@@ -274,16 +300,37 @@ function customPrerequisiteGate(
     name: rolloutCopy.gateNames.customPrerequisite(name),
     ok: false,
     evaluated: false,
-    reason: rolloutCopy.gateReasons.customPrerequisite(stageId, name, description),
+    reason: rolloutCopy.gateReasons.customPrerequisite(evaluatedStage, name, description),
+    description,
   };
 }
 
 /**
- * A name neither a built-in nor a declared custom check accounts for.
+ * An Attestation requirement the workflow declared, which this page cannot
+ * evaluate: it counts the Attestations recorded on the change's Revisions, by
+ * whom and how recently, and none of that is loaded here.
+ */
+function attestationPrerequisiteGate(
+  evaluatedStage: string,
+  name: string,
+  description: string | undefined,
+): RolloutGate {
+  return {
+    id: `attestation-prerequisite:${name}`,
+    name: rolloutCopy.gateNames.attestationPrerequisite(name),
+    ok: false,
+    evaluated: false,
+    reason: rolloutCopy.gateReasons.attestationPrerequisite(evaluatedStage, name, description),
+    description,
+  };
+}
+
+/**
+ * A name neither a built-in nor a declared check accounts for.
  *
- * `cub` fails the promotion outright on this — "unrecognized prerequisite for
- * Stage '%s': '%s'" — so it is EVALUATED and FAILED here, not merely unknown.
- * Dropping it would make this page permit a promotion the CLI refuses.
+ * The server fails the promotion outright on this — "unrecognized prerequisite
+ * for Stage '%s': '%s'" — so it is EVALUATED and FAILED here, not merely
+ * unknown.
  */
 function unrecognisedPrerequisiteGate(stageId: string, name: string): RolloutGate {
   return {
@@ -641,6 +688,55 @@ function notEvaluated(id: string, name: string, previousStageId: string): Rollou
 }
 
 /**
+ * A stage's gates, with the server's verdicts in place of the ones this page
+ * could not reach.
+ *
+ * `serverGates` is what a dry run of promoting into the stage reported: one
+ * result per Space of the previous stage and per prerequisite. Only a gate this
+ * page left unevaluated takes the server's answer. One it evaluated stays live
+ * with the data it was evaluated from, which is refreshed more often than a dry
+ * run is.
+ *
+ * ⚠️ A PASS NEEDS EVERY SPACE. The server stops at `Promoted` for a Space the
+ * change has not reached and evaluates nothing else there, so a prerequisite
+ * with no failures can still be unanswered for some Spaces. It is satisfied
+ * only when every Space the server reported on satisfied it, and otherwise
+ * stays not evaluated. Any failure is a failure, in the server's own words,
+ * followed by the author's description of a declared check.
+ */
+export function applyServerGates(
+  gates: RolloutGate[],
+  serverGates: readonly PromoteGateResult[] | undefined,
+  stage: Pick<RolloutStage, 'previousStageId' | 'isFirst'>,
+): RolloutGate[] {
+  if (serverGates === undefined || serverGates.length === 0) return gates;
+  const reportedSpaces = new Set(serverGates.map((result) => result.SpaceID ?? ''));
+  return gates.map((gate) => {
+    if (gate.evaluated || gate.prerequisite === undefined) return gate;
+    const results = serverGates.filter((result) => result.Prerequisite === gate.prerequisite);
+    const failures = results.filter((result) => result.Satisfied !== true);
+    if (failures.length > 0) {
+      const messages = [
+        ...new Set(failures.map((result) => result.Message ?? '').filter((message) => message !== '')),
+      ];
+      if (messages.length === 0) messages.push(rolloutCopy.promoteHeld.generic);
+      if (gate.description !== undefined && gate.description !== '') messages.push(gate.description);
+      return { ...gate, ok: false, evaluated: true, reason: messages.join(' ') };
+    }
+    const satisfiedSpaces = new Set(results.map((result) => result.SpaceID ?? ''));
+    if (results.length === 0 || [...reportedSpaces].some((spaceId) => !satisfiedSpaces.has(spaceId))) {
+      return gate;
+    }
+    return {
+      ...gate,
+      ok: true,
+      evaluated: true,
+      reason: rolloutCopy.gateReasons.satisfiedOnServer(previousStageDisplayName(stage) ?? ''),
+    };
+  });
+}
+
+/**
  * Count satisfied gates.
  *
  * A gate that has not been evaluated counts as NOT satisfied — it is not a pass.
@@ -726,8 +822,10 @@ export function partitionBlockingGates(gates: readonly RolloutGate[]): BlockingG
 }
 
 /**
- * True when nothing holds the stage back. A stage with no gates is open — no
- * declared prerequisite means nothing to wait for.
+ * True when every gate was evaluated and holds. A stage with no gates is open —
+ * no declared prerequisite means nothing to wait for. A gate nobody evaluated
+ * keeps a stage from reading as ready, though it does not stop a promotion
+ * (`gatesBlockPromotion`).
  */
 export function gatesOpen(gates: RolloutGate[]): boolean {
   return gates.every((gate) => gate.evaluated && gate.ok);

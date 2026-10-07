@@ -102,6 +102,18 @@ export interface RolloutGate {
   evaluated: boolean;
   /** Plain-language reason, in the CLI's own words where one applies. */
   reason: string;
+  /**
+   * The prerequisite the server reports this gate's verdicts under: `Promoted`
+   * for the mandatory gate, otherwise the name the stage gates on. What a
+   * server verdict is matched to the gate by (`applyServerGates`).
+   */
+  prerequisite?: string;
+  /**
+   * What a check the workflow declared is for, in its author's words. Kept
+   * beside the server's verdict on it, whose message names the check but not
+   * what it wants.
+   */
+  description?: string;
   /** Named approvers, when the gate has any. */
   approvers?: RolloutApprover[];
 }

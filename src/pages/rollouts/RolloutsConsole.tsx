@@ -1679,8 +1679,8 @@ export function RolloutsConsole(props: RolloutsConsoleProps) {
    */
   const promotion = promoteRow === null ? null : promotionFor(promoteRow);
   const blocking = partitionBlockingGates(promotion?.gates ?? []);
-  const blockingCount = blocking.failed.length + blocking.notEvaluated.length;
-  const gatesBlock = gatesBlockPromotion(blockingCount);
+  const failedGateCount = blocking.failed.length;
+  const gatesBlock = gatesBlockPromotion(failedGateCount);
 
   const confirmPromote = useCallback(
     ({ release }: { release: boolean }) => {
@@ -1703,11 +1703,11 @@ export function RolloutsConsole(props: RolloutsConsoleProps) {
       // Branch on the returned result, never on message text: the hook inspects
       // every item of a bulk 200/207, which `.unwrap()` does not, and
       // `promoteAnnouncement` owns which of those results says what.
-      void run(spaceIds, { blockingGateCount: blockingCount }).then((result) => {
+      void run(spaceIds, { failedGateCount }).then((result) => {
         announce(promoteAnnouncement(stageId, result));
       });
     },
-    [promoteRow, promotion, gatesBlock, blockingCount, actions, announce],
+    [promoteRow, promotion, gatesBlock, failedGateCount, actions, announce],
   );
 
   return (

@@ -17,12 +17,12 @@ import { promoteRefusal, type PromoteRequest } from '../src/pages/x/apps/rollout
  */
 
 test('an ordinary promote of a stage nothing holds proceeds', () => {
-  expect(promoteRefusal({ blockingGateCount: 0 })).toBeNull();
+  expect(promoteRefusal({ failedGateCount: 0 })).toBeNull();
 });
 
 test('a promote of a held stage is refused, however many gates hold it', () => {
-  expect(promoteRefusal({ blockingGateCount: 1 })).toBe(rolloutCopy.promoteHeld.refused);
-  expect(promoteRefusal({ blockingGateCount: 3 })).toBe(rolloutCopy.promoteHeld.refused);
+  expect(promoteRefusal({ failedGateCount: 1 })).toBe(rolloutCopy.promoteHeld.refused);
+  expect(promoteRefusal({ failedGateCount: 3 })).toBe(rolloutCopy.promoteHeld.refused);
 });
 
 /*
@@ -33,7 +33,7 @@ test('a promote of a held stage is refused, however many gates hold it', () => {
  */
 test('nothing a caller adds to the request makes a held stage promotable', () => {
   const decorated = {
-    blockingGateCount: 1,
+    failedGateCount: 1,
     stageId: 'prod',
     reason: 'incident 4812',
     override: { stageId: 'prod', reason: 'incident 4812' },
@@ -44,5 +44,5 @@ test('nothing a caller adds to the request makes a held stage promotable', () =>
 
 /* The refusal names the hold and claims nothing was promoted, which is true. */
 test('the refusal says the stage was not promoted', () => {
-  expect(promoteRefusal({ blockingGateCount: 1 })).toContain('was not promoted');
+  expect(promoteRefusal({ failedGateCount: 1 })).toContain('was not promoted');
 });

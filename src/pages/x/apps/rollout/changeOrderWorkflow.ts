@@ -31,6 +31,7 @@
 
 import type {
   ChangeOrderRead,
+  ChangeWorkflowAttestationPrerequisite,
   ChangeWorkflowPrerequisite,
   ChangeWorkflowSpec,
   ChangeWorkflowStage,
@@ -111,10 +112,15 @@ export type PrerequisiteKind =
   | { kind: 'built-in'; name: 'Released' | 'Healthy' | 'Validated' }
   /**
    * A check the workflow declared, carrying a CEL expression. `ui/` has no CEL
-   * evaluator, so this is reported and never evaluated — never as passing, and
-   * never as failing.
+   * evaluator, so only the server's verdict on it is ever reported.
    */
   | { kind: 'custom'; name: string; description?: string }
+  /**
+   * An Attestation requirement the workflow declared. It reads the Attestations
+   * recorded on the change's Revisions, which this page does not load, so only
+   * the server's verdict on it is ever reported.
+   */
+  | { kind: 'attestation'; name: string; description?: string }
   /** Named by neither, which is a workflow this build cannot fully read. */
   | { kind: 'unrecognised'; name: string };
 
@@ -130,6 +136,7 @@ export type PrerequisiteKind =
 export function classifyPrerequisite(
   name: string,
   customPrerequisites: readonly ChangeWorkflowPrerequisite[] | undefined,
+  attestationPrerequisites?: readonly ChangeWorkflowAttestationPrerequisite[],
 ): PrerequisiteKind {
   if (
     name === BUILT_IN_PREREQUISITES.released ||
@@ -137,6 +144,12 @@ export function classifyPrerequisite(
     name === BUILT_IN_PREREQUISITES.validated
   ) {
     return { kind: 'built-in', name };
+  }
+  // Asked before the custom checks, in the server's order, so a name declared
+  // as both is what the server evaluates it as.
+  const attestation = attestationPrerequisites?.find((declared) => declared.Name === name);
+  if (attestation !== undefined) {
+    return { kind: 'attestation', name, description: attestation.Description };
   }
   const declared = customPrerequisites?.find((custom) => custom.Name === name);
   if (declared !== undefined) {

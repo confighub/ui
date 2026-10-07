@@ -41,7 +41,8 @@ import { ROUTE_COMPONENTS } from '../appTypes';
 import type { RunningRelease } from '../liveStatus';
 import { changeOrderStageMembers, stageWhereSpace, type ChangeOrderWorkflow } from './changeOrderWorkflow';
 import { rolloutCopy } from './rolloutCopy';
-import { buildGatesForStage, gatesOpen } from './rolloutGates';
+import { applyServerGates, buildGatesForStage, gatesOpen } from './rolloutGates';
+import type { ServerGatesByStage } from './useServerStageGates';
 import type { RolloutGateSpaceInput } from './rolloutGates';
 import { reportedHealthOf } from './rolloutReportedHealth';
 import { rollbackScope } from './rolloutRollback';
@@ -1288,6 +1289,13 @@ export function buildConsoleRow(
   order: ConsoleChangeOrder,
   allSpaces: ConsoleSpace[],
   stageSpacesByClause: Record<string, ExtendedSpaceRead[]>,
+  /**
+   * The server's verdicts on the stages' gates, by stage name, where a page
+   * showing this one rollout asked for them (`useServerStageGates`). The list
+   * of rollouts has none, and reads the gates it cannot evaluate as not
+   * evaluated.
+   */
+  serverGatesByStage?: ServerGatesByStage,
 ): ConsoleRow {
   const abortedReason = order.abortedReason ?? '';
 
@@ -1347,16 +1355,21 @@ export function buildConsoleRow(
       gateSpaceInput(id, bySpaceId.get(id)),
     );
 
-    const gates = buildGatesForStage({
+    const gates = applyServerGates(
+      buildGatesForStage({
+        stage,
+        previousStageSpaces,
+        progress,
+        // The gate wording names the thing being promoted. Fleet-wide there is no
+        // single component, so the rollout's own Space is the honest stand-in.
+        componentName: order.spaceSlug ?? '',
+        changeOrderSlug: order.slug,
+        customPrerequisites: workflow.CustomPrerequisites,
+        attestationPrerequisites: workflow.AttestationPrerequisites,
+      }),
+      serverGatesByStage?.[stage.id],
       stage,
-      previousStageSpaces,
-      progress,
-      // The gate wording names the thing being promoted. Fleet-wide there is no
-      // single component, so the rollout's own Space is the honest stand-in.
-      componentName: order.spaceSlug ?? '',
-      changeOrderSlug: order.slug,
-      customPrerequisites: workflow.CustomPrerequisites,
-    });
+    );
 
     return deriveStageState({ stage, gates, progress, inFlightSpaceIds: EMPTY_SET });
   });

@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: MIT
 import { test, expect } from './fixtures/test';
 import {
+  applyServerGates,
   blockingGates,
   buildGatesForStage,
   gateStateFor,
   gatesOpen,
+  onlyTheServerEvaluates,
   partitionBlockingGates,
 } from '../src/pages/x/apps/rollout/rolloutGates';
+import { gatesBlockPromotion } from '../src/pages/x/apps/rollout/rolloutFooterModel';
 import type { RolloutStage, RolloutProgress } from '../src/pages/x/apps/rollout/rolloutTypes';
 import { SOURCE_STAGE_ID, buildRolloutSequence } from '../src/pages/x/apps/rollout/rolloutStages';
 import { rolloutCopy } from '../src/pages/x/apps/rollout/rolloutCopy';
@@ -828,4 +831,162 @@ test('the stage after the first still holds on a targetless predecessor', () => 
   expect(gates.find((g) => g.id === 'check/released')?.ok).toBe(true);
   expect(gatesOpen(gates)).toBe(false);
   expect(gateStateFor(gates)).toBe('unknown');
+});
+
+// ── Checks only the server makes ────────────────────────────────────────────
+
+const ATTESTATIONS = [{ Name: 'Two approvals', Description: 'Two release managers approved it.', Count: 2 }];
+
+test('a declared Attestation requirement is a gate of its own, not an unrecognised name', () => {
+  const gates = buildGatesForStage({
+    stage: stage({ prerequisites: ['Two approvals'] }),
+    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', release: null }],
+    progress,
+    componentName: 'MyApp',
+    changeOrderSlug: 'co-1',
+    attestationPrerequisites: ATTESTATIONS,
+  });
+  expect(gates.map((g) => g.id)).toEqual(['check/promoted', 'attestation-prerequisite:Two approvals']);
+  expect(gates[1].reason).toContain('Two release managers approved it.');
+  expect(gates[1].evaluated).toBe(false);
+  expect(gates[1].prerequisite).toBe('Two approvals');
+  expect(gateStateFor(gates)).toBe('unknown');
+});
+
+test('Validated and declared checks are the server\'s to evaluate; the rest are not', () => {
+  const custom = [{ Name: 'QA sign-off', Expression: 'cel:true' }];
+  expect(onlyTheServerEvaluates('Validated', custom, ATTESTATIONS)).toBe(true);
+  expect(onlyTheServerEvaluates('QA sign-off', custom, ATTESTATIONS)).toBe(true);
+  expect(onlyTheServerEvaluates('Two approvals', custom, ATTESTATIONS)).toBe(true);
+  expect(onlyTheServerEvaluates('Released', custom, ATTESTATIONS)).toBe(false);
+  expect(onlyTheServerEvaluates('Healthy', custom, ATTESTATIONS)).toBe(false);
+  expect(onlyTheServerEvaluates('Approved', custom, ATTESTATIONS)).toBe(false);
+});
+
+/*
+ * A gate nobody could evaluate keeps a stage from reading as ready, and does not
+ * stop the promotion: the server evaluates it when asked, and refuses with 409
+ * when it does not hold. Refusing on it here made a stage gating on Validated
+ * impossible to promote from the UI.
+ */
+test('only a failed gate refuses a promote; an unevaluated one is left to the server', () => {
+  const gates = buildGatesForStage({
+    stage: stage({ prerequisites: ['Validated'] }),
+    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', release: null }],
+    progress,
+    componentName: 'MyApp',
+    changeOrderSlug: 'co-1',
+  });
+  const report = partitionBlockingGates(gates);
+  expect(report.notEvaluated.map((g) => g.id)).toEqual(['validated']);
+  expect(gatesOpen(gates)).toBe(false);
+  expect(gatesBlockPromotion(report.failed.length)).toBe(false);
+});
+
+function validatedGates(resolved: string[]) {
+  return buildGatesForStage({
+    stage: stage({ prerequisites: ['Released', 'Validated'] }),
+    previousStageSpaces: [
+      { spaceId: 'd1', loaded: true, variantName: 'dev', release: null },
+      { spaceId: 'd2', loaded: true, variantName: 'dev-2', release: null },
+    ],
+    progress: { ...progress, resolvedSpaceIds: new Set(resolved) },
+    componentName: 'MyApp',
+    changeOrderSlug: 'co-1',
+  });
+}
+
+test('the server\'s pass in every Space opens a gate this page could not evaluate', () => {
+  const gates = applyServerGates(
+    validatedGates(['d1', 'd2']),
+    [
+      { Prerequisite: 'Promoted', SpaceID: 'd1', Satisfied: true },
+      { Prerequisite: 'Released', SpaceID: 'd1', Satisfied: true },
+      { Prerequisite: 'Validated', SpaceID: 'd1', Satisfied: true },
+      { Prerequisite: 'Promoted', SpaceID: 'd2', Satisfied: true },
+      { Prerequisite: 'Released', SpaceID: 'd2', Satisfied: true },
+      { Prerequisite: 'Validated', SpaceID: 'd2', Satisfied: true },
+    ],
+    stage({}),
+  );
+  const validated = gates.find((g) => g.id === 'validated');
+  expect(validated?.evaluated).toBe(true);
+  expect(validated?.ok).toBe(true);
+  expect(validated?.reason).toBe(rolloutCopy.gateReasons.satisfiedOnServer('dev'));
+  expect(gatesOpen(gates)).toBe(true);
+});
+
+test('the server\'s failure is reported in its own words', () => {
+  const message = "unable to promote to stage 'staging', Variant 'dev-2' has ValidationErrors";
+  const gates = applyServerGates(
+    validatedGates(['d1', 'd2']),
+    [
+      { Prerequisite: 'Promoted', SpaceID: 'd1', Satisfied: true },
+      { Prerequisite: 'Validated', SpaceID: 'd1', Satisfied: true },
+      { Prerequisite: 'Promoted', SpaceID: 'd2', Satisfied: true },
+      { Prerequisite: 'Validated', SpaceID: 'd2', Satisfied: false, Message: message },
+    ],
+    stage({}),
+  );
+  const validated = gates.find((g) => g.id === 'validated');
+  expect(validated?.evaluated).toBe(true);
+  expect(validated?.ok).toBe(false);
+  expect(validated?.reason).toBe(message);
+  expect(gateStateFor(gates)).toBe('held');
+  expect(gatesBlockPromotion(partitionBlockingGates(gates).failed.length)).toBe(true);
+});
+
+/*
+ * The server evaluates nothing past `Promoted` in a Space the change has not
+ * reached, so a prerequisite with no failure there has not passed there either.
+ */
+test('a check the server made in only some Spaces is not a pass', () => {
+  const gates = applyServerGates(
+    validatedGates(['d1']),
+    [
+      { Prerequisite: 'Promoted', SpaceID: 'd1', Satisfied: true },
+      { Prerequisite: 'Validated', SpaceID: 'd1', Satisfied: true },
+      { Prerequisite: 'Promoted', SpaceID: 'd2', Satisfied: false, Message: 'not taken' },
+    ],
+    stage({}),
+  );
+  expect(gates.find((g) => g.id === 'validated')?.evaluated).toBe(false);
+});
+
+test('a gate this page evaluated keeps its own verdict', () => {
+  const before = validatedGates(['d1', 'd2']);
+  const after = applyServerGates(
+    before,
+    [
+      { Prerequisite: 'Promoted', SpaceID: 'd1', Satisfied: true },
+      { Prerequisite: 'Released', SpaceID: 'd1', Satisfied: false, Message: 'from an older read' },
+      { Prerequisite: 'Validated', SpaceID: 'd1', Satisfied: true },
+    ],
+    stage({}),
+  );
+  expect(after.find((g) => g.id === 'check/released')).toEqual(before.find((g) => g.id === 'check/released'));
+});
+
+/*
+ * A prerequisite is a condition on the stage BEFORE the one being entered, so a
+ * check this page cannot make is described as a condition on that stage, by
+ * name, and never as something the stage being entered must have.
+ */
+test('a check the server makes is worded as a condition on the previous stage', () => {
+  const gates = buildGatesForStage({
+    stage: stage({ id: 'test', previousStageId: 'dev', prerequisites: ['Validated', 'QA sign-off', 'Two approvals'] }),
+    previousStageSpaces: [{ spaceId: 'd1', loaded: true, variantName: 'dev', release: null }],
+    progress,
+    componentName: 'MyApp',
+    changeOrderSlug: 'co-1',
+    customPrerequisites: [{ Name: 'QA sign-off', Expression: 'cel:true' }],
+    attestationPrerequisites: ATTESTATIONS,
+  });
+  const reasons = gates.slice(1).map((g) => g.reason);
+  expect(reasons).toHaveLength(3);
+  for (const reason of reasons) {
+    expect(reason).toMatch(/(any|every) Space of 'dev'/i);
+    expect(reason).not.toContain("'test'");
+  }
+  expect(reasons[0]).toBe(rolloutCopy.gateReasons.validated('dev'));
 });

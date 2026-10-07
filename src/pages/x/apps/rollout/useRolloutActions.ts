@@ -111,7 +111,7 @@ function isGateReevaluation(error: unknown): boolean {
 }
 
 /** The HTTP status of a rejected request, when it carries one. */
-function statusOf(error: unknown): number | undefined {
+export function statusOf(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null) return undefined;
   const status = (error as { status?: unknown }).status;
   return typeof status === 'number' ? status : undefined;
@@ -123,7 +123,7 @@ function statusOf(error: unknown): number | undefined {
  * A 409 is not a bare status: it holds every gate the server evaluated, which
  * is the whole reason the refusal is structured rather than a sentence.
  */
-function promoteResultOf(error: unknown): PromoteResult | undefined {
+export function promoteResultOf(error: unknown): PromoteResult | undefined {
   if (typeof error !== 'object' || error === null) return undefined;
   const data = (error as { data?: unknown }).data;
   if (typeof data !== 'object' || data === null) return undefined;
@@ -357,13 +357,14 @@ export function promoteGatesHolding(result: PromoteResult | undefined): string |
 /**
  * What the caller must say about the stage it is promoting into.
  *
- * `blockingGateCount` is the stage's own count at the moment of the click —
- * `blockingGateCount(stage.gates)` — not a page-wide figure. It is required so
- * that promoting is impossible without answering "is anything holding this?",
- * which is the question the whole gate apparatus exists to ask.
+ * `failedGateCount` is the stage's own count of gates that were evaluated and
+ * failed at the moment of the click — `partitionBlockingGates(stage.gates)
+ * .failed.length` — not a page-wide figure. It is required so that promoting is
+ * impossible without answering "is anything holding this?". A gate nobody
+ * evaluated is not counted: the server evaluates it when asked.
  */
 export interface PromoteRequest {
-  blockingGateCount: number;
+  failedGateCount: number;
 }
 
 /**
@@ -376,7 +377,7 @@ export interface PromoteRequest {
  * none: there is no such argument.
  */
 export function promoteRefusal(request: PromoteRequest): string | null {
-  return gatesBlockPromotion(request.blockingGateCount) ? rolloutCopy.promoteHeld.refused : null;
+  return gatesBlockPromotion(request.failedGateCount) ? rolloutCopy.promoteHeld.refused : null;
 }
 
 /**
@@ -505,10 +506,10 @@ export interface RolloutActions {
    * `ExpectedPlan`: what was previewed is what gets written, or nothing is.
    *
    * `request` states the gate situation for the same reason `promote` does: a
-   * held stage is not previewed at all. The gates are the page's own reading,
-   * and they are what a held stage's dialog reports — so there is nothing for a
-   * dry run to add, and asking for one would put a request on the wire for a
-   * promotion that is not going to happen.
+   * stage held by a gate that failed is not previewed at all. Its gates are
+   * what its dialog reports, so there is nothing for a dry run to add. A stage
+   * whose gates are only unevaluated is previewed, and the server's verdict on
+   * them comes back with the preview.
    */
   preview: (spaceIds: string[], request: PromoteRequest) => Promise<void>;
   promotePreview: PromotePreview;

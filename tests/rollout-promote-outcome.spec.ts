@@ -8,7 +8,7 @@ import {
 } from '../src/pages/x/apps/rollout/useRolloutActions';
 import { rolloutCopy } from '../src/pages/x/apps/rollout/rolloutCopy';
 
-const READY = { blockingGateCount: 0 };
+const READY = { failedGateCount: 0 };
 
 /*
  * ⚠️ THE WIRING, NOT JUST THE PREDICATE.
@@ -42,7 +42,7 @@ test('a promote with everything it needs is allowed to proceed', () => {
  * that wrote nothing.
  */
 test('a held gate stops the promote as a failure, not as a no-op', () => {
-  const result = promotePrecheck('co-1', 'base-1', ['s1'], { blockingGateCount: 2 });
+  const result = promotePrecheck('co-1', 'base-1', ['s1'], { failedGateCount: 2 });
   expect(result?.ok).toBe(false);
   expect(result?.didNothing).toBeUndefined();
   expect(result?.message).toBe(rolloutCopy.promoteHeld.refused);

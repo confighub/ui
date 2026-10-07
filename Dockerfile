@@ -7,7 +7,9 @@
 # this app. Everywhere else `js` is the empty stage below, and the packages come from npm.
 FROM scratch AS js
 
-FROM node:22-alpine AS builder
+# The app is static files, the same for every platform, so the build runs on the
+# builder's own platform once; only the nginx stage below is per platform.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
 WORKDIR /app/ui
 COPY --from=js / /app/public/js/
 RUN if [ -f ../public/js/package.json ]; then \

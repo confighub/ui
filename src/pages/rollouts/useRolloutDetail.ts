@@ -64,7 +64,8 @@ import {
 } from '@confighub/rtk-query';
 
 import type { RunningRelease } from '../x/apps/liveStatus';
-import { buildGatesForStage } from '../x/apps/rollout/rolloutGates';
+import { applyServerGates, buildGatesForStage, onlyTheServerEvaluates } from '../x/apps/rollout/rolloutGates';
+import { useServerStageGates } from '../x/apps/rollout/useServerStageGates';
 import {
   buildConsoleRow,
   consoleSpaceLoaded,
@@ -426,6 +427,35 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
     refetchReleases();
   }, [orders, spaces, one, identity, refetchReleases]);
 
+  /*
+   * The stages whose gates include one only the server evaluates, and that it
+   * will plan a promotion into: not the first, which has no gates, and not one
+   * that selects no Space, which it refuses before evaluating anything. A
+   * completed ChangeOrder is refused outright, so nothing is asked.
+   */
+  const serverGateStageNames = useMemo(() => {
+    if (workflow === undefined || order?.Stage === 'Completed') return [];
+    return workflow.Stages.slice(1)
+      .filter(
+        (stage) =>
+          (stageSpaces[stage.Name]?.length ?? 0) > 0 &&
+          (stage.Prerequisites ?? []).some((name) =>
+            onlyTheServerEvaluates(name, workflow.CustomPrerequisites, workflow.AttestationPrerequisites),
+          ),
+      )
+      .map((stage) => stage.Name);
+  }, [workflow, stageSpaces, order?.Stage]);
+  const serverGates = useServerStageGates({
+    changeOrderId: order?.ChangeOrderID,
+    stageNames: serverGateStageNames,
+    refreshKey: JSON.stringify([
+      order?.UpdatedAt,
+      order?.ResolvedSpaceIDs,
+      order?.ReleasedSpaceIDs,
+      order?.Stage,
+    ]),
+  });
+
   return useMemo<RolloutDetail>(() => {
     if (slug === undefined || order?.ChangeOrderID === undefined) {
       return {
@@ -486,14 +516,19 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
     for (const stage of sequence.stages) {
       const previousStage = previousStageOf(sequence, stage);
       const previousStageSpaces = previousStageGateSpaces(previousStage?.spaceIds, allSpaceById);
-      gatesByStageId[stage.id] = buildGatesForStage({
+      gatesByStageId[stage.id] = applyServerGates(
+        buildGatesForStage({
+          stage,
+          previousStageSpaces,
+          progress,
+          componentName: componentName ?? '',
+          changeOrderSlug: order.Slug ?? '',
+          customPrerequisites: workflow?.CustomPrerequisites,
+          attestationPrerequisites: workflow?.AttestationPrerequisites,
+        }),
+        serverGates[stage.id],
         stage,
-        previousStageSpaces,
-        progress,
-        componentName: componentName ?? '',
-        changeOrderSlug: order.Slug ?? '',
-        customPrerequisites: workflow?.CustomPrerequisites,
-      });
+      );
     }
 
     const stageStates = sequence.stages.map((stage) =>
@@ -532,6 +567,7 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
       },
       allSpaces,
       stageSpacesByClause,
+      serverGates,
     );
     // The console row's own answer, so the list and this page name the same
     // next stage for one rollout.
@@ -609,6 +645,7 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
     stageSpacesByClause,
     allSpaces,
     allSpaceById,
+    serverGates,
     slug,
     isLoading,
     isFetching,

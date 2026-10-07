@@ -7,10 +7,12 @@
  * ONE RULE, EVERY SURFACE THAT PROMOTES. Two predicates for one rule is how two
  * surfaces come to disagree about whether a stage may be promoted.
  *
- * `blockingGates` (rolloutGates.ts) already counts a gate that has NOT BEEN
- * EVALUATED as blocking, which is deliberate: not knowing whether a check
- * passed is not the same as it having passed.
+ * Counts only the gates that were evaluated and FAILED
+ * (`partitionBlockingGates(...).failed`). A gate this page could not evaluate
+ * is the server's to decide: the promotion asks it, and it refuses with 409
+ * when the gate does not hold. Refusing here instead would make a stage that
+ * gates on a check only the server can make impossible to promote from the UI.
  */
-export function gatesBlockPromotion(blockingGateCount: number): boolean {
-  return blockingGateCount > 0;
+export function gatesBlockPromotion(failedGateCount: number): boolean {
+  return failedGateCount > 0;
 }

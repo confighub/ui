@@ -18,11 +18,13 @@ const SPACE_FILTER_FIELDS = [
 /**
  * Column vocabulary surfaced in the ColumnPicker. Aggregate counts come from
  * the server-side ExtendedSpaceRead hydration — they don't require explicit
- * `include` parameters.
+ * `include` parameters. Component is the slug of the Component the Space is a
+ * Variant of, which the query includes when a column reads it.
  */
 const ALL_SPACE_COLUMNS = [
   'Slug',
   'DisplayName',
+  'Component',
   'CreatedAt',
   'UpdatedAt',
   'OrganizationID',

@@ -239,6 +239,8 @@ export const rolloutCopy = {
      * row to the line in the workflow rather than to a generic label.
      */
     customPrerequisite: (name: string) => `check/${name}`,
+    /** Named after the Attestation requirement, as a custom check is. */
+    attestationPrerequisite: (name: string) => `check/${name}`,
   },
   gateTag: {
     satisfied: 'satisfied',
@@ -348,25 +350,37 @@ export const rolloutCopy = {
     releasedLoading: (previousStage: string) =>
       `Not evaluated. Still reading the Spaces in '${previousStage}'.`,
     /*
-     * A workflow naming a prerequisite this build does not implement. `cub`
-     * refuses the promotion outright on this, so the honest surface is an
-     * unsatisfied gate rather than silence: ignoring it would make this page
-     * permit what the CLI refuses.
+     * A stage naming a prerequisite that is neither built in nor declared by the
+     * workflow. The server refuses the promotion outright on this, so the honest
+     * surface is an unsatisfied gate rather than silence.
      */
     unrecognizedPrerequisite: (stageName: string, prerequisite: string) =>
-      `Stage '${stageName}' declares prerequisite '${prerequisite}', which this page does not implement. Promotion is refused.`,
+      `Stage '${stageName}' names prerequisite '${prerequisite}', which its ChangeWorkflow does not declare. Promotion is refused.`,
     /*
-     * A check the workflow declared, written as a CEL expression. This page has
-     * no CEL evaluator, so the true state is that the check has not been made —
-     * said plainly, and never dressed as a verdict. The author's own
-     * description is the most useful thing available about what it wants.
+     * The checks this page cannot make itself: Validated reads the
+     * ValidationErrors of the Revisions carrying the change, a custom check is a
+     * CEL expression, and an Attestation requirement reads the Attestations
+     * recorded on those Revisions. Each is a condition on every Space of the
+     * stage it is evaluated over — the stage before the one being entered, or
+     * for `Final` the last stage itself — so the sentence names that stage, never
+     * the one being entered. The server evaluates them, and a dry run of the
+     * promotion reports its verdicts, which replace these sentences. The
+     * author's own description is the most useful thing available about what a
+     * declared check wants.
      */
-    validated: (stageName: string) =>
-      `Stage '${stageName}' requires that the change has no ValidationErrors in the stage ahead. This page cannot check it; \`cub variant promote --dry-run\` does.`,
-    customPrerequisite: (stageName: string, prerequisite: string, description?: string) =>
+    validated: (evaluatedStage: string) =>
+      `The change must have no ValidationErrors in any Space of '${evaluatedStage}'. The server checks this.`,
+    customPrerequisite: (evaluatedStage: string, prerequisite: string, description?: string) =>
       description !== undefined && description !== ''
-        ? `Stage '${stageName}' gates on '${prerequisite}': ${description} This page cannot check it; \`cub variant promote\` does.`
-        : `Stage '${stageName}' gates on '${prerequisite}', a check this page cannot make. \`cub variant promote\` does.`,
+        ? `Every Space of '${evaluatedStage}' must satisfy '${prerequisite}': ${description} The server checks this.`
+        : `Every Space of '${evaluatedStage}' must satisfy '${prerequisite}'. The server checks this.`,
+    attestationPrerequisite: (evaluatedStage: string, prerequisite: string, description?: string) =>
+      description !== undefined && description !== ''
+        ? `The change must have the Attestations '${prerequisite}' requires in every Space of '${evaluatedStage}': ${description} The server checks this.`
+        : `The change must have the Attestations '${prerequisite}' requires in every Space of '${evaluatedStage}'. The server checks this.`,
+    /** A check the server made and found satisfied in every Space it asked about. */
+    satisfiedOnServer: (previousStage: string) =>
+      `Satisfied in every Space of '${previousStage}'.`,
   },
 
   /**

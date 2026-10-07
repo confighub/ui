@@ -772,7 +772,19 @@ function StageRail({
          */
         const selected = !completeSelected && state.stageId === selectedStageId;
         const isSource = state.verdict === 'source';
-        const held = !isSource && state.spaceCount > 0 && state.gates.length > 0 && !state.gatesOpen;
+        /*
+         * A stage's gates hold back only a change that has not entered it yet.
+         * Once every Space of the stage has taken the change — promoted,
+         * released, or since restored — its gates are holding nothing, whatever
+         * they read now.
+         */
+        const entered =
+          state.verdict === 'promoted' ||
+          state.verdict === 'released' ||
+          state.verdict === 'restored' ||
+          state.verdict === 'restore-released';
+        const held =
+          !isSource && !entered && state.spaceCount > 0 && state.gates.length > 0 && !state.gatesOpen;
         const dot = railDot(state, state.stageId === nextStageId, i < stagesDone);
         return (
           <Fragment key={state.stageId}>
@@ -1158,16 +1170,18 @@ export default function RolloutsPage() {
    * went unmentioned, naming something that was never the reason.
    */
   const blocking = partitionBlockingGates(gates);
-  const blockingCount = blocking.failed.length + blocking.notEvaluated.length;
+  const failedGateCount = blocking.failed.length;
   /**
-   * Whether this stage may be promoted at all.
+   * Whether this stage may be promoted at all: not when a gate was evaluated
+   * and failed. A gate nobody could evaluate here is left to the server, which
+   * the preview asks.
    *
    * The same rule the side pane's footer applies (`gatesBlockPromotion`), so
    * the two surfaces cannot come to disagree about whether a stage is clear.
    * The two differ only in what they do with the answer: the footer makes its
    * buttons inert, and this page refuses the action and says what holds it.
    */
-  const gatesBlock = gatesBlockPromotion(blockingCount);
+  const gatesBlock = gatesBlockPromotion(failedGateCount);
 
   const resolvedSpaceIds = useMemo(
     () => new Set(detail.progress.resolvedSpaceIds ?? []),
@@ -1476,7 +1490,7 @@ export default function RolloutsPage() {
       setPromoteOpen(false);
       setAnnouncement(`Promoting to ${stageId}.`);
       const run = release ? actions.promoteAndRelease : actions.promote;
-      void run(stageSpaceIds, { blockingGateCount: blockingCount }).then((r) => {
+      void run(stageSpaceIds, { failedGateCount }).then((r) => {
         // Branch on the returned result, never on message text: the hook already
         // inspects every item of a bulk 200/207, which `.unwrap()` does not.
         // `promoteAnnouncement` owns which of those results says what, so the
@@ -1484,7 +1498,7 @@ export default function RolloutsPage() {
         setAnnouncement(promoteAnnouncement(stageId, r));
       });
     },
-    [actions, selectedStage?.stageId, stageSpaceIds, gatesBlock, blockingCount],
+    [actions, selectedStage?.stageId, stageSpaceIds, gatesBlock, failedGateCount],
   );
 
   /*
@@ -1681,8 +1695,8 @@ export default function RolloutsPage() {
         canRelease={stageHasTargets}
         /*
           The SERVER's gates where a dry run reported them, and this page's own
-          reading otherwise — which is the held case, since a held stage is not
-          previewed at all. The page's reading is the richer one: it names how
+          reading otherwise — which is the held case, since a stage held by a
+          gate that failed is not previewed at all. The page's reading is the richer one: it names how
           many checks failed, how many were never made, and the principal cause.
         */
         blockedReason={
@@ -2532,11 +2546,12 @@ export default function RolloutsPage() {
                         is sent with the promotion itself, so what was previewed
                         is what gets written or nothing is.
 
-                        A held stage is not previewed: the gates below are this
-                        page's own reading, and they are what its dialog
-                        reports.
+                        A stage held by a gate that failed is not previewed: the
+                        gates below are what its dialog reports. One whose gates
+                        were only not evaluated is, and the server's verdict on
+                        them comes back with the preview.
                       */
-                      void actions.preview(stageSpaceIds, { blockingGateCount: blockingCount });
+                      void actions.preview(stageSpaceIds, { failedGateCount });
                     }}
                     data-promote-stage={selectedStage.stageId}
                     /*

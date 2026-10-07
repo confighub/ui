@@ -19,7 +19,8 @@ function splitPascal(name: string): string {
  * "HeadRevisionNum" → "Head Revision Num", "Labels.my-key" → "my-key",
  * "Values.MemLimit/none" → "Mem Limit" (the value-recording trigger's slug;
  * the attribute suffix is an implementation detail), "Space.Slug" → "Space",
- * "Unit.Slug" → "Slug", other "Entity.Field" → "Entity Field".
+ * "Component.Slug" → "Component", "Unit.Slug" → "Slug", other "Entity.Field" →
+ * "Entity Field".
  */
 function formatHeaderName(col: string): string {
   if (col.startsWith('Space.Labels.')) {
@@ -36,6 +37,7 @@ function formatHeaderName(col: string): string {
   }
   if (col === 'Space.Slug') return 'Space';
   if (col === 'Target.Slug') return 'Target';
+  if (col === 'Component.Slug') return 'Component';
   if (col === 'Unit.Slug') return 'Slug';
   const entity = col.match(/^(Unit|Space|Target)\.(.+)$/);
   if (entity) {

@@ -11,6 +11,7 @@ import {
 } from '@confighub/rtk-query';
 import { GroupNavRow, getCellValue } from '../cell-value';
 import { entityTypeOfView, getGroupByColumns, LABEL_PREFIX } from '../types';
+import { spaceQueryFields } from '../space-query';
 import { useResourceViewRows } from './useResourceViewRows';
 
 /**
@@ -18,8 +19,8 @@ import { useResourceViewRows } from './useResourceViewRows';
  * OrderBy) to the server `select` fields and `include` entities needed to
  * render it.
  *
- * See header note on the old useViewUnits hook for the design rationale; this
- * file extends the same pattern to Spaces.
+ * See header note on the old useViewUnits hook for the design rationale. The
+ * same pattern for Spaces is in `../space-query`.
  */
 type ColumnMapping = { select?: readonly string[]; include?: readonly string[] };
 
@@ -53,41 +54,6 @@ const UNIT_COLUMN_MAPPING: Record<string, ColumnMapping> = {
   UnappliedChanges: { select: ['HeadRevisionNum', 'LastReleasedRevisionNum', 'TargetID'] },
   UpgradeNeeded: { select: ['UpstreamRevisionNum'], include: ['UpstreamUnitID'] },
 };
-
-const SPACE_COLUMN_MAPPING: Record<string, ColumnMapping> = {
-  Slug: { select: ['Slug'] },
-  DisplayName: { select: ['DisplayName'] },
-  CreatedAt: { select: ['CreatedAt'] },
-  UpdatedAt: { select: ['UpdatedAt'] },
-  OrganizationID: { select: ['OrganizationID'] },
-  // Aggregate counts are computed by the server rather than selected, so these
-  // contribute no fields. They arrive only when the query asks for the rollup
-  // (see SPACE_COUNT_COLUMNS); without it every count reads back as zero.
-  TotalUnitCount: {},
-  TotalLinkCount: {},
-  TotalFilterCount: {},
-  TotalBridgeWorkerCount: {},
-  TotalChangeSetCount: {},
-  TotalTagCount: {},
-  TotalViewCount: {},
-  TotalAttributeCount: {},
-  TotalInvocationCount: {},
-  UnreleasedUnitCount: {},
-  UnlinkedUnitCount: {},
-  UpgradableUnitCount: {},
-  GatedUnitCount: {},
-};
-
-/**
- * Space columns whose value is an aggregate the server computes on request,
- * rather than a field stored on the Space. Exactly the SPACE_COLUMN_MAPPING
- * entries that contribute no select fields.
- */
-const SPACE_COUNT_COLUMNS = new Set(
-  Object.entries(SPACE_COLUMN_MAPPING)
-    .filter(([, mapping]) => !mapping.select && !mapping.include)
-    .map(([name]) => name),
-);
 
 export interface ViewDataResult {
   /** Rows used to build the GroupNavPanel tree. Always populated when ready. */
@@ -174,25 +140,11 @@ export function useViewData(
   // ── Space query (active when entityType === 'Space') ──────────────────────
   // Filter API can be applied to Spaces too: the server resolves `filter=UUID`
   // generically. We use the same path for both entity types.
-  const spaceSelectFields = new Set<string>(['SpaceID', 'Slug']);
-  for (const col of referenced) {
-    if (!col) continue;
-    if (col.startsWith(LABEL_PREFIX)) {
-      spaceSelectFields.add('Labels');
-      continue;
-    }
-    const mapping = SPACE_COLUMN_MAPPING[col];
-    mapping?.select?.forEach((f) => spaceSelectFields.add(f));
-  }
-
   const spacesResult = useListSpacesQuery(
     {
       filter: filterId,
       where: !filterId && whereClause ? whereClause : undefined,
-      select: Array.from(spaceSelectFields).sort().join(','),
-      // Only when a column shows one: the rollup counts across every entity in
-      // each space, which a view that just lists slugs has no use for.
-      summary: referenced.some((col) => col && SPACE_COUNT_COLUMNS.has(col)) || undefined,
+      ...spaceQueryFields(referenced),
     },
     { skip: entityType !== 'Space' },
   );

@@ -418,6 +418,7 @@ export function finalStageGates(input: RolloutCompletionInput): RolloutGate[] | 
     componentName,
     changeOrderSlug,
     customPrerequisites: workflow.CustomPrerequisites,
+    attestationPrerequisites: workflow.AttestationPrerequisites,
   });
 }
 

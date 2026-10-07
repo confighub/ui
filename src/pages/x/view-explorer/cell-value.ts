@@ -94,6 +94,11 @@ function getSpaceCellValue(es: ExtendedSpaceRead, column: string): string {
       return space.OrganizationID ?? '';
     case 'SpaceID':
       return space.SpaceID ?? '';
+    case 'Component':
+    case 'Component.Slug':
+      // Present when the query included the Component; a Space that is a
+      // Variant of none has no Component to name.
+      return es.Component?.Slug ?? '';
     case 'TotalUnitCount':
       return es.TotalUnitCount != null ? String(es.TotalUnitCount) : '';
     case 'TotalLinkCount':

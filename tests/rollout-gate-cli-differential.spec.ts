@@ -3,13 +3,14 @@
 //
 // ══ A DIFFERENTIAL TEST BETWEEN `cub` AND THIS APP'S GATE ══════════════════
 //
-// There is NO server-side stage gate. `validateStageEntryGates`
-// (public/cmd/cub/variant_promote.go) is the specification, and on the UI's
-// promote path this app's own gate is the only one a promotion passes. So the
-// two must decide alike: where `cub` REFUSES, the UI must BLOCK; where `cub`
-// PASSES, the UI must not withhold Promote. The one deliberate difference is
-// the SHAPE of a refusal — `cub` errors, the UI may render a gate as
-// `evaluated: false`, which also blocks — never the DECISION.
+// The server gates promotion (`evaluatePrerequisites`,
+// internal/views/promote_gates.go), and `cub variant promote` prints its
+// verdicts. This app evaluates the gates it can from the data it holds, so that
+// the list of rollouts can say which are ready, and the two must decide alike:
+// where `cub` REFUSES, the UI must not offer Promote as ready; where `cub`
+// PASSES, the UI must not withhold it. A gate this app cannot evaluate is
+// `evaluated: false` — not ready, but not refused either: the page showing one
+// rollout fills it in from the server's dry run, and a promote asks the server.
 //
 // BOTH DIRECTIONS ARE DEFECTS. A UI that passes what `cub` refuses promotes
 // unverified configuration to production. A UI that blocks what `cub` allows
@@ -57,7 +58,8 @@ import type { ChangeWorkflowSpec, ComponentRead, ExtendedSpaceRead } from '@conf
 import type { LiveStatus } from '../src/pages/x/apps/liveStatus';
 import { carryingReleases, runningRelease } from './fixtures/running-release';
 import { stageWhereSpace } from '../src/pages/x/apps/rollout/changeOrderWorkflow';
-import { gatesOpen, blockingGateCount, gateStateFor } from '../src/pages/x/apps/rollout/rolloutGates';
+import { gatesOpen, blockingGateCount, gateStateFor, partitionBlockingGates } from '../src/pages/x/apps/rollout/rolloutGates';
+import type { ServerGatesByStage } from '../src/pages/x/apps/rollout/useServerStageGates';
 import {
   actionFor,
   buildConsoleRow,
@@ -139,6 +141,8 @@ function rowFor(
   progress: { resolved: string[]; released: string[]; carrying?: string[] },
   /** `ChangeOrder.Stage` as the server recorded it. Absent is no stage recorded. */
   stage?: string,
+  /** The server's dry-run verdicts, by stage, as the page showing one rollout has them. */
+  serverGates?: ServerGatesByStage,
 ): ConsoleRow {
   const stageSpaces: Record<string, ExtendedSpaceRead[]> = {};
   workflow.Stages.forEach((stage, i) => {
@@ -161,6 +165,7 @@ function rowFor(
     },
     spaces,
     stageSpaces,
+    serverGates,
   );
 }
 
@@ -601,9 +606,10 @@ test('case 9 — an empty WhereSpace widens the previous stage to the whole scop
 
 /*
  * ══ CASE 10 — A CUSTOM CEL PREREQUISITE ════════════════════════════════════
- * `ui/` has no CEL evaluator, so a custom prerequisite is `evaluated: false` and
- * blocks. That is the deliberate divergence in SHAPE where `cub` refuses — but
- * where `cub` PASSES it is a divergence in DECISION.
+ * `ui/` has no CEL evaluator, so a custom prerequisite is `evaluated: false`
+ * until the server's verdict replaces it. Without one — the list of rollouts —
+ * the stage is not ready and not refused; with one — the page showing the
+ * rollout — the UI decides as `cub` does.
  *
  * cub, unsatisfied:  REFUSE
  *   $ cub variant promote --change-order gdx-base/co-cel --target-stage dev --dry-run
@@ -626,7 +632,7 @@ const CEL_WORKFLOW: ChangeWorkflowSpec = {
   ],
 };
 
-function celRow(signoff: string | undefined): ConsoleRow {
+function celRow(signoff: string | undefined, serverGates?: ServerGatesByStage): ConsoleRow {
   return rowFor(
     CEL_WORKFLOW,
     consoleSpaces(
@@ -644,25 +650,48 @@ function celRow(signoff: string | undefined): ConsoleRow {
     ),
     [['dev-1'], ['stg-1']],
     { resolved: [BASE, 'dev-1'], released: ['dev-1'] },
+    undefined,
+    serverGates,
   );
+}
+
+function celVerdict(satisfied: boolean): ServerGatesByStage {
+  return {
+    staging: [
+      { Prerequisite: 'Promoted', SpaceID: 'dev-1', Satisfied: true },
+      {
+        Prerequisite: 'signed-off',
+        SpaceID: 'dev-1',
+        Satisfied: satisfied,
+        Message: satisfied ? undefined : "unable to promote to stage 'staging', prerequisite 'signed-off' is not satisfied",
+      },
+    ],
+  };
 }
 
 test('case 10a — custom CEL unsatisfied: cub refuses, UI blocks', () => {
   expect(uiVerdict(celRow(undefined), 'staging').decision).toBe('BLOCK'); // AGREES
+  const ui = uiVerdict(celRow(undefined, celVerdict(false)), 'staging');
+  expect(ui.decision).toBe('BLOCK'); // AGREES, now as a verdict
+  expect(ui.gateState).toBe('held');
 });
 
 /*
- * ⚠️ DIVERGENCE — recorded, not fixed. `cub` promotes; this app cannot evaluate
- * CEL and so cannot say the gate passed. It blocks, and the override is the way
- * past it. The UI is MORE STRICT than `cub` here, by design, and that design has
- * a cost: every promotion under a CEL-gated stage demands an override, however
- * plainly satisfied the expression is.
+ * Without the server's verdict the stage is not ready — nobody made the check —
+ * but nothing refuses its promotion either: the promote asks the server. With
+ * the verdict, the UI passes what `cub` passes.
  */
-test('case 10b — DIVERGENCE: custom CEL satisfied — cub passes, UI blocks', () => {
-  const ui = uiVerdict(celRow('true'), 'staging');
-  expect(ui.decision).toBe('BLOCK'); // cub: PASS — the UI is stricter
-  expect(ui.gateState).toBe('unknown'); // not `held`: nobody made the check
-  expect(ui.reasons.join(' ')).not.toContain('satisfied');
+test('case 10b — custom CEL satisfied: cub passes, UI passes once the server has answered', () => {
+  const unanswered = celRow('true');
+  const before = uiVerdict(unanswered, 'staging');
+  expect(before.decision).toBe('BLOCK'); // not ready: unknown
+  expect(before.gateState).toBe('unknown'); // not `held`: nobody made the check
+  const stage = unanswered.stages.find((s) => s.stageId === 'staging');
+  expect(partitionBlockingGates(stage?.gates ?? []).failed).toEqual([]); // and not refused
+
+  const ui = uiVerdict(celRow('true', celVerdict(true)), 'staging');
+  expect(ui.decision).toBe('PASS'); // AGREES
+  expect(ui.gateState).toBe('open');
 });
 
 /*
