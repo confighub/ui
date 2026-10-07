@@ -7,9 +7,10 @@
  * ⚠️ THE CHANGEORDER READ IS EXPENSIVE, AND NOT IN A WAY ANY CLIENT OPTION CAN
  * FIX. `InScopeSpaceIDs`, `ResolvedSpaceIDs`, `ReleasedSpaceIDs` and `State` are
  * derived per row at read time by a Links+Units graph walk. `/change_order`
- * accepts only `where`, `filter`, `contains`, `include` and `select`
- * (`confighubapi.gen.ts:262-268`) — no `limit`, no `offset`, no `order_by` — so
- * the read is unbounded and there is no server ordering to preserve.
+ * takes `limit`, `order_by` and `continue`, but a `limit` does not bound the
+ * walk: the server reads at least 100 rows per batch and derives every one of
+ * them before applying it. The console needs every rollout to count and filter
+ * them anyway, so the read is unbounded and sorted here.
  *
  * Four consequences are baked into this file rather than left to be
  * rediscovered:
