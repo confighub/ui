@@ -44,7 +44,7 @@ test('base not matched by any real stage gets a synthetic source lane', () => {
   const seq = buildRolloutSequence(
     wf,
     { dev: [space('dev-1')], staging: [space('staging-1')] },
-    'base-1',
+    ['base-1'],
   );
   expect(seq.stages[0].id).toBe(SOURCE_STAGE_ID);
   expect(seq.stages[0].isSource).toBe(true);
@@ -66,7 +66,7 @@ test('base not matched by any real stage gets a synthetic source lane', () => {
  */
 test('a real first stage that selects the source Space keeps it, and the source lane still draws', () => {
   const wf = workflow([{ name: 'dev', whereSpace: "Labels.Stage='dev'" }]);
-  const seq = buildRolloutSequence(wf, { dev: [space('base-1'), space('dev-1')] }, 'base-1');
+  const seq = buildRolloutSequence(wf, { dev: [space('base-1'), space('dev-1')] }, ['base-1']);
   expect(seq.stages[0].isSource).toBe(true);
   expect(seq.stages[0].spaceIds).toEqual(['base-1']);
   expect(seq.stages[1].spaceIds).toEqual(['base-1', 'dev-1']);
@@ -74,7 +74,7 @@ test('a real first stage that selects the source Space keeps it, and the source 
 
 test('a stage whose whereSpace selects nothing is reported as a problem, not silently empty', () => {
   const wf = workflow([{ name: 'dev', whereSpace: "Labels.Stage='dev'" }]);
-  const seq = buildRolloutSequence(wf, { dev: [] }, 'base-1');
+  const seq = buildRolloutSequence(wf, { dev: [] }, ['base-1']);
   expect(seq.problems).toContainEqual({ kind: 'stage-selects-nothing', stageName: 'dev' });
 });
 
@@ -117,7 +117,7 @@ test('stages carry their declared prerequisites through', () => {
     { name: 'dev', whereSpace: "x" },
     { name: 'prod', whereSpace: "y", prerequisites: ['Released', 'Healthy'] },
   ]);
-  const seq = buildRolloutSequence(wf, { dev: [space('d')], prod: [space('p')] }, 'base-1');
+  const seq = buildRolloutSequence(wf, { dev: [space('d')], prod: [space('p')] }, ['base-1']);
   const prod = seq.stages.find((s) => s.id === 'prod');
   expect(prod?.prerequisites).toEqual(['Released', 'Healthy']);
 });
@@ -149,7 +149,7 @@ test('a stage with no selector takes every Space it was given', () => {
   const seq = buildRolloutSequence(
     wf,
     { everywhere: [space('base-1'), space('dev-1'), space('prod-1')] },
-    'base-1',
+    ['base-1'],
   );
   // Every in-scope Space, base included — the selector said so.
   expect(seq.stages[1].spaceIds).toEqual(['base-1', 'dev-1', 'prod-1']);
@@ -166,7 +166,7 @@ test('a stage naming the component is no problem', () => {
   const wf = workflow([
     { name: 'dev', whereSpace: "Labels.Component = 'other' AND Labels.Stage = 'dev'" },
   ]);
-  const seq = buildRolloutSequence(wf, { dev: [space('dev-1')] }, 'base-1');
+  const seq = buildRolloutSequence(wf, { dev: [space('dev-1')] }, ['base-1']);
   expect(seq.problems).toEqual([]);
   expect(seq.stages[1].spaceIds).toEqual(['dev-1']);
   expect(stageWhereSpace(wf.Stages[0])).toBe("Labels.Component = 'other' AND Labels.Stage = 'dev'");

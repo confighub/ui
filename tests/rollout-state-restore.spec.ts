@@ -33,6 +33,8 @@ interface ProgressFields {
 function progressOf(fields: ProgressFields): RolloutProgress {
   return deriveProgress({
     changeOrderSpaceId: BASE,
+    ownSpaceReached: true,
+    state: undefined,
     // The base is always a member of a genuine answer, so every fixture carries it.
     resolvedSpaceIds: [BASE, ...(fields.resolved ?? [])],
     releasedSpaceIds: fields.released,
@@ -186,6 +188,8 @@ test('absent restore fields leave every other verdict untouched', () => {
   const stage = stageOf(['prod-1']);
   const progress = deriveProgress({
     changeOrderSpaceId: BASE,
+    ownSpaceReached: true,
+    state: undefined,
     resolvedSpaceIds: [BASE, 'prod-1'],
     releasedSpaceIds: ['prod-1'],
     releases: carryingReleases(['prod-1']),

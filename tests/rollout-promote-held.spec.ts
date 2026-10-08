@@ -62,13 +62,23 @@ function isPromoteWrite(method: string, url: string): boolean {
   return method === 'PATCH' && parsed.searchParams.get('upgrade') === 'true';
 }
 
+/**
+ * The dry run the stage panel makes to show what a promotion would write — whatever its
+ * gates say, so it is no preview of a promotion the dialog would make. It alone asks for
+ * each Unit's configuration.
+ */
+function isStagePanelPreview(url: string): boolean {
+  return (new URL(url).searchParams.get('include') ?? '').split(',').includes('ConfigData');
+}
+
 /** A dry run of a promotion: the preview the dialog opens with. Writes nothing. */
 function isPromotePreview(method: string, url: string): boolean {
   const parsed = new URL(url);
   return (
     method === 'POST' &&
     parsed.pathname === '/api/promote' &&
-    parsed.searchParams.get('dry_run') === 'true'
+    parsed.searchParams.get('dry_run') === 'true' &&
+    !isStagePanelPreview(url)
   );
 }
 

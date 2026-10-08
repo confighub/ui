@@ -13,12 +13,16 @@
  * TWO SOURCES, chosen PER SPACE by whether that Space has already taken the
  * change — see `takenSpaceIds` below, and U16:
  *
- *  - NOT YET PROMOTED — a dry-run of the real promotion
- *    (`upgrade=true`, `change_order=<id>`, `dry_run=true`). The server computes
- *    the merged result and returns it without persisting, so the "incoming"
- *    value is what the promote would genuinely write, not a guess assembled in
- *    the browser. This is the same mechanism the upgrade preview in this view
- *    already uses.
+ *  - NOT YET PROMOTED — a dry run of the promotion itself (`POST /promote`
+ *    with `DryRun` and `include=ConfigData`). The server plans and runs the
+ *    promotion without persisting it and returns what each Unit would hold, so
+ *    the "incoming" value is what the Promote button would genuinely write, by
+ *    whatever means the ChangeOrder's UpdateType takes — an upgrade, a resolve
+ *    over its Links, or an invocation — and not a guess assembled in the
+ *    browser. It is FORCED past the stage's gates: a preview of a stage that is
+ *    not open yet is still a question worth answering, and a dry run records no
+ *    override. Forcing needs Edit on the ChangeOrder, so for a reader without it
+ *    the request fails and the stage reads as undetermined.
  *
  *  - ALREADY PROMOTED — the Revisions that carry the ChangeOrder in that
  *    Space. Their `Data` is what was actually written (the "after" side), so
@@ -58,14 +62,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import {
-  useBulkPatchUnitsMutation,
-  useListAllRevisionsQuery,
-  type UnitCreateOrUpdateResponseRead,
-} from '@confighub/rtk-query';
+import { useListAllRevisionsQuery, usePromoteMutation } from '@confighub/rtk-query';
 import { useRevisionDataMap } from '@/hooks/useUnitData';
 
-import { buildRolloutChangeGroups, conflictBlocks, type RolloutChangeSource } from './rolloutChanges';
+import { buildRolloutChangeGroups, readPromotionPreview, type RolloutChangeSource } from './rolloutChanges';
 import type { RolloutChangeGroup, RolloutResourceConflict, RolloutStage } from './rolloutTypes';
 
 export interface UseRolloutChangesArgs {
@@ -90,6 +90,12 @@ export interface UseRolloutChangesArgs {
 
 const EMPTY_GROUPS: ReadonlyMap<string, RolloutChangeGroup[]> = new Map();
 
+/**
+ * Recorded on nothing, since a dry run records no override, but the server requires a reason
+ * with Force.
+ */
+const PREVIEW_FORCE_REASON = 'Previewing what the promotion would write';
+
 export function useRolloutChanges(args: UseRolloutChangesArgs): ReadonlyMap<string, RolloutChangeGroup[]> {
   const { changeOrderId, stages, selectedStageId, takenSpaceIds, currentDataByUnitId, skip } = args;
 
@@ -98,7 +104,7 @@ export function useRolloutChanges(args: UseRolloutChangesArgs): ReadonlyMap<stri
     [stages, selectedStageId],
   );
 
-  const [dryRunPatch] = useBulkPatchUnitsMutation();
+  const [runPromote] = usePromoteMutation();
   const [dryRunDataByUnitId, setDryRunDataByUnitId] = useState<ReadonlyMap<string, string>>(
     () => new Map(),
   );
@@ -124,6 +130,13 @@ export function useRolloutChanges(args: UseRolloutChangesArgs): ReadonlyMap<stri
   const [answeredWithNoDataUnitIds, setAnsweredWithNoDataUnitIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  /**
+   * Units the dry run would not write — marked, skipped or left unchanged — whose
+   * configuration therefore stays what it is now.
+   */
+  const [unwrittenUnitIds, setUnwrittenUnitIds] = useState<ReadonlySet<string>>(() => new Set());
+  /** Spaces the dry run could not plan, none of whose Units has an answer. */
+  const [unplannedSpaceIds, setUnplannedSpaceIds] = useState<ReadonlySet<string>>(() => new Set());
   /** What the dry run refused, per resource. Empty until a dry run reports one. */
   const [dryRunConflictsByUnitId, setDryRunConflictsByUnitId] = useState<
     ReadonlyMap<string, readonly RolloutResourceConflict[]>
@@ -176,74 +189,62 @@ export function useRolloutChanges(args: UseRolloutChangesArgs): ReadonlyMap<stri
       .map((id) => `'${id}'`)
       .join(', ')})`;
 
-    dryRunPatch({
-      upgrade: true,
-      dryRun: true,
-      changeOrder: changeOrderId,
-      where,
-      // A dry run stores nothing, so the resolved configuration comes back on
-      // the response only when asked for — it is no longer a field of Unit
-      // itself (config Data and MutationSources moved to their own APIs).
+    runPromote({
       include: 'ConfigData',
-      // @ts-expect-error RTK Query merge-patch+json content type requires pre-stringified body
-      body: JSON.stringify({}),
+      // As the query parameter too, as the Promote dialog's own preview sends it: it is
+      // what tells a dry run from a promotion without reading the body.
+      dryRun: true,
+      promoteRequest: {
+        ChangeOrderID: changeOrderId,
+        WhereSpace: where,
+        DryRun: true,
+        Force: true,
+        ForceReason: PREVIEW_FORCE_REASON,
+      },
     })
       .unwrap()
-      .then((results: UnitCreateOrUpdateResponseRead[]) => {
-        setDryRunDataByUnitId((prev) => {
+      .then((result) => {
+        const preview = readPromotionPreview(result);
+        setDryRunDataByUnitId((prev) => new Map([...prev, ...preview.dataByUnitId]));
+        /*
+         * The refusals arrive on the SAME envelope as the configuration, keyed
+         * by the resource they belong to. Attribution needs no name matching:
+         * the response says which resource each conflict is for, so nothing here
+         * touches the row key. An empty list stays the ordinary case and must
+         * render as though this feature were not here.
+         */
+        setDryRunConflictsByUnitId((prev) => {
           const next = new Map(prev);
-          for (const result of results) {
-            const unitId = result.Unit?.UnitID;
-            const data = result.ConfigData;
-            if (unitId !== undefined && data !== undefined) next.set(unitId, data);
+          for (const space of result.Spaces ?? []) {
+            for (const unit of space.Units ?? []) {
+              if (unit.UnitID === undefined) continue;
+              const conflicts = preview.conflictsByUnitId.get(unit.UnitID);
+              if (conflicts !== undefined) next.set(unit.UnitID, conflicts);
+              else next.delete(unit.UnitID);
+            }
           }
           return next;
         });
         // The response named these and gave nothing for them. Recording that is
         // the whole point: silently skipping them threw away the one fact that
         // separates "no answer" from "no change".
-        /*
-         * The refusals arrive on the SAME envelope as the configuration, keyed
-         * by the resource they belong to, and were previously read off and
-         * dropped. Attribution needs no name matching: the response says which
-         * resource each conflict is for, so nothing here touches the row key.
-         *
-         * A DRY RUN DOES RETURN THESE. An upgrade sets `mergeRan`, and
-         * `internal/views/unit_update.go:1499-1500` assigns the conflicts to the
-         * IN-MEMORY resource before the dry-run-gated persistence call, so
-         * skipping the write cannot skip them. `UnitWriteResponder`'s own doc
-         * settles it: the resource it is handed is "the one the operation
-         * produced -- for a dry run, held only in memory".
-         *
-         * What is untested is whether a real stage produces a refusal worth
-         * showing. That is a question about the data, not about the transport,
-         * so an empty list stays the ordinary case and must render as though
-         * this feature were not here.
-         */
-        setDryRunConflictsByUnitId((prev) => {
-          const next = new Map(prev);
-          for (const result of results) {
-            const unitId = result.Unit?.UnitID;
-            if (unitId === undefined) continue;
-            const conflicts = (result.Conflicts ?? []).map((conflict) => ({
-              reason: conflict.Reason ?? '',
-              resourceName: conflict.Resource?.ResourceName,
-              path: conflict.Path,
-              details: conflict.Details,
-              blocks: conflictBlocks(conflict.Reason),
-            }));
-            if (conflicts.length > 0) next.set(unitId, conflicts);
-            else next.delete(unitId);
-          }
-          return next;
-        });
         setAnsweredWithNoDataUnitIds((prev) => {
           const next = new Set(prev);
-          for (const result of results) {
-            const unitId = result.Unit?.UnitID;
-            if (unitId === undefined) continue;
-            if (result.ConfigData === undefined) next.add(unitId);
-            else next.delete(unitId);
+          for (const unitId of preview.undeterminedUnitIds) next.add(unitId);
+          for (const unitId of [...preview.dataByUnitId.keys(), ...preview.unchangedUnitIds]) next.delete(unitId);
+          return next;
+        });
+        setUnwrittenUnitIds((prev) => {
+          const next = new Set(prev);
+          for (const unitId of preview.unchangedUnitIds) next.add(unitId);
+          for (const unitId of [...preview.dataByUnitId.keys(), ...preview.undeterminedUnitIds]) next.delete(unitId);
+          return next;
+        });
+        setUnplannedSpaceIds((prev) => {
+          const next = new Set(prev);
+          for (const spaceId of pendingKey.split(',')) {
+            if (preview.undeterminedSpaceIds.has(spaceId)) next.add(spaceId);
+            else next.delete(spaceId);
           }
           return next;
         });
@@ -264,7 +265,7 @@ export function useRolloutChanges(args: UseRolloutChangesArgs): ReadonlyMap<stri
          */
         markOutcome('failed');
       });
-  }, [skip, changeOrderId, pendingKey, dryRunPatch]);
+  }, [skip, changeOrderId, pendingKey, runPromote]);
 
   // ── Written: the Revisions that carry the ChangeOrder, for the Spaces that
   //    have actually taken it (plus the source, which always has) ───────────
@@ -438,7 +439,11 @@ export function useRolloutChanges(args: UseRolloutChangesArgs): ReadonlyMap<stri
         if (unit.spaceId !== spaceId) continue;
         const writtenValue = writtenDataByUnitId.get(unitId);
         const written = writtenValue !== undefined;
-        const afterData = writtenValue ?? dryRunDataByUnitId.get(unitId);
+        // A Unit the promotion would not write keeps what it holds now.
+        const afterData =
+          writtenValue
+          ?? dryRunDataByUnitId.get(unitId)
+          ?? (unwrittenUnitIds.has(unitId) ? unit.data : undefined);
         // A written unit's "before" is its own pre-promotion revision (see
         // priorDataByUnitId above), never `unit.data` — that's the CURRENT,
         // already-promoted value, which is what afterData is too for any
@@ -461,7 +466,7 @@ export function useRolloutChanges(args: UseRolloutChangesArgs): ReadonlyMap<stri
           cannotDetermineAfter:
             !written
             && afterData === undefined
-            && (dryRunFailed || answeredWithNoDataUnitIds.has(unitId)),
+            && (dryRunFailed || answeredWithNoDataUnitIds.has(unitId) || unplannedSpaceIds.has(spaceId)),
         });
       }
     }
@@ -479,6 +484,8 @@ export function useRolloutChanges(args: UseRolloutChangesArgs): ReadonlyMap<stri
     dryRunDataByUnitId,
     dryRunConflictsByUnitId,
     answeredWithNoDataUnitIds,
+    unwrittenUnitIds,
+    unplannedSpaceIds,
     writtenSpaceIds,
     revisionsLoading,
     carryingDataFetching,

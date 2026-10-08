@@ -69,8 +69,8 @@
  *                          is not healthy.
  *
  * All three are what the row SAYS. `taken` below is what keeps even that
- * honest: only a Space actually running THIS change is evidence, and the
- * ChangeOrder's own Space never is (`reportedSpaceInput`).
+ * honest: only a Space actually running THIS change is evidence, and a Space
+ * the promotion passes over never is (`reportedSpaceInput`).
  */
 
 import type { LiveStatus } from '../liveStatus';
@@ -97,8 +97,8 @@ export interface ReportedHealthSpaceInput {
   /**
    * Whether this Space is running the change being rolled out — `hasTakenChange`
    * over the ChangeOrder's own progress, never a guess from the stage verdict,
-   * and never true of the ChangeOrder's own Space, which no promotion judges
-   * (`reportedSpaceInput`).
+   * and never true of a Space the promotion passes over, which no promotion
+   * judges (`reportedSpaceInput`).
    *
    * ⚠️ THE ONE FACT THAT MAKES A LIVE STATUS EVIDENCE. A Space that has not
    * taken the change is running somebody else's configuration, so its live

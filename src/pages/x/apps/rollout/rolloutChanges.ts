@@ -33,6 +33,8 @@
  *     whether it goes through it.
  */
 
+import type { PromoteResult } from '@confighub/rtk-query';
+
 import { buildPaths, computeFieldDiffs } from '../entryBuilders';
 import { parseUnitData, resourceIdentitiesOf } from '../configParser';
 import type { RolloutChangeGroup, RolloutResourceConflict } from './rolloutTypes';
@@ -87,6 +89,83 @@ const APPLIED_CONFLICT_REASONS: ReadonlySet<string> = new Set(['ExclusiveCleared
  */
 export function conflictBlocks(reason: string | undefined): boolean {
   return reason === undefined || !APPLIED_CONFLICT_REASONS.has(reason);
+}
+
+/** What a promote dry run says it would do to each Unit, in the shape the stage tree reads. */
+export interface PromotionPreview {
+  /** The configuration each Unit the promotion writes would hold. */
+  dataByUnitId: Map<string, string>;
+  /** What the promotion would withhold from each Unit, where it would withhold anything. */
+  conflictsByUnitId: Map<string, RolloutResourceConflict[]>;
+  /** Units the promotion would not write: their configuration stays as it is. */
+  unchangedUnitIds: Set<string>;
+  /**
+   * Units the dry run answered for without saying what they would hold: an error, or a
+   * write that came back with no configuration.
+   */
+  undeterminedUnitIds: Set<string>;
+  /**
+   * Spaces the dry run did not plan — Blocked, because they take from another Space of the
+   * same promotion, or Failed — so none of their Units has an answer.
+   */
+  undeterminedSpaceIds: Set<string>;
+}
+
+/**
+ * The actions that write nothing to a Unit's configuration. A Mark only moves the
+ * ChangeOrder's Tags onto a Unit that already holds the change.
+ */
+const NON_WRITING_UNIT_ACTIONS: ReadonlySet<string> = new Set(['Mark', 'Unchanged', 'Skip']);
+
+/** The Space actions under which the dry run planned each of the Space's Units. */
+const PLANNED_SPACE_ACTIONS: ReadonlySet<string> = new Set(['Promote', 'Unchanged', 'Skipped']);
+
+/**
+ * Read a `POST /promote` dry run made with `include=ConfigData` into what each Unit would
+ * hold.
+ *
+ * ⚠️ A UNIT WITH NO CONFIGURATION IS ONE OF TWO THINGS. The server returns `ConfigData`
+ * only for a Unit the promotion writes, so a Unit it marks, skips or leaves unchanged has
+ * none and is unchanged. One it would write and still has none for, or reports an error
+ * for, is not: it is undetermined, and must not read as "this promotion changes nothing
+ * here".
+ */
+export function readPromotionPreview(result: PromoteResult | undefined): PromotionPreview {
+  const preview: PromotionPreview = {
+    dataByUnitId: new Map(),
+    conflictsByUnitId: new Map(),
+    unchangedUnitIds: new Set(),
+    undeterminedUnitIds: new Set(),
+    undeterminedSpaceIds: new Set(),
+  };
+  for (const space of result?.Spaces ?? []) {
+    if (space.SpaceID !== undefined && !PLANNED_SPACE_ACTIONS.has(space.Action ?? '')) {
+      preview.undeterminedSpaceIds.add(space.SpaceID);
+    }
+    for (const unit of space.Units ?? []) {
+      const unitId = unit.UnitID;
+      // A clone the dry run would make has no id yet, and no current Unit to stand beside.
+      if (unitId === undefined) continue;
+      const conflicts = (unit.Conflicts ?? []).map((conflict) => ({
+        reason: conflict.Reason ?? '',
+        resourceName: conflict.Resource?.ResourceName,
+        path: conflict.Path,
+        details: conflict.Details,
+        blocks: conflictBlocks(conflict.Reason),
+      }));
+      if (conflicts.length > 0) preview.conflictsByUnitId.set(unitId, conflicts);
+      if (unit.Error !== undefined) {
+        preview.undeterminedUnitIds.add(unitId);
+      } else if (unit.ConfigData !== undefined && unit.ConfigData !== '') {
+        preview.dataByUnitId.set(unitId, unit.ConfigData);
+      } else if (NON_WRITING_UNIT_ACTIONS.has(unit.Action ?? '')) {
+        preview.unchangedUnitIds.add(unitId);
+      } else {
+        preview.undeterminedUnitIds.add(unitId);
+      }
+    }
+  }
+  return preview;
 }
 
 /**

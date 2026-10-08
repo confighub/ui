@@ -191,6 +191,8 @@ test('the healthy gate fails for a released Space whose carrying Release was wit
 test('ChangeOrder.Releases, not ReleasedSpaceIDs, is what the progress carries', () => {
   const read = deriveProgress({
     changeOrderSpaceId: 'base',
+    ownSpaceReached: true,
+    state: undefined,
     resolvedSpaceIds: ['base', 'd1', 'd2'],
     releasedSpaceIds: ['d1', 'd2'],
     restoredSpaceIds: undefined,

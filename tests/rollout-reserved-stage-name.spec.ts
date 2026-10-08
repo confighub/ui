@@ -106,7 +106,7 @@ test('a stage named after the source row does not ungate the stage behind it', (
       [RESERVED]: [{ Space: { SpaceID: FIRST } } as ExtendedSpaceRead],
       prod: [{ Space: { SpaceID: PROD } } as ExtendedSpaceRead],
     },
-    BASE,
+    [BASE],
   );
   const prod = sequence.stages.find((s) => s.id === 'prod');
   if (prod === undefined) throw new Error('the sequence lost prod');
@@ -118,6 +118,8 @@ test('a stage named after the source row does not ungate the stage behind it', (
     ],
     progress: deriveProgress({
       changeOrderSpaceId: BASE,
+      ownSpaceReached: true,
+      state: undefined,
       resolvedSpaceIds: [BASE, FIRST],
       releasedSpaceIds: [],
       releases: carryingReleases([]),
@@ -173,13 +175,15 @@ test('the final health check of a stage named after the source row is still eval
   const sequence = buildRolloutSequence(
     ONE_COLLIDING_STAGE,
     { [RESERVED]: [{ Space: { SpaceID: PROD } } as ExtendedSpaceRead] },
-    BASE,
+    [BASE],
   );
   const gates = finalStageGates({
     workflow: ONE_COLLIDING_STAGE,
     sequence,
     progress: deriveProgress({
       changeOrderSpaceId: BASE,
+      ownSpaceReached: true,
+      state: undefined,
       resolvedSpaceIds: [BASE, PROD],
       releasedSpaceIds: [PROD],
       releases: carryingReleases([PROD]),
@@ -223,7 +227,7 @@ test('the row a stage is entered from is named by position, not by the name it h
       [RESERVED]: [{ Space: { SpaceID: FIRST } } as ExtendedSpaceRead],
       prod: [{ Space: { SpaceID: PROD } } as ExtendedSpaceRead],
     },
-    BASE,
+    [BASE],
   );
   const first = sequence.stages.find((s) => s.isFirst);
   const prod = sequence.stages.find((s) => s.id === 'prod');

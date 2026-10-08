@@ -62,7 +62,7 @@ function sequenceOf(
   for (const [stageName, ids] of Object.entries(spacesByStage)) {
     resolved[stageName] = ids.map(space);
   }
-  return buildRolloutSequence(wf, resolved, BASE);
+  return buildRolloutSequence(wf, resolved, [BASE]);
 }
 
 /**
@@ -76,6 +76,8 @@ function statesOf(
 ): RolloutStageState[] {
   const progress = deriveProgress({
     changeOrderSpaceId: BASE,
+    ownSpaceReached: true,
+    state: undefined,
     resolvedSpaceIds: [BASE, ...reported.resolved],
     releasedSpaceIds: reported.released,
     releases: carryingReleases(reported.released),
@@ -104,6 +106,8 @@ function completionInput(sequence: RolloutSequence, wf: ChangeWorkflowSpec, repo
     sequence,
     progress: deriveProgress({
       changeOrderSpaceId: BASE,
+      ownSpaceReached: true,
+      state: undefined,
       resolvedSpaceIds: [BASE, ...reported],
       releasedSpaceIds: reported,
       releases: carryingReleases(reported),

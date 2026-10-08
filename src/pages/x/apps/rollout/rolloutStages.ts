@@ -27,7 +27,7 @@ import type { RolloutSequence, RolloutSequenceProblem, RolloutStage } from './ro
  * from the stage after it. The facts this constant used to stand in for are
  * flags on `RolloutStage` now: `isSource` and `isFirst`.
  *
- * The source Space is never itself a promotion target, so it is always
+ * The source row is never itself a promotion target, so it is always
  * rendered as this separate, unnumbered row rather than folded into a real
  * stage.
  */
@@ -36,11 +36,15 @@ export const SOURCE_STAGE_ID = '__rollout_source__';
 /**
  * Build the rollout sequence.
  *
- * `sourceSpaceId` is the Space the ChangeOrder resides in. It always gets its
- * own synthetic row at the front of the sequence, since a ChangeWorkflow's
- * stages describe promotion targets, not the entry point.
+ * `sourceSpaceIds` are where the change was made, which always get their own
+ * synthetic row at the front of the sequence, since a ChangeWorkflow's stages
+ * describe promotion targets, not the entry point. For a ChangeOrder whose own
+ * Space holds the change from the start (`changeOrderOwnSpaceReached`) that is
+ * its own Space, the base. For a fan-out ChangeOrder it is the Spaces of the
+ * Units its Links take from, outside its scope (`useFanOutSource`), and the base
+ * is an ordinary target in whichever stage selects it.
  *
- * ⚠️ THE SOURCE ROW IS A SECOND VIEW OF THAT SPACE, NEVER A CLAIM ON IT. It is
+ * ⚠️ THE SOURCE ROW IS A SECOND VIEW OF THE BASE, NEVER A CLAIM ON IT. It is
  * drawn so the reader can see where the change came from; it does not take the
  * base Space out of the workflow. The server's promotion resolves a stage's
  * selector and filters by scope and nothing else, so a stage whose selector
@@ -59,7 +63,9 @@ export const SOURCE_STAGE_ID = '__rollout_source__';
 export function buildRolloutSequence(
   workflow: ChangeWorkflowSpec,
   stageSpaces: Record<string, ExtendedSpaceRead[]>,
-  sourceSpaceId: string,
+  sourceSpaceIds: readonly string[],
+  /** Whether the source is an Invocation run in each stage (`RolloutStage.runsInvocation`). */
+  runsInvocation = false,
 ): RolloutSequence {
   const problems: RolloutSequenceProblem[] = [];
   const realStages: RolloutStage[] = [];
@@ -102,11 +108,12 @@ export function buildRolloutSequence(
   const sourceStage: RolloutStage = {
     id: SOURCE_STAGE_ID,
     previousStageId: null,
-    spaceIds: [sourceSpaceId],
+    spaceIds: [...sourceSpaceIds],
     index: 0,
     isSource: true,
     isFirst: false,
     prerequisites: [],
+    ...(runsInvocation ? { runsInvocation: true } : {}),
   };
   if (realStages.length > 0) {
     realStages[0] = { ...realStages[0], previousStageId: SOURCE_STAGE_ID };
@@ -116,33 +123,57 @@ export function buildRolloutSequence(
 }
 
 /**
+ * The UpdateTypes whose change is made in Spaces outside the rollout: each
+ * in-scope Unit takes it over Links of that type into Units elsewhere, such as
+ * the registry-facts Units a TransformPaths image update reads from.
+ */
+const FAN_OUT_UPDATE_TYPES: ReadonlySet<string> = new Set(['TransformPaths', 'Upsert', 'Insert']);
+
+/**
+ * Whether the Space a ChangeOrder resides in holds the change before anything
+ * has been promoted into it — the server's `changeOrderOwnSpaceReached`.
+ *
+ * It does for UpgradeUnit and MergeUnits: the ChangeOrder was made in the Space
+ * holding the change, which is the base its variants upgrade from. It does not
+ * for Invoke, where nothing has changed anywhere until an invocation runs, nor
+ * for a fan-out ChangeOrder, whose own Space takes the change over its Links
+ * like any other Space in scope.
+ *
+ * An absent UpdateType is the server's default, UpgradeUnit.
+ */
+export function changeOrderOwnSpaceReached(updateType: string | null | undefined): boolean {
+  if (updateType === undefined || updateType === null || updateType === '') return true;
+  return updateType !== 'Invoke' && !FAN_OUT_UPDATE_TYPES.has(updateType);
+}
+
+/**
+ * The Space a promotion of this ChangeOrder passes over, or `undefined` when it
+ * passes over none: the ChangeOrder's own Space, when that Space already holds
+ * the change.
+ */
+export function promotionSkippedSpaceId(
+  changeOrderSpaceId: string | undefined,
+  updateType: string | null | undefined,
+): string | undefined {
+  return changeOrderOwnSpaceReached(updateType) ? changeOrderSpaceId : undefined;
+}
+
+/**
  * The Spaces of a stage a promotion actually WRITES INTO — its membership minus
- * the Space the ChangeOrder resides in.
+ * the Space the promotion passes over (`promotionSkippedSpaceId`).
  *
- * ⚠️ MEMBERSHIP AND THE WRITE SET ARE DIFFERENT QUESTIONS, and one commit
- * answering the first is what made this necessary. `buildRolloutSequence` no
- * longer withholds the base from a stage whose selector covers it, because
- * every entry gate to the next stage quantifies over that membership and
- * `stageSpaces` includes it. `cub`'s promotion loop then throws the base away
- * again, one line later:
+ * ⚠️ MEMBERSHIP AND THE WRITE SET ARE DIFFERENT QUESTIONS. `buildRolloutSequence`
+ * does not withhold the base from a stage whose selector covers it, because
+ * every entry gate to the next stage quantifies over that membership. The
+ * server's promotion then skips the base when it already has the change: it is
+ * where the change was made, so promoting it would ask a Space to take what it
+ * originated, and releasing it would publish a Release the promotion never
+ * asked for.
  *
- *   if variant.SpaceID == changeOrder.SpaceID && changeOrder.UpdateType != updateTypeInvoke {
- *       tprint("Skipping %s, the space the change order was created in", variant.Slug)
- *       continue
- *   }
- *                                   — public/cmd/cub/variant_promote.go
- *
- * The base already HAS the change; it is where the change was made. Promoting
- * it asks a Space to take what it originated, and releasing it publishes a
- * Release `cub` never publishes on this path — on a base with no release target
- * that reports a failure over a promotion that in fact succeeded.
- *
- * THE UI'S PROMOTE IS ALWAYS THE LINK-FOLLOWING ONE. The CLI's skip is
- * conditional on `UpdateType != Invoke` because an Invoke ChangeOrder makes its
- * change nowhere until the invocation runs. The rollout footer performs a
- * clone-then-upgrade over Links and nothing else, so the condition is settled
- * here and the skip is unconditional; an Invoke rollout would need its own
- * action before it needed this exception.
+ * When the ChangeOrder's own Space does NOT already have the change — Invoke,
+ * and the fan-out UpdateTypes — the server promotes into it like any other
+ * Space, and leaving it out here would leave it behind: the UI names the Spaces
+ * it promotes explicitly, so a Space this drops is a Space never sent.
  *
  * The count a confirmation dialog states must come from HERE and not from the
  * stage's membership, or the dialog names a number of variants the promote will
@@ -150,9 +181,9 @@ export function buildRolloutSequence(
  */
 export function promotionTargets(
   spaceIds: readonly string[],
-  changeOrderSpaceId: string | undefined,
+  skippedSpaceId: string | undefined,
 ): string[] {
-  return spaceIds.filter((spaceId) => spaceId !== changeOrderSpaceId);
+  return spaceIds.filter((spaceId) => spaceId !== skippedSpaceId);
 }
 
 /** The stages that can actually be promoted into — everything but the source. */

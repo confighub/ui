@@ -61,11 +61,19 @@ const isPromote = (url: string, method: string) =>
   new URL(url).pathname === '/api/promote' &&
   new URL(url).searchParams.get('dry_run') !== 'true';
 
+/**
+ * The dry run the stage panel makes to show what a promotion would write. It is not the
+ * dialog's preview, and it alone asks for each Unit's configuration.
+ */
+const isStagePanelPreview = (url: string) =>
+  (new URL(url).searchParams.get('include') ?? '').split(',').includes('ConfigData');
+
 /** The dry run that plans a promotion without writing it. */
 const isPromotePreview = (url: string, method: string) =>
   method === 'POST' &&
   new URL(url).pathname === '/api/promote' &&
-  new URL(url).searchParams.get('dry_run') === 'true';
+  new URL(url).searchParams.get('dry_run') === 'true' &&
+  !isStagePanelPreview(url);
 
 /**
  * The routes the client-side promotion used to write through.
@@ -854,6 +862,7 @@ test.describe('rollout mode — a promotion that writes nothing', () => {
             }),
           });
         }
+        if (!isPromote(request.url(), request.method())) return route.fallback();
         appliedBody = body as { ExpectedPlan?: string; WhereSpace?: string };
         return route.fulfill({
           status: 200,

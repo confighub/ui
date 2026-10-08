@@ -63,6 +63,11 @@ export interface RolloutStage {
   isFirst: boolean;
   /** Gate names (`'released'`, `'healthy'`) the ChangeWorkflow stage declared. Empty for the synthetic source stage. */
   prerequisites: string[];
+  /**
+   * The source row of an Invoke ChangeOrder, whose change is an Invocation run in each
+   * Space as it is promoted rather than a change already made somewhere.
+   */
+  runsInvocation?: boolean;
 }
 
 /**

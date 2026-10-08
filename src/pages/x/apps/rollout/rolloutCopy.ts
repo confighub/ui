@@ -387,14 +387,15 @@ export const rolloutCopy = {
    * Two sentences, because two different things have no gates and calling both
    * "the base" describes the wrong one.
    *
-   * The base has none because it is where the change is made — nothing gates
-   * entry to it. A STAGE has none when it has no previous stage, which
+   * The source has none because it is where the change is made — nothing gates
+   * entry to it. It is the base for a ChangeOrder made there, and the Spaces a
+   * fan-out ChangeOrder's Links take from for one of those. A STAGE has none when it has no previous stage, which
    * `validateStageEntryGates` treats as "no prerequisite, so no gate".
    * The verdict is identical; the reason is not, and a reader told that dev is
    * the base has been told something false about their own sequence.
    */
   noGates: {
-    base: 'No gate applies to the base.',
+    base: 'No gate applies to the source.',
     stage: (stage: string) => `No gate applies to ${stage}. It has no previous stage.`,
   },
 
@@ -425,6 +426,18 @@ export const rolloutCopy = {
    * "1 of 1 space promoted" would describe a promotion that never happened.
    */
   sourceProgress: 'The change starts here',
+  /**
+   * An Invoke ChangeOrder's source: the Invocation it runs. Nothing has changed anywhere
+   * until it runs in a stage, so "Change landed" would be false of it.
+   */
+  invocationSource: {
+    verdict: 'Change defined',
+    progress: 'Runs as each stage is promoted',
+    /** The source panel's heading: the Invocation is what runs, not a write here. */
+    selectedHeading: 'What this change runs',
+    /** Which Spaces one "At the source" diff stands for. */
+    groupCaption: (spaces: string[]) => `In ${spaces.join(', ')}`,
+  },
   /**
    * A stage whose selector matched no Space. Nothing can be promoted into it,
    * so neither a verdict like "Ready to promote" nor a "0 of 0" count is true.

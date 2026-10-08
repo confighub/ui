@@ -74,6 +74,7 @@ import type { RolloutEndIntent } from '../x/apps/rollout/rolloutRollback';
 import { useEndRollout } from '../x/apps/rollout/useEndRollout';
 import { promoteAnnouncement, useRolloutActions } from '../x/apps/rollout/useRolloutActions';
 import { PromoteDialog } from './components/PromoteDialog';
+import { InvocationSourceDetails } from './components/InvocationSourceDetails';
 import { RolloutHistory, RolloutLastActivity } from './components/RolloutHistory';
 import { RolloutsConsole } from './RolloutsConsole';
 import {
@@ -294,8 +295,18 @@ function ScopeSpaces({ spaces, stages }: { spaces: RolloutSpace[]; stages: Rollo
   const listRef = useRef<HTMLUListElement>(null);
 
   const rows = useMemo(() => {
+    // A real stage before the synthetic source row: a base a stage's selector
+    // covers is promoted (or gated on) in that stage, which is the fact worth
+    // naming. `viewerPositionIn` places a Space the same way.
     const firstStage = new Map<string, RolloutStage>();
     for (const stage of stages) {
+      if (stage.isSource) continue;
+      for (const spaceId of stage.spaceIds) {
+        if (!firstStage.has(spaceId)) firstStage.set(spaceId, stage);
+      }
+    }
+    for (const stage of stages) {
+      if (!stage.isSource) continue;
       for (const spaceId of stage.spaceIds) {
         if (!firstStage.has(spaceId)) firstStage.set(spaceId, stage);
       }
@@ -737,6 +748,7 @@ function StageRail({
   completeLabel,
   completeSelected,
   finalGates,
+  sourceSummary,
 }: {
   stageStates: RolloutStageState[];
   /** The steps the rollout has passed: stage `i` is passed when `i < stagesDone`. */
@@ -758,6 +770,12 @@ function StageRail({
   completeSelected: boolean;
   /** `Final.Prerequisites` over the last stage's own Spaces — the step's checklist. */
   finalGates: RolloutGate[];
+  /**
+   * What the source node names, where it is not the base the rest of the page is about:
+   * the Spaces a fan-out ChangeOrder's change was made in, or the Invocation an Invoke
+   * ChangeOrder runs. Empty otherwise.
+   */
+  sourceSummary: string;
 }) {
   const finalTally = tallyGates(finalGates);
   return (
@@ -848,6 +866,11 @@ function StageRail({
                   {stageDisplayName(state.stageId, state.verdict === 'source')}
                 </Box>
               </Box>
+              {isSource && sourceSummary !== '' ? (
+                <Box sx={{ fontSize: rolloutType.size.small, color: rolloutInk.default }}>
+                  {sourceSummary}
+                </Box>
+              ) : null}
               {/* `label` and `progress` are composed by the shared derivation, so
                   the rail and every other surface say the same thing about a
                   stage rather than each phrasing it. */}
@@ -1107,6 +1130,12 @@ export default function RolloutsPage() {
 
   /** The URL names the Complete step — the same `:stage` segment a real stage uses. */
   const completeSelected = stageParam === COMPLETE_STAGE_ID;
+  const sourceSummary = useMemo(() => {
+    if (detail.invocationSource !== undefined) return detail.invocationSource.slug ?? '';
+    return (detail.fanOutSource?.spaceIds ?? [])
+      .map((spaceId) => detail.fanOutSource?.spaceNameBySpaceId.get(spaceId) ?? spaceId)
+      .join(', ');
+  }, [detail.invocationSource, detail.fanOutSource]);
 
   /**
    * The stage whose panel this page shows, or `undefined` for none.
@@ -1129,6 +1158,10 @@ export default function RolloutsPage() {
     }
     return detail.stageStates.find((s) => s.stageId === detail.nextStageId);
   }, [detail.stageStates, detail.nextStageId, stageParam]);
+  // An Invoke ChangeOrder's source writes nothing: its panel shows the Invocation that runs
+  // in each stage as it is promoted, and "At the source" what running it changes.
+  const invocationSourceSelected =
+    selectedStage?.verdict === 'source' && detail.invocationSource !== undefined;
 
   /**
    * The console row, when it has a promotion path. The rail, its pips and the
@@ -1191,6 +1224,9 @@ export default function RolloutsPage() {
   const changes = useRolloutConsoleChanges({
     changeOrderId: detail.changeOrderId,
     baseSpaceId: detail.baseSpaceId,
+    fanOutSource: detail.fanOutSource,
+    runsInvocation: detail.invocationSource !== undefined,
+    inScopeSpaceIds: detail.inScopeSpaceIds,
     stages: detail.sequence.stages,
     selectedStageId: selectedStage?.stageId ?? null,
     scopedSpaces: detail.scopedSpaces,
@@ -1319,14 +1355,20 @@ export default function RolloutsPage() {
             resourceKind={group?.resourceKind}
             spaceName={changes.spaceNameBySpaceId.get(unit.spaceId) ?? unit.spaceId}
             // Not a promotion record — this is the change as
-            // authored at the base, never something a stage wrote.
+            // authored at the source, never something a stage wrote.
             written={false}
             // Every unit reaching `sourceUnits` was determinable
             // by construction — one that was not is dropped and
             // counted in `sourceDropped` instead, never rendered.
             undetermined={false}
             unchanged={fieldDiffs.length === 0}
-            spaceHref={componentSpaceDeepLink(detail.componentName, unit.spaceId) ?? undefined}
+            // A fan-out ChangeOrder's sources are outside the component, so
+            // they open as Spaces rather than in the component view.
+            spaceHref={
+              detail.fanOutSource !== undefined
+                ? `/spaces/${unit.spaceId}`
+                : (componentSpaceDeepLink(detail.componentName, unit.spaceId) ?? undefined)
+            }
           />
           <RolloutRefusals conflicts={rowRefusals(group)} />
           {fieldDiffs.length === 0 ? (
@@ -1353,6 +1395,7 @@ export default function RolloutsPage() {
       changes.sourceGroupsByUnitId,
       changes.spaceNameBySpaceId,
       detail.componentName,
+      detail.fanOutSource,
       stableDiffColumnStyle,
       onDiffDividerMouseDown,
       isDiffDragging,
@@ -1441,8 +1484,8 @@ export default function RolloutsPage() {
   );
 
   /**
-   * The Spaces this stage's actions WRITE INTO — its membership minus the
-   * ChangeOrder's own Space, which `cub` skips (`promotionTargets`).
+   * The Spaces this stage's actions WRITE INTO — its membership minus the Space
+   * the promotion passes over (`promotionTargets`).
    *
    * Every consumer below is a write or a statement about one: the promote, the
    * release, the retried upgrade leg, the count the confirmation dialog states,
@@ -1453,9 +1496,9 @@ export default function RolloutsPage() {
     () =>
       promotionTargets(
         detail.sequence.stages.find((st) => st.id === selectedStage?.stageId)?.spaceIds ?? [],
-        detail.baseSpaceId,
+        detail.skippedSpaceId,
       ),
-    [detail.sequence.stages, selectedStage?.stageId, detail.baseSpaceId],
+    [detail.sequence.stages, selectedStage?.stageId, detail.skippedSpaceId],
   );
   /**
    * Whether ANY variant of this stage can even publish. A Space with no
@@ -1508,14 +1551,20 @@ export default function RolloutsPage() {
    * separately: a stage row's own diffs go empty as soon as a variant already
    * holds the target value, and "the promote writes nothing here" must not be
    * read as "the promote does not involve this resource".
+   *
+   * Unknown for a fan-out ChangeOrder: its source Units are other resources
+   * than the ones it writes — a registry fact, not the Deployment taking the
+   * image — so they say nothing about which rows of a stage it carries.
    */
   const carriedResourceKeys = useMemo(
     () =>
-      carriedResourceKeysOf(
-        changes.sourceGroupsByUnitId.values(),
-        changes.sourceCreatedResourceKeys,
-      ),
-    [changes.sourceGroupsByUnitId, changes.sourceCreatedResourceKeys],
+      detail.fanOutSource !== undefined
+        ? null
+        : carriedResourceKeysOf(
+            changes.sourceGroupsByUnitId.values(),
+            changes.sourceCreatedResourceKeys,
+          ),
+    [detail.fanOutSource, changes.sourceGroupsByUnitId, changes.sourceCreatedResourceKeys],
   );
   const outcome = useMemo(
     () => buildRolloutOutcome(changes.matrix, carriedResourceKeys),
@@ -1844,6 +1893,22 @@ export default function RolloutsPage() {
                   />
                 ) : null}
               </Box>
+              {/* What the change is, in its author's words, where they gave any. */}
+              {detail.description !== undefined && detail.description.trim() !== '' ? (
+                <Box
+                  data-testid="rollout-description"
+                  sx={{
+                    fontSize: rolloutType.size.prose,
+                    lineHeight: rolloutType.lineHeight.body,
+                    color: rolloutInk.muted,
+                    margin: '6px 0 0',
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
+                  }}
+                >
+                  {detail.description}
+                </Box>
+              ) : null}
 
               <Box
                 component="dl"
@@ -1870,6 +1935,7 @@ export default function RolloutsPage() {
                     <FactLink href={`/spaces/${detail.baseSpaceId}`}>{detail.baseSpaceSlug}</FactLink>
                   )}
                 </Fact>
+                <Fact term="Update type">{detail.updateType ?? '—'}</Fact>
                 {/*
                   The workflow this rollout was created under, opened in the
                   workflow builder to view or edit. The rollout keeps the copy
@@ -1929,7 +1995,53 @@ export default function RolloutsPage() {
                 Costs no extra request: both sides are already fetched for the
                 comparison above, and the answer cannot vary by stage.
               */}
-              {changes.sourceUnits.length > 0 ? (
+              {changes.sourceSpaceGroups.length > 0 ? (
+                /*
+                  An Invoke ChangeOrder's source is what running its Invocation
+                  changes: the in-scope Spaces grouped as a stage's are, so
+                  Spaces where it makes the same change show one diff.
+                */
+                <Box
+                  component="section"
+                  role="region"
+                  aria-label="At the source"
+                  sx={{ marginTop: '14px' }}
+                >
+                  <Box
+                    component="h3"
+                    sx={{
+                      fontSize: rolloutType.size.prose,
+                      lineHeight: rolloutType.lineHeight.heading,
+                      fontWeight: rolloutType.weight.semibold,
+                      margin: '0 0 8px',
+                    }}
+                  >
+                    At the source
+                  </Box>
+                  <Box sx={{ maxWidth: rolloutCardTokens.colBlock }}>
+                    {changes.sourceSpaceGroups.map((group) => {
+                      const { changedUnits, blockedUnits } = partitionSourceUnitsByChange(
+                        cardRepresentativeUnits(changes.sourceUnits, group.representativeSpaceId, detail.skippedUnits),
+                        changes.sourceGroupsByUnitId,
+                      );
+                      return (
+                        <Box key={group.representativeSpaceId} sx={{ marginBottom: '10px' }}>
+                          <Box sx={{ fontSize: rolloutType.size.body, color: rolloutInk.muted, marginBottom: '4px' }}>
+                            {rolloutCopy.invocationSource.groupCaption(group.labels)}
+                          </Box>
+                          {changedUnits.length === 0 && blockedUnits.length === 0 ? (
+                            <Box sx={{ fontSize: rolloutType.size.body, color: rolloutInk.muted, padding: '4px 12px 10px' }}>
+                              No fields differ here.
+                            </Box>
+                          ) : (
+                            [...changedUnits, ...blockedUnits].map(renderSourceUnit)
+                          )}
+                        </Box>
+                      );
+                    })}
+                  </Box>
+                </Box>
+              ) : changes.sourceUnits.length > 0 ? (
                 <Box
                   component="section"
                   role="region"
@@ -2278,6 +2390,7 @@ export default function RolloutsPage() {
                 completeLabel={completeStage?.state.label ?? ''}
                 completeSelected={completeSelected}
                 finalGates={detail.finalGates}
+                sourceSummary={sourceSummary}
               />
             )}
             {detail.sequence.problems.length > 0 ? (
@@ -2571,7 +2684,7 @@ export default function RolloutsPage() {
               <Box
                 component="section"
                 role="region"
-                aria-label="What this promotion writes"
+                aria-label={invocationSourceSelected ? rolloutCopy.invocationSource.selectedHeading : 'What this promotion writes'}
                 sx={{ marginTop: '18px' }}
               >
                 <Box
@@ -2583,7 +2696,7 @@ export default function RolloutsPage() {
                     margin: '0 0 10px',
                   }}
                 >
-                  What this promotion writes
+                  {invocationSourceSelected ? rolloutCopy.invocationSource.selectedHeading : 'What this promotion writes'}
                 </Box>
                 {/*
                   Reported, never folded into `same` — but as a plain note,
@@ -2671,7 +2784,7 @@ export default function RolloutsPage() {
                     </Box>
                   </Box>
                 ) : null}
-                {comparableGroups.length < 2 ? (
+                {invocationSourceSelected ? null : comparableGroups.length < 2 ? (
                   /*
                    * NO BAR FOR FEWER THAN TWO COMPARABLE OUTCOMES.
                    *
@@ -2771,7 +2884,9 @@ export default function RolloutsPage() {
                     ) : null}
                   </Box>
                 )}
-                {changes.isLoading ? (
+                {invocationSourceSelected && detail.invocationSource !== undefined ? (
+                  <InvocationSourceDetails source={detail.invocationSource} />
+                ) : changes.isLoading ? (
                   <Box sx={{ fontSize: rolloutType.size.prose, color: rolloutInk.muted }}>
                     Working out what this promotion writes…
                   </Box>

@@ -208,6 +208,7 @@ export function useRolloutConsole(): RolloutConsoleData {
         // The Release that released the change in each Space, which the Healthy
         // gate reads. Derived only for a read of the whole row, as this one is.
         releases: order.Releases,
+        updateType: order.UpdateType,
         // What the two above are measured against, and the third term of
         // stage membership — see `buildRolloutSequence`.
         inScopeSpaceIds: order.InScopeSpaceIDs,

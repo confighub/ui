@@ -53,7 +53,13 @@ import type {
   ReportedHealthChannel,
   ReportedHealthSpaceInput,
 } from './rolloutReportedHealth';
-import { buildRolloutSequence, previousStageOf, promotionTargets } from './rolloutStages';
+import {
+  buildRolloutSequence,
+  changeOrderOwnSpaceReached,
+  previousStageOf,
+  promotionSkippedSpaceId,
+  promotionTargets,
+} from './rolloutStages';
 import {
   deriveProgress,
   deriveStageState,
@@ -182,6 +188,18 @@ export interface ConsoleChangeOrder {
   /** ChangeOrder.Releases: the published Release that released the change in each Space. */
   releases?: ChangeOrderRelease[];
   /**
+   * `ChangeOrder.UpdateType`, which decides whether the ChangeOrder's own Space
+   * holds the change from the start (`changeOrderOwnSpaceReached`).
+   */
+  updateType?: string | null;
+  /**
+   * Where a fan-out ChangeOrder's change was made: the Spaces of the source Units its
+   * Links take from (`useFanOutSource`). Read only where its own Space does not hold the
+   * change from the start; absent where nobody looked them up, which leaves the source
+   * row with no Spaces rather than putting the base there.
+   */
+  sourceSpaceIds?: string[];
+  /**
    * Where this ChangeOrder is headed, which is the third term of stage
    * membership — see `buildRolloutSequence`. Not part of progress: it is what
    * progress is measured against.
@@ -272,9 +290,9 @@ export interface ConsoleStage {
    * reads this exact field for the same reason on the PREVIOUS stage's side of
    * a gate check; this asks it of the stage being promoted into.
    *
-   * Measured over `promotionTargets`, not over stage membership: the
-   * ChangeOrder's own Space is skipped by the promote, so a base Space with a
-   * Target would otherwise promise a release into somewhere nothing is written.
+   * Measured over `promotionTargets`, not over stage membership: where the
+   * promote skips the ChangeOrder's own Space, a base Space with a Target would
+   * otherwise promise a release into somewhere nothing is written.
    */
   hasReleaseTargets: boolean;
 }
@@ -290,6 +308,11 @@ export interface ConsoleRow {
    */
   changeWorkflowId?: string;
   spaceId?: string;
+  /**
+   * The Space a promotion of this rollout passes over, or `undefined` when it
+   * passes over none — see `promotionSkippedSpaceId`.
+   */
+  skippedSpaceId?: string;
   spaceSlug?: string;
   createdAt?: string;
   /**
@@ -426,7 +449,7 @@ export function actionFor(
  */
 export interface RolloutPromotion {
   stageId: string;
-  /** The Spaces the promote WRITES INTO — stage membership minus the ChangeOrder's own Space. */
+  /** The Spaces the promote WRITES INTO — stage membership minus the Space it passes over. */
   spaceIds: string[];
   /** The stage's entry gates, for the caller to partition and quote. */
   gates: RolloutGate[];
@@ -435,14 +458,14 @@ export interface RolloutPromotion {
 }
 
 export function promotionFor(
-  row: Pick<ConsoleRow, 'stages' | 'nextStageId' | 'spaceId'>,
+  row: Pick<ConsoleRow, 'stages' | 'nextStageId' | 'skippedSpaceId'>,
 ): RolloutPromotion | null {
   if (row.nextStageId === null) return null;
   const stage = row.stages.find((candidate) => candidate.stageId === row.nextStageId);
   if (stage === undefined) return null;
   return {
     stageId: stage.stageId,
-    spaceIds: promotionTargets(stage.spaceIds, row.spaceId),
+    spaceIds: promotionTargets(stage.spaceIds, row.skippedSpaceId),
     gates: stage.gates,
     canRelease: stage.hasReleaseTargets,
   };
@@ -713,20 +736,22 @@ function reportedSpaceInput(
   spaceId: string,
   space: ConsoleSpace | undefined,
   progress: RolloutProgress,
-  baseSpaceId: string | undefined,
+  skippedSpaceId: string | undefined,
 ): ReportedHealthSpaceInput {
   return {
     loaded: consoleSpaceLoaded(space),
     variantName: space?.displayName ?? space?.slug ?? spaceId,
     liveStatus: space?.release?.liveStatus ?? null,
     /*
-     * ⚠️ THE CHANGEORDER'S OWN SPACE IS NEVER EVIDENCE, IN ANY STAGE.
+     * ⚠️ A SPACE THE PROMOTION PASSES OVER IS NEVER EVIDENCE, IN ANY STAGE.
      *
-     * `hasTakenChange` answers true for the base by definition — it is where
-     * the change was made — but a promotion never asks the base anything.
-     * `cub`'s loop skips it outright (`variant.SpaceID == changeOrder.SpaceID
-     * … continue`, public/cmd/cub/variant_promote.go), so no verdict it
-     * reaches is ever about the base's workload.
+     * Where the ChangeOrder's own Space holds the change from the start,
+     * `hasTakenChange` answers true for it by definition — it is where the
+     * change was made — but a promotion never asks it anything. The server
+     * skips it outright (`promotionSkippedSpaceId`), so no verdict a promotion
+     * reaches is ever about its workload. Where it does not hold the change
+     * from the start, it is promoted like any other Space and is evidence like
+     * any other.
      *
      * `reachedStageIndices` already keeps the SOURCE row out of this channel's
      * reach by verdict. That guard does nothing once a real stage's selector
@@ -740,7 +765,7 @@ function reportedSpaceInput(
      * verdict: a stage is `in-progress` precisely when some of its Spaces have
      * taken the change and some have not, so the whole stage cannot answer this.
      */
-    taken: spaceId !== baseSpaceId && hasTakenChange(progress, spaceId),
+    taken: spaceId !== skippedSpaceId && hasTakenChange(progress, spaceId),
   };
 }
 
@@ -765,7 +790,7 @@ function reportedHealthByStage(
   stages: readonly RolloutStage[],
   bySpaceId: ReadonlyMap<string, ConsoleSpace>,
   progress: RolloutProgress,
-  baseSpaceId: string | undefined,
+  skippedSpaceId: string | undefined,
 ): ReportedHealthChannel[] {
   // The same per-Space facts the gates read. One Space has one live status;
   // what differs between the channels is the question asked of it.
@@ -780,7 +805,7 @@ function reportedHealthByStage(
   return stages.map((stage) =>
     reportedHealthOf(
       stage.spaceIds.map((id) =>
-        reportedSpaceInput(id, bySpaceId.get(id), progress, stage.isSource ? undefined : baseSpaceId),
+        reportedSpaceInput(id, bySpaceId.get(id), progress, stage.isSource ? undefined : skippedSpaceId),
       ),
     ),
   );
@@ -1243,6 +1268,7 @@ function stagelessRow(
     slug: order.slug,
     changeWorkflowId: governingWorkflowId(order),
     spaceId: order.spaceId,
+    skippedSpaceId: promotionSkippedSpaceId(order.spaceId, order.updateType),
     spaceSlug: order.spaceSlug,
     createdAt: order.createdAt,
     appName: orderComponent(order, bySpaceId)?.Slug,
@@ -1262,6 +1288,8 @@ function stagelessRow(
     progressUnavailable: true,
     progress: deriveProgress({
       changeOrderSpaceId: undefined,
+      ownSpaceReached: true,
+      state: undefined,
       resolvedSpaceIds: undefined,
       releasedSpaceIds: undefined,
       restoredSpaceIds: undefined,
@@ -1332,7 +1360,12 @@ export function buildConsoleRow(
       order.inScopeSpaceIds,
     );
   }
-  const sequence = buildRolloutSequence(workflow, stageSpacesByStageName, order.spaceId ?? '');
+  const sequence = buildRolloutSequence(
+    workflow,
+    stageSpacesByStageName,
+    changeOrderOwnSpaceReached(order.updateType) ? [order.spaceId ?? ''] : (order.sourceSpaceIds ?? []),
+    order.updateType === 'Invoke',
+  );
   // The server counts these toward `State` and no stage can promote into them,
   // so a rollout can have every stage done and still not be finished.
   const stagedSpaceIds = new Set(sequence.stages.flatMap((stage) => stage.spaceIds));
@@ -1340,8 +1373,11 @@ export function buildConsoleRow(
     (spaceId) => spaceId !== order.spaceId && !stagedSpaceIds.has(spaceId),
   );
 
+  const skippedSpaceId = promotionSkippedSpaceId(order.spaceId, order.updateType);
   const progress = deriveProgress({
     changeOrderSpaceId: order.spaceId,
+    ownSpaceReached: changeOrderOwnSpaceReached(order.updateType),
+    state: order.state,
     resolvedSpaceIds: order.resolvedSpaceIds,
     releasedSpaceIds: order.releasedSpaceIds,
     restoredSpaceIds: order.restoredSpaceIds,
@@ -1404,7 +1440,7 @@ export function buildConsoleRow(
   // The display channel, derived once for the row and read by its state, its
   // blocker and every segment — the three surfaces that must never disagree
   // about whether a stage's workload is healthy.
-  const reportedByStageIndex = reportedHealthByStage(sequence.stages, bySpaceId, progress, order.spaceId);
+  const reportedByStageIndex = reportedHealthByStage(sequence.stages, bySpaceId, progress, skippedSpaceId);
   const lastStageIndex = lastPromotableStageIndex(sequence.stages);
 
 
@@ -1453,7 +1489,7 @@ export function buildConsoleRow(
   const complete = state === 'complete' || state === 'complete-unverified';
   const stages: ConsoleStage[] = sequence.stages.map((stage, i) => ({
     stageId: stage.id,
-    hasReleaseTargets: promotionTargets(stage.spaceIds, order.spaceId).some(
+    hasReleaseTargets: promotionTargets(stage.spaceIds, skippedSpaceId).some(
       (id) => bySpaceId.get(id)?.releaseTargetId !== undefined,
     ),
     spaceSlugs: stage.spaceIds
@@ -1479,6 +1515,7 @@ export function buildConsoleRow(
     slug: order.slug,
     changeWorkflowId: governingWorkflowId(order),
     spaceId: order.spaceId,
+    skippedSpaceId,
     spaceSlug: order.spaceSlug,
     createdAt: order.createdAt,
     appName: orderComponent(order, bySpaceId)?.Slug,

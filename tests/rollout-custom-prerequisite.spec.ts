@@ -127,8 +127,13 @@ test.describe('a stage gating on a declared custom prerequisite', () => {
     await expect(gateTag).toHaveText(rolloutCopy.gateTag.unsatisfied, { timeout: 30_000 });
     await expect(page.locator('[role="progressbar"]')).toHaveCount(0);
 
+    // The gate poll's dry run, not the stage panel's, which asks for each Unit's
+    // configuration and has no gate verdict to refresh.
     await page.waitForRequest(
-      (request) => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/promote'),
+      (request) =>
+        request.method() === 'POST' &&
+        new URL(request.url()).pathname.endsWith('/promote') &&
+        !(new URL(request.url()).searchParams.get('include') ?? '').split(',').includes('ConfigData'),
       { timeout: SERVER_GATES_POLL_INTERVAL_MS * 2 },
     );
     await page.waitForTimeout(2_000);

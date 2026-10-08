@@ -73,9 +73,16 @@ import {
 } from '../x/apps/rollout/rolloutsConsoleModel';
 import type { ConsoleRow, ConsoleSpace } from '../x/apps/rollout/rolloutsConsoleModel';
 import type { RolloutGateSpaceInput } from '../x/apps/rollout/rolloutGates';
-import { buildRolloutSequence, previousStageOf } from '../x/apps/rollout/rolloutStages';
+import {
+  buildRolloutSequence,
+  changeOrderOwnSpaceReached,
+  previousStageOf,
+  promotionSkippedSpaceId,
+} from '../x/apps/rollout/rolloutStages';
 import { changeOrderWorkflow, stageWhereSpace } from '../x/apps/rollout/changeOrderWorkflow';
 import { ROLLOUT_POLL_INTERVAL_MS } from '../x/apps/rollout/useRolloutData';
+import { useFanOutSource, type FanOutSource } from '../x/apps/rollout/useFanOutSource';
+import { useInvocationSource, type InvocationSource } from '../x/apps/rollout/useInvocationSource';
 import { useWorkflowStageSpaces } from '../x/apps/rollout/useWorkflowStageSpaces';
 import { useRunningReleases } from '../x/apps/useRunningReleases';
 import {
@@ -122,6 +129,25 @@ export interface RolloutDetail {
   changeOrderId?: string;
   displayName?: string;
   baseSpaceId?: string;
+  /**
+   * The Space a promotion of this rollout passes over: the base when it holds
+   * the change from the start, otherwise `undefined` — see
+   * `promotionSkippedSpaceId`.
+   */
+  skippedSpaceId?: string;
+  /** `ChangeOrder.UpdateType`: how the change reaches each Space. */
+  updateType?: string;
+  /** `ChangeOrder.Description`, as its author wrote it. */
+  description?: string;
+  /** `ChangeOrder.InScopeSpaceIDs`, exactly as it arrived. */
+  inScopeSpaceIds?: string[];
+  /**
+   * Where a fan-out ChangeOrder's change was made (`useFanOutSource`). Absent for one whose
+   * own Space holds the change from the start, where that Space is the source.
+   */
+  fanOutSource?: FanOutSource;
+  /** What an Invoke ChangeOrder runs (`useInvocationSource`). Absent for every other type. */
+  invocationSource?: InvocationSource;
   baseSpaceSlug?: string;
   createdAt?: string;
   abortedReason: string;
@@ -352,6 +378,26 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
   const order = entry?.ChangeOrder;
   const baseSpaceId = order?.SpaceID;
 
+  // Three kinds of source: the base, for a ChangeOrder made there; the Units a fan-out
+  // ChangeOrder's Links take from; and, for an Invoke ChangeOrder, the Invocation it runs,
+  // since it has made no change anywhere yet.
+  const ownSpaceReached = changeOrderOwnSpaceReached(order?.UpdateType);
+  const invokes = order?.UpdateType === 'Invoke';
+  const fansOut = order !== undefined && !ownSpaceReached && !invokes;
+  const fanOutSource = useFanOutSource({
+    startTagId: order?.StartTagID,
+    endTagId: order?.EndTagID,
+    inScopeSpaceIds: order?.InScopeSpaceIDs,
+    skip: !fansOut,
+  });
+  const invocationSource = useInvocationSource({
+    invocationId: order?.InvocationID,
+    parameters: order?.Parameters,
+    whereUnit: order?.WhereUnit,
+    unitFilterId: order?.UnitFilterID,
+    skip: !invokes,
+  });
+
   // The component this rollout is named by, read off the base Space's own
   // Component — the same `orderComponent` the fleet console uses. Display only:
   // stage membership is the stage's selector and the ChangeOrder's scope.
@@ -470,6 +516,8 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
         sequence: EMPTY_SEQUENCE,
         progress: deriveProgress({
           changeOrderSpaceId: undefined,
+          ownSpaceReached: true,
+          state: undefined,
           resolvedSpaceIds: undefined,
           releasedSpaceIds: undefined,
           restoredSpaceIds: undefined,
@@ -494,6 +542,8 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
 
     const progress = deriveProgress({
       changeOrderSpaceId: baseSpaceId,
+      ownSpaceReached: changeOrderOwnSpaceReached(order.UpdateType),
+      state: order.State,
       resolvedSpaceIds: order.ResolvedSpaceIDs,
       releasedSpaceIds: order.ReleasedSpaceIDs,
       restoredSpaceIds: order.RestoredSpaceIDs,
@@ -510,7 +560,12 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
     const sequence =
       workflow === undefined || baseSpaceId === undefined
         ? EMPTY_SEQUENCE
-        : buildRolloutSequence(workflow, stageSpaces, baseSpaceId);
+        : buildRolloutSequence(
+            workflow,
+            stageSpaces,
+            ownSpaceReached ? [baseSpaceId] : fansOut ? fanOutSource.spaceIds : [],
+            invokes,
+          );
 
     const gatesByStageId: Record<string, RolloutGate[]> = {};
     for (const stage of sequence.stages) {
@@ -557,6 +612,8 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
         restoredSpaceIds: order.RestoredSpaceIDs,
         releasedRestoredSpaceIds: order.ReleasedRestoredSpaceIDs,
         releases: order.Releases,
+        updateType: order.UpdateType,
+        sourceSpaceIds: fansOut ? fanOutSource.spaceIds : [],
         inScopeSpaceIds: order.InScopeSpaceIDs,
         annotations: order.Annotations,
         governing,
@@ -597,6 +654,12 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
       changeOrderId: order.ChangeOrderID,
       displayName: order.DisplayName,
       baseSpaceId,
+      skippedSpaceId: promotionSkippedSpaceId(baseSpaceId, order.UpdateType),
+      updateType: order.UpdateType ?? undefined,
+      description: order.Description,
+      inScopeSpaceIds: order.InScopeSpaceIDs,
+      fanOutSource: fansOut ? fanOutSource : undefined,
+      invocationSource,
       baseSpaceSlug: order.SpaceSlug ?? entry?.Space?.Slug,
       createdAt: order.CreatedAt,
       abortedReason: order.AbortedReason ?? '',
@@ -638,6 +701,11 @@ export function useRolloutDetail(slug: string | undefined): RolloutDetail {
     order,
     entry,
     baseSpaceId,
+    ownSpaceReached,
+    invokes,
+    fansOut,
+    fanOutSource,
+    invocationSource,
     componentName,
     governing,
     workflow,

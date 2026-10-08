@@ -37,10 +37,12 @@ import type { RolloutStageMatrix } from '../x/apps/rollout/rolloutMatrix';
 import { buildRolloutMergedUnits } from '../x/apps/rollout/rolloutMergedUnits';
 import { useRolloutBaseline } from '../x/apps/rollout/useRolloutBaseline';
 import { useRolloutChanges } from '../x/apps/rollout/useRolloutChanges';
+import type { FanOutSource } from '../x/apps/rollout/useFanOutSource';
 import { resourceIdentityJoinKeysOf, resourceIdentityKeyOf } from '../x/apps/rollout/rolloutChanges';
 import type { RolloutChangeGroup, RolloutStage } from '../x/apps/rollout/rolloutTypes';
 import type { MergedUnit } from '../x/apps/componentTypes';
 import type { RolloutSpace } from './useRolloutDetail';
+import { buildRolloutOutcome, type RolloutOutcomeGroup } from './rolloutOutcome';
 
 export interface RolloutConsoleChanges {
   units: MergedUnit[];
@@ -59,7 +61,8 @@ export interface RolloutConsoleChanges {
   /** Unit id -> the Space it lives in, for anywhere a unit needs a `/units/:spaceId/:id` link built. */
   spaceIdByUnitId: ReadonlyMap<string, string>;
   /**
-   * The change AS AUTHORED, at the base — the subject of the page.
+   * The change AS AUTHORED — the subject of the page. At the base, or, for a
+   * fan-out ChangeOrder, in the source Units its Links take from.
    *
    * ⚠️ NOT THE SAME QUESTION AS THE STAGE TREES BELOW IT, and the reference is
    * explicit that the pairing is the point: *"this is the value as authored,
@@ -101,6 +104,13 @@ export interface RolloutConsoleChanges {
    * variant as taking the change identically.
    */
   sourceCreatedResourceKeys: ReadonlySet<string>;
+  /**
+   * For an Invoke ChangeOrder, the in-scope Spaces grouped by the change running its
+   * Invocation makes in them — the stage panel's grouping, over the whole scope — each
+   * with the Space whose Units `sourceUnits` holds for it. Empty for every other type,
+   * whose source is one place.
+   */
+  sourceSpaceGroups: RolloutOutcomeGroup[];
   /** The stage's variant matrix, or null when there is nothing to compare. */
   matrix: RolloutStageMatrix | null;
   isLoading: boolean;
@@ -208,18 +218,161 @@ export function partitionSourceUnitsByChange<TUnit extends { unitId: string }>(
 const EMPTY_UNITS: MergedUnit[] = [];
 const EMPTY_SOURCE_GROUPS: ReadonlyMap<string, RolloutChangeGroup> = new Map();
 const EMPTY_KEYS: ReadonlySet<string> = new Set();
+const EMPTY_DATA: ReadonlyMap<string, string> = new Map();
+const EMPTY_SPACE_GROUPS: RolloutOutcomeGroup[] = [];
+
+/** The id of the synthetic stage an Invoke ChangeOrder's source is read as. Never shown. */
+const INVOCATION_SOURCE_STAGE_ID = '__invocation_source__';
+
+/** "At the source", whichever kind of source it is. */
+interface SourceChanges {
+  units: MergedUnit[];
+  dropped: number;
+  createdResourceKeys: ReadonlySet<string>;
+  groupsByUnitId: ReadonlyMap<string, RolloutChangeGroup>;
+  /** See `RolloutConsoleChanges.sourceSpaceGroups`. Absent is none. */
+  spaceGroups?: RolloutOutcomeGroup[];
+}
+
+/**
+ * "At the source" for an Invoke ChangeOrder: what running its Invocation changes, grouped
+ * as the stage panel groups a stage. Spaces where it makes the same change are one group,
+ * shown once, by its representative Space's Units. A Space nobody could get an answer for
+ * is left out here, as the stage panel leaves it out of the comparable groups.
+ */
+function invocationSourceChanges(input: {
+  groups: RolloutChangeGroup[];
+  spaceIds: string[];
+  currentDataByUnitId: ReadonlyMap<string, { slug: string; spaceId: string; data?: string; toolchainType?: string }>;
+  spaceIdByUnitId: ReadonlyMap<string, string>;
+  spaceNameBySpaceId: ReadonlyMap<string, string>;
+  takenSpaceIds: ReadonlySet<string>;
+}): SourceChanges {
+  const { groups, spaceIds, currentDataByUnitId, spaceIdByUnitId, spaceNameBySpaceId, takenSpaceIds } = input;
+  if (groups.length === 0 || spaceIds.length === 0) {
+    return { units: EMPTY_UNITS, dropped: 0, createdResourceKeys: EMPTY_KEYS, groupsByUnitId: EMPTY_SOURCE_GROUPS };
+  }
+  const matrix = buildStageMatrix({
+    groups,
+    spaceIds,
+    spaceIdByUnitId,
+    spaceNameBySpaceId,
+    stageId: INVOCATION_SOURCE_STAGE_ID,
+  });
+  const spaceGroups = buildRolloutOutcome(matrix).groups.filter(
+    (group) => group.kind !== 'unknown' && group.spaceIds.length > 0,
+  );
+  const representatives = new Set(spaceGroups.map((group) => group.representativeSpaceId));
+  const representativeGroups = groups.filter((group) =>
+    representatives.has(spaceIdByUnitId.get(group.unitId) ?? ''),
+  );
+  const built = buildRolloutMergedUnits({
+    groups: representativeGroups,
+    currentDataByUnitId,
+    deploymentNameBySpaceId: spaceNameBySpaceId,
+    // The Invocation's change is the source; there is no starting point to weigh
+    // local overrides against here. The stage previews do that.
+    beforeChangeBySlug: EMPTY_DATA,
+    currentBySlug: EMPTY_DATA,
+    baselineStatus: 'unresolvable',
+    takenSpaceIds,
+  });
+  const groupsByUnitId = new Map<string, RolloutChangeGroup>();
+  for (const group of representativeGroups) groupsByUnitId.set(group.unitId, group);
+  return {
+    units: built.units,
+    dropped: built.droppedUnitIds.size,
+    createdResourceKeys: EMPTY_KEYS,
+    groupsByUnitId,
+    spaceGroups,
+  };
+}
+
+/**
+ * "At the source" for a fan-out ChangeOrder: each source Unit from the change's start
+ * Tag to its end Tag. Both ends are recorded Revisions, so every Unit here has an honest
+ * diff and nothing is dropped for want of a starting point. Nothing is reported as
+ * created: a source Unit is not a resource of the Spaces the change is promoted into.
+ */
+function fanOutSourceChanges(fanOutSource: FanOutSource, takenSpaceIds: ReadonlySet<string>): SourceChanges {
+  if (fanOutSource.status !== 'resolved' || fanOutSource.units.length === 0) {
+    return { units: EMPTY_UNITS, dropped: 0, createdResourceKeys: EMPTY_KEYS, groupsByUnitId: EMPTY_SOURCE_GROUPS };
+  }
+  const groups: RolloutChangeGroup[] = [];
+  const context = new Map<string, { slug: string; spaceId: string; data?: string; toolchainType?: string }>();
+  for (const unit of fanOutSource.units) {
+    groups.push({
+      unitId: unit.unitId,
+      resourceName: unit.slug,
+      resourceKind: undefined,
+      resourceIdentity: resourceIdentityKeyOf(unit.before) ?? resourceIdentityKeyOf(unit.after),
+      resourceIdentityJoinKeys: resourceIdentityJoinKeysOf(unit.before, unit.after),
+      fieldDiffs: computeFieldDiffs(unit.before, unit.after),
+      allPaths: buildPaths(unit.after),
+      written: true,
+      determinable: true,
+    });
+    context.set(unit.unitId, {
+      slug: unit.slug,
+      spaceId: unit.spaceId,
+      data: unit.after,
+      toolchainType: unit.toolchainType,
+    });
+  }
+  const built = buildRolloutMergedUnits({
+    groups,
+    currentDataByUnitId: context,
+    deploymentNameBySpaceId: fanOutSource.spaceNameBySpaceId,
+    // A source Unit has no local overrides to weigh: it is where the change was made.
+    beforeChangeBySlug: EMPTY_DATA,
+    currentBySlug: EMPTY_DATA,
+    baselineStatus: 'unresolvable',
+    takenSpaceIds,
+  });
+  const groupsByUnitId = new Map<string, RolloutChangeGroup>();
+  for (const group of groups) groupsByUnitId.set(group.unitId, group);
+  return {
+    units: built.units,
+    dropped: built.droppedUnitIds.size,
+    createdResourceKeys: EMPTY_KEYS,
+    groupsByUnitId,
+  };
+}
 
 export function useRolloutConsoleChanges(args: {
   changeOrderId: string | undefined;
   baseSpaceId: string | undefined;
+  /**
+   * Where a fan-out ChangeOrder's change was made. When present, "At the source" is
+   * those Units from the change's start to its end, and the base is not read for it:
+   * it has not been changed until something is promoted into it.
+   */
+  fanOutSource: FanOutSource | undefined;
+  /**
+   * Whether the ChangeOrder runs an Invocation. It has made no change anywhere until it is
+   * promoted, so there is no authored change to diff, at the base or elsewhere.
+   */
+  runsInvocation: boolean;
+  /** `ChangeOrder.InScopeSpaceIDs`: where an Invoke ChangeOrder's Invocation runs. */
+  inScopeSpaceIds: readonly string[] | undefined;
   stages: RolloutStage[];
   selectedStageId: string | null;
   scopedSpaces: RolloutSpace[] | null;
   resolvedSpaceIds: ReadonlySet<string>;
   skip: boolean;
 }): RolloutConsoleChanges {
-  const { changeOrderId, baseSpaceId, stages, selectedStageId, scopedSpaces, resolvedSpaceIds, skip } =
-    args;
+  const {
+    changeOrderId,
+    baseSpaceId,
+    fanOutSource,
+    runsInvocation,
+    inScopeSpaceIds,
+    stages,
+    selectedStageId,
+    scopedSpaces,
+    resolvedSpaceIds,
+    skip,
+  } = args;
 
   const spaceIds = useMemo(() => (scopedSpaces ?? []).map((s) => s.spaceId), [scopedSpaces]);
 
@@ -266,8 +419,12 @@ export function useRolloutConsoleChanges(args: {
     for (const space of scopedSpaces ?? []) {
       index.set(space.spaceId, space.displayName ?? space.slug);
     }
+    // The Spaces a fan-out ChangeOrder's sources are in are outside its scope.
+    for (const [spaceId, name] of fanOutSource?.spaceNameBySpaceId ?? []) {
+      if (!index.has(spaceId)) index.set(spaceId, name);
+    }
     return index;
-  }, [scopedSpaces]);
+  }, [scopedSpaces, fanOutSource]);
 
   const slugByUnitId = useMemo(() => {
     const index = new Map<string, string>();
@@ -307,11 +464,48 @@ export function useRolloutConsoleChanges(args: {
     skip: skip || currentDataByUnitId.size === 0,
   });
 
+  /*
+   * An Invoke ChangeOrder's source is the change running its Invocation makes, so it is
+   * read as a stage would be — a dry run where it has not run, what it wrote where it has —
+   * over every Space in scope at once, as one synthetic stage.
+   */
+  const invocationStage = useMemo((): RolloutStage | null => {
+    if (!runsInvocation || (inScopeSpaceIds ?? []).length === 0) return null;
+    // In the order the rollout travels, so the groups read as the promotion path does:
+    // each stage's Spaces, then any the stages do not select.
+    const inScope = new Set(inScopeSpaceIds);
+    const ordered: string[] = [];
+    for (const stage of stages) {
+      for (const spaceId of stage.spaceIds) {
+        if (inScope.has(spaceId) && !ordered.includes(spaceId)) ordered.push(spaceId);
+      }
+    }
+    for (const spaceId of inScopeSpaceIds ?? []) if (!ordered.includes(spaceId)) ordered.push(spaceId);
+    return {
+      id: INVOCATION_SOURCE_STAGE_ID,
+      previousStageId: null,
+      spaceIds: ordered,
+      index: -1,
+      isSource: false,
+      isFirst: false,
+      prerequisites: [],
+    };
+  }, [runsInvocation, inScopeSpaceIds, stages]);
+  const invocationStages = useMemo(() => (invocationStage === null ? [] : [invocationStage]), [invocationStage]);
+  const invocationGroupsByStageId = useRolloutChanges({
+    changeOrderId,
+    stages: invocationStages,
+    selectedStageId: invocationStage === null ? null : INVOCATION_SOURCE_STAGE_ID,
+    takenSpaceIds: resolvedSpaceIds,
+    currentDataByUnitId,
+    skip: skip || invocationStage === null || currentDataByUnitId.size === 0,
+  });
+
   const baseline = useRolloutBaseline({
     changeOrderId,
     baseSpaceId,
     baseUnitSlugById,
-    skip: skip || baseUnitSlugById.size === 0,
+    skip: skip || baseUnitSlugById.size === 0 || fanOutSource !== undefined || runsInvocation,
   });
 
   const currentBySlug = useMemo(() => {
@@ -322,12 +516,18 @@ export function useRolloutConsoleChanges(args: {
     return index;
   }, [currentDataByUnitId, baseSpaceId]);
 
-  const source = useMemo((): {
-    units: MergedUnit[];
-    dropped: number;
-    createdResourceKeys: ReadonlySet<string>;
-    groupsByUnitId: ReadonlyMap<string, RolloutChangeGroup>;
-  } => {
+  const source = useMemo((): SourceChanges => {
+    if (fanOutSource !== undefined) return fanOutSourceChanges(fanOutSource, resolvedSpaceIds);
+    if (runsInvocation) {
+      return invocationSourceChanges({
+        groups: invocationGroupsByStageId.get(INVOCATION_SOURCE_STAGE_ID) ?? [],
+        spaceIds: invocationStage?.spaceIds ?? [],
+        currentDataByUnitId,
+        spaceIdByUnitId: unitSpaceIdIndex,
+        spaceNameBySpaceId,
+        takenSpaceIds: resolvedSpaceIds,
+      });
+    }
     if (baseSpaceId === undefined || baseline.status !== 'resolved') {
       return { units: EMPTY_UNITS, dropped: 0, createdResourceKeys: EMPTY_KEYS, groupsByUnitId: EMPTY_SOURCE_GROUPS };
     }
@@ -425,9 +625,58 @@ export function useRolloutConsoleChanges(args: {
       createdResourceKeys,
       groupsByUnitId: sourceGroupsByUnitId,
     };
-  }, [baseSpaceId, baseline.status, baseline.dataBySlug, currentDataByUnitId, spaceNameBySpaceId, currentBySlug, resolvedSpaceIds]);
+  }, [
+    fanOutSource,
+    runsInvocation,
+    invocationGroupsByStageId,
+    invocationStage,
+    unitSpaceIdIndex,
+    baseSpaceId,
+    baseline.status,
+    baseline.dataBySlug,
+    currentDataByUnitId,
+    spaceNameBySpaceId,
+    currentBySlug,
+    resolvedSpaceIds,
+  ]);
 
   return useMemo(() => {
+    /*
+     * A fan-out ChangeOrder's source row is the Spaces its Links take from, outside the
+     * scope this hook reads Units in, so the stage pipeline has nothing to show there. What
+     * that row stands for is the change as made, which is the source tree.
+     */
+    if (fanOutSource !== undefined && stages.find((s) => s.id === selectedStageId)?.isSource === true) {
+      const sourceSpaceIdByUnitId = new Map([
+        ...unitSpaceIdIndex,
+        ...source.units.map((unit) => [unit.unitId, unit.spaceId] as const),
+      ]);
+      return {
+        units: source.units,
+        groupsByUnitId: source.groupsByUnitId,
+        writtenUnitIds: new Set(source.units.map((unit) => unit.unitId)),
+        undeterminedUnitIds: new Set<string>(),
+        spaceNameBySpaceId,
+        slugByUnitId: new Map([...slugByUnitId, ...source.units.map((unit) => [unit.unitId, unit.slug] as const)]),
+        spaceIdByUnitId: sourceSpaceIdByUnitId,
+        sourceUnits: source.units,
+        sourceGroupsByUnitId: source.groupsByUnitId,
+        sourceDropped: source.dropped,
+        sourceCreatedResourceKeys: source.createdResourceKeys,
+        sourceSpaceGroups: source.spaceGroups ?? EMPTY_SPACE_GROUPS,
+        matrix:
+          fanOutSource.spaceIds.length === 0
+            ? null
+            : buildStageMatrix({
+                groups: [...source.groupsByUnitId.values()],
+                spaceIds: fanOutSource.spaceIds,
+                spaceIdByUnitId: sourceSpaceIdByUnitId,
+                spaceNameBySpaceId,
+                stageId: selectedStageId ?? '',
+              }),
+        isLoading: fanOutSource.status === 'loading',
+      };
+    }
     const groups = selectedStageId === null ? [] : (groupsByStageId.get(selectedStageId) ?? []);
     if (groups.length === 0) {
       return {
@@ -442,6 +691,7 @@ export function useRolloutConsoleChanges(args: {
         sourceGroupsByUnitId: source.groupsByUnitId,
         sourceDropped: source.dropped,
         sourceCreatedResourceKeys: source.createdResourceKeys,
+        sourceSpaceGroups: source.spaceGroups ?? EMPTY_SPACE_GROUPS,
         matrix: null,
         isLoading: !skip && currentDataByUnitId.size === 0,
       };
@@ -487,10 +737,12 @@ export function useRolloutConsoleChanges(args: {
       sourceGroupsByUnitId: source.groupsByUnitId,
       sourceDropped: source.dropped,
       sourceCreatedResourceKeys: source.createdResourceKeys,
+      sourceSpaceGroups: source.spaceGroups ?? EMPTY_SPACE_GROUPS,
       matrix,
       isLoading: false,
     };
   }, [
+    fanOutSource,
     stages,
     groupsByStageId,
     selectedStageId,

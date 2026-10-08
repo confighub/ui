@@ -46,6 +46,14 @@ const EMPTY_RELEASES: ReadonlyMap<string, CarryingRelease> = new Map();
 export interface RolloutProgressInput {
   /** ChangeOrder.SpaceID — the Space it resides in, i.e. the base. */
   changeOrderSpaceId: string | undefined;
+  /**
+   * Whether that Space holds the change before anything is promoted into it
+   * (`changeOrderOwnSpaceReached`). It decides how a real answer is told from
+   * a missing one — see `deriveProgress`.
+   */
+  ownSpaceReached: boolean;
+  /** ChangeOrderRead.State, exactly as it arrived. */
+  state: string | undefined;
   /** ChangeOrderRead.ResolvedSpaceIDs, exactly as it arrived. `undefined` matters. */
   resolvedSpaceIds: string[] | undefined;
   /** ChangeOrderRead.ReleasedSpaceIDs, exactly as it arrived. */
@@ -90,10 +98,20 @@ export interface RolloutProgressInput {
  * predates the feature, a derivation failure in production, and reading the
  * unwrapped POST shape where the wrapped GET shape was expected (which yields
  * `undefined` for every ChangeOrder).
+ *
+ * THAT DISCRIMINATOR HOLDS ONLY WHERE THE BASE HAS THE CHANGE FROM THE START.
+ * An Invoke or fan-out ChangeOrder's own Space is resolved only once something
+ * has been promoted into it, so before the first promotion the genuine answer
+ * IS empty. For those the discriminator is `State`, which the server sets in
+ * the same pass that derives these fields and leaves unset when that pass
+ * fails — except `Aborted`, which it sets beforehand without asking the Links
+ * anything, and so proves nothing on its own.
  */
 export function deriveProgress(input: RolloutProgressInput): RolloutProgress {
   const {
     changeOrderSpaceId,
+    ownSpaceReached,
+    state,
     resolvedSpaceIds,
     releasedSpaceIds,
     restoredSpaceIds,
@@ -101,12 +119,19 @@ export function deriveProgress(input: RolloutProgressInput): RolloutProgress {
     releases,
   } = input;
 
-  if (resolvedSpaceIds === undefined || resolvedSpaceIds.length === 0) {
-    return unavailableProgress();
-  }
-  // The base must be in there. If it is not, we are not looking at a real answer.
-  if (changeOrderSpaceId !== undefined && !resolvedSpaceIds.includes(changeOrderSpaceId)) {
-    return unavailableProgress();
+  if (ownSpaceReached) {
+    if (resolvedSpaceIds === undefined || resolvedSpaceIds.length === 0) {
+      return unavailableProgress();
+    }
+    // The base must be in there. If it is not, we are not looking at a real answer.
+    if (changeOrderSpaceId !== undefined && !resolvedSpaceIds.includes(changeOrderSpaceId)) {
+      return unavailableProgress();
+    }
+  } else {
+    const derived =
+      (resolvedSpaceIds !== undefined && resolvedSpaceIds.length > 0) ||
+      (state !== undefined && state !== '' && state !== 'Aborted');
+    if (!derived) return unavailableProgress();
   }
 
   return {
@@ -148,8 +173,9 @@ function unavailableProgress(): RolloutProgress {
 /**
  * Whether a Space has taken the change.
  *
- * The base is excluded from every count elsewhere, but it HAS taken the change
- * by definition — it is where the change was made — so it reports true here.
+ * Where the base holds the change from the start (`changeOrderOwnSpaceReached`)
+ * it is excluded from every count elsewhere, but it HAS taken the change by
+ * definition — it is where the change was made — so it reports true here.
  */
 export function hasTakenChange(progress: RolloutProgress, spaceId: string): boolean {
   return progress.resolvedSpaceIds.has(spaceId);
@@ -314,11 +340,17 @@ export function deriveStageState(input: RolloutStageStateInput): RolloutStageSta
   return {
     stageId: stage.id,
     verdict,
-    label: noSpaces ? rolloutCopy.stageHasNoSpaces : rolloutCopy.stageVerdict[verdict],
+    label: noSpaces
+      ? rolloutCopy.stageHasNoSpaces
+      : verdict === 'source' && stage.runsInvocation === true
+        ? rolloutCopy.invocationSource.verdict
+        : rolloutCopy.stageVerdict[verdict],
     progress: noSpaces
       ? ''
       : verdict === 'source'
-        ? rolloutCopy.sourceProgress
+        ? stage.runsInvocation === true
+          ? rolloutCopy.invocationSource.progress
+          : rolloutCopy.sourceProgress
         : verdict === 'unknown'
           ? rolloutCopy.progressUnavailable
           : rolloutCopy.stageProgress(promotedCount, spaceCount, inFlightCount),

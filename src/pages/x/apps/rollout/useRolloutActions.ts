@@ -549,7 +549,7 @@ export function useRolloutActions(args: UseRolloutActionsArgs): RolloutActions {
    *
    * Naming the Spaces rather than the stage: the caller has already decided
    * which of the stage's Spaces this action writes into — `promotionTargets`
-   * drops the ChangeOrder's own Space — and a `TargetStage` would hand that
+   * drops the Space the promotion passes over — and a `TargetStage` would hand that
    * decision back to the server and undo it. The stage's gates are evaluated
    * either way, since they are evaluated over the stage before it.
    */
