@@ -1859,7 +1859,8 @@ export default function RolloutsPage() {
               padding: '18px 20px',
               display: 'grid',
               gridTemplateColumns: 'minmax(0,1fr) 220px',
-              gap: '20px 32px',
+              // No row gap: the full-width row below sets its own top margin.
+              gap: '0 32px',
             }}
           >
             <Box sx={{ minWidth: 0 }}>
@@ -1982,226 +1983,6 @@ export default function RolloutsPage() {
                   whoever wants it later; only its display is gone.
                 */}
               </Box>
-
-              {/*
-                THE SUBJECT OF THE PAGE, not a second copy of the stage trees.
-                The reference pairs the two deliberately — "this is the value as
-                authored, that is the value as each target reported it… the
-                reader compares two trees, not a table against a list." One says
-                what the ChangeOrder carries; the other says what promoting into
-                a given stage would write. Overlapping field names, different
-                questions.
-
-                Costs no extra request: both sides are already fetched for the
-                comparison above, and the answer cannot vary by stage.
-              */}
-              {changes.sourceSpaceGroups.length > 0 ? (
-                /*
-                  An Invoke ChangeOrder's source is what running its Invocation
-                  changes: the in-scope Spaces grouped as a stage's are, so
-                  Spaces where it makes the same change show one diff.
-                */
-                <Box
-                  component="section"
-                  role="region"
-                  aria-label="At the source"
-                  sx={{ marginTop: '14px' }}
-                >
-                  <Box
-                    component="h3"
-                    sx={{
-                      fontSize: rolloutType.size.prose,
-                      lineHeight: rolloutType.lineHeight.heading,
-                      fontWeight: rolloutType.weight.semibold,
-                      margin: '0 0 8px',
-                    }}
-                  >
-                    At the source
-                  </Box>
-                  <Box sx={{ maxWidth: rolloutCardTokens.colBlock }}>
-                    {changes.sourceSpaceGroups.map((group) => {
-                      const { changedUnits, blockedUnits } = partitionSourceUnitsByChange(
-                        cardRepresentativeUnits(changes.sourceUnits, group.representativeSpaceId, detail.skippedUnits),
-                        changes.sourceGroupsByUnitId,
-                      );
-                      return (
-                        <Box key={group.representativeSpaceId} sx={{ marginBottom: '10px' }}>
-                          <Box sx={{ fontSize: rolloutType.size.body, color: rolloutInk.muted, marginBottom: '4px' }}>
-                            {rolloutCopy.invocationSource.groupCaption(group.labels)}
-                          </Box>
-                          {changedUnits.length === 0 && blockedUnits.length === 0 ? (
-                            <Box sx={{ fontSize: rolloutType.size.body, color: rolloutInk.muted, padding: '4px 12px 10px' }}>
-                              No fields differ here.
-                            </Box>
-                          ) : (
-                            [...changedUnits, ...blockedUnits].map(renderSourceUnit)
-                          )}
-                        </Box>
-                      );
-                    })}
-                  </Box>
-                </Box>
-              ) : changes.sourceUnits.length > 0 ? (
-                <Box
-                  component="section"
-                  role="region"
-                  aria-label="At the source"
-                  sx={{ marginTop: '14px' }}
-                >
-                  <Box
-                    component="h3"
-                    sx={{
-                      fontSize: rolloutType.size.prose,
-                      lineHeight: rolloutType.lineHeight.heading,
-                      fontWeight: rolloutType.weight.semibold,
-                      margin: '0 0 8px',
-                    }}
-                  >
-                    At the source
-                  </Box>
-                  {/*
-                    The card is not the whole change when something was
-                    omitted, and saying so is the difference between a partial
-                    list and a partial list that reads as complete.
-                  */}
-                  {changes.sourceDropped > 0 ? (
-                    <Box sx={{ fontSize: rolloutType.size.body, color: rolloutInk.muted, marginBottom: '8px' }}>
-                      {changes.sourceDropped}{' '}
-                      {changes.sourceDropped === 1 ? 'resource is' : 'resources are'} not shown here —
-                      no state was recorded for them before the change.
-                    </Box>
-                  ) : null}
-                  {/*
-                    `colBlock`: the reference caps this exact tree at 880px
-                    (`--col-block`) even though the card around it fills the
-                    row — a property/value column has its own readable width,
-                    independent of the card's. Found by screenshot, not by
-                    the structural harness: the tree was present and correct
-                    at every node, just stretched wider than the reference
-                    means it to be.
-                  */}
-                  <Box sx={{ maxWidth: rolloutCardTokens.colBlock }}>
-                    {/*
-                      A unit the ChangeOrder never touched is not shown here —
-                      it is already accounted for in "Passed over" — so
-                      `visibleSourceUnits` filters it out rather than
-                      repeating it. A unit that IS in scope but has nothing
-                      left to write (its value already matches) still shows,
-                      with its own "No fields differ here" line below, inside
-                      the "Unchanged" group beneath the resources that do move
-                      — see `visibleSourceUnits`'s own comment for why that is
-                      a different case from "skipped".
-                    */}
-                    {visibleSourceUnits.length === 0 ? (
-                      <Box sx={{ fontSize: rolloutType.size.body, color: rolloutInk.muted }}>
-                        Every resource here was passed over — see "Passed over" below.
-                      </Box>
-                    ) : (
-                      <>
-                        {changedSourceUnits.map(renderSourceUnit)}
-                        {/*
-                          The resources this change does not move are not listed
-                          at all. This screen reports what the change does, and a
-                          resource it leaves alone is not that.
-                          The exception below is the resource the change DID try
-                          to alter and could not, which reads identically in the
-                          diffs — both are empty — and could not be more
-                          different to a reader.
-                        */}
-                        <RolloutBlockedResources
-                          units={blockedSourceUnits}
-                          renderUnit={renderSourceUnit}
-                        />
-                      </>
-                    )}
-                  </Box>
-                </Box>
-              ) : null}
-              {/*
-                ⚠️ THIS IS NOT THE REFERENCE'S "N variants are not in scope"
-                CALLOUT, and building it as though it were would be the fake
-                mapping the reviewer explicitly warned against. The two are
-                different data: `skippedUnits` below names UNITS the change
-                itself declined to touch inside the Spaces it DOES cover
-                (`ChangeOrder.SkippedUnits`, real, wired, rendered as "Passed
-                over"). The reference's callout names whole SPACES excluded
-                from `InScopeSpaceIDs` entirely, each with a categorised
-                reason ("created after scope", "unreachable" — mockup ~line
-                4142). `InScopeSpaceIDs` is a positive list on the wire; there
-                is no field anywhere in the OpenAPI surface naming a Space
-                that was considered and excluded, let alone why. The excluded
-                SET is derivable client-side (every Space of the component
-                minus this list) but the REASON is not, and the reference's
-                whole callout is built around the reason. Rendering the set
-                without it would be guessing at "unreachable" vs. "created
-                after scope" — exactly the invented-data failure this page's
-                own header promises never to do. Left unbuilt; reported as a
-                real gap rather than approximated.
-              */}
-              {Object.keys(detail.skippedUnits).length > 0 ? (() => {
-                const skippedEntries = Object.entries(detail.skippedUnits);
-                return (
-                  <CollapsibleUnitGroup
-                    regionLabel="Resources this change passed over"
-                    label="Passed over"
-                    count={<>{skippedEntries.length} {skippedEntries.length === 1 ? 'resource' : 'resources'}</>}
-                    bodyId="passed-over-list"
-                    expanded={skippedExpanded}
-                    onToggle={() => setSkippedExpanded((prev) => !prev)}
-                    sx={{ marginTop: '14px' }}
-                  >
-                    {/*
-                      NOT AN ERROR, AND NOT WORDED AS ONE. A ChangeOrder over
-                      one changed Unit passes over every other Unit in its
-                      Space — that is the ordinary case, not a failure. The
-                      tone here is neutral for that reason, and the reason
-                      string is the server's own rather than a gloss on it.
-                    */}
-                    <Box component="dl" sx={{ margin: 0, fontSize: rolloutType.size.body }}>
-                      {skippedEntries.map(([unitId, reason]) => {
-                        const skippedSpaceId = changes.spaceIdByUnitId.get(unitId);
-                        const skippedName = changes.slugByUnitId.get(unitId) ?? unitId;
-                        return (
-                          <Box key={unitId} sx={{ display: 'flex', gap: '8px', padding: '2px 0' }}>
-                            <Box
-                              component="dt"
-                              sx={{ margin: 0, color: rolloutInk.default, fontFamily: 'monospace' }}
-                            >
-                              {/*
-                                The slug, never the unit id. An id is an
-                                internal identity — unique, correct and
-                                meaningless to a reader. It falls back to the
-                                id only when the unit is outside the scope
-                                this screen fetched, where showing something
-                                beats showing nothing. Linked to
-                                `/units/:spaceId/:id` — same destination
-                                every other unit row on this page links to
-                                — only when a Space id was actually
-                                resolved for it; a unit outside scope has
-                                no page to send a reader to.
-                              */}
-                              {skippedSpaceId !== undefined ? (
-                                <FactLink href={`/units/${skippedSpaceId}/${unitId}`}>{skippedName}</FactLink>
-                              ) : (
-                                skippedName
-                              )}
-                            </Box>
-                            <Box component="dd" sx={{ margin: 0, color: rolloutInk.muted }}>
-                              {reason}
-                            </Box>
-                          </Box>
-                        );
-                      })}
-                    </Box>
-                  </CollapsibleUnitGroup>
-                );
-              })() : null}
-
-              {detail.abortedReason !== '' ? (
-                <Box sx={{ fontSize: rolloutType.size.prose, color: rolloutInk.muted }}>
-                  Aborted: {detail.abortedReason}
-                </Box>
-              ) : null}
             </Box>
 
             <Box>
@@ -2340,6 +2121,224 @@ export default function RolloutsPage() {
                   </Button>
                 ) : null}
               </Box>
+            </Box>
+
+            {/*
+              The source tree and everything after it span both columns, so
+              the tree gets the card's full width rather than the width left
+              beside the stages panel.
+            */}
+            <Box sx={{ gridColumn: '1 / -1', minWidth: 0 }}>
+              {/*
+                THE SUBJECT OF THE PAGE, not a second copy of the stage trees.
+                The reference pairs the two deliberately — "this is the value as
+                authored, that is the value as each target reported it… the
+                reader compares two trees, not a table against a list." One says
+                what the ChangeOrder carries; the other says what promoting into
+                a given stage would write. Overlapping field names, different
+                questions.
+
+                Costs no extra request: both sides are already fetched for the
+                comparison above, and the answer cannot vary by stage.
+              */}
+              {changes.sourceSpaceGroups.length > 0 ? (
+                /*
+                  An Invoke ChangeOrder's source is what running its Invocation
+                  changes: the in-scope Spaces grouped as a stage's are, so
+                  Spaces where it makes the same change show one diff.
+                */
+                <Box
+                  component="section"
+                  role="region"
+                  aria-label="At the source"
+                  sx={{ marginTop: '14px' }}
+                >
+                  <Box
+                    component="h3"
+                    sx={{
+                      fontSize: rolloutType.size.prose,
+                      lineHeight: rolloutType.lineHeight.heading,
+                      fontWeight: rolloutType.weight.semibold,
+                      margin: '0 0 8px',
+                    }}
+                  >
+                    At the source
+                  </Box>
+                  <Box>
+                    {changes.sourceSpaceGroups.map((group) => {
+                      const { changedUnits, blockedUnits } = partitionSourceUnitsByChange(
+                        cardRepresentativeUnits(changes.sourceUnits, group.representativeSpaceId, detail.skippedUnits),
+                        changes.sourceGroupsByUnitId,
+                      );
+                      return (
+                        <Box key={group.representativeSpaceId} sx={{ marginBottom: '10px' }}>
+                          <Box sx={{ fontSize: rolloutType.size.body, color: rolloutInk.muted, marginBottom: '4px' }}>
+                            {rolloutCopy.invocationSource.groupCaption(group.labels)}
+                          </Box>
+                          {changedUnits.length === 0 && blockedUnits.length === 0 ? (
+                            <Box sx={{ fontSize: rolloutType.size.body, color: rolloutInk.muted, padding: '4px 12px 10px' }}>
+                              No fields differ here.
+                            </Box>
+                          ) : (
+                            [...changedUnits, ...blockedUnits].map(renderSourceUnit)
+                          )}
+                        </Box>
+                      );
+                    })}
+                  </Box>
+                </Box>
+              ) : changes.sourceUnits.length > 0 ? (
+                <Box
+                  component="section"
+                  role="region"
+                  aria-label="At the source"
+                  sx={{ marginTop: '14px' }}
+                >
+                  <Box
+                    component="h3"
+                    sx={{
+                      fontSize: rolloutType.size.prose,
+                      lineHeight: rolloutType.lineHeight.heading,
+                      fontWeight: rolloutType.weight.semibold,
+                      margin: '0 0 8px',
+                    }}
+                  >
+                    At the source
+                  </Box>
+                  {/*
+                    The card is not the whole change when something was
+                    omitted, and saying so is the difference between a partial
+                    list and a partial list that reads as complete.
+                  */}
+                  {changes.sourceDropped > 0 ? (
+                    <Box sx={{ fontSize: rolloutType.size.body, color: rolloutInk.muted, marginBottom: '8px' }}>
+                      {changes.sourceDropped}{' '}
+                      {changes.sourceDropped === 1 ? 'resource is' : 'resources are'} not shown here —
+                      no state was recorded for them before the change.
+                    </Box>
+                  ) : null}
+                  <Box>
+                    {/*
+                      A unit the ChangeOrder never touched is not shown here —
+                      it is already accounted for in "Passed over" — so
+                      `visibleSourceUnits` filters it out rather than
+                      repeating it. A unit that IS in scope but has nothing
+                      left to write (its value already matches) still shows,
+                      with its own "No fields differ here" line below, inside
+                      the "Unchanged" group beneath the resources that do move
+                      — see `visibleSourceUnits`'s own comment for why that is
+                      a different case from "skipped".
+                    */}
+                    {visibleSourceUnits.length === 0 ? (
+                      <Box sx={{ fontSize: rolloutType.size.body, color: rolloutInk.muted }}>
+                        Every resource here was passed over — see "Passed over" below.
+                      </Box>
+                    ) : (
+                      <>
+                        {changedSourceUnits.map(renderSourceUnit)}
+                        {/*
+                          The resources this change does not move are not listed
+                          at all. This screen reports what the change does, and a
+                          resource it leaves alone is not that.
+                          The exception below is the resource the change DID try
+                          to alter and could not, which reads identically in the
+                          diffs — both are empty — and could not be more
+                          different to a reader.
+                        */}
+                        <RolloutBlockedResources
+                          units={blockedSourceUnits}
+                          renderUnit={renderSourceUnit}
+                        />
+                      </>
+                    )}
+                  </Box>
+                </Box>
+              ) : null}
+              {/*
+                ⚠️ THIS IS NOT THE REFERENCE'S "N variants are not in scope"
+                CALLOUT, and building it as though it were would be the fake
+                mapping the reviewer explicitly warned against. The two are
+                different data: `skippedUnits` below names UNITS the change
+                itself declined to touch inside the Spaces it DOES cover
+                (`ChangeOrder.SkippedUnits`, real, wired, rendered as "Passed
+                over"). The reference's callout names whole SPACES excluded
+                from `InScopeSpaceIDs` entirely, each with a categorised
+                reason ("created after scope", "unreachable" — mockup ~line
+                4142). `InScopeSpaceIDs` is a positive list on the wire; there
+                is no field anywhere in the OpenAPI surface naming a Space
+                that was considered and excluded, let alone why. The excluded
+                SET is derivable client-side (every Space of the component
+                minus this list) but the REASON is not, and the reference's
+                whole callout is built around the reason. Rendering the set
+                without it would be guessing at "unreachable" vs. "created
+                after scope" — exactly the invented-data failure this page's
+                own header promises never to do. Left unbuilt; reported as a
+                real gap rather than approximated.
+              */}
+              {Object.keys(detail.skippedUnits).length > 0 ? (() => {
+                const skippedEntries = Object.entries(detail.skippedUnits);
+                return (
+                  <CollapsibleUnitGroup
+                    regionLabel="Resources this change passed over"
+                    label="Passed over"
+                    count={<>{skippedEntries.length} {skippedEntries.length === 1 ? 'resource' : 'resources'}</>}
+                    bodyId="passed-over-list"
+                    expanded={skippedExpanded}
+                    onToggle={() => setSkippedExpanded((prev) => !prev)}
+                    sx={{ marginTop: '14px' }}
+                  >
+                    {/*
+                      NOT AN ERROR, AND NOT WORDED AS ONE. A ChangeOrder over
+                      one changed Unit passes over every other Unit in its
+                      Space — that is the ordinary case, not a failure. The
+                      tone here is neutral for that reason, and the reason
+                      string is the server's own rather than a gloss on it.
+                    */}
+                    <Box component="dl" sx={{ margin: 0, fontSize: rolloutType.size.body }}>
+                      {skippedEntries.map(([unitId, reason]) => {
+                        const skippedSpaceId = changes.spaceIdByUnitId.get(unitId);
+                        const skippedName = changes.slugByUnitId.get(unitId) ?? unitId;
+                        return (
+                          <Box key={unitId} sx={{ display: 'flex', gap: '8px', padding: '2px 0' }}>
+                            <Box
+                              component="dt"
+                              sx={{ margin: 0, color: rolloutInk.default, fontFamily: 'monospace' }}
+                            >
+                              {/*
+                                The slug, never the unit id. An id is an
+                                internal identity — unique, correct and
+                                meaningless to a reader. It falls back to the
+                                id only when the unit is outside the scope
+                                this screen fetched, where showing something
+                                beats showing nothing. Linked to
+                                `/units/:spaceId/:id` — same destination
+                                every other unit row on this page links to
+                                — only when a Space id was actually
+                                resolved for it; a unit outside scope has
+                                no page to send a reader to.
+                              */}
+                              {skippedSpaceId !== undefined ? (
+                                <FactLink href={`/units/${skippedSpaceId}/${unitId}`}>{skippedName}</FactLink>
+                              ) : (
+                                skippedName
+                              )}
+                            </Box>
+                            <Box component="dd" sx={{ margin: 0, color: rolloutInk.muted }}>
+                              {reason}
+                            </Box>
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                  </CollapsibleUnitGroup>
+                );
+              })() : null}
+
+              {detail.abortedReason !== '' ? (
+                <Box sx={{ fontSize: rolloutType.size.prose, color: rolloutInk.muted }}>
+                  Aborted: {detail.abortedReason}
+                </Box>
+              ) : null}
             </Box>
           </Box>
 
@@ -3187,8 +3186,7 @@ export default function RolloutsPage() {
                         {groupOpen ? (
                           <Box id={`group-body-${groupKey}`}>
                             {changedRepUnits.length + blockedRepUnits.length === 0 ? (
-                              /* `colBlock`: see the comment at the "At the source" tree — same cap, same reason. */
-                              <Box sx={{ padding: '4px 0', maxWidth: rolloutCardTokens.colBlock }}>
+                              <Box sx={{ padding: '4px 0' }}>
                                 <Box sx={{ fontSize: rolloutType.size.body, color: rolloutInk.muted, padding: '4px 12px 10px' }}>
                                   {rolloutCopy.noResourcesYet}
                                 </Box>
@@ -3196,7 +3194,7 @@ export default function RolloutsPage() {
                             ) : (
                               <>
                                 {changedRepUnits.length > 0 ? (
-                                  <Box sx={{ padding: '4px 0', maxWidth: rolloutCardTokens.colBlock }}>
+                                  <Box sx={{ padding: '4px 0' }}>
                                     {changedRepUnits.map(renderRepUnit)}
                                   </Box>
                                 ) : null}
@@ -3211,7 +3209,7 @@ export default function RolloutsPage() {
                                   more different to a reader — which is why it
                                   sits apart rather than among the rows.
                                 */}
-                                <Box sx={{ maxWidth: rolloutCardTokens.colBlock, padding: '0 12px' }}>
+                                <Box sx={{ padding: '0 12px' }}>
                                   <RolloutBlockedResources
                                     units={blockedRepUnits}
                                     renderUnit={renderRepUnit}

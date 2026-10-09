@@ -166,6 +166,7 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
 | `componentTheme.ts` / `diffStyles.ts` | Design tokens + styled rows/pills/badges. |
 | `useColumnResize.ts`, `diffConstants.ts` | Minor helpers. |
 | `compare/DeploymentSelectors.tsx` | The N-way compare's selector row: slot A is the open deployment, every slot (including A) has the same clear (X) and picker once there are 2+. |
+| `compare/CompareCollapsible.tsx` | The "Compare" header that folds the selector row away, on both the Configuration tab (`DeploymentSelectors`) and the Releases tab (`ReleaseSelectors`). The folded state is a view preference kept in localStorage, one key per tab, not in the URL. |
 | `compare/ComponentCompareSection.tsx` | The compare surface itself: filter strip, per-document-group grid + hoisted image rows, staged-edit footer. |
 | `compare/CompareGrid.tsx` | N columns of one document's fields; only the key column freezes. Column heads are drag sources/targets when mounted with a `dndScope`. |
 | `compare/CompareCell.tsx` | One value in one column: `same`/`differs`/`absent`/`unknown`/`no-document`. |

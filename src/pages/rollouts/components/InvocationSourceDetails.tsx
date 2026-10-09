@@ -83,7 +83,6 @@ export function InvocationSourceDetails({ source }: InvocationSourceDetailsProps
         alignItems: 'baseline',
         margin: 0,
         padding: '10px 12px',
-        maxWidth: 880,
         borderRadius: `${rolloutShape.radius.md}px`,
         border: `1px solid ${rolloutBorder.default}`,
         background: rolloutSurface.sunk,

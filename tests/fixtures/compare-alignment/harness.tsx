@@ -15,6 +15,7 @@ import { useState, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { Theme } from '../../../src/components/theme-provider/ThemeProvider';
+import { CompareCollapsible } from '../../../src/pages/x/apps/compare/CompareCollapsible';
 import { CompareColumnDnd } from '../../../src/pages/x/apps/compare/CompareColumnDnd';
 import { ComponentCompareSection } from '../../../src/pages/x/apps/compare/ComponentCompareSection';
 import { DeploymentSelectors } from '../../../src/pages/x/apps/compare/DeploymentSelectors';
@@ -98,6 +99,9 @@ const commit = async (unitId: string, spaceId: string) => {
 const recordedSelections: string[][] = [];
 (window as unknown as { __compareSelections: string[][] }).__compareSelections = recordedSelections;
 
+/** The `collapse` pane's localStorage key. Each spec page opens in a new browser context, so it starts empty and the pane starts expanded. */
+const COLLAPSE_STORAGE_KEY = 'confighub.harness.compareCollapsed';
+
 const REORDER_DATA: Record<string, string> = {
   'prod-us1': A,
   'dev-1': B,
@@ -153,6 +157,8 @@ interface ReorderHarnessProps {
   extraUnit?: boolean;
   /** Gives every column a `unitId` and wires `onCommitStaged`, so cells can be staged — for the "a collapsed unit does not lose its staged edits" test. */
   editable?: boolean;
+  /** Wraps the selector row in `CompareCollapsible`, the way `ComponentSidePane` does. */
+  collapsible?: boolean;
 }
 
 /**
@@ -162,7 +168,7 @@ interface ReorderHarnessProps {
  * the picker and a drag all end up going through the same
  * `recordedSelections` log, so a spec can assert on whichever gesture it drove.
  */
-function ReorderHarness({ deploymentIds, ignoreReorder, extraUnit, editable }: ReorderHarnessProps): ReactElement {
+function ReorderHarness({ deploymentIds, ignoreReorder, extraUnit, editable, collapsible }: ReorderHarnessProps): ReactElement {
   const [selection, setSelection] = useState<string[]>(deploymentIds);
   const options = selection.map((id) => ({ id, ...shownFor(id) }));
   const labels = new Map(options.map((option) => [option.id, option.label]));
@@ -175,9 +181,17 @@ function ReorderHarness({ deploymentIds, ignoreReorder, extraUnit, editable }: R
 
   const unitId = (id: string) => (editable ? `u-${id}` : undefined);
 
+  const selectors = <DeploymentSelectors options={options} selection={selection} onSelectionChange={applyNext} />;
+
   return (
     <CompareColumnDnd order={selection} labels={labels} onReorder={applyNext}>
-      <DeploymentSelectors options={options} selection={selection} onSelectionChange={applyNext} />
+      {collapsible ? (
+        <CompareCollapsible storageKey={COLLAPSE_STORAGE_KEY} testId="component-compare">
+          {selectors}
+        </CompareCollapsible>
+      ) : (
+        selectors
+      )}
       <ComponentCompareSection
         units={[
           {
@@ -351,6 +365,10 @@ createRoot(document.getElementById('root')!).render(
         one or both are collapsed. */}
     <div data-state="reorder-units" style={{ width: 645, height: 900, display: 'flex', flexDirection: 'column' }}>
       <ReorderHarness deploymentIds={['prod-us1', 'dev-1', 'dev-2']} extraUnit editable />
+    </div>
+    {/* The selector row folded under a "Compare" header, as the side pane draws it. */}
+    <div data-state="collapse" style={{ width: 645, height: 520, display: 'flex', flexDirection: 'column' }}>
+      <ReorderHarness deploymentIds={['prod-us1', 'dev-1']} collapsible />
     </div>
     {[2, 3, 5, 8].map((n) => (
       <div key={n} data-pane={n} style={{ width: 645, border: '1px solid #ccc', marginBottom: 24, display: 'flex', flexDirection: 'column', height: 700 }}>

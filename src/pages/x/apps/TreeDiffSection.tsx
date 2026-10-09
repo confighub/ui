@@ -26,6 +26,24 @@ import {
 
 const INDENT_PX = 12;
 
+/** Marks a leaf row's key cell, so the section can size the key column to the widest one. */
+const KEY_CELL_CLASS = 'tree-diff-key';
+
+/**
+ * The widest key cell's natural width in px, or null when no leaf is visible.
+ * Every cell is set to `max-content` before any is read, so the layout is
+ * computed once and not once per cell.
+ */
+function measureKeyColumn(container: HTMLElement): number | null {
+  const cells = Array.from(container.getElementsByClassName(KEY_CELL_CLASS)) as HTMLElement[];
+  if (cells.length === 0) return null;
+  for (const cell of cells) cell.style.width = 'max-content';
+  let widest = 0;
+  for (const cell of cells) widest = Math.max(widest, cell.getBoundingClientRect().width);
+  for (const cell of cells) cell.style.width = '';
+  return Math.ceil(widest);
+}
+
 /**
  * Changed-token treatment per column: a subtle tint plus a hairline, mirroring the
  * staged-preview pill in ComponentValuesSection. The token TEXT colour is inherited
@@ -203,11 +221,12 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
 
   const col1 = (columnStyle as Record<string, string>)['--col1-width'] ?? '40%';
   const col2 = (columnStyle as Record<string, string>)['--col2-width'] ?? '28%';
+  const keyCol = (columnStyle as Record<string, string>)['--key-col-width'];
 
   useLayoutEffect(() => {
     if (!isLeaf) return;
     setAutoWrap(measureTruncation(cellRefs.current));
-  }, [isLeaf, node.diff?.oldValue, node.diff?.newValue, node.key, col1, col2]);
+  }, [isLeaf, node.diff?.oldValue, node.diff?.newValue, node.key, col1, col2, keyCol]);
 
   useEffect(() => {
     if (!isLeaf) return;
@@ -267,6 +286,7 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
       return (
         <ReviewRow $striped={striped} $plain sx={{ alignItems: 'center', minHeight: 22, py: '1px', opacity: 0.45 }}>
           <PropertyCell
+            className={KEY_CELL_CLASS}
             sx={{ display: 'flex', alignItems: 'center', gap: 0, paddingLeft: `${16 + depth * INDENT_PX}px`, fontSize: 12, fontFamily: componentTheme.fontMono, color: componentTheme.fgSubtle }}
           >
             <Box component="span" sx={{ width: 10, flexShrink: 0 }} />
@@ -289,6 +309,7 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
       return (
         <ReviewRow $striped={striped} $plain sx={{ alignItems: 'center' }}>
           <PropertyCell
+            className={KEY_CELL_CLASS}
             sx={{ display: 'flex', alignItems: 'center', gap: 0, paddingLeft: `${16 + depth * INDENT_PX}px`, fontSize: 12, fontFamily: componentTheme.fontMono }}
           >
             <Box component="span" sx={{ width: 10, flexShrink: 0 }} />
@@ -317,6 +338,7 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
         sx={{ alignItems: autoWrap || preformatted ? 'flex-start' : 'center' }}
       >
         <PropertyCell
+          className={KEY_CELL_CLASS}
           sx={{ display: 'flex', alignItems: 'center', gap: 0, paddingLeft: `${16 + depth * INDENT_PX}px`, fontSize: 12, fontFamily: componentTheme.fontMono, color: componentTheme.fgMuted }}
         >
           <Box component="span" sx={{ width: 10, flexShrink: 0 }} />
@@ -572,12 +594,34 @@ export const TreeDiffSection = memo(({ entry, allPaths, keyPrefix, label, varian
     return indices;
   }, [tree]);
 
+  /*
+   * The key column takes only the width its keys need, so the value columns get
+   * the rest. Capped at 40% of the row so one long key cannot squeeze the values.
+   * Measured again whenever the container resizes, which an expanded or
+   * collapsed folder also does.
+   */
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [keyWidth, setKeyWidth] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const measure = () => setKeyWidth(measureKeyColumn(container));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [tree]);
+  const sizedColumnStyle = useMemo(
+    () => (keyWidth == null ? columnStyle : ({ ...columnStyle, '--key-col-width': `min(${keyWidth}px, 40%)` } as CSSProperties)),
+    [columnStyle, keyWidth],
+  );
+
   if (!suppliedTree && filterText && filteredDiffs.length === 0) return null;
 
   return (
     <>
       {!hideLabel && <SectionLabel sx={SECTION_LABEL_COLORS[variant]}>{label}</SectionLabel>}
-      <Box data-diff-columns style={columnStyle} sx={{ position: 'relative' }}>
+      <Box ref={containerRef} data-diff-columns style={sizedColumnStyle} sx={{ position: 'relative' }}>
         {!viewOnly && <DiffColumnDivider $position="first" $dragging={isDragging} onMouseDown={(e) => onDividerMouseDown(0, e)} />}
         {!viewOnly && <DiffColumnDivider $position="second" $dragging={isDragging} onMouseDown={(e) => onDividerMouseDown(1, e)} />}
         {tree.map((node, i) => (
@@ -589,7 +633,7 @@ export const TreeDiffSection = memo(({ entry, allPaths, keyPrefix, label, varian
             filterText={filterText}
             variantOverrides={variantOverrides}
             rowIndex={startIndices[i]}
-            columnStyle={columnStyle}
+            columnStyle={sizedColumnStyle}
             allPaths={allPaths}
             changedPaths={changedPaths}
             changedDiffs={changedDiffs}

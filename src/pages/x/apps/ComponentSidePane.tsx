@@ -43,6 +43,7 @@ import { useUnitMutationSourcesMap } from '@/hooks/useUnitData';
 
 import type { FieldPathMeta } from './configParser';
 import { ComponentToolbar } from './ComponentToolbar';
+import { CompareCollapsible } from './compare/CompareCollapsible';
 import { CompareColumnDnd } from './compare/CompareColumnDnd';
 import { ComponentCompareSection, type CompareUnit } from './compare/ComponentCompareSection';
 import { DeploymentSelectors, type DeploymentOption } from './compare/DeploymentSelectors';
@@ -118,6 +119,9 @@ const EMPTY_RELEASE_SELECTION: readonly string[] = [];
 
 /** Stable identity for "nothing extra is being compared", so memos downstream don't churn. */
 const EMPTY_COMPARE_IDS: readonly string[] = [];
+
+/** Where the Configuration tab remembers that its compare slots are folded away. */
+const CONFIG_COMPARE_COLLAPSED_KEY = 'confighub.componentPane.config.compareCollapsed';
 
 // ============================================================================
 // STYLED COMPONENTS — pane content tabs (Configuration / Releases)
@@ -2109,11 +2113,13 @@ export const ComponentSidePane = memo(
             onReorder={handleCompareSelectionChange}
           >
             {compareOptions.length > 1 && (
-              <DeploymentSelectors
-                options={compareOptions}
-                selection={compareSelection}
-                onSelectionChange={handleCompareSelectionChange}
-              />
+              <CompareCollapsible storageKey={CONFIG_COMPARE_COLLAPSED_KEY} testId='component-compare'>
+                <DeploymentSelectors
+                  options={compareOptions}
+                  selection={compareSelection}
+                  onSelectionChange={handleCompareSelectionChange}
+                />
+              </CompareCollapsible>
             )}
 
             {isComparing && (

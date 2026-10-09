@@ -69,6 +69,7 @@ import type { ReactElement } from 'react';
 
 import Box from '@mui/material/Box';
 
+import { CompareCollapsible } from './compare/CompareCollapsible';
 import { componentTheme } from './componentTheme';
 import { groupFieldEntriesByDocument } from './diffTree';
 import { buildGroupedPaths, countLogicalChanges } from './entryBuilders';
@@ -89,6 +90,9 @@ import type { ExtendedReleaseRead } from '@confighub/rtk-query';
 export const DECLARED_BAR_ID = '__declared__';
 /** The declared bar's short label — used in the lane, the readout and the diff header. */
 const DECLARED_LABEL = 'decl';
+
+/** Where the Releases tab remembers that its two release selectors are folded away. */
+const RELEASES_COMPARE_COLLAPSED_KEY = 'confighub.componentPane.releases.compareCollapsed';
 
 /** Stable empty array: feeding `useUnreleasedChanges` a fresh `[]` would re-run its memos, and a non-empty list is what makes it fetch. */
 const EMPTY_RELEASE_UNITS: ReleaseUnitRef[] = [];
@@ -671,19 +675,23 @@ export function ReleasesPane({
         ) : (
           <LaneEmpty data-testid='release-empty'>No releases yet.</LaneEmpty>
         )
-      ) : selectionPending ? (
-        // The releases are known and the default is not. Two blank selectors
-        // would say "nothing is selected", which is a different claim and a
-        // false one. The diff region below already holds for the same reason —
-        // its `isLoading` is the same unresolved count — so this is the one
-        // element that was asserting a state it could not know.
-        <LaneEmpty data-testid='release-loading'>Loading…</LaneEmpty>
       ) : (
-        <ReleaseSelectors
-          options={options}
-          selection={liveSelection}
-          onSelectionChange={handleSelectionChange}
-        />
+        <CompareCollapsible storageKey={RELEASES_COMPARE_COLLAPSED_KEY} testId='release-compare'>
+          {selectionPending ? (
+            // The releases are known and the default is not. Two blank selectors
+            // would say "nothing is selected", which is a different claim and a
+            // false one. The diff region below already holds for the same reason —
+            // its `isLoading` is the same unresolved count — so this is the one
+            // element that was asserting a state it could not know.
+            <LaneEmpty data-testid='release-loading'>Loading…</LaneEmpty>
+          ) : (
+            <ReleaseSelectors
+              options={options}
+              selection={liveSelection}
+              onSelectionChange={handleSelectionChange}
+            />
+          )}
+        </CompareCollapsible>
       )}
 
           {/* The comparison names itself in the two selectors above, so the

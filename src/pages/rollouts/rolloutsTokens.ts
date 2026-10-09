@@ -59,19 +59,6 @@ export const rolloutSurface = {
 export const rolloutCardTokens = {
   radius: 10,
   shadow: '0 1px 2px rgba(25,29,35,.05), 0 1px 1px rgba(25,29,35,.04)',
-  /**
-   * `--col-block`. A property/value tree reads as a column of aligned
-   * values, and a column has an optimal width independent of how wide its
-   * container happens to be — the reference caps its diff trees at this
-   * width while every other card on the page fills the row (mockup ~line
-   * 671, 679: `.dv-unit`'s own `max-width` is set on the tree, never on
-   * `.main`). Rendering these trees at full card width was found by direct
-   * side-by-side screenshot comparison, not by any structural check — every
-   * region-presence and chrome check the harness runs passed while this was
-   * still wrong, because the tree was PRESENT, just proportioned differently
-   * than the reference means it to be.
-   */
-  colBlock: 880,
 } as const;
 
 /** Outcome-kind border tints, for a panel's own edge — `--wait-line` / `--bad-line` / `--accent-line`. */
