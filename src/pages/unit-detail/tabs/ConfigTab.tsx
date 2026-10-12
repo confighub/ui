@@ -6,9 +6,9 @@ import { ErrorBox } from '@/components/error-box/ErrorBox';
 import { Section } from '@/components/styled';
 import { BorderedAccordion, fadeIn } from '@/components/styled';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
-import { useUnitData, useUploadUnitData } from '@/hooks/useUnitData';
-import { UnitRead } from '@confighub/rtk-query';
+import { useEditableUnitData, useUploadUnitData } from '@/hooks/useUnitData';
 import { Direction } from '@/types/enums';
+import { UnitRead } from '@confighub/rtk-query';
 import CancelIcon from '@mui/icons-material/Cancel';
 import EditIcon from '@mui/icons-material/Edit';
 import AccordionDetails from '@mui/material/AccordionDetails';
@@ -70,7 +70,10 @@ export interface ConfigEditorTabProps {
 export const CONFIG_TAB_ID = 1;
 
 /**
- * ConfigTab component provides a code editor interface for editing configuration data
+ * ConfigTab component provides a code editor interface for editing configuration data.
+ *
+ * The page renders it with the Unit's ID as its key, so nothing here outlives the Unit it was
+ * for: an edit in progress, or edit mode, does not follow the user to the next Unit.
  */
 export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTabProps) => {
   // State
@@ -78,10 +81,14 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
   const [isShowLastChangeDescriptionModalOpen, setIsShowLastChangeDescriptionModalOpen] =
     useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [configData, setConfigData] = useState<string>('');
+  // undefined until the user changes something. Save writes this and nothing else, so a Save
+  // with no edit writes nothing rather than whatever the editor last reported.
+  const [editedData, setEditedData] = useState<string | undefined>(undefined);
+  // Remounts the editor, which is uncontrolled, so Cancel puts back what was loaded.
+  const [editSession, setEditSession] = useState(0);
 
-  // Unit data can run to megabytes; decode only when it actually changes.
-  const { data: decodedData } = useUnitData(unit.SpaceID, unit.UnitID);
+  const { data: loadedData, etag, isLoaded } = useEditableUnitData(unit.SpaceID, unit.UnitID);
+  const hasChanges = editedData !== undefined && editedData !== loadedData;
 
   // API Hooks
   const [uploadUnitData, { error, isSuccess }] = useUploadUnitData();
@@ -91,23 +98,43 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
     onSuccess: () => {
       onConfigUpdated();
       setIsEditMode(false);
+      setEditedData(undefined);
+    },
+    onError: () => {
+      if (error && 'status' in error && error.status === 409) {
+        setErrorMessage(
+          'The configuration changed after it was loaded. Copy your edit, Cancel to load the current configuration, and apply the edit again.',
+        );
+      }
     },
   });
 
   // Event Handlers
   const handleLastChangedDescription = async (lastChangeDescription: string) => {
     setIsShowLastChangeDescriptionModalOpen(false);
+    if (!hasChanges) return;
 
-    // The configuration goes to the data endpoint; the change description is metadata.
-    await uploadUnitData({
-      spaceId: unit.SpaceID!,
-      unitId: unit.UnitID!,
-      body: configData,
-      lastChangeDescription,
-    }).unwrap();
+    // The configuration goes to the data endpoint; the change description is metadata. The
+    // write names the configuration the edit started from, so it cannot land on a Unit that
+    // holds anything else.
+    try {
+      await uploadUnitData({
+        spaceId: unit.SpaceID!,
+        unitId: unit.UnitID!,
+        body: editedData,
+        lastChangeDescription,
+        'If-Match': etag || undefined,
+      }).unwrap();
+    } catch {
+      // Reported through useApiErrorMessage.
+    }
   };
 
   const onToggleEditMode = (toggleEdit: boolean) => {
+    if (!toggleEdit) {
+      setEditedData(undefined);
+      setEditSession((n) => n + 1);
+    }
     setIsEditMode(toggleEdit);
   };
 
@@ -129,6 +156,7 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
                       startIcon={isEditMode ? <CancelIcon /> : <EditIcon />}
                       variant='text'
                       color='secondary'
+                      disabled={!isEditMode && !isLoaded}
                       onClick={() => onToggleEditMode(!isEditMode)}
                     >
                       {isEditMode ? 'Cancel' : 'Edit'}
@@ -139,23 +167,33 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
               <Divider />
               {/* Main Content Area */}
               <ContentContainer>
-                {/* Raw YAML editing  */}
-                <Suspense
-                  fallback={
-                    <Typography sx={{ p: 2 }} variant='body2' color='text.secondary'>
-                      Loading editor…
-                    </Typography>
-                  }
-                >
-                  <YamlEditor
-                    value={decodedData}
-                    toolchainType={unit.ToolchainType ?? undefined}
-                    onCodeChanged={(value) => {
-                      setConfigData(value);
-                    }}
-                    canEdit={isEditMode}
-                  />
-                </Suspense>
+                {/* Raw YAML editing. The editor mounts once the configuration has arrived:
+                    Monaco settles a model's line endings when it creates it, and one created
+                    empty saves CRLF. */}
+                {!isLoaded ? (
+                  <Typography sx={{ p: 2 }} variant='body2' color='text.secondary'>
+                    Loading configuration…
+                  </Typography>
+                ) : (
+                  <Suspense
+                    fallback={
+                      <Typography sx={{ p: 2 }} variant='body2' color='text.secondary'>
+                        Loading editor…
+                      </Typography>
+                    }
+                  >
+                    <YamlEditor
+                      key={editSession}
+                      value={loadedData}
+                      toolchainType={unit.ToolchainType ?? undefined}
+                      onCodeChanged={(value) => {
+                        // The editor also reports text it was given, not only typing.
+                        if (isEditMode) setEditedData(value);
+                      }}
+                      canEdit={isEditMode}
+                    />
+                  </Suspense>
+                )}
               </ContentContainer>
 
               <Divider />
@@ -178,6 +216,7 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
                     <Button
                       variant='contained'
                       fullWidth
+                      disabled={!hasChanges}
                       onClick={() => {
                         // Show change description modal
                         setIsShowLastChangeDescriptionModalOpen(true);

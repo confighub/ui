@@ -131,7 +131,6 @@ export const CodeEditor = ({
   // Content-driven height for `fitContentHeight` mode (capped at maxContentHeight).
   const [fitHeight, setFitHeight] = useState<number>();
   const monaco = useMonaco();
-  const [isEditMode, setIsEditMode] = useState(canEdit);
   const [editorInstance, setEditorInstance] = useState<editor.IStandaloneCodeEditor>();
   const decorationsRef = useRef<string[]>([]);
   // Disposable for the onDidContentSizeChange listener used by fitContentHeight.
@@ -164,10 +163,6 @@ export const CodeEditor = ({
   // i.e. Kubernetes YAML. Everything else never had it, so saying so would be
   // noise.
   const showSchemaDisabledNote = isOversized && isKubernetesToolchain(toolchainType);
-
-  useEffect(() => {
-    setIsEditMode(canEdit);
-  }, [canEdit]);
 
   const updateEditorHeight = () => {
     const remainingHeight = window.innerHeight - 170 - 50;
@@ -560,7 +555,9 @@ export const CodeEditor = ({
             fontSize: 14,
             lineNumbers: 'on',
             automaticLayout: true,
-            readOnly: !isEditMode || readonly,
+            // Read from the prop, not a copy of it in state: a copy lags a render behind, so
+            // the editor stayed read-only for the first keystrokes after Edit was clicked.
+            readOnly: !canEdit || readonly,
             // Don't auto-pop or auto-accept the suggest widget. monaco-yaml
             // schema-driven completion supplies multi-line snippet items whose
             // `range` covers the whole current line; with the defaults, a

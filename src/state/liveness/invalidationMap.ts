@@ -159,6 +159,7 @@ export const EXTRA_INVALIDATIONS: Record<string, TagType[]> = {
   createUnit: UNIT_WRITE,
   updateUnit: UNIT_WRITE,
   patchUnit: UNIT_WRITE,
+  uploadUnitData: UNIT_WRITE,
   setUnitProtection: UNIT_WRITE,
   bulkCreateUnits: UNIT_WRITE,
   bulkPatchUnits: UNIT_WRITE,

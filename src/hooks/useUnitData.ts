@@ -20,6 +20,7 @@ import {
   useSearchUnitMutationSourcesChunkedQuery,
 } from './chunkedQueriesApi';
 import { chunkIds, inClause } from './inClauseChunks';
+import { useDownloadEditableUnitDataQuery } from './unitDataEditApi';
 
 /**
  * Configuration data and mutation sources are not fields of a Unit or a Revision. They are
@@ -34,22 +35,46 @@ import { chunkIds, inClause } from './inClauseChunks';
  * clause over a large Component's Units is longer than the server accepts.
  */
 
-/** A Unit's configuration. Skipped until both ids are known. */
+/**
+ * A Unit's configuration. Skipped until both ids are known.
+ *
+ * currentData, not data: data is the last result the hook received for any arguments, so for
+ * as long as the next Unit's configuration is loading it is the previous Unit's.
+ */
 export const useUnitData = (spaceId?: string, unitId?: string) => {
-  const { data, isFetching, error } = useDownloadUnitDataQuery(
+  const { currentData, isFetching, error } = useDownloadUnitDataQuery(
     { spaceId: spaceId as string, unitId: unitId as string },
     { skip: !spaceId || !unitId },
   );
-  return { data: (data as string | undefined) ?? '', isFetching, error };
+  return { data: (currentData as string | undefined) ?? '', isFetching, error };
+};
+
+/**
+ * A Unit's configuration for an editor: the text, the ETag to write it back with (as the
+ * upload's If-Match), and whether it has loaded for this Unit -- an editor must not
+ * offer to edit before it has, since what it shows until then is nothing.
+ */
+export const useEditableUnitData = (spaceId?: string, unitId?: string) => {
+  const { currentData, isFetching, error } = useDownloadEditableUnitDataQuery(
+    { spaceId: spaceId as string, unitId: unitId as string },
+    { skip: !spaceId || !unitId },
+  );
+  return {
+    data: currentData?.data ?? '',
+    etag: currentData?.etag ?? '',
+    isLoaded: currentData !== undefined,
+    isFetching,
+    error,
+  };
 };
 
 /** A Revision's configuration. Skipped until all three ids are known. */
 export const useRevisionData = (spaceId?: string, unitId?: string, revisionId?: string) => {
-  const { data, isFetching, error } = useDownloadRevisionDataQuery(
+  const { currentData, isFetching, error } = useDownloadRevisionDataQuery(
     { spaceId: spaceId as string, unitId: unitId as string, revisionId: revisionId as string },
     { skip: !spaceId || !unitId || !revisionId },
   );
-  return { data: (data as string | undefined) ?? '', isFetching, error };
+  return { data: (currentData as string | undefined) ?? '', isFetching, error };
 };
 
 /** What set each value in a Unit's configuration. */
@@ -77,7 +102,9 @@ export const useRevisionMutationSources = (
 /**
  * Writing a Unit's configuration. It is a separate call from updating the Unit: the update
  * body has nowhere to put a configuration, which is what stops a metadata write from
- * destroying one it never fetched.
+ * destroying one it never fetched. An edit of a configuration that was read passes the etag
+ * useEditableUnitData returned as If-Match, so the write is refused with 409 rather than
+ * landing on a configuration other than the one the edit started from.
  */
 export const useUploadUnitData = useUploadUnitDataMutation;
 

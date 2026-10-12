@@ -1,11 +1,12 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import {useCallback, useState} from 'react';
+import { useCallback, useState } from 'react';
 
 import { useAppDispatch } from '@/hooks/useApp';
-import { type ExtendedUnitRead } from '@confighub/rtk-query';
+import { useEditableUnitData, useUploadUnitData } from '@/hooks/useUnitData';
 import { setAlert } from '@/state/slices/alert';
 import { getApiErrorMessage } from '@/utility/error-functions';
+import { type ExtendedUnitRead } from '@confighub/rtk-query';
 import Editor from '@monaco-editor/react';
 import CloseIcon from '@mui/icons-material/Close';
 import SaveIcon from '@mui/icons-material/Save';
@@ -14,7 +15,6 @@ import Button from '@mui/material/Button';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { styled, useTheme } from '@mui/material/styles';
-import { useUnitData, useUploadUnitData } from '@/hooks/useUnitData';
 
 // ============================================================================
 // TYPES
@@ -53,33 +53,47 @@ export const ConfigEditor = ({ unit, onClose }: IConfigEditorProps) => {
   const theme = useTheme();
   const dispatch = useAppDispatch();
   const [uploadUnitData] = useUploadUnitData();
+  const unitId = unit?.Unit?.UnitID || '';
 
   // The configuration comes from the Unit's data endpoint, not the Unit.
-  const { data: originalData } = useUnitData(unit?.Unit?.SpaceID, unit?.Unit?.UnitID);
+  const {
+    data: originalData,
+    etag,
+    isLoaded,
+  } = useEditableUnitData(unit?.Unit?.SpaceID, unit?.Unit?.UnitID);
 
   // The configuration arrives after the Unit does, so the editor's buffer is seeded from
   // it rather than initialised with it: undefined means "not edited yet" and reads through
-  // to whatever the endpoint served.
-  const [editedData, setEditedData] = useState<string | undefined>(undefined);
+  // to whatever the endpoint served. The edit records which Unit it is of, so one made on
+  // this Unit is not shown, or saved, as another's when the editor moves on.
+  const [edit, setEdit] = useState<{ unitId: string; data: string } | undefined>(undefined);
+  const editedData = edit?.unitId === unitId ? edit.data : undefined;
   const displayedData = editedData ?? originalData;
 
   // Check if there are unsaved changes
-  const hasChanges = editedData !== undefined && editedData !== originalData;
+  const hasChanges = isLoaded && editedData !== undefined && editedData !== originalData;
 
-  const handleEditorChange = useCallback((value: string | undefined) => {
-    setEditedData(value || '');
-  }, []);
+  const handleEditorChange = useCallback(
+    (value: string | undefined) => {
+      setEdit({ unitId, data: value || '' });
+    },
+    [unitId],
+  );
 
   const handleSave = useCallback(async () => {
+    if (!hasChanges) return;
     try {
       // Configuration is written through the Unit's data endpoint. The Unit body has
-      // nowhere to put one, so a metadata update cannot carry it.
+      // nowhere to put one, so a metadata update cannot carry it. If-Match names the
+      // configuration the edit started from, so the write is refused rather than landing
+      // on anything else.
       await uploadUnitData({
         spaceId: unit?.Unit?.SpaceID || '',
-        unitId: unit?.Unit?.UnitID || '',
+        unitId,
         body: displayedData,
+        'If-Match': etag || undefined,
       }).unwrap();
-      setEditedData(undefined);
+      setEdit(undefined);
     } catch (error) {
       dispatch(
         setAlert({
@@ -89,7 +103,7 @@ export const ConfigEditor = ({ unit, onClose }: IConfigEditorProps) => {
         }),
       );
     }
-  }, [dispatch, displayedData, unit?.Unit?.SpaceID, unit?.Unit?.UnitID, uploadUnitData]);
+  }, [dispatch, displayedData, etag, hasChanges, unit?.Unit?.SpaceID, unitId, uploadUnitData]);
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -140,19 +154,29 @@ export const ConfigEditor = ({ unit, onClose }: IConfigEditorProps) => {
 
       {/* Monaco Editor */}
       <EditorContainer>
-        <Editor
-          height='100%'
-          language='yaml'
-          value={displayedData}
-          onChange={handleEditorChange}
-          theme='vs-dark'
-          options={{
-            minimap: { enabled: true },
-            scrollBeyondLastLine: false,
-            fontSize: 14,
-            wordWrap: 'on',
-          }}
-        />
+        {/* Mounted once this Unit's configuration has arrived: Monaco settles a model's line
+            endings when it creates it, and one created empty saves CRLF. Keyed by the Unit so
+            moving to another one starts a new model rather than editing this one's. */}
+        {!isLoaded ? (
+          <Typography sx={{ p: 2, color: theme.palette.grey[400] }} variant='body2'>
+            Loading configuration…
+          </Typography>
+        ) : (
+          <Editor
+            key={unitId}
+            height='100%'
+            language='yaml'
+            value={displayedData}
+            onChange={handleEditorChange}
+            theme='vs-dark'
+            options={{
+              minimap: { enabled: true },
+              scrollBeyondLastLine: false,
+              fontSize: 14,
+              wordWrap: 'on',
+            }}
+          />
+        )}
       </EditorContainer>
     </Box>
   );

@@ -466,6 +466,7 @@ export const UnitDetailPage = () => {
           )}
         </Section>
         <ConfigTab
+          key={currentUnit.UnitID}
           unit={currentUnit}
           onConfigUpdated={() => setRefresh(!refresh)}
           selectedTab={selectedTab}
