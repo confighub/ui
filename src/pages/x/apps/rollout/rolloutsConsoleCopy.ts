@@ -75,12 +75,25 @@ export const rolloutsConsoleCopy = {
     unknown: { label: 'Not reported', hint: 'server did not answer' },
   },
 
+  /** The summary cards above the list, one per `ConsoleGroup`, in card order. */
+  groups: {
+    'needs-you': { label: 'Needs you', hint: 'ready to promote' },
+    stuck: { label: 'Stuck', hint: 'needs a fix to move' },
+    'in-progress': { label: 'In progress', hint: 'no action needed' },
+    finished: { label: 'Finished', hint: 'complete or aborted' },
+  },
+
   filters: {
     searchPlaceholder: `Search ${featureNamePlural}`,
     state: 'State',
     space: 'Space',
     component: 'Component',
-    allStates: 'All states',
+    /** The State filter's value when nothing is selected: every row shows. */
+    allStates: 'All',
+    /** The State filter's heading for the states no summary card counts. */
+    otherStates: 'Other',
+    /** The tail of the State filter's value once more than two states are named. */
+    moreStates: (n: number) => `+${n}`,
     allSpaces: 'All Spaces',
     allComponents: 'All Components',
     clear: 'Clear filters',

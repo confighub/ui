@@ -15,9 +15,12 @@ import {
   REACH_TEXT,
   UNKNOWN_KEY,
   buildHistory,
+  clockTime,
+  dayKeyOf,
   dayLabel,
   failureSpaceHeadline,
   foldReleaseRuns,
+  fullTime,
   groupByDay,
   hiddenExceptionsText,
   historyUserIds,
@@ -33,8 +36,10 @@ import {
   personCounts,
   relativeTime,
   resolvePerson,
+  shortDate,
   splitFailureItems,
   stageCounts,
+  utcTime,
   type BuildHistoryInput,
   type HistoryActionEntry,
   type HistoryUser,
@@ -354,11 +359,45 @@ test.describe('filters', () => {
 test.describe('days, folding and Release runs', () => {
   const now = Date.parse(at('10-06T15:40:00'));
 
-  test('day labels say Today and Yesterday, in UTC', () => {
-    expect(dayLabel(Date.parse(at('10-06T01:00:00')), now)).toBe('Today, Tue 6 Oct');
-    expect(dayLabel(Date.parse(at('10-05T23:59:00')), now)).toBe('Yesterday, Mon 5 Oct');
-    expect(dayLabel(Date.parse(at('09-14T09:00:00')), now)).toBe('Mon 14 Sep');
+  // The helpers default to the viewer's time zone, so every test here names one:
+  // the machine running the suite must not decide the result.
+  test('day labels say Today and Yesterday, in the zone they are given', () => {
+    expect(dayLabel(Date.parse(at('10-06T01:00:00')), now, 'UTC')).toBe('Today, Tue 6 Oct');
+    expect(dayLabel(Date.parse(at('10-05T23:59:00')), now, 'UTC')).toBe('Yesterday, Mon 5 Oct');
+    expect(dayLabel(Date.parse(at('09-14T09:00:00')), now, 'UTC')).toBe('Mon 14 Sep');
     expect(relativeTime(now - 42 * 60_000, now)).toBe('42 min ago');
+  });
+
+  test('a day is the calendar day in the viewer\'s zone, not in UTC', () => {
+    // 23:30 UTC on 5 Oct is 00:30 on 6 Oct in London (BST): today there, yesterday in UTC.
+    const lateUtc = Date.parse(at('10-05T23:30:00'));
+    expect(dayLabel(lateUtc, now, 'UTC')).toBe('Yesterday, Mon 5 Oct');
+    expect(dayLabel(lateUtc, now, 'Europe/London')).toBe('Today, Tue 6 Oct');
+    expect(dayKeyOf(lateUtc, 'Europe/London')).toBe('2026-10-06');
+    // 06:30 UTC on 6 Oct is 23:30 on 5 Oct in Los Angeles (PDT): yesterday there.
+    const earlyUtc = Date.parse(at('10-06T06:30:00'));
+    expect(dayLabel(earlyUtc, now, 'America/Los_Angeles')).toBe('Yesterday, Mon 5 Oct');
+    expect(dayKeyOf(earlyUtc, 'America/Los_Angeles')).toBe('2026-10-05');
+    // Two entries an hour apart either side of local midnight land on two days.
+    const built = history({
+      promotions: [
+        { UserID: PRIYA, PromotedAt: at('10-06T07:30:00'), Stage: 'prod', SpaceIDs: ['a'] },
+        { UserID: PRIYA, PromotedAt: at('10-06T06:30:00'), Stage: 'prod', SpaceIDs: ['a'] },
+      ],
+    });
+    expect(groupByDay(built.entries, 'UTC').map((d) => d.key)).toEqual(['2026-10-06']);
+    expect(groupByDay(built.entries, 'America/Los_Angeles').map((d) => d.key)).toEqual(['2026-10-06', '2026-10-05']);
+  });
+
+  test('times read in the zone they are given, and UTC is written out for the hover', () => {
+    const t = Date.parse('2026-10-08T13:52:05.684852Z');
+    expect(clockTime(t, 'UTC')).toBe('13:52');
+    expect(clockTime(t, 'Europe/London')).toBe('14:52');
+    expect(shortDate(t, 'America/Los_Angeles')).toBe('8 Oct 2026');
+    expect(fullTime(t, 'UTC')).toBe('Thu 8 Oct 2026, 13:52 UTC');
+    expect(utcTime(t)).toBe('8 Oct 2026, 13:52:05 UTC');
+    // Midnight is 00, not 24.
+    expect(clockTime(Date.parse('2026-10-08T00:05:00Z'), 'UTC')).toBe('00:05');
   });
 
   const smallRollout = {
@@ -376,7 +415,7 @@ test.describe('days, folding and Release runs', () => {
   test('a small Rollout draws every day in full, old days too', () => {
     const built = history(smallRollout);
     expect(built.entries.length).toBeLessThan(HISTORY_FOLD_MIN_ENTRIES);
-    const days = groupByDay(built.entries);
+    const days = groupByDay(built.entries, 'UTC');
     expect(days.map((d) => d.key)).toEqual(['2026-10-06', '2026-10-05', '2026-10-04', '2026-10-03']);
     expect(days.map((d, i) => isFoldable(d, i, built.entries.length))).toEqual([false, false, false, false]);
   });
@@ -391,7 +430,7 @@ test.describe('days, folding and Release runs', () => {
     }));
     const built = history({ ...smallRollout, releases });
     expect(built.entries.length).toBeGreaterThanOrEqual(HISTORY_FOLD_MIN_ENTRIES);
-    const days = groupByDay(built.entries);
+    const days = groupByDay(built.entries, 'UTC');
     expect(days.map((d) => d.key)).toEqual(['2026-10-06', '2026-10-05', '2026-10-04', '2026-10-03', '2026-10-02']);
     expect(days.map((d, i) => isFoldable(d, i, built.entries.length))).toEqual([false, false, true, false, true]);
     expect(HISTORY_FULL_DAYS).toBe(2);
@@ -423,7 +462,7 @@ test.describe('days, folding and Release runs', () => {
   });
 
   test('the days not yet loaded say how many overrides and failures they hold', () => {
-    const days = (input: Omit<BuildHistoryInput, 'person'>) => groupByDay(history(input).entries);
+    const days = (input: Omit<BuildHistoryInput, 'person'>) => groupByDay(history(input).entries, 'UTC');
     const override = (d: string) => ({ UserID: MARCO, OverriddenAt: at(`${d}T12:00:00`), Stage: 'prod', SpaceIDs: ['a'] });
     const failure = (d: string) => ({ UserID: PRIYA, FailedAt: at(`${d}T09:00:00`), Stage: 'prod', Spaces: [{ Action: 'Failed' }] });
     expect(hiddenExceptionsText(days({ overrides: [override('10-01'), override('09-30')], failures: [failure('09-29')] }))).toBe(

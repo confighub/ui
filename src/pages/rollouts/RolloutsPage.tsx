@@ -31,7 +31,15 @@ import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Tooltip from '@mui/material/Tooltip';
 import type { BoxProps } from '@mui/material/Box';
+import type { SvgIconComponent } from '@mui/icons-material';
+import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import AutorenewIcon from '@mui/icons-material/Autorenew';
+import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
+import FolderCopyOutlinedIcon from '@mui/icons-material/FolderCopyOutlined';
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
+import SchemaOutlinedIcon from '@mui/icons-material/SchemaOutlined';
+import SyncAltOutlinedIcon from '@mui/icons-material/SyncAltOutlined';
+import UpdateOutlinedIcon from '@mui/icons-material/UpdateOutlined';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import BlockIcon from '@mui/icons-material/Block';
 import CheckIcon from '@mui/icons-material/Check';
@@ -109,6 +117,7 @@ import {
 import { RolloutBlockedResources, RolloutRefusals } from './rolloutRefusals';
 import { useRolloutDetail, type RolloutSpace } from './useRolloutDetail';
 import { useRolloutHistory } from './useRolloutHistory';
+import { clockTime, shortDate, utcTime, zoneName } from './rolloutHistory';
 import { changeWorkflowHref, changeWorkflowLabel, useChangeWorkflowNames } from './useChangeWorkflowNames';
 
 /**
@@ -254,13 +263,37 @@ function FactLink({ href, children }: { href: string; children: React.ReactNode 
   );
 }
 
-function Fact({ term, children, wide = false }: { term: string; children: React.ReactNode; wide?: boolean }) {
+/**
+ * One term/value pair in the header's fact grid. `icon` sits before the term,
+ * in the term's ink; it is decorative (the term names the fact), so it stays
+ * out of the accessibility tree.
+ */
+function Fact({
+  term,
+  icon: Icon,
+  children,
+  wide = false,
+}: {
+  term: string;
+  icon?: SvgIconComponent;
+  children: React.ReactNode;
+  wide?: boolean;
+}) {
   return (
     <Box sx={{ minWidth: 0, gridColumn: wide ? 'span 2' : undefined }}>
       <Box
         component="dt"
-        sx={{ fontSize: rolloutType.size.micro, letterSpacing: '.07em', color: rolloutInk.subtle, margin: 0 }}
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          fontSize: rolloutType.size.micro,
+          letterSpacing: '.07em',
+          color: rolloutInk.subtle,
+          margin: 0,
+        }}
       >
+        {Icon !== undefined ? <Icon aria-hidden="true" sx={{ fontSize: 14, flex: '0 0 auto' }} /> : null}
         {term}
       </Box>
       <Box
@@ -270,6 +303,31 @@ function Fact({ term, children, wide = false }: { term: string; children: React.
         {children}
       </Box>
     </Box>
+  );
+}
+
+/**
+ * The Opened fact, in the viewer's time zone with the zone named, as the History
+ * card writes its times. Hover gives UTC, readable and then verbatim as the
+ * server sent it. No weekday, so it fits its column on one line. A value that
+ * does not parse is shown as it came, rather than as "Invalid Date".
+ */
+function OpenedAt({ value }: { value: string | undefined }) {
+  if (value === undefined) return <>—</>;
+  const at = Date.parse(value);
+  if (Number.isNaN(at)) return <>{value}</>;
+  const utc = (
+    <>
+      <div>{utcTime(at)}</div>
+      <div>{value}</div>
+    </>
+  );
+  return (
+    <Tooltip title={utc} describeChild placement="bottom-start">
+      <Box component="time" dateTime={value}>
+        {`${shortDate(at)}, ${clockTime(at)} ${zoneName(at)}`}
+      </Box>
+    </Tooltip>
   );
 }
 
@@ -1920,7 +1978,7 @@ export default function RolloutsPage() {
                   margin: '16px 0 0',
                 }}
               >
-                <Fact term="Component">
+                <Fact term="Component" icon={AccountTreeOutlinedIcon}>
                   {detail.componentName === undefined ? (
                     '—'
                   ) : componentDeepLink !== null ? (
@@ -1929,21 +1987,21 @@ export default function RolloutsPage() {
                     detail.componentName
                   )}
                 </Fact>
-                <Fact term="Base Space">
+                <Fact term="Base Space" icon={FolderOutlinedIcon}>
                   {detail.baseSpaceSlug === undefined || detail.baseSpaceId === undefined ? (
                     detail.baseSpaceSlug ?? '—'
                   ) : (
                     <FactLink href={`/spaces/${detail.baseSpaceId}`}>{detail.baseSpaceSlug}</FactLink>
                   )}
                 </Fact>
-                <Fact term="Update type">{detail.updateType ?? '—'}</Fact>
+                <Fact term="Update type" icon={SyncAltOutlinedIcon}>{detail.updateType ?? '—'}</Fact>
                 {/*
                   The workflow this rollout was created under, opened in the
                   workflow builder to view or edit. The rollout keeps the copy
                   it was created with, so an edit there governs later
                   rollouts, not this one.
                 */}
-                <Fact term="Workflow">
+                <Fact term="Workflow" icon={SchemaOutlinedIcon}>
                   {workflowHref !== null ? (
                     <FactLink href={workflowHref}>{changeWorkflowLabel(workflowId, workflowNames)}</FactLink>
                   ) : (
@@ -1961,15 +2019,17 @@ export default function RolloutsPage() {
                   label, asserting a distinction the data does not have. One
                   figure stays a fact; a duplicated one would be a claim.
                 */}
-                <Fact term="Scope">
+                <Fact term="Scope" icon={FolderCopyOutlinedIcon}>
                   {detail.scopedSpaces === null ? (
                     'Not reported by the server'
                   ) : (
                     <ScopeSpaces spaces={detail.scopedSpaces} stages={detail.sequence.stages} />
                   )}
                 </Fact>
-                <Fact term="Opened">{detail.createdAt ?? '—'}</Fact>
-                <Fact term="Last activity" wide>
+                <Fact term="Opened" icon={CalendarTodayOutlinedIcon}>
+                  <OpenedAt value={detail.createdAt} />
+                </Fact>
+                <Fact term="Last activity" icon={UpdateOutlinedIcon} wide>
                   <RolloutLastActivity history={history} />
                 </Fact>
                 {/*

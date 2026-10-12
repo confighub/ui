@@ -17,6 +17,7 @@
 import { Fragment, useMemo, useState, type ReactNode } from 'react';
 
 import Box from '@mui/material/Box';
+import Tooltip from '@mui/material/Tooltip';
 import ButtonBase from '@mui/material/ButtonBase';
 import NativeSelect from '@mui/material/NativeSelect';
 import BoltIcon from '@mui/icons-material/Bolt';
@@ -39,7 +40,6 @@ import {
   dayLabel,
   foldReleaseRuns,
   foldedPeople,
-  fullTime,
   groupByDay,
   hasFilters,
   hiddenExceptionsText,
@@ -53,6 +53,8 @@ import {
   relativeTime,
   stageCounts,
   summariseDay,
+  utcTime,
+  zoneName,
   type HistoryFilters,
   type HistoryKindFilter,
 } from '../rolloutHistory';
@@ -546,7 +548,7 @@ export function RolloutHistory({ history }: { history: RolloutHistoryData }) {
           <span>
             ConfigHub keeps the last {HISTORY_RETENTION.promotions} promotions, {HISTORY_RETENTION.overrides} overrides and{' '}
             {HISTORY_RETENTION.failures} failed promotions for each Rollout. Dry runs and promotions refused at a gate are
-            not recorded. Times are UTC.
+            not recorded. Times are in your time zone, {zoneName(now)}; hover a time for UTC.
           </span>
         </Box>
       ) : null}
@@ -574,9 +576,11 @@ export function RolloutLastActivity({ history }: { history: RolloutHistoryData }
       <span>
         {last.person.name}
         {last.person.isYou ? ' (you)' : ''},{' '}
-        <Box component="time" dateTime={new Date(last.at).toISOString()} title={fullTime(last.at)}>
-          {relativeTime(last.at, history.now)}
-        </Box>
+        <Tooltip title={utcTime(last.at)} describeChild placement="bottom-start">
+          <Box component="time" dateTime={new Date(last.at).toISOString()}>
+            {relativeTime(last.at, history.now)}
+          </Box>
+        </Tooltip>
       </span>
       {last.override ? (
         <Box

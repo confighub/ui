@@ -14,6 +14,7 @@ import { useId, useState, type ReactNode } from 'react';
 
 import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
+import Tooltip from '@mui/material/Tooltip';
 import ButtonBase from '@mui/material/ButtonBase';
 import BlockIcon from '@mui/icons-material/Block';
 import BoltIcon from '@mui/icons-material/Bolt';
@@ -53,6 +54,8 @@ import {
   overrideReach,
   plural,
   splitFailureItems,
+  utcTime,
+  zoneName,
   type HistoryActionEntry,
   type HistoryPerson,
   type HistoryReleaseEntry,
@@ -678,21 +681,22 @@ function EntryFrame({
         <Icon sx={{ fontSize: 17 }} />
       </Box>
       <Box sx={{ minWidth: 0, paddingTop: '3px' }}>{children}</Box>
-      <Box
-        component="time"
-        dateTime={new Date(at).toISOString()}
-        title={fullTime(at)}
-        sx={{
-          fontFamily: rolloutFontMono,
-          fontSize: rolloutType.size.small,
-          color: rolloutInk.subtle,
-          textAlign: 'right',
-          paddingTop: '5px',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {clockTime(at)}
-      </Box>
+      <Tooltip title={utcTime(at)} describeChild placement="bottom-end">
+        <Box
+          component="time"
+          dateTime={new Date(at).toISOString()}
+          sx={{
+            fontFamily: rolloutFontMono,
+            fontSize: rolloutType.size.small,
+            color: rolloutInk.subtle,
+            textAlign: 'right',
+            paddingTop: '5px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {clockTime(at)}
+        </Box>
+      </Tooltip>
     </Box>
   );
 }
@@ -1046,7 +1050,7 @@ function ReleaseRunEntry({ run }: { run: ReleaseRun }) {
     <EntryFrame
       tone="release"
       Icon={Inventory2OutlinedIcon}
-      label={`${run.items.length} Releases published by ${who} between ${clockTime(first)} and ${clockTime(last)} UTC`}
+      label={`${run.items.length} Releases published by ${who} between ${clockTime(first)} and ${clockTime(last)} ${zoneName(last)}`}
       at={last}
       dataKind="release-run"
     >
@@ -1099,13 +1103,15 @@ function ReleaseRunEntry({ run }: { run: ReleaseRun }) {
                   <span>
                     <SpaceChip spaceId={item.release.SpaceID} slug={item.release.SpaceSlug} />
                   </span>
-                  <Box
-                    component="time"
-                    title={fullTime(item.at)}
-                    sx={{ fontFamily: rolloutFontMono, color: rolloutInk.subtle, textAlign: 'right', fontSize: rolloutType.size.small }}
-                  >
-                    {clockTime(item.at)}
-                  </Box>
+                  <Tooltip title={utcTime(item.at)} describeChild placement="bottom-end">
+                    <Box
+                      component="time"
+                      dateTime={new Date(item.at).toISOString()}
+                      sx={{ fontFamily: rolloutFontMono, color: rolloutInk.subtle, textAlign: 'right', fontSize: rolloutType.size.small }}
+                    >
+                      {clockTime(item.at)}
+                    </Box>
+                  </Tooltip>
                 </Box>
               ))}
             </Box>

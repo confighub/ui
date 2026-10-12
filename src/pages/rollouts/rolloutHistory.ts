@@ -573,21 +573,23 @@ export function personCounts(entries: readonly HistoryEntry[], filters: HistoryF
 // ---------------------------------------------------------------------------
 
 export interface HistoryDay {
-  /** `YYYY-MM-DD`, UTC. */
+  /** `YYYY-MM-DD`, in the time zone the days were grouped in. */
   key: string;
   at: number;
   entries: HistoryEntry[];
 }
 
-export function dayKeyOf(at: number): string {
-  return new Date(at).toISOString().slice(0, 10);
+/** The calendar day of `at` in `timeZone` (the viewer's when left out), as `YYYY-MM-DD`. */
+export function dayKeyOf(at: number, timeZone?: string): string {
+  const p = zonedParts(at, timeZone);
+  return `${p.year}-${pad(p.month + 1)}-${pad(p.day)}`;
 }
 
-/** Entries are newest first, so days are too. */
-export function groupByDay(entries: readonly HistoryEntry[]): HistoryDay[] {
+/** Entries are newest first, so days are too. A day is a calendar day in `timeZone`, the viewer's when left out. */
+export function groupByDay(entries: readonly HistoryEntry[], timeZone?: string): HistoryDay[] {
   const days: HistoryDay[] = [];
   for (const entry of entries) {
-    const key = dayKeyOf(entry.at);
+    const key = dayKeyOf(entry.at, timeZone);
     const last = days[days.length - 1];
     if (last !== undefined && last.key === key) last.entries.push(entry);
     else days.push({ key, at: entry.at, entries: [entry] });
@@ -716,41 +718,115 @@ export function lastActivity(entries: readonly HistoryEntry[]): HistoryActionEnt
 }
 
 // ---------------------------------------------------------------------------
-// Time. UTC throughout, and the card says so.
+// Time. In the viewer's time zone, with the zone named, and UTC on hover.
+//
+// Every helper takes an optional IANA `timeZone`; left out, it is the
+// browser's own. Day-month-year and a 24-hour clock in every zone, with
+// English month and weekday names, so the card reads the same for everyone and
+// only the zone differs.
 // ---------------------------------------------------------------------------
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+interface ZonedParts {
+  year: number;
+  /** 0-11, as `Date` counts months. */
+  month: number;
+  day: number;
+  weekday: string;
+  hour: string;
+  minute: string;
+  second: string;
+}
 
 function pad(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-export function clockTime(at: number): string {
-  const d = new Date(at);
-  return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const partsFormats = new Map<string, Intl.DateTimeFormat>();
+const zoneNameFormats = new Map<string, Intl.DateTimeFormat>();
+
+function zonedParts(at: number, timeZone?: string): ZonedParts {
+  const cacheKey = timeZone ?? '';
+  let format = partsFormats.get(cacheKey);
+  if (format === undefined) {
+    format = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    });
+    partsFormats.set(cacheKey, format);
+  }
+  const parts = format.formatToParts(at);
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
+  return {
+    year: Number(value('year')),
+    month: Number(value('month')) - 1,
+    day: Number(value('day')),
+    weekday: value('weekday'),
+    hour: value('hour'),
+    minute: value('minute'),
+    second: value('second'),
+  };
 }
 
-export function shortDate(at: number): string {
-  const d = new Date(at);
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+/**
+ * The zone's short name at that instant, as the viewer's locale writes it: "BST"
+ * for en-GB in London, "PDT" for en-US in Los Angeles, "UTC" for UTC, and
+ * "GMT+5:30" where the locale has no abbreviation.
+ */
+export function zoneName(at: number, timeZone?: string): string {
+  const cacheKey = timeZone ?? '';
+  let format = zoneNameFormats.get(cacheKey);
+  if (format === undefined) {
+    format = new Intl.DateTimeFormat(undefined, { timeZone, timeZoneName: 'short' });
+    zoneNameFormats.set(cacheKey, format);
+  }
+  return format.formatToParts(at).find((p) => p.type === 'timeZoneName')?.value ?? '';
 }
 
-export function fullTime(at: number): string {
-  const d = new Date(at);
-  return `${WEEKDAYS[d.getUTCDay()]} ${shortDate(at)}, ${clockTime(at)} UTC`;
+/** `14:52`. */
+export function clockTime(at: number, timeZone?: string): string {
+  const p = zonedParts(at, timeZone);
+  return `${p.hour}:${p.minute}`;
 }
 
-export function dayLabel(at: number, now: number): string {
-  const d = new Date(at);
-  const n = new Date(now);
-  const diff = Math.round(
-    (Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()) -
-      Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())) /
-      86_400_000,
-  );
-  const base = `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
-  const withYear = d.getUTCFullYear() === n.getUTCFullYear() ? base : `${base} ${d.getUTCFullYear()}`;
+/** `8 Oct 2026`. */
+export function shortDate(at: number, timeZone?: string): string {
+  const p = zonedParts(at, timeZone);
+  return `${p.day} ${MONTHS[p.month]} ${p.year}`;
+}
+
+/** `Thu 8 Oct 2026, 14:52 BST`. */
+export function fullTime(at: number, timeZone?: string): string {
+  const p = zonedParts(at, timeZone);
+  return `${p.weekday} ${shortDate(at, timeZone)}, ${clockTime(at, timeZone)} ${zoneName(at, timeZone)}`;
+}
+
+/** `8 Oct 2026, 13:52:05 UTC`: the hover text for a time shown in the viewer's zone. */
+export function utcTime(at: number): string {
+  const p = zonedParts(at, 'UTC');
+  return `${shortDate(at, 'UTC')}, ${p.hour}:${p.minute}:${p.second} UTC`;
+}
+
+/** The calendar day in `timeZone`, as days since the epoch, so two days subtract. */
+function dayNumber(at: number, timeZone?: string): number {
+  const p = zonedParts(at, timeZone);
+  return Date.UTC(p.year, p.month, p.day) / 86_400_000;
+}
+
+export function dayLabel(at: number, now: number, timeZone?: string): string {
+  const d = zonedParts(at, timeZone);
+  const n = zonedParts(now, timeZone);
+  const diff = dayNumber(now, timeZone) - dayNumber(at, timeZone);
+  const base = `${d.weekday} ${d.day} ${MONTHS[d.month]}`;
+  const withYear = d.year === n.year ? base : `${base} ${d.year}`;
   if (diff === 0) return `Today, ${base}`;
   if (diff === 1) return `Yesterday, ${base}`;
   return withYear;

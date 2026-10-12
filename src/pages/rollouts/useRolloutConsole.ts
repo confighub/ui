@@ -57,9 +57,11 @@ import {
   buildConsoleRow,
   type ConsoleChangeOrder,
   type ConsoleRow,
+  type ConsoleGroup,
   type ConsoleSpace,
   type ConsoleState,
 } from '../x/apps/rollout/rolloutsConsoleModel';
+import { countGroups, countStates } from '../x/apps/rollout/rolloutsConsoleStateFilter';
 import { changeOrderWorkflow } from '../x/apps/rollout/changeOrderWorkflow';
 import { useRunningReleases } from '../x/apps/useRunningReleases';
 import { useDistinctStageSpaces } from './useDistinctStageSpaces';
@@ -89,6 +91,11 @@ export interface RolloutConsoleData {
   rows: readonly ConsoleRow[];
   /** How many rows are in each state, counted over `rows` — every state present, zero included. */
   stateCounts: Readonly<Record<ConsoleState, number>>;
+  /**
+   * How many rows are in each `ConsoleGroup`, counted over `rows` — every group
+   * present, zero included. A row in no group counts nowhere.
+   */
+  groupCounts: Readonly<Record<ConsoleGroup, number>>;
   /** Every Space slug that appears on a row, for the Space filter. */
   spaceSlugs: readonly string[];
   /** Every Component slug that appears on a row, for the Component filter. */
@@ -128,21 +135,6 @@ export interface RolloutConsoleData {
   lastLoadedAt: number | null;
   refetch: () => void;
 }
-
-/** Every state, so a count of zero is a rendered zero rather than a missing key. */
-const ZERO_COUNTS: Readonly<Record<ConsoleState, number>> = {
-  ready: 0,
-  degraded: 0,
-  blocked: 0,
-  held: 0,
-  progressing: 0,
-  complete: 0,
-  'complete-unverified': 0,
-  aborted: 0,
-  'no-workflow': 0,
-  'no-stages': 0,
-  unknown: 0,
-};
 
 export function useRolloutConsole(): RolloutConsoleData {
   const orders = useListAllChangeOrdersQuery({});
@@ -276,11 +268,9 @@ export function useRolloutConsole(): RolloutConsoleData {
     [unreadableOrders, unreadableSpaces],
   );
 
-  const stateCounts = useMemo(() => {
-    const counts = { ...ZERO_COUNTS };
-    for (const row of rows) counts[row.state] += 1;
-    return counts;
-  }, [rows]);
+  // One tally: the cards' counts are sums of the dropdown's, so the two cannot disagree.
+  const stateCounts = useMemo(() => countStates(rows.map((row) => row.state)), [rows]);
+  const groupCounts = useMemo(() => countGroups(stateCounts), [stateCounts]);
 
   const spaceSlugs: readonly string[] = useMemo(() => {
     const slugs = new Set<string>();
@@ -323,6 +313,7 @@ export function useRolloutConsole(): RolloutConsoleData {
     () => ({
       rows,
       stateCounts,
+      groupCounts,
       spaceSlugs,
       componentSlugs,
       spaceLabel,
@@ -338,6 +329,7 @@ export function useRolloutConsole(): RolloutConsoleData {
     [
       rows,
       stateCounts,
+      groupCounts,
       spaceSlugs,
       componentSlugs,
       spaceLabel,

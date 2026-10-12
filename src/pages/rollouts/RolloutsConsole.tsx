@@ -66,6 +66,10 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import type { SxProps, Theme } from '@mui/material/styles';
 import RefreshIcon from '@mui/icons-material/Cached';
+import CheckBoxIcon from '@mui/icons-material/CheckBox';
+import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
+import IndeterminateCheckBoxIcon from '@mui/icons-material/IndeterminateCheckBox';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 
 import { ROUTE_COMPONENTS } from '../x/apps/appTypes';
@@ -74,7 +78,21 @@ import { EndRolloutDialog } from '../x/apps/rollout/EndRolloutDialog';
 import { RolloutStageStrip } from '../x/apps/rollout/RolloutStageStrip';
 import { actionFor, promotionFor, rolloutIntents } from '../x/apps/rollout/rolloutsConsoleModel';
 import type { SegmentTone } from '../x/apps/rollout/rolloutsConsoleModel';
-import type { ConsoleRow, ConsoleState } from '../x/apps/rollout/rolloutsConsoleModel';
+import {
+  NO_STATES,
+  STATE_SECTIONS,
+  rowMatchesStates,
+  sectionCheck,
+  sectionLabel,
+  selectionAfterCardClick,
+  selectionAfterSectionToggle,
+  selectionAfterStateToggle,
+  selectionLabel,
+  statesInSection,
+  type SectionCheck,
+  type StateSelection,
+} from '../x/apps/rollout/rolloutsConsoleStateFilter';
+import type { ConsoleGroup, ConsoleRow, ConsoleState } from '../x/apps/rollout/rolloutsConsoleModel';
 import type { RolloutEndIntent } from '../x/apps/rollout/rolloutRollback';
 import { gatesBlockPromotion } from '../x/apps/rollout/rolloutFooterModel';
 import { partitionBlockingGates } from '../x/apps/rollout/rolloutGates';
@@ -309,8 +327,19 @@ const STATE_INK: Record<ConsoleState, string> = {
  * `cardSx` and `activeCardSx`. The component owns the strip's shape and
  * behaviour and holds no palette of its own, so all six are stated here — the
  * page that shows the strip is the page that decides how it reads.
+ *
+ * Needs you is the only card in the accent, because it is the only group that
+ * asks the reader to act. In progress asks nothing, so it takes the neutral
+ * secondary ink, not `progressing`'s accent: two accent figures would make the
+ * strip ask for action twice. Stuck takes the warning ink, not `degraded`'s:
+ * most of what it counts is waiting on a fix, and only some of it is failing.
  */
-const KPI_TONES: Record<ConsoleState, string> = STATE_INK;
+const KPI_TONES: Record<ConsoleGroup, string> = {
+  'needs-you': STATE_INK.ready,
+  stuck: STATE_INK.blocked,
+  'in-progress': T.ink2,
+  finished: STATE_INK.complete,
+};
 /** The contract's own figure type: `ui-monospace | 18px | 650 | 1 | -0.36px`. */
 const KPI_NUM_SX = {
   fontFamily: T.mono,
@@ -360,6 +389,17 @@ const KPI_ACTIVE_CARD_SX = {
   borderColor: T.accent,
   background: T.accentSoft,
   boxShadow: `inset 0 0 0 1px ${T.accent}`,
+} as const;
+/**
+ * The State dropdown holds some of this card's states, or these and others.
+ * The accent border says the card takes part in the filter; the dash and the
+ * plain surface say it is not the whole of it. Line style, never opacity (R11).
+ */
+const KPI_PARTIAL_CARD_SX = {
+  borderColor: T.accent,
+  borderStyle: 'dashed',
+  background: T.surface,
+  boxShadow: 'none',
 } as const;
 
 /** `"needs a Release"` -> `"Needs a Release"`. The copy module writes hints as fragments; this is the only place they are read as sentences. */
@@ -930,11 +970,12 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
 });
 
 /** A control's own label, paired to its `<select>`/`<input>` by `htmlFor`, never by placement alone. */
-function FieldLabel({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
+function FieldLabel({ htmlFor, id, children }: { htmlFor: string; id?: string; children: React.ReactNode }) {
   return (
     <Typography
       component="label"
       htmlFor={htmlFor}
+      id={id}
       sx={{ fontSize: 11.5, lineHeight: T.lh, fontWeight: 600, color: T.ink3, whiteSpace: 'nowrap' }}
     >
       {children}
@@ -967,8 +1008,169 @@ const FILTER_SELECT_SX: SxProps<Theme> = {
   padding: '0 10px',
 };
 
+const CHECK_ICON: Record<SectionCheck, typeof CheckBoxIcon> = {
+  checked: CheckBoxIcon,
+  indeterminate: IndeterminateCheckBoxIcon,
+  unchecked: CheckBoxOutlineBlankIcon,
+};
+
+const ARIA_CHECKED = { checked: 'true', indeterminate: 'mixed', unchecked: 'false' } as const;
+
 /**
- * Search, Space, Component, Clear — the console's own filter bar.
+ * A row of the State menu. A disabled row is a chosen colour, not MUI's
+ * default `opacity` (R11), and nothing in it is uppercased.
+ */
+function stateMenuItemSx(indent: boolean, spaced = false): SxProps<Theme> {
+  return {
+    gap: '8px',
+    marginTop: spaced ? '4px' : 0,
+    padding: indent ? '5px 12px 5px 30px' : '6px 12px',
+    fontFamily: T.sans,
+    fontSize: 12.5,
+    lineHeight: T.lh,
+    fontWeight: indent ? 500 : 650,
+    color: T.ink,
+    textTransform: 'none',
+    '&:hover': { background: T.surfaceHover, color: T.ink },
+    '&.Mui-focusVisible': { background: T.surfaceHover },
+    '&.Mui-disabled': { opacity: 1, color: T.ink3 },
+  };
+}
+
+function CheckMark({ check, disabled }: { check: SectionCheck; disabled: boolean }) {
+  const Icon = CHECK_ICON[check];
+  return (
+    <Icon
+      sx={{ fontSize: 17, color: disabled ? T.lineStrong : check === 'unchecked' ? T.ink3 : T.accent }}
+    />
+  );
+}
+
+/**
+ * The State dropdown: the same selection the summary cards write, one state
+ * or one heading at a time.
+ *
+ * A button and a menu of checkbox items, not a native `<select>` like its
+ * neighbours: a native multi-select cannot show headings that check and
+ * uncheck a group, or a count beside each state. The button takes the
+ * neighbours' `FILTER_SELECT_SX` so the bar still reads as one row of selects.
+ *
+ * The menu stays open on a click, because a multi-select that closes after
+ * every choice makes the reader reopen it for each state they add.
+ *
+ * Zero-count states are disabled unless selected: choosing one would only
+ * empty the list, but a selected one must stay reachable so it can be cleared.
+ */
+function StateFilter({
+  selection,
+  onChange,
+  counts,
+}: {
+  selection: StateSelection;
+  onChange: (next: StateSelection) => void;
+  counts: Readonly<Record<ConsoleState, number>>;
+}) {
+  const buttonId = useId();
+  const labelId = useId();
+  const valueId = useId();
+  const menuId = useId();
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const open = anchor !== null;
+
+  const items = STATE_SECTIONS.flatMap((section, index) => {
+    const states = statesInSection(section);
+    const check = sectionCheck(selection, section);
+    const headingDisabled = check === 'unchecked' && states.every((state) => counts[state] === 0);
+    return [
+      <MenuItem
+        key={section}
+        role="menuitemcheckbox"
+        aria-checked={ARIA_CHECKED[check]}
+        disabled={headingDisabled}
+        onClick={() => onChange(selectionAfterSectionToggle(selection, section))}
+        sx={stateMenuItemSx(false, index > 0)}
+      >
+        <CheckMark check={check} disabled={headingDisabled} />
+        {sectionLabel(section)}
+      </MenuItem>,
+      ...states.map((state) => {
+        const selected = selection.has(state);
+        const disabled = !selected && counts[state] === 0;
+        return (
+          <MenuItem
+            key={state}
+            role="menuitemcheckbox"
+            aria-checked={selected ? 'true' : 'false'}
+            disabled={disabled}
+            onClick={() => onChange(selectionAfterStateToggle(selection, state))}
+            sx={stateMenuItemSx(true)}
+          >
+            <CheckMark check={selected ? 'checked' : 'unchecked'} disabled={disabled} />
+            <Box component="span" sx={{ flex: 1 }}>
+              {rolloutsConsoleCopy.states[state].label}
+            </Box>
+            <Box component="span" sx={{ fontFamily: T.mono, fontSize: 12, color: T.ink3, paddingLeft: '16px' }}>
+              {counts[state]}
+            </Box>
+          </MenuItem>
+        );
+      }),
+    ];
+  });
+
+  return (
+    <Stack direction="row" alignItems="center" sx={{ gap: '6px' }}>
+      <FieldLabel htmlFor={buttonId} id={labelId}>
+        {rolloutsConsoleCopy.filters.state}
+      </FieldLabel>
+      {/*
+        Named by the label AND the value, so a screen reader hears "State,
+        Stuck" and not only "State" — the value is the point of the control.
+      */}
+      <Box
+        component="button"
+        type="button"
+        id={buttonId}
+        aria-haspopup="menu"
+        aria-expanded={open ? 'true' : 'false'}
+        aria-controls={open ? menuId : undefined}
+        aria-labelledby={`${labelId} ${valueId}`}
+        onClick={(event: React.MouseEvent<HTMLElement>) => setAnchor(event.currentTarget)}
+        sx={{
+          ...FILTER_SELECT_SX,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '6px',
+          maxWidth: 280,
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+      >
+        <Box
+          component="span"
+          id={valueId}
+          sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+        >
+          {selectionLabel(selection)}
+        </Box>
+        <KeyboardArrowDownIcon sx={{ fontSize: 16, color: T.ink3, flexShrink: 0 }} />
+      </Box>
+      <Menu
+        id={menuId}
+        anchorEl={anchor}
+        open={open}
+        onClose={() => setAnchor(null)}
+        MenuListProps={{ 'aria-labelledby': labelId, sx: { minWidth: 240, padding: '4px' } }}
+      >
+        {items}
+      </Menu>
+    </Stack>
+  );
+}
+
+/**
+ * Search, State, Space, Component, Clear — the console's own filter bar.
  *
  * ⚠️ NO SOURCE CONTROL, AND THAT IS A DECISION ALREADY MADE, NOT A GAP. The
  * reference renders a Source select (GitHub release / CI pipeline) beside a
@@ -978,11 +1180,13 @@ const FILTER_SELECT_SX: SxProps<Theme> = {
  * (`ANCHOR-REQUIREMENTS.md`) in a new shape: something that exists and cannot
  * do anything. If `ChangeOrder` ever reports an origin, both come back together.
  *
- * ⚠️ NO STATE CONTROL EITHER, AND THAT IS ALSO DECIDED, NOT A GAP. The KPI
- * strip above (`RolloutExceptions`) already IS the State filter — each card's
- * `onSelect` writes the same `stateFilter` a dropdown here would duplicate.
- * A second control driving the same value is not a second way to filter, it
- * is two places a reader has to check to find out what is currently applied.
+ * ONE STATE FILTER, TWO CONTROLS. The State dropdown here and the KPI strip
+ * above (`RolloutExceptions`) both read and write the one `selectedStates`
+ * value, and neither keeps a copy, so they cannot show different filters. The
+ * cards are the fast way in, one group per click; the dropdown is the way to
+ * one state, to several groups at once, and to the states no card counts.
+ * The dropdown always renders, even when the strip hides, so those stay
+ * reachable.
  *
  * A rollout scopes to Spaces, so the Space control filters by the Space the
  * rollout lives in. The Component control filters by that Space's Component —
@@ -993,6 +1197,9 @@ const FILTER_SELECT_SX: SxProps<Theme> = {
 function FilterBar({
   search,
   onSearch,
+  selectedStates,
+  onSelectedStates,
+  stateCounts,
   spaceFilter,
   onSpaceFilter,
   spaceSlugs,
@@ -1004,6 +1211,9 @@ function FilterBar({
 }: {
   search: string;
   onSearch: (v: string) => void;
+  selectedStates: StateSelection;
+  onSelectedStates: (next: StateSelection) => void;
+  stateCounts: Readonly<Record<ConsoleState, number>>;
   spaceFilter: 'all' | string;
   onSpaceFilter: (v: 'all' | string) => void;
   spaceSlugs: readonly string[];
@@ -1043,6 +1253,8 @@ function FilterBar({
         aria-label={rolloutsConsoleCopy.filters.searchPlaceholder}
         sx={{ ...SELECT_SX, width: 220, '&::placeholder': { color: T.ink3 } }}
       />
+
+      <StateFilter selection={selectedStates} onChange={onSelectedStates} counts={stateCounts} />
 
       <Stack direction="row" alignItems="center" sx={{ gap: '6px' }}>
         <FieldLabel htmlFor={spaceId}>{rolloutsConsoleCopy.filters.space}</FieldLabel>
@@ -1228,24 +1440,30 @@ export function RolloutsConsoleView({
    */
   onEndRequest?: (intent: RolloutEndIntent, row: ConsoleRow) => void;
 }) {
-  const { rows, spaceSlugs, componentSlugs, stateCounts, isLoading, isFetching, error, lastLoadedAt, refetch, unreadable } = data;
+  const { rows, spaceSlugs, componentSlugs, stateCounts, groupCounts, isLoading, isFetching, error, lastLoadedAt, refetch, unreadable } = data;
   // One org-wide list, shared with every other console reading the same names.
   const workflowNames = useChangeWorkflowNames();
 
   /*
-   * The filter bar's controls, and the KPI strip's State filter. `'all'` is the sentinel for "no filter",
-   * matching the option every select renders first — never the empty string,
-   * which would collide with a Space slug or a search box cleared to nothing.
+   * The filter bar's controls. `'all'` is the Space and Component selects'
+   * sentinel for "no filter", matching the option each renders first — never
+   * the empty string, which would collide with a Space slug or a search box
+   * cleared to nothing. The State filter's "no filter" is the empty selection;
+   * the KPI cards and the State dropdown both edit it.
    */
   const [search, setSearch] = useState('');
-  const [stateFilter, setStateFilter] = useState<'all' | ConsoleState>('all');
+  const [selectedStates, setSelectedStates] = useState<StateSelection>(NO_STATES);
+  const selectGroup = useCallback(
+    (group: ConsoleGroup) => setSelectedStates((current) => selectionAfterCardClick(current, group)),
+    [],
+  );
   const [spaceFilter, setSpaceFilter] = useState<'all' | string>('all');
   const [componentFilter, setComponentFilter] = useState<'all' | string>('all');
   const filtersActive =
-    search !== '' || stateFilter !== 'all' || spaceFilter !== 'all' || componentFilter !== 'all';
+    search !== '' || selectedStates.size > 0 || spaceFilter !== 'all' || componentFilter !== 'all';
   const clearFilters = useCallback(() => {
     setSearch('');
-    setStateFilter('all');
+    setSelectedStates(NO_STATES);
     setSpaceFilter('all');
     setComponentFilter('all');
   }, []);
@@ -1299,19 +1517,19 @@ export function RolloutsConsoleView({
    * What the reader typed or picked narrows the fleet down to the rollouts
    * they asked about. No second, independent "hide finished ones" pass over
    * that — Complete and Aborted rows show like any other state unless a
-   * filter says otherwise, and clicking the Complete/Aborted count shows
+   * filter says otherwise, and clicking the Finished count shows
    * exactly that.
    */
   const matched = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return rows.filter((row) => {
-      if (stateFilter !== 'all' && row.state !== stateFilter) return false;
+      if (!rowMatchesStates(selectedStates, row.state)) return false;
       if (spaceFilter !== 'all' && row.spaceSlug !== spaceFilter) return false;
       if (componentFilter !== 'all' && row.appName !== componentFilter) return false;
       if (needle === '') return true;
       return `${row.slug} ${row.spaceSlug ?? ''} ${row.appName ?? ''}`.toLowerCase().includes(needle);
     });
-  }, [rows, search, stateFilter, spaceFilter, componentFilter]);
+  }, [rows, search, selectedStates, spaceFilter, componentFilter]);
 
   const headingId = 'rollouts-console-heading';
   const freshness = freshnessFrom(lastLoadedAt, now);
@@ -1432,10 +1650,10 @@ export function RolloutsConsoleView({
       </Typography>
 
       {/*
-        `active`/`onSelect` bind straight to the State filter's own state —
-        this KPI strip IS the State filter, there is no separate dropdown for
-        it to agree with. `RolloutExceptions`' `onSelect` type (`ConsoleState |
-        'all'`) is `setStateFilter`'s exactly; no wrapper.
+        `selection` is the State filter's one value, the same one the State
+        dropdown in `FilterBar` edits; a card click becomes the next selection
+        through `selectionAfterCardClick`, so the cards keep no state of their
+        own to disagree with the dropdown.
 
         `role="group"` + an `aria-label` on the WRAPPER, not inside
         `RolloutExceptions.tsx`: the contract's `component-shape` check names
@@ -1446,20 +1664,24 @@ export function RolloutsConsoleView({
       */}
       <Box role="group" aria-label="Rollout exceptions">
         <RolloutExceptions
-          counts={stateCounts}
-          active={stateFilter}
-          onSelect={setStateFilter}
+          counts={groupCounts}
+          selection={selectedStates}
+          onSelect={selectGroup}
           tones={KPI_TONES}
           numSx={KPI_NUM_SX}
           labelSx={KPI_LABEL_SX}
           hintSx={KPI_HINT_SX}
           cardSx={KPI_CARD_SX}
           activeCardSx={KPI_ACTIVE_CARD_SX}
+          partialCardSx={KPI_PARTIAL_CARD_SX}
         />
       </Box>
       <FilterBar
         search={search}
         onSearch={setSearch}
+        selectedStates={selectedStates}
+        onSelectedStates={setSelectedStates}
+        stateCounts={stateCounts}
         spaceFilter={spaceFilter}
         onSpaceFilter={setSpaceFilter}
         spaceSlugs={spaceSlugs}

@@ -38,6 +38,7 @@ import { type Locator, type Page } from '@playwright/test';
 import { test, expect, newAuthorizedContext } from './fixtures/test';
 
 import { rolloutsConsoleCopy } from '../src/pages/x/apps/rollout/rolloutsConsoleCopy';
+import { statesInSection } from '../src/pages/x/apps/rollout/rolloutsConsoleStateFilter';
 
 import { ApiHelper } from './fixtures/api-helper';
 import { type RolloutFixture, buildRolloutFixture } from './fixtures/rollout-fixture';
@@ -149,31 +150,69 @@ test.describe('rollouts console', () => {
     await expect(page.locator('#root h1')).toHaveCount(1);
   });
 
-  test('the KPI strip is the only State filter — no separate select duplicates it', async ({ page }) => {
-    await assertOurConsole(page);
+  test('the KPI cards and the State control are one filter, never two', async ({ page }) => {
+    const consoleRegion = await assertOurConsole(page);
 
     /*
-     * The FilterBar used to render its own State `<select>` alongside this
-     * KPI strip — two controls writing the same `stateFilter`, which is a
-     * point of confusion (which one is "current"?) rather than a real second
-     * way to filter. It was removed in favour of the KPI cards alone.
+     * One selection, two controls. A card click writes the selection and the
+     * State control reads it back as the card's own word; the State control
+     * narrows it and the card reads that back as "mixed". If either kept its
+     * own copy, these two readings are where they would first disagree.
      *
-     * `getByLabel('State')` also once caught an accessible-name collision
-     * between that select and the KPI strip's wrapping `role="group"`
-     * (Playwright's accessible-name match is a case-insensitive SUBSTRING
-     * match, so "Filter by state" matched a query for "State" too).
-     *
-     * Both regressions are named by ROLE rather than by an unscoped label,
-     * because the substring match is what makes an unscoped query unsafe here:
+     * Named by ROLE and by a name that STARTS with the label, because
+     * Playwright's accessible-name match is a case-insensitive SUBSTRING match:
      * every row is a button named "Open rollout <slug>", and a slug carrying
      * the word "state" — the fixture's random word list contains one, so
      * `e2e-rollout-tinkling-state-order` is a name this org really produces —
-     * answered to "State" and failed a console that was perfectly correct.
-     * This file asserts invariants that must hold for whatever the org
-     * contains, so no assertion in it may depend on which slugs exist.
+     * answers to a bare "State". The control is named by its label and its
+     * value together ("State All"), so a reader hears both.
      */
-    await expect(page.getByRole('combobox', { name: 'State' })).toHaveCount(0);
-    await expect(page.getByRole('group', { name: 'State' })).toHaveCount(0);
+    const stateControl = consoleRegion.getByRole('button', { name: /^State / });
+    await expect(stateControl).toHaveCount(1);
+    await expect(stateControl).toHaveText(rolloutsConsoleCopy.filters.allStates);
+
+    const stuckCard = consoleRegion.getByTestId('rollout-exception-stuck');
+    const stuckCount = await stuckCard.count();
+    test.skip(
+      stuckCount === 0 || (await stuckCard.isDisabled()),
+      'No Stuck rollouts in this org; the card cannot be clicked.',
+    );
+
+    await stuckCard.click();
+    await expect(stuckCard).toHaveAttribute('aria-pressed', 'true');
+    await expect(stateControl).toHaveText(rolloutsConsoleCopy.groups.stuck.label);
+    const listedStates = () =>
+      consoleRegion
+        .locator('[data-rollout-state]')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('data-rollout-state')));
+    const stuckStates: readonly (string | null)[] = statesInSection('stuck');
+    await expect.poll(async () => (await listedStates()).every((s) => stuckStates.includes(s))).toBe(true);
+
+    // Narrow inside the group: Degraded is one of Stuck's states, so it is
+    // selected — and so enabled — whatever its count.
+    await stateControl.click();
+    const menu = page.getByRole('menu', { name: rolloutsConsoleCopy.filters.state, exact: true });
+    const degraded = menu.getByRole('menuitemcheckbox', {
+      name: new RegExp(`^${rolloutsConsoleCopy.states.degraded.label} \\d+$`),
+    });
+    await expect(degraded).toHaveAttribute('aria-checked', 'true');
+    await degraded.click();
+    await expect(degraded).toHaveAttribute('aria-checked', 'false');
+    await expect(
+      menu.getByRole('menuitemcheckbox', { name: rolloutsConsoleCopy.groups.stuck.label, exact: true }),
+    ).toHaveAttribute('aria-checked', 'mixed');
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect(stateControl).toBeFocused();
+
+    await expect(stuckCard).toHaveAttribute('aria-pressed', 'mixed');
+    await expect(stateControl).not.toHaveText(rolloutsConsoleCopy.groups.stuck.label);
+    await expect.poll(async () => (await listedStates()).includes('degraded')).toBe(false);
+
+    // And back: a card that is not on selects its whole group again.
+    await stuckCard.click();
+    await expect(stuckCard).toHaveAttribute('aria-pressed', 'true');
+    await expect(stateControl).toHaveText(rolloutsConsoleCopy.groups.stuck.label);
   });
 
   test('renders no uppercase text anywhere in the console', async ({ page }) => {

@@ -10,6 +10,11 @@
  *
  * The session is a stand-in token in sessionStorage, as no request reaches a
  * server. Time is fixed, so "Today" and "42 min ago" are stable.
+ *
+ * The card shows times in the viewer's time zone, with UTC on hover. The zone is
+ * fixed to London in summer (BST, UTC+1), not UTC, so a time that reads in UTC
+ * fails here. None of these records sits near midnight, so the days are the
+ * same in either zone; the day boundary is covered in rollout-history.pure.spec.ts.
  */
 
 import { expect, test, type Page, type Route } from '@playwright/test';
@@ -291,6 +296,8 @@ async function openRollout(page: Page, records: Records, seen?: string[], userDe
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 test.describe('Rollout history', () => {
+  test.use({ timezoneId: 'Europe/London', locale: 'en-GB' });
+
   test('joins one promote action and says that it is a match', async ({ page }) => {
     const card = await openRollout(page, TYPICAL);
     // 4 promotions + 1 override + 2 failures + 4 Releases = 11 records. The override joins Marco's
@@ -323,7 +330,13 @@ test.describe('Rollout history', () => {
     const card = await openRollout(page, TYPICAL);
     const override = card.locator('[data-history-entry="override"]');
     await expect(override).toHaveCount(1);
-    await expect(override).toHaveAttribute('aria-label', /^Override by Marco Lindqvist into prod, Tue 6 Oct 2026, 14:58 UTC$/);
+    await expect(override).toHaveAttribute('aria-label', /^Override by Marco Lindqvist into prod, Tue 6 Oct 2026, 15:58 BST$/);
+    // The entry's time reads in the viewer's zone, and its hover tooltip gives UTC.
+    const time = override.locator(':scope > time');
+    await expect(time).toHaveText('15:58');
+    await expect(time).toHaveAttribute('datetime', '2026-10-06T14:58:09.000Z');
+    await time.hover();
+    await expect(page.getByRole('tooltip')).toHaveText('6 Oct 2026, 14:58:09 UTC');
     await expect(override).toContainText('forced a promotion into');
     await expect(override).toContainText('past 1 failing gate');
     await expect(override).toContainText('1 of 2 listed Spaces written');
@@ -493,7 +506,7 @@ test.describe('Rollout history', () => {
     const today = card.locator('[data-history-entry="release-run"]').first();
     await expect(today).toContainText('Automation');
     await expect(today).toContainText('5 Releases');
-    await expect(today).toContainText('02:00 to 02:04');
+    await expect(today).toContainText('03:00 to 03:04');
     await today.getByRole('button', { name: 'Show each Release' }).click();
     await expect(today.locator('li')).toHaveCount(5);
     // Older days fold their routine entries; the folded row holds the only control.
@@ -517,6 +530,7 @@ test.describe('Rollout history', () => {
     await expect(card.locator('[data-history-day]')).toHaveCount(12);
     await expect(card.locator('[data-history-entry="opened"]')).toBeVisible();
     await expect(card.getByText('ConfigHub keeps the last 1024 promotions, 256 overrides and 64 failed promotions')).toBeVisible();
+    await expect(card.getByRole('note')).toContainText('Times are in your time zone, BST; hover a time for UTC.');
   });
 
   test('a person whose name is still being read shows as loading, never as Unknown user', async ({ page }) => {

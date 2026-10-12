@@ -112,6 +112,49 @@ export type ConsoleState =
   | 'unknown';
 
 /**
+ * The console's summary cards, grouped by what happens next to a rollout
+ * rather than by its exact state. A reader scanning the fleet asks "what do I
+ * do now", and eleven states answer a finer question than that one.
+ */
+export type ConsoleGroup = 'needs-you' | 'stuck' | 'in-progress' | 'finished';
+
+/** Card order: the group that needs a human first, the closed ones last. */
+export const CONSOLE_GROUPS: readonly ConsoleGroup[] = ['needs-you', 'stuck', 'in-progress', 'finished'];
+
+/**
+ * A `Record` over every state, so a new `ConsoleState` fails to compile until
+ * it is put in a group or deliberately left out of all of them.
+ *
+ * `no-workflow` and `unknown` are in no group: nothing on this page can move
+ * either one, and the server gave no state to sort `unknown` by. Those rows
+ * still list when no card is selected.
+ */
+const CONSOLE_GROUP_OF: Readonly<Record<ConsoleState, ConsoleGroup | null>> = {
+  ready: 'needs-you',
+  degraded: 'stuck',
+  blocked: 'stuck',
+  held: 'stuck',
+  'no-stages': 'stuck',
+  progressing: 'in-progress',
+  complete: 'finished',
+  'complete-unverified': 'finished',
+  aborted: 'finished',
+  'no-workflow': null,
+  unknown: null,
+};
+
+export function consoleGroupOf(state: ConsoleState): ConsoleGroup | null {
+  return CONSOLE_GROUP_OF[state];
+}
+
+/**
+ * Every state, in card order and then the ungrouped ones. Taken from the
+ * exhaustive `Record` above rather than listed again, so a new state cannot be
+ * grouped and still be missing from the State filter.
+ */
+export const CONSOLE_STATES: readonly ConsoleState[] = Object.keys(CONSOLE_GROUP_OF) as ConsoleState[];
+
+/**
  * The row's state as the GATE channel alone reaches it — `cub`'s question,
  * answered by `rolloutGates.ts` and by nothing else.
  *

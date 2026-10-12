@@ -1503,7 +1503,20 @@ function StepComponent({
                 if (val !== null) field.onChange(val);
               }}
               size='small'
-              sx={{ flexWrap: 'wrap', gap: 1, '& .MuiToggleButton-root': { borderRadius: 1 } }}
+              sx={{
+                flexWrap: 'wrap',
+                gap: 1,
+                '& .MuiToggleButton-root': { borderRadius: 1 },
+                // The group hides each later button's left border so that
+                // touching neighbours share one. These buttons have a gap,
+                // so each needs its own, in the colour of its other sides.
+                '& .MuiToggleButtonGroup-grouped': {
+                  marginLeft: 0,
+                  borderLeft: '1px solid var(--bd0)',
+                  '&.Mui-disabled': { borderLeftColor: 'action.disabledBackground' },
+                  '&.Mui-selected': { borderLeftColor: 'var(--rust-ring)' },
+                },
+              }}
             >
               {owners.map((o) => (
                 <ToggleButton key={o} value={o} sx={{ textTransform: 'none', px: 1.5 }}>
