@@ -13,6 +13,7 @@ import {
   deleteValueAtPath,
   findFieldValue,
   parseUnitDataStructured,
+  selectByResource,
   setValueAtPath,
 } from './configParser';
 import type { FieldEntry, FieldPathMeta, ResourceInfo, SetValueResult } from './configParser';
@@ -111,24 +112,17 @@ function overlayValueReflected(
 }
 
 /**
- * Find the FieldEntry for a path in an entry list, optionally scoped to a resource.
- * Mirrors the resource-matching logic in configParser's matchesResource.
+ * Find the FieldEntry for a path in an entry list, optionally scoped to a resource,
+ * matched as configParser's selectByResource matches one.
  */
 function findEntry(
   entries: FieldEntry[],
   path: string,
   resource?: ResourceInfo,
 ): FieldEntry | undefined {
-  for (const e of entries) {
-    if (e.path !== path) continue;
-    if (!resource) return e;
-    const er = e.resource;
-    if (!er) continue;
-    if (resource.ResourceType !== undefined && er.ResourceType !== resource.ResourceType) continue;
-    if (resource.ResourceName !== undefined && er.ResourceName !== resource.ResourceName) continue;
-    return e;
-  }
-  return undefined;
+  const atPath = entries.filter((e) => e.path === path);
+  if (!resource) return atPath[0];
+  return selectByResource(atPath, (e) => e.resource, resource)[0];
 }
 
 // ============================================================================

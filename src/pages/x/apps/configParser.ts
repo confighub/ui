@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 import { isMap, isScalar, isSeq, LineCounter, parse as parseYaml, parseAllDocuments, stringify as stringifyYaml } from 'yaml';
 import type { ResourceInfo } from '@confighub/rtk-query';
+import { sameKubernetesResourceType } from '@/utility/resource-type-functions';
 
 // ============================================================================
 // PARSE CACHE
@@ -635,10 +636,11 @@ function serializeMultiDocYaml(
  */
 function documentCandidateIdxs(docObjects: unknown[], resource?: ResourceInfo): number[] {
   if (!resource) return docObjects.map((_o, i) => i).reverse();
-  return docObjects.reduce<number[]>((acc, obj, i) => {
-    if (matchesResource(extractResourceIdentity(obj), resource)) acc.push(i);
-    return acc;
-  }, []);
+  return selectByResource(
+    docObjects.map((_o, i) => i),
+    (i) => extractResourceIdentity(docObjects[i]),
+    resource,
+  );
 }
 
 /**
@@ -1049,12 +1051,44 @@ export function buildFieldPathMeta(data: string | undefined): Map<string, FieldP
   return result;
 }
 
-/** Return true when `entryResource` satisfies all non-undefined fields of `target`. */
-export function matchesResource(entryResource: ResourceInfo | undefined, target: ResourceInfo): boolean {
-  if (!entryResource) return false;
-  if (target.ResourceType !== undefined && entryResource.ResourceType !== target.ResourceType) return false;
-  if (target.ResourceName !== undefined && entryResource.ResourceName !== target.ResourceName) return false;
-  return true;
+/** The name of a Kubernetes resource without its namespace: `ns/web` is `web`. */
+function nameWithoutScope(name: string): string {
+  const slash = name.indexOf('/');
+  return slash >= 0 ? name.slice(slash + 1) : name;
+}
+
+/**
+ * The items whose resource is `target`, matched the way the server matches a stored record
+ * against a configuration: the same type, in any API version, and the same name, namespace
+ * included; or, when no item has that name, the same name without its namespace, when that
+ * names one resource. So a resource recorded before a namespace changed -- upstream's
+ * `confighubplaceholder/web` for a variant's `prod/web` -- is still found, and two resources of
+ * one type and name in different namespaces are not confused. Fields `target` leaves undefined
+ * are not compared. The types compared are Kubernetes types, since extractResourceIdentity reads
+ * one from a document's apiVersion and kind.
+ */
+export function selectByResource<T>(
+  items: T[],
+  resourceOf: (item: T) => ResourceInfo | undefined,
+  target: ResourceInfo,
+): T[] {
+  const typed = items.filter((item) => {
+    const resource = resourceOf(item);
+    if (!resource) return false;
+    return (
+      target.ResourceType === undefined ||
+      (resource.ResourceType !== undefined && sameKubernetesResourceType(resource.ResourceType, target.ResourceType))
+    );
+  });
+  if (target.ResourceName === undefined) return typed;
+  const exact = typed.filter((item) => resourceOf(item)?.ResourceName === target.ResourceName);
+  if (exact.length > 0) return exact;
+  const wanted = nameWithoutScope(target.ResourceName);
+  const unscoped = typed.filter((item) => {
+    const name = resourceOf(item)?.ResourceName;
+    return name !== undefined && nameWithoutScope(name) === wanted;
+  });
+  return new Set(unscoped.map((item) => resourceOf(item)?.ResourceName)).size === 1 ? unscoped : [];
 }
 
 /**
@@ -1070,7 +1104,11 @@ export function findFieldValue(
 ): string | undefined {
   const entries = parseUnitDataStructured(data);
   if (resource) {
-    const match = entries.find((e) => e.path === path && matchesResource(e.resource, resource));
+    const match = selectByResource(
+      entries.filter((e) => e.path === path),
+      (e) => e.resource,
+      resource,
+    )[0];
     if (match !== undefined) return String(match.value);
   }
   const any = entries.find((e) => e.path === path);

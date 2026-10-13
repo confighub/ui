@@ -14,6 +14,7 @@ import {
 import { TOP_NAV_HEIGHT } from '@/utility/constants';
 import { getFilteredMutations } from '@/utility/mutation-functions';
 import { Resource, convertToResourceList } from '@/utility/schema-functions';
+import { sameResourceType } from '@/utility/resource-type-functions';
 import { cleanString } from '@/utility/string-functions';
 import { isIDInvalid } from '@/utility/validation-functions';
 import Drawer from '@mui/material/Drawer';
@@ -140,10 +141,13 @@ export const MutationDrawer = ({
   // Get the resource type for the currently selected tab
   const selectedResourceType = mutations?.[selectedTab]?.Resource?.ResourceType || '';
 
-  // Find the resource data that matches the selected resource type
-  const currentData = resources?.find(
-    (resource) =>
-      resource.ResourceType.toLocaleLowerCase() === selectedResourceType.toLocaleLowerCase(),
+  // Find the resource data that matches the selected resource type, in any of its API versions
+  const currentData = resources?.find((resource) =>
+    sameResourceType(
+      resource.ResourceType.toLocaleLowerCase(),
+      selectedResourceType.toLocaleLowerCase(),
+      unitExtended?.Unit?.ToolchainType,
+    ),
   )?.ResourceBody;
 
   return (

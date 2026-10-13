@@ -3,7 +3,7 @@
 
 import type { MutationMap, ResourceMutation, ResourceMutationList } from '@confighub/rtk-query';
 
-import { matchesResource, type FieldPathMeta } from './configParser';
+import { selectByResource, type FieldPathMeta } from './configParser';
 
 /**
  * Walk from `path` up through its dot-segment ancestors, returning the
@@ -61,7 +61,8 @@ export function buildProtectedPathLookup(
     // entry answers for every path.
     if (mutationSources.length === 1) return mutationSources[0];
     const meta = fieldPathMeta.get(path);
-    return mutationSources.find((rm) => matchesResource(meta?.resource, rm.Resource ?? {}));
+    if (!meta?.resource) return undefined;
+    return selectByResource(mutationSources, (rm) => rm.Resource, meta.resource)[0];
   };
 
   return (path: string): boolean => {
