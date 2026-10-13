@@ -179,10 +179,6 @@ one.
 - **Step-count changes ripple.** Adding, removing, or reordering steps in a tour means renumbering every
   `'N of M'` assertion across every spec that drives that tour — grep for the tour's title string across
   `ui/tests/tour-*.spec.ts` before considering the change done.
-- **`tour-full-walkthrough.spec.ts` is intentionally `test.skip`'d** (too slow/flaky for routine CI) but
-  chains all six tours back-to-back and must be **kept accurate** as living documentation of the intended
-  full flow — update it in the same commit as any step content or advance-kind change, even though it
-  will not run.
 - A regression-style spec that drives a chapter through the **real tooltip** (clicking only what the
   tooltip itself points at, not raw `page.getByTestId(...).click()` calls that bypass the engine) is
   the only kind of test that can catch the "couple of steps ahead" bug class from rule 1. A spec that

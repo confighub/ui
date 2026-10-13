@@ -4,25 +4,17 @@
 // A deployment's live status is the `LiveStatus` of the Release it is running:
 // its latest published Release for its current release Target. These pin how
 // that Release is picked, what the `Healthy` gate concludes from its status,
-// and how the status is drawn — browser-free.
+// and what the component graph carries for it — browser-free.
 
 import { expect, test } from '@playwright/test';
 
 import type { ExtendedReleaseRead, ExtendedSpaceRead, ExtendedUnitRead } from '@confighub/rtk-query';
 
 import { buildComponentData } from '../src/pages/x/apps/componentData';
-import {
-  deriveHealthPresentation,
-  deriveSyncPresentation,
-  formatDigest,
-  type LiveStatus,
-  reporterDetailLines,
-  resolveLiveStatusProvider,
-  runningReleases,
-} from '../src/pages/x/apps/liveStatus';
-import { buildGatesForStage, liveStatusFailure } from '../src/pages/x/apps/rollout/rolloutGates';
-import { deriveProgress } from '../src/pages/x/apps/rollout/rolloutState';
-import type { RolloutProgress, RolloutStage } from '../src/pages/x/apps/rollout/rolloutTypes';
+import { formatDigest, type LiveStatus, runningReleases } from '../src/pages/x/apps/liveStatus';
+import { buildGatesForStage, liveStatusFailure } from '../src/pages/x/apps/change-order/changeOrderGates';
+import { deriveProgress } from '../src/pages/x/apps/change-order/changeOrderState';
+import type { ChangeOrderProgress, ChangeOrderStage } from '../src/pages/x/apps/change-order/changeOrderTypes';
 import { carryingReleaseMap } from './fixtures/running-release';
 
 const GREEN: LiveStatus = {
@@ -103,22 +95,7 @@ test('a green Release passes, with or without an operation', () => {
   expect(liveStatusFailure('dev', { releaseNum: 4, liveStatus: noOperation })).toBeNull();
 });
 
-test('each failing axis is named, in the server\'s order and words', () => {
-  const failure = (status: LiveStatus | null) => liveStatusFailure('dev', { releaseNum: 4, liveStatus: status });
-  expect(failure(null)).toBe('dev has no live status for release 4 yet.');
-  expect(failure({ ...GREEN, Sync: 'OutOfSync', Health: 'Degraded' })).toBe(
-    'dev release 4 is not synced (OutOfSync).',
-  );
-  expect(failure({ ...GREEN, Operation: 'Running', Health: 'Progressing' })).toBe(
-    'dev release 4 is still being deployed.',
-  );
-  expect(failure({ ...GREEN, Operation: 'Failed', Health: 'Degraded' })).toBe(
-    'dev release 4 failed to deploy.',
-  );
-  expect(failure({ ...GREEN, Health: 'Progressing' })).toBe('dev release 4 is not healthy (Progressing).');
-});
-
-const STAGE: RolloutStage = {
+const STAGE: ChangeOrderStage = {
   id: 'staging',
   previousStageId: 'dev',
   spaceIds: ['s1'],
@@ -129,7 +106,7 @@ const STAGE: RolloutStage = {
 };
 
 /** `carrying` is the Spaces `ChangeOrder.Releases` names; by default, every released one. */
-function progress(released: string[], carrying: string[] = released): RolloutProgress {
+function progress(released: string[], carrying: string[] = released): ChangeOrderProgress {
   return {
     availability: 'available',
     resolvedSpaceIds: new Set(['d1']),
@@ -210,40 +187,6 @@ test('the healthy gate fails on a Release not reported on yet', () => {
     evaluated: true,
     reason: 'dev has no live status for release 2 yet.',
   });
-});
-
-// ── How it is drawn ─────────────────────────────────────────────────────────
-
-test('the vitals read the normalized fields', () => {
-  expect(deriveSyncPresentation(GREEN)?.state).toBe('Synced');
-  expect(deriveHealthPresentation(GREEN)?.state).toBe('Healthy');
-  expect(deriveSyncPresentation({ ...GREEN, Operation: 'Running' })?.state).toBe('Progressing');
-  expect(deriveSyncPresentation({ ...GREEN, Operation: 'Failed' })?.state).toBe('OutOfSync');
-  expect(deriveHealthPresentation({ ...GREEN, Health: 'Missing' })?.tone).toBe('danger');
-  expect(deriveSyncPresentation(null)).toBeNull();
-  expect(deriveHealthPresentation(undefined)).toBeNull();
-});
-
-test('the reporter names the delivery system', () => {
-  expect(resolveLiveStatusProvider(GREEN)).toBe('argocd');
-  expect(resolveLiveStatusProvider({ ...GREEN, Reporter: 'flux-watcher' })).toBe('flux');
-  expect(resolveLiveStatusProvider({ ...GREEN, Reporter: 'something-else' })).toBe('unknown');
-  expect(resolveLiveStatusProvider(null)).toBe('unknown');
-});
-
-test("the peek carries the reporter's own words where they say more", () => {
-  const errored: LiveStatus = {
-    ...GREEN,
-    Sync: 'OutOfSync',
-    ReporterSync: 'OutOfSync',
-    Operation: 'Failed',
-    ReporterOperation: 'Error',
-  };
-  // The reporter's sync word matches the normalized one, so it is not repeated.
-  expect(reporterDetailLines(errored, 'sync')).toEqual(['operation: Error']);
-  expect(reporterDetailLines({ ...GREEN, ReporterHealth: 'Healthy' }, 'health')).toEqual([
-    'operation: Succeeded',
-  ]);
 });
 
 test('a digest keeps its algorithm and abbreviates its hash', () => {

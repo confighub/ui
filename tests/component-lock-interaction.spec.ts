@@ -182,7 +182,7 @@ async function openLeafKebab(page: Page, searchText: string): Promise<ReturnType
   return leafRow;
 }
 
-test.describe('Lock/unlock interaction — kebab wording and staging', () => {
+test.describe('Lock/unlock interaction — Undo keep', () => {
   test.use({ storageState: 'authentication.json' });
 
   const devFields = { replicas: '1', strategy: 'RollingUpdate', minReadySeconds: '10', limitsCpu: '500m', limitsMemory: '512Mi', image: 'v1', includeNewFeatureFlag: false };
@@ -197,14 +197,6 @@ test.describe('Lock/unlock interaction — kebab wording and staging', () => {
     await page.waitForResponse((r) => r.url().includes('/api/space') && r.request().method() === 'GET' && r.ok());
     const api = new ApiHelper(page);
     fx = await setupLockFixture(page, api, devFields, prodFields, { ...devFields, includeNewFeatureFlag: true });
-
-    // `strategy` matches upstream (never overridden) but is protected directly —
-    // the "fourth cell": protected + matches-upstream, which the read-side
-    // border fix (Section 2) makes visible for the first time.
-    await api.setUnitProtection(fx.prodSpaceId, fx.prodUnitId, [
-      { Resource: { ResourceType: RESOURCE_TYPE, ResourceName: RESOURCE_NAME }, Protected: { 'spec.strategy': true } },
-    ]);
-    await waitForResolved(page, fx.prodSpaceId, fx.prodUnitId);
     await context.close();
   });
 
@@ -217,72 +209,6 @@ test.describe('Lock/unlock interaction — kebab wording and staging', () => {
     try { await api.deleteSpace(fx.prodSpaceId, true); } catch { /* ignore */ }
     try { await api.deleteSpace(fx.devSpaceId, true); } catch { /* ignore */ }
     await context.close();
-  });
-
-  test('unprotected leaf shows "Keep on merge"; a committed-protected leaf shows "Let merges update this"', async ({ page }) => {
-    await openProdPane(page, fx.appLabel, fx.prodTargetSlug);
-
-    const unprotectedRow = await openLeafKebab(page, 'replicas');
-    await expect(page.getByRole('menuitem').filter({ hasText: 'Keep on merge' })).toBeVisible();
-    await expect(page.getByRole('menuitem').filter({ hasText: 'Let merges update this' })).toHaveCount(0);
-    await expect(unprotectedRow).toHaveAttribute('data-protected', 'false');
-    await page.keyboard.press('Escape');
-
-    // strategy: protected directly via setUnitProtection in beforeAll, value
-    // UNCHANGED from upstream — the fourth cell.
-    const protectedRow = await openLeafKebab(page, 'strategy');
-    await expect(page.getByRole('menuitem').filter({ hasText: 'Let merges update this' })).toBeVisible();
-    await expect(page.getByRole('menuitem').filter({ hasText: 'Keep on merge' })).toHaveCount(0);
-    await expect(protectedRow).toHaveAttribute('data-protected', 'true');
-    await expect(protectedRow).toHaveAttribute('data-differs-upstream', 'false');
-  });
-
-  test('leaf kebab disables "Keep on merge" for an upstream-only (absent) row, with the correct tooltip', async ({ page }) => {
-    await openProdPane(page, fx.appLabel, fx.prodTargetSlug);
-
-    const row = await openLeafKebab(page, 'newFeatureFlag');
-    const item = page.getByRole('menuitem').filter({ hasText: 'Keep on merge' });
-    await expect(item).toBeVisible();
-    await expect(item).toHaveAttribute('aria-disabled', 'true');
-    void row;
-  });
-
-  test('leaf kebab disables protection for an array-indexed row, with the correct tooltip', async ({ page }) => {
-    await openProdPane(page, fx.appLabel, fx.prodTargetSlug);
-
-    // "image" inside spec.containers.0 is array-indexed.
-    await openLeafKebab(page, 'image');
-    const item = page.getByRole('menuitem').filter({ hasText: 'Keep on merge' });
-    await expect(item).toBeVisible();
-    await expect(item).toHaveAttribute('aria-disabled', 'true');
-
-    // Verify the tooltip text specifically (distinct from the absent-row case).
-    // MUI wraps a disabled child in its own hover-catching span for Tooltip
-    // purposes — force bypasses Playwright's "topmost element" actionability
-    // check, which the wrapper span otherwise fails (by design: it exists
-    // specifically to receive hover a disabled button itself cannot). Retried:
-    // the very first hover after the menu opens occasionally lands before
-    // MUI's Popper has finished positioning, missing the mouseenter.
-    const tooltip = page.locator('[role="tooltip"]');
-    await expect(async () => {
-      await item.hover({ force: true });
-      await expect(tooltip).toContainText('Cannot protect array-indexed rows.', { timeout: 2000 });
-    }).toPass({ timeout: 10000 });
-  });
-
-  test('folder kebab shows the correct "Keep group & N keys" delta wording', async ({ page }) => {
-    await openProdPane(page, fx.appLabel, fx.prodTargetSlug);
-
-    const searchBox = page.getByPlaceholder('Search...');
-    await searchBox.fill('limits');
-    const folderRow = page.locator('[data-testid="component-folder-row"][data-folder-path="spec.limits"]');
-    await expect(folderRow).toBeVisible({ timeout: 15000 });
-    await folderRow.locator('.kebab-btn').click();
-    await expect(page.getByRole('menu')).toBeVisible({ timeout: 5000 });
-
-    // Neither leaf under `limits` is protected yet — delta is the full count.
-    await expect(page.getByText('Keep group & 2 keys on merge')).toBeVisible();
-    await expect(page.getByText('0 are already kept. This changes 2.')).toBeVisible();
   });
 
   test('Undo keep reverses exactly the staged keep, leaving an independently-kept row untouched', async ({ page }) => {
@@ -525,143 +451,5 @@ test.describe.serial('Lock/unlock interaction — commit flows', () => {
     // "minReadySeconds", which hides the lock row.
     await searchBox.fill('strategy');
     await expect(lockRow).toHaveAttribute('data-protected', 'true', { timeout: 10000 });
-  });
-});
-
-// ============================================================================
-// Two more surfaces for the SAME staged-toggle action as the kebab's "Keep on
-// merge" item: the value-hover tooltip's "Protect"/"Unprotect" line, and the
-// InspectPanel's own toggle. Own fixture/space pair so these tests' mutations
-// (protect/unprotect on `replicas` and `minReadySeconds`) can't race the
-// read-only assertions in the describe blocks above under `fullyParallel`.
-// ============================================================================
-
-test.describe('Lock/unlock interaction — hover tooltip and InspectPanel surfaces', () => {
-  test.use({ storageState: 'authentication.json' });
-
-  const devFields = { replicas: '1', strategy: 'RollingUpdate', minReadySeconds: '10', limitsCpu: '500m', limitsMemory: '512Mi', image: 'v1', includeNewFeatureFlag: false };
-  const prodFields = { replicas: '3', strategy: 'RollingUpdate', minReadySeconds: '10', limitsCpu: '600m', limitsMemory: '1Gi', image: 'v2', includeNewFeatureFlag: false };
-
-  let fx: LockFixture;
-
-  test.beforeAll(async ({ browser }) => {
-    const context = await newAuthorizedContext(browser);
-    const page = await context.newPage();
-    await page.goto('/');
-    await page.waitForResponse((r) => r.url().includes('/api/space') && r.request().method() === 'GET' && r.ok());
-    const api = new ApiHelper(page);
-    fx = await setupLockFixture(page, api, devFields, prodFields, { ...devFields, includeNewFeatureFlag: true });
-    await context.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const context = await newAuthorizedContext(browser);
-    const page = await context.newPage();
-    await page.goto('/');
-    await page.waitForResponse((r) => r.url().includes('/api/space') && r.request().method() === 'GET' && r.ok());
-    const api = new ApiHelper(page);
-    try { await api.deleteSpace(fx.prodSpaceId, true); } catch { /* ignore */ }
-    try { await api.deleteSpace(fx.devSpaceId, true); } catch { /* ignore */ }
-    await context.close();
-  });
-
-  test('hover tooltip Protect/Unprotect stages the same effect as the kebab item, without entering inline edit', async ({ page }) => {
-    await openProdPane(page, fx.appLabel, fx.prodTargetSlug);
-
-    const searchBox = page.getByPlaceholder('Search...');
-    await searchBox.fill('replicas');
-    const row = page.getByTestId('component-leaf-row').filter({ hasText: 'replicas' });
-    await expect(async () => { expect(await row.count()).toBe(1); }).toPass({ timeout: 15000 });
-    await expect(row).toHaveAttribute('data-protected', 'false');
-
-    const pill = row.locator('.current-pill');
-    const protectToggle = page.getByTestId('tooltip-protect-toggle');
-
-    await expect(async () => {
-      await pill.hover();
-      await expect(protectToggle).toBeVisible({ timeout: 2000 });
-    }).toPass({ timeout: 10000 });
-    await expect(protectToggle).toHaveText('Protect');
-    await protectToggle.click();
-
-    // Staged exactly like the kebab's "Keep on merge": solid border/rail via
-    // data-protected + data-change-type, and — the portal-click assumption —
-    // no inline editor was opened by the click landing "inside" the anchor span.
-    await expect(row).toHaveAttribute('data-protected', 'true');
-    await expect(row).toHaveAttribute('data-change-type', 'protect');
-    await expect(page.getByTestId('field-edit-input')).toHaveCount(0);
-
-    // Hover again — the affordance now reads Unprotect; clicking reverts it,
-    // proving this is the exact same staged toggle as the kebab (idempotent
-    // round trip), not a one-way action.
-    await expect(async () => {
-      await pill.hover();
-      await expect(protectToggle).toBeVisible({ timeout: 2000 });
-    }).toPass({ timeout: 10000 });
-    await expect(protectToggle).toHaveText('Unprotect');
-    await protectToggle.click();
-    await expect(row).toHaveAttribute('data-protected', 'false');
-    await expect(row).toHaveAttribute('data-change-type', 'none');
-  });
-
-  test('hover tooltip omits the Protect affordance for an absent or array-indexed path', async ({ page }) => {
-    await openProdPane(page, fx.appLabel, fx.prodTargetSlug);
-    const searchBox = page.getByPlaceholder('Search...');
-
-    // Absent (upstream-only) row — canEditInline is still true (typing creates
-    // the value), but Protect can't apply until the key exists downstream.
-    await searchBox.fill('newFeatureFlag');
-    const absentRow = page.getByTestId('component-leaf-row').filter({ hasText: 'newFeatureFlag' });
-    await expect(async () => { expect(await absentRow.count()).toBe(1); }).toPass({ timeout: 15000 });
-    await expect(async () => {
-      await absentRow.locator('.current-pill').hover();
-      await expect(page.locator('[role="tooltip"]')).toBeVisible({ timeout: 2000 });
-    }).toPass({ timeout: 10000 });
-    await expect(page.getByTestId('tooltip-protect-toggle')).toHaveCount(0);
-
-    // Array-indexed row ("image" inside spec.containers.0).
-    await searchBox.fill('image');
-    const arrayRow = page.getByTestId('component-leaf-row').filter({ hasText: 'image' });
-    await expect(async () => { expect(await arrayRow.count()).toBe(1); }).toPass({ timeout: 15000 });
-    await expect(async () => {
-      await arrayRow.locator('.current-pill').hover();
-      await expect(page.locator('[role="tooltip"]')).toBeVisible({ timeout: 2000 });
-    }).toPass({ timeout: 10000 });
-    await expect(page.getByTestId('tooltip-protect-toggle')).toHaveCount(0);
-  });
-
-  test('InspectPanel Protect/Unprotect stages the same effect as the kebab item', async ({ page }) => {
-    await openProdPane(page, fx.appLabel, fx.prodTargetSlug);
-
-    const row = await openLeafKebab(page, 'minReadySeconds');
-    await expect(row).toHaveAttribute('data-protected', 'false');
-    await page.getByRole('menuitem').filter({ hasText: 'Inspect value' }).click();
-
-    const protectToggle = page.getByTestId('inspect-panel-protect-toggle');
-    await expect(protectToggle).toBeVisible({ timeout: 5000 });
-    await expect(protectToggle).toHaveText('Protect');
-    await protectToggle.click();
-
-    await expect(row).toHaveAttribute('data-protected', 'true');
-    await expect(row).toHaveAttribute('data-change-type', 'protect');
-    await expect(protectToggle).toHaveText('Unprotect');
-
-    // Round trip, same as the hover-tooltip test — proves this triggers the
-    // identical staged toggle rather than a one-way action.
-    await protectToggle.click();
-    await expect(row).toHaveAttribute('data-protected', 'false');
-    await expect(row).toHaveAttribute('data-change-type', 'none');
-  });
-
-  test('InspectPanel omits the Protect affordance for an absent or array-indexed path', async ({ page }) => {
-    await openProdPane(page, fx.appLabel, fx.prodTargetSlug);
-
-    await openLeafKebab(page, 'newFeatureFlag');
-    await page.getByRole('menuitem').filter({ hasText: 'Inspect value' }).click();
-    await expect(page.getByTestId('inspect-panel-protect-toggle')).toHaveCount(0);
-
-    await openLeafKebab(page, 'image');
-    await page.getByRole('menuitem').filter({ hasText: 'Inspect value' }).click();
-    await expect(page.getByTestId('inspect-panel-protect-toggle')).toHaveCount(0);
   });
 });

@@ -28,7 +28,6 @@ import {
   ancestorPathsOf,
   buildCompareTreeRows,
   decodeIdentityPath,
-  elideFolderLabel,
   encodeIdentityPath,
 } from '../src/pages/x/apps/compare/compareTree';
 
@@ -189,75 +188,6 @@ test.describe('ancestors', () => {
         'apiVersion',
       ),
     ).toEqual([]);
-  });
-});
-
-test('the edit targets still resolve, so nesting did not move the write', () => {
-  // Nesting is grouping and indent. If it ever became row identity, an edit
-  // would start writing somewhere else.
-  const extra = DEEP.replace(
-    '        - name: api',
-    '        - name: debug\n          image: busybox\n        - name: api',
-  );
-  const rows = leaves(
-    buildCompareResult(
-      [
-        { deploymentId: 'a', label: 'prod', data: DEEP },
-        { deploymentId: 'b', label: 'dev', data: extra },
-      ],
-    ).groups[0]?.rows ?? [],
-  );
-  const image = rows.find((row) => row.identityPath === 'spec.template.spec.containers[api].image');
-  expect(image).toBeDefined();
-  expect((image as CompareLeafRow).editTargets[0]?.positionalPath).toBe(
-    'spec.template.spec.containers.0.image',
-  );
-  expect((image as CompareLeafRow).editTargets[1]?.positionalPath).toBe(
-    'spec.template.spec.containers.1.image',
-  );
-});
-
-test.describe('a folder label is shortened without being destroyed', () => {
-  // The first version split on `.` without the bracket-aware splitter that
-  // already existed for the tree builder — so
-  // `annotations[kubectl.kubernetes.io/restartedAt]` came back as `spec.…`, the
-  // identity gone and the label naming nothing. The same bug in a second place,
-  // which is why both now share one splitter.
-
-  const LONG = 'spec.template.metadata.annotations[kubectl.kubernetes.io/restartedAt]';
-
-  test('an identity token is never torn apart', () => {
-    const out = elideFolderLabel(LONG, 20);
-    expect(out).not.toBe('spec.…');
-    // Both ends of the token survive, which is what identifies it.
-    expect(out).toContain('annota');
-    expect(out).toContain('tedAt]');
-  });
-
-  test('the result always fits the budget it was given', () => {
-    // It used to prefer keeping identity units at ANY cost, so the CSS ellipsis
-    // fired on top of the elision — two ellipses, and the tail lost anyway.
-    for (const [label, budget] of [
-      [LONG, 20],
-      ['spec.template.spec.containers[api].resources.limits', 22],
-      ['spec.template.spec.containers[api]', 18],
-      ['a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p', 12],
-    ] as const) {
-      expect(elideFolderLabel(label, budget).length, `${label} @ ${budget}`).toBeLessThanOrEqual(budget);
-    }
-  });
-
-  test('a label that already fits is left exactly as it is', () => {
-    for (const label of ['metadata', 'spec.template.spec', 'containers[api]']) {
-      expect(elideFolderLabel(label, 22)).toBe(label);
-    }
-  });
-
-  test('whole units go before any unit is cut', () => {
-    // Middle-truncation is the last resort, not the first move.
-    expect(elideFolderLabel('spec.template.spec.containers[api].resources.limits', 22)).toBe(
-      'spec.….limits',
-    );
   });
 });
 

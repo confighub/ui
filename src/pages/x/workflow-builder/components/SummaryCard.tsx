@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The rollout detail page's own head, in an authoring mode: what this definition
+ * The ChangeOrder detail page's own head, in an authoring mode: what this definition
  * is, what state it is in, and the three things that can be done to it.
  *
  * ⚠️ TWO LAYOUTS, ONE PER SIDE OF THE FIRST SAVE. A workflow that exists gets
@@ -169,11 +169,11 @@ export function SummaryCard({
      Rendering the third as the second would assert something nobody established. */
   let governs: React.ReactNode;
   if (wf.governs === undefined) governs = 'Not counted';
-  else if (wf.governs === 0) governs = 'No change order yet';
+  else if (wf.governs === 0) governs = 'No ChangeOrder yet';
   else {
     governs = (
       <button className='factlink' type='button' data-act='noop'>
-        {plural(wf.governs, 'change order', 'change orders')}
+        {plural(wf.governs, 'ChangeOrder', 'ChangeOrders')}
       </button>
     );
   }

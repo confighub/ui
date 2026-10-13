@@ -17,10 +17,10 @@
  * component conjoined -- that is `useStageResolutions`, and nothing about it changed.
  *
  * THE COMPONENT IS PREVIEW STATE. It is never stored on the workflow and never sent: a
- * ChangeWorkflow has no component of its own, and may govern rollouts of several. What a
- * rollout covers is its ChangeOrder's scope (`InScopeSpaceIDs`), which a ChangeOrder for
+ * ChangeWorkflow has no component of its own, and may govern ChangeOrders of several. What a
+ * ChangeOrder covers is its own scope (`InScopeSpaceIDs`), which a ChangeOrder for
  * one component's variants typically selects. So this answers "show me what this
- * definition would do for payments", which is a question about a hypothetical rollout
+ * definition would do for payments", which is a question about a hypothetical ChangeOrder
  * rather than a fact about the definition -- and the difference is what makes a Stage
  * matching nothing a warning here rather than a defect.
  */
@@ -142,7 +142,7 @@ export function useWorkflowSpaces(
    * `useStageResolutions` treats its scope as optional and conjoins it when present, so
    * handing it an undefined scope would resolve each Stage's bare selector across EVERY
    * Space in the organisation. That is wrong and expensive at once: wrong because a
-   * rollout is always narrowed by its ChangeOrder's scope and unscoped it answers a
+   * ChangeOrder is always narrowed by its own scope and unscoped it answers a
    * question nobody asked, expensive because it is one org-wide query per Stage.
    *
    * Withholding the Stages is how that is said, rather than teaching the resolver about

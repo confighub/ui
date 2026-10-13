@@ -24,7 +24,8 @@ const TargetListPage = lazy(() => import('./pages/target-list/TargetListPage'));
 const FunctionBrowserPage = lazy(() => import('./pages/function-browser/FunctionBrowserPage'));
 const ChangeReviewPage = lazy(() => import('./pages/change-review/ChangeReviewPage'));
 const AppsComponentPage = lazy(() => import('./pages/x/apps/AppsComponentPage'));
-const RolloutsPage = lazy(() => import('./pages/rollouts/RolloutsPage'));
+const ChangeOrdersPage = lazy(() => import('./pages/change-orders/ChangeOrdersPage'));
+const ChangeOrdersOldRouteRedirect = lazy(() => import('./pages/change-orders/OldRouteRedirect'));
 const ViewExplorerPage = lazy(() => import('./pages/x/view-explorer/ViewExplorerPage'));
 const ResourceExplorerPage = lazy(
   () => import('./pages/x/resource-explorer/ResourceExplorerPage'),
@@ -168,10 +169,19 @@ const routes = [
         ),
       },
       {
+        path: '/change-orders/:slug?/:stage?',
+        element: (
+          <Suspense fallback={<Loader isLoading={true} />}>
+            <ChangeOrdersPage />
+          </Suspense>
+        ),
+      },
+      {
+        // The page's earlier address. Links to it are still in bookmarks and history.
         path: '/rollouts/:slug?/:stage?',
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
-            <RolloutsPage />
+            <ChangeOrdersOldRouteRedirect />
           </Suspense>
         ),
       },

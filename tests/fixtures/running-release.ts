@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: MIT
 //
 // The Releases a fixture Space is running, and the ones that released a
-// ChangeOrder's change, for specs that hand the rollout model its inputs
+// ChangeOrder's change, for specs that hand the ChangeOrder model its inputs
 // directly.
 
 import type { ChangeOrderRelease } from '@confighub/rtk-query';
 
 import type { LiveStatus, RunningRelease } from '../../src/pages/x/apps/liveStatus';
-import type { CarryingRelease } from '../../src/pages/x/apps/rollout/rolloutTypes';
+import type { CarryingRelease } from '../../src/pages/x/apps/change-order/changeOrderTypes';
 
 /**
  * A published Release carrying `liveStatus`, or one its deploying tool has not
@@ -34,7 +34,7 @@ export function carryingReleases(
   }));
 }
 
-/** The same, as `RolloutProgress.carryingReleases` holds it. */
+/** The same, as `ChangeOrderProgress.carryingReleases` holds it. */
 export function carryingReleaseMap(
   spaceIds: Iterable<string>,
   releaseNum = 1,

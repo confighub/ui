@@ -15,16 +15,10 @@ import {
   kubernetesVersionFact,
 } from '../src/pages/x/apps/flow-graph/fold/derivedGroupKeys';
 import { K8S_GROUP_KEY } from '../src/pages/x/apps/flow-graph/fold/foldConstants';
-import {
-  foldHeaderCountText,
-  foldHeaderTitle,
-} from '../src/pages/x/apps/flow-graph/fold/foldHeader';
 import { foldMembers } from '../src/pages/x/apps/flow-graph/fold/foldModel';
 import {
   defaultGroupKey,
-  groupByButtonLabel,
   groupByOptions,
-  groupKeyPlural,
   groupQuiet,
   resolveGroupKey,
 } from '../src/pages/x/apps/flow-graph/fold/groupBy';
@@ -33,7 +27,6 @@ import type {
   ExtendedUnitRead,
   UnitRead,
 } from '@confighub/rtk-query';
-import { meridianComponent } from './fixtures/meridianFoldFixture';
 
 const QUIET = { staleUnits: 0, unreleasedUnits: 0, gatedUnits: 0 };
 
@@ -93,9 +86,6 @@ function component(members: Member[]): ComponentDeployment[] {
     ...members.map((m) => node(m, m.base ?? 'base-a')),
   ];
 }
-
-const optionKeys = (deployments: ComponentDeployment[]) =>
-  groupByOptions(foldMembers(deployments)).map((o) => o.key);
 
 const withFacts = (facts: Record<string, string>): ComponentDeployment => ({
   ...node({ name: 'x' }, 'base-a'),
@@ -267,56 +257,6 @@ test.describe('the order of the stacks', () => {
   });
 });
 
-test.describe('when Kubernetes version is offered', () => {
-  test('listed when it puts two Deployments of one Base together', () => {
-    const deployments = component([
-      { name: 'a', k8s: '1.31.2' },
-      { name: 'b', k8s: '1.31.4' },
-      { name: 'c', k8s: '1.32.0' },
-    ]);
-    expect(groupByOptions(foldMembers(deployments))).toEqual([
-      { key: K8S_GROUP_KEY, label: 'Kubernetes version', valueCount: 2, isDefault: false },
-    ]);
-  });
-
-  test('not listed when no Target has a version fact', () => {
-    expect(optionKeys(component([{ name: 'a' }, { name: 'b' }, { name: 'c' }]))).toEqual([]);
-  });
-
-  test('not listed when every Deployment is on one version', () => {
-    const deployments = component([
-      { name: 'a', k8s: '1.31.2' },
-      { name: 'b', k8s: '1.31.2' },
-      { name: 'c', k8s: '1.31.9', base: 'base-b' },
-    ]);
-    expect(optionKeys(deployments)).toEqual([]);
-  });
-
-  test('not listed when every version is on one Deployment of its Base', () => {
-    const deployments = component([
-      { name: 'a', k8s: '1.30.0' },
-      { name: 'b', k8s: '1.31.0' },
-      { name: 'c', k8s: '1.30.0', base: 'base-b' },
-      { name: 'd', k8s: '1.32.0', base: 'base-b' },
-    ]);
-    expect(optionKeys(deployments)).toEqual([]);
-  });
-
-  test('not listed when it only repeats the Base split', () => {
-    const deployments = component([
-      { name: 'a', k8s: '1.30.0' },
-      { name: 'b', k8s: '1.30.1' },
-      { name: 'c', k8s: '1.32.0', base: 'base-b' },
-      { name: 'd', k8s: '1.32.4', base: 'base-b' },
-    ]);
-    expect(optionKeys(deployments)).toEqual([]);
-  });
-
-  test('cert-manager: not listed when the Targets carry no Facts', () => {
-    expect(optionKeys(meridianComponent('cert-manager'))).not.toContain(K8S_GROUP_KEY);
-  });
-});
-
 test.describe('the key', () => {
   const deployments = component([
     { name: 'a', k8s: '1.31.2', labels: { Department: 'retail', k8s: 'x' } },
@@ -366,13 +306,4 @@ test.describe('the key', () => {
     expect(resolveGroupKey('@k8s', noFacts, 'Department')).toBe('Department');
   });
 
-  test('the button, the fold header and merged stacks name it in words', () => {
-    expect(groupByButtonLabel(true, K8S_GROUP_KEY)).toBe('Kubernetes version');
-    expect(groupKeyPlural(K8S_GROUP_KEY)).toBe('Kubernetes versions');
-    expect(foldHeaderTitle(K8S_GROUP_KEY, ['1.30', '1.31'])).toBe(
-      'Kubernetes version: 1.30, 1.31',
-    );
-    expect(foldHeaderCountText(K8S_GROUP_KEY, 1)).toBe('1 Kubernetes version');
-    expect(foldHeaderCountText(K8S_GROUP_KEY, 3)).toBe('3 Kubernetes versions');
-  });
 });

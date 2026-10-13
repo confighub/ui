@@ -79,7 +79,7 @@ function GateLink({ wf, into, over, selected, lit, isFinal, stageId, onSelect }:
       ? plural(n, 'gate', 'gates')
       : 'no gate';
   const label = isFinal
-    ? `Prerequisites for the rollout to read as complete, evaluated over every variant in ${over}`
+    ? `Prerequisites for the ChangeOrder to read as complete, evaluated over every variant in ${over}`
     : `Prerequisites for entering ${into.name}, evaluated over every variant in ${over}`;
 
   return (
@@ -193,7 +193,7 @@ export function StageRail({ api, lit, preview }: StageRailProps) {
         <div className='blank'>
           <div className='t'>This workflow has no Stages</div>
           <p className='d'>
-            A change order created from it would have nowhere to go. Add the first Stage: it is the
+            A ChangeOrder created from it would have nowhere to go. Add the first Stage: it is the
             one the change starts in, and it has no entry gates, because nothing precedes it.
           </p>
           <button className='btn primary' type='button' data-act='addstage' onClick={api.addStage}>

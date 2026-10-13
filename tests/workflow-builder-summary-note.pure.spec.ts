@@ -3,7 +3,7 @@
 //
 // `summaryNote` and `definitionState` (workflow-builder/model.ts) — the sentence
 // under the summary card's actions and the chip beside its slug — exercised
-// directly, same pure-derivation pattern as `rollout-outcome.pure.spec.ts`: no
+// directly, same pure-derivation pattern as `change-order-outcome.pure.spec.ts`: no
 // page, no browser.
 //
 // These two now render in different places on different sides of the first

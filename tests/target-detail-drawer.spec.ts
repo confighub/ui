@@ -14,12 +14,10 @@ test.describe('target detail drawer', () => {
   test.use({ storageState: 'authentication.json' });
 
   // ── Seed data ────────────────────────────────────────────────────────────
-  // TargetListPage's toolbar has no persistent "Add Target" button (it only
-  // appears in the chrome-free empty state, EmptyTargetList.tsx, which stops
-  // rendering once the org has any Target) — filed as a product bug, see
-  // #4939. So each test seeds its Target via the API, in a Space afterAll
-  // deletes, and exercises what this file covers: the target *detail drawer's*
-  // edit/delete behavior.
+  // Each test seeds its Target via the API, in a Space afterAll deletes, so it
+  // spends no time in the Add Target form (target-list-page.spec.ts covers
+  // that) and exercises only what this file covers: the target *detail
+  // drawer's* edit and worker-access behavior.
   const seedSlug = `e2e-target-drawer-${RandomSlugGenerator.randomSlugName()}`;
   let seedSpaceId: string;
 
@@ -169,31 +167,5 @@ test.describe('target detail drawer', () => {
     await saveAndWait();
     await expect(page.locator('.MuiBackdrop-root')).toHaveCount(0, { timeout: 10000 });
     expect(await grants()).toEqual([]);
-  });
-
-  test('should delete a target', async ({ page }) => {
-    const targetName = `${seedSlug}-delete-${RandomSlugGenerator.randomSlugName()}`;
-
-    const api = new ApiHelper(page);
-    await page.goto('/');
-    await page.waitForResponse(
-      (r) => r.url().includes('/api/space') && r.request().method() === 'GET' && r.ok(),
-    );
-    await api.createTarget({
-      spaceId: seedSpaceId,
-      slug: targetName,
-    });
-
-    const targetDetailPage = new TargetDetailPage(page);
-    const targetListPage = new TargetListPage(page);
-
-    await targetListPage.goto();
-    await targetListPage.filterTargets(`Slug = '${targetName}'`);
-
-    await targetListPage.selectRow(targetName);
-
-    await targetDetailPage.deleteTarget();
-
-    await targetListPage.expectNotToBeVisibleByText(targetName);
   });
 });

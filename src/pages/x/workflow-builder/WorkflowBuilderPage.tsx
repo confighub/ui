@@ -15,7 +15,7 @@
  * WHY THIS PAGE IS NOT BUILT OUT OF MUI. Its surface is dense -- 22px dots,
  * 18px chips, 28px buttons, 1px hairlines and a 12.5px body -- and MUI's own
  * defaults (ripples, 40px minimum heights, uppercase labels, elevation, margin)
- * each have to be undone before a single value matches. The rollouts console
+ * each have to be undone before a single value matches. The ChangeOrders console
  * settled the same question the same way: plain elements plus a page-local token
  * set that overrides the global theme. The tokens and rules live in
  * `workflowBuilder.css`, scoped under `.wfb` so none of it reaches other pages.

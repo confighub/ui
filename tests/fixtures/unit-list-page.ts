@@ -28,13 +28,10 @@ export type UnitCreateTypes =
   | 'todo-app-db'
   | 'todo-app-load-balancer'
   | 'nginx'
-  | 'ai-chat-app'
   | 'basic-deployment'
   | 'network-ingress'
   | 'namespace'
-  | 'postgress'
   | 'crm-app'
-  | 'cluster-role'
   | 'backend';
 
 export type CreateUnitParams = {

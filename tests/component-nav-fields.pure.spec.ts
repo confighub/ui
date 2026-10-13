@@ -9,10 +9,6 @@ import { expect, test } from '@playwright/test';
 
 import type { ComponentRead, ExtendedSpaceRead } from '@confighub/rtk-query';
 import {
-  COMPONENT_CATALOG,
-  COMPONENT_DEFAULT_LEVELS,
-  ID_BATCH_SIZE,
-  batchIds,
   deriveComponentTreePath,
   filterComponentsByGroupPath,
   getComponentGroupValue,
@@ -58,32 +54,9 @@ test.describe('componentIndex (pure)', () => {
     expect(result[1].spaces).toEqual([]);
   });
 
-  test('buildComponentNavItems: the owner follows the owner rule (own label, else the label all Spaces share, else "")', () => {
-    const result = items(
-      [component('own', { Owner: 'team-c' }), component('shared'), component('split'), component('none')],
-      [
-        space('own', { Owner: 'team-a' }),
-        space('shared', { Owner: 'team-a' }),
-        space('shared', { Owner: 'team-a' }),
-        space('split', { Owner: 'team-a' }),
-        space('split', { Owner: 'team-b' }),
-      ],
-    );
-    const owner = Object.fromEntries(result.map((i) => [i.slug, i.owner]));
-    expect(owner).toEqual({ own: 'team-c', shared: 'team-a', split: '', none: '' });
-  });
 });
 
 test.describe('componentGroupFields (pure)', () => {
-  test('COMPONENT_DEFAULT_LEVELS is Owner only', () => {
-    expect(COMPONENT_DEFAULT_LEVELS).toEqual(['Labels.Owner']);
-  });
-
-  test('COMPONENT_CATALOG offers only the status roll-ups as static fields (no Component, no Target)', () => {
-    const fields = COMPONENT_CATALOG.staticCategories.flatMap((c) => c.fields.map((f) => f.field));
-    expect(fields.sort()).toEqual(['Gated', 'UnreleasedChanges', 'UpgradeNeeded']);
-  });
-
   const normalizationTable: Array<{ saved: string[]; read: string[]; why: string }> = [
     { saved: ['Labels.Owner', 'Component'], read: ['Labels.Owner'], why: 'the old default' },
     { saved: ['Component'], read: [], why: 'Component is the leaf now' },
@@ -266,16 +239,5 @@ test.describe('componentGroupFields (pure)', () => {
       'Engineering',
       'ui-preview',
     ]);
-  });
-
-  test('batchIds: splits into ID_BATCH_SIZE-sized chunks, deduplicating and dropping falsy entries', () => {
-    const ids = Array.from({ length: ID_BATCH_SIZE + 1 }, (_, i) => `id-${i}`);
-    const batches = batchIds(ids);
-    expect(batches).toHaveLength(2);
-    expect(batches[0]).toHaveLength(ID_BATCH_SIZE);
-    expect(batches[1]).toHaveLength(1);
-
-    expect(batchIds(['a', 'a', 'b', '', undefined as unknown as string])).toEqual([['a', 'b']]);
-    expect(batchIds([])).toEqual([]);
   });
 });

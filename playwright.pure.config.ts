@@ -3,7 +3,7 @@
 //
 // The browser-free specs, run WITHOUT a server.
 //
-// Several rollout specs exercise pure derivation: they import product modules
+// Several ChangeOrder specs exercise pure derivation: they import product modules
 // from `../src`, take no `page` fixture, and start no browser. They still could
 // not run on their own, because `playwright.config.ts` names a `globalSetup`
 // that logs in against a live server and throws when `TEST_USER` /

@@ -22,11 +22,11 @@ export interface ComponentKpiRow {
   /**
    * Whether a ChangeOrder exists based in one of this component's Spaces
    * (including its base) — existence, not completion (see
-   * useOutstandingRolloutsBulk.ts). `false` when the caller passes no
-   * `outstandingRolloutBaseSpaceIds` set at all, same as every other KPI
+   * useOutstandingChangeOrdersBulk.ts). `false` when the caller passes no
+   * `outstandingChangeOrderBaseSpaceIds` set at all, same as every other KPI
    * here reading 0 before its data has arrived.
    */
-  hasOutstandingRollout: boolean;
+  hasOutstandingChangeOrder: boolean;
 }
 
 export interface OrgKpiSummary {
@@ -34,8 +34,8 @@ export interface OrgKpiSummary {
   unapplied: number;
   gatesPending: number;
   upgrades: number;
-  /** Count of components (rows) with `hasOutstandingRollout` true. */
-  outstandingRollouts: number;
+  /** Count of components (rows) with `hasOutstandingChangeOrder` true. */
+  outstandingChangeOrders: number;
 }
 
 export interface OverviewData {
@@ -63,8 +63,8 @@ export interface OverviewData {
  * entirely, so gating the KPI sum on Target presence previously caused real,
  * genuinely-stale deployment Spaces to be silently skipped.
  *
- * `outstandingRolloutBaseSpaceIds` is the ONE numeric-style field that comes
- * from a separate, dedicated fetch (`useOutstandingRolloutsBulk`), not from
+ * `outstandingChangeOrderBaseSpaceIds` is the ONE numeric-style field that comes
+ * from a separate, dedicated fetch (`useOutstandingChangeOrdersBulk`), not from
  * `ExtendedSpaceRead` — see that hook for why a per-Space summary count
  * cannot answer this. Checked against every one of a component's Spaces,
  * base included, since a ChangeOrder's SpaceID is where it resides, and that
@@ -76,7 +76,7 @@ export interface OverviewData {
 export function buildOverviewData(
   spaces: ExtendedSpaceRead[],
   componentById: ReadonlyMap<string, ComponentRead>,
-  outstandingRolloutBaseSpaceIds?: ReadonlySet<string>,
+  outstandingChangeOrderBaseSpaceIds?: ReadonlySet<string>,
 ): OverviewData {
   // 1. Group component spaces by Component
   const componentGroups = new Map<string, { component: ComponentRead; spaces: ExtendedSpaceRead[] }>();
@@ -101,7 +101,7 @@ export function buildOverviewData(
     let gatesPending = 0;
     let upgrades = 0;
 
-    let hasOutstandingRollout = false;
+    let hasOutstandingChangeOrder = false;
 
     for (const space of compSpaces) {
       totalSpaces++;
@@ -111,11 +111,11 @@ export function buildOverviewData(
 
       const spaceId = space.Space?.SpaceID;
       if (
-        outstandingRolloutBaseSpaceIds &&
+        outstandingChangeOrderBaseSpaceIds &&
         spaceId !== undefined &&
-        outstandingRolloutBaseSpaceIds.has(spaceId)
+        outstandingChangeOrderBaseSpaceIds.has(spaceId)
       ) {
-        hasOutstandingRollout = true;
+        hasOutstandingChangeOrder = true;
       }
     }
 
@@ -126,7 +126,7 @@ export function buildOverviewData(
       unapplied,
       gatesPending,
       upgrades,
-      hasOutstandingRollout,
+      hasOutstandingChangeOrder,
     });
   }
 
@@ -136,7 +136,7 @@ export function buildOverviewData(
     unapplied: rows.reduce((s, r) => s + r.unapplied, 0),
     gatesPending: rows.reduce((s, r) => s + r.gatesPending, 0),
     upgrades: rows.reduce((s, r) => s + r.upgrades, 0),
-    outstandingRollouts: rows.reduce((s, r) => s + (r.hasOutstandingRollout ? 1 : 0), 0),
+    outstandingChangeOrders: rows.reduce((s, r) => s + (r.hasOutstandingChangeOrder ? 1 : 0), 0),
   };
 
   return { rows, org };

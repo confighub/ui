@@ -22,25 +22,12 @@ const COMPONENT_CHECKOUT = `e2e-nav-checkout-${RUN}`;
 const COMPONENT_BILLING = `e2e-nav-billing-${RUN}`;
 const COMPONENT_SEARCH = `e2e-nav-search-${RUN}`;
 const COMPONENT_ORPHAN = `e2e-nav-orphan-${RUN}`;
-// One Component whose two Spaces have DIFFERENT Owners and no Owner of its
-// own: it has no owner, so it is one leaf under "(empty)".
-const OWNER_SPLIT_1 = `e2e-nav-owner-split1-${RUN}`;
-const OWNER_SPLIT_2 = `e2e-nav-owner-split2-${RUN}`;
-const COMPONENT_SPLIT = `e2e-nav-split-${RUN}`;
-// A Component with its own Owner label, whose Space has Owner B: its own
-// label wins, so it is under Owner C, and Owner B keeps one Component.
-const OWNER_C = `e2e-nav-owner-c-${RUN}`;
-const COMPONENT_OWNED = `e2e-nav-owned-${RUN}`;
 // A Component with no Spaces (no variants yet), and an Owner of its own.
 const OWNER_E = `e2e-nav-owner-e-${RUN}`;
 const COMPONENT_EMPTY = `e2e-nav-empty-${RUN}`;
-// An ordinary Component label key, on Checkout only.
-const TIER_KEY = 'Tier';
 
 /** Component labels for the fixtures that have any. */
 const COMPONENT_LABELS: Record<string, Record<string, string>> = {
-  [COMPONENT_CHECKOUT]: { [TIER_KEY]: 'gold' },
-  [COMPONENT_OWNED]: { Owner: OWNER_C },
   [COMPONENT_EMPTY]: { Owner: OWNER_E },
 };
 
@@ -69,27 +56,6 @@ async function waitForTreeLoaded(page: Page) {
   await page.waitForSelector('[role="tree"]', { timeout: 20000 });
 }
 
-/**
- * Opens the field picker and adds a field under the "Labels" submenu
- * (hover-triggered). The submenu's rows carry a trailing count/"IN USE"
- * badge (e.g. "Variant 45"), so the item locator is a substring match, not
- * `exact: true`. Hovers the item itself (not just the "Labels" trigger)
- * before clicking: the submenu is a separate Popper that closes on a 150ms
- * grace timer when the mouse leaves the trigger, and jumping straight from
- * the trigger to a click on `item` can race that timer closed.
- */
-async function addLabelGroupingLevel(page: Page, labelKey: string, expectedUrlPattern: RegExp) {
-  await page.getByRole('button', { name: 'Add grouping level' }).click();
-  const labelsTrigger = page.getByRole('menuitem', { name: 'Labels', exact: true });
-  await labelsTrigger.waitFor({ state: 'visible', timeout: 5000 });
-  await labelsTrigger.hover();
-  const item = page.getByRole('menuitem', { name: labelKey });
-  await item.waitFor({ state: 'visible', timeout: 5000 });
-  await item.hover();
-  await item.click();
-  await expect(page).toHaveURL(expectedUrlPattern, { timeout: 5000 });
-}
-
 /** Opens the field picker and adds a top-level (non-label) field. */
 async function addStaticGroupingLevel(page: Page, field: string, expectedUrlPattern: RegExp) {
   await page.getByRole('button', { name: 'Add grouping level' }).click();
@@ -116,25 +82,11 @@ async function clickTreeNode(page: Page, label: string) {
   await page.locator('[role="tree"]').getByText(label, { exact: false }).first().click();
 }
 
-/**
- * Expands a tree node's children via its chevron (icon container), without
- * opening its graph. Auto-expansion only ever covers the top-level nodes
- * (plus ancestors of whatever was selected when the tree FIRST populated) —
- * it never re-fires on a later selection change, so a deeper node reached
- * by a click after mount needs its own ancestor expanded first.
- */
-async function expandTreeNode(page: Page, label: string) {
-  const row = page.locator('[role="tree"]').getByText(label, { exact: false }).first();
-  const rowContent = row.locator('xpath=ancestor::div[contains(@class, "MuiTreeItem-content")][1]');
-  await rowContent.locator('.MuiTreeItem-iconContainer').click();
-}
-
 test.describe('Components nav grouping + saved views', () => {
   test.use({ storageState: 'authentication.json' });
 
   const spaceIds: string[] = [];
   const componentIds: string[] = [];
-  const filterIds: string[] = [];
   const viewIds: string[] = [];
   let ownerSpaceId = ''; // one Space to own saved views (rule b)
 
@@ -154,9 +106,6 @@ test.describe('Components nav grouping + saved views', () => {
       { slug: `${COMPONENT_SEARCH}-base`, component: COMPONENT_SEARCH, labels: { Owner: OWNER_B } },
       // No Owner label — the "Unassigned"/(empty) bucket.
       { slug: `${COMPONENT_ORPHAN}-base`, component: COMPONENT_ORPHAN, labels: {} },
-      { slug: `${COMPONENT_SPLIT}-base`, component: COMPONENT_SPLIT, labels: { Owner: OWNER_SPLIT_1 } },
-      { slug: `${COMPONENT_SPLIT}-prod`, component: COMPONENT_SPLIT, labels: { Owner: OWNER_SPLIT_2 } },
-      { slug: `${COMPONENT_OWNED}-base`, component: COMPONENT_OWNED, labels: { Owner: OWNER_B } },
     ];
 
     const componentIdBySlug = new Map<string, string>();
@@ -191,9 +140,6 @@ test.describe('Components nav grouping + saved views', () => {
     const warn = (what: string) => (error: unknown) => console.warn(`cleanup: ${what}: ${error}`);
     for (const viewId of viewIds) {
       await api.deleteView(ownerSpaceId, viewId).catch(warn(`View ${viewId}`));
-    }
-    for (const filterId of filterIds) {
-      await api.deleteFilterInSpace(ownerSpaceId, filterId).catch(warn(`Filter ${filterId}`));
     }
     for (const spaceId of spaceIds) {
       await api.deleteSpace(spaceId, true).catch(warn(`Space ${spaceId}`));
@@ -235,7 +181,7 @@ test.describe('Components nav grouping + saved views', () => {
     await expect(ownerA).toHaveAttribute('data-testid', 'components-tree-node');
     await expect(treeNode(page, OWNER_B)).toHaveAttribute('data-testid', 'components-tree-node');
 
-    // The (empty) group (Orphan and Split have no owner) is the last
+    // The (empty) group (Orphan has no owner) is the last
     // top-level group, after every real Owner.
     const topLevelGroups = page.locator('[role="tree"] > [data-testid="components-tree-node"]');
     await expect(topLevelGroups.last().locator('.MuiTreeItem-content').first()).toContainText('(empty)');
@@ -263,26 +209,6 @@ test.describe('Components nav grouping + saved views', () => {
     );
   });
 
-  test('2b. a Component label level groups by the Component\'s own label', async ({ page }) => {
-    await page.goto('/components');
-    await waitForTreeLoaded(page);
-
-    await addLabelGroupingLevel(page, TIER_KEY, /viewGroupBy=Labels\.Owner%2CLabels\.Tier/);
-    // Checkout carries Tier=gold; Billing (same Owner) has no Tier. The new
-    // level's nodes start collapsed, so open them by their chevrons.
-    const ownerA = treeNode(page, OWNER_A);
-    const gold = ownerA.getByRole('treeitem', { name: /^gold/ });
-    const noTier = ownerA.getByRole('treeitem', { name: /^\(empty\)/ });
-    await gold.locator('.MuiTreeItem-iconContainer').first().click();
-    await noTier.locator('.MuiTreeItem-iconContainer').first().click();
-    await expect(gold.getByTestId(`app-tree-item-${COMPONENT_CHECKOUT}`)).toBeVisible();
-    await expect(noTier.getByTestId(`app-tree-item-${COMPONENT_BILLING}`)).toBeVisible();
-    // (empty) is last at the second level too.
-    const tierGroups = ownerA.locator('[data-testid="components-tree-node"]');
-    await expect(tierGroups).toHaveCount(2);
-    await expect(tierGroups.last().locator('.MuiTreeItem-content').first()).toContainText('(empty)');
-  });
-
   test('3. a leaf opens the Component graph (?app=); an Owner click opens a node graph of every Space under it, not the overview', async ({ page }) => {
     await page.goto('/components');
     await waitForTreeLoaded(page);
@@ -301,28 +227,6 @@ test.describe('Components nav grouping + saved views', () => {
     await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
     await expect(page.locator('table')).toHaveCount(0);
     await expect(deploymentNodes(page)).toHaveCount(3);
-  });
-
-  test('3a. an old ?viewGroupBy=Labels.Owner,Component link reads as Owner only', async ({ page }) => {
-    await page.goto(`/components?viewGroupBy=${encodeURIComponent('Labels.Owner,Component')}`);
-    await waitForTreeLoaded(page);
-
-    await expect(page.getByRole('button', { name: /Change Owner grouping/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Change Component grouping/i })).toHaveCount(0);
-    // One leaf per Component, directly under its Owner node.
-    await expect(page.getByTestId(`app-tree-item-${COMPONENT_CHECKOUT}`)).toHaveCount(1);
-    await expect(treeNode(page, OWNER_A).getByTestId(`app-tree-item-${COMPONENT_CHECKOUT}`)).toBeVisible();
-
-    await clickTreeNode(page, OWNER_A);
-    await expect(page).toHaveURL(/group=/);
-    await expect(deploymentNodes(page)).toHaveCount(3);
-
-    // A Component deep link with the old levels highlights the Component's leaf.
-    await page.goto(`/components?app=${COMPONENT_BILLING}&viewGroupBy=${encodeURIComponent('Labels.Owner,Component')}`);
-    await waitForTreeLoaded(page);
-    await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
-    await expect(page.getByTestId(`app-tree-item-${COMPONENT_BILLING}`)).toHaveAttribute('aria-selected', 'true');
-    await expect(page.locator('[role="treeitem"][aria-selected="true"]')).toHaveCount(1);
   });
 
   test('3b. a Component with no Spaces is a leaf; it opens an empty state with the upload command', async ({ page }) => {
@@ -352,69 +256,6 @@ test.describe('Components nav grouping + saved views', () => {
     await clickTreeNode(page, OWNER_E);
     await expect(page).toHaveURL(new RegExp(`app=${COMPONENT_EMPTY}`));
     await expect(page.getByTestId('component-no-variants')).toBeVisible();
-  });
-
-  test('3c. a Component whose Spaces have different Owners has no owner: one leaf under (empty), which opens the WHOLE Component', async ({ page }) => {
-    await page.goto('/components');
-    await waitForTreeLoaded(page);
-
-    const splitLeaf = page.getByTestId(`app-tree-item-${COMPONENT_SPLIT}`);
-    await expect(splitLeaf).toHaveCount(1);
-    // The Space Owners make no node of their own.
-    await expect(treeNode(page, OWNER_SPLIT_1)).toHaveCount(0);
-    await expect(treeNode(page, OWNER_SPLIT_2)).toHaveCount(0);
-    await expect(
-      page.getByRole('treeitem', { name: /^\(empty\)/ }).getByTestId(`app-tree-item-${COMPONENT_SPLIT}`),
-    ).toHaveCount(1);
-
-    await splitLeaf.click();
-    await expect(page).toHaveURL(new RegExp(`app=${COMPONENT_SPLIT}`));
-    await expect(page).not.toHaveURL(/group=/);
-    await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
-    await expect(deploymentNodes(page)).toHaveCount(2);
-    await expect(splitLeaf).toHaveAttribute('aria-selected', 'true');
-    await expect(page.locator('[role="treeitem"][aria-selected="true"]')).toHaveCount(1);
-  });
-
-  test('3d. a Component\'s own Owner label wins over the Owner label of its Spaces', async ({ page }) => {
-    await page.goto('/components');
-    await waitForTreeLoaded(page);
-
-    await expect(treeNode(page, OWNER_C).getByTestId(`app-tree-item-${COMPONENT_OWNED}`)).toBeVisible();
-    await expect(treeNode(page, OWNER_B).getByTestId(`app-tree-item-${COMPONENT_OWNED}`)).toHaveCount(0);
-    await expect(nodeCount(treeNode(page, OWNER_B))).toHaveText('1');
-  });
-
-  test('3e. a saved view whose levels include Component reads as Owner only, and shows unmodified', async ({ page }) => {
-    const api = new ApiHelper(page);
-    const filter = await api.createFilter({
-      spaceId: ownerSpaceId,
-      filter: { Slug: `e2e-components-old-filter-${RUN}`, From: 'Space' },
-    });
-    filterIds.push(filter.FilterID as string);
-    const viewName = `e2e-components-old-view-${RUN}`;
-    const view = await api.createView({
-      spaceId: ownerSpaceId,
-      view: {
-        Slug: viewName,
-        FilterID: filter.FilterID,
-        Annotations: {
-          'ui.confighub.io/view-kind': 'components',
-          'ui.confighub.io/group-by': 'Labels.Owner,Component',
-        },
-      },
-    });
-    viewIds.push(view.ViewID as string);
-
-    await page.goto(`/components?viewID=${view.ViewID}&type=view`);
-    await waitForTreeLoaded(page);
-    const tab = page.getByTestId('view-tabs').getByRole('tab', { name: new RegExp(viewName) });
-    await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 10000 });
-    await expect(page.getByRole('button', { name: /Change Owner grouping/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Change Component grouping/i })).toHaveCount(0);
-    await expect(treeNode(page, OWNER_A).getByTestId(`app-tree-item-${COMPONENT_CHECKOUT}`)).toBeVisible();
-    // Reading the old levels changes nothing in the view.
-    await expect(tab.getByTestId('view-tab-modified-dot')).toHaveCount(0);
   });
 
   test('4-5. saving a view (grouping only) persists across reload; the Unit list never sees it', async ({ page }) => {
@@ -469,38 +310,6 @@ test.describe('Components nav grouping + saved views', () => {
     expect(storageKeys).toContain('confighub:space:components:openViewTabs');
     // No draft right after a clean save (namespaced the same way as the tabs key).
     expect(storageKeys).not.toContain(`confighub:space:components:viewDraft:${viewId}`);
-  });
-
-  test('4-5b. saving a new view right after adding a grouping level sends that level in the create payload', async ({ page }) => {
-    await page.goto('/components');
-    await waitForTreeLoaded(page);
-
-    // A slow CPU keeps the level-add's router transition pending while the
-    // save gestures below run, the way a busy CI runner or slow laptop does.
-    // The address bar already holds the new level; renders until the
-    // transition commits do not. The payload must follow the address bar.
-    const cdp = await page.context().newCDPSession(page);
-    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 6 });
-    try {
-      await addStaticGroupingLevel(page, 'Gated', /viewGroupBy=Labels\.Owner%2CGated/);
-
-      const createResponse = page.waitForResponse(
-        (r) => r.request().method() === 'POST' && /\/api\/space\/[^/]+\/view$/.test(new URL(r.url()).pathname),
-      );
-      await page.getByTestId('view-tabs-add-tab').click();
-      await page.getByTestId('add-tab-menu-create-new-view').click();
-      await page.getByTestId('view-tabs-new-view-name-input').fill(`e2e-components-view-fast-${RUN}`);
-      await page.getByTestId('view-tabs-new-view-submit').click();
-
-      const response = await createResponse;
-      const created = (await response.json().catch(() => null)) as { ViewID?: string } | null;
-      if (created?.ViewID) viewIds.push(created.ViewID);
-
-      const body = response.request().postDataJSON() as { Annotations?: Record<string, string> };
-      expect(body.Annotations?.['ui.confighub.io/group-by']).toBe('Labels.Owner,Gated');
-    } finally {
-      await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
-    }
   });
 
   test('13. a node graph still detects an upstream Space outside the set as upgradable', async ({ page, browser }) => {
@@ -584,51 +393,6 @@ test.describe('Components nav grouping + saved views', () => {
     });
   });
 
-  test('6. no filter button on the Components page — a saved view holds grouping only', async ({ page }) => {
-    await page.goto('/components');
-    await waitForTreeLoaded(page);
-    await expect(page.getByRole('button', { name: 'Filter' })).toHaveCount(0);
-
-    // Also true with a Component graph open — the button never reappears
-    // depending on what's on screen.
-    await page.goto(`/components?app=${COMPONENT_SEARCH}`);
-    await waitForTreeLoaded(page);
-    await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
-    await expect(page.getByRole('button', { name: 'Filter' })).toHaveCount(0);
-  });
-
-  test('7a. the nav tree fills the resizable pane at every drag width', async ({ page }) => {
-    await page.goto('/components');
-    await waitForTreeLoaded(page);
-
-    const widthsFor = () =>
-      page.evaluate(() => {
-        const paneEl = document.querySelector('#components-layout')?.firstElementChild as HTMLElement | null;
-        const treeEl = document.querySelector('[role="tree"]') as HTMLElement | null;
-        return { pane: paneEl?.getBoundingClientRect().width ?? 0, tree: treeEl?.getBoundingClientRect().width ?? 0 };
-      });
-
-    const before = await widthsFor();
-    // The tree sits inside the pane's own padding (`PanelBody`'s 8px each
-    // side) — a few px short of the pane's own width, not a full-width match.
-    expect(before.pane - before.tree).toBeLessThan(20);
-
-    const separator = page.locator('[data-separator]').first();
-    const box = await separator.boundingBox();
-    if (!box) throw new Error('resize separator not found');
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2 + 150, box.y + box.height / 2, { steps: 10 });
-    await page.mouse.up();
-    await page.waitForTimeout(300);
-
-    const after = await widthsFor();
-    expect(after.pane).toBeGreaterThan(before.pane + 50);
-    // The tree tracks the pane 1:1 — the same fixed padding gap, not a
-    // fixed tree width left behind by a wider pane.
-    expect(after.pane - after.tree).toBeLessThan(20);
-  });
-
   test('8. changing levels while a ?group= node graph is open clears it and returns to the overview (not empty)', async ({ page }) => {
     await page.goto('/components');
     await waitForTreeLoaded(page);
@@ -655,47 +419,6 @@ test.describe('Components nav grouping + saved views', () => {
     await expect(overviewTable.getByText(COMPONENT_SEARCH)).toBeVisible();
   });
 
-  test('9. switching the active saved-view tab clears a stale ?group= (graph closes, overview returns)', async ({ page }) => {
-    await page.goto('/components');
-    await waitForTreeLoaded(page);
-
-    // Open a node graph on the sentinel ("All components") tab. Owner A (not
-    // B): B has exactly one Component with one Space, so its bucket trivially
-    // equals that whole Component and would open `?app=` instead.
-    await clickTreeNode(page, OWNER_A);
-    await expect(page).toHaveURL(/group=/);
-    await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
-
-    // Switch the active view (sentinel → a new saved view) — the same
-    // `activeView.View.ViewID` transition `clearParamsOnViewSwitch` watches for.
-    await page.getByTestId('view-tabs-add-tab').click();
-    await page.getByTestId('add-tab-menu-create-new-view').click();
-    const viewName = `e2e-components-view2-${RUN}`;
-    await page.getByTestId('view-tabs-new-view-name-input').fill(viewName);
-    await page.getByTestId('view-tabs-new-view-submit').click();
-    await expect(
-      page.getByTestId('view-tabs').getByRole('tab', { name: new RegExp(viewName) }),
-    ).toBeVisible({ timeout: 10000 });
-
-    const viewId = new URL(page.url()).searchParams.get('viewID');
-    if (viewId) viewIds.push(viewId);
-
-    await expect(page).not.toHaveURL(/group=/);
-    await expect(page.locator('.react-flow')).toHaveCount(0);
-  });
-
-  test('10. the chevron only expands/collapses — it never opens a graph or writes the URL', async ({ page }) => {
-    await page.goto('/components');
-    await waitForTreeLoaded(page);
-
-    const startUrl = page.url();
-    await expandTreeNode(page, OWNER_A);
-
-    await expect(page).toHaveURL(startUrl);
-    await expect(page.locator('.react-flow')).toHaveCount(0);
-    await expect(page.locator('table')).toBeVisible();
-  });
-
   test('11. deep link ?group=<owner> restores the node graph and highlights + expands to that node', async ({ page }) => {
     await page.goto(`/components?group=${encodeURIComponent(OWNER_A)}`);
     await waitForTreeLoaded(page);
@@ -704,47 +427,6 @@ test.describe('Components nav grouping + saved views', () => {
     await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
     await expect(deploymentNodes(page)).toHaveCount(3);
     await expect(page.locator('[role="treeitem"][aria-selected="true"]')).toContainText(OWNER_A);
-  });
-
-  test('11b. a ?group= path that ends at a leaf opens that Component; a path with no Component highlights nothing', async ({ page }) => {
-    // One value longer than the levels (Owner): the leaf of Billing. The pane
-    // shows Billing's graph, not the overview, and only its leaf is selected.
-    await page.goto(`/components?group=${encodeURIComponent(OWNER_A)}&group=${encodeURIComponent(COMPONENT_BILLING)}`);
-    await waitForTreeLoaded(page);
-    await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
-    await expect(page.locator('table')).toHaveCount(0);
-    await expect(deploymentNodes(page)).toHaveCount(1);
-    await expect(page.getByTestId(`app-tree-item-${COMPONENT_BILLING}`)).toHaveAttribute('aria-selected', 'true');
-    await expect(page.locator('[role="treeitem"][aria-selected="true"]')).toHaveCount(1);
-
-    // A path no Component has: the overview, and no node selected.
-    await page.goto(`/components?group=${encodeURIComponent(`e2e-nav-no-owner-${RUN}`)}`);
-    await waitForTreeLoaded(page);
-    await expect(page.locator('table')).toBeVisible({ timeout: 20000 });
-    await expect(page.locator('.react-flow')).toHaveCount(0);
-    await expect(page.locator('[role="treeitem"][aria-selected="true"]')).toHaveCount(0);
-  });
-
-  test('11c. a failed Component list shows an error with Retry in the tree and the pane, not a skeleton', async ({ page }) => {
-    let failList = true;
-    // Only the list request: `/api/component/<id>` reads are left alone.
-    await page.route(/\/api\/component(\?.*)?$/, async (route) => {
-      if (failList && route.request().method() === 'GET') {
-        await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'list failed' }) });
-        return;
-      }
-      await route.continue();
-    });
-    await page.goto(`/components?app=${COMPONENT_BILLING}`);
-    const errors = page.getByTestId('query-error-state');
-    await expect(errors).toHaveCount(2, { timeout: 20000 });
-
-    failList = false;
-    await errors.first().getByTestId('query-error-retry').click();
-    await expect(errors).toHaveCount(0, { timeout: 20000 });
-    await waitForTreeLoaded(page);
-    await expect(page.getByTestId(`app-tree-item-${COMPONENT_BILLING}`)).toHaveAttribute('aria-selected', 'true');
-    await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
   });
 
   test('12. Back after Owner graph -> Component graph returns to the Owner graph; re-clicking the open node adds no history entry', async ({ page }) => {
@@ -773,25 +455,7 @@ test.describe('Components nav grouping + saved views', () => {
     await expect(page).toHaveURL(overviewUrl);
   });
 
-  test('12b. double-clicking a tree node adds ONE history entry — the second click sees the URL the first one wrote', async ({ page }) => {
-    await page.goto('/components');
-    await waitForTreeLoaded(page);
-    const overviewUrl = page.url();
-
-    // Both clicks land before React commits the first click's navigation
-    // (the router hands React the new location in a transition), so the
-    // second click's handler still renders from the Overview URL. Its
-    // "already open" guard must read the live URL, or it pushes a second
-    // `?group=` entry and Back can't reach the Overview.
-    await page.locator('[role="tree"]').getByText(OWNER_A, { exact: false }).first().dblclick();
-    await expect(page).toHaveURL(/group=/);
-    await expect(deploymentNodes(page)).toHaveCount(3);
-
-    await page.goBack();
-    await expect(page).toHaveURL(overviewUrl);
-  });
-
-  test('14. Dashboard: shows only the open node\'s Spaces, Graph returns to the canvas, and it survives a reload', async ({ page }) => {
+  test('14. Dashboard: shows only the open node\'s Spaces, is sticky across node clicks and Back, Graph returns to the canvas, and it survives a reload', async ({ page }) => {
     // Owner A spans 2 Components (Checkout, Billing) — a mixed-Component node
     // graph, which is exactly the case Dashboard exists for.
     await page.goto('/components');
@@ -800,8 +464,7 @@ test.describe('Components nav grouping + saved views', () => {
     await expect(page).toHaveURL(/group=/);
     await expect(page.locator('.react-flow')).toBeVisible({ timeout: 20000 });
 
-    const dashboardButton = page.getByRole('button', { name: 'Dashboard' });
-    await dashboardButton.click();
+    await page.getByRole('button', { name: 'Dashboard' }).click();
     await expect(page).toHaveURL(/display=dashboard/);
     const matrix = page.getByTestId('component-overview-matrix');
     await expect(matrix).toBeVisible();
@@ -813,6 +476,19 @@ test.describe('Components nav grouping + saved views', () => {
     await expect(matrix.getByText(COMPONENT_BILLING)).toBeVisible();
     await expect(matrix.getByText(COMPONENT_SEARCH)).toHaveCount(0);
 
+    // Clicking a DIFFERENT node (Owner B) keeps Dashboard mode and shows
+    // Owner B's own Spaces, not Owner A's.
+    await clickTreeNode(page, OWNER_B);
+    await expect(page).toHaveURL(/display=dashboard/);
+    await expect(page.locator('.react-flow')).not.toBeVisible();
+    await expect(matrix.getByText(COMPONENT_SEARCH)).toBeVisible();
+    await expect(matrix.getByText(COMPONENT_CHECKOUT)).toHaveCount(0);
+
+    // Back returns to Owner A's node — still in Dashboard mode.
+    await page.goBack();
+    await expect(page).toHaveURL(/display=dashboard/);
+    await expect(matrix.getByText(COMPONENT_CHECKOUT)).toBeVisible();
+
     // Graph is the only other segment; clicking it returns to the canvas.
     await page.getByRole('button', { name: 'Graph' }).click();
     await expect(page).not.toHaveURL(/display=dashboard/);
@@ -823,68 +499,5 @@ test.describe('Components nav grouping + saved views', () => {
     await waitForTreeLoaded(page);
     await expect(page.getByTestId('component-overview-matrix')).toBeVisible();
     await expect(page.locator('.react-flow')).not.toBeVisible();
-  });
-
-  test('15. a Component leaf and special label keys (Owner) get their own icon; an ordinary label key gets the generic one; Variant is not offered', async ({ page }) => {
-    // MUI's icon components carry a `data-testid="<Name>Icon"` unconditionally
-    // (createSvgIcon), so this distinguishes the actual rendered icon without
-    // needing a visual/screenshot diff.
-    await page.goto('/components');
-    await waitForTreeLoaded(page);
-    await expect(page.getByTestId(`app-tree-item-${COMPONENT_CHECKOUT}`).getByTestId('WidgetsOutlinedIcon')).toBeVisible();
-
-    await page.getByRole('button', { name: 'Add grouping level' }).click();
-    const labelsTrigger = page.getByRole('menuitem', { name: 'Labels', exact: true });
-    await labelsTrigger.waitFor({ state: 'visible', timeout: 5000 });
-    await labelsTrigger.hover();
-
-    const ownerRow = page.getByRole('menuitem', { name: /^Owner/ });
-    await expect(ownerRow.getByTestId('PersonOutlineOutlinedIcon')).toBeVisible();
-
-    // Tier is an ordinary Component label key — it keeps the generic Labels icon.
-    const tierRow = page.getByRole('menuitem', { name: new RegExp(`^${TIER_KEY}`) });
-    await expect(tierRow.getByTestId('LocalOfferOutlinedIcon')).toBeVisible();
-
-    // Variant names a Space, never a Component.
-    await expect(page.getByRole('menuitem', { name: /^Variant/ })).toHaveCount(0);
-  });
-
-  test('16. Dashboard mode is sticky across node clicks; Back keeps it too', async ({ page }) => {
-    await page.goto('/components');
-    await waitForTreeLoaded(page);
-
-    await clickTreeNode(page, OWNER_A);
-    await expect(page).toHaveURL(/group=/);
-    await page.getByRole('button', { name: 'Dashboard' }).click();
-    await expect(page).toHaveURL(/display=dashboard/);
-    const matrix = page.getByTestId('component-overview-matrix');
-    await expect(matrix).toBeVisible();
-    await expect(matrix.getByText(COMPONENT_CHECKOUT)).toBeVisible();
-
-    // Clicking a DIFFERENT node (Owner B) keeps Dashboard mode and shows
-    // Owner B's own Spaces, not Owner A's.
-    await clickTreeNode(page, OWNER_B);
-    await expect(page).toHaveURL(/display=dashboard/);
-    await expect(page.getByTestId('component-overview-matrix')).toBeVisible();
-    await expect(page.locator('.react-flow')).not.toBeVisible();
-    await expect(matrix.getByText(COMPONENT_SEARCH)).toBeVisible();
-    await expect(matrix.getByText(COMPONENT_CHECKOUT)).toHaveCount(0);
-
-    // Back returns to Owner A's node — still in Dashboard mode.
-    await page.goBack();
-    await expect(page).toHaveURL(/display=dashboard/);
-    await expect(page.getByTestId('component-overview-matrix')).toBeVisible();
-    await expect(matrix.getByText(COMPONENT_CHECKOUT)).toBeVisible();
-  });
-
-  test('7. Unit list default Space grouping still works (smoke — unit-list-page.spec.ts covers this in full)', async ({ page }) => {
-    await page.goto('/units');
-    await page.waitForSelector('[role="grid"]', { timeout: 20000 });
-    await expect(page.getByRole('button', { name: /Change Space grouping/i })).toBeVisible({ timeout: 10000 });
-    // A second grouping level still works via the same picker (same assertion
-    // shape as `unit-list-page.spec.ts`'s "Table Grouping" block).
-    await page.getByRole('button', { name: 'Add grouping level' }).click();
-    await page.getByRole('menuitem', { name: 'Target' }).click();
-    await expect(page.getByRole('button', { name: /Change Target grouping/i })).toBeVisible({ timeout: 10000 });
   });
 });

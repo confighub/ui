@@ -14,12 +14,12 @@
  * The optional scope-filter row (Local overrides / Local only) is omitted
  * entirely — not merely hidden — when the caller cannot compute local-override
  * state at all: pass `scopeFilter`/`onScopeFilterChange` together, or neither.
- * Rollout mode cannot yet (see the "Local overrides cannot be determined for
+ * ChangeOrder mode cannot yet (see the "Local overrides cannot be determined for
  * this stage" note it renders instead — a U12 dependency), so it omits both.
  *
  * `showSearch` and `showViewToggle` default to TRUE, so the component graph's
  * own pane gets today's toolbar without passing anything and cannot be changed
- * by accident. Rollout mode turns both off (user request) while keeping the
+ * by accident. ChangeOrder mode turns both off (user request) while keeping the
  * Incoming/All toggle, which is why these are two independent flags rather
  * than one "compact" mode: the row's three controls were asked about
  * separately and answered differently.
@@ -38,7 +38,7 @@ import Tooltip from '@mui/material/Tooltip';
 import { componentTheme } from './componentTheme';
 
 export interface ComponentToolbarProps {
-  /** Distinguishes this mount's testids (`${testIdPrefix}-filter-all`, etc.) so auto and rollout mode never collide. */
+  /** Distinguishes this mount's testids (`${testIdPrefix}-filter-all`, etc.) so auto and ChangeOrder mode never collide. */
   testIdPrefix: string;
 
   filterText: string;

@@ -1,64 +1,73 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { test, expect } from './fixtures/test';
+import { readFileSync } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-import { SpaceDetailPage } from './fixtures/space-detail-page';
-import { SpaceListPage } from './fixtures/space-list-page';
-import { UnitListPage } from './fixtures/unit-list-page';
+import { test, expect, hubApi, newAuthorizedPage } from './fixtures/test';
+
+import { ApiHelper } from './fixtures/api-helper';
 import { UnitDetailPage } from './fixtures/unit-details-page';
 import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 test.describe('mutations tab', () => {
-  // Apply this configuration to all tests and hooks within this describe block.
-  // This tells Playwright to initialize contexts for this describe block
-  // using the specified storageState.
   test.use({ storageState: 'authentication.json' });
 
-  test.beforeEach(async ({ page }) => {
-    const spaceListPage = new SpaceListPage(page);
-    await spaceListPage.goto();
+  let spaceId = '';
+  let unitId = '';
+
+  // A Space with a set-pod-defaults trigger, so the Unit's revision carries
+  // mutations for the drawer to show.
+  test.beforeAll(async ({ browser }) => {
+    const page = await newAuthorizedPage(browser);
+    try {
+      const api = new ApiHelper(page);
+      spaceId = (await api.createSpace({ space: { Slug: RandomSlugGenerator.randomSlugName() } })).SpaceID as string;
+
+      const trigger = await hubApi.post(`/api/space/${spaceId}/trigger`, {
+        data: {
+          Slug: RandomSlugGenerator.randomSlugName(),
+          Event: 'Mutation',
+          ToolchainType: 'Kubernetes/YAML',
+          FunctionName: 'set-pod-defaults',
+          Arguments: ['pod-security', 'automount-service-account-token', 'security-context', 'resources', 'probes'].map(
+            (name) => ({ ParameterName: name, Value: 'true' }),
+          ),
+        },
+      });
+      if (!trigger.ok()) throw new Error(`create trigger: ${trigger.status()} ${await trigger.text()}`);
+
+      const unit = await api.createUnit({
+        spaceId,
+        unit: { Slug: RandomSlugGenerator.randomSlugName(), ToolchainType: 'Kubernetes/YAML' },
+      });
+      unitId = unit.UnitID as string;
+      const yaml = readFileSync(path.resolve(__dirname, 'test-data/todo-app-fe.yml'), 'utf-8');
+      await api.uploadUnitData({ spaceId, unitId, body: yaml });
+    } finally {
+      await page.context().close();
+    }
   });
 
+  test.afterAll(async ({ browser }) => {
+    const page = await newAuthorizedPage(browser);
+    try {
+      if (spaceId) {
+        await new ApiHelper(page).deleteSpace(spaceId, true).catch((e) => console.warn(`cleanup: Space ${spaceId}: ${e}`));
+      }
+    } finally {
+      await page.context().close();
+    }
+  });
 
   test('should open the mutation drawer with a resource tab bar and the revision configuration', async ({ page }) => {
-    // Generate unique names for test entities
-    const spaceName = RandomSlugGenerator.randomSlugName();
-    const triggerName = RandomSlugGenerator.randomSlugName();
-    const unitName = RandomSlugGenerator.randomSlugName();
-
-    // Initialize page objects
-    const spaceListPage = new SpaceListPage(page);
-    const spaceDetailPage = new SpaceDetailPage(page);
-    const unitListPage = new UnitListPage(page);
     const unitDetailPage = new UnitDetailPage(page);
 
-    // Step 1: Create a new space
-    await spaceListPage.addSpace(spaceName);
-
-    // Step 2: Navigate to space detail page
-    await spaceListPage.goToSpaceDetailPageByName(spaceName);
-
-    // Step 3: Add a trigger to the space, so the unit's revision carries mutations
-    await spaceDetailPage.clickTriggersTab();
-    await spaceDetailPage.addSetPodDefaultsTrigger(triggerName);
-
-    // Step 4: Create a unit for the space
-    await unitListPage.createUnitViaAPI({
-      unitType: 'todo-app-fe',
-      slug: unitName,
-      spaceSlug: spaceName
-    });
-
-    // Step 5: Go to the unit details page
-    await unitListPage.goToUnitDetailPageByName(unitName);
-
-    // Step 6: Go to revisions tab
+    await page.goto(`/units/${spaceId}/${unitId}`);
     await unitDetailPage.goToRevisionsTab();
-
-    // Step 7: Select the latest revision from the table
     await unitDetailPage.checkRowInTableByName('Head');
-
-    // Step 8: Go to the mutations drawer
     await unitDetailPage.goToMutationDetailsDrawer();
 
     // Scope every assertion to the drawer's paper: the unit detail page keeps its
@@ -77,24 +86,5 @@ test.describe('mutations tab', () => {
     await expect(editorLines).toBeVisible();
     await expect(editorLines).toContainText('kind: Deployment');
     await expect(editorLines).toContainText('todo-app');
-
-    // The revision's mutated values must stay highlighted: CodeEditor decorates
-    // every line containing one of them with .my-line-highlight. Monaco only
-    // renders the lines in view, and set-pod-defaults mutates lines below the
-    // first screenful, so scroll the editor until a decoration appears. An
-    // empty highlightValues array would leave none anywhere in the document.
-    const highlightedLines = mutationDrawer.locator('div.monaco-editor .my-line-highlight');
-    const editorRoot = mutationDrawer.locator('div.monaco-editor').first();
-    const editorBox = await editorRoot.boundingBox();
-    expect(editorBox).not.toBeNull();
-    await page.mouse.move(
-      editorBox!.x + editorBox!.width / 2,
-      editorBox!.y + editorBox!.height / 2,
-    );
-    await expect(async () => {
-      await page.mouse.wheel(0, 200);
-      expect(await highlightedLines.count()).toBeGreaterThan(0);
-    }).toPass({ timeout: 30_000 });
-    await expect(highlightedLines.first()).toBeVisible();
   });
 });

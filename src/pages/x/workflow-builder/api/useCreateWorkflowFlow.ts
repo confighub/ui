@@ -4,7 +4,7 @@
 /**
  * Starting a new workflow from an existing one.
  *
- * There is no blank-draft path. A ChangeWorkflow is a shape of rollout, and the
+ * There is no blank-draft path. A ChangeWorkflow is a shape of promotion, and the
  * question a new one answers is "which other component should get this shape" --
  * which is what cloning already says, and what the console's own copy already
  * tells a reader: "Cloning a workflow into another Space is how a second

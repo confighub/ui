@@ -11,7 +11,7 @@ import { ApiHelper } from './fixtures/api-helper';
 // completion screen (not a silent disappearance), "Continue" starts the next
 // tour in the sequence at its own first step, and the Getting Started panel
 // marks the finished tour complete automatically — with its manual toggle
-// never touched.
+// never touched — and can start a tour again from its "Take the tour" action.
 //
 // Drives chapter 1 for real (it is the only tour whose last step is a plain
 // click with no further dependency), so this run creates one real base
@@ -19,19 +19,23 @@ import { ApiHelper } from './fixtures/api-helper';
 // ============================================================================
 
 let baseSpaceId: string | undefined;
+let componentId: string | undefined;
 const COMPONENT_NAME = `tour-continuity-${Date.now()}`;
 
 test.describe('tour-to-tour continuity', () => {
   test.use({ storageState: 'authentication.json' });
 
   test.afterAll(async ({ browser }) => {
-    if (!baseSpaceId) return;
+    if (!baseSpaceId && !componentId) return;
     const context = await newAuthorizedContext(browser);
     const page = await context.newPage();
     await page.goto('/');
     await page.waitForResponse((r) => r.url().includes('/api/space') && r.status() === 200);
     const api = new ApiHelper(page);
-    await api.deleteSpace(baseSpaceId, true).catch(() => {});
+    if (baseSpaceId) await api.deleteSpace(baseSpaceId, true).catch(() => {});
+    // After its Space. The org has a Component quota, so a run must not leave
+    // its Component behind.
+    if (componentId) await api.deleteComponent(componentId).catch(() => {});
     await context.close();
   });
 
@@ -101,5 +105,11 @@ test.describe('tour-to-tour continuity', () => {
     // convention), not the component name itself.
     const space = await api.getSpaceBySlug(`${COMPONENT_NAME}-base`);
     baseSpaceId = space.SpaceID;
+    componentId = (await api.getComponentBySlug(COMPONENT_NAME)).ComponentID as string;
+
+    // The panel's own "Take the tour" action starts a tour again.
+    await page.getByText('Make your first component').click();
+    await page.getByRole('button', { name: 'Take the tour' }).click();
+    await expect(tooltip).toBeVisible({ timeout: 10000 });
   });
 });

@@ -224,7 +224,7 @@ function FinalDetail({ api }: { api: LoadedBuilderApi }) {
       <div className='detbody'>
         <div className='sec'>
           <p className='prose'>
-            {`Nothing is promoted into ${COMPLETE_LABEL}. A Stage\u2019s prerequisites gate entry to the Stage after it, so the last Stage gates nothing: there is no hop left. These checks are what say the change has landed everywhere it was going, and a rollout reads as completed when they hold.`}
+            {`Nothing is promoted into ${COMPLETE_LABEL}. A Stage\u2019s prerequisites gate entry to the Stage after it, so the last Stage gates nothing: there is no hop left. These checks are what say the change has landed everywhere it was going, and a ChangeOrder reads as completed when they hold.`}
           </p>
           <p className='prose' style={{ marginTop: 8 }}>
             {'It covers the same variants as '}

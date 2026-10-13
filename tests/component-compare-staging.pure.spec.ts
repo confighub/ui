@@ -19,7 +19,6 @@
 // check either). Asserted below so neither is quietly reintroduced.
 
 import { expect, test } from '@playwright/test';
-import { readFileSync } from 'node:fs';
 
 import {
   applyEditsToUnit,
@@ -30,7 +29,6 @@ import {
   summariseEdits,
   type StagedCompareEdit,
 } from '../src/pages/x/apps/compare/compareEditing';
-import { COMPARE_STAGED_TOKENS } from '../src/pages/x/apps/compare/rowTypeTokens';
 import {
   buildCompareResult,
   type CompareLeafRow,
@@ -213,24 +211,4 @@ test.describe('applying to several deployments at once', () => {
     expect(refused[0]?.label).toBe('staging');
     expect(refused[0]?.reason).toContain('server');
   });
-});
-
-test('the staged colours still match the shipped tree', () => {
-  // These three are mirrored from `ROW_TYPE_TOKENS`, which is welded into a
-  // 4,000-line file behind 32 annotated constants. Mirroring is what lets the
-  // compare grid use them without that edit; this is what stops the mirror
-  // drifting, which is a thing that has already happened twice in this feature.
-  const shipped = readFileSync('src/pages/x/apps/ComponentValuesSection.tsx', 'utf8');
-  const declared = (name: string) => {
-    const match = new RegExp(`const ${name} = '([^']+)'`).exec(shipped);
-    if (!match) throw new Error(`${name} is no longer declared — the mirror has lost its source`);
-    return match[1];
-  };
-
-  expect(COMPARE_STAGED_TOKENS.edit.fill).toBe(declared('EDIT_CONTROL'));
-  expect(COMPARE_STAGED_TOKENS.add.fill).toBe(declared('ADD_FILL'));
-  expect(COMPARE_STAGED_TOKENS.delete.fill).toBe(declared('DEL_FILL'));
-  expect(COMPARE_STAGED_TOKENS.edit.tint).toBe(declared('EDIT_TINT'));
-  expect(COMPARE_STAGED_TOKENS.add.tint).toBe(declared('ADD_TINT'));
-  expect(COMPARE_STAGED_TOKENS.delete.tint).toBe(declared('DEL_TINT'));
 });

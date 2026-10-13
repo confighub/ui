@@ -165,7 +165,7 @@ export function definitionFaults(wf: UnresolvedWorkflow): Problem[] {
       sev: 'problem',
       msg: [
         {
-          text: 'This workflow has no Stages, so a change order created from it would have nowhere to go.',
+          text: 'This workflow has no Stages, so a ChangeOrder created from it would have nowhere to go.',
         },
       ],
       go: null,

@@ -10,7 +10,7 @@
   The design's `:root` custom properties live on `.wfb` for the same reason:
   declared on `:root` they would repaint every other page. A page-local
   override of the global MUI theme is the precedent this page follows, the way
-  the rollouts console does.
+  the ChangeOrders console does.
 
   Values here are the design's, not values chosen by eye. The design is the
   specification; when a value here looks wrong, the design is the thing to read.
@@ -120,7 +120,7 @@
 .wfb .chip.good{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok)}
 .wfb .chip.h22{height:22px;padding:0 8px;font-size:11.5px}
 
-/* the rollout page's own state pill: 1px border, 2px 10px, coloured by state */
+/* the ChangeOrder page's own state pill: 1px border, 2px 10px, coloured by state */
 .wfb .statechip{display:inline-flex;align-items:center;border:1px solid;border-radius:999px;padding:2px 10px;font-size:11.5px;font-weight:600;line-height:1.35;white-space:nowrap}
 .wfb .statechip.ok{color:var(--ok);background:var(--ok-soft);border-color:var(--ok-line)}
 .wfb .statechip.wait{color:var(--wait);background:var(--wait-soft);border-color:var(--wait-line)}
@@ -128,7 +128,7 @@
 .wfb button.statechip{cursor:pointer;font-family:inherit}
 .wfb button.statechip:hover{text-decoration:underline}
 
-/* ---------- summary card: the rollout detail page's own head ---------- */
+/* ---------- summary card: the ChangeOrder detail page's own head ---------- */
 /* `align-items:start` stops the shorter column stretching to match the
    taller one's height, which read as unexplained blank space down one side.
    `.sumright` is legitimately denser than `.sumleft` -- a Space picker, up to
@@ -621,16 +621,16 @@
 .wfb .newwfpanel .clonepanel{margin-top:2px;padding-top:10px;border-top:1px dashed var(--line)}
 .wfb .legend{display:flex;gap:13px;flex-wrap:wrap;padding:7px 12px;background:var(--sunk);border:1px solid var(--line);border-bottom:0}
 .wfb .legend .li{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-muted)}
-/* The same pip the rollouts console draws (`RolloutStageStrip`, re-skinned by
+/* The same pip the ChangeOrders console draws (`ChangeOrderStageStrip`, re-skinned by
    that page's own `SEGMENT_TONES`), to the pixel: 6px tall, 3px radius, elastic
    width down to a 12px floor, and a 1.5px INSET RING rather than a border, so
    the ring costs no layout width and the pip's footprint is its fill.
 
-   ⚠️ THE TONES ARE MAPPED BY MEANING, NOT COPIED BY NAME. Every rollouts tone
+   ⚠️ THE TONES ARE MAPPED BY MEANING, NOT COPIED BY NAME. Every ChangeOrders tone
    reports on a promotion that ran; nothing here has run. `done` on that page is
    a stage that completed healthy, and painting it on a definition would claim a
    result from a workflow that has never been used once. So each of the three
-   states here takes the rollouts tone that means the same thing:
+   states here takes the ChangeOrders tone that means the same thing:
 
      .ok   an ordinary Stage        <- `unverified`: it is there, and no claim is
                                        made about its health. The ring without a
@@ -649,14 +649,14 @@
 .wfb .seg{height:6px;border-radius:3px;flex:1 1 0;min-width:12px}
 .wfb .seg.ok{background:transparent;box-shadow:inset 0 0 0 1.5px var(--ok)}
 .wfb .seg.bad{background:var(--bad)}
-/* ⚠️ DELIBERATELY NOT the rollouts `ready` mapping above any more: that tone is
+/* ⚠️ DELIBERATELY NOT the ChangeOrders `ready` mapping above any more: that tone is
    the action colour, and this pip is a passive legend swatch, never hovered,
    focused or selected. Rust stays on hover/focus/selection only; a static
    status mark takes the neutral ring instead, the same call `.node.fin` and
    `.nodedot.fin` already make. */
 .wfb .seg.fin{background:var(--inset);box-shadow:inset 0 0 0 1.5px var(--line-strong)}
 /* A key is read one swatch at a time, so its swatches are a fixed size rather
-   than a share of a row -- 16x6, the same figure the rollouts legend uses. */
+   than a share of a row -- 16x6, the same figure the ChangeOrders legend uses. */
 .wfb .legend .seg{flex:none;width:16px}
 .wfb .table{border:1px solid var(--line);border-radius:0 0 var(--r-card) var(--r-card);background:var(--card);overflow:hidden;box-shadow:var(--shadow)}
 .wfb .grid4{display:grid;grid-template-columns:minmax(190px,1.5fr) 198px 56px 186px;gap:16px;align-items:center;padding:0 14px}
@@ -668,7 +668,7 @@
 .wfb .rname{font-size:13.5px;font-weight:600;line-height:1.35;display:block}
 .wfb .rslug{font-family:var(--mono);font-size:11px;color:var(--ink-subtle);display:block;margin-top:2px}
 .wfb .strip{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
-/* 11.5px, not the 10.5px a caption would otherwise take here: the rollouts
+/* 11.5px, not the 10.5px a caption would otherwise take here: the ChangeOrders
    console sets its own line under the pips at 11.5px mono in this same colour,
    and a caption a point smaller under an otherwise identical strip is enough to
    make the two tables read as different furniture. */

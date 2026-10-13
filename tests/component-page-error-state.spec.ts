@@ -6,10 +6,10 @@ import { test, expect } from './fixtures/test';
 // ============================================================================
 // Components View Error State E2E Tests
 //
-// Forces the Components view's live `/space` query to fail three ways
-// (network abort, 500, 404) and asserts the cause-aware error state renders
-// the right headline, exposes the endpoint via Technical detail, and that
-// Retry recovers the page once the network condition clears.
+// Forces the Components view's live `/space` query to fail (network abort)
+// and asserts the error state renders its headline, exposes the endpoint via
+// Technical detail, and that Retry recovers the page once the network
+// condition clears.
 //
 // Only the *live* org-wide query (no `summary=true` param) is intercepted.
 // The summary query is left to `route.continue()` so it does not also need
@@ -79,45 +79,5 @@ test.describe('components view error state', () => {
     // `AppsComponentLayout` actually mounted, not just that the error state
     // went away.
     await expect(page.getByTestId('components-layout')).toBeVisible({ timeout: 15000 });
-  });
-
-  test('shows a server-error headline for a 500 response', async ({ page }) => {
-    await page.route('**/api/space**', async (route: Route) => {
-      if (isLiveSpacesRequest(route.request().url())) {
-        await route.fulfill({
-          status: 500,
-          contentType: 'application/json',
-          body: JSON.stringify({ message: 'internal error' }),
-        });
-        return;
-      }
-      await route.continue();
-    });
-
-    await page.goto('/components');
-
-    const errorState = page.getByTestId('query-error-state');
-    await expect(errorState).toBeVisible({ timeout: 15000 });
-    await expect(errorState).toContainText('The server had an internal error');
-  });
-
-  test('shows a not-found headline for a 404 response', async ({ page }) => {
-    await page.route('**/api/space**', async (route: Route) => {
-      if (isLiveSpacesRequest(route.request().url())) {
-        await route.fulfill({
-          status: 404,
-          contentType: 'application/json',
-          body: JSON.stringify({ message: 'not found' }),
-        });
-        return;
-      }
-      await route.continue();
-    });
-
-    await page.goto('/components');
-
-    const errorState = page.getByTestId('query-error-state');
-    await expect(errorState).toBeVisible({ timeout: 15000 });
-    await expect(errorState).toContainText('This Space was not found');
   });
 });

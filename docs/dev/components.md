@@ -193,18 +193,18 @@ an older link is ignored. An id that fails to resolve (a stale
 `?stage=`/`?rolloutSpace=`) is deleted from the URL rather than left dangling.
 
 **Rollout mode** is a different kind of thing from the graph view: it follows ONE ChangeOrder through a promotion sequence rather than arranging the graph.
-Code lives in `src/pages/x/apps/rollout/`, with the graph pieces in `flow-graph/rolloutLayout.ts`,
+Code lives in `src/pages/x/apps/change-order/`, with the graph pieces in `flow-graph/rolloutLayout.ts`,
 `RolloutLaneNode.tsx` and `RolloutStrip.tsx`. Playwright coverage: `ui/tests/rollout-mode.spec.ts`.
 
 **The rollout pane mounts `ComponentValuesSection` directly — the SAME tree auto mode renders —
 not a separate one.** `RolloutSidePane.tsx` renders `ChangeOrderLine` (collapsed identity) →
-`RolloutGateList` (promotion-precondition gates, reused verbatim) → a thin per-unit
-`RolloutUnitHeader` + `ComponentValuesSection` mounted `readOnly`, one per real unit across every
+`ChangeOrderGateList` (promotion-precondition gates, reused verbatim) → a thin per-unit
+`ChangeOrderUnitHeader` + `ComponentValuesSection` mounted `readOnly`, one per real unit across every
 Space of the *selected* stage (there is no accordion — the pane's whole subject is one stage,
 chosen in the graph; the graph is the cross-stage view) → the footer. The ChangeOrder feeds the
-tree as a synthetic `UpgradeEntry`/`VariationEntry` built by `rolloutMergedUnits.ts`, the one new
-derivation this reuse needed — everything else (`rolloutStages`, `rolloutGates`, `rolloutChanges`,
-`rolloutOverrides`, `useRolloutBaseline`, `useRolloutData`) is untouched pure logic feeding it.
+tree as a synthetic `UpgradeEntry`/`VariationEntry` built by `changeOrderMergedUnits.ts`, the one new
+derivation this reuse needed — everything else (`changeOrderStages`, `changeOrderGates`, `changeOrderChanges`,
+`rolloutOverrides`, `useChangeOrderBaseline`, `useChangeOrderData`) is untouched pure logic feeding it.
 `ComponentSidePane.tsx` is never opened, and neither it nor `ComponentValuesSection.tsx` gains any
 rollout knowledge — reuse is a data adapter into a shared component, not a shared pane. An earlier
 version of the pane (deleted) was a bespoke accordion (`RolloutStepper.tsx`) over its own diff tree
@@ -233,7 +233,7 @@ The rules that are easy to get wrong, all of them learned the hard way:
   workflow does not reorder a rollout already in flight. Each stage's `whereSpace` expression is
   resolved server-side to find its member Spaces; there is no client-side label to derive order
   from any more. `cub variant promote`'s `validateStageEntryGates` is the CLI-side twin this UI's
-  `rolloutGates.ts` mirrors.
+  `changeOrderGates.ts` mirrors.
 - **Gates are a client-side port of that CLI function**, reusing its wording verbatim so a user
   refused here and refused by `cub` is told the same thing. There is no gate entity in the backend.
   If the two ever disagree, the CLI is right.
@@ -882,7 +882,7 @@ Do not re-propose these — they were explicitly rejected by the people who buil
   generous bundling, all four staging signals among them, ~18 of 30 belonging to subsystems rollout
   has no use for — a "shared" child two-thirds of whose surface one caller ignores is not shared.
   Reuse landed one level down instead: mount `ComponentValuesSection` itself, read-only, fed by a data
-  adapter (`rolloutMergedUnits.ts`). `ComponentSidePane.tsx` is not opened by this reuse at all.
+  adapter (`changeOrderMergedUnits.ts`). `ComponentSidePane.tsx` is not opened by this reuse at all.
 - **An inline right-hand-slot toggle for protection** (a per-row ambient switch next to the value,
   mirroring the upgrade checkbox's position). Built and rejected by the lock-interaction design track:
   it collides with the upgrade checkbox at the pane's 460px width, and a switch that waits for a button

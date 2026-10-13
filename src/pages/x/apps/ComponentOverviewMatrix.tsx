@@ -21,7 +21,7 @@ import { alpha, useTheme } from '@mui/material/styles';
 import { ComponentActivityFeed } from './ComponentActivityFeed';
 import { type SelectedApp } from './appTypes';
 import { buildOverviewData, type ComponentKpiRow } from './componentOverview';
-import { useOutstandingRolloutBaseSpaceIds } from './rollout/useOutstandingRolloutsBulk';
+import { useOutstandingChangeOrderBaseSpaceIds } from './change-order/useOutstandingChangeOrdersBulk';
 
 // ============================================================================
 // TYPES
@@ -36,7 +36,7 @@ type FilterKey =
   | 'unapplied'
   | 'gatesPending'
   | 'upgrades'
-  | 'outstandingRollout';
+  | 'outstandingChangeOrder';
 
 type SortKey =
   | 'health'
@@ -44,7 +44,7 @@ type SortKey =
   | 'unapplied'
   | 'gatesPending'
   | 'upgrades'
-  | 'outstandingRollout';
+  | 'outstandingChangeOrder';
 
 type ColKey =
   | 'unapplied'
@@ -83,14 +83,14 @@ const FILTER_LABELS: Record<FilterKey, string> = {
   unapplied:          'Unreleased Changes',
   gatesPending:       'Blocking Gates',
   upgrades:           'Upgrades Available',
-  outstandingRollout: 'Outstanding Rollouts',
+  outstandingChangeOrder: 'Outstanding ChangeOrders',
 };
 
 const KPI_SORT_FIELDS: Partial<Record<SortKey, keyof ComponentKpiRow>> = {
   unapplied:          'unapplied',
   gatesPending:       'gatesPending',
   upgrades:           'upgrades',
-  outstandingRollout: 'hasOutstandingRollout',
+  outstandingChangeOrder: 'hasOutstandingChangeOrder',
 };
 
 function getKpiValue(row: ComponentKpiRow, key: NumericKpiKey): number {
@@ -99,13 +99,13 @@ function getKpiValue(row: ComponentKpiRow, key: NumericKpiKey): number {
 
 /**
  * Whether a KPI "counts" for filter/dimming purposes — true for a nonzero
- * numeric KPI, or for `hasOutstandingRollout` directly. Kept separate from
+ * numeric KPI, or for `hasOutstandingChangeOrder` directly. Kept separate from
  * `getKpiValue` (numeric-display only, feeds the heat-mapped columns) since
- * `hasOutstandingRollout` is a boolean with its own column, not one more
+ * `hasOutstandingChangeOrder` is a boolean with its own column, not one more
  * numeric column.
  */
 function isKpiFlagged(row: ComponentKpiRow, key: FilterKey): boolean {
-  if (key === 'outstandingRollout') return row.hasOutstandingRollout;
+  if (key === 'outstandingChangeOrder') return row.hasOutstandingChangeOrder;
   return getKpiValue(row, key) > 0;
 }
 
@@ -301,11 +301,11 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
   const [sortBy, setSortBy] = useState<SortKey>('health');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
-  const outstandingRolloutBaseSpaceIds = useOutstandingRolloutBaseSpaceIds();
+  const outstandingChangeOrderBaseSpaceIds = useOutstandingChangeOrderBaseSpaceIds();
   const { componentById } = useComponentSlugs();
   const { rows, org } = useMemo(
-    () => buildOverviewData(spaces, componentById, outstandingRolloutBaseSpaceIds),
-    [spaces, componentById, outstandingRolloutBaseSpaceIds],
+    () => buildOverviewData(spaces, componentById, outstandingChangeOrderBaseSpaceIds),
+    [spaces, componentById, outstandingChangeOrderBaseSpaceIds],
   );
 
 
@@ -472,13 +472,13 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
             onClick={() => handleFilterToggle('upgrades')}
           />
           <KpiTile
-            label='Outstanding Rollouts'
-            value={org.outstandingRollouts}
+            label='Outstanding ChangeOrders'
+            value={org.outstandingChangeOrders}
             unit='components'
             description='Has a ChangeOrder in progress'
             severity='info'
-            isActive={activeFilter === 'outstandingRollout'}
-            onClick={() => handleFilterToggle('outstandingRollout')}
+            isActive={activeFilter === 'outstandingChangeOrder'}
+            onClick={() => handleFilterToggle('outstandingChangeOrder')}
           />
         </Box>
 
@@ -595,14 +595,14 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
                     </TableCell>
                   ))}
 
-                  {/* Outstanding-rollout column header — a boolean per-row
+                  {/* Outstanding-ChangeOrder column header — a boolean per-row
                       dot, not one more heat-mapped numeric column, so it
                       lives outside COL_DEFS; still wired into the same
                       sort/filter state for consistency with the others. */}
                   <TableCell
                     align='center'
                     sx={{
-                      bgcolor: activeFilter === 'outstandingRollout' ? alpha(theme.palette.warning.main, 0.05) : 'background.default',
+                      bgcolor: activeFilter === 'outstandingChangeOrder' ? alpha(theme.palette.warning.main, 0.05) : 'background.default',
                       borderBottom: `1px solid ${theme.palette.divider}`,
                       p: 0,
                       position: 'sticky',
@@ -612,7 +612,7 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
                   >
                     <Box
                       component='button'
-                      onClick={() => handleSort('outstandingRollout')}
+                      onClick={() => handleSort('outstandingChangeOrder')}
                       sx={{
                         width: '100%', border: 0, background: 'transparent', cursor: 'pointer',
                         p: '11px 10px', fontFamily: 'inherit', color: 'text.secondary',
@@ -623,11 +623,11 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
                     >
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                         <Box component='span' sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'info.main', flexShrink: 0 }} />
-                        <Typography component='span' sx={{ fontWeight: sortBy === 'outstandingRollout' ? 700 : 600, fontSize: 11, color: sortBy === 'outstandingRollout' ? 'text.primary' : 'inherit' }}>
-                          Outstanding Rollouts
+                        <Typography component='span' sx={{ fontWeight: sortBy === 'outstandingChangeOrder' ? 700 : 600, fontSize: 11, color: sortBy === 'outstandingChangeOrder' ? 'text.primary' : 'inherit' }}>
+                          Outstanding ChangeOrders
                         </Typography>
-                        <Typography component='span' sx={{ fontSize: 9, color: sortBy === 'outstandingRollout' ? 'error.main' : 'text.disabled' }}>
-                          {sortArrow('outstandingRollout')}
+                        <Typography component='span' sx={{ fontSize: 9, color: sortBy === 'outstandingChangeOrder' ? 'error.main' : 'text.disabled' }}>
+                          {sortArrow('outstandingChangeOrder')}
                         </Typography>
                       </Box>
                       <Typography component='span' sx={{ fontSize: 9.5, fontWeight: 500, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -732,21 +732,21 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
                         );
                       })}
 
-                      {/* Outstanding-rollout dot — same visual language as
+                      {/* Outstanding-ChangeOrder dot — same visual language as
                           the AppComponentView toggle's notifier dot. */}
                       <TableCell
                         align='center'
                         sx={{
                           p: 0, height: 50,
-                          bgcolor: activeFilter === 'outstandingRollout' ? alpha(theme.palette.warning.main, 0.05) : 'transparent',
+                          bgcolor: activeFilter === 'outstandingChangeOrder' ? alpha(theme.palette.warning.main, 0.05) : 'transparent',
                           borderBottom: `1px solid ${theme.palette.divider}`,
                           transition: 'background 0.12s ease',
                         }}
                       >
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                          {row.hasOutstandingRollout ? (
+                          {row.hasOutstandingChangeOrder ? (
                             <Box
-                              data-testid='outstanding-rollout-dot'
+                              data-testid='outstanding-change-order-dot'
                               sx={{
                                 width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
                                 bgcolor: theme.palette.warning.dark,
@@ -804,12 +804,12 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
                     sx={{
                       borderTop: `2px solid ${theme.palette.divider}`,
                       height: 42,
-                      bgcolor: activeFilter === 'outstandingRollout' ? alpha(theme.palette.warning.main, 0.05) : 'background.default',
+                      bgcolor: activeFilter === 'outstandingChangeOrder' ? alpha(theme.palette.warning.main, 0.05) : 'background.default',
                       fontFamily: MONO_FONT,
                       fontSize: 13, fontWeight: 600, color: 'text.secondary',
                     }}
                   >
-                    {org.outstandingRollouts}
+                    {org.outstandingChangeOrders}
                   </TableCell>
                 </TableRow>
               </TableFooter>

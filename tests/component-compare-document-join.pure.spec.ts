@@ -1,8 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 //
-// How a document finds its counterpart in the other deployments, and what a cell
-// says when it genuinely cannot answer.
+// How a document finds its counterpart in the other deployments.
 //
 // THE BUG THIS EXISTS TO STOP COMING BACK. The document join originally keyed on
 // resource type AND name. Within one unit that is correct and is this repo's
@@ -15,8 +14,9 @@
 //
 // That surfaced as the user-visible symptom "a lot of the values don't show, the
 // state seems stuck on loading", because `unknown` printed the loading word by
-// default. So the two halves are asserted together: the join must hold, AND no
-// settled state may ever print "loading".
+// default. So the join is asserted together with its symptom: when both
+// deployments loaded, no cell may be left unanswerable. What an unanswerable
+// cell says is component-compare-unanswerable.pure.spec.ts's subject.
 
 import { expect, test } from '@playwright/test';
 
@@ -127,134 +127,5 @@ spec:
 `;
     const result = buildCompareResult(columns(pair, pair));
     expect(result.groups.map((group) => group.kind).sort()).toEqual(['ConfigMap', 'Deployment']);
-  });
-});
-
-test.describe('a cell that cannot answer says which, and only waits when it is waiting', () => {
-  test('a deployment holding the resource reads against one that does not', () => {
-    const withMap = `apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: settings
-data:
-  tier: gold
-`;
-    const result = buildCompareResult(columns(withMap, PROD));
-    const configMap = result.groups.find((group) => group.kind === 'ConfigMap');
-    const tier = leaves(configMap?.rows ?? []).find((row) => row.identityPath === 'data.tier');
-
-    // Terminal, and NOT `unknown`: the other deployment loaded perfectly well.
-    expect(tier?.cells[1]?.kind).toBe('no-document');
-    expect(tier?.cells[1]?.kind).not.toBe('unknown');
-  });
-
-  test('a genuinely loading column is still unknown — the state is not deleted', () => {
-    const result = buildCompareResult(
-      [
-        { deploymentId: 'a', label: 'prod', data: PROD },
-        { deploymentId: 'b', label: 'dev', unavailable: 'loading' },
-      ],
-    );
-    const replicas = leaves(result.groups[0]?.rows ?? []).find(
-      (row) => row.identityPath === 'spec.replicas',
-    );
-    expect(replicas?.cells[1]?.kind).toBe('unknown');
-  });
-
-  test('an empty unit is a settled answer, not a wait', () => {
-    const result = buildCompareResult(
-      [
-        { deploymentId: 'a', label: 'prod', data: PROD },
-        { deploymentId: 'b', label: 'dev', unavailable: 'empty-unit' },
-      ],
-    );
-    const replicas = leaves(result.groups[0]?.rows ?? []).find(
-      (row) => row.identityPath === 'spec.replicas',
-    );
-    // Still `unknown` in the model — the column cannot answer — but the reason
-    // travels with it so the cell prints "empty" rather than "loading".
-    expect(replicas?.cells[1]?.kind).toBe('unknown');
-  });
-
-  test('a resource missing from one column is not, by itself, a difference', () => {
-    // Two columns hold the resource and agree; the third lacks it entirely.
-    // `no-document` is not evidence either way — there is nothing here for a
-    // reader to act on, so it must not inflate the count.
-    const withMap = `apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: settings
-data:
-  tier: gold
-`;
-    const result = buildCompareResult(columns(withMap, PROD, withMap));
-    const configMap = result.groups.find((group) => group.kind === 'ConfigMap');
-    expect(configMap?.differingCount).toBe(0);
-    const tier = leaves(configMap?.rows ?? []).find((row) => row.identityPath === 'data.tier');
-    expect(tier?.cells[1]?.kind).toBe('no-document');
-    expect(tier?.cells.map((cell) => cell.kind)).toContain('same');
-  });
-
-  test('a genuine disagreement still shows through even where a third column has no document at all', () => {
-    const withMapGold = `apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: settings
-data:
-  tier: gold
-`;
-    const withMapSilver = withMapGold.replace('tier: gold', 'tier: silver');
-    const result = buildCompareResult(columns(withMapGold, withMapSilver, PROD));
-    const configMap = result.groups.find((group) => group.kind === 'ConfigMap');
-    expect(configMap?.differingCount).toBeGreaterThan(0);
-  });
-});
-
-test.describe('the namespace appears exactly where it disambiguates', () => {
-  const NS = (ns: string, name: string) => `apiVersion: v1
-kind: ConfigMap
-metadata:
-  namespace: ${ns}
-  name: ${name}
-data:
-  tier: gold
-`;
-
-  test('a lone resource is headed by its bare name, with no leading slash', () => {
-    const doc = `apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: metrics-server
-spec:
-  replicas: 1
-`;
-    const group = buildCompareResult(columns(doc, doc)).groups[0];
-    expect(group?.name).toBe('metrics-server');
-    expect(group?.namespace).toBeUndefined();
-    expect(group?.kindIsAmbiguous).toBe(false);
-  });
-
-  test('a namespaced resource still shows only its name while the Kind is unique', () => {
-    const group = buildCompareResult(columns(NS('prod', 'settings'), NS('prod', 'settings')))
-      .groups[0];
-    expect(group?.name).toBe('settings');
-    expect(group?.namespace).toBe('prod');
-    // Nothing to disambiguate, so the namespace stays off the header.
-    expect(group?.kindIsAmbiguous).toBe(false);
-  });
-
-  test('two same-named resources in different namespaces are distinguishable', () => {
-    // Without the namespace both headers would read `settings`, and a tooltip
-    // cannot tell two identical headers apart.
-    const unit = `${NS('alpha', 'settings')}---\n${NS('beta', 'settings')}`;
-    const result = buildCompareResult(columns(unit, unit));
-    expect(result.groups).toHaveLength(2);
-    for (const group of result.groups) {
-      expect(group.name).toBe('settings');
-      expect(group.kindIsAmbiguous).toBe(true);
-    }
-    expect(result.groups.map((group) => group.namespace).sort()).toEqual(['alpha', 'beta']);
-    // And they must not have collapsed into one another.
-    expect(new Set(result.groups.map((group) => group.docKey)).size).toBe(2);
   });
 });

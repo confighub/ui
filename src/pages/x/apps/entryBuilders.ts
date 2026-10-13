@@ -68,7 +68,7 @@ export function countLogicalChanges(paths: Iterable<string>): number {
  * many leaves) counts as ONE. This keeps the badge, the footer "Upgrade [N]"
  * chip, and "Select all (N)" all showing the same logical number.
  *
- * Shared between `ComponentSidePane` (auto mode) and rollout mode's toolbar —
+ * Shared between `ComponentSidePane` (auto mode) and ChangeOrder mode's toolbar —
  * the two must never carry independent copies of this predicate (rule 4).
  */
 export function countUpgradableBadgeFields(unit: MergedUnit): number {
@@ -241,7 +241,7 @@ export function peekGroupedLeafCount(data: string | undefined): number | undefin
 
 /**
  * The toolbar search box's predicate, shared by `ComponentSidePane` (auto mode)
- * and rollout mode: matches a unit's slug, or any upgrade/apply field diff's
+ * and ChangeOrder mode: matches a unit's slug, or any upgrade/apply field diff's
  * path/old/new value, or any path/value in its full path list (covers
  * variation-only paths too). Case-insensitive substring match throughout.
  */
@@ -275,9 +275,9 @@ export function filterUnitsByText(units: MergedUnit[], filterText: string): Merg
 
 /**
  * Total field count for the "All · N" toolbar badge, shared by `ComponentSidePane`
- * (auto mode) and rollout mode. `isMaterialized` is the one thing that differs
+ * (auto mode) and ChangeOrder mode. `isMaterialized` is the one thing that differs
  * between callers: auto mode gates it on its collapse/heavy-unit state, while
- * rollout mode — which never collapses a unit and has no heavy-unit gate of its
+ * ChangeOrder mode — which never collapses a unit and has no heavy-unit gate of its
  * own yet — passes `() => true`, so every unit counts exactly and `allFieldsPartial`
  * never fires there. See `peekGroupedLeafCount` for why an unmaterialized unit
  * must not be parsed just to count it.

@@ -24,7 +24,7 @@ export interface Builtin {
 export const BUILTINS: readonly Builtin[] = [
   {
     name: 'Validated',
-    desc: 'No Unit in %s has validation errors on the revision the change order’s end tag marks.',
+    desc: 'No Unit in %s has validation errors on the revision the ChangeOrder’s end tag marks.',
   },
   { name: 'Released', desc: 'Every variant in %s has published a Release carrying the change.' },
   { name: 'Healthy', desc: 'Every variant in %s reports synced, succeeded and healthy.' },

@@ -176,7 +176,7 @@ export class ApiHelper {
 
     // POST /api/space/{spaceId}/unit returns UnitCreateOrUpdateResponseRead
     // now (config Data and MutationSources split into their own APIs — see
-    // rollout-fixture.ts's file header point 2 for the sibling ChangeOrder
+    // change-order-fixture.ts's file header point 2 for the sibling ChangeOrder
     // change from the same migration), so the created Unit is under `.Unit`,
     // not the response body itself.
     const body = await response.json();
@@ -777,7 +777,7 @@ export class ApiHelper {
   }
   // ── ChangeOrder fixtures ────────────────────────────────────────────────
   //
-  // A rollout is a ChangeOrder crossing Spaces, so a rollout fixture needs
+  // A ChangeOrder carries a change across Spaces, so a ChangeOrder fixture needs
   // three things the helpers above cannot make: a Filter that says WHERE the
   // change is headed, a ChangeSet that names it, and the ChangeOrder itself.
   //
@@ -785,13 +785,13 @@ export class ApiHelper {
   // selects the Spaces the change propagates into; without it the ChangeOrder
   // "names a change without saying where it is headed" and its derived
   // `ResolvedSpaceIDs` never grows past the Space it lives in — which reads,
-  // wrongly, as a rollout that never moves. Every rollout fixture therefore
+  // wrongly, as a ChangeOrder that never moves. Every ChangeOrder fixture therefore
   // creates a Space Filter over the component label first.
 
   /**
    * Create a Filter (POST /api/space/{spaceId}/filter).
    *
-   * For rollout fixtures this is a Filter over Spaces — `From: 'Space'` with a
+   * For ChangeOrder fixtures this is a Filter over Spaces — `From: 'Space'` with a
    * `Where` that matches the fixture's Component label — which is then handed
    * to `createChangeOrder` as its `SpaceFilterID`.
    * @param params - Object containing spaceId, the Filter body, and allowExists
@@ -948,13 +948,13 @@ export class ApiHelper {
    *
    * `ResolvedSpaceIDs` (promoted) and `ReleasedSpaceIDs` (released) are derived
    * at READ time rather than stored, so this is the authoritative answer to
-   * "how far has the rollout got" — and it is also why a spec must poll it with
+   * "how far has the ChangeOrder got" — and it is also why a spec must poll it with
    * `expect.poll` rather than read it once straight after a promote.
    *
    * The READ endpoints wrap the entity — `{"ChangeOrder": {...}}` — where POST
    * returns it bare. Reading `.ResolvedSpaceIDs` off the raw body therefore
    * yields `undefined` for every ChangeOrder, silently, which looks exactly
-   * like a rollout that has not moved. This unwraps so callers cannot make
+   * like a ChangeOrder that has not moved. This unwraps so callers cannot make
    * that mistake.
    * @param params - Object containing spaceId and changeOrderId
    * @returns Promise resolving to the unwrapped ChangeOrderRead object

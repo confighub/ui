@@ -193,8 +193,7 @@ export function WorkflowsConsole({
           <div className='t'>No change workflows yet</div>
           <p className='d'>
             A change workflow declares the Stages a change moves through and what must hold to enter
-            each one. It is the definition; a change order is one change moving through it, and a
-            rollout is that change order in motion.
+            each one. It is the definition; a ChangeOrder is one change moving through it.
           </p>
         </div>
       </div>
@@ -265,10 +264,9 @@ export function WorkflowsConsole({
       </div>
 
       <p className='conintro'>
-        The definitions a change order is promoted under: the Stages a change moves through, and what
-        must hold before it enters each one. One workflow governs many change orders, and a rollout
-        is one of them in motion. Cloning a workflow into another Space is how a second component
-        gets the same shape.
+        The definitions a ChangeOrder is promoted under: the Stages a change moves through, and what
+        must hold before it enters each one. One workflow governs many ChangeOrders. Cloning a
+        workflow into another Space is how a second component gets the same shape.
       </p>
 
       <div className='filterbar'>

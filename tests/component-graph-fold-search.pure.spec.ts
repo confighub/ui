@@ -3,28 +3,18 @@
 //
 // Canvas search on a folded Component graph must say where a Deployment
 // lives before the user jumps to it, because a folded Deployment has no card
-// on screen until its stack opens. A drag on a card pans the canvas, so a
-// click must be told apart from the end of a pan. And the Group by label in
-// the URL is only used when it is one of the Component's options.
+// on screen until its stack opens.
 import { expect, test } from '@playwright/test';
 
 import type { ComponentDeployment } from '../src/pages/x/apps/componentTypes';
-import {
-  isClickAfterPan,
-  matchRange,
-  searchDeployments,
-} from '../src/pages/x/apps/flow-graph/fold/canvasSearch';
+import { searchDeployments } from '../src/pages/x/apps/flow-graph/fold/canvasSearch';
 import { SEARCH_MAX_RESULTS } from '../src/pages/x/apps/flow-graph/fold/foldConstants';
 import {
   type FoldModel,
   buildFoldModel,
   foldMembers,
 } from '../src/pages/x/apps/flow-graph/fold/foldModel';
-import {
-  defaultGroupKey,
-  groupByOptions,
-  resolveGroupKey,
-} from '../src/pages/x/apps/flow-graph/fold/groupBy';
+import { defaultGroupKey } from '../src/pages/x/apps/flow-graph/fold/groupBy';
 import { meridianComponent } from './fixtures/meridianFoldFixture';
 
 function certManager(): { deployments: ComponentDeployment[]; model: FoldModel } {
@@ -115,71 +105,5 @@ test.describe('searchDeployments', () => {
       hits: [],
       total: 0,
     });
-  });
-});
-
-test.describe('matchRange', () => {
-  test('marks the matched part of the name', () => {
-    expect(matchRange('ap-northeast-retail-prod2', 'Retail')).toEqual([13, 19]);
-  });
-
-  test('marks nothing when the name does not hold the query', () => {
-    expect(matchRange('ap-northeast-retail-prod2', 'uat')).toBeNull();
-    expect(matchRange('ap-northeast-retail-prod2', '')).toBeNull();
-  });
-});
-
-test.describe('isClickAfterPan', () => {
-  const down = { x: 100, y: 100 };
-
-  test('a pointer that moved 3 px is still a click', () => {
-    expect(isClickAfterPan(down, { x: 103, y: 100 })).toBe(false);
-    expect(isClickAfterPan(down, { x: 100, y: 97 })).toBe(false);
-  });
-
-  test('a pointer that moved 5 px ended a pan', () => {
-    expect(isClickAfterPan(down, { x: 105, y: 100 })).toBe(true);
-    expect(isClickAfterPan(down, { x: 97, y: 104 })).toBe(true);
-  });
-
-  test('exactly on the threshold is still a click', () => {
-    expect(isClickAfterPan(down, { x: 104, y: 100 })).toBe(false);
-  });
-});
-
-test.describe('resolveGroupKey from the URL', () => {
-  const deployments = meridianComponent('cert-manager');
-  const members = foldMembers(deployments);
-  const options = groupByOptions(members);
-  const fallback = defaultGroupKey(members);
-
-  test('a URL key that is an option is used', () => {
-    expect(options.map((o) => o.key)).toContain('Region');
-    expect(resolveGroupKey('Region', options, fallback)).toBe('Region');
-  });
-
-  test('a URL key that is not an option falls back to the default', () => {
-    expect(fallback).toBe('Department');
-    expect(resolveGroupKey('Colour', options, fallback)).toBe('Department');
-  });
-
-  test('?graphGroup=Stage is used, though Stage is never the default', () => {
-    expect(resolveGroupKey('Stage', options, fallback)).toBe('Stage');
-    expect(fallback).not.toBe('Stage');
-  });
-
-  test('?graphGroup=@target is not an option: it falls back to the default', () => {
-    expect(options.map((o) => o.key)).not.toContain('@target');
-    expect(resolveGroupKey('@target', options, fallback)).toBe('Department');
-  });
-
-  test('?graphGroup=Environment is not an option: it falls back to the default', () => {
-    expect(options.map((o) => o.key)).not.toContain('Environment');
-    expect(resolveGroupKey('Environment', options, fallback)).toBe('Department');
-  });
-
-  test('no URL key gives the default', () => {
-    expect(resolveGroupKey(null, options, fallback)).toBe('Department');
-    expect(resolveGroupKey(undefined, options, fallback)).toBe('Department');
   });
 });

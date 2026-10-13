@@ -1029,7 +1029,7 @@ interface ComponentValuesSectionProps {
    * which excludes any path a local override blocks from actually upgrading:
    * for a consumer showing what a write WOULD do (never what a live upgrade
    * blocks), that exclusion can legitimately throw out every real change — it
-   * did, for the rollout page's synthetic `MergedUnit`s, where the exclusion
+   * did, for the ChangeOrder page's synthetic `MergedUnit`s, where the exclusion
    * emptied the tree on a unit with three genuine diffs. `'changed'` is the
    * narrowing `'all'` mode's own highlighting already uses; this only makes it
    * possible to request as the VISIBLE set too, not just the highlighted one.
@@ -1518,10 +1518,10 @@ const NodeRow = memo(({
     //
     // A read-only mount has no lock to hover and nothing to sync, so it never
     // reaches the preview state those visuals belong to — it only inherited
-    // their at-rest half. That is the reported bug: in rollout mode's All view
+    // their at-rest half. That is the reported bug: in ChangeOrder mode's All view
     // a locally-overridden path whose upstream value is gone rendered as a red,
     // struck-through deletion of a value that is not going anywhere, on paths
-    // the ChangeOrder does not even touch (rollout's `variationEntry` carries
+    // the ChangeOrder does not even touch (its `variationEntry` carries
     // only paths the promotion leaves alone — see `buildVariationEntry`).
     //
     // Excluded HERE, at the source, rather than at each of the four places this
@@ -2098,15 +2098,15 @@ const NodeRow = memo(({
                       previewSegments={previewSegments}
                       previewRemoved={previewRemoved}
                       // Never populated: auto mode never passes readOnly, so
-                      // this was dead code by construction until rollout mode
+                      // this was dead code by construction until ChangeOrder mode
                       // became the first readOnly caller (U11/U14) and
                       // .pill-staged started revealing it for real. Auto mode
                       // itself never renders this struck-through line (see
                       // .current-old-preview below) — a staged row there is
                       // one line: incoming value, token pill, nothing above
                       // it. Reference image confirms it (U20). Rendering it
-                      // in rollout was a divergence nobody asked for, not a
-                      // deliberate difference — drop it so rollout matches.
+                      // in ChangeOrder was a divergence nobody asked for, not a
+                      // deliberate difference — drop it so ChangeOrder matches.
                       oldValueForPreview={undefined}
                       differsFromUpstream={differsFromUpstream}
                       kept={effectiveKept}
@@ -2126,7 +2126,7 @@ const NodeRow = memo(({
                   color already convey changed/new/removed without implying
                   a "stage this" action that has nowhere to commit. */}
               {/*
-                READ-ONLY (rollout) blocked row: the same amber lock and the
+                READ-ONLY (ChangeOrder) blocked row: the same amber lock and the
                 same explanation auto mode gives this case, minus the checkbox.
                 Reuses `ActionTooltipContent` and `T1LockIcon` rather than
                 restating either — including auto's own `status` wording and its
@@ -2134,7 +2134,7 @@ const NodeRow = memo(({
                 placeholder when upstream has dropped the path entirely.
                 
                 The checkbox is deliberately NOT carried over: it stages a
-                "sync with upstream", and rollout mode has nowhere to commit
+                "sync with upstream", and ChangeOrder mode has nowhere to commit
                 one. The hero verb changes with it — auto's "Sync with
                 upstream" names what its checkbox does, and repeating it here
                 would promise an action this mount cannot perform.

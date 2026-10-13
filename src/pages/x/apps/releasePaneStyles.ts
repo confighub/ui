@@ -26,7 +26,7 @@
  *     module deliberately departs from the design file.
  *
  * `PANE_PX` (11px) is the single horizontal padding token for the whole pane.
- * `ReleaseDiffPanel` and `ComponentRolloutsPane` import it and `paneType` from
+ * `ReleaseDiffPanel` and its sibling panes import it and `paneType` from
  * here rather than restating them, so the pane's surfaces cannot drift apart.
  */
 import Box from '@mui/material/Box';

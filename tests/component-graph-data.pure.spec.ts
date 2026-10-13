@@ -3,11 +3,8 @@
 //
 // The data the Components flow graph reads for a large Component.
 //
-// chunkInClause: one IN clause over every Unit of a large Component (cert-manager,
-// 104 Spaces, 520 Units) is longer than the 8,192-character query string the server
-// accepts, and a Revision search asks for more than its 1,000-row limit. Each chunk
-// must stay under both limits, and together the chunks must ask for every id exactly
-// once, or a node silently loses its data.
+// The chunked reads that keep a large Component under the server's limits are
+// component-graph-chunked-fetch.pure.spec.ts's subject.
 //
 // buildComponentData: every node carries its Space labels (the graph folds by them)
 // and its Stale / Unreleased changes / Gated unit counts, by the same rules as the
@@ -18,75 +15,12 @@
 
 import { expect, test } from '@playwright/test';
 
-import {
-  DEFAULT_MAX_ENCODED_WHERE,
-  DEFAULT_MAX_IN_ITEMS,
-  chunkInClause,
-} from '../src/hooks/inClauseChunks';
 import { buildComponentData, uniqueTargetLabels } from '../src/pages/x/apps/componentData';
 import type {
   ExtendedSpaceRead,
   ExtendedUnitRead,
   UnitRead,
 } from '@confighub/rtk-query';
-
-/** A deterministic UUID-shaped id, so the length of each quoted id matches production. */
-const uuid = (n: number) => {
-  const hex = n.toString(16).padStart(32, '0');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-};
-
-/** The ids a clause asks for, in order. */
-const idsIn = (column: string, where: string): string[] => {
-  const prefix = `${column} IN (`;
-  expect(where.startsWith(prefix)).toBe(true);
-  expect(where.endsWith(')')).toBe(true);
-  return where
-    .slice(prefix.length, -1)
-    .split(', ')
-    .map((quoted) => {
-      expect(quoted.startsWith("'") && quoted.endsWith("'")).toBe(true);
-      return quoted.slice(1, -1);
-    });
-};
-
-test.describe('chunkInClause', () => {
-  test('520 UUIDs: every chunk under the length budget, every id once, order kept', () => {
-    const ids = Array.from({ length: 520 }, (_, i) => uuid(i + 1));
-    const chunks = chunkInClause('UnitID', ids);
-
-    // One clause over all of them is what the server rejected.
-    expect(encodeURIComponent(`UnitID IN (${ids.map((id) => `'${id}'`).join(', ')})`).length)
-      .toBeGreaterThan(8192);
-    expect(chunks.length).toBeGreaterThan(1);
-    for (const where of chunks) {
-      expect(encodeURIComponent(where).length).toBeLessThanOrEqual(DEFAULT_MAX_ENCODED_WHERE);
-    }
-    expect(chunks.flatMap((where) => idsIn('UnitID', where))).toEqual(ids);
-  });
-
-  test('1,200 short ids with a large length budget: no chunk over the item limit', () => {
-    const ids = Array.from({ length: 1200 }, (_, i) => `u${i}`);
-    const chunks = chunkInClause('RevisionID', ids, { maxEncodedLength: 1_000_000 });
-
-    expect(chunks.length).toBe(2);
-    for (const where of chunks) {
-      expect(idsIn('RevisionID', where).length).toBeLessThanOrEqual(DEFAULT_MAX_IN_ITEMS);
-    }
-    expect(chunks.flatMap((where) => idsIn('RevisionID', where))).toEqual(ids);
-  });
-
-  test('duplicates and empty ids are dropped, first-seen order kept', () => {
-    expect(chunkInClause('SpaceID', ['b', undefined, 'a', null, '', 'b', 'c', 'a'])).toEqual([
-      "SpaceID IN ('b', 'a', 'c')",
-    ]);
-  });
-
-  test('no ids gives no clauses', () => {
-    expect(chunkInClause('UnitID', [])).toEqual([]);
-    expect(chunkInClause('UnitID', [undefined, null, ''])).toEqual([]);
-  });
-});
 
 test.describe('buildComponentData', () => {
   const space = (id: string, slug: string, labels?: Record<string, string>): ExtendedSpaceRead => ({

@@ -13,7 +13,7 @@ import type { RevisionRead, UserRead } from '@confighub/rtk-query';
  * there is nothing left to merge.
  *
  * `filterEntriesByTab`/`countEntriesByTab` live outside ComponentActivityFeed.tsx so the tab split
- * is directly assertable without a browser. See tests/component-activity-feed-tabs.spec.ts.
+ * is a pure function of the entries, which can be checked without a browser.
  */
 
 /** How many entries the feed shows, and how many the Revisions query is asked for. */

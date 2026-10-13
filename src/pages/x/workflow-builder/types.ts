@@ -12,7 +12,7 @@
  * the caret with it.
  */
 
-/** One wave of a rollout: the variants it covers, and what must hold to enter it. */
+/** One wave of a ChangeOrder: the variants it covers, and what must hold to enter it. */
 export interface Stage {
   id: string;
   /** `ChangeWorkflowStage.Name`. Unique within the workflow. */

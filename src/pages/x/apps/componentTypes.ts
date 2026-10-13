@@ -188,8 +188,8 @@ export interface UpgradeEntry {
   /**
    * True when this diff describes a change that has ALREADY been applied —
    * a record of what happened, not a proposal of what would happen if
-   * something acted on it. Deliberately generic, not rollout-specific: the
-   * rollout detail page is its first and only caller today (a promoted
+   * something acted on it. Deliberately generic, not ChangeOrder-specific: the
+   * ChangeOrder detail page is its first and only caller today (a promoted
    * stage's diff, shown against its pre-promotion revision), but the concept — "this upgrade-shaped diff is historical" —
    * belongs to the diff itself, not to any one caller. Read-only rendering
    * only: `ComponentValuesSection` uses it to pick the 'edit' (yellow)

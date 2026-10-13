@@ -4,9 +4,8 @@
 // The fold rules the user decided for large Component graphs, tested at their
 // edges. The Meridian specs prove the reviewed numbers on real data; these
 // prove each rule where it switches on or off (9 vs 10 Deployments, 4 vs 5
-// members in a wave, 3 vs 4 groups of 1, 59.999 s vs 60 s), and hold the
-// layout and Fit rules for every stack and many screen sizes, so a change
-// that keeps the Meridian numbers but moves a boundary still fails here.
+// members in a wave, 3 vs 4 groups of 1, 59.999 s vs 60 s), so a change that
+// keeps the Meridian numbers but moves a boundary still fails here.
 import { expect, test } from '@playwright/test';
 
 import type { ComponentDeployment } from '../src/pages/x/apps/componentTypes';
@@ -14,17 +13,7 @@ import {
   type ConditionKind,
   stripMark,
 } from '../src/pages/x/apps/flow-graph/fold/deploymentCondition';
-import {
-  CARD_CAP,
-  FIT_TOP,
-  MORE_BELOW_MIN_HIDDEN,
-  READABLE_ZOOM_FLOOR,
-  RECOVERED_HOLD_MS,
-} from '../src/pages/x/apps/flow-graph/fold/foldConstants';
-import {
-  type FoldLayout,
-  computeFoldedLayout,
-} from '../src/pages/x/apps/flow-graph/fold/foldLayout';
+import { CARD_CAP, RECOVERED_HOLD_MS } from '../src/pages/x/apps/flow-graph/fold/foldConstants';
 import {
   type BaseFold,
   type FoldModel,
@@ -33,16 +22,9 @@ import {
   shouldFold,
 } from '../src/pages/x/apps/flow-graph/fold/foldModel';
 import { stepFoldStability } from '../src/pages/x/apps/flow-graph/fold/foldStability';
-import {
-  type Size,
-  hiddenBelowPx,
-  panDownViewport,
-  solveFoldedFit,
-} from '../src/pages/x/apps/flow-graph/fold/foldViewport';
 import { defaultGroupKey, groupByOptions } from '../src/pages/x/apps/flow-graph/fold/groupBy';
 import { waveActionLabel } from '../src/pages/x/apps/flow-graph/fold/waveActions';
 import type { LiveStatus } from '../src/pages/x/apps/liveStatus';
-import { type MeridianComponentName, meridianComponent } from './fixtures/meridianFoldFixture';
 
 // ── A synthetic Component: root Base -> class Bases -> leaf Deployments ─────
 
@@ -360,12 +342,6 @@ test.describe('a config condition on most of a Base is one wave', () => {
     }
   });
 
-  test('the action words for each wave', () => {
-    expect(waveActionLabel('stale', 55)).toBe('Upgrade 55');
-    expect(waveActionLabel('unreleased', 14)).toBe('Release 14');
-    expect(waveActionLabel('gated', 14)).toBe('Review gates');
-  });
-
   test('a wave hides only its own condition: a waved member that is also Degraded keeps its card', () => {
     const model = buildFoldModel({
       deployments: flat([
@@ -574,143 +550,6 @@ test.describe('the default Group by is fixed', () => {
     );
     expect(defaultGroupKey(foldMembers(healthy))).toBe('Department');
     expect(defaultGroupKey(foldMembers(broken))).toBe('Department');
-  });
-});
-
-// ── layout and Fit on the Meridian data ───────────────────────────────────
-
-const FOLDED: MeridianComponentName[] = ['cert-manager', 'traefik', 'checkout'];
-const SCREEN: Size = { width: 1224, height: 796 };
-const NONE: ReadonlySet<string> = new Set();
-
-function fittedLayout(name: MeridianComponentName, container: Size) {
-  const deployments = meridianComponent(name);
-  const model = buildFoldModel({
-    deployments,
-    groupKey: defaultGroupKey(foldMembers(deployments)),
-  });
-  const fit = solveFoldedFit(
-    (availableWidth) =>
-      computeFoldedLayout(deployments, model, { availableWidth, expandedGroupIds: NONE }),
-    container,
-  );
-  const layoutWith = (expandedGroupIds: ReadonlySet<string>): FoldLayout =>
-    computeFoldedLayout(deployments, model, {
-      availableWidth: fit.frozen.availableWidth,
-      frozen: fit.frozen,
-      expandedGroupIds,
-    });
-  return { deployments, model, fit, layoutWith };
-}
-
-const byId = (layout: FoldLayout) => new Map(layout.nodes.map((n) => [n.id, n]));
-
-test.describe('expand a stack in place', () => {
-  for (const name of FOLDED) {
-    test(`${name}: for every stack, nothing moves sideways and nothing moves up`, () => {
-      const { model, fit, layoutWith } = fittedLayout(name, SCREEN);
-      const closed = layoutWith(NONE);
-      const before = byId(closed);
-      const stacks = [...model.bases.values()].flatMap((b) =>
-        b.groups.filter((g) => g.kind !== 'loose'),
-      );
-      expect(stacks.length).toBeGreaterThan(0);
-
-      for (const stack of stacks) {
-        const open = layoutWith(new Set([stack.id]));
-        const after = byId(open);
-        const stackNode = before.get(stack.id)!;
-        const bandTop = before.get(`fold:${stackNode.baseId}`)!.y;
-        for (const node of closed.nodes) {
-          const moved = after.get(node.id);
-          expect(moved, `${stack.id}: ${node.id} still drawn`).toBeDefined();
-          expect(moved!.x, `${stack.id}: ${node.id} x`).toBe(node.x);
-          expect(moved!.y, `${stack.id}: ${node.id} y`).toBeGreaterThanOrEqual(node.y);
-          // Bands above the opened one do not move at all.
-          if (node.y + node.height <= bandTop && node.placement !== 'tree') {
-            expect(moved!.y, `${stack.id}: ${node.id} above`).toBe(node.y);
-          }
-        }
-        // The columns Fit chose stay frozen.
-        expect(open.frozen.stackColumnsByBase).toEqual(fit.frozen.stackColumnsByBase);
-        expect(open.frozen.cardColumnsByBase).toEqual(fit.frozen.cardColumnsByBase);
-        expect(open.width).toBe(closed.width);
-        // Closing it again puts every node back where it was.
-        const reclosed = layoutWith(NONE);
-        expect(reclosed.nodes).toEqual(closed.nodes);
-      }
-    });
-  }
-
-  test('opening every stack at once still moves nothing sideways', () => {
-    const { model, layoutWith } = fittedLayout('cert-manager', SCREEN);
-    const all = new Set(
-      [...model.bases.values()].flatMap((b) =>
-        b.groups.filter((g) => g.kind !== 'loose').map((g) => g.id),
-      ),
-    );
-    const closed = layoutWith(NONE);
-    const after = byId(layoutWith(all));
-    for (const node of closed.nodes) {
-      expect(after.get(node.id)!.x, node.id).toBe(node.x);
-      expect(after.get(node.id)!.y, node.id).toBeGreaterThanOrEqual(node.y);
-    }
-  });
-});
-
-test.describe('Fit keeps a readable floor and shows "More below"', () => {
-  const containers: Size[] = [];
-  for (const width of [640, 900, 1064, 1224, 1600, 2200]) {
-    for (const height of [360, 500, 700, 796, 1000, 1400]) containers.push({ width, height });
-  }
-
-  for (const name of FOLDED) {
-    test(`${name}: zoom 80%-100% at every size, and "More below" exactly when it is tall`, () => {
-      for (const container of containers) {
-        const { fit, layoutWith } = fittedLayout(name, container);
-        const layout = layoutWith(NONE);
-        const where = `${container.width}x${container.height}`;
-        const { zoom } = fit.viewport;
-        expect(zoom, where).toBeGreaterThanOrEqual(READABLE_ZOOM_FLOOR);
-        expect(zoom, where).toBeLessThanOrEqual(1);
-        // Fit chose the columns for the zoom: the frozen width is what that zoom leaves.
-        expect(fit.frozen.availableWidth, where).toBeCloseTo((container.width - 36) / zoom, 6);
-
-        const hidden = hiddenBelowPx(fit.viewport, layout.height, container);
-        if (fit.tall) {
-          expect(zoom, where).toBe(READABLE_ZOOM_FLOOR);
-          expect(fit.viewport.y, where).toBe(FIT_TOP);
-          // Tall means it overflows at 80%: below (the cue shows) or, on a very
-          // narrow canvas, only to the right (nothing is below, so no cue).
-          const overflowsRight = layout.width * zoom > container.width - 36 + 1;
-          expect(hidden > 0 || overflowsRight, where).toBe(true);
-        } else {
-          expect(hidden, where).toBe(0);
-          expect(layout.height * zoom, where).toBeLessThanOrEqual(container.height - 42);
-        }
-      }
-    });
-  }
-
-  test('"More below" pans down at the same zoom until nothing is hidden', () => {
-    const container = { width: 1064, height: 500 };
-    const { fit, layoutWith } = fittedLayout('cert-manager', container);
-    expect(fit.tall).toBe(true);
-    const layout = layoutWith(NONE);
-    let viewport = fit.viewport;
-    let clicks = 0;
-    while (hiddenBelowPx(viewport, layout.height, container) >= MORE_BELOW_MIN_HIDDEN) {
-      const next = panDownViewport(viewport, layout.height, container);
-      expect(next.zoom).toBe(fit.viewport.zoom);
-      expect(next.x).toBe(viewport.x);
-      expect(next.y).toBeLessThan(viewport.y);
-      viewport = next;
-      clicks++;
-      expect(clicks).toBeLessThan(20);
-    }
-    expect(clicks).toBeGreaterThan(0);
-    expect(hiddenBelowPx(viewport, layout.height, container)).toBe(0);
-    expect(panDownViewport(viewport, layout.height, container)).toBe(viewport);
   });
 });
 

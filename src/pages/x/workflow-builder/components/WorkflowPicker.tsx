@@ -12,7 +12,7 @@
  *
  * A select, matching `SpacePicker`'s own reasoning for being one: the page has no
  * searchable control anywhere else, and this list is bounded by an organisation's
- * workflows -- definitions, not rollouts, so genuinely few.
+ * workflows -- definitions, not ChangeOrders, so genuinely few.
  *
  * Presentation only. The workflows, and whether they arrived, come from outside.
  */

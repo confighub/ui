@@ -62,7 +62,7 @@ export function NoComponentChosen({ components, withoutComponent }: NoComponentC
     <div className='cov'>
       <h3>Coverage</h3>
       <p className='lede'>
-        {'A workflow names no component. Its Stages select Spaces by their labels, and which Spaces those turn out to be comes from the change order being promoted — which is what lets one definition be cloned to give another component the same shape of rollout.'}
+        {'A workflow names no component. Its Stages select Spaces by their labels, and which Spaces those turn out to be comes from the ChangeOrder being promoted — which is what lets one definition be cloned to give another component the same promotion path.'}
       </p>
       <p className='lede' style={{ marginTop: 8 }}>
         {'So to show what a Stage covers, this page has to be told which component to look through. The choice is not saved, changes nothing about the workflow, and a different one would show different variants for the same unchanged Stages.'}

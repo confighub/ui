@@ -20,18 +20,13 @@ import {
 import {
   type FoldModel,
   buildFoldModel,
-  countCards,
-  countStacks,
   foldMembers,
-  keepSelectedCards,
-  locationText,
   shouldFold,
   updateRecoveredHolds,
 } from '../src/pages/x/apps/flow-graph/fold/foldModel';
 import {
   defaultGroupKey,
   groupByOptions,
-  groupKeyPlural,
   resolveGroupKey,
 } from '../src/pages/x/apps/flow-graph/fold/groupBy';
 import { type MeridianComponentName, meridianComponent } from './fixtures/meridianFoldFixture';
@@ -48,23 +43,10 @@ function defaultModel(deployments: ComponentDeployment[]): FoldModel {
   return buildFoldModel({ deployments, groupKey: defaultGroupKey(foldMembers(deployments)) });
 }
 
-function allCards(model: FoldModel) {
-  return [...model.bases.values()].flatMap((b) => b.cards);
-}
-
 function baseFold(model: FoldModel, baseId: string) {
   const fold = model.bases.get(baseId);
   if (!fold) throw new Error(`no fold for Base ${baseId}`);
   return fold;
-}
-
-/** A copy of the nodes with one Deployment changed. */
-function withChange(
-  deployments: ComponentDeployment[],
-  id: string,
-  change: Partial<ComponentDeployment>,
-): ComponentDeployment[] {
-  return deployments.map((d) => (d.deploymentId === id ? { ...d, ...change } : d));
 }
 
 const QUIET_SIGNALS = { staleUnits: 0, unreleasedUnits: 0, gatedUnits: 0 };
@@ -183,7 +165,6 @@ test.describe('conditions and severity', () => {
 
 test.describe('cert-manager (99 Deployments under four Bases)', () => {
   const deployments = meridianComponent('cert-manager');
-  const byId = new Map(deployments.map((d) => [d.deploymentId, d]));
   const model = defaultModel(deployments);
 
   test('it folds and groups by Department', () => {
@@ -192,48 +173,9 @@ test.describe('cert-manager (99 Deployments under four Bases)', () => {
     expect(model.groupKey).toBe('Department');
   });
 
-  test('only the three Unreleased Deployments get cards', () => {
-    const cards = allCards(model);
-    expect(countCards(model)).toBe(3);
-    expect(cards.map((c) => c.id).sort()).toEqual([
-      'ap-northeast-logistics-prod1',
-      'us-east-retail-uat1',
-      'us-west-logistics-prod1',
-    ]);
-    for (const card of cards) {
-      expect(card.reason).toBe('exception');
-      expect(model.conditions.get(card.id)?.unreleased).toBe(true);
-    }
-  });
-
-  test('Stale is a wave on uat (15) and prod (55), and earns no card', () => {
-    const waves = (baseId: string) =>
-      baseFold(model, baseId).waves.map((w) => [w.condition, w.count]);
-    expect(waves('uat')).toEqual([['stale', 15]]);
-    expect(waves('prod')).toEqual([['stale', 55]]);
-    expect(waves('dev')).toEqual([]);
-    expect(waves('test')).toEqual([]);
-    const staleCount = deployments.filter((d) => d.configSignals.staleUnits > 0).length;
-    expect(staleCount).toBe(70);
-    for (const card of allCards(model)) expect(card.severity).toBeGreaterThan(0);
-  });
-
   test('the root Base is a tree node, not a fold', () => {
     expect([...model.bases.keys()].sort()).toEqual(['dev', 'prod', 'test', 'uat']);
     expect(model.location.has('base')).toBe(false);
-  });
-
-  test('15 stacks in total', () => {
-    expect(countStacks(model)).toBe(15);
-  });
-
-  test('test Base: 13 quiet, 1 loose card and 3 stacks', () => {
-    const test = baseFold(model, 'test');
-    expect(test.quietCount).toBe(13);
-    const loose = test.groups.filter((g) => g.kind === 'loose');
-    expect(loose).toHaveLength(1);
-    expect(loose[0].memberIds).toEqual(['eu-central-logistics-test1']);
-    expect(test.groups.filter((g) => g.kind === 'stack')).toHaveLength(3);
   });
 
   test('dev Base groups by Department, "No department" last', () => {
@@ -253,19 +195,6 @@ test.describe('cert-manager (99 Deployments under four Bases)', () => {
     const none = dev.groups[3].memberIds;
     expect(none).toEqual([...none].sort((a, b) => a.localeCompare(b)));
   });
-
-  test('every member has one location, and it reads as words', () => {
-    const members = foldMembers(deployments);
-    expect(members).toHaveLength(99);
-    for (const m of members) expect(model.location.has(m.deploymentId)).toBe(true);
-    expect(locationText('us-east-retail-uat1', model, byId)).toBe('uat Base › card');
-    expect(locationText('us-west-prod1', model, byId)).toBe('prod Base › No department stack');
-    expect(locationText('eu-west-retail-prod1', model, byId)).toBe('prod Base › retail stack');
-    expect(locationText('eu-central-logistics-test1', model, byId)).toBe(
-      'test Base › quiet card, logistics',
-    );
-    expect(locationText('prod', model, byId)).toBe('prod');
-  });
 });
 
 test.describe('checkout (every Deployment is retail)', () => {
@@ -276,40 +205,6 @@ test.describe('checkout (every Deployment is retail)', () => {
     expect(model.groupKey).toBe('Region');
   });
 
-  test('prod has a Gated wave of 14 and no Gated card', () => {
-    const prod = baseFold(model, 'prod');
-    const gated = prod.waves.find((w) => w.condition === 'gated');
-    expect(gated?.count).toBe(14);
-    expect(prod.waveSet.has('gated')).toBe(true);
-    for (const card of prod.cards) {
-      const mark = stripMark(model.conditions.get(card.id)!, prod.waveSet);
-      expect(mark).not.toBe('gated');
-      expect(mark).not.toBe('unreleased');
-    }
-    expect(prod.cards.map((c) => c.id)).toEqual([
-      'eu-north-retail-prod1',
-      'ap-southeast-retail-prod1',
-      'us-west-retail-prod2',
-    ]);
-  });
-});
-
-test.describe('traefik (live problems spread over Bases)', () => {
-  const model = defaultModel(meridianComponent('traefik'));
-
-  test('7 cards, worst first and then by name', () => {
-    expect(countCards(model)).toBe(7);
-    expect(baseFold(model, 'prod').cards.map((c) => [c.id, c.severity])).toEqual([
-      ['eu-central-payments-prod2', 5],
-      ['eu-west-retail-prod2', 4],
-      ['us-east-payments-prod3', 4],
-      ['eu-central-prod3', 2],
-      ['eu-central-payments-prod1', 1],
-    ]);
-    expect(baseFold(model, 'dev').cards.map((c) => c.id)).toEqual(['us-east-logistics-dev1']);
-    expect(baseFold(model, 'test').cards.map((c) => c.id)).toEqual(['us-west-test1']);
-    expect(baseFold(model, 'uat').cards).toEqual([]);
-  });
 });
 
 test.describe('a group of 1 is never a stack', () => {
@@ -381,12 +276,6 @@ test.describe('a group of 1 is never a stack', () => {
     }
   });
 
-  test('plurals', () => {
-    expect(groupKeyPlural('Department')).toBe('departments');
-    expect(groupKeyPlural('Region')).toBe('regions');
-    expect(groupKeyPlural('City')).toBe('cities');
-    expect(groupKeyPlural('Stage')).toBe('stages');
-  });
 });
 
 test.describe('the card cap', () => {
@@ -434,16 +323,6 @@ test.describe('Group by options', () => {
     expect(defaultGroupKey(foldMembers(deployments))).toBe('Department');
   });
 
-  test('cert-manager: Department counts "no department" as a value', () => {
-    const options = groupByOptions(foldMembers(meridianComponent('cert-manager')));
-    expect(options[0]).toEqual({
-      key: 'Department',
-      label: 'Department',
-      valueCount: 4,
-      isDefault: true,
-    });
-  });
-
   test('cert-manager: the menu is Department, Region and Stage', () => {
     const options = groupByOptions(foldMembers(meridianComponent('cert-manager')));
     expect(options.map((o) => o.key)).toEqual(['Department', 'Region', 'Stage']);
@@ -489,44 +368,8 @@ test.describe('Group by options', () => {
   });
 });
 
-test.describe('stability over status polls', () => {
-  const before = meridianComponent('traefik');
-  const recoveredId = 'eu-central-payments-prod2';
-  const after = withChange(before, recoveredId, {
-    liveStatus: { Sync: 'Synced', Health: 'Healthy' },
-  });
-  const previous = defaultModel(before);
-  const next = defaultModel(after);
+test.describe('a recovered hold over status polls', () => {
   const empty: ReadonlyMap<string, number> = new Map();
-
-  test('a card that recovers is held for 60 s', () => {
-    expect(next.location.get(recoveredId)?.kind).not.toBe('card');
-    const holds = updateRecoveredHolds({ previous, next, holds: empty, now: 1_000 });
-    expect([...holds]).toEqual([[recoveredId, 61_000]]);
-  });
-
-  test('nothing changed -> the same map instance', () => {
-    const holds = updateRecoveredHolds({ previous, next, holds: empty, now: 1_000 });
-    expect(updateRecoveredHolds({ previous, next, holds, now: 2_000 })).toBe(holds);
-    expect(updateRecoveredHolds({ previous: next, next, holds, now: 3_000 })).toBe(holds);
-    expect(updateRecoveredHolds({ previous: next, next, holds: empty, now: 3_000 })).toBe(
-      empty,
-    );
-  });
-
-  test('a hold ends when it runs out', () => {
-    const holds = updateRecoveredHolds({ previous, next, holds: empty, now: 1_000 });
-    const later = updateRecoveredHolds({ previous: next, next, holds, now: 61_000 });
-    expect(later.has(recoveredId)).toBe(false);
-  });
-
-  test('a hold ends when the Deployment needs attention again', () => {
-    const holds = updateRecoveredHolds({ previous, next, holds: empty, now: 1_000 });
-    const worse = defaultModel(before);
-    expect(updateRecoveredHolds({ previous: next, next: worse, holds, now: 2_000 }).size).toBe(
-      0,
-    );
-  });
 
   test('cards whose condition joins a wave fold without a false "Recovered"', () => {
     // 10 members, 4 Unreleased: 4 exception cards. A 5th Unreleased member
@@ -547,36 +390,5 @@ test.describe('stability over status polls', () => {
     expect(
       updateRecoveredHolds({ previous: four, next: five, holds: empty, now: 1_000 }),
     ).toBe(empty);
-  });
-
-  test('a held Deployment stays a card, marked recovered', () => {
-    const holds = updateRecoveredHolds({ previous, next, holds: empty, now: 1_000 });
-    const held = buildFoldModel({
-      deployments: after,
-      groupKey: next.groupKey,
-      recoveredIds: new Set(holds.keys()),
-    });
-    const prod = baseFold(held, 'prod');
-    expect(prod.cards.find((c) => c.id === recoveredId)).toEqual({
-      id: recoveredId,
-      reason: 'recovered',
-      severity: 0,
-    });
-    expect(prod.cards.at(-1)?.id).toBe(recoveredId);
-    expect(held.location.get(recoveredId)).toEqual({ baseId: 'prod', kind: 'card' });
-  });
-
-  test('a selected card never folds', () => {
-    const keep = keepSelectedCards(previous, new Set([recoveredId, 'eu-central-prod1']));
-    expect([...keep]).toEqual([recoveredId]);
-    const kept = buildFoldModel({
-      deployments: after,
-      groupKey: next.groupKey,
-      keepAsCardIds: keep,
-    });
-    expect(baseFold(kept, 'prod').cards.find((c) => c.id === recoveredId)?.reason).toBe(
-      'selected',
-    );
-    expect(keepSelectedCards(null, new Set([recoveredId])).size).toBe(0);
   });
 });

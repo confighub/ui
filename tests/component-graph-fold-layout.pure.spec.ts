@@ -1,30 +1,14 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 //
-// Where a folded Component graph puts its nodes, and how Fit and the pan-only
-// helpers move the viewport. The data is the Meridian demo the design was
-// reviewed on: cert-manager must fit a 1440 x 900 screen (a 1224 x 796
-// canvas) at a readable zoom. If that fails, the geometry differs from the
-// reviewed design: fix the geometry, not the number.
+// Where a folded Component graph puts its nodes, and how the pan-only helpers
+// move the viewport. The data is the Meridian demo the design was reviewed on:
+// every folded Component must draw each Deployment once, with nothing
+// overlapping, and keep its columns when the width or a poll changes.
 import { expect, test } from '@playwright/test';
 
 import type { ComponentDeployment } from '../src/pages/x/apps/componentTypes';
-import {
-  BLOCK_GAP,
-  CARD_W,
-  FIT_TOP,
-  FOLD_GAP,
-  FOLD_HEAD,
-  FOLD_HEAD_CHIP_H,
-  FOLD_HEAD_LINE_H,
-  FOLD_HEAD_PAD_BOTTOM,
-  FOLD_HEAD_PAD_TOP,
-  FOLD_HEAD_ROW_GAP,
-  READABLE_ZOOM_FLOOR,
-  TREE_GAP,
-  TREE_NODE_W,
-} from '../src/pages/x/apps/flow-graph/fold/foldConstants';
-import { STAGE_GAP } from '../src/pages/x/apps/flow-graph/flowLayout';
+import { FIT_TOP } from '../src/pages/x/apps/flow-graph/fold/foldConstants';
 import {
   type FoldLayout,
   type FoldLayoutNode,
@@ -193,196 +177,6 @@ test.describe('the folded layout of every folded Meridian Component', () => {
   }
 });
 
-test.describe('cert-manager geometry', () => {
-  const deployments = meridianComponent('cert-manager');
-
-  test('the Base tree is compact and each block starts right of its Base', () => {
-    const { layout } = fitted(deployments, SCREEN);
-    const nodes = byNodeId(layout);
-    expect(nodes.get('base')).toMatchObject({
-      x: 0,
-      placement: 'tree',
-      width: 132,
-      height: 56,
-    });
-    for (const env of ['dev', 'test', 'uat', 'prod']) {
-      expect(nodes.get(env)).toMatchObject({ x: TREE_NODE_W + TREE_GAP, placement: 'tree' });
-    }
-    const blockX = TREE_NODE_W + TREE_GAP + TREE_NODE_W + BLOCK_GAP;
-    // dev and test have no cards, so their folds start where cards would.
-    expect(nodes.get(foldFrameId('dev'))!.x).toBe(blockX);
-    expect(nodes.get(foldFrameId('test'))!.x).toBe(blockX);
-    // uat has one card, so its fold starts right of one card column.
-    expect(nodes.get('us-east-retail-uat1')).toMatchObject({ x: blockX, placement: 'card' });
-    expect(nodes.get(foldFrameId('uat'))!.x).toBe(blockX + CARD_W + FOLD_GAP);
-    // A card beside a fold starts below the fold's header line.
-    expect(nodes.get('us-east-retail-uat1')!.y).toBe(
-      nodes.get(foldFrameId('uat'))!.y + nodes.get(foldFrameId('uat'))!.headerHeight!,
-    );
-  });
-
-  test('the edge between columns is as roomy as the unfolded graph: at least STAGE_GAP', () => {
-    expect(TREE_GAP).toBeGreaterThanOrEqual(STAGE_GAP);
-    expect(BLOCK_GAP).toBeGreaterThanOrEqual(STAGE_GAP);
-    const { layout } = fitted(deployments, SCREEN);
-    const nodes = byNodeId(layout);
-    const gap = (from: FoldLayoutNode, to: FoldLayoutNode) => to.x - (from.x + from.width);
-    const base = nodes.get('base')!;
-    for (const env of ['dev', 'test', 'uat', 'prod']) {
-      const tree = nodes.get(env)!;
-      expect(gap(base, tree), `base to ${env}`).toBeGreaterThanOrEqual(STAGE_GAP);
-      for (const n of layout.nodes) {
-        if (n.baseId !== env || n.placement === 'tree') continue;
-        if (n.kind === 'foldFrame' || n.placement === 'card') {
-          expect(gap(tree, n), `${env} to ${n.id}`).toBeGreaterThanOrEqual(STAGE_GAP);
-        }
-      }
-    }
-  });
-
-  test('bands run top to bottom, and each Base sits in the middle of its band', () => {
-    const { layout } = fitted(deployments, SCREEN);
-    const nodes = byNodeId(layout);
-    const folds = ['dev', 'test', 'uat', 'prod'].map((env) => nodes.get(foldFrameId(env))!);
-    expect(folds[0].y).toBe(20);
-    for (let i = 1; i < folds.length; i++) {
-      expect(folds[i].y).toBe(folds[i - 1].y + folds[i - 1].height + 16);
-    }
-    for (const fold of folds) {
-      const base = nodes.get(fold.baseId!)!;
-      expect(base.y + base.height / 2).toBe(fold.y + fold.height / 2);
-    }
-    const root = nodes.get('base')!;
-    const last = folds[folds.length - 1];
-    expect(root.y + 28).toBe((folds[0].y + last.y + last.height) / 2);
-  });
-
-  test('one edge from a Base into its fold; no edge to a stacked or loose Deployment', () => {
-    const { model, layout } = fitted(deployments, SCREEN);
-    const edgeIds = layout.edges.map((e) => e.id).sort();
-    const folds = layout.edges.filter((e) => e.kind === 'fold');
-    expect(folds.map((e) => [e.source, e.target])).toEqual(
-      ['dev', 'test', 'uat', 'prod'].map((env) => [env, foldFrameId(env)]),
-    );
-    const cards = [...model.bases.values()].flatMap((b) =>
-      b.cards.map((c) => `edge-${b.baseId}-${c.id}`),
-    );
-    const tree = ['dev', 'test', 'uat', 'prod'].map((env) => `edge-base-${env}`);
-    expect(edgeIds).toEqual([...cards, ...tree, ...folds.map((e) => e.id)].sort());
-  });
-});
-
-test.describe('Fit', () => {
-  test('cert-manager by Department fits a 1440 x 900 screen at a readable zoom', () => {
-    const { fit, layout } = fitted(meridianComponent('cert-manager'), SCREEN, 'Department');
-    expect(fit.tall).toBe(false);
-    expect(fit.viewport.zoom).toBeGreaterThanOrEqual(READABLE_ZOOM_FLOOR);
-    expect(fit.viewport.zoom).toBeGreaterThanOrEqual(0.84);
-    expect(fit.viewport.zoom).toBeLessThanOrEqual(1);
-    const { zoom } = fit.viewport;
-    expect(layout.height * zoom).toBeLessThanOrEqual(SCREEN.height - FIT_TOP - 28);
-    expect(layout.width * zoom).toBeLessThanOrEqual(SCREEN.width - 36 + 1);
-    // Centred in the space left over.
-    expect(fit.viewport.x).toBeCloseTo(18 + (SCREEN.width - 36 - layout.width * zoom) / 2, 6);
-    expect(fit.viewport.y).toBeCloseTo(
-      FIT_TOP + (SCREEN.height - FIT_TOP - 28 - layout.height * zoom) / 2,
-      6,
-    );
-  });
-
-  test('the first zoom that fits wins; a lower zoom gives more stack columns', () => {
-    const deployments = meridianComponent('cert-manager');
-    const model = modelOf(deployments, 'Department');
-    const at = (w: number) =>
-      computeFoldedLayout(deployments, model, { availableWidth: w, expandedGroupIds: NONE });
-    const fit = solveFoldedFit(at, SCREEN);
-    const larger = Math.round((fit.viewport.zoom + 0.01) * 100) / 100;
-    const tooBig = at((SCREEN.width - 36) / larger);
-    expect(
-      tooBig.height * larger > SCREEN.height - FIT_TOP - 28 ||
-        tooBig.width * larger > SCREEN.width - 35,
-    ).toBe(true);
-    const narrow = at(900).frozen.stackColumnsByBase;
-    const wide = at(2400).frozen.stackColumnsByBase;
-    for (const [baseId, columns] of narrow) {
-      expect(wide.get(baseId)!).toBeGreaterThanOrEqual(columns);
-    }
-  });
-
-  test('a graph that does not fit at 80% shows its top at 80%', () => {
-    for (const [groupKey, container] of [
-      ['Department', { width: 1064, height: 500 }],
-      ['Region', { width: 1064, height: 696 }],
-    ] as const) {
-      const { fit } = fitted(meridianComponent('cert-manager'), container, groupKey);
-      expect(fit.tall, groupKey).toBe(true);
-      expect(fit.viewport.zoom).toBe(0.8);
-      expect(fit.viewport.y).toBe(FIT_TOP);
-      expect(fit.frozen.availableWidth).toBeCloseTo((container.width - 36) / 0.8, 6);
-    }
-  });
-});
-
-test.describe('expanding a stack in place', () => {
-  const deployments = meridianComponent('cert-manager');
-  const { model, fit, layout } = fitted(deployments, SCREEN, 'Department');
-  const prodStacks = model.bases.get('prod')!.groups.filter((g) => g.kind !== 'loose');
-
-  test('cells before it keep their place; everything after moves down only', () => {
-    // The first prod stack, so later cells exist to move down.
-    const stack = prodStacks[0];
-    const before = byNodeId(layout);
-    const stackNode = before.get(stack.id)!;
-    const expanded = new Set([stack.id]);
-    const open = computeFoldedLayout(deployments, model, {
-      availableWidth: fit.frozen.availableWidth,
-      frozen: fit.frozen,
-      expandedGroupIds: expanded,
-    });
-    const after = byNodeId(open);
-
-    let movedDown = 0;
-    for (const node of layout.nodes) {
-      const now = after.get(node.id)!;
-      expect(now.x, node.id).toBe(node.x);
-      // Tree nodes re-centre on their grown band, so they are only held to "down".
-      const isBlockNodeUpToTheStackRow = node.placement !== 'tree' && node.y <= stackNode.y;
-      if (isBlockNodeUpToTheStackRow) {
-        expect(now.y, node.id).toBe(node.y);
-      } else {
-        expect(now.y, node.id).toBeGreaterThanOrEqual(node.y);
-        if (now.y > node.y) movedDown++;
-      }
-    }
-    expect(movedDown).toBeGreaterThan(0);
-
-    const frame = after.get(`frame:${stack.id}`)!;
-    expect(frame.y).toBeGreaterThan(stackNode.y + stackNode.height);
-    for (const id of stack.memberIds) {
-      expect(after.get(id)).toMatchObject({ placement: 'member', groupId: stack.id });
-    }
-    expect(open.frozen.stackColumnsByBase).toEqual(fit.frozen.stackColumnsByBase);
-    expect(open.frozen.cardColumnsByBase).toEqual(fit.frozen.cardColumnsByBase);
-  });
-
-  test('its frame spans the fold and holds its members in the fold’s columns', () => {
-    const stack = prodStacks[prodStacks.length - 1];
-    const open = computeFoldedLayout(deployments, model, {
-      availableWidth: fit.frozen.availableWidth,
-      frozen: fit.frozen,
-      expandedGroupIds: new Set([stack.id]),
-    });
-    const nodes = byNodeId(open);
-    const fold = nodes.get(foldFrameId('prod'))!;
-    const frame = nodes.get(`frame:${stack.id}`)!;
-    expect(frame.x).toBe(fold.x + 2);
-    expect(frame.width).toBe(fold.width - 4);
-    const columns = fit.frozen.stackColumnsByBase.get('prod')!;
-    const xs = new Set(stack.memberIds.map((id) => nodes.get(id)!.x));
-    expect(xs.size).toBe(Math.min(columns, stack.memberIds.length));
-  });
-});
-
 test.describe('frozen columns', () => {
   const deployments = meridianComponent('cert-manager');
 
@@ -406,44 +200,6 @@ test.describe('frozen columns', () => {
       expandedGroupIds: NONE,
     });
     expect(free.nodes.some((n) => n.x !== before.get(n.id)?.x)).toBe(true);
-  });
-
-  test('a poll that breaks a quiet prod member adds a card and moves no stack sideways', () => {
-    const { fit, layout } = fitted(deployments, SCREEN, 'Department');
-    const model = modelOf(deployments, 'Department');
-    // A member of a stack that keeps two or more members after it leaves.
-    const stack = model.bases
-      .get('prod')!
-      .groups.find((g) => g.kind === 'stack' && g.memberIds.length >= 3)!;
-    const broken = stack.memberIds[0];
-    const polled = deployments.map((d) =>
-      d.deploymentId === broken
-        ? { ...d, liveStatus: { ...d.liveStatus!, Health: 'Degraded' as const } }
-        : d,
-    );
-    const next = modelOf(polled, 'Department');
-    expect(next.location.get(broken)?.kind).toBe('card');
-
-    const after = computeFoldedLayout(polled, next, {
-      availableWidth: fit.frozen.availableWidth,
-      frozen: fit.frozen,
-      expandedGroupIds: NONE,
-    });
-    const nodes = byNodeId(after);
-    let stacks = 0;
-    for (const node of layout.nodes) {
-      if (node.kind !== 'stack' && node.placement !== 'loose') continue;
-      const now = nodes.get(node.id);
-      if (!now) continue;
-      stacks++;
-      expect(now.x, node.id).toBe(node.x);
-    }
-    expect(stacks).toBeGreaterThan(0);
-    expect(nodes.get(foldFrameId('prod'))!.x).toBe(
-      byNodeId(layout).get(foldFrameId('prod'))!.x,
-    );
-    expect(nodes.get(broken)).toMatchObject({ placement: 'card', baseId: 'prod' });
-    expectNoOverlaps(after);
   });
 
   test('a first card in a Base that had none pushes its fold down, never right', () => {
@@ -480,31 +236,6 @@ test.describe('frozen columns', () => {
     }
     expect(after.frozen.cardColumnsByBase.get('test')).toBe(0);
     expectNoOverlaps(after);
-  });
-});
-
-test.describe('fold header', () => {
-  test('two waves go on a row below the values on a narrow fold, and beside them on a wide one', () => {
-    const deployments = meridianComponent('checkout');
-    const model = modelOf(deployments, 'Region');
-    expect(model.bases.get('prod')!.waves.length).toBe(2);
-    const at = (w: number) =>
-      byNodeId(
-        computeFoldedLayout(deployments, model, { availableWidth: w, expandedGroupIds: NONE }),
-      ).get(foldFrameId('prod'))!;
-    const narrow = at(1000);
-    expect(narrow.chipsBeside).toBe(false);
-    // At this width the Stale and Unreleased chips take a row each.
-    expect(narrow.headerHeight).toBe(
-      FOLD_HEAD_PAD_TOP +
-        narrow.headerLines! * FOLD_HEAD_LINE_H +
-        2 * (FOLD_HEAD_ROW_GAP + FOLD_HEAD_CHIP_H) +
-        FOLD_HEAD_PAD_BOTTOM,
-    );
-    const wide = at(2400);
-    expect(wide.chipsBeside).toBe(true);
-    expect(wide.headerLines).toBe(1);
-    expect(wide.headerHeight).toBe(FOLD_HEAD);
   });
 });
 

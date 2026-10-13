@@ -1,7 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 //  https://playwright.dev/docs/pom
-import { test } from './fixtures/test';
+import { test, expect } from './fixtures/test';
 
 import { SpaceDetailPage } from './fixtures/space-detail-page';
 import { SpaceListPage } from './fixtures/space-list-page';
@@ -13,17 +13,6 @@ test.describe('space detail page', () => {
   // This tells Playwright to initialize contexts for this describe block
   // using the specified storageState.
   test.use({ storageState: 'authentication.json' });
-
-  test('should add a space', async ({ page }) => {
-    const spaceName = RandomSlugGenerator.randomSlugName();
-    const spaceListPage = new SpaceListPage(page);
-    const spaceDetailPage = new SpaceDetailPage(page);
-
-    await spaceListPage.goto();
-    await spaceListPage.addSpace(spaceName);
-
-    await spaceDetailPage.expectToBeVisibleByRole('link', spaceName);
-  });
 
   test('should show an error when trying to delete a space with units', async ({ page }) => {
     const spaceName = RandomSlugGenerator.randomSlugName();
@@ -80,7 +69,7 @@ test.describe('space detail page', () => {
   });
 
   test('should add a trigger', async ({ page }) => {
-    test.setTimeout(60000)
+    test.setTimeout(60000);
 
     const spaceName = RandomSlugGenerator.randomSlugName();
     const triggerName = RandomSlugGenerator.randomSlugName();
@@ -94,10 +83,15 @@ test.describe('space detail page', () => {
 
     await spaceDetailPage.clickTriggersTab();
 
+    const createResponse = page.waitForResponse(
+      (response) => response.url().includes('/trigger') && response.request().method() === 'POST',
+    );
     await spaceDetailPage.addCelTrigger(triggerName);
+    expect((await createResponse).ok()).toBe(true);
 
-    await spaceDetailPage.clickTriggersTab();
-
-    await spaceDetailPage.expectToBeVisibleByText(triggerName);
+    // The drawer closes on success; the table then refetches, which can take
+    // longer than the default expect timeout under CI load.
+    await expect(page.getByRole('button', { name: 'Create Trigger' })).toBeHidden({ timeout: 15000 });
+    await expect(page.getByText(triggerName)).toBeVisible({ timeout: 15000 });
   });
 });

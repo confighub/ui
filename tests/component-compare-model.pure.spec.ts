@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 //
 // The N-deployment compare model, exercised directly — no page, no browser, no
-// fixtures, the same pure-derivation pattern as `rollout-outcome.pure.spec.ts`.
+// fixtures, the same pure-derivation pattern as `change-order-outcome.pure.spec.ts`.
 //
 // WHY THESE ARE THE ASSERTIONS THAT MATTER. Every claim this grid makes is a
 // claim about two values being the same value, and each of the four ways it can
@@ -24,11 +24,10 @@
 
 import { expect, test } from '@playwright/test';
 
+import { containerImageOf } from '../src/pages/x/apps/compare/containerImagePaths';
 import {
   buildCompareResult,
-  elideSharedPrefix,
   filterRows,
-  formatLiteral,
   rowDiffers,
   type CompareColumnInput,
   type CompareLeafRow,
@@ -242,16 +241,6 @@ test.describe('cell states', () => {
     expect(missing?.literal).toBeUndefined();
   });
 
-  test('quotes are spent only where the bare text would read as another type', () => {
-    expect(formatLiteral('')).toBe('""');
-    expect(formatLiteral('true')).toBe('"true"');
-    expect(formatLiteral('1500m')).toBe('1500m');
-    expect(formatLiteral('8080')).toBe('"8080"');
-    expect(formatLiteral(8080)).toBe('8080');
-    expect(formatLiteral(true)).toBe('true');
-    expect(formatLiteral(null)).toBe('null');
-  });
-
   test('a column that has not loaded says so instead of reading as unset', () => {
     const result = buildCompareResult([
       COLUMNS[0] as CompareColumnInput,
@@ -357,38 +346,6 @@ test.describe('column order — first appearance, left to right, not slot A', ()
   });
 });
 
-test.describe('common-prefix elision', () => {
-  test('the shared head goes and the differing tail survives', () => {
-    const prefix = elideSharedPrefix([
-      'ghcr.io/confighubai/api:v0.4.15',
-      'ghcr.io/confighubai/api:v0.5.0-rc.2',
-    ]);
-    expect(prefix).toBe('ghcr.io/confighubai/api:v0.');
-
-    const result = buildCompareResult(COLUMNS);
-    const api = leafAt(result, 'spec.template.spec.containers[api].image');
-    expect(api.elidedPrefix).toBe('ghcr.io/confighubai/api:v0.');
-    expect(api.cells[0]?.display).toBe('…4.15');
-    expect(api.cells[1]?.display).toBe('…5.0-rc.2');
-    // The whole value is kept, for the title and for copying.
-    expect(api.cells[0]?.literal).toBe('ghcr.io/confighubai/api:v0.4.15');
-  });
-
-  test('short values are left alone — nothing on the row is at risk of truncating', () => {
-    expect(elideSharedPrefix(['info', 'infra'])).toBe('');
-    expect(elideSharedPrefix(['1Gi', '512Mi'])).toBe('');
-  });
-
-  test('a prefix is cut back to a token boundary, never mid-word', () => {
-    const prefix = elideSharedPrefix([
-      'registry.example.com/team/service-alpha',
-      'registry.example.com/team/service-beta',
-    ]);
-    expect(prefix.endsWith('-')).toBe(true);
-    expect(prefix).toBe('registry.example.com/team/service-');
-  });
-});
-
 test.describe('documents', () => {
   test('two resources in one unit are compared separately, never merged', () => {
     const multi = `apiVersion: v1
@@ -421,5 +378,31 @@ spec:
     const names = leaves(result).filter((leaf) => leaf.identityPath === 'metadata.name');
     expect(names).toHaveLength(2);
     for (const row of names) expect(rowDiffers(row.cells)).toBe(false);
+  });
+});
+
+// The hoist reads the IDENTITY path, so it must keep working when a deployment
+// carries an extra container and the indices no longer line up — the case
+// `imageRef.ts`'s positional `parseImagePath` cannot handle. `DEV` carries
+// `debug` first for exactly that reason.
+test.describe('the image hoist', () => {
+  test('a container image is recognised by its container name', () => {
+    const api = leafAt(buildCompareResult(COLUMNS), 'spec.template.spec.containers[api].image');
+    expect(containerImageOf(api)).toEqual({ list: 'containers', container: 'api' });
+  });
+
+  test('a field that merely ends in something else is not hoisted', () => {
+    const result = buildCompareResult(COLUMNS);
+    expect(containerImageOf(leafAt(result, 'spec.template.spec.containers[api].name'))).toBeNull();
+    expect(containerImageOf(leafAt(result, 'spec.replicas'))).toBeNull();
+  });
+
+  test('it still recognises the container when one deployment holds an extra one', () => {
+    const hoisted = leaves(buildCompareResult(COLUMNS))
+      .map(containerImageOf)
+      .filter((image): image is { list: string; container: string } => image !== null)
+      .map((image) => image.container)
+      .sort();
+    expect(hoisted).toEqual(['api', 'debug', 'otel']);
   });
 });

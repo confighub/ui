@@ -75,8 +75,7 @@ const DEV_NODE_CSS = '[data-testid^="flow-node-"][data-variant="dev"]:not([data-
 // ALREADY-selected node clears the selection instead of doing nothing).
 // deployAndRelease.tsx's own last real click (`release-select-base`) selects
 // base and nothing after it deselects, so a user who takes these tours back
-// to back in order — the exact chain tour-full-walkthrough.spec.ts drives —
-// arrives here with base already selected. A plain `click` advance is
+// to back in order arrives here with base already selected. A plain `click` advance is
 // blind to that: it re-fires the click, the toggle clears the selection,
 // and every step after it (open Functions, search, pick, fill, Invoke)
 // proceeds with `selectedUnits` empty — `InvokerContent.tsx`'s

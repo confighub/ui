@@ -113,7 +113,7 @@ export const BottomBar = styled(Box)({
  * task #34). Shared, literally, by the Upgrade button and the Space settings
  * sheet's Save button in `ComponentSidePane` (both spread this same object, so
  * they cannot visually drift apart the way two hand-copied sx literals
- * could), and moved here (a pure move, no behaviour change) so the rollout
+ * could), and moved here (a pure move, no behaviour change) so the ChangeOrder
  * footer's buttons can share the exact same treatment per the user's
  * "same style footer buttons" feedback — `ComponentSidePane.tsx` stays shut
  * for everything else.
@@ -139,10 +139,10 @@ export const bottomBarPrimaryButtonSx = {
   // says "there is nothing here"; a greyed button says "there is something
   // here and it is not available right now".
   //
-  // Lives on the SHARED object, so the rollout footer and auto mode's own
+  // Lives on the SHARED object, so the ChangeOrder footer and auto mode's own
   // Save/Upgrade buttons cannot drift apart — the two were byte-identical in
   // every other state (measured: same purple, radius, weight and height), and
-  // a rollout-only override made the disabled state the one place they
+  // a ChangeOrder-only override made the disabled state the one place they
   // disagreed.
   '&.Mui-disabled': {
     backgroundColor: componentTheme.bgInset,

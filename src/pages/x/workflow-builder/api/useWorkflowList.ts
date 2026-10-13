@@ -8,7 +8,7 @@
  * `useChangeWorkflowNames` gives: a `where` keyed on whatever is currently visible
  * mints a fresh cache entry per filter, per sort and per navigation, and no two of them
  * can serve each other. The unparameterised list is a SINGLE entry every view answers
- * from. An organisation's workflows are few -- they are definitions, not rollouts -- so
+ * from. An organisation's workflows are few -- they are definitions, not ChangeOrders -- so
  * reading all of them costs less than repeatedly reading the right subset.
  *
  * THE GOVERNED COUNT IS OFF BY DEFAULT, AND THAT IS THE INTERESTING PART.
@@ -20,7 +20,7 @@
  *
  * The cheapness argument for the workflow list above does not extend to it, and it is
  * worth being explicit about that rather than letting one justification appear to cover
- * both. Workflows are few BECAUSE they are definitions rather than rollouts -- which is
+ * both. Workflows are few BECAUSE they are definitions rather than ChangeOrders -- which is
  * precisely what makes change orders the numerous thing. Reading every change order in an
  * organisation to display one number is cheap at a hundred and not at ten thousand, and
  * `select` trims the width of the response without changing how many rows come back.

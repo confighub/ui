@@ -98,8 +98,8 @@ function Sentence({ api }: { api: LoadedBuilderApi }) {
         </p>
         <p className='over'>
           Prerequisites are evaluated over the Stage ahead of the one being entered, and there is no
-          Stage ahead of this one: the change is already in the change order&rsquo;s base Space when
-          the rollout opens.
+          Stage ahead of this one: the change is already in the ChangeOrder&rsquo;s base Space when
+          the ChangeOrder opens.
         </p>
       </div>
     );
@@ -137,7 +137,7 @@ function Sentence({ api }: { api: LoadedBuilderApi }) {
       <p className='s' aria-live='polite'>
         {isFinal ? (
           <>
-            {'For the rollout to read as '}
+            {'For the ChangeOrder to read as '}
             <strong>complete</strong>
             {', every variant in '}
             <strong>{over}</strong>
@@ -438,7 +438,7 @@ function CustomRow({
               </>
             ) : (
               <span className='fhelp'>
-                Evaluated against the Space under consideration, the change order being promoted, and
+                Evaluated against the Space under consideration, the ChangeOrder being promoted, and
                 that Space&rsquo;s Release. Compiled when the workflow is written, not at the
                 promotion it would hold up.
               </span>

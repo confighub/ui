@@ -271,20 +271,20 @@ TopNavToolsButton.displayName = 'TopNavToolsButton';
 // ============================================================================
 
 /**
- * Whether the Rollouts nav entry is shown.
+ * Whether the ChangeOrders nav entry is shown.
  *
  * ON, by an explicit product decision taken with the limitation in view. The
- * console is built and verified (`ui/tests/rollouts-page.spec.ts`, which
- * tracks this flag directly, and `ui/tests/rollouts-populated.spec.ts`), but on a
- * server that does not return `InScopeSpaceIDs` every row reports "Not
- * reported" rather than its stages. That was the reason this stayed off — the
- * first impression it gives someone without context. The user has seen that
- * state and the populated-render evidence, and asked for the entry anyway.
+ * console is covered by `ui/tests/change-orders-console.spec.ts`, which also
+ * checks this entry, but on a server that does not return `InScopeSpaceIDs`
+ * every row reports "Not reported" rather than its stages. That was the reason
+ * this stayed off — the first impression it gives someone without context. The
+ * user has seen that state and the populated-render evidence, and asked for the
+ * entry anyway.
  *
  * Kept as a flag rather than inlined so it can go back to `false` in one
  * character if the data gap turns out to be longer-lived than expected.
  */
-const SHOW_ROLLOUTS_NAV = true;
+const SHOW_CHANGE_ORDERS_NAV = true;
 
 const ConfigurationItems: INavItem[] = [
   {
@@ -294,12 +294,12 @@ const ConfigurationItems: INavItem[] = [
     disable: false,
   },
   // Sits between Components and Units, per the approved design.
-  ...(SHOW_ROLLOUTS_NAV
+  ...(SHOW_CHANGE_ORDERS_NAV
     ? [
         {
-          text: 'Rollouts',
+          text: 'ChangeOrders',
           component: <RocketLaunchIcon sx={{ color: 'white' }} />,
-          navigate: `/rollouts`,
+          navigate: `/change-orders`,
           disable: false,
         },
       ]
