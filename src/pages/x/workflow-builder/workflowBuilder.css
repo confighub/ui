@@ -539,6 +539,7 @@
 .wfb .cpsent .over{font-size:11px;line-height:1.5;color:var(--ink-subtle);margin-top:7px}
 .wfb .cpsent .over .mono{color:var(--ink-muted)}
 .wfb .cpsent.none .s{color:var(--ink-muted)}
+.wfb .cpsent .s.rel, .wfb .cpsent.none .s.rel{margin-top:7px;color:var(--ink)}
 
 .wfb .cplist{padding:0;flex:1}
 .wfb .cpgroup{padding:7px 12px 3px;font-size:10.5px;color:var(--ink-subtle);line-height:1.45;border-top:1px solid var(--line)}
@@ -576,6 +577,8 @@
    its own. Clamped to one line rather than reflowing the column; the full
    text is still there, in `title`. */
 .wfb .cpwhat.clamp{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wfb .cprel{display:flex;align-items:flex-start;gap:6px;font-size:11px;line-height:1.5;color:var(--ink-muted);margin-top:5px;padding-left:21px;cursor:pointer}
+.wfb .cprel input[type=checkbox]{margin:2px 0 0;width:13px;height:13px;accent-color:var(--accent);flex:none}
 
 .wfb .cpedit{margin-top:9px;margin-left:21px;padding-top:9px;border-top:1px dashed var(--line-strong)}
 .wfb .cpglobal{display:flex;gap:6px;font-size:11px;line-height:1.5;color:var(--wait);margin:0 0 9px}

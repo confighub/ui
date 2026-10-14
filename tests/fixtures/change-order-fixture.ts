@@ -85,6 +85,7 @@ import type {
   ReleaseLiveStatus,
 } from '@confighub/rtk-query';
 
+import { changeOrderPath } from '../../src/pages/change-orders/changeOrderAddress';
 import { ApiHelper } from './api-helper';
 import { RandomSlugGenerator } from './utils/random-slug-generator';
 import { hubApi } from './test';
@@ -256,6 +257,8 @@ export interface ChangeOrderFixture {
   changeOrderSlug: string;
   /** The Space the ChangeOrder resides in — `base` unless `interval: 'none'`. */
   changeOrderSpaceId: string;
+  /** The ChangeOrder's page, `/change-orders/:space/:slug`, to append a stage to. */
+  changeOrderPath: string;
   /**
    * The ChangeWorkflow governing the ChangeOrder, or `undefined` under
    * `workflow: 'none'`. The ChangeOrder carries a frozen copy of this
@@ -1025,6 +1028,7 @@ export async function buildChangeOrderFixture(
     // it carry nothing. It is still in the Component, so it is in scope and the
     // component's lanes render exactly as they otherwise would.
     let changeOrderSpaceId = spaces.base.spaceId;
+    let changeOrderSpaceSlug = spaces.base.slug;
     if (interval === 'none') {
       const orders = await api.createSpace({
         space: {
@@ -1034,6 +1038,7 @@ export async function buildChangeOrderFixture(
         } as never,
       });
       changeOrderSpaceId = (orders as { SpaceID: string }).SpaceID;
+      changeOrderSpaceSlug = `${appLabel}-orders`;
       createdSpaceIds.push(changeOrderSpaceId);
     }
 
@@ -1155,6 +1160,7 @@ export async function buildChangeOrderFixture(
       changeOrderId,
       changeOrderSlug,
       changeOrderSpaceId,
+      changeOrderPath: changeOrderPath(changeOrderSpaceSlug, changeOrderSlug),
       changeWorkflowId,
       workflowSpaceId,
       spaces,

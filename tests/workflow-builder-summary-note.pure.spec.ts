@@ -25,7 +25,7 @@ import type { UnresolvedWorkflow } from '../src/pages/x/workflow-builder/model';
 import type { Stage } from '../src/pages/x/workflow-builder/types';
 
 function stage(name: string): Stage {
-  return { id: `st-${name}`, name, where: 'Labels.Variant = "canary"', prereqs: [] };
+  return { id: `st-${name}`, name, where: 'Labels.Variant = "canary"', prereqs: [], releasePrereqs: [] };
 }
 
 /* No resolutions are ever passed below, so no Stage here can produce a
@@ -43,6 +43,7 @@ function workflow(stages: Stage[] = []): UnresolvedWorkflow {
     stages,
     final: { prereqs: [] },
     custom: [],
+    attestations: [],
   };
 }
 

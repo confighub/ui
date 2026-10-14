@@ -80,7 +80,7 @@ test.describe('the Complete step', () => {
 
   /** The detail screen, settled. The summary region is the page's own "rendered" signal. */
   async function openChangeOrder(page: Page) {
-    await page.goto(`/change-orders/${fx.changeOrderSlug}`);
+    await page.goto(fx.changeOrderPath);
     await expect(page.getByRole('region', { name: 'ChangeOrder summary' })).toBeVisible({
       timeout: 30_000,
     });
@@ -102,7 +102,7 @@ test.describe('the Complete step', () => {
      * so a rail node linking to the printed one would route to a stage nobody
      * declared and select nothing.
      */
-    await expect(page).toHaveURL(new RegExp(`/change-orders/[^/]+/${COMPLETE_STAGE_ID}$`));
+    await expect(page).toHaveURL(new RegExp(`${fx.changeOrderPath}/${COMPLETE_STAGE_ID}$`));
     await expect(node).toHaveAttribute('aria-pressed', 'true');
 
     const panel = page.getByTestId('complete-step-detail');

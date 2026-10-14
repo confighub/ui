@@ -12,6 +12,8 @@
  */
 
 import { BUILTIN_NAMES, COMPLETE_LABEL, IMPLICIT_GATE } from './vocabulary';
+import type { ChangeWorkflowAttestationPrerequisite } from '@confighub/rtk-query';
+
 import type { SpaceRow, StageResolution } from './api/resolution/stageResolution';
 import type { MessagePart, Problem, StageProblem, Stage, Workflow } from './types';
 
@@ -68,8 +70,63 @@ export function andJoinText(parts: string[]): string {
   return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
 }
 
+/** Every name the workflow declares: its custom prerequisites, then its attestation ones. */
 export function declaredNames(wf: UnresolvedWorkflow): string[] {
-  return wf.custom.map((c) => c.name);
+  return [...wf.custom.map((c) => c.name), ...attestationNames(wf)];
+}
+
+export function attestationNames(wf: UnresolvedWorkflow): string[] {
+  return wf.attestations.map((a) => a.Name);
+}
+
+export function isAttestationName(wf: UnresolvedWorkflow, name: string): boolean {
+  return wf.attestations.some((a) => a.Name === name);
+}
+
+/** Which Stages require a prerequisite of their Releases. Only an attestation one can be. */
+export function releasedBy(wf: UnresolvedWorkflow, name: string): string[] {
+  return wf.stages.filter((s) => s.releasePrereqs.includes(name)).map((s) => s.name);
+}
+
+/** `a`, `a or b`, `a, b or c`: any one of them, where `andJoinText` would read as all. */
+function orJoinText(parts: string[]): string {
+  if (parts.length <= 1) return parts.join('');
+  return `${parts.slice(0, -1).join(', ')} or ${parts[parts.length - 1]}`;
+}
+
+/**
+ * What an attestation prerequisite requires, in a sentence, with the server's defaults
+ * applied: `Type` is Approval when empty and `Count` is 1 when zero.
+ *
+ * `nameOf` turns a User ID into what a reader calls that User. The Groups are counted rather
+ * than named, since a Group's name is readable only by its members.
+ */
+export function attestationSummary(
+  a: ChangeWorkflowAttestationPrerequisite,
+  nameOf: (userId: string) => string,
+): string {
+  const type = a.Type?.trim() || 'Approval';
+  const count = a.Count && a.Count > 0 ? a.Count : 1;
+  const users = (a.FromUserIDs ?? []).map(nameOf);
+  const groups = a.FromGroupIDs ?? [];
+
+  let what: string;
+  if (a.DistinctGroups && groups.length) {
+    what = `One ${type} from a member of each of ${plural(groups.length, 'group', 'groups')}`;
+  } else {
+    const from: string[] = [];
+    if (users.length) from.push(orJoinText(users));
+    if (groups.length) from.push(`members of ${plural(groups.length, 'group', 'groups')}`);
+    what = from.length
+      ? `${plural(count, type, `${type}s`)} from ${from.join(' or ')}`
+      : `${plural(count, type, `${type}s`)} from anyone who may attest in the Space`;
+  }
+
+  const rules = [`${what} on each Revision.`];
+  rules.push(a.AllowAuthors ? 'Authors of the change count.' : 'Authors of the change do not count.');
+  if (a.MaxAge) rules.push(`No older than ${a.MaxAge}.`);
+  if (a.IgnoreFail) rules.push('A Fail does not block.');
+  return rules.join(' ');
 }
 
 /** Which Stages name a prerequisite today, by the label a reader sees. */
@@ -212,6 +269,24 @@ export function definitionFaults(wf: UnresolvedWorkflow): Problem[] {
     }
   });
 
+  wf.stages.forEach((st) => {
+    const n = (st.name || '').trim();
+    const undeclared = st.releasePrereqs.filter((pr) => !isAttestationName(wf, pr));
+    if (n && undeclared.length) {
+      out.push({
+        sev: 'problem',
+        msg: [
+          { text: 'Stage ' },
+          { text: n, code: true },
+          { text: ' requires ' },
+          { text: undeclared[0], code: true },
+          { text: ' of its Releases, which no attestation prerequisite declares.' },
+        ],
+        go: { kind: 'stage', id: st.id },
+      });
+    }
+  });
+
   wf.final.prereqs.forEach((pr) => {
     if (!isKnownGate(wf, pr)) {
       out.push({
@@ -242,6 +317,18 @@ export function definitionFaults(wf: UnresolvedWorkflow): Problem[] {
         });
       }
       cseen[n] = true;
+
+      if (isAttestationName(wf, n)) {
+        out.push({
+          sev: 'problem',
+          msg: [
+            { text: 'A custom prerequisite and an attestation prerequisite are both named ' },
+            { text: n, code: true },
+            { text: '.' },
+          ],
+          go,
+        });
+      }
 
       if (BUILTIN_NAMES.includes(n)) {
         out.push({
@@ -296,6 +383,22 @@ export function definitionFaults(wf: UnresolvedWorkflow): Problem[] {
           { text: ` is named by no Stage and not by ${COMPLETE_LABEL}, so it gates nothing.` },
         ],
         go,
+      });
+    }
+  });
+
+  wf.attestations.forEach((a) => {
+    if (usedBy(wf, a.Name).length === 0 && releasedBy(wf, a.Name).length === 0) {
+      out.push({
+        sev: 'note',
+        msg: [
+          { text: 'Attestation prerequisite ' },
+          { text: a.Name, code: true },
+          {
+            text: ` is named by no Stage, no Stage's Releases and not by ${COMPLETE_LABEL}, so it gates nothing.`,
+          },
+        ],
+        go: null,
       });
     }
   });
@@ -448,7 +551,7 @@ export function litStageNames(wf: Workflow, name: string | null, implicit: boole
     return out;
   }
   wf.stages.forEach((st) => {
-    if (st.prereqs.includes(name)) out.add(st.name);
+    if (st.prereqs.includes(name) || st.releasePrereqs.includes(name)) out.add(st.name);
   });
   if (wf.final.prereqs.includes(name)) out.add(COMPLETE_LABEL);
   return out;

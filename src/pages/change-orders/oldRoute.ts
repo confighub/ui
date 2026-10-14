@@ -11,6 +11,9 @@
  * link opens the same step instead of falling through to the default stage.
  * A real stage name passes through unchanged.
  *
+ * The old address carries no Space, so it is sent to the slug-only form, which
+ * the page resolves to the full address (`changeOrderAddress.ts`).
+ *
  * PURE, so `change-orders-old-route.pure.spec.ts` can check it without a page.
  */
 

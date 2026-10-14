@@ -278,7 +278,7 @@ async function mockApi(page: Page, records: Records): Promise<void> {
 
 async function openChangeOrder(page: Page, records: Records) {
   await mockApi(page, records);
-  await page.goto(`/change-orders/${SLUG}`);
+  await page.goto(`/change-orders/checkout-base/${SLUG}`);
   const card = page.getByRole('region', { name: 'ChangeOrder history' });
   await expect(card).toBeVisible({ timeout: 30_000 });
   return card;

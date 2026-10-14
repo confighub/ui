@@ -26,7 +26,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
+import { Link as RouterLink, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
 import Tooltip from '@mui/material/Tooltip';
@@ -116,6 +116,7 @@ import {
   changeOrderType,
 } from './changeOrdersTokens';
 import { ChangeOrderBlockedResources, ChangeOrderRefusals } from './changeOrderRefusals';
+import { changeOrderPath } from './changeOrderAddress';
 import { useChangeOrderDetail, type ChangeOrderSpace } from './useChangeOrderDetail';
 import Snackbar from '@mui/material/Snackbar';
 import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined';
@@ -1088,6 +1089,7 @@ function StageRail({
   stagesDone,
   selectedStageId,
   nextStageId,
+  spaceSlug,
   slug,
   completeTone,
   completeAbandoned,
@@ -1104,6 +1106,7 @@ function StageRail({
   stagesDone: number;
   selectedStageId: string | undefined;
   nextStageId: string | null;
+  spaceSlug: string | undefined;
   slug: string;
   /**
    * How the trailing Complete step reads, or `null` when there is no console
@@ -1139,7 +1142,7 @@ function StageRail({
         /*
          * Selection is EXCLUSIVE across the whole rail, Complete included. The
          * page falls back to the next stage when the URL names no real stage,
-         * which is right for a bare `/change-orders/:slug` and wrong the moment
+         * which is right for a bare `/change-orders/:space/:slug` and wrong the moment
          * Complete is the thing selected: two ringed nodes say two things are
          * selected when one is.
          */
@@ -1181,7 +1184,7 @@ function StageRail({
             )}
             <Box
               component={RouterLink}
-              to={`/change-orders/${slug}/${encodeURIComponent(state.stageId)}`}
+              to={changeOrderPath(spaceSlug, slug, state.stageId)}
               aria-pressed={selected}
               role="button"
               sx={{
@@ -1292,7 +1295,7 @@ function StageRail({
           <StageLink state={completeLinkState(completeTone, finalGates, finalTally)} isNext={false} />
           <Box
             component={RouterLink}
-            to={`/change-orders/${slug}/${encodeURIComponent(COMPLETE_STAGE_ID)}`}
+            to={changeOrderPath(spaceSlug, slug, COMPLETE_STAGE_ID)}
             aria-pressed={completeSelected}
             role="button"
             data-testid="stage-rail-complete"
@@ -1546,9 +1549,26 @@ function CompleteStepDetail({
 }
 
 export default function ChangeOrdersPage() {
-  const { slug, stage: stageParam } = useParams<{ slug?: string; stage?: string }>();
+  const { space, slug, stage } = useParams<{ space?: string; slug?: string; stage?: string }>();
   const navigate = useNavigate();
-  const detail = useChangeOrderDetail(slug);
+  const { search, hash } = useLocation();
+  const detail = useChangeOrderDetail({ space, slug, stage });
+  const { address } = detail;
+  /** Whether the URL addresses a ChangeOrder at all, rather than the console. */
+  const addressed = address?.kind !== 'none';
+  /** The stage segment, wherever the address form put it. */
+  const stageParam = address?.kind === 'found' ? address.stage : undefined;
+
+  /*
+   * A slug-only link that names one ChangeOrder is replaced with its full
+   * address, so a bookmark made from it keeps opening the same ChangeOrder after
+   * another Space takes the slug too.
+   */
+  useEffect(() => {
+    if (address?.kind !== 'found' || address.canonical) return;
+    const pathname = changeOrderPath(address.order.spaceSlug, address.order.slug, address.stage);
+    navigate({ pathname, search, hash }, { replace: true });
+  }, [address, navigate, search, hash]);
   const history = useChangeOrderHistory(detail);
   const workflowNames = useChangeWorkflowNames();
   const workflowId = detail.consoleRow?.changeWorkflowId;
@@ -2122,7 +2142,7 @@ export default function ChangeOrdersPage() {
   const goToReview = useCallback(
     (action: ReviewBandAction, target: string | undefined) => {
       const needsSelect = target !== undefined && target !== selectedStage?.stageId;
-      if (needsSelect) navigate(`/change-orders/${detail.slug}/${encodeURIComponent(target)}`);
+      if (needsSelect) navigate(changeOrderPath(detail.baseSpaceSlug, detail.slug, target));
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       const go = () => {
         let element: HTMLElement | null = document.getElementById(REVIEW_PANEL_ID);
@@ -2151,7 +2171,7 @@ export default function ChangeOrdersPage() {
       if (needsSelect) window.setTimeout(go, 100);
       else go();
     },
-    [selectedStage?.stageId, navigate, detail.slug],
+    [selectedStage?.stageId, navigate, detail.baseSpaceSlug, detail.slug],
   );
   /** The step the band's gate is on: the stage, or Complete for the sign-off. */
   const bandStep = bandSummary === undefined ? undefined : bandSummary.gate.kind === 'final' ? COMPLETE_STAGE_ID : bandSummary.gate.stageId;
@@ -2417,10 +2437,10 @@ export default function ChangeOrdersPage() {
         either down from here would bind a list's actions to a ChangeOrder the list
         is not showing.
       */}
-      {slug === undefined ? (
+      {!addressed ? (
         <ChangeOrdersConsole
           onOpenChangeOrder={(row) => {
-            navigate(`/change-orders/${row.slug}`);
+            navigate(changeOrderPath(row.spaceSlug, row.slug));
           }}
           /*
             ONE LIVE REGION ON THIS PAGE, AND IT IS THE ONE ABOVE.
@@ -2440,7 +2460,7 @@ export default function ChangeOrdersPage() {
         />
       ) : null}
 
-      {slug !== undefined ? (
+      {addressed ? (
       <Box sx={{ marginBottom: '12px' }}>
         <Box
           component={RouterLink}
@@ -2452,11 +2472,40 @@ export default function ChangeOrdersPage() {
       </Box>
       ) : null}
 
-      {slug !== undefined && detail.isLoading ? (
+      {addressed && detail.isLoading ? (
         <Box sx={{ fontSize: changeOrderType.size.prose }}>Loading…</Box>
       ) : null}
 
-      {slug !== undefined && !detail.isLoading && !detail.found ? (
+      {address?.kind === 'ambiguous' ? (
+        <Box role="region" aria-label="ChangeOrders with this slug" sx={{ fontSize: changeOrderType.size.prose }}>
+          <Box
+            component="h1"
+            sx={{
+              fontSize: changeOrderType.size.heading,
+              lineHeight: changeOrderType.lineHeight.heading,
+              fontWeight: changeOrderType.weight.semibold,
+              margin: '0 0 6px',
+            }}
+          >
+            {address.candidates.length} ChangeOrders are named “{address.slug}”
+          </Box>
+          <Box sx={{ color: changeOrderInk.muted, marginBottom: '8px' }}>
+            A ChangeOrder slug is unique only within its Space. Pick the Space:
+          </Box>
+          <Box component="ul" sx={{ margin: 0, paddingLeft: '20px' }} data-testid="change-order-candidates">
+            {address.candidates.map((candidate) => (
+              <li key={candidate.changeOrderId}>
+                <RouterLink to={changeOrderPath(candidate.spaceSlug, candidate.slug, address.stage) + search + hash}>
+                  {candidate.spaceSlug}/{candidate.slug}
+                </RouterLink>
+              </li>
+            ))}
+          </Box>
+        </Box>
+      ) : null}
+
+      {/* `address` is undefined here only when the list read failed. */}
+      {addressed && !detail.isLoading && !detail.found && address?.kind !== 'ambiguous' ? (
         <Box role="region" aria-label="ChangeOrder not found" sx={{ fontSize: changeOrderType.size.prose }}>
           <Box
             component="h1"
@@ -2467,7 +2516,7 @@ export default function ChangeOrdersPage() {
               margin: '0 0 6px',
             }}
           >
-            No ChangeOrder matches “{slug}”
+            No ChangeOrder matches “{address?.kind === 'notFound' ? address.label : [space, slug].filter(Boolean).join('/')}”
           </Box>
           <Box sx={{ color: changeOrderInk.muted }}>
             It may have been deleted, or the address may be wrong.
@@ -3042,6 +3091,7 @@ export default function ChangeOrdersPage() {
                 stagesDone={detail.stagesDone}
                 selectedStageId={selectedStage?.stageId}
                 nextStageId={detail.nextStageId}
+                spaceSlug={detail.baseSpaceSlug}
                 slug={detail.slug}
                 completeTone={completeTone}
                 completeAbandoned={completeAbandoned}

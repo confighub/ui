@@ -5,8 +5,8 @@
  * Every prerequisite, in one column headed by the sentence.
  *
  * The Stage keeps its name and the variants it covers. What it costs to enter
- * lives here: the implicit gate, the three built in, every custom one, and
- * adding at the bottom.
+ * lives here: the implicit gate, the three built in, every custom one, every
+ * attestation one, and adding at the bottom.
  *
  * The sentence at the head is the load-bearing part. Prerequisites are evaluated
  * over the Stage AHEAD of the one being entered, and a list of tick boxes sitting
@@ -14,10 +14,13 @@
  * both Stages, rewrites on every tick, and is the largest type in the column.
  */
 
-import { Fragment, useEffect, useRef } from 'react';
+import { Fragment, useEffect, useMemo, useRef } from 'react';
 
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import Tooltip from '@mui/material/Tooltip';
+import type { ChangeWorkflowAttestationPrerequisite } from '@confighub/rtk-query';
+
+import { useListUsersByIdChunkedQuery } from '@/hooks/chunkedQueriesApi';
 
 import {
   BUILTINS,
@@ -29,8 +32,11 @@ import {
 import {
   andJoin,
   andJoinText,
+  attestationSummary,
   declaredNames,
+  isAttestationName,
   isKnownGate,
+  releasedBy,
   stageIndex,
   usedBy,
 } from '../model';
@@ -69,6 +75,40 @@ function gateTarget(api: LoadedBuilderApi): Stage | FinalStage | null {
   return null;
 }
 
+/** The open Stage, when the target is a Stage rather than Complete. */
+function openStage(api: LoadedBuilderApi): Stage | null {
+  const sel = api.selection;
+  if (sel?.kind !== 'stage') return null;
+  return api.workflow.stages.find((s) => s.id === sel.id) ?? null;
+}
+
+/**
+ * What a Release in the open Stage must carry. Unlike the entry gates, these are
+ * checked over the Stage itself -- over the Revisions a Release bundles -- so the
+ * first Stage can have them too.
+ */
+function ReleaseLine({ api }: { api: LoadedBuilderApi }) {
+  const st = openStage(api);
+  if (!st || !st.releasePrereqs.length) return null;
+  return (
+    <p className='s rel'>
+      {'To release in '}
+      <strong>{st.name}</strong>
+      {', every Revision a Release bundles must have '}
+      {andJoin(st.releasePrereqs).map((w, i) =>
+        w.sep !== undefined ? (
+          <Fragment key={i}>{w.sep}</Fragment>
+        ) : (
+          <span className={isAttestationName(api.workflow, w.item) ? 'g' : 'g bad'} key={i}>
+            {w.item}
+          </span>
+        ),
+      )}
+      {'.'}
+    </p>
+  );
+}
+
 function GateWord({ wf, name }: { wf: Workflow; name: string }) {
   const cls =
     name === IMPLICIT_GATE ? 'g implicit' : isKnownGate(wf, name) ? 'g' : 'g bad';
@@ -101,6 +141,7 @@ function Sentence({ api }: { api: LoadedBuilderApi }) {
           Stage ahead of this one: the change is already in the ChangeOrder&rsquo;s base Space when
           the ChangeOrder opens.
         </p>
+        <ReleaseLine api={api} />
       </div>
     );
   }
@@ -164,6 +205,7 @@ function Sentence({ api }: { api: LoadedBuilderApi }) {
           <InfoOutlinedIcon fontSize='inherit' className='infoicon' />
         </Tooltip>
       </p>
+      <ReleaseLine api={api} />
     </div>
   );
 }
@@ -489,6 +531,134 @@ function CustomRow({
 }
 
 /**
+ * An attestation prerequisite: declared with its rules on the workflow, gated on
+ * by name here. Its fields are not edited on this page, so it is plain text like a
+ * built-in, with what it requires written out beneath it. A Stage can name it as
+ * an entry gate, as the others are, and also require it of its Releases.
+ */
+function AttestationRow({
+  api,
+  a,
+  target,
+  nameOf,
+  onHover,
+}: {
+  api: LoadedBuilderApi;
+  a: ChangeWorkflowAttestationPrerequisite;
+  target: string | null;
+  nameOf: (userId: string) => string;
+  onHover: (name: string | null, implicit: boolean) => void;
+}) {
+  const wf = api.workflow;
+  const t = gateTarget(api);
+  const on = t ? t.prereqs.includes(a.Name) : false;
+  const noPrev = Boolean(target) && !targetOver(api);
+  const st = openStage(api);
+  const releaseOn = st ? st.releasePrereqs.includes(a.Name) : false;
+  const entry = usedBy(wf, a.Name);
+  const releases = releasedBy(wf, a.Name);
+
+  return (
+    <div
+      className={`cprow${on || releaseOn ? ' on' : ''}`}
+      data-cplight={a.Name}
+      onMouseEnter={() => onHover(a.Name, false)}
+      onMouseLeave={() => onHover(null, false)}
+    >
+      <span className='cptop'>
+        {target ? (
+          <input
+            type='checkbox'
+            data-act='togglegate'
+            data-gate={a.Name}
+            checked={on}
+            disabled={noPrev}
+            aria-label={`${on ? 'Stop' : 'Have'} ${target} ${on ? 'naming' : 'name'} ${a.Name}`}
+            onChange={(e) => api.toggleGate(a.Name, e.target.checked)}
+          />
+        ) : (
+          <TickSlot />
+        )}
+        <span className='cpfix'>{a.Name}</span>
+        <span className='tagmini cptag'>{(a.Type?.trim() || 'Approval').toLowerCase()}</span>
+      </span>
+
+      {entry.length || !releases.length ? <NamedBy api={api} name={a.Name} /> : null}
+      {releases.length ? (
+        <span className={`cpmeta${st && releases.includes(st.name) ? ' here' : ''}`}>
+          {`required of Releases in ${andJoinText(releases)}`}
+        </span>
+      ) : null}
+      <span className='cpwhat'>{attestationSummary(a, nameOf)}</span>
+      {a.Description ? (
+        <span className='cpwhat clamp' title={a.Description}>
+          {a.Description}
+        </span>
+      ) : null}
+
+      {st ? (
+        <label className='cprel'>
+          <input
+            type='checkbox'
+            data-act='togglerelease'
+            data-gate={a.Name}
+            checked={releaseOn}
+            onChange={(e) => api.toggleReleaseGate(a.Name, e.target.checked)}
+          />
+          <span>
+            {'Required to release in '}
+            <span className='mono'>{st.name}</span>
+          </span>
+        </label>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The attestation prerequisites, with the Users they name read once for all of
+ * them. A User not yet read, or not readable, shows the start of its ID.
+ */
+function AttestationRows({
+  api,
+  target,
+  onHover,
+}: {
+  api: LoadedBuilderApi;
+  target: string | null;
+  onHover: (name: string | null, implicit: boolean) => void;
+}) {
+  const attestations = api.workflow.attestations;
+  const userIds = useMemo(
+    () => [...new Set(attestations.flatMap((a) => a.FromUserIDs ?? []))].sort(),
+    [attestations],
+  );
+  const users = useListUsersByIdChunkedQuery({ userIds }, { skip: userIds.length === 0 });
+  const names = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const entry of users.data ?? []) {
+      const user = entry.User;
+      if (user?.UserID) out.set(user.UserID, user.DisplayName?.trim() || user.Username?.trim() || user.Slug);
+    }
+    return out;
+  }, [users.data]);
+  const nameOf = (userId: string) => names.get(userId) ?? userId.slice(0, 8);
+
+  if (!attestations.length) return null;
+  return (
+    <>
+      <div className='cpgroup'>
+        Attestation prerequisites, declared once and named wherever they apply. Their rules are
+        edited with <span className='mono'>cub changeworkflow update</span>.
+      </div>
+      {attestations.map((a) => (
+        <AttestationRow key={a.Name} api={api} a={a} target={target} nameOf={nameOf} onHover={onHover} />
+      ))}
+    </>
+  );
+}
+
+/**
  * A name a Stage carries that nothing declares. It has no row of its own to sit
  * in, so it gets one here, where the tick that clears it is.
  */
@@ -575,6 +745,8 @@ export function PrereqColumn({
             ))}
           </>
         ) : null}
+
+        <AttestationRows api={api} target={target} onHover={onHover} />
       </div>
 
       {/* Adding is at the foot of the column, and only a custom one can be added. */}

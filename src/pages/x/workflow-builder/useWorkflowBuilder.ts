@@ -145,6 +145,8 @@ export interface BuilderApi extends BuilderState {
   setStageName: (value: string) => void;
   setStageWhere: (value: string) => void;
   toggleGate: (gate: string, on: boolean) => void;
+  /** Require an attestation prerequisite of the open Stage's Releases, or stop requiring it. */
+  toggleReleaseGate: (gate: string, on: boolean) => void;
   addCustom: () => void;
   removeCustom: (id: string) => void;
   setCustomName: (id: string, value: string) => void;
@@ -330,6 +332,7 @@ export function useWorkflowBuilder(
            Release having carried the change. The first Stage has nothing ahead
            of it, so it gets none. */
         prereqs: wf.stages.length ? ['Released'] : [],
+        releasePrereqs: [],
       };
       wf.stages.push(st);
       return { reorder: null, selection: { kind: 'stage', id: st.id } };
@@ -418,6 +421,20 @@ export function useWorkflowBuilder(
         const i = target.prereqs.indexOf(gate);
         if (on && i === -1) target.prereqs.push(gate);
         if (!on && i !== -1) target.prereqs.splice(i, 1);
+      });
+    },
+    [edit],
+  );
+
+  const toggleReleaseGate = useCallback(
+    (gate: string, on: boolean) => {
+      edit((wf, prev) => {
+        if (prev.selection?.kind !== 'stage') return {};
+        const st = stageById(wf, prev.selection.id);
+        if (!st) return {};
+        const i = st.releasePrereqs.indexOf(gate);
+        if (on && i === -1) st.releasePrereqs.push(gate);
+        if (!on && i !== -1) st.releasePrereqs.splice(i, 1);
       });
     },
     [edit],
@@ -589,6 +606,7 @@ export function useWorkflowBuilder(
       setStageName,
       setStageWhere,
       toggleGate,
+      toggleReleaseGate,
       addCustom,
       removeCustom,
       setCustomName,
@@ -628,6 +646,7 @@ export function useWorkflowBuilder(
       setStageName,
       setStageWhere,
       toggleGate,
+      toggleReleaseGate,
       addCustom,
       removeCustom,
       setCustomName,

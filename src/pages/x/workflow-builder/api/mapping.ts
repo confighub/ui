@@ -127,6 +127,7 @@ function toPageStage(stage: ChangeWorkflowStage, index: number): Stage {
     name: stage.Name,
     where: stage.WhereSpace ?? '',
     prereqs: stage.Prerequisites ?? [],
+    releasePrereqs: stage.ReleasePrerequisites ?? [],
   };
 }
 
@@ -197,6 +198,7 @@ export function emptyWorkflow(): MappedWorkflow {
     stages: [],
     final: { prereqs: [] },
     custom: [],
+    attestations: [],
   };
 }
 
@@ -217,6 +219,7 @@ export function fromWire(wire: ChangeWorkflowRead): MappedEntity {
       expression: custom.Expression,
       description: custom.Description ?? '',
     })),
+    attestations: wire.AttestationPrerequisites ?? [],
   };
 
   return {
@@ -251,6 +254,7 @@ export function toWire(
       Name: stage.name,
       WhereSpace: stage.where || undefined,
       Prerequisites: stage.prereqs.length ? stage.prereqs : undefined,
+      ReleasePrerequisites: stage.releasePrereqs.length ? stage.releasePrereqs : undefined,
     })),
     Final: { Prerequisites: workflow.final.prereqs.length ? workflow.final.prereqs : undefined },
     CustomPrerequisites: workflow.custom.map((custom) => ({
@@ -258,6 +262,7 @@ export function toWire(
       Expression: custom.expression,
       Description: custom.description || undefined,
     })),
+    AttestationPrerequisites: workflow.attestations,
   };
 }
 

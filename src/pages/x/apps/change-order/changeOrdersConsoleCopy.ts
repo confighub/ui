@@ -83,6 +83,9 @@ export const changeOrdersConsoleCopy = {
     state: 'State',
     space: 'Space',
     component: 'Component',
+    updateType: 'Update type',
+    createdFrom: 'Created from',
+    createdTo: 'to',
     /** The State filter's value when nothing is selected: every row shows. */
     allStates: 'All',
     /** The State filter's heading for the states no summary card counts. */
@@ -91,6 +94,7 @@ export const changeOrdersConsoleCopy = {
     moreStates: (n: number) => `+${n}`,
     allSpaces: 'All Spaces',
     allComponents: 'All Components',
+    allUpdateTypes: 'All update types',
     clear: 'Clear filters',
   },
 

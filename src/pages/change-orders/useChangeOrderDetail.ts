@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * One ChangeOrder, addressed by slug, reduced to everything the detail screen draws.
+ * One ChangeOrder, addressed by Space slug and slug (`changeOrderAddress.ts`),
+ * reduced to everything the detail screen draws.
  *
  * DERIVES, NEVER FETCHES, THE CHANGEORDER DOMAIN. Stage sequence, gates, per-stage
  * state and progress all come from `x/apps/change-order/`, which is the same logic
@@ -19,17 +20,17 @@
  *     narrowing strips exactly what this screen is built on — and it saves the
  *     server nothing, because a `select` omitting `EndTagID` makes it issue an
  *     EXTRA full row fetch per ChangeOrder.
- *  2. NO POLLING ON THE LIST. The list read resolves a slug to its ids ONCE, on
+ *  2. NO POLLING ON THE LIST. The list read resolves an address to its ids ONCE, on
  *     entry. Anything that needs to stay live must poll the single-order read
  *     instead, which is bounded to one row.
  *
- * ⚠️ THE SLUG CANNOT REACH THE SINGLE-ORDER READ DIRECTLY, AND THAT IS WHY THE
+ * ⚠️ THE ADDRESS CANNOT REACH THE SINGLE-ORDER READ DIRECTLY, AND THAT IS WHY THE
  * LIST READ IS HERE AT ALL. `useGetChangeOrderQuery` is
  * `/space/{spaceId}/change_order/{changeOrderId}` — it needs BOTH ids, and a
- * slug-addressed URL carries neither. So a slug route cannot open a ChangeOrder
- * without one list read to resolve it. Routing by id instead would remove that
- * read, at the cost of URLs nobody can read or type; that trade is open and is
- * recorded here rather than settled by accident.
+ * URL of slugs carries neither. So the route cannot open a ChangeOrder without
+ * one list read to resolve it. Routing by id instead would remove that read, at
+ * the cost of URLs nobody can read or type. The same read resolves a slug-only
+ * link made before the Space was part of the address.
  *
  * ⚠️ LIVENESS POLLS THE SINGLE ORDER, NEVER THE LIST, AND THE DIFFERENCE IS NOT
  * STYLISTIC. `useListAllChangeOrdersQuery({})` is keyed on `{}`, which is a
@@ -67,6 +68,7 @@ import {
 } from '@confighub/rtk-query';
 
 import type { RunningRelease } from '../x/apps/liveStatus';
+import { resolveChangeOrderAddress, type ChangeOrderAddress, type ChangeOrderRef } from './changeOrderAddress';
 import { usePromoteFinalQuery } from './reviews/reviewServerApi';
 import { promoteFinalOf, type PromoteFinalAnswer } from './reviews/stageReviewInputs';
 import { applyServerGates, buildGatesForStage, onlyTheServerEvaluates } from '../x/apps/change-order/changeOrderGates';
@@ -133,7 +135,12 @@ export interface ChangeOrderSpace {
 }
 
 export interface ChangeOrderDetail {
-  /** Absent while loading, and when no ChangeOrder carries this slug. */
+  /**
+   * What the route's segments name (`resolveChangeOrderAddress`): `undefined`
+   * while the list read that resolves them is outstanding.
+   */
+  address?: ChangeOrderAddress;
+  /** False while loading, and when the address names no single ChangeOrder. */
   found: boolean;
   slug: string;
   changeOrderId?: string;
@@ -349,15 +356,36 @@ export function gateSpaceInput(
   };
 }
 
-export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetail {
+/** The route's segments, named for the full address; `changeOrderAddress.ts` reads the older forms. */
+export interface ChangeOrderRouteSegments {
+  space?: string;
+  slug?: string;
+  stage?: string;
+}
+
+export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): ChangeOrderDetail {
   // No second argument, deliberately — see the header. One shot, on entry.
   const orders = useListAllChangeOrdersQuery({});
   const spaces = useListSpacesQuery({});
 
-  const listEntry = useMemo(
-    () => (orders.data ?? []).find((candidate) => candidate.ChangeOrder?.Slug === slug),
-    [orders.data, slug],
-  );
+  const { space: spaceSegment, slug: slugSegment, stage: stageSegment } = segments;
+  const address = useMemo<ChangeOrderAddress | undefined>(() => {
+    if (spaceSegment === undefined || spaceSegment === '') return { kind: 'none' };
+    if (orders.data === undefined) return undefined;
+    const refs: ChangeOrderRef[] = orders.data.flatMap((candidate) => {
+      const order = candidate.ChangeOrder;
+      const spaceSlug = order?.SpaceSlug ?? candidate.Space?.Slug;
+      if (order?.SpaceID === undefined || order.ChangeOrderID === undefined || spaceSlug === undefined) return [];
+      return [{ spaceId: order.SpaceID, spaceSlug, changeOrderId: order.ChangeOrderID, slug: order.Slug }];
+    });
+    return resolveChangeOrderAddress({ space: spaceSegment, slug: slugSegment, stage: stageSegment }, refs);
+  }, [orders.data, spaceSegment, slugSegment, stageSegment]);
+
+  const listEntry = useMemo(() => {
+    if (address?.kind !== 'found') return undefined;
+    const { changeOrderId } = address.order;
+    return (orders.data ?? []).find((candidate) => candidate.ChangeOrder?.ChangeOrderID === changeOrderId);
+  }, [orders.data, address]);
 
   const identity = useMemo(() => {
     const spaceId = listEntry?.ChangeOrder?.SpaceID;
@@ -415,8 +443,12 @@ export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetai
    * list entry until it does — so the screen renders immediately on entry
    * rather than waiting a second round-trip, and then stays live off the
    * bounded read rather than the org-wide one.
+   *
+   * `currentData`, not `data`: `data` keeps the last ChangeOrder read while
+   * another is fetched, which would show one ChangeOrder under another's address
+   * when a reader moves between two that share a slug.
    */
-  const entry = one.data ?? listEntry;
+  const entry = one.currentData ?? listEntry;
   const order = entry?.ChangeOrder;
   const baseSpaceId = order?.SpaceID;
 
@@ -589,10 +621,11 @@ export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetai
   const reviewRequests = order?.ReviewRequests ?? EMPTY_REVIEW_REQUESTS;
 
   return useMemo<ChangeOrderDetail>(() => {
-    if (slug === undefined || order?.ChangeOrderID === undefined) {
+    if (order?.ChangeOrderID === undefined) {
       return {
+        address,
         found: false,
-        slug: slug ?? '',
+        slug: '',
         ownSpaceReached,
         workflowCompleted,
         reviewRequests,
@@ -696,7 +729,7 @@ export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetai
     const consoleRow = buildConsoleRow(
       {
         changeOrderId: order.ChangeOrderID,
-        slug: order.Slug ?? slug,
+        slug: order.Slug,
         displayName: order.DisplayName,
         spaceId: baseSpaceId,
         spaceSlug: order.SpaceSlug ?? entry?.Space?.Slug,
@@ -743,8 +776,9 @@ export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetai
           }) ?? []);
 
     return {
+      address,
       found: true,
-      slug: order.Slug ?? slug,
+      slug: order.Slug,
       changeOrderId: order.ChangeOrderID,
       displayName: order.DisplayName,
       baseSpaceId,
@@ -825,7 +859,7 @@ export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetai
     allSpaceById,
     serverGates,
     refreshServerGates,
-    slug,
+    address,
     isLoading,
     isFetching,
     error,

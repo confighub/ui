@@ -72,7 +72,7 @@ const isPromotePreview = (url: string, method: string) =>
  * both rather than leaving half of it at each call site.
  */
 async function openAtDev(page: Page, fx: ChangeOrderFixture): Promise<void> {
-  await page.goto(`/change-orders/${fx.changeOrderSlug}/dev`);
+  await page.goto(`${fx.changeOrderPath}/dev`);
   await expect(page.locator('[data-promote-stage="dev"]')).toBeVisible({ timeout: 30000 });
 }
 
@@ -469,7 +469,7 @@ test.describe('ChangeOrder mode — the Promote button', () => {
         route.fulfill({ status: 200, contentType: 'application/json', body: unchanged })
     );
 
-    await page.goto(`/change-orders/${fx.changeOrderSlug}/dev`);
+    await page.goto(`${fx.changeOrderPath}/dev`);
     const promote = page.locator('[data-promote-stage="dev"]');
     await expect(promote).toBeVisible({ timeout: 30000 });
     await promote.click();
@@ -519,7 +519,7 @@ test.describe('ChangeOrder mode — the Promote button', () => {
         route.fulfill({ status: 200, contentType: 'application/json', body: blocked })
     );
 
-    await page.goto(`/change-orders/${fx.changeOrderSlug}/dev`);
+    await page.goto(`${fx.changeOrderPath}/dev`);
     const promote = page.locator('[data-promote-stage="dev"]');
     await expect(promote).toBeVisible({ timeout: 30000 });
     await promote.click();
@@ -597,7 +597,7 @@ test.describe('ChangeOrder mode — the Promote button', () => {
       }
     );
 
-    await page.goto(`/change-orders/${fx.changeOrderSlug}/dev`);
+    await page.goto(`${fx.changeOrderPath}/dev`);
     const promote = page.locator('[data-promote-stage="dev"]');
     await expect(promote).toBeVisible({ timeout: 30000 });
     await promote.click();
@@ -653,7 +653,7 @@ test.describe('ChangeOrder mode — the Promote button', () => {
       }
     );
 
-    await page.goto(`/change-orders/${fx.changeOrderSlug}/dev`);
+    await page.goto(`${fx.changeOrderPath}/dev`);
     const promote = page.locator('[data-promote-stage="dev"]');
     await expect(promote).toBeVisible({ timeout: 30000 });
     await promote.click();

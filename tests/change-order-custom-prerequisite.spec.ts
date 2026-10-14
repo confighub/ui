@@ -76,7 +76,7 @@ test.describe('a stage gating on a declared custom prerequisite', () => {
     const consoleErrors: string[] = [];
     page.on('pageerror', (e) => consoleErrors.push(e.message));
 
-    await page.goto(`/change-orders/${fx.changeOrderSlug}/${GATED_STAGE}`);
+    await page.goto(`${fx.changeOrderPath}/${GATED_STAGE}`);
     const promote = page.locator(`[data-promote-stage="${GATED_STAGE}"]`);
     await expect(promote).toBeVisible({ timeout: 30_000 });
 
@@ -105,7 +105,7 @@ test.describe('a stage gating on a declared custom prerequisite', () => {
       expect(resp.ok(), `sign off ${space.slug}: ${resp.status()} ${await resp.text()}`).toBe(true);
     }
 
-    await page.goto(`/change-orders/${fx.changeOrderSlug}/${GATED_STAGE}`);
+    await page.goto(`${fx.changeOrderPath}/${GATED_STAGE}`);
     // Every gate holding, the list collapses to its summary: the mandatory
     // `check/promoted` and the declared check, both by the server's answer.
     await expect(page.getByRole('button', { name: /Gates 2 of 2 satisfied/ })).toBeVisible({
@@ -127,7 +127,7 @@ test.describe('a stage gating on a declared custom prerequisite', () => {
 
     // Every prod Space has the change now, so prod's gates hold nothing back,
     // whatever they read once the ChangeOrder has completed.
-    const lane = page.locator(`a[href="/change-orders/${fx.changeOrderSlug}/${GATED_STAGE}"]`);
+    const lane = page.locator(`a[href="${fx.changeOrderPath}/${GATED_STAGE}"]`);
     const prodSpaces = fx.spacesInStage(GATED_STAGE).length;
     await expect(lane).toContainText(`${prodSpaces} of ${prodSpaces} spaces promoted`, { timeout: 30_000 });
     await expect(lane).not.toContainText('held');

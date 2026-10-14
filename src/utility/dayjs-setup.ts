@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
-import updateLocale from 'dayjs/plugin/updateLocale';
+import relativeTime from 'dayjs/plugin/relativeTime.js';
+import updateLocale from 'dayjs/plugin/updateLocale.js';
 
 dayjs.extend(relativeTime);
 dayjs.extend(updateLocale);

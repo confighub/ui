@@ -12,6 +12,8 @@
  * the caret with it.
  */
 
+import type { ChangeWorkflowAttestationPrerequisite } from '@confighub/rtk-query';
+
 /** One wave of a ChangeOrder: the variants it covers, and what must hold to enter it. */
 export interface Stage {
   id: string;
@@ -19,8 +21,14 @@ export interface Stage {
   name: string;
   /** `ChangeWorkflowStage.WhereSpace`. A where expression over Spaces. Empty selects every variant. */
   where: string;
-  /** `ChangeWorkflowStage.Prerequisites`. Names of built-in or custom checks. */
+  /** `ChangeWorkflowStage.Prerequisites`. Names of built-in, custom or attestation checks. */
   prereqs: string[];
+  /**
+   * `ChangeWorkflowStage.ReleasePrerequisites`. Names of attestation prerequisites a Release
+   * for a ChangeOrder in one of the Stage's Spaces must satisfy. Checked over the Stage itself,
+   * not the one ahead of it, so the first Stage may have them too.
+   */
+  releasePrereqs: string[];
 }
 
 /**
@@ -63,6 +71,12 @@ export interface Workflow {
   stages: Stage[];
   final: FinalStage;
   custom: CustomPrerequisite[];
+  /**
+   * `AttestationPrerequisites`, carried as read. The builder gates on them by name but does
+   * not edit their fields, so they go back to the server exactly as they came: a save that
+   * dropped them would remove the approvals a workflow requires.
+   */
+  attestations: ChangeWorkflowAttestationPrerequisite[];
 }
 
 /** A Space in the mock inventory. A Space belongs to exactly one component. */

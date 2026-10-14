@@ -214,7 +214,7 @@ test.describe('promoting from a console row', () => {
     // `Resolve` is what a held row offers: something to look at, not something
     // to write. Pressing it opens the ChangeOrder, which is a navigation.
     await row.getByRole('button', { name: 'Resolve', exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/change-orders/${fx.changeOrderSlug}`), { timeout: 20_000 });
+    await expect(page).toHaveURL(new RegExp(fx.changeOrderPath), { timeout: 20_000 });
 
     // And the stage the console refused really is the held one, so the absence
     // above is the gate and not a ChangeOrder that simply finished.
@@ -237,7 +237,7 @@ test.describe('promoting from a console row', () => {
    */
   test('a held stage\'s dialog names the hold and offers no control that promotes', async ({ page }) => {
     const traffic = await watchPromoteTraffic(page);
-    await page.goto(`/change-orders/${fx.changeOrderSlug}/${HELD_STAGE}`);
+    await page.goto(`${fx.changeOrderPath}/${HELD_STAGE}`);
     const promote = page.locator(`[data-promote-stage="${HELD_STAGE}"]`);
     await expect(promote).toBeVisible({ timeout: 30_000 });
 

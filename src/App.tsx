@@ -169,7 +169,7 @@ const routes = [
         ),
       },
       {
-        path: '/change-orders/:slug?/:stage?',
+        path: '/change-orders/:space?/:slug?/:stage?',
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <ChangeOrdersPage />

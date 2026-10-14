@@ -41,6 +41,7 @@ import { ROUTE_COMPONENTS } from '../appTypes';
 import type { RunningRelease } from '../liveStatus';
 import { changeOrderStageMembers, stageWhereSpace, type ChangeOrderWorkflow } from './changeOrderWorkflow';
 import { changeOrderCopy } from './changeOrderCopy';
+import { effectiveUpdateType } from './changeOrdersConsoleFilters';
 import { applyServerGates, buildGatesForStage, gatesOpen } from './changeOrderGates';
 import type { ServerGatesByStage } from './useServerStageGates';
 import type { ChangeOrderGateSpaceInput } from './changeOrderGates';
@@ -358,6 +359,8 @@ export interface ConsoleRow {
   skippedSpaceId?: string;
   spaceSlug?: string;
   createdAt?: string;
+  /** `ChangeOrder.UpdateType`, with an absent one read as the server's default. */
+  updateType: string;
   /**
    * The base Space's `Component` label, i.e. the app this ChangeOrder belongs to
    * in the per-component view. `undefined` when the base Space carries no
@@ -1314,6 +1317,7 @@ function stagelessRow(
     skippedSpaceId: promotionSkippedSpaceId(order.spaceId, order.updateType),
     spaceSlug: order.spaceSlug,
     createdAt: order.createdAt,
+    updateType: effectiveUpdateType(order.updateType),
     appName: orderComponent(order, bySpaceId)?.Slug,
     state: abortedReason !== '' ? 'aborted' : state,
     /*
@@ -1564,6 +1568,7 @@ export function buildConsoleRow(
     skippedSpaceId,
     spaceSlug: order.spaceSlug,
     createdAt: order.createdAt,
+    updateType: effectiveUpdateType(order.updateType),
     appName: orderComponent(order, bySpaceId)?.Slug,
     state,
     gateState,

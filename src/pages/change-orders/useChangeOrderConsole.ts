@@ -100,6 +100,8 @@ export interface ChangeOrderConsoleData {
   spaceSlugs: readonly string[];
   /** Every Component slug that appears on a row, for the Component filter. */
   componentSlugs: readonly string[];
+  /** Every UpdateType that appears on a row, for the Update type filter. */
+  updateTypes: readonly string[];
   /**
    * Space id -> the slug a reader recognises, for the Spaces a rollback names.
    *
@@ -286,6 +288,12 @@ export function useChangeOrderConsole(): ChangeOrderConsoleData {
     return [...slugs].sort((a, b) => a.localeCompare(b));
   }, [rows]);
 
+  const updateTypes: readonly string[] = useMemo(() => {
+    const types = new Set(rows.map((row) => row.updateType));
+    if (types.size === 0) return NO_SLUGS;
+    return [...types].sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
   const spaceLabel = useMemo(() => {
     const slugBySpaceId = new Map(consoleSpaces.map((space) => [space.spaceId, space.slug]));
     return (spaceId: string) => slugBySpaceId.get(spaceId) ?? spaceId;
@@ -316,6 +324,7 @@ export function useChangeOrderConsole(): ChangeOrderConsoleData {
       groupCounts,
       spaceSlugs,
       componentSlugs,
+      updateTypes,
       spaceLabel,
       unreadable,
       // Workflow resolution counts as loading, so no row is ever shown against
@@ -332,6 +341,7 @@ export function useChangeOrderConsole(): ChangeOrderConsoleData {
       groupCounts,
       spaceSlugs,
       componentSlugs,
+      updateTypes,
       spaceLabel,
       unreadable,
       stageSpacesLoading,

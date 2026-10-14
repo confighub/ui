@@ -92,6 +92,7 @@ import {
   type SectionCheck,
   type StateSelection,
 } from '../x/apps/change-order/changeOrdersConsoleStateFilter';
+import { createdWithin } from '../x/apps/change-order/changeOrdersConsoleFilters';
 import type { ConsoleGroup, ConsoleRow, ConsoleState } from '../x/apps/change-order/changeOrdersConsoleModel';
 import type { ChangeOrderEndIntent } from '../x/apps/change-order/changeOrderRollback';
 import { gatesBlockPromotion } from '../x/apps/change-order/changeOrderFooterModel';
@@ -1170,7 +1171,8 @@ function StateFilter({
 }
 
 /**
- * Search, State, Space, Component, Clear — the console's own filter bar.
+ * Search, State, Space, Component, Update type, Created, Clear — the console's
+ * own filter bar.
  *
  * ⚠️ NO SOURCE CONTROL, AND THAT IS A DECISION ALREADY MADE, NOT A GAP. The
  * reference renders a Source select (GitHub release / CI pipeline) beside a
@@ -1191,8 +1193,12 @@ function StateFilter({
  * A ChangeOrder scopes to Spaces, so the Space control filters by the Space the
  * ChangeOrder lives in. The Component control filters by that Space's Component —
  * a real entity, not the reference's fixture-only `checkout-api` groupings — and
- * a ChangeOrder whose Space has no Component matches no Component. `spaceSlugs` and
- * `componentSlugs` are computed by the hook; no second derivation is added here.
+ * a ChangeOrder whose Space has no Component matches no Component. `spaceSlugs`,
+ * `componentSlugs` and `updateTypes` are computed by the hook; no second
+ * derivation is added here.
+ *
+ * Created is a range of days in the viewer's time zone, both ends inclusive and
+ * either one open (`createdWithin`).
  */
 function FilterBar({
   search,
@@ -1206,6 +1212,13 @@ function FilterBar({
   componentFilter,
   onComponentFilter,
   componentSlugs,
+  updateTypeFilter,
+  onUpdateTypeFilter,
+  updateTypes,
+  createdFrom,
+  onCreatedFrom,
+  createdTo,
+  onCreatedTo,
   onClear,
   clearDisabled,
 }: {
@@ -1220,11 +1233,22 @@ function FilterBar({
   componentFilter: 'all' | string;
   onComponentFilter: (v: 'all' | string) => void;
   componentSlugs: readonly string[];
+  updateTypeFilter: 'all' | string;
+  onUpdateTypeFilter: (v: 'all' | string) => void;
+  updateTypes: readonly string[];
+  /** `YYYY-MM-DD`, or `''` for an open end. */
+  createdFrom: string;
+  onCreatedFrom: (v: string) => void;
+  createdTo: string;
+  onCreatedTo: (v: string) => void;
   onClear: () => void;
   clearDisabled: boolean;
 }) {
   const spaceId = useId();
   const componentId = useId();
+  const updateTypeId = useId();
+  const createdFromId = useId();
+  const createdToId = useId();
   return (
     <Stack
       direction="row"
@@ -1290,6 +1314,51 @@ function FilterBar({
             </option>
           ))}
         </Box>
+      </Stack>
+
+      <Stack direction="row" alignItems="center" sx={{ gap: '6px' }}>
+        <FieldLabel htmlFor={updateTypeId}>{changeOrdersConsoleCopy.filters.updateType}</FieldLabel>
+        <Box
+          component="select"
+          id={updateTypeId}
+          value={updateTypeFilter}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onUpdateTypeFilter(e.target.value)}
+          sx={FILTER_SELECT_SX}
+        >
+          <option value="all">{changeOrdersConsoleCopy.filters.allUpdateTypes}</option>
+          {updateTypes.map((updateType) => (
+            <option key={updateType} value={updateType}>
+              {updateType}
+            </option>
+          ))}
+        </Box>
+      </Stack>
+
+      {/*
+        Each end bounds the other, so the browser's picker offers no range
+        that runs backwards.
+      */}
+      <Stack direction="row" alignItems="center" sx={{ gap: '6px' }}>
+        <FieldLabel htmlFor={createdFromId}>{changeOrdersConsoleCopy.filters.createdFrom}</FieldLabel>
+        <Box
+          component="input"
+          type="date"
+          id={createdFromId}
+          value={createdFrom}
+          max={createdTo === '' ? undefined : createdTo}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => onCreatedFrom(e.target.value)}
+          sx={SELECT_SX}
+        />
+        <FieldLabel htmlFor={createdToId}>{changeOrdersConsoleCopy.filters.createdTo}</FieldLabel>
+        <Box
+          component="input"
+          type="date"
+          id={createdToId}
+          value={createdTo}
+          min={createdFrom === '' ? undefined : createdFrom}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => onCreatedTo(e.target.value)}
+          sx={SELECT_SX}
+        />
       </Stack>
 
       <Box
@@ -1438,7 +1507,7 @@ export function ChangeOrdersConsoleView({
    */
   onEndRequest?: (intent: ChangeOrderEndIntent, row: ConsoleRow) => void;
 }) {
-  const { rows, spaceSlugs, componentSlugs, stateCounts, groupCounts, isLoading, isFetching, error, lastLoadedAt, refetch, unreadable } = data;
+  const { rows, spaceSlugs, componentSlugs, updateTypes, stateCounts, groupCounts, isLoading, isFetching, error, lastLoadedAt, refetch, unreadable } = data;
   // One org-wide list, shared with every other console reading the same names.
   const workflowNames = useChangeWorkflowNames();
 
@@ -1457,13 +1526,26 @@ export function ChangeOrdersConsoleView({
   );
   const [spaceFilter, setSpaceFilter] = useState<'all' | string>('all');
   const [componentFilter, setComponentFilter] = useState<'all' | string>('all');
+  const [updateTypeFilter, setUpdateTypeFilter] = useState<'all' | string>('all');
+  // `YYYY-MM-DD` days, as `<input type="date">` gives them; `''` is an open end.
+  const [createdFrom, setCreatedFrom] = useState('');
+  const [createdTo, setCreatedTo] = useState('');
   const filtersActive =
-    search !== '' || selectedStates.size > 0 || spaceFilter !== 'all' || componentFilter !== 'all';
+    search !== '' ||
+    selectedStates.size > 0 ||
+    spaceFilter !== 'all' ||
+    componentFilter !== 'all' ||
+    updateTypeFilter !== 'all' ||
+    createdFrom !== '' ||
+    createdTo !== '';
   const clearFilters = useCallback(() => {
     setSearch('');
     setSelectedStates(NO_STATES);
     setSpaceFilter('all');
     setComponentFilter('all');
+    setUpdateTypeFilter('all');
+    setCreatedFrom('');
+    setCreatedTo('');
   }, []);
 
   /*
@@ -1524,10 +1606,12 @@ export function ChangeOrdersConsoleView({
       if (!rowMatchesStates(selectedStates, row.state)) return false;
       if (spaceFilter !== 'all' && row.spaceSlug !== spaceFilter) return false;
       if (componentFilter !== 'all' && row.appName !== componentFilter) return false;
+      if (updateTypeFilter !== 'all' && row.updateType !== updateTypeFilter) return false;
+      if (!createdWithin(row.createdAt, createdFrom, createdTo)) return false;
       if (needle === '') return true;
       return `${row.slug} ${row.spaceSlug ?? ''} ${row.appName ?? ''}`.toLowerCase().includes(needle);
     });
-  }, [rows, search, selectedStates, spaceFilter, componentFilter]);
+  }, [rows, search, selectedStates, spaceFilter, componentFilter, updateTypeFilter, createdFrom, createdTo]);
 
   const headingId = 'change-orders-console-heading';
   const freshness = freshnessFrom(lastLoadedAt, now);
@@ -1686,6 +1770,13 @@ export function ChangeOrdersConsoleView({
         componentFilter={componentFilter}
         onComponentFilter={setComponentFilter}
         componentSlugs={componentSlugs}
+        updateTypeFilter={updateTypeFilter}
+        onUpdateTypeFilter={setUpdateTypeFilter}
+        updateTypes={updateTypes}
+        createdFrom={createdFrom}
+        onCreatedFrom={setCreatedFrom}
+        createdTo={createdTo}
+        onCreatedTo={setCreatedTo}
         onClear={clearFilters}
         clearDisabled={!filtersActive}
       />

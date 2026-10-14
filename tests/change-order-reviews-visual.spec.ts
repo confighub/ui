@@ -671,7 +671,7 @@ async function mockReviews(
 }
 
 async function openProd(page: Page, fx: ChangeOrderFixture): Promise<void> {
-  await page.goto(`/change-orders/${fx.changeOrderSlug}/${PROD}`);
+  await page.goto(`${fx.changeOrderPath}/${PROD}`);
   await expect(page.getByTestId('review-panel')).toBeVisible({ timeout: 45000 });
   await expect(page.getByTestId('review-band')).toBeVisible();
   // The decisions are read and named.
@@ -861,7 +861,7 @@ test.describe('ChangeOrder reviews — the six design states', () => {
     await expect(copy).toBeVisible();
     await copy.click();
     await expect.poll(() => page.evaluate(() => (window as unknown as { __copied: string[] }).__copied)).toEqual([
-      expect.stringMatching(new RegExp(`/change-orders/${fx.changeOrderSlug}/${PROD}#review$`)),
+      expect.stringMatching(new RegExp(`${fx.changeOrderPath}/${PROD}#review$`)),
     ]);
     await expect(page.getByTestId('review-toast')).toContainText('Link to this review copied.');
     // The author block keeps its explanation and the people who can approve, and no text button.
@@ -922,7 +922,7 @@ test.describe('ChangeOrder reviews — the six design states', () => {
   test('release review: Release is held by the 422, on the promoted stage', async ({ page }) => {
     await mockReviews(page, fx, 'pending', { release: 'held' });
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(`/change-orders/${fx.changeOrderSlug}/staging`);
+    await page.goto(`${fx.changeOrderPath}/staging`);
     const panel = page.getByTestId('review-panel');
     await expect(panel).toHaveAttribute('data-gate-kind', 'release', { timeout: 45000 });
     await expect(panel).toContainText('Release review');
@@ -942,7 +942,7 @@ test.describe('ChangeOrder reviews — the six design states', () => {
 
   test('a release dry run refused with 403: not evaluated, no hold, no count, and the page stays', async ({ page }) => {
     await mockReviews(page, fx, 'pending', { release: 'noPermission' });
-    await page.goto(`/change-orders/${fx.changeOrderSlug}/staging`);
+    await page.goto(`${fx.changeOrderPath}/staging`);
     await expect(page.getByTestId('review-band')).toBeVisible({ timeout: 45000 });
     await expect(page).not.toHaveURL(/access-denied/);
     // Without a server row there is nothing to hold Release on, and no figure to show.
@@ -956,7 +956,7 @@ test.describe('ChangeOrder reviews — the six design states', () => {
 
   test('release with nothing new to release (200, no Gates): not evaluated, no hold', async ({ page }) => {
     await mockReviews(page, fx, 'pending', { release: 'unchanged' });
-    await page.goto(`/change-orders/${fx.changeOrderSlug}/staging`);
+    await page.goto(`${fx.changeOrderPath}/staging`);
     await expect(page.locator('[data-testid="review-panel"][data-gate-kind="release"]')).toBeVisible({ timeout: 45000 });
     await expect(page.locator('[data-release-held="true"]')).toHaveCount(0);
     await expect(page.getByTestId('review-requirement-release-ok')).toHaveAttribute('data-evaluated', 'false');
@@ -1027,7 +1027,7 @@ test.describe('ChangeOrder reviews — the six design states', () => {
 
   test('not evaluated for the viewer: no counts, the decisions still listed, and the page stays', async ({ page }) => {
     await mockReviews(page, fx, 'partial', { entryNoPermission: true });
-    await page.goto(`/change-orders/${fx.changeOrderSlug}/${PROD}`);
+    await page.goto(`${fx.changeOrderPath}/${PROD}`);
     await expect(page.getByTestId('review-panel')).toBeVisible({ timeout: 45000 });
     await expect(page).not.toHaveURL(/access-denied/);
     await expect(page.getByTestId('review-requirement-security-review')).toHaveAttribute('data-evaluated', 'false');
@@ -1204,7 +1204,7 @@ test.describe('ChangeOrder reviews — Final sign-off', () => {
     // One approval of two, recorded in the last stage's Spaces.
     await mockReviews(page, fx, 'partial', { signOff: true }, PROD);
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(`/change-orders/${fx.changeOrderSlug}/${encodeURIComponent('__change_order_complete__')}`);
+    await page.goto(`${fx.changeOrderPath}/${encodeURIComponent('__change_order_complete__')}`);
     const panel = page.getByTestId('review-panel');
     await expect(panel).toHaveAttribute('data-gate-kind', 'final', { timeout: 45000 });
     await expect(panel).toContainText('Sign-off');
@@ -1223,7 +1223,7 @@ test.describe('ChangeOrder reviews — Final sign-off', () => {
 
   test('before Final opens: "not open yet", never a permission problem', async ({ page }) => {
     await mockReviews(page, fx, 'partial', { signOff: true, signOffNotOpen: true }, PROD);
-    await page.goto(`/change-orders/${fx.changeOrderSlug}/${encodeURIComponent('__change_order_complete__')}`);
+    await page.goto(`${fx.changeOrderPath}/${encodeURIComponent('__change_order_complete__')}`);
     const panel = page.getByTestId('review-panel');
     await expect(panel).toHaveAttribute('data-gate-kind', 'final', { timeout: 45000 });
     const signoff = page.getByTestId('review-requirement-signoff');
@@ -1237,7 +1237,7 @@ test.describe('ChangeOrder reviews — Final sign-off', () => {
   test('a workflow the server reports complete reads complete on the Complete node', async ({ page }) => {
     // Stage still lags at prod, but the completion probe answers 400 "has completed ChangeWorkflow".
     await mockReviews(page, fx, 'satisfied', { signOff: true, signOffCompleted: true }, PROD);
-    await page.goto(`/change-orders/${fx.changeOrderSlug}/${encodeURIComponent('__change_order_complete__')}`);
+    await page.goto(`${fx.changeOrderPath}/${encodeURIComponent('__change_order_complete__')}`);
     await expect(page.getByTestId('review-panel')).toHaveAttribute('data-gate-kind', 'final', { timeout: 45000 });
     const node = page.getByTestId('stage-rail-complete');
     await expect(node).not.toContainText('Not complete', { timeout: 20000 });
