@@ -423,8 +423,8 @@ test.describe('ChangeOrder history', () => {
     await card.getByRole('button', { name: 'Show 6 earlier days' }).click();
     await expect(card.locator('[data-history-day]')).toHaveCount(12);
     await expect(card.locator('[data-history-entry="opened"]')).toBeVisible();
-    await expect(card.getByText('ConfigHub keeps the last 1024 promotions, 256 overrides and 64 failed promotions')).toBeVisible();
-    await expect(card.getByRole('note')).toContainText('Times are in your time zone, BST; hover a time for UTC.');
+    // The card has no retention or time-zone note (the times keep their UTC tooltip).
+    await expect(card.getByRole('note')).toHaveCount(0);
   });
 
   test('an empty ChangeOrder says no promotions yet', async ({ page }) => {

@@ -32,6 +32,7 @@ import { useUnitDataMap } from '@/hooks/useUnitData';
 import { useListAllUnitsQuery } from '@confighub/rtk-query';
 
 import { buildPaths, computeFieldDiffs } from '../x/apps/entryBuilders';
+import { diffsUnderPaths } from '../x/apps/change-order/linkedSourcePaths';
 import { buildStageMatrix } from '../x/apps/change-order/changeOrderMatrix';
 import type { ChangeOrderStageMatrix } from '../x/apps/change-order/changeOrderMatrix';
 import { buildChangeOrderMergedUnits } from '../x/apps/change-order/changeOrderMergedUnits';
@@ -293,6 +294,8 @@ function invocationSourceChanges(input: {
  * Tag to its end Tag. Both ends are recorded Revisions, so every Unit here has an honest
  * diff and nothing is dropped for want of a starting point. Nothing is reported as
  * created: a source Unit is not a resource of the Spaces the change is promoted into.
+ * Where the Links read only some of a Unit's paths, its diff is those paths: nothing else
+ * in it reaches a Space the change is promoted into.
  */
 function fanOutSourceChanges(fanOutSource: FanOutSource, takenSpaceIds: ReadonlySet<string>): SourceChanges {
   if (fanOutSource.status !== 'resolved' || fanOutSource.units.length === 0) {
@@ -307,7 +310,7 @@ function fanOutSourceChanges(fanOutSource: FanOutSource, takenSpaceIds: Readonly
       resourceKind: undefined,
       resourceIdentity: resourceIdentityKeyOf(unit.before) ?? resourceIdentityKeyOf(unit.after),
       resourceIdentityJoinKeys: resourceIdentityJoinKeysOf(unit.before, unit.after),
-      fieldDiffs: computeFieldDiffs(unit.before, unit.after),
+      fieldDiffs: diffsUnderPaths(computeFieldDiffs(unit.before, unit.after), unit.linkedPaths),
       allPaths: buildPaths(unit.after),
       written: true,
       determinable: true,

@@ -250,7 +250,7 @@ export function summarisePromote(
     const spaceFailure =
       itemFailure(spaceName, space.Error?.Message) ??
       (reportsReason(space, result?.DryRun === true, baseSpaceId)
-        ? itemFailure(spaceName, space.Reason)
+        ? itemFailure(spaceName, space.Message || space.Reason)
         : null);
     if (spaceFailure !== null) {
       failures.push(spaceFailure);

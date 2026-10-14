@@ -44,10 +44,6 @@ export class SpaceListPage extends EntityGridFixture {
     return row;
   }
 
-  async clickSpaceListNavItem() {
-    await this.page.getByRole('button', { name: 'Spaces' }).click();
-  }
-
   async goToSpaceDetailPageByName(displayName: string) {
     // Use a more flexible selector to handle HighlightedCell wrapping
     // First try exact match
@@ -88,19 +84,6 @@ export class SpaceListPage extends EntityGridFixture {
     // callers assert on the space link, so wait for it (the real UI-settled state)
     // rather than returning early after only the API call completes.
     await expect(this.page.getByRole('link', { name }).first()).toBeVisible();
-  }
-
-  async goToSelectedSpace(name: string) {
-    await this.page.getByText(name).click();
-  }
-
-  /**
-   * Filter spaces using the advanced filter WHERE clause
-   * @param filterText - The WHERE clause filter text
-   */
-  async filterSpaces(filterText: string) {
-    // Space placeholder from ENTITY_FILTER_EXAMPLES
-    await this.applyAdvancedFilter(filterText, "Slug = 'production'");
   }
 
   async expectToNotBeVisibleByRole(role: Role, name: string) {

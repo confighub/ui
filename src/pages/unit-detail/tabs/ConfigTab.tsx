@@ -21,6 +21,7 @@ import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
 
 import { LastChangeDescriptionModal } from '../components/last-change-description-modal/LastChangeDescriptionModal';
+import { UNIT_DETAIL_TAB } from '../unitDetailHrefs';
 
 // Monaco (plus monaco-yaml and its workers) is the heaviest dependency on this
 // page. Loading it dynamically keeps it out of the initial chunk; it's fetched
@@ -67,7 +68,7 @@ export interface ConfigEditorTabProps {
   selectedTab: number;
 }
 
-export const CONFIG_TAB_ID = 1;
+export const CONFIG_TAB_ID = UNIT_DETAIL_TAB.config;
 
 /**
  * ConfigTab component provides a code editor interface for editing configuration data.

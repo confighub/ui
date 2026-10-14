@@ -33,10 +33,10 @@ import {
   IUnitDetailModalComposerProps,
   UnitDetailModalComposer,
 } from './components/unit-detail-modal-composer/UnitDetailModalComposer';
-import { UnitDownstreamTable } from './components/unit-downstream-table/UnitDownstreamTable';
 import { useUnitActions } from './hooks/useUnitActions';
 import { useUnitComputedData } from './hooks/useUnitComputedData';
 import { useUnitDetailData } from './hooks/useUnitDetailData';
+import { UNIT_DETAIL_TAB } from './unitDetailHrefs';
 import { ModalType } from './rules';
 import { ConfigTab } from './tabs/ConfigTab';
 import { MutationsTab } from './tabs/MutationsTab';
@@ -67,8 +67,12 @@ export const UnitDetailPage = () => {
   // State
   const { id = '', spaceID = '' } = useParams();
   const [searchParams] = useSearchParams();
-  const initialTab = parseInt(searchParams.get('tab') || '0');
-  const [selectedTab, setSelectedTab] = useState(initialTab);
+  const tabParam = searchParams.get('tab');
+  const [selectedTab, setSelectedTab] = useState(parseInt(tabParam || '0'));
+  // A link within the page, such as to another Unit's Config tab, keeps this page mounted.
+  useEffect(() => {
+    setSelectedTab(parseInt(tabParam || '0'));
+  }, [tabParam]);
 
   // Modal state
   const [modalType, setModalType] = useState<ModalType>('' as ModalType);
@@ -101,7 +105,6 @@ export const UnitDetailPage = () => {
     currentSpace,
     targets,
     upstreamUnit,
-    setCurrentUnit,
     isFetchingUnit,
     setIsEditInvocationCancelled,
     invocationToEdit,
@@ -428,7 +431,6 @@ export const UnitDetailPage = () => {
                 `Revisions (${currentUnit?.HeadRevisionNum || 0})`,
                 `Links (${links?.length || 0})`,
                 `Events (${currentUnit?.HeadUnitEventNum || 0})`,
-                `Downstreams (${downstreamUnits?.length || 0})`,
                 `Mutations (${currentUnit?.HeadMutationNum || 0})`,
               ]}
               onTabSelected={onTabSelected}
@@ -482,24 +484,12 @@ export const UnitDetailPage = () => {
         <LinksTab
           selectedTab={selectedTab}
           linkRows={links}
+          unitId={id}
+          spaceId={spaceID}
           onLinkAction={() => setRefresh(!refresh)}
         />
-        <Section $display={selectedTab === 4} $direction={Direction.FadeIn} $width='100%'>
+        <Section $display={selectedTab === UNIT_DETAIL_TAB.events} $direction={Direction.FadeIn} $width='100%'>
           <UnitEventsTable unitId={id} spaceId={spaceID} />
-        </Section>
-        <Section $display={selectedTab === 5} $direction={Direction.FadeIn} $width='100%'>
-          <UnitDownstreamTable
-            onUnitNavigation={(downstreamUnit: UnitRead) => {
-              // The space id and unit id need to come from the downstream.
-              navigate(`/units/${downstreamUnit?.SpaceID}/${downstreamUnit?.UnitID}?tab=0`, {
-                replace: true,
-              });
-              setSelectedTab(0);
-              setCurrentUnit(downstreamUnit);
-            }}
-            currentUnit={currentUnit}
-            onCloneClick={() => onModalTypeSelected('clone')}
-          />
         </Section>
         <MutationsTab
           selectedTab={selectedTab}

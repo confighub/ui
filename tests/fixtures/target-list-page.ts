@@ -22,10 +22,6 @@ export class TargetListPage extends EntityGridFixture {
     await this.page.goto('/targets');
   }
 
-  async clickTargetListNavItem() {
-    await this.page.getByRole('button', { name: 'Targets' }).click();
-  }
-
   async goToDetailPageByRowClick(targetName: string) {
     await this.page.getByLabel(targetName, { exact: true }).click();
   }
@@ -49,10 +45,6 @@ export class TargetListPage extends EntityGridFixture {
 
     // Click Create Target button
     await this.page.getByRole('button', { name: 'Create Target' }).click();
-  }
-
-  async closeTargetDetailDrawer() {
-    await this.page.locator('.MuiBackdrop-root').click();
   }
 
   async deleteTarget(name: string) {
@@ -127,52 +119,5 @@ export class TargetListPage extends EntityGridFixture {
       await expect(partialText).not.toBeVisible();
     }
     // If neither exists, the expectation is already met
-  }
-
-  async editTargetWithDeleteGates({
-    targetName,
-    deleteGates,
-  }: {
-    targetName: string;
-    deleteGates: string[];
-  }) {
-    await this.goToDetailPageByRowClick(targetName);
-
-    // Add delete gates
-    for (const gate of deleteGates) {
-      await this.page.getByRole('textbox', { name: 'Delete Gate Key' }).fill(gate);
-      await this.page.getByRole('button', { name: 'Add Gate' }).click();
-    }
-
-    // Click Update Target button and wait for the update API call to complete
-    await Promise.all([
-      this.page.waitForResponse(
-        (response) =>
-          response.url().includes('/target/') &&
-          ['PUT', 'PATCH'].includes(response.request().method()),
-      ),
-      this.page.getByRole('button', { name: 'Update Target' }).click(),
-    ]);
-  }
-
-  async attemptDeleteTargetByNameExpectingError(name: string, expectedError: string) {
-    await this.selectRow(name);
-    await this.deleteTargetButton.click();
-
-    // A delete refused by its DeleteGates is a conflict.
-    const responsePromise = this.page.waitForResponse(
-      (response) =>
-        response.url().includes('/api/target') &&
-        response.request().method() === 'DELETE' &&
-        response.status() === 409,
-    );
-
-    await this.confirmButton.click();
-
-    // Wait for the error response
-    await responsePromise;
-
-    // Verify the expected error message appears (auto-waits for it to render)
-    await this.expectToBeVisibleByText(expectedError);
   }
 }

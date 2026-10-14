@@ -110,11 +110,6 @@ export class InitiativesPage {
     await this.page.getByRole('menuitem', { name: 'Activate' }).click();
   }
 
-  /** Click "Mark Completed" from the open card context menu (in_progress → completed). */
-  async clickMarkCompletedFromMenu() {
-    await this.page.getByRole('menuitem', { name: 'Mark Completed' }).click();
-  }
-
   /** Confirm the delete dialog by clicking the "Delete" button. */
   async confirmDelete() {
     // The dialog has a "Cancel" and a "Delete" button — use the one inside the dialog
@@ -128,17 +123,6 @@ export class InitiativesPage {
     await this.getCard(initiativeName).click();
   }
 
-  /**
-   * Click the Back button in the initiative editor left pane.
-   * Uses `locator('button')` to avoid matching <div role="button"> sidebar elements.
-   */
-  async clickBackButton() {
-    // Exact name: a substring match on 'Back' also selects the header's "Feedback" button,
-    // which does not navigate.
-    await this.page.getByRole('button', { name: 'Back', exact: true }).click();
-    await this.page.waitForURL('**/x/initiatives');
-  }
-
   /** Assert a initiative card with the given name is visible in the kanban. */
   async expectInitiativeVisible(initiativeName: string) {
     await expect(this.getCard(initiativeName)).toBeVisible();
@@ -147,16 +131,6 @@ export class InitiativesPage {
   /** Assert no initiative card with the given name is present. */
   async expectInitiativeNotVisible(initiativeName: string) {
     await expect(this.getCard(initiativeName)).not.toBeVisible();
-  }
-
-  /** Assert the empty-state message is visible (no initiatives yet). */
-  async expectEmptyState() {
-    await expect(this.page.getByText('No initiatives yet')).toBeVisible();
-  }
-
-  /** Assert we are on the initiatives list page. */
-  async expectOnInitiativesPage() {
-    await expect(this.page).toHaveURL(/\/x\/initiatives$/);
   }
 
   /**

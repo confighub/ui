@@ -47,7 +47,8 @@
  * reading a backgrounded ChangeOrder.
  */
 
-import { useCallback, useMemo } from 'react';
+import { skipToken } from '@reduxjs/toolkit/query';
+import { useCallback, useMemo, useState } from 'react';
 
 import { useComponentSlugs } from '@/hooks/useComponentSlugs';
 import { usePolling } from '@/hooks/usePolling';
@@ -59,13 +60,22 @@ import {
   type ChangeOrderPromotionFailure,
   type ChangeOrderPromotionOverride,
   type ChangeOrderRelease,
+  type ChangeOrderReviewRequestRead,
+  type ChangeWorkflowSpec,
   type ComponentRead,
   type ExtendedSpaceRead,
 } from '@confighub/rtk-query';
 
 import type { RunningRelease } from '../x/apps/liveStatus';
+import { usePromoteFinalQuery } from './reviews/reviewServerApi';
+import { promoteFinalOf, type PromoteFinalAnswer } from './reviews/stageReviewInputs';
 import { applyServerGates, buildGatesForStage, onlyTheServerEvaluates } from '../x/apps/change-order/changeOrderGates';
-import { useServerStageGates } from '../x/apps/change-order/useServerStageGates';
+import {
+  SERVER_GATES_POLL_INTERVAL_MS,
+  useServerStageGateReads,
+  type ServerGateRefusals,
+  type ServerGatesByStage,
+} from '../x/apps/change-order/useServerStageGates';
 import {
   buildConsoleRow,
   consoleSpaceLoaded,
@@ -150,6 +160,8 @@ export interface ChangeOrderDetail {
   invocationSource?: InvocationSource;
   baseSpaceSlug?: string;
   createdAt?: string;
+  /** `ChangeOrder.UserID`: who created the ChangeOrder. Absent for ChangeOrders created before it was recorded. */
+  creatorUserId?: string;
   abortedReason: string;
   /**
    * The row this ChangeOrder shows on the console — the SAME derivation, so the
@@ -166,6 +178,26 @@ export interface ChangeOrderDetail {
   componentName?: string;
   startTagId?: string;
   endTagId?: string;
+  /** `ChangeOrder.ReleaseTagID`: the Tag a Release of the change is published at. */
+  releaseTagId?: string;
+  /** `ChangeOrder.Stage`, verbatim (`Completed` once Final holds). */
+  orderStage?: string;
+  /** The ChangeOrder's own Space holds the change from the start (`changeOrderOwnSpaceReached`). */
+  ownSpaceReached: boolean;
+  /**
+   * The workflow is complete: `ChangeOrder.Stage` is `Completed`, or the server refuses a
+   * promote dry run because every last-stage Space satisfies Final (it can say so first).
+   */
+  workflowCompleted: boolean;
+  /**
+   * The promote dry run with no TargetStage, once the last stage is reached: `open` with
+   * the Final rows (#5788), `notOpen`, `completed`, `noPermission` or `error`.
+   */
+  finalAnswer?: PromoteFinalAnswer;
+  /** `ChangeOrder.ReviewRequests`, as read. */
+  reviewRequests: ChangeOrderReviewRequestRead[];
+  /** `ChangeOrder.Version`, sent with a ReviewRequests PATCH. */
+  version?: number;
   /**
    * Units the ChangeOrder passed over, keyed by unit id, with the reason.
    *
@@ -213,6 +245,15 @@ export interface ChangeOrderDetail {
   stagesTotal: number;
   nextStageId: string | null;
 
+  /** The governing workflow (the ChangeOrder's frozen copy), or undefined when none governs. */
+  workflow?: ChangeWorkflowSpec;
+  /** The promote dry run's gate results, keyed by stage name. The authority on server-only gates. */
+  serverGatesByStage: ServerGatesByStage;
+  /** Stages the dry run was refused for, by status (403: no permission to promote). */
+  serverGateRefusals: ServerGateRefusals;
+  /** Asks the server for fresh gate verdicts now, for example after an Attestation is recorded. */
+  refreshServerGates: () => void;
+
   isLoading: boolean;
   isFetching: boolean;
   error: unknown;
@@ -224,6 +265,7 @@ const EMPTY_PROMOTIONS: ChangeOrderPromotion[] = [];
 const EMPTY_OVERRIDES: ChangeOrderPromotionOverride[] = [];
 const EMPTY_FAILURES: ChangeOrderPromotionFailure[] = [];
 const EMPTY_RELEASES: ChangeOrderRelease[] = [];
+const EMPTY_REVIEW_REQUESTS: ChangeOrderReviewRequestRead[] = [];
 
 /**
  * Which Spaces count for this ChangeOrder, or `null` when that cannot be known.
@@ -388,6 +430,7 @@ export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetai
     startTagId: order?.StartTagID,
     endTagId: order?.EndTagID,
     inScopeSpaceIds: order?.InScopeSpaceIDs,
+    updateType: order?.UpdateType,
     skip: !fansOut,
   });
   const invocationSource = useInvocationSource({
@@ -479,9 +522,48 @@ export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetai
    * that selects no Space, which it refuses before evaluating anything. A
    * completed ChangeOrder is refused outright, so nothing is asked.
    */
+  // Bumped by `refreshServerGates`, so an Attestation recorded here is followed by fresh verdicts.
+  const [gateRefreshCount, setGateRefreshCount] = useState(0);
+  const refreshServerGates = useCallback(() => setGateRefreshCount((count) => count + 1), []);
+
+  /*
+   * Whether the workflow is complete. `ChangeOrder.Stage` says `Completed` only when
+   * the server advances it, which can lag: the promote dry run refuses a complete
+   * ChangeOrder (400, `refuseCompletedWorkflow`, internal/views/promote_gates.go:381)
+   * while the Stage still names the last stage. So that refusal is asked for, once the
+   * last stage has been promoted into and until the Stage says it.
+   */
+  const lastStage = workflow?.Stages[workflow.Stages.length - 1];
+  const resolvedIds = order?.ResolvedSpaceIDs;
+  const lastStageReached =
+    lastStage !== undefined &&
+    (stageSpaces[lastStage.Name] ?? []).some((member) => !!member.Space?.SpaceID && (resolvedIds ?? []).includes(member.Space.SpaceID));
+  const probeCompletion =
+    order?.ChangeOrderID !== undefined && workflow !== undefined && order.Stage !== 'Completed' && lastStageReached;
+  // The same dry run with no TargetStage answers `Complete` with the Final rows (#5788) once
+  // every stage has the change, and the completed refusal once Final holds.
+  const finalProbe = usePromoteFinalQuery(
+    probeCompletion && order?.ChangeOrderID !== undefined
+      ? { changeOrderId: order.ChangeOrderID, refreshKey: JSON.stringify([order.UpdatedAt, gateRefreshCount]) }
+      : skipToken,
+  );
+  const finalAnswer = useMemo(
+    () => (probeCompletion && finalProbe.data !== undefined ? promoteFinalOf(finalProbe.data) : undefined),
+    [probeCompletion, finalProbe.data],
+  );
+  const refetchFinal = finalProbe.refetch;
+  const pollFinal = useCallback(() => {
+    if (probeCompletion && finalAnswer?.kind !== 'completed' && !finalProbe.isUninitialized) void refetchFinal();
+  }, [probeCompletion, finalAnswer?.kind, finalProbe.isUninitialized, refetchFinal]);
+  usePolling(pollFinal, SERVER_GATES_POLL_INTERVAL_MS);
+  const workflowCompleted = order?.Stage === 'Completed' || finalAnswer?.kind === 'completed';
+
   const serverGateStageNames = useMemo(() => {
-    if (workflow === undefined || order?.Stage === 'Completed') return [];
-    return workflow.Stages.slice(1)
+    // A completed workflow is refused outright (400), so nothing is asked.
+    if (workflow === undefined || workflowCompleted) return [];
+    // The first stage too, when the own Space holds the change: the server evaluates its
+    // prerequisites over that Space (`evaluateStageGates`).
+    return workflow.Stages.filter((_, index) => index > 0 || ownSpaceReached)
       .filter(
         (stage) =>
           (stageSpaces[stage.Name]?.length ?? 0) > 0 &&
@@ -490,8 +572,8 @@ export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetai
           ),
       )
       .map((stage) => stage.Name);
-  }, [workflow, stageSpaces, order?.Stage]);
-  const serverGates = useServerStageGates({
+  }, [workflow, stageSpaces, workflowCompleted, ownSpaceReached]);
+  const serverGateReads = useServerStageGateReads({
     changeOrderId: order?.ChangeOrderID,
     stageNames: serverGateStageNames,
     refreshKey: JSON.stringify([
@@ -499,14 +581,21 @@ export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetai
       order?.ResolvedSpaceIDs,
       order?.ReleasedSpaceIDs,
       order?.Stage,
+      gateRefreshCount,
     ]),
   });
+  const serverGates = serverGateReads.byStage;
+  const serverGateRefusals = serverGateReads.refusedByStage;
+  const reviewRequests = order?.ReviewRequests ?? EMPTY_REVIEW_REQUESTS;
 
   return useMemo<ChangeOrderDetail>(() => {
     if (slug === undefined || order?.ChangeOrderID === undefined) {
       return {
         found: false,
         slug: slug ?? '',
+        ownSpaceReached,
+        workflowCompleted,
+        reviewRequests,
         abortedReason: '',
         skippedUnits: {},
         promotions: EMPTY_PROMOTIONS,
@@ -531,6 +620,10 @@ export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetai
         stagesDone: 0,
         stagesTotal: 0,
         nextStageId: null,
+        workflow: undefined,
+        serverGatesByStage: serverGates,
+        serverGateRefusals,
+        refreshServerGates,
         isLoading,
         isFetching,
         error,
@@ -580,6 +673,7 @@ export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetai
           changeOrderSlug: order.Slug ?? '',
           customPrerequisites: workflow?.CustomPrerequisites,
           attestationPrerequisites: workflow?.AttestationPrerequisites,
+          ownSpaceReached,
         }),
         serverGates[stage.id],
         stage,
@@ -662,6 +756,7 @@ export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetai
       invocationSource,
       baseSpaceSlug: order.SpaceSlug ?? entry?.Space?.Slug,
       createdAt: order.CreatedAt,
+      creatorUserId: order.UserID,
       abortedReason: order.AbortedReason ?? '',
       // Carried, not re-guessed. The console has always fetched `State` and
       // thrown it away, substituting a derived label for an authoritative field
@@ -671,6 +766,13 @@ export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetai
       componentName,
       startTagId: order.StartTagID,
       endTagId: order.EndTagID,
+      releaseTagId: order.ReleaseTagID,
+      orderStage: order.Stage,
+      ownSpaceReached,
+      workflowCompleted,
+      finalAnswer,
+      reviewRequests,
+      version: order.Version,
       skippedUnits: order.SkippedUnits ?? {},
       promotions: order.Promotions ?? EMPTY_PROMOTIONS,
       promotionOverrides: order.PromotionOverrides ?? EMPTY_OVERRIDES,
@@ -686,6 +788,10 @@ export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetai
       stagesDone: consoleRow.stagesDone,
       stagesTotal: consoleRow.stagesTotal,
       nextStageId,
+      workflow,
+      serverGatesByStage: serverGates,
+      serverGateRefusals,
+      refreshServerGates,
       isLoading,
       isFetching,
       error,
@@ -702,6 +808,10 @@ export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetai
     entry,
     baseSpaceId,
     ownSpaceReached,
+    workflowCompleted,
+    finalAnswer,
+    reviewRequests,
+    serverGateRefusals,
     invokes,
     fansOut,
     fanOutSource,
@@ -714,6 +824,7 @@ export function useChangeOrderDetail(slug: string | undefined): ChangeOrderDetai
     allSpaces,
     allSpaceById,
     serverGates,
+    refreshServerGates,
     slug,
     isLoading,
     isFetching,

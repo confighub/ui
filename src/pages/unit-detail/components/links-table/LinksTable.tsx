@@ -27,6 +27,7 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { GridColDef } from '@mui/x-data-grid';
 
+import { LinkDetailsDrawer } from '../link-details-drawer/LinkDetailsDrawer';
 import { UpdateLinksModal } from '../update-links-modal/UpdateLinksModal';
 
 /**
@@ -35,7 +36,7 @@ import { UpdateLinksModal } from '../update-links-modal/UpdateLinksModal';
 export type LinkRow = { id: string } & ExtendedLinkRead;
 
 // Define all possible column fields for type safety
-type LinkColumnFields = 'slug' | 'from' | 'to' | 'toSpace' | 'updateType' | 'autoUpdate' | 'useLiveState' | 'whereMutation' | 'whereResource' | 'upstreamLastMergedRev' | 'downstreamLastMergedRev' | 'createdAt' | 'updatedAt' | 'actions';
+type LinkColumnFields = 'slug' | 'from' | 'fromSpace' | 'to' | 'toSpace' | 'updateType' | 'autoUpdate' | 'stale' | 'useLiveState' | 'whereMutation' | 'whereResource' | 'upstreamLastMergedRev' | 'downstreamLastMergedRev' | 'createdAt' | 'updatedAt' | 'actions';
 
 // Create a type that requires all columns to be specified
 type LinkColumnVisibility = Record<LinkColumnFields, boolean>;
@@ -68,17 +69,19 @@ export const LinksTable = (props: LinksTableProps) => {
     columnVisibility: {
       slug: true,
       from: true,
+      fromSpace: true,
       to: true,
       toSpace: true,
       updateType: true,
       autoUpdate: false,
+      stale: true,
       useLiveState: false,
       whereMutation: false,
       whereResource: false,
       upstreamLastMergedRev: false,
       downstreamLastMergedRev: false,
       createdAt: false,
-      updatedAt: true,
+      updatedAt: false,
       actions: true,
     } satisfies LinkColumnVisibility,
   });
@@ -90,6 +93,7 @@ export const LinksTable = (props: LinksTableProps) => {
   const [editLinkTo, setEditLinkTo] = useState<UnitRead>({} as UnitRead);
   const [editLink, setEditLink] = useState<LinkRead>({} as LinkRead);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [detailsLinkID, setDetailsLinkID] = useState<string>('');
 
   const [deleteLink, { isSuccess: isDeleteSuccess, error: deleteError }] =
     useDeleteLinkMutation();
@@ -117,12 +121,28 @@ export const LinksTable = (props: LinksTableProps) => {
     {
       field: 'slug',
       headerName: 'Name',
-      minWidth: 140,
-      flex: 0.8,
+      minWidth: 220,
+      flex: 1.2,
       valueGetter: (_, row) => row.Link?.Slug,
       renderCell: (params) => (
         <CenteredTableCell>
-          <Typography variant='body1'>{params.row.Link?.Slug}</Typography>
+          <Typography
+            variant='body1'
+            component='button'
+            onClick={() => setDetailsLinkID(params.row.id)}
+            sx={{
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              color: 'inherit',
+              font: 'inherit',
+            }}
+            data-testid={`link-details-${params.row.Link?.Slug}`}
+          >
+            {params.row.Link?.Slug}
+          </Typography>
         </CenteredTableCell>
       ),
     },
@@ -144,6 +164,28 @@ export const LinksTable = (props: LinksTableProps) => {
               >
                 {fromUnit.Slug}
               </Typography>
+            </NavLink>
+          </CenteredTableCell>
+        );
+      },
+    },
+    {
+      field: 'fromSpace',
+      headerName: 'From Space',
+      minWidth: 200,
+      flex: 1,
+      valueGetter: (_, row) => row.Space?.Slug ?? row.Link?.SpaceSlug,
+      renderCell: (params) => {
+        const spaceID = params.row.Link?.SpaceID;
+        const slug = params.row.Space?.Slug ?? params.row.Link?.SpaceSlug;
+
+        return (
+          <CenteredTableCell>
+            <NavLink
+              to={`/spaces/${spaceID}`}
+              style={{ cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              <Typography variant='body1'>{slug}</Typography>
             </NavLink>
           </CenteredTableCell>
         );
@@ -344,7 +386,7 @@ export const LinksTable = (props: LinksTableProps) => {
         );
       },
     },
-  ], [setSelectedLinkID, setIsLinkDeleteConfirmationOpen, setEditLinkFrom, setEditLinkTo, setEditLink, setIsUpdateLinksModalOpen]);
+  ], [setSelectedLinkID, setIsLinkDeleteConfirmationOpen, setEditLinkFrom, setEditLinkTo, setEditLink, setIsUpdateLinksModalOpen, setDetailsLinkID]);
 
   // Apply stored widths to columns
   const columns = useMemo(
@@ -398,6 +440,10 @@ export const LinksTable = (props: LinksTableProps) => {
         onSubmit={onLinkDelete}
         modalDescriptionText={`Are you sure you want to delete ${selectedLink.Slug || 'the selected link'}?`}
         modalTitleText='Delete Link'
+      />
+      <LinkDetailsDrawer
+        link={rows.find((link) => link.id === detailsLinkID)}
+        onClose={() => setDetailsLinkID('')}
       />
       <UpdateLinksModal
         isOpen={isUpdateLinksModalOpen}

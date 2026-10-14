@@ -21,15 +21,21 @@
  * An answer that does not come — no permission to promote, a ChangeOrder the
  * server will no longer promote — leaves the stage's gates as the page
  * evaluated them, which is not evaluated.
+ *
+ * SENT WITH `authFetch`, NOT THE RTK BASE QUERY. RTK hands every 403 to the
+ * app's `handleForbidden`, which replaces the page with /access-denied; a viewer
+ * who may look at a ChangeOrder but not promote it is refused this dry run as a
+ * matter of course, and must keep the page (`refusedByStage` says 403).
  */
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { usePromoteMutation, type PromoteGateResult, type PromoteResult } from '@confighub/rtk-query';
+import type { PromoteGateResult, PromoteResult } from '@confighub/rtk-query';
 
+import { authFetch } from '@/auth/session';
 import { usePolling } from '@/hooks/usePolling';
 
-import { promoteResultOf, statusOf } from './useChangeOrderActions';
+import { promoteDryRun } from '../../../change-orders/reviews/quietServerCalls';
 
 /**
  * How often the verdicts are asked for again with nothing else changed.
@@ -43,6 +49,19 @@ export type ServerGatesByStage = Readonly<Record<string, readonly PromoteGateRes
 
 const NO_GATES: ServerGatesByStage = {};
 
+/**
+ * Why a stage asked about has no verdicts: the HTTP status of the refusal (403
+ * is no permission to promote), or 0 for an answer that named no such stage.
+ */
+export type ServerGateRefusals = Readonly<Record<string, number>>;
+
+const NO_REFUSALS: ServerGateRefusals = {};
+
+export interface ServerStageGateReads {
+  byStage: ServerGatesByStage;
+  refusedByStage: ServerGateRefusals;
+}
+
 export interface UseServerStageGatesArgs {
   changeOrderId: string | undefined;
   /** The stages to ask about, by name. Empty asks nothing. */
@@ -54,15 +73,24 @@ export interface UseServerStageGatesArgs {
   refreshKey: string;
 }
 
-export function useServerStageGates({
+export function useServerStageGates(args: UseServerStageGatesArgs): ServerGatesByStage {
+  return useServerStageGateReads(args).byStage;
+}
+
+/** The verdicts, and why a stage asked about has none (the reviews say "no permission" from a 403). */
+export function useServerStageGateReads({
   changeOrderId,
   stageNames,
   refreshKey,
-}: UseServerStageGatesArgs): ServerGatesByStage {
-  const [runPromote] = usePromoteMutation();
-  const [gates, setGates] = useState<{ changeOrderId: string | undefined; byStage: ServerGatesByStage }>({
+}: UseServerStageGatesArgs): ServerStageGateReads {
+  const [gates, setGates] = useState<{
+    changeOrderId: string | undefined;
+    byStage: ServerGatesByStage;
+    refusedByStage: ServerGateRefusals;
+  }>({
     changeOrderId,
     byStage: NO_GATES,
+    refusedByStage: NO_REFUSALS,
   });
   const [tick, setTick] = useState(0);
   const poll = useCallback(() => setTick((t) => t + 1), []);
@@ -72,38 +100,37 @@ export function useServerStageGates({
 
   useEffect(() => {
     if (changeOrderId === undefined || stageNames.length === 0) {
-      setGates({ changeOrderId, byStage: NO_GATES });
+      setGates({ changeOrderId, byStage: NO_GATES, refusedByStage: NO_REFUSALS });
       return;
     }
     let cancelled = false;
     void Promise.all(
-      stageNames.map(async (stageName): Promise<[string, readonly PromoteGateResult[]] | null> => {
-        let result: PromoteResult | undefined;
-        try {
-          result = await runPromote({
-            promoteRequest: { ChangeOrderID: changeOrderId, TargetStage: stageName, DryRun: true },
-          }).unwrap();
-        } catch (error) {
-          // A held stage is refused, and the refusal carries the verdicts.
-          // Anything else is no answer.
-          if (statusOf(error) !== 409) return null;
-          result = promoteResultOf(error);
-        }
+      stageNames.map(async (stageName): Promise<[string, readonly PromoteGateResult[] | number]> => {
+        const answer = await promoteDryRun(authFetch, { ChangeOrderID: changeOrderId, TargetStage: stageName });
+        // A held stage is refused (409), and the refusal carries the verdicts.
+        // Anything else is no answer; its status says why.
+        const ok = answer.status >= 200 && answer.status < 300;
+        if (!ok && answer.status !== 409) return [stageName, answer.status];
+        const result = answer.body as PromoteResult | undefined;
         const stage = result?.Stages?.find((candidate) => candidate.Name === stageName);
-        return stage === undefined ? null : [stageName, stage.Gates ?? []];
+        return stage === undefined ? [stageName, 0] : [stageName, stage.Gates ?? []];
       }),
     ).then((answers) => {
       if (cancelled) return;
       const byStage: Record<string, readonly PromoteGateResult[]> = {};
-      for (const answer of answers) {
-        if (answer !== null) byStage[answer[0]] = answer[1];
+      const refusedByStage: Record<string, number> = {};
+      for (const [stageName, answer] of answers) {
+        if (typeof answer === 'number') refusedByStage[stageName] = answer;
+        else byStage[stageName] = answer;
       }
       // The same answer keeps its identity, so a poll that changed nothing
       // does not re-derive everything the ChangeOrder page computes from it.
       setGates((previous) =>
-        previous.changeOrderId === changeOrderId && JSON.stringify(previous.byStage) === JSON.stringify(byStage)
+        previous.changeOrderId === changeOrderId &&
+        JSON.stringify(previous.byStage) === JSON.stringify(byStage) &&
+        JSON.stringify(previous.refusedByStage) === JSON.stringify(refusedByStage)
           ? previous
-          : { changeOrderId, byStage },
+          : { changeOrderId, byStage, refusedByStage },
       );
     });
     return () => {
@@ -112,9 +139,11 @@ export function useServerStageGates({
     // `stagesKey` stands for `stageNames`, whose identity may change while its
     // contents do not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [changeOrderId, stagesKey, refreshKey, tick, runPromote]);
+  }, [changeOrderId, stagesKey, refreshKey, tick]);
 
   // Verdicts about another ChangeOrder are never shown for this one, even for
   // the moment before this one's arrive.
-  return gates.changeOrderId === changeOrderId ? gates.byStage : NO_GATES;
+  return gates.changeOrderId === changeOrderId
+    ? { byStage: gates.byStage, refusedByStage: gates.refusedByStage }
+    : { byStage: NO_GATES, refusedByStage: NO_REFUSALS };
 }

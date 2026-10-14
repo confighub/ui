@@ -35,17 +35,19 @@ export function getApiErrorMessage(
     return defaultMessage;
   }
 
-  // Check for FetchBaseQueryError with data.message (API errors from RTK Query)
+  // Check for FetchBaseQueryError with data.message (API errors from RTK Query). An error
+  // response the server writes itself has `message`, the error as one string, and `Error`, the
+  // error as data; an operation that refuses in its own response type, such as a promotion,
+  // has only `Error`.
   if ('data' in error) {
     const fetchError = error as FetchBaseQueryError;
-    if (
-      typeof fetchError.data === 'object' &&
-      fetchError.data != null &&
-      'message' in fetchError.data
-    ) {
-      const message = (fetchError.data as { message: unknown }).message;
-      if (typeof message === 'string') {
-        return message;
+    if (typeof fetchError.data === 'object' && fetchError.data != null) {
+      const data = fetchError.data as { message?: unknown; Error?: { Message?: unknown } };
+      if (typeof data.message === 'string') {
+        return data.message;
+      }
+      if (typeof data.Error?.Message === 'string') {
+        return data.Error.Message;
       }
     }
   }
@@ -59,6 +61,25 @@ export function getApiErrorMessage(
   }
 
   return defaultMessage;
+}
+
+/**
+ * The `Type` of the error in an API error response: the error's category as a code, such as
+ * `NotFound`, `Conflict` or `AlreadyExists`. It tells apart errors that share an HTTP status,
+ * as a version mismatch and a name already taken share 409. Undefined for anything else.
+ */
+export function getApiErrorType(
+  error: FetchBaseQueryError | SerializedError | Error | unknown,
+): string | undefined {
+  if (error == null || typeof error !== 'object' || !('data' in error)) {
+    return undefined;
+  }
+  const data = (error as FetchBaseQueryError).data;
+  if (typeof data !== 'object' || data == null) {
+    return undefined;
+  }
+  const type = (data as { Error?: { Type?: unknown } }).Error?.Type;
+  return typeof type === 'string' ? type : undefined;
 }
 
 /**

@@ -15,12 +15,17 @@
  * ONE QUERY, UNDEDUPED. The list across Spaces returns one Revision per Unit unless told
  * otherwise, and a `Tags.*` term is evaluated after that, so asking for both Tags at once
  * without `distinct_on=Off` keeps only the newer of each Unit's two Revisions.
+ *
+ * For a TransformPaths ChangeOrder it also reads the in-scope Links that take from each source
+ * Unit, to know which of its paths the change can carry (`linkedSourcePaths`).
  */
 
 import { useMemo } from 'react';
 
-import { useListAllRevisionsQuery } from '@confighub/rtk-query';
+import { useListAllRevisionsQuery, useSearchListLinksQuery, type LinkRead } from '@confighub/rtk-query';
 import { useRevisionDataMap } from '@/hooks/useUnitData';
+
+import { linkedSourcePaths } from './linkedSourcePaths';
 
 /** One source Unit of a fan-out ChangeOrder. */
 export interface FanOutSourceUnit {
@@ -32,6 +37,12 @@ export interface FanOutSourceUnit {
   before: string;
   /** Configuration at the end Tag: the change as made. */
   after: string;
+  /**
+   * The paths the ChangeOrder's Links read from this Unit, when they read nothing else: the
+   * only part of the change that reaches the Spaces it is promoted into. Absent when any of
+   * the Unit can (`linkedSourcePaths`).
+   */
+  linkedPaths?: string[];
 }
 
 export interface FanOutSource {
@@ -55,18 +66,21 @@ export function useFanOutSource(args: {
   startTagId: string | undefined;
   endTagId: string | undefined;
   inScopeSpaceIds: readonly string[] | undefined;
+  /** `ChangeOrder.UpdateType`: the kind of Link the change travels over. */
+  updateType: string | undefined;
   skip: boolean;
 }): FanOutSource {
-  const { startTagId, endTagId, inScopeSpaceIds, skip } = args;
+  const { startTagId, endTagId, inScopeSpaceIds, updateType, skip } = args;
+
+  const inScope = useMemo(() => [...(inScopeSpaceIds ?? [])].sort(), [inScopeSpaceIds]);
 
   const where = useMemo(() => {
     if (startTagId === undefined || endTagId === undefined) return undefined;
     const tags = `Tags.*.TagID IN ('${startTagId}', '${endTagId}')`;
-    const inScope = [...(inScopeSpaceIds ?? [])].sort();
     return inScope.length === 0
       ? tags
       : `${tags} AND SpaceID NOT IN (${inScope.map((id) => `'${id}'`).join(', ')})`;
-  }, [startTagId, endTagId, inScopeSpaceIds]);
+  }, [startTagId, endTagId, inScope]);
 
   const { data: revisions, isError } = useListAllRevisionsQuery(
     {
@@ -81,10 +95,34 @@ export function useFanOutSource(args: {
 
   const { dataFor, ready } = useRevisionDataMap((revisions ?? []).map((r) => r.Revision?.RevisionID));
 
+  // Only a TransformPaths Link reads named paths; every other kind carries the whole Unit.
+  const linkWhere = useMemo(() => {
+    if (updateType !== 'TransformPaths' || inScope.length === 0) return undefined;
+    const unitIds = [...new Set((revisions ?? []).map((r) => r.Revision?.UnitID).filter((id) => id !== undefined))];
+    if (unitIds.length === 0) return undefined;
+    return (
+      `UpdateType = 'TransformPaths' AND ToUnitID IN (${unitIds.sort().map((id) => `'${id}'`).join(', ')})`
+      + ` AND SpaceID IN (${inScope.map((id) => `'${id}'`).join(', ')})`
+    );
+  }, [updateType, inScope, revisions]);
+  const { data: links, isError: linksFailed } = useSearchListLinksQuery(
+    { where: linkWhere },
+    { skip: skip || linkWhere === undefined },
+  );
+
   return useMemo((): FanOutSource => {
     if (skip || where === undefined) return EMPTY;
     if (isError) return { ...EMPTY, status: 'failed' };
     if (revisions === undefined || !ready) return EMPTY;
+    // Without the Links every source Unit is shown whole, so a failure to read them is not
+    // a failure of the source: it only loses the narrowing.
+    if (linkWhere !== undefined && links === undefined && !linksFailed) return EMPTY;
+    const linksByUnitId = new Map<string, LinkRead[]>();
+    for (const entry of links ?? []) {
+      const link = entry.Link;
+      if (link === undefined) continue;
+      linksByUnitId.set(link.ToUnitID, [...(linksByUnitId.get(link.ToUnitID) ?? []), link]);
+    }
 
     const byUnitId = new Map<string, Partial<FanOutSourceUnit> & { unitId: string }>();
     const spaceIds: string[] = [];
@@ -122,8 +160,12 @@ export function useFanOutSource(args: {
         toolchainType: unit.toolchainType,
         before: unit.before,
         after: unit.after,
+        linkedPaths:
+          linkWhere === undefined || linksFailed
+            ? undefined
+            : linkedSourcePaths(linksByUnitId.get(unit.unitId) ?? []),
       });
     }
     return { status: 'resolved', units, spaceIds, spaceNameBySpaceId };
-  }, [skip, where, isError, revisions, ready, dataFor, startTagId, endTagId]);
+  }, [skip, where, isError, revisions, ready, dataFor, startTagId, endTagId, linkWhere, links, linksFailed]);
 }

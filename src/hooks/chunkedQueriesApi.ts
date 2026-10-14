@@ -69,10 +69,11 @@ export interface UserIdsArg {
 export const BY_ID_CHUNK_SIZE = 50;
 
 /** The base query RTK hands a `queryFn`: the API's own, with its auth handling. */
-type ChunkBaseQuery = (
+export type ChunkBaseQuery = (
   args: string | FetchArgs,
 ) => ReturnType<BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError>>;
-type ChunkResult<T> = { data: T[] } | { error: FetchBaseQueryError };
+/** `truncated`: a `maxPages` cap stopped a read before its last page. */
+export type ChunkResult<T> = { data: T[]; truncated?: boolean } | { error: FetchBaseQueryError };
 
 /**
  * Sorted and without duplicates or empties: the form the cache key is built from.
@@ -85,28 +86,35 @@ const idSet = (ids: readonly (string | undefined | null)[] | undefined): string[
   Array.from(new Set((ids ?? []).filter((id): id is string => !!id))).sort();
 
 /** The response header carrying the token for a list's next page. */
-const CONTINUE_HEADER = 'ConfigHub-Continue';
+export const CONTINUE_HEADER = 'ConfigHub-Continue';
 
 /** The largest page a list returns. */
-const PAGE_LIMIT = 1000;
+export const PAGE_LIMIT = 1000;
 
 /**
  * Every page of one list request: the request is repeated with the token from the
  * previous response's `ConfigHub-Continue` header until a response has none. A page can
  * hold fewer rows than the limit, or none, and still be followed by more, so the header
  * and not the row count says when the list is done.
+ *
+ * Every page sends `limit` (PAGE_LIMIT), which a read with `distinct_on=Off` must.
+ * With `maxPages`, the read stops after that many pages and says `truncated`.
  */
-async function fetchAllPages<T>(
+export async function fetchAllPages<T>(
   args: FetchArgs,
   baseQuery: ChunkBaseQuery,
-): Promise<{ data: T[]; error?: undefined } | { error: FetchBaseQueryError }> {
+  { maxPages }: { maxPages?: number } = {},
+): Promise<{ data: T[]; truncated?: boolean; error?: undefined } | { error: FetchBaseQueryError }> {
   const rows: T[] = [];
   let token: string | undefined;
+  let pages = 0;
   do {
+    if (maxPages !== undefined && pages >= maxPages) return { data: rows, truncated: true };
     const params: Record<string, unknown> = { ...args.params, limit: PAGE_LIMIT };
     if (token) params.continue = token;
     const result = await baseQuery({ ...args, params });
     if (result.error) return { error: result.error };
+    pages += 1;
     rows.push(...((result.data as T[] | undefined) ?? []));
     const meta = result.meta as FetchBaseQueryMeta | undefined;
     token = meta?.response?.headers.get(CONTINUE_HEADER) ?? undefined;
@@ -118,17 +126,18 @@ async function fetchAllPages<T>(
  * One request per chunk, at most MAX_PARALLEL_CHUNKS at a time, rows concatenated in
  * chunk order. When a chunk fails, the result is the error of the first failed chunk:
  * a partial list would look complete to every caller. With `paged`, each chunk is read
- * to its last page.
+ * to its last page, or to `maxPages` pages, and the result says `truncated` if any was
+ * cut. `request` also receives the chunk's ids, for a clause that depends on them.
  */
-async function fetchChunks<T>(
+export async function fetchChunks<T>(
   column: string,
   ids: readonly string[],
-  request: (where: string, count: number) => FetchArgs,
+  request: (where: string, count: number, chunk: readonly string[]) => FetchArgs,
   baseQuery: ChunkBaseQuery,
-  { paged = false, maxItems }: { paged?: boolean; maxItems?: number } = {},
+  { paged = false, maxItems, maxPages }: { paged?: boolean; maxItems?: number; maxPages?: number } = {},
 ): Promise<ChunkResult<T>> {
   const chunks = chunkIds(column, ids, { maxItems });
-  const results: ({ data: T[] } | { error: FetchBaseQueryError } | undefined)[] = new Array(
+  const results: ({ data: T[]; truncated?: boolean } | { error: FetchBaseQueryError } | undefined)[] = new Array(
     chunks.length,
   );
   let next = 0;
@@ -136,13 +145,16 @@ async function fetchChunks<T>(
     while (next < chunks.length) {
       const index = next++;
       const chunk = chunks[index];
-      const args = request(inClause(column, chunk), chunk.length);
+      const args = request(inClause(column, chunk), chunk.length, chunk);
       const result = paged
-        ? await fetchAllPages<T>(args, baseQuery)
+        ? await fetchAllPages<T>(args, baseQuery, { maxPages })
         : await baseQuery(args);
       results[index] = result.error
         ? { error: result.error }
-        : { data: (result.data as T[] | undefined) ?? [] };
+        : {
+            data: (result.data as T[] | undefined) ?? [],
+            truncated: 'truncated' in result && result.truncated === true,
+          };
       // Later chunks cannot change the outcome once one has failed.
       if (result.error) next = chunks.length;
     }
@@ -152,12 +164,14 @@ async function fetchChunks<T>(
   );
 
   const rows: T[] = [];
+  let truncated = false;
   for (const result of results) {
     if (!result) continue;
     if ('error' in result) return { error: result.error };
     rows.push(...result.data);
+    truncated = truncated || result.truncated === true;
   }
-  return { data: rows };
+  return truncated ? { data: rows, truncated } : { data: rows };
 }
 
 const chunkedQueriesApi = confighubApi.injectEndpoints({

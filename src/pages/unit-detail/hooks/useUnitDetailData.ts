@@ -7,6 +7,7 @@ import {
   Invocation,
   SpaceRead,
   TargetRead,
+  ExtendedLinkRead,
   ExtendedUnitRead,
   UnitRead,
   UserRead,
@@ -20,11 +21,15 @@ import {
   useListExtendedRevisionsQuery,
   useListFunctionsQuery,
   useListLinksQuery,
+  useSearchListLinksQuery,
 } from '@confighub/rtk-query';
 import { type RevisionRow } from '@/types';
 import { isIDInvalid } from '@/utility/validation-functions';
 
 import { LinkRow } from '../components/links-table/LinksTable';
+
+const EMPTY_LINKS: ExtendedLinkRead[] = [];
+const LINK_INCLUDE = 'FromUnitID,ToUnitID,SpaceID,ToSpaceID';
 
 export interface IUseUnitDetailDataProps {
   id: string;
@@ -41,7 +46,6 @@ const EMPTY_SPACE = {} as SpaceRead;
 
 export const useUnitDetailData = ({ id, spaceID, refresh }: IUseUnitDetailDataProps) => {
   // State
-  const [currentUnit, setCurrentUnit] = useState<UnitRead>(EMPTY_UNIT);
   const [currentSpace, setCurrentSpace] = useState<SpaceRead>(EMPTY_SPACE);
   const [links, setLinks] = useState<LinkRow[]>([]);
   const [usersState, setUsersState] = useState<(UserRead | undefined)[]>([]);
@@ -88,26 +92,6 @@ export const useUnitDetailData = ({ id, spaceID, refresh }: IUseUnitDetailDataPr
     [triggersData],
   );
 
-  const { data: target = {} } = useGetTargetQuery(
-    {
-      targetId: currentUnit?.TargetID || '',
-      spaceId: spaceID,
-    },
-    {
-      skip: isIDInvalid(currentUnit?.TargetID) || isIDInvalid(spaceID),
-    },
-  );
-
-  const { data: downstreamUnits = [] } = useListAllUnitsQuery(
-    {
-      include: 'SpaceID',
-      where: `UpstreamUnitID = '${id}'`,
-    },
-    {
-      skip: isIDInvalid(id),
-    },
-  );
-
   // The ONLY fetch of this unit. Note there is no `= {}` default: that would mint
   // a new object on every render and re-run everything downstream of it.
   const {
@@ -121,14 +105,48 @@ export const useUnitDetailData = ({ id, spaceID, refresh }: IUseUnitDetailDataPr
 
   const currentUnitExtended = freshExtendedUnit ?? EMPTY_UNIT_EXTENDED;
   const fetchedUnit = freshExtendedUnit?.Unit;
+  const currentUnit = fetchedUnit ?? EMPTY_UNIT;
 
-  const { data: linksData = [], refetch: refetchLinks } = useListLinksQuery(
+  // Whether the unit has downstreams decides whether pushing to them is offered.
+  const { data: downstreamUnits = [] } = useListAllUnitsQuery(
     {
-      spaceId: spaceID,
-      include: 'FromUnitID,ToUnitID,ToSpaceID',
+      include: 'SpaceID',
+      where: `UpstreamUnitID = '${id}'`,
     },
     {
-      skip: isIDInvalid(spaceID),
+      skip: isIDInvalid(id),
+    },
+  );
+
+  const { data: target = {} } = useGetTargetQuery(
+    {
+      targetId: currentUnit?.TargetID || '',
+      spaceId: spaceID,
+    },
+    {
+      skip: isIDInvalid(currentUnit?.TargetID) || isIDInvalid(spaceID),
+    },
+  );
+
+  // The Links from this Unit are in its Space; the Links to it can be in any Space, such as
+  // the Links from the Units of every environment to a Unit that records facts for them all.
+  const { data: linksFromData = EMPTY_LINKS, refetch: refetchLinksFrom } = useListLinksQuery(
+    {
+      spaceId: spaceID,
+      where: `FromUnitID = '${id}'`,
+      include: LINK_INCLUDE,
+    },
+    {
+      skip: isIDInvalid(spaceID) || isIDInvalid(id),
+    },
+  );
+  const { data: linksToData = EMPTY_LINKS, refetch: refetchLinksTo } = useSearchListLinksQuery(
+    {
+      where: `ToUnitID = '${id}'`,
+      include: LINK_INCLUDE,
+    },
+    {
+      skip: isIDInvalid(id),
     },
   );
 
@@ -191,14 +209,6 @@ export const useUnitDetailData = ({ id, spaceID, refresh }: IUseUnitDetailDataPr
     }
   }, [id, spaceID, refresh]);
 
-  // Mirror the unit carried by the extended payload into state. It stays state
-  // (rather than being read straight through) because the downstream-units table
-  // sets it optimistically while navigating to another unit; the next resolved
-  // fetch takes over from there.
-  useEffect(() => {
-    setCurrentUnit(fetchedUnit ?? EMPTY_UNIT);
-  }, [fetchedUnit]);
-
   // The upstream unit is a DIFFERENT unit, so it keeps its own fetch. It is
   // keyed off the unit we just loaded, and re-runs on refresh so the "upgrade
   // available" chip stays accurate.
@@ -259,28 +269,24 @@ export const useUnitDetailData = ({ id, spaceID, refresh }: IUseUnitDetailDataPr
 
   // Refetch links when refresh changes
   useEffect(() => {
-    if (!isIDInvalid(spaceID)) {
-      refetchLinks();
-    }
-  }, [refresh, spaceID, refetchLinks]);
+    if (isIDInvalid(id)) return;
+    if (!isIDInvalid(spaceID)) refetchLinksFrom();
+    refetchLinksTo();
+  }, [refresh, spaceID, id, refetchLinksFrom, refetchLinksTo]);
 
-  // Process links data when it changes
+  // Process links data when it changes. A Link from this Unit to itself is in both lists.
   useEffect(() => {
-    if (linksData.length === 0 || isIDInvalid(id)) return;
+    if (isIDInvalid(id)) return;
 
-    const rows: LinkRow[] = linksData
-      ?.filter?.(
-        (extendedLink) =>
-          extendedLink.Link &&
-          (extendedLink.Link?.FromUnitID === id || extendedLink.Link?.ToUnitID === id),
-      )
-      ?.map((extendedLink) => ({
-        id: extendedLink.Link?.LinkID || '',
-        ...extendedLink,
-      }));
+    const rows = new Map<string, LinkRow>();
+    for (const extendedLink of [...linksFromData, ...linksToData]) {
+      const linkId = extendedLink.Link?.LinkID;
+      if (linkId === undefined || rows.has(linkId)) continue;
+      rows.set(linkId, { id: linkId, ...extendedLink });
+    }
 
-    setLinks(rows);
-  }, [refresh, linksData, id]);
+    setLinks([...rows.values()]);
+  }, [refresh, linksFromData, linksToData, id]);
 
   const spaces = extendedSpaces
     .map((es) => es.Space)
@@ -301,7 +307,6 @@ export const useUnitDetailData = ({ id, spaceID, refresh }: IUseUnitDetailDataPr
     currentSpace,
     targets,
     upstreamUnit,
-    setCurrentUnit,
     isFetchingUnit,
     isEditInvocationCancelled,
     setIsEditInvocationCancelled,

@@ -12,6 +12,7 @@ import {
   ExtendedUnitRead,
   useListExtendedMutationsQuery,
 } from '@confighub/rtk-query';
+import { UNIT_DETAIL_TAB } from '@/pages/unit-detail/unitDetailHrefs';
 import { CmpProps } from '@/types';
 import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
@@ -123,7 +124,7 @@ export const MutationsTable = ({ unitExtended, onTabSelected }: IMutationsTableP
             <Ellipses
               variant='body1'
               sx={{ textDecoration: 'underline', cursor: 'pointer' }}
-              onClick={() => onTabSelected(3)}
+              onClick={() => onTabSelected(UNIT_DETAIL_TAB.links)}
             >
               {params.row?.Link?.Slug}
             </Ellipses>

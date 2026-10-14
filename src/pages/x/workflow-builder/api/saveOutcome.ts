@@ -10,22 +10,21 @@
  * wins, try again -- and collapsing them tells someone to go and fix an expression
  * that was never wrong.
  *
- * The discriminator is the HTTP status, never the message text. An error response
- * carries only `{"message": "..."}`: `errmap.HTTPErrorHandler` wraps the structured
- * `ResponseError` in an `echo.HTTPError` and serialises that instead, and
- * `echo.HTTPError` tags its `Code` `json:"-"`. So `ErrorCategory` -- which the server
- * does set to "conflict" -- never reaches us, and a branch on it could never be true.
- * Matching the message text instead is the fragility already living at
- * `confighubapi.ts:112`, and this file does not add a second instance of it.
+ * The discriminator is the HTTP status, and the error's `Type` where one status means two
+ * things, never the message text. An error response carries `message`, the error as one
+ * string, and `Error`, whose `Type` is the error's category as a code. A 409 is either
+ * `Conflict`, a version mismatch, or `AlreadyExists`, a name another workflow has. Matching
+ * the message text instead is the fragility already living at `confighubapi.ts:112`, and
+ * this file does not add a second instance of it.
  */
 
-import { getApiErrorMessage } from '@/utility/error-functions';
+import { getApiErrorMessage, getApiErrorType } from '@/utility/error-functions';
 import { SerializedError } from '@reduxjs/toolkit';
 import { FetchBaseQueryError } from '@reduxjs/toolkit/query';
 
 import type { MappedWorkflow, WorkflowIdentity } from './mapping';
 
-/** The version check is `vNew < vOld` in `internal/views/single_handlers.go:588`. */
+/** The status of a save against a Version the server has moved past. */
 const HTTP_CONFLICT = 409;
 
 export type SaveOutcome =
@@ -58,7 +57,7 @@ export type SaveOutcome =
  * reach one.
  *
  * A 400 or a 422 means it parsed the request and refused what was in it, which is the
- * author's to fix. Everything else -- a transport failure, a timeout, an unreadable
+ * author's to fix, and so does a 409 of type `AlreadyExists`: the name is taken. Everything else -- a transport failure, a timeout, an unreadable
  * body, a server fault -- leaves the content UNJUDGED. Reporting those as a refusal
  * blames work that may be entirely correct, so nothing may treat them as one.
  *
@@ -75,7 +74,9 @@ export type SaveOutcome =
  */
 export function isContentRefusal(error: FetchBaseQueryError | SerializedError): boolean {
   if (!('status' in error) || typeof error.status !== 'number') return false;
-  return error.status === 400 || error.status === 422;
+  return (
+    error.status === 400 || error.status === 422 || getApiErrorType(error) === 'AlreadyExists'
+  );
 }
 
 /**
@@ -95,7 +96,7 @@ export function classifySaveError(error: FetchBaseQueryError | SerializedError):
   }
 
   const status = error.status;
-  if (status === HTTP_CONFLICT) return { kind: 'conflict', message, status };
   if (isContentRefusal(error)) return { kind: 'rejected', message, status };
+  if (status === HTTP_CONFLICT) return { kind: 'conflict', message, status };
   return { kind: 'failed', message, status };
 }

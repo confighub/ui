@@ -283,6 +283,7 @@ test.describe('filters', () => {
       overrides: 1,
       failures: 1,
       releases: 2,
+      reviews: 0,
     });
   });
 

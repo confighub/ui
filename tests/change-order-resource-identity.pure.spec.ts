@@ -236,6 +236,25 @@ test.describe('a payload holding several documents', () => {
     // counting only the later arrival made the number depend on iteration order.
     expect(matrix.duplicateIdentityCount).toBe(2);
   });
+
+  test('the kind badge names the documents that change, not the last one', () => {
+    // The flattened data holds one `kind` key, the last document's, so reading it
+    // badges a Service + Deployment + Namespace bundle as a Namespace when only
+    // its Deployment changes.
+    const kindOf = (beforeData: string, afterData: string | undefined) =>
+      buildChangeOrderChangeGroups([source({ space: 'a', slug: 'app', beforeData, afterData })])[0].resourceKind;
+
+    expect(kindOf(bundle([svcDoc('80'), depDoc('v1'), nsDoc]), bundle([svcDoc('80'), depDoc('v2'), nsDoc])))
+      .toBe('Deployment');
+    expect(kindOf(bundle([svcDoc('80'), depDoc('v1'), nsDoc]), bundle([svcDoc('81'), depDoc('v2'), nsDoc])))
+      .toBe('Service, Deployment');
+    // A document the change removes is one it touches.
+    expect(kindOf(bundle([svcDoc('80'), depDoc('v1')]), depDoc('v1'))).toBe('Service');
+    // Nothing differs, or the AFTER side is unknown: every kind the Unit holds.
+    expect(kindOf(bundle([svcDoc('80'), nsDoc]), bundle([svcDoc('80'), nsDoc]))).toBe('Service, Namespace');
+    expect(kindOf(bundle([svcDoc('80'), nsDoc]), undefined)).toBe('Service, Namespace');
+    expect(kindOf(depDoc('v1'), depDoc('v2'))).toBe('Deployment');
+  });
 });
 
 // ── The regression this key exists to prevent ───────────────────────────────

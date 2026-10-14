@@ -26,10 +26,6 @@ export class WorkerListPage extends EntityGridFixture {
     await this.goToDetailPageByRowClick(workerSlug);
   }
 
-  async clickWorkerListNavItem() {
-    await this.page.getByRole('button', { name: 'Workers' }).click();
-  }
-
   async addWorker(name: string) {
     await this.addWorkerButton.click();
 
@@ -82,14 +78,6 @@ export class WorkerListPage extends EntityGridFixture {
       }
       await expect(modal).toHaveCount(0, { timeout: 3000 });
     }
-  }
-
-  async expectToBeVisibleByText(text: string) {
-    await expect(this.page.getByText(text, { exact: true })).toBeVisible();
-  }
-
-  async expectNotToBeVisibleByText(text: string) {
-    await expect(this.page.getByText(text, { exact: true })).not.toBeVisible();
   }
 
   async editWorkerWithDeleteGates({
@@ -155,14 +143,6 @@ export class WorkerListPage extends EntityGridFixture {
 
     // Click the worker name link within the row to open the edit drawer
     await row.getByRole('link', { name }).click();
-  }
-
-  async deleteWorker(name: string) {
-    await this.selectRow(name);
-
-    await this.deleteWorkerButton.click();
-    await this.page.waitForTimeout(1000);
-    await this.confirmButton.click();
   }
 
   async attemptDeleteWorkerByNameExpectingError(name: string, expectedError: string) {

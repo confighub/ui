@@ -67,6 +67,24 @@ export function previousStageDisplayName(stage: {
   if (stage.previousStageId === null) return null;
   return stageDisplayName(stage.previousStageId, stage.isFirst);
 }
+/**
+ * Why a ChangeOrder passed over a Unit, worded from the code the server stores
+ * in `ChangeOrder.SkippedUnits`. A code this does not know, from a newer
+ * server, is shown as it is.
+ */
+const SKIPPED_UNIT_REASONS: Record<string, string> = {
+  NotFollowed: 'nothing follows it by links of this change order\'s update type',
+  FollowedByOtherLinks: 'followed downstream, but not by links of this change order\'s update type',
+  NotMarked: 'the end tag marks no revision of it',
+  NoStartRevision: 'a link to it has never merged, and it predates empty start revisions',
+  AlreadyTaken: 'already promoted; marked, but carrying no revisions',
+  TakenPastEnd: 'already promoted past where this change ends',
+};
+
+export function skippedUnitReasonText(reason: string): string {
+  return SKIPPED_UNIT_REASONS[reason] ?? reason;
+}
+
 /** Terminology fixed by the design brief. Used exactly, nowhere paraphrased. */
 export const CHANGE_ORDER_TERMS = {
   gated: 'Gated',
@@ -420,6 +438,18 @@ export const changeOrderCopy = {
    */
   writtenMarker: 'Written',
   undeterminedMarker: 'Cannot be determined yet',
+  /**
+   * Opens the resource's Links of the ChangeOrder's type that cross into other Spaces: the
+   * ones the change travels over.
+   */
+  linksBadge: 'Links',
+  /**
+   * Under a source resource whose diff is narrowed to the paths the ChangeOrder's Links read
+   * (`linkedSourcePaths`): says that the rest of the resource changed too, and is not shown
+   * because it goes nowhere.
+   */
+  linkedPathsCaption: (paths: string[]) =>
+    `Only the ${paths.length === 1 ? 'path' : 'paths'} this change's Links read: ${paths.join(', ')}`,
   /**
    * The base is not promoted into — the change is MADE there — so its step
    * shows where the change came from rather than a promoted count. Saying

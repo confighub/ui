@@ -3,24 +3,15 @@
 //  https://playwright.dev/docs/pom
 import type { Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
-import dotenv from 'dotenv';
 import { readFileSync } from 'fs';
 import yaml from 'js-yaml';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { Unit } from '@confighub/rtk-query';
 import { Role } from '../types';
 import { ApiHelper } from './api-helper';
 import { EntityGridFixture } from './entity-grid-fixture';
 import { hubApi } from './test';
-
-export type AdvancedFilterType = {
-  space: string;
-  resourceType: string;
-  whereData?: string;
-  where?: string;
-};
 
 export type UnitCreateTypes =
   | 'todo-app-fe'
@@ -42,54 +33,23 @@ export type CreateUnitParams = {
   labels?: Record<string, string>;
 };
 
-dotenv.config();
 const filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(filename);
-const authFile = path.join(__dirname, '../authentication.json');
-
-const username = process.env.TEST_USER || '';
-const password = process.env.TEST_PASSWORD || '';
 
 // Test constants
 const DEFAULT_TOOLCHAIN_TYPE = 'Kubernetes/YAML';
 
 export class UnitListPage extends EntityGridFixture {
   private readonly moreItemsButton: Locator;
-  private readonly cloneButton: Locator;
   private readonly deleteModalConfirm: Locator;
-  private readonly functionSelect: Locator;
   private readonly invokeButton: Locator;
-  private readonly recentFilterSelect: Locator;
-  private readonly filterSelect: Locator;
-  private readonly shareViewButton: Locator;
-  private readonly shareFilterButton: Locator;
-  private readonly previewLink: Locator;
-  private readonly columnSelectButton: Locator;
-  private readonly selectFilter: Locator;
-  private readonly saveOptionsButton: Locator;
-  private readonly saveInvocationButton: Locator;
-  private readonly cancelButton: Locator;
   private readonly refreshButton: Locator;
 
   constructor(public readonly page: Page) {
     super(page);
     this.moreItemsButton = this.page.getByRole('button', { name: 'More' });
-    this.cloneButton = this.page.getByRole('button', { name: 'Clone' });
     this.deleteModalConfirm = this.page.getByRole('button', { name: 'Confirm' });
     this.invokeButton = page.getByRole('button', { name: 'Invoke' });
-    this.functionSelect = page.getByRole('combobox', { name: 'Functions' });
-    this.recentFilterSelect = page.getByRole('combobox', { name: 'Recent Filters' });
-    this.filterSelect = this.page.getByTestId('filter-select');
-    this.shareViewButton = this.page.getByRole('button', { name: 'Share view' });
-    this.shareFilterButton = this.page.getByRole('button', { name: 'Share filter' });
-    this.previewLink = this.page.getByText('Preview');
-    this.columnSelectButton = this.page.getByRole('button', { name: 'Select columns' });
-    this.selectFilter = this.page.getByRole('combobox', {
-      name: 'Select a filter or view...',
-    });
-    this.saveOptionsButton = this.page.getByRole('button', { name: 'Save', exact: true });
-    this.saveInvocationButton = this.page.getByRole('button', { name: 'Save', exact: true });
-    this.cancelButton = this.page.getByRole('button', { name: 'Cancel' });
     this.refreshButton = this.page.getByTestId('refresh-button');
   }
 
@@ -97,55 +57,8 @@ export class UnitListPage extends EntityGridFixture {
     await this.refreshButton.click();
   }
 
-  async clickSelectFilterAutocomplete() {
-    await this.selectFilter.click();
-  }
-
-  async clickColumnSelection() {
-    await this.columnSelectButton.click();
-  }
-
-  async clickPreviewLink() {
-    await this.previewLink.click();
-  }
-
-  async clickShareViewButton() {
-    await this.shareViewButton.click();
-  }
-
-  async clickShareFilterButton() {
-    await this.shareFilterButton.click();
-  }
-
   async goto() {
     await this.page.goto('/units');
-  }
-
-  async clickFilterSelect() {
-    await this.filterSelect.click();
-  }
-
-  /**
-   * No-op - QueryBuilder is always visible in the header now
-   * @deprecated QueryBuilder is always visible, no need to click to expand
-   */
-  async clickAdvancedFilterButton() {
-    // QueryBuilder is always visible in the header, no need to click
-  }
-
-  async clickUnitsLeftNavLink() {
-    await this.page.getByRole('button', { name: 'Units', exact: true }).click();
-  }
-
-  async hoverOverFunctionsSelect() {
-    await this.functionSelect.hover();
-  }
-
-  async clickUnitListNavItem() {
-    await this.page.getByRole('button', { name: 'Units' }).click();
-
-    // Wait for the units grid to finish loading
-    await this.waitForGridReady();
   }
 
   async goToUnitDetailPageByRowClick(name: string) {
@@ -153,20 +66,6 @@ export class UnitListPage extends EntityGridFixture {
 
     // Click the unit name link within the row
     await row.getByRole('link', { name }).click();
-  }
-
-  // Removed: checkUnitByNameInTable - use selectRow() from EntityGridFixture
-  // Removed: checkAllUnitsInTable - use selectAllRows() from EntityGridFixture
-  // Removed: getUnitByNameInTable - use getRowByName() from EntityGridFixture
-
-  async login() {
-    await this.goto();
-    await this.page.getByRole('textbox', { name: 'Email' }).fill(username);
-    await this.page.getByRole('button', { name: 'Continue' }).click();
-    await this.page.getByLabel('Password').fill(password);
-    await this.page.getByRole('button', { name: 'Sign in' }).click();
-
-    await this.page.context().storageState({ path: authFile });
   }
 
   /**
@@ -269,37 +168,6 @@ export class UnitListPage extends EntityGridFixture {
   }
 
   /**
-   * Update a unit via API using the same types as RTK Query
-   */
-  async updateUnitViaAPI({
-    existingUnit,
-    spaceId,
-    unitSlug,
-    toolchainType,
-  }: {
-    existingUnit: Unit;
-    spaceId: string;
-    unitSlug: string;
-    toolchainType?: string;
-  }) {
-    const apiHelper = new ApiHelper(this.page);
-
-    const selectedToolchainType = toolchainType ?? DEFAULT_TOOLCHAIN_TYPE;
-
-    // Use the API helper to update the unit (same endpoint as RTK Query)
-    // The existingUnit should already contain the ChangeSetID from createUnitViaAPI
-    return apiHelper.updateUnit({
-      spaceId,
-      unitId: existingUnit.UnitID ?? '',
-      changeSetId: existingUnit.ChangeSetID,
-      unit: {
-        Slug: unitSlug,
-        ToolchainType: selectedToolchainType,
-      },
-    });
-  }
-
-  /**
    * Create a unit via UI (SAFE for testing the UI) - Use only for testing the Add Unit UI flow
    */
   async createUnitViaUI(params: CreateUnitParams) {
@@ -374,28 +242,6 @@ export class UnitListPage extends EntityGridFixture {
         .first()
         .click();
       await this.page.getByRole('button', { name: 'close' }).click();
-    }
-  }
-
-  async checkIfUnitExists(slug: string) {
-    try {
-      // Make sure we're on the units page
-      await this.goto();
-
-      // Wait for the page to load and the table to be visible
-      await this.page.waitForSelector('table', { timeout: 10000 });
-
-      // Look for the unit slug in the table
-      const unitElement = this.page.getByRole('link', { name: slug });
-
-      // Check if the element is visible with a short timeout
-      const isVisible = await unitElement.isVisible({ timeout: 2000 });
-
-      return isVisible;
-    } catch (error) {
-      // If there's any error (timeout, element not found, etc.), assume unit doesn't exist
-      console.log(`Error checking if unit exists: ${error}`);
-      return false;
     }
   }
 
@@ -581,14 +427,6 @@ export class UnitListPage extends EntityGridFixture {
     await row.getByRole('checkbox').check();
   }
 
-  async deleteSelectedUnits() {
-    // 1) Pick the “Delete” option
-    await this.selectMoreItemsOptionByName('Delete');
-
-    // 2) Confirm the deletion
-    await this.clickConfirmDelete();
-  }
-
   async deleteUnitByName(name: string) {
     await this.selectRow(name);
     await this.selectMoreItemsOptionByName('Delete');
@@ -615,10 +453,6 @@ export class UnitListPage extends EntityGridFixture {
 
   async clickConfirmDelete() {
     await this.deleteModalConfirm.click();
-  }
-
-  async clickNext() {
-    await this.page.getByRole('button', { name: 'Next' }).click();
   }
 
   async clickCloneConfirmButton() {
@@ -676,16 +510,6 @@ export class UnitListPage extends EntityGridFixture {
     await this.page.getByRole(role, { name }).fill(value);
   }
 
-  async hoverOverFunctionByName(name: string) {
-    // openInvokerSidebar waits for the panel to open; fill/hover then auto-wait.
-    await this.openInvokerSidebar();
-
-    const searchField = this.page.getByPlaceholder('Search functions');
-    await searchField.fill(name);
-
-    await this.page.getByTestId(`function-item-${name}`).first().hover();
-  }
-
   async pasteYamlToEditor(name: UnitCreateTypes) {
     // Read the YAML file into a string
     const yamlFilePath = path.resolve(__dirname, `../test-data/${name}.yml`);
@@ -707,16 +531,8 @@ export class UnitListPage extends EntityGridFixture {
     await editor.press('Meta+V');
   }
 
-  async clickCloneButton() {
-    await this.cloneButton.click();
-  }
-
   async clickInvokeButton() {
     await this.invokeButton.click();
-  }
-
-  async clickRecentFilterSelect() {
-    await this.recentFilterSelect.click();
   }
 
   async selectMoreItemsOptionByName(text: string) {
@@ -808,47 +624,6 @@ export class UnitListPage extends EntityGridFixture {
       // caller's web-first assertion on the error text is the synchronization.
       await this.clickInvokeButton();
     }
-  }
-
-  async applyQuickFilterByName(filterName: string) {
-    try {
-      // Sometimes an error is returned even though the combo box was selected and the filter applied properly.
-      // Just leaving this here for now since the tests actually work.
-      await this.page.getByRole('combobox', { name: 'Quick Filters' }).click();
-
-      await this.page.getByRole('option', { name: filterName }).click();
-    } finally {
-      console.log('Quick filter applied:', filterName);
-    }
-  }
-
-  async groupSelectedUnits() {
-    await this.selectMoreItemsOptionByName('Group');
-
-    // Wait for the group modal to appear
-    await this.page.getByRole('dialog').waitFor();
-
-    await this.page.getByRole('textbox', { name: 'Name' }).fill('test-group');
-    await this.page.getByRole('button', { name: 'Add' }).click();
-  }
-
-  async linkSelectedUnits() {
-    await this.selectMoreItemsOptionByName('Link');
-
-    // Wait for the link modal to appear
-    await this.page.getByRole('dialog').waitFor();
-
-    // Fill in the link name
-    await this.page.getByRole('textbox', { name: 'Link Name' }).fill('test-link');
-
-    // Click Add to create the link and wait for the create API call to complete
-    await Promise.all([
-      this.page.waitForResponse(
-        (response) =>
-          response.url().includes('/link') && response.request().method() === 'POST',
-      ),
-      this.page.getByRole('button', { name: 'Add' }).click(),
-    ]);
   }
 
   async goToUnitDetailPageByName(name: string) {
@@ -945,50 +720,6 @@ export class UnitListPage extends EntityGridFixture {
   }
 
   /**
-   * Clear all filters using the QueryBuilder's Clear all button
-   */
-  async clearAllFilters() {
-    // Use exact match to avoid strict mode violations with multiple "Clear all" buttons
-    const clearButton = this.page.getByRole('button', { name: 'Clear all', exact: true });
-    if (await clearButton.isVisible()) {
-      await clearButton.click();
-      // Once filters are cleared, the "Clear all" button disappears
-      await expect(clearButton).toBeHidden();
-    }
-  }
-
-  async applyQuickFilter(filterName: string) {
-    await this.page.getByRole('combobox', { name: 'Quick Filters' }).click();
-    await this.page.getByRole('option', { name: filterName }).click();
-  }
-
-  async clickViewsTab() {
-    await this.page.getByRole('tab', { name: 'Views' }).click();
-  }
-
-  async createSavedView({ viewName, filterName }: { viewName: string; filterName: string }) {
-    await this.page.getByRole('combobox', { name: 'Select a filter or view...' }).click();
-
-    await this.page.getByText(filterName).click();
-
-    await this.page.getByRole('button', { name: 'Save View' }).click();
-
-    await this.page.getByRole('textbox', { name: 'View Name' }).fill(viewName);
-
-    await this.page.getByRole('button', { name: 'Save', exact: true }).click();
-  }
-
-  async addColumnToTable(columnName: string) {
-    await this.page.getByRole('button', { name: 'Columns' }).click();
-    await this.page.getByRole('textbox', { name: 'Search columns...' }).fill(columnName);
-    await this.page.getByRole('checkbox', { name: columnName, exact: true }).check();
-    // Close the panel so the grid is accessible
-    await this.page.keyboard.press('Escape');
-    // Wait for the column panel to close (search box disappears)
-    await expect(this.page.getByRole('textbox', { name: 'Search columns...' })).toBeHidden();
-  }
-
-  /**
    * Add a grouping level using the sidebar "Add grouping level" button.
    * Supports static field labels: 'Space', 'Target', 'Toolchain Type', etc.
    */
@@ -1001,73 +732,8 @@ export class UnitListPage extends EntityGridFixture {
     await expect(menuItem).toBeHidden();
   }
 
-  async applySavedView(viewName: string) {
-    // Switch to Views tab
-    await this.clickViewsTab();
-
-    // Select the saved view from dropdown
-    await this.page.getByTestId('saved-view-select').click();
-    await this.page.getByRole('option', { name: viewName }).click();
-
-    // Apply the view
-    await this.page.getByRole('button', { name: 'Apply View' }).click();
-
-    // Wait for the grid to reload with the applied view
-    await this.waitForGridReady();
-  }
-
-  async uncheckColumns(columns: string[]) {
-    await this.clickColumnSelection();
-
-    for (const column of columns) {
-      const checkbox = this.page.getByRole('checkbox', { name: column });
-      await checkbox.uncheck();
-    }
-
-    // Close the column selection dropdown
-    await this.page
-      .getByRole('main')
-      .filter({ hasText: 'OrganizationE2E' })
-      .getByRole('main')
-      .click();
-  }
-
-  async selectFilterOrViewByName(name: string) {
-    await this.clickSelectFilterAutocomplete();
-    await this.page.getByRole('option', { name }).click();
-  }
-
-  async clearSelectedFilter() {
-    await this.selectFilter.fill('');
-  }
-
-  async expectToBeVisibleByRole(role: Role, name: string) {
-    await expect(this.page.getByRole(role, { name })).toBeVisible();
-  }
-
   async expectToBeVisibleByText(text: string) {
     await expect(this.page.getByText(text).first()).toBeVisible();
-  }
-
-  async expectFilterOrViewToBeSelected(expectedValue: string) {
-    // Verify the MUI Autocomplete combobox has the expected value selected
-    await expect(this.selectFilter).toHaveValue(expectedValue);
-  }
-
-  async expectToBeVisibleByTestId(locatorName: string) {
-    await expect(this.page.getByTestId(locatorName)).toBeVisible();
-  }
-
-  async expectNotToBeVisibleByRole(role: Role, name: string) {
-    await expect(this.page.getByRole(role, { name })).not.toBeVisible();
-  }
-
-  async expectToBeDisabledByRole(role: Role, name: string) {
-    await expect(this.page.getByRole(role, { name })).toBeDisabled();
-  }
-
-  async expectNotToBeVisibleByText(text: string) {
-    await expect(this.page.getByText(text)).not.toBeVisible();
   }
 
   async expectToHaveCount(text: string, count: number) {
@@ -1193,13 +859,6 @@ export class UnitListPage extends EntityGridFixture {
   }
 
   /**
-   * Set a slug filter value in the Visual Builder
-   */
-  async setSlugFilter(value: string) {
-    await this.page.getByPlaceholder('Search slugs...').fill(value);
-  }
-
-  /**
    * Clear all filters in the Visual Builder
    */
   async clearAllVisualBuilderFilters() {
@@ -1219,22 +878,6 @@ export class UnitListPage extends EntityGridFixture {
           // Fallback: filters may already be cleared
         });
     }
-  }
-
-  /**
-   * Check if a Filter block with a selected value is visible
-   * @param filterName The expected filter name displayed in the block
-   */
-  async isFilterBlockVisible(filterName?: string): Promise<boolean> {
-    if (filterName) {
-      const filterBlock = this.page.locator('button').filter({ hasText: filterName });
-      return await filterBlock.isVisible({ timeout: 2000 }).catch(() => false);
-    }
-
-    // Check if any filter row exists that's not showing "Select..."
-    const filterRows = this.page.locator('[class*="FilterRow"], [class*="filter-row"]');
-    const count = await filterRows.count();
-    return count > 0;
   }
 
   /**

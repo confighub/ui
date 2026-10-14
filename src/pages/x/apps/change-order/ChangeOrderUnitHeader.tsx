@@ -24,6 +24,7 @@
 import DataObjectIcon from '@mui/icons-material/DataObject';
 import Box from '@mui/material/Box';
 
+import { unitConfigHref } from '../../../unit-detail/unitDetailHrefs';
 import { UnitHeaderRow, UnitSlug, TagBadge, TagBadgeLink } from '../diffStyles';
 import { componentTheme } from '../componentTheme';
 import { changeOrderCopy } from './changeOrderCopy';
@@ -77,6 +78,11 @@ export interface ChangeOrderUnitHeaderProps {
    * other page this header would have to invent a reason to prefer.
    */
   spaceHref?: string;
+  /**
+   * Where the "Links" badge links: the resource's Links the change travels over. Built by the
+   * caller for the same reason as `spaceHref`; absent for no badge.
+   */
+  linksHref?: string;
 }
 
 export function ChangeOrderUnitHeader({
@@ -90,12 +96,13 @@ export function ChangeOrderUnitHeader({
   unchanged,
   differsNote,
   spaceHref,
+  linksHref,
 }: ChangeOrderUnitHeaderProps) {
   return (
     <UnitHeaderRow sx={{ cursor: 'default' }} data-testid={`change-order-unit-${unitId}`}>
       <DataObjectIcon sx={{ fontSize: 15, color: componentTheme.fgMuted, flexShrink: 0 }} />
       <UnitSlug
-        href={`/units/${spaceId}/${unitId}`}
+        href={unitConfigHref(spaceId, unitId)}
         target="_blank"
         rel="noopener noreferrer"
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
@@ -123,6 +130,17 @@ export function ChangeOrderUnitHeader({
         <TagBadge data-testid={`change-order-unit-space-${unitId}`}>{spaceName}</TagBadge>
       )}
       {resourceKind !== undefined && <TagBadge>{resourceKind}</TagBadge>}
+      {linksHref !== undefined && (
+        <TagBadgeLink
+          href={linksHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e: React.MouseEvent) => e.stopPropagation()}
+          data-testid={`change-order-unit-links-${unitId}`}
+        >
+          {changeOrderCopy.linksBadge}
+        </TagBadgeLink>
+      )}
       <Box sx={{ display: 'flex', gap: '8px', alignItems: 'center', ml: 'auto' }}>
         {differsNote !== undefined && (
           <TagBadge

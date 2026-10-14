@@ -33,6 +33,9 @@ import type {
 } from '@confighub/rtk-query';
 
 import { AUTOMATED_USER_ID } from '../x/apps/appTypes';
+import type { HistoryReviewEntry } from './reviews/changeOrderReviewTypes';
+
+export type { HistoryReviewEntry } from './reviews/changeOrderReviewTypes';
 
 /** An override is written before its action's writes, so its promotion or failure can come this much later. */
 export const HISTORY_JOIN_WINDOW_MS = 60_000;
@@ -43,9 +46,6 @@ export const HISTORY_JOIN_WINDOW_MS = 60_000;
  * belong to two actions.
  */
 export const HISTORY_SAME_WRITE_MS = 2_000;
-
-/** The server keeps this many of each record for one ChangeOrder, dropping the oldest. */
-export const HISTORY_RETENTION = { promotions: 1024, overrides: 256, failures: 64 } as const;
 
 /** The server keeps this many Unit, and Link, errors for each failed Space. */
 export const FAILURE_RECORDED_ITEMS = 32;
@@ -195,7 +195,8 @@ export interface HistoryReleaseEntry {
   release: HistoryReleaseInput;
 }
 
-export type HistoryEntry = HistoryActionEntry | HistoryReleaseEntry;
+/** Review events (approved, rejected, revoked, expired, requested) are built by `reviews/reviewHistory.ts`. */
+export type HistoryEntry = HistoryActionEntry | HistoryReleaseEntry | HistoryReviewEntry;
 
 /** An override or a failure. These are never folded away. */
 export function isException(entry: HistoryEntry): boolean {
@@ -408,8 +409,12 @@ export function failureSpaceHeadline(space: ChangeOrderPromotionFailureSpace): s
   switch (space.Action) {
     case 'Failed':
       return 'Could not be planned. Nothing was written to this Space.';
-    case 'Blocked':
-      return space.Reason ? `Blocked: ${space.Reason}` : 'Blocked.';
+    case 'Blocked': {
+      // Message is the reason in words; a failure recorded before reasons were codes has the
+      // words in Reason.
+      const reason = space.Message || space.Reason;
+      return reason ? `Blocked: ${reason}` : 'Blocked.';
+    }
     case 'Promote':
       return 'Some Units failed. Other Units were written.';
     default:
@@ -464,7 +469,14 @@ export function isLongError(error: string | undefined): boolean {
 // Filters
 // ---------------------------------------------------------------------------
 
-export type HistoryKindFilter = 'all' | 'promotions' | 'exceptions' | 'overrides' | 'failures' | 'releases';
+export type HistoryKindFilter =
+  | 'all'
+  | 'promotions'
+  | 'exceptions'
+  | 'overrides'
+  | 'failures'
+  | 'releases'
+  | 'reviews';
 
 export interface HistoryFilters {
   kind: HistoryKindFilter;
@@ -494,6 +506,8 @@ export function matchesKind(entry: HistoryEntry, kind: HistoryKindFilter): boole
       return entry.kind === 'action' && entry.failure !== undefined;
     case 'releases':
       return entry.kind === 'release';
+    case 'reviews':
+      return entry.kind === 'review';
   }
 }
 
@@ -516,6 +530,7 @@ export const HISTORY_KINDS: readonly HistoryKindFilter[] = [
   'overrides',
   'failures',
   'releases',
+  'reviews',
 ];
 
 export function kindTallies(entries: readonly HistoryEntry[], filters: HistoryFilters): Record<HistoryKindFilter, number> {
@@ -600,6 +615,7 @@ export function groupByDay(entries: readonly HistoryEntry[], timeZone?: string):
 export interface DaySummary {
   promotions: number;
   releases: number;
+  reviews: number;
   overrides: number;
   failures: number;
 }
@@ -607,6 +623,7 @@ export interface DaySummary {
 export function summariseDay(day: HistoryDay): DaySummary {
   let promotions = 0;
   let releases = 0;
+  let reviews = 0;
   let overrides = 0;
   let failures = 0;
   for (const entry of day.entries) {
@@ -614,11 +631,15 @@ export function summariseDay(day: HistoryDay): DaySummary {
       releases += 1;
       continue;
     }
+    if (entry.kind === 'review') {
+      reviews += 1;
+      continue;
+    }
     promotions += 1;
     if (entry.override) overrides += 1;
     if (entry.failure) failures += 1;
   }
-  return { promotions, releases, overrides, failures };
+  return { promotions, releases, reviews, overrides, failures };
 }
 
 /**

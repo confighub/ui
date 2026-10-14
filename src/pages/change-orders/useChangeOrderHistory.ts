@@ -16,6 +16,9 @@
  *   naming the ChangeOrder. The two are merged by ReleaseID.
  * - Space names: the org-wide Space list `useChangeOrderDetail` already reads,
  *   under the same cache key, so it costs no request.
+ * - Reviews: every gate review summary the page reads (`useChangeOrderReviewSummaries`,
+ *   same cache keys), as approved, rejected, revoked, expired and requested
+ *   entries (`reviews/reviewHistory.ts`).
  *
  * The Release reads are polled with the ChangeOrder, as a publish can land at
  * any time and nothing else here would show it.
@@ -29,6 +32,8 @@ import { usePolling } from '@/hooks/usePolling';
 import { useListAllReleasesQuery, useListSpacesQuery, type ListAllReleasesApiResponse } from '@confighub/rtk-query';
 
 import { CHANGE_ORDER_POLL_INTERVAL_MS } from '../x/apps/change-order/useChangeOrderData';
+import { buildReviewHistory, reviewHistoryUserIds } from './reviews/reviewHistory';
+import { useChangeOrderReviewSummaries } from './reviews/useStageReviews';
 import {
   buildHistory,
   historyUserIds,
@@ -91,16 +96,21 @@ export function useChangeOrderHistory(detail: ChangeOrderDetail): ChangeOrderHis
     return merged.length === 0 ? EMPTY_RELEASES : merged;
   }, [forOrder.data, carried.data]);
 
-  const userIds = useMemo(
-    () =>
-      historyUserIds({
-        promotions: detail.promotions,
-        overrides: detail.promotionOverrides,
-        failures: detail.promotionFailures,
-        releases,
-      }),
-    [detail.promotions, detail.promotionOverrides, detail.promotionFailures, releases],
-  );
+  const reviews = useChangeOrderReviewSummaries(detail);
+  const reviewSummaries = reviews.summaries;
+  // Only review entries move with the clock (expiry); without reviews the entries keep their identity.
+  const reviewNow = reviewSummaries.length === 0 ? 0 : now;
+
+  const userIds = useMemo(() => {
+    const ids = historyUserIds({
+      promotions: detail.promotions,
+      overrides: detail.promotionOverrides,
+      failures: detail.promotionFailures,
+      releases,
+    });
+    const reviewerIds = reviewHistoryUserIds(reviewSummaries).filter((id) => !ids.includes(id));
+    return reviewerIds.length === 0 ? ids : [...ids, ...reviewerIds];
+  }, [detail.promotions, detail.promotionOverrides, detail.promotionFailures, releases, reviewSummaries]);
   // `data` keeps the last answer while new IDs are read, so known names stay. Only an ID
   // no finished read has covered waits as "loading"; one a read covered and did not
   // return is "Unknown user".
@@ -143,34 +153,36 @@ export function useChangeOrderHistory(detail: ChangeOrderDetail): ChangeOrderHis
     return { workflowStages: names, stageBySpaceId: bySpace };
   }, [stages]);
 
-  const built = useMemo(
-    () =>
-      buildHistory({
-        promotions: detail.promotions,
-        overrides: detail.promotionOverrides,
-        failures: detail.promotionFailures,
-        releases,
-        stageBySpaceId,
-        person: (userId) =>
-          resolvePerson(
-            userId,
-            userById,
-            currentUserId,
-            usersFetching && userId !== undefined && !answeredIds.has(userId),
-          ),
-      }),
-    [
-      detail.promotions,
-      detail.promotionOverrides,
-      detail.promotionFailures,
+  const built = useMemo(() => {
+    const person = (userId: string | undefined) =>
+      resolvePerson(userId, userById, currentUserId, usersFetching && userId !== undefined && !answeredIds.has(userId));
+    const history = buildHistory({
+      promotions: detail.promotions,
+      overrides: detail.promotionOverrides,
+      failures: detail.promotionFailures,
       releases,
       stageBySpaceId,
-      userById,
-      currentUserId,
-      usersFetching,
-      answeredIds,
-    ],
-  );
+      person,
+    });
+    const reviewEntries = buildReviewHistory({ summaries: reviewSummaries, now: reviewNow, person });
+    if (reviewEntries.length === 0) return history;
+    return {
+      entries: [...history.entries, ...reviewEntries].sort((a, b) => b.at - a.at),
+      recordCount: history.recordCount + reviewEntries.length,
+    };
+  }, [
+    detail.promotions,
+    detail.promotionOverrides,
+    detail.promotionFailures,
+    releases,
+    stageBySpaceId,
+    userById,
+    currentUserId,
+    usersFetching,
+    answeredIds,
+    reviewSummaries,
+    reviewNow,
+  ]);
 
   const createdAt = detail.createdAt === undefined ? undefined : Date.parse(detail.createdAt);
 

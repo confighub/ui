@@ -135,12 +135,26 @@ export interface ChangeOrderGateContext {
   customPrerequisites?: readonly ChangeWorkflowPrerequisite[];
   /** The Attestation requirements the governing workflow declared, likewise. */
   attestationPrerequisites?: readonly ChangeWorkflowAttestationPrerequisite[];
+  /**
+   * The ChangeOrder's own Space holds the change from the start
+   * (`changeOrderOwnSpaceReached`). Then the server evaluates the FIRST stage's
+   * prerequisites over that Space (`evaluateStageGates`), and so does this
+   * page: `previousStageSpaces` is the own Space. Absent or false keeps the
+   * first stage ungated, which is what the server does for Invoke and fan-out
+   * ChangeOrders.
+   */
+  ownSpaceReached?: boolean;
 }
 
 /**
  * Build the gates for one stage.
  *
- * ── THE FIRST STAGE IS UNGATED ────────────────────────────────────────────
+ * ── THE FIRST STAGE IS UNGATED, UNLESS ITS OWN SPACE HOLDS THE CHANGE ─────
+ *
+ * When `ownSpaceReached` is set, the server evaluates the first stage's
+ * prerequisites over the ChangeOrder's own Space (`evaluateStageGates` in
+ * `internal/views/promote_gates.go`), and this builds those gates over it.
+ * The rest of this note is the case without it.
  *
  * `validateStageEntryGates` returns nil the moment `previousStage == nil`, and
  * the model says why: a Stage's prerequisites "are evaluated over every Space of
@@ -187,7 +201,11 @@ export function buildGatesForStage(context: ChangeOrderGateContext): ChangeOrder
 
   if (stage.isSource) return [];
   if (stage.previousStageId === null) return [];
-  if (stage.isFirst) return [];
+  if (stage.isFirst) {
+    // The own Space holds the change by definition, so only the declared prerequisites are gates.
+    if (context.ownSpaceReached !== true) return [];
+    return stage.prerequisites.map((name) => ({ ...evaluatePrerequisite(name, context), prerequisite: name }));
+  }
 
   return [
     { ...promotedGate(context), prerequisite: PROMOTED_PREREQUISITE },

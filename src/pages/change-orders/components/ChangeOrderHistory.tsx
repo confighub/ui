@@ -25,9 +25,9 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import FilterAltOffOutlinedIcon from '@mui/icons-material/FilterAltOffOutlined';
 import FormatListBulletedIcon from '@mui/icons-material/FormatListBulleted';
 import HistoryIcon from '@mui/icons-material/History';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import KeyboardDoubleArrowRightIcon from '@mui/icons-material/KeyboardDoubleArrowRight';
+import RateReviewOutlinedIcon from '@mui/icons-material/RateReviewOutlined';
 import ReportOutlinedIcon from '@mui/icons-material/ReportOutlined';
 import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
 import type { SvgIconComponent } from '@mui/icons-material';
@@ -35,7 +35,6 @@ import type { SvgIconComponent } from '@mui/icons-material';
 import {
   HISTORY_INITIAL_DAYS,
   HISTORY_MORE_DAYS,
-  HISTORY_RETENTION,
   NO_FILTERS,
   dayLabel,
   foldReleaseRuns,
@@ -54,7 +53,6 @@ import {
   stageCounts,
   summariseDay,
   utcTime,
-  zoneName,
   type HistoryFilters,
   type HistoryKindFilter,
 } from '../changeOrderHistory';
@@ -76,6 +74,7 @@ export const CHANGE_ORDER_HISTORY_ID = 'change-order-history';
 
 const KIND_BUTTONS: { kind: HistoryKindFilter; label: string; Icon: SvgIconComponent; tone?: 'warn' | 'danger' }[] = [
   { kind: 'all', label: 'All', Icon: FormatListBulletedIcon },
+  { kind: 'reviews', label: 'Reviews', Icon: RateReviewOutlinedIcon },
   { kind: 'promotions', label: 'Promotions', Icon: KeyboardDoubleArrowRightIcon },
   { kind: 'exceptions', label: 'Exceptions only', Icon: ReportOutlinedIcon, tone: 'warn' },
   { kind: 'overrides', label: 'Overrides', Icon: BoltIcon, tone: 'warn' },
@@ -246,6 +245,7 @@ export function ChangeOrderHistory({ history }: { history: ChangeOrderHistoryDat
             const routine = [
               summary.promotions ? plural(summary.promotions, 'promotion') : '',
               summary.releases ? `${plural(summary.releases, 'Release')} published` : '',
+              summary.reviews ? plural(summary.reviews, 'review event') : '',
             ]
               .filter(Boolean)
               .join(', ');
@@ -530,28 +530,6 @@ export function ChangeOrderHistory({ history }: { history: ChangeOrderHistoryDat
       </Box>
 
       {body}
-
-      {!history.isLoading ? (
-        <Box
-          role="note"
-          sx={{
-            padding: '10px 20px 14px',
-            fontSize: changeOrderType.size.small,
-            color: changeOrderInk.subtle,
-            display: 'flex',
-            gap: '6px',
-            alignItems: 'flex-start',
-            borderTop: `1px solid ${changeOrderSurface.inset}`,
-          }}
-        >
-          <InfoOutlinedIcon aria-hidden sx={{ fontSize: 15, marginTop: '1px' }} />
-          <span>
-            ConfigHub keeps the last {HISTORY_RETENTION.promotions} promotions, {HISTORY_RETENTION.overrides} overrides and{' '}
-            {HISTORY_RETENTION.failures} failed promotions for each ChangeOrder. Dry runs and promotions refused at a gate are
-            not recorded. Times are in your time zone, {zoneName(now)}; hover a time for UTC.
-          </span>
-        </Box>
-      ) : null}
     </Box>
   );
 }

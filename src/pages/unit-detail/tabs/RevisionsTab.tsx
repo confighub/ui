@@ -7,6 +7,8 @@ import { ExtendedUnitRead, UnitRead } from '@confighub/rtk-query';
 import { type RevisionRow } from '@/types';
 import { Direction } from '@/types/enums';
 
+import { UNIT_DETAIL_TAB } from '../unitDetailHrefs';
+
 export interface IRevisionsTabProps {
   selectedTab: number;
   revisionRows: Array<RevisionRow>;
@@ -16,7 +18,7 @@ export interface IRevisionsTabProps {
   onRefresh?: () => void;
 }
 
-export const REVISIONS_TAB_ID = 2;
+export const REVISIONS_TAB_ID = UNIT_DETAIL_TAB.revisions;
 
 /**
  * RevisionsTab is a container component that conditionally renders the 

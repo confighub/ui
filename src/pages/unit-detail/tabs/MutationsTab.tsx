@@ -5,13 +5,15 @@ import { Section } from '@/components/styled';
 import { ExtendedUnitRead } from '@confighub/rtk-query';
 import { Direction } from '@/types/enums';
 
+import { UNIT_DETAIL_TAB } from '../unitDetailHrefs';
+
 export interface IMutationsTabProps {
   unitExtended: ExtendedUnitRead;
   selectedTab: number;
   onTabSelected: (newValue: number) => void;
 }
 
-export const MUTATIONS_TAB_ID = 6;
+export const MUTATIONS_TAB_ID = UNIT_DETAIL_TAB.mutations;
 
 export const MutationsTab = ({
   unitExtended,

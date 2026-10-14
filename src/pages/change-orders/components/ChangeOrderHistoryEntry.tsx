@@ -16,6 +16,7 @@ import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
 import Tooltip from '@mui/material/Tooltip';
 import ButtonBase from '@mui/material/ButtonBase';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import BlockIcon from '@mui/icons-material/Block';
 import BoltIcon from '@mui/icons-material/Bolt';
 import CheckIcon from '@mui/icons-material/Check';
@@ -32,6 +33,8 @@ import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import KeyboardDoubleArrowRightIcon from '@mui/icons-material/KeyboardDoubleArrowRight';
 import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
+import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined';
+import UndoIcon from '@mui/icons-material/Undo';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import type { SvgIconComponent } from '@mui/icons-material';
 
@@ -53,12 +56,14 @@ import {
   matchedFromText,
   overrideReach,
   plural,
+  shortDate,
   splitFailureItems,
   utcTime,
   zoneName,
   type HistoryActionEntry,
   type HistoryPerson,
   type HistoryReleaseEntry,
+  type HistoryReviewEntry,
   type HistoryRow,
   type OverrideReach,
   type ReleaseRun,
@@ -72,6 +77,7 @@ import {
   changeOrderSurface,
   changeOrderType,
 } from '../changeOrdersTokens';
+import { reviewInitials } from '../reviews/changeOrderReviews';
 
 /** Avatar fills for people, chosen by a hash of the UserID. Each carries white initials at AA. */
 /** The mockup's own break: below it, two-column rows stack. The theme's breakpoints sit far wider. */
@@ -92,10 +98,8 @@ function avatarColor(seed: string): string {
   return AVATAR_COLORS[hash % AVATAR_COLORS.length];
 }
 
-function initials(name: string): string {
-  const parts = name.split(/\s+/).filter(Boolean);
-  return ((parts[0]?.[0] ?? '?') + (parts[1]?.[0] ?? '')).toUpperCase();
-}
+/** The same initials as the review panel: "rv-bot (Service Account)" is "RB". */
+const initials = reviewInitials;
 
 // ---------------------------------------------------------------------------
 // Small parts
@@ -594,7 +598,7 @@ function FailureSpace({ space }: { space: ChangeOrderPromotionFailureSpace }) {
 // Entry frame
 // ---------------------------------------------------------------------------
 
-type EntryTone = 'promotion' | 'override' | 'failure' | 'release' | 'opened';
+type EntryTone = 'promotion' | 'override' | 'failure' | 'release' | 'opened' | 'reviewWait' | 'reviewVoid';
 
 const ENTRY_TONE: Record<EntryTone, { fg: string; border: string; bg: string; edge?: string }> = {
   promotion: { fg: changeOrderStatus.success, border: changeOrderStatus.successLine, bg: changeOrderStatus.successGround },
@@ -602,6 +606,8 @@ const ENTRY_TONE: Record<EntryTone, { fg: string; border: string; bg: string; ed
   failure: { fg: changeOrderStatus.danger, border: changeOrderStatus.dangerLine, bg: changeOrderStatus.dangerSoft, edge: changeOrderStatus.danger },
   release: { fg: changeOrderStatus.accent, border: changeOrderStatus.accentLine, bg: changeOrderStatus.accentSoft },
   opened: { fg: changeOrderInk.subtle, border: changeOrderBorder.default, bg: changeOrderSurface.sunk },
+  reviewWait: { fg: changeOrderStatus.warn, border: changeOrderStatus.warnLine, bg: changeOrderStatus.warnSoft },
+  reviewVoid: { fg: changeOrderInk.subtle, border: changeOrderBorder.strong, bg: changeOrderSurface.inset },
 };
 
 function EntryFrame({
@@ -1123,6 +1129,244 @@ function ReleaseRunEntry({ run }: { run: ReleaseRun }) {
 }
 
 // ---------------------------------------------------------------------------
+// Review events
+// ---------------------------------------------------------------------------
+
+type ReviewTagTone = 'ok' | 'bad' | 'idle' | 'warn';
+
+const REVIEW_TAG_TONE: Record<ReviewTagTone, { fg: string; bg: string }> = {
+  ok: { fg: changeOrderStatus.success, bg: changeOrderStatus.successGround },
+  bad: { fg: changeOrderStatus.danger, bg: changeOrderStatus.dangerSoft },
+  idle: { fg: changeOrderInk.muted, bg: changeOrderSurface.inset },
+  warn: { fg: changeOrderStatus.warn, bg: changeOrderStatus.warnSoft },
+};
+
+function ReviewKindTag({ tone, children }: { tone: ReviewTagTone; children: ReactNode }) {
+  const t = REVIEW_TAG_TONE[tone];
+  return (
+    <Box
+      component="span"
+      data-review-tag
+      sx={{
+        fontSize: changeOrderType.size.micro,
+        fontWeight: changeOrderType.weight.bold,
+        letterSpacing: '.03em',
+        textTransform: 'uppercase',
+        borderRadius: `${changeOrderShape.radius.sm}px`,
+        padding: '1px 6px',
+        color: t.fg,
+        background: t.bg,
+      }}
+    >
+      {children}
+    </Box>
+  );
+}
+
+function Mono({ children }: { children: ReactNode }) {
+  return (
+    <Box component="span" sx={{ fontFamily: changeOrderFontMono, fontSize: changeOrderType.size.body }}>
+      {children}
+    </Box>
+  );
+}
+
+function MonoList({ names }: { names: string[] }) {
+  return (
+    <>
+      {names.map((name, i) => (
+        <span key={name}>
+          {i > 0 ? ', ' : ''}
+          <Mono>{name}</Mono>
+        </span>
+      ))}
+    </>
+  );
+}
+
+/**
+ * One review event: an approval, a rejection, a revocation, an approval that
+ * expired, or the moment a stage started to wait on review.
+ */
+/** "for prod", "for the release in prod", "for sign-off": what the review was for. */
+function GateTarget({ entry }: { entry: HistoryReviewEntry }) {
+  const stage = <StageName stage={entry.stage} />;
+  if (entry.gateKind === 'release') {
+    return (
+      <>
+        <span>for the release in</span>
+        {stage}
+      </>
+    );
+  }
+  if (entry.gateKind === 'final') return <span>for sign-off</span>;
+  return (
+    <>
+      <span>for</span>
+      {stage}
+    </>
+  );
+}
+
+function gateText(entry: HistoryReviewEntry): string {
+  if (entry.gateKind === 'release') return `the release in ${entry.stage}`;
+  if (entry.gateKind === 'final') return 'sign-off';
+  return entry.stage;
+}
+
+function ReviewEntry({ entry }: { entry: HistoryReviewEntry }) {
+  let tone: EntryTone = 'promotion';
+  let Icon: SvgIconComponent = CheckIcon;
+  let tag: ReactNode;
+  let head: ReactNode;
+  let label = '';
+  const who = entry.person.name;
+  const satisfied = entry.satisfiedRequirementNames ?? [];
+  const target = <GateTarget entry={entry} />;
+  switch (entry.reviewKind) {
+    case 'approved':
+      tag = <ReviewKindTag tone="ok">Approved</ReviewKindTag>;
+      label = `${who} approved ${gateText(entry)}, ${fullTime(entry.at)}`;
+      head = (
+        <>
+          <Who person={entry.person} />
+          <span>approved</span>
+          {target}
+          {satisfied.length > 0 ? (
+            <span>
+              <MonoList names={satisfied} /> satisfied
+            </span>
+          ) : (
+            <span>
+              on <MonoList names={entry.requirementNames} />
+              {entry.revisionCount !== undefined ? `, ${plural(entry.revisionCount, 'Revision')}` : ''}
+            </span>
+          )}
+        </>
+      );
+      break;
+    case 'rejected':
+      // A rejection blocks only where a requirement does not ignore rejections (S4).
+      tone = entry.blocksPromotion === true ? 'failure' : 'reviewVoid';
+      Icon = BlockIcon;
+      tag = <ReviewKindTag tone="bad">Rejected</ReviewKindTag>;
+      label = `${who} rejected ${gateText(entry)}, ${fullTime(entry.at)}`;
+      head = (
+        <>
+          <Who person={entry.person} />
+          <span>rejected</span>
+          {target}
+          <span>
+            on <MonoList names={entry.requirementNames} />
+            {entry.blocksPromotion === true ? `. ${entry.gateKind === 'release' ? 'Release' : 'Promotion'} blocked` : '. Rejections do not block here'}
+          </span>
+        </>
+      );
+      break;
+    case 'revoked': {
+      // The revoker, who can be a manager of the Space rather than the attester (S2).
+      tone = 'reviewVoid';
+      Icon = UndoIcon;
+      tag = <ReviewKindTag tone="idle">Revoked</ReviewKindTag>;
+      const original = entry.originalPerson;
+      const ownDecision = original === undefined || original.key === entry.person.key;
+      label = ownDecision
+        ? `${who} revoked a decision ${gateText(entry)}, ${fullTime(entry.at)}`
+        : `${who} revoked a decision by ${original.name} ${gateText(entry)}, ${fullTime(entry.at)}`;
+      const from = entry.replacesAt !== undefined ? ` from ${shortDateTime(entry.replacesAt)}` : '';
+      head = (
+        <>
+          <Who person={entry.person} />
+          {ownDecision ? (
+            <span>revoked their decision{from}</span>
+          ) : (
+            <>
+              <span>revoked</span>
+              <Box component="span" data-history-original sx={{ display: 'inline-flex', alignItems: 'center' }}>
+                <Who person={original} />’s
+              </Box>
+              <span>decision{from}</span>
+            </>
+          )}
+          {target}
+        </>
+      );
+      break;
+    }
+    case 'expired':
+      tone = 'reviewVoid';
+      Icon = AccessTimeIcon;
+      tag = <ReviewKindTag tone="idle">Expired</ReviewKindTag>;
+      label = `An approval by ${who} ${gateText(entry)} expired, ${fullTime(entry.at)}`;
+      head = (
+        <>
+          {/* One flex item, so the row's gap does not split the name from its ’s. */}
+          <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center' }}>
+            <Who person={entry.person} />’s
+          </Box>
+          <span>approval</span>
+          {target}
+          {/* Expiry is per requirement (S3): name the ones it no longer counts for. */}
+          <span>
+            expired for <MonoList names={entry.requirementNames} />
+          </span>
+        </>
+      );
+      break;
+    case 'requested': {
+      // A real ChangeOrder.ReviewRequest (#5788): who asked whom, and for which stage.
+      tone = 'reviewWait';
+      Icon = PersonOutlineOutlinedIcon;
+      tag = <ReviewKindTag tone="warn">Review</ReviewKindTag>;
+      const asked = entry.requestedOf;
+      label = `${who} asked ${asked?.name ?? 'someone'} to review ${gateText(entry)}, ${fullTime(entry.at)}`;
+      head = (
+        <>
+          {entry.person.kind === 'none' ? <span>Review requested</span> : (
+            <>
+              <Who person={entry.person} />
+              <span>asked</span>
+            </>
+          )}
+          {asked !== undefined ? <Who person={asked} /> : null}
+          <span>to review</span>
+          {target}
+        </>
+      );
+      break;
+    }
+  }
+  return (
+    <EntryFrame tone={tone} Icon={Icon} label={label} at={entry.at} dataKind={`review-${entry.reviewKind}`}>
+      <Box sx={headSx}>
+        {tag}
+        {head}
+      </Box>
+      {entry.note !== undefined && entry.note !== '' ? (
+        <Box
+          component="q"
+          sx={{
+            display: 'block',
+            marginTop: '3px',
+            fontSize: changeOrderType.size.body,
+            color: changeOrderInk.muted,
+            overflowWrap: 'anywhere',
+            quotes: '"\\201C" "\\201D"',
+          }}
+        >
+          {entry.note}
+        </Box>
+      ) : null}
+    </EntryFrame>
+  );
+}
+
+/** `13 Oct, 16:02`: the page's own date order, from `shortDate`, without the year. */
+function shortDateTime(at: number): string {
+  return `${shortDate(at).replace(/ \d{4}$/, '')}, ${clockTime(at)}`;
+}
+
+// ---------------------------------------------------------------------------
 // Public
 // ---------------------------------------------------------------------------
 
@@ -1138,6 +1382,7 @@ export function HistoryRowView({
 }) {
   if (row.kind === 'action') return <ActionEntry action={row} spaceSlugById={spaceSlugById} defaultOpen={defaultOpen} />;
   if (row.kind === 'release') return <ReleaseEntry entry={row} />;
+  if (row.kind === 'review') return <ReviewEntry entry={row} />;
   return <ReleaseRunEntry run={row} />;
 }
 

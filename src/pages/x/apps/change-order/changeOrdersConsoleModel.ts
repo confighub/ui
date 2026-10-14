@@ -1445,6 +1445,9 @@ export function buildConsoleRow(
         changeOrderSlug: order.slug,
         customPrerequisites: workflow.CustomPrerequisites,
         attestationPrerequisites: workflow.AttestationPrerequisites,
+        // The server evaluates the first stage's prerequisites over the own Space when it holds
+        // the change, so the row must not call that stage ready while they are unanswered.
+        ownSpaceReached: changeOrderOwnSpaceReached(order.updateType),
       }),
       serverGatesByStage?.[stage.id],
       stage,

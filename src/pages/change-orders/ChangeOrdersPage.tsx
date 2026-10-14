@@ -25,7 +25,7 @@
  * full beside the promote state below, where the affordance is.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
@@ -56,10 +56,11 @@ import { INFO_PEEK_TOOLTIP_SX } from '@/components/info-peek/InfoPeek';
 import { ChangeOrderGateList } from '../x/apps/change-order/ChangeOrderGateList';
 import { gateStateFor, gatesOpen, partitionBlockingGates, tallyGates } from '../x/apps/change-order/changeOrderGates';
 import { gatesBlockPromotion } from '../x/apps/change-order/changeOrderFooterModel';
-import { changeOrderCopy, stageDisplayName } from '../x/apps/change-order/changeOrderCopy';
+import { changeOrderCopy, skippedUnitReasonText, stageDisplayName } from '../x/apps/change-order/changeOrderCopy';
 import { changeOrdersConsoleCopy } from '../x/apps/change-order/changeOrdersConsoleCopy';
 import { promotionTargets } from '../x/apps/change-order/changeOrderStages';
 import { componentSpaceDeepLink } from '../x/apps/change-order/changeOrdersConsoleModel';
+import { unitLinksHref } from '../unit-detail/unitDetailHrefs';
 import type { ConsoleState } from '../x/apps/change-order/changeOrdersConsoleModel';
 import type {
   ChangeOrderGate,
@@ -116,6 +117,24 @@ import {
 } from './changeOrdersTokens';
 import { ChangeOrderBlockedResources, ChangeOrderRefusals } from './changeOrderRefusals';
 import { useChangeOrderDetail, type ChangeOrderSpace } from './useChangeOrderDetail';
+import Snackbar from '@mui/material/Snackbar';
+import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined';
+import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
+import { ReviewBand, type ReviewBandAction } from './reviews/ReviewBand';
+import { ReviewChip, ReviewGateActions, ReviewGateBlockedLine, ReviewGateSpaces } from './reviews/reviewParts';
+import type { ChangeOrderGateExtra } from '../x/apps/change-order/ChangeOrderGateList';
+import { reviewCopy } from './reviews/reviewCopy';
+import { REVIEW_PANEL_ID, ReviewPanel } from './reviews/ReviewPanel';
+import { withReviewApprovers } from './reviews/changeOrderReviews';
+import type {
+  PromoteReadiness,
+  ReviewChoice,
+  ReviewGateRef,
+  StageReviewRail,
+  StageReviewSummary,
+  SubmitReviewOutcome,
+} from './reviews/changeOrderReviewTypes';
+import { useChangeOrderReviews, useGateReviews } from './reviews/useStageReviews';
 import { useChangeOrderHistory } from './useChangeOrderHistory';
 import { clockTime, shortDate, utcTime, zoneName } from './changeOrderHistory';
 import { changeWorkflowHref, changeWorkflowLabel, useChangeWorkflowNames } from './useChangeWorkflowNames';
@@ -219,6 +238,9 @@ const EMPTY_UNIT_PARTITION: SourceUnitPartition<MergedUnit> = {
 };
 
 /** The `--root` target for `check.mjs`. One stable selector, per U1. */
+/** A Final gate's reason once the server reports the ChangeWorkflow complete. */
+const WORKFLOW_COMPLETED_REASON = 'Satisfied: the server reports this ChangeWorkflow as complete.';
+
 export const CHANGE_ORDERS_ROOT_ID = 'change-orders-root';
 
 function StateChip({ label, tone }: { label: string; tone: string }) {
@@ -240,6 +262,120 @@ function StateChip({ label, tone }: { label: string; tone: string }) {
       {label}
     </Box>
   );
+}
+
+function reviewRequirementOf(gate: ChangeOrderGate, summary: StageReviewSummary) {
+  return summary.requirements.find(
+    (r) => gate.prerequisite === r.name || gate.id === `attestation-prerequisite:${r.name}`,
+  );
+}
+
+/** The workflow author's description of a review gate, when its reason ends with it. */
+function reviewGateDescription(gate: ChangeOrderGate): string | undefined {
+  const description = gate.description?.trim();
+  if (description === undefined || description === '') return undefined;
+  return gate.reason.endsWith(description) ? description : undefined;
+}
+
+/**
+ * The review gates of a stage, ready for `ChangeOrderGateList`: the reviewers as
+ * approvers (`withReviewApprovers`), and the server's message as a sentence
+ * of its own. `applyServerGates` joins the message and the workflow author's
+ * description with a space and no full stop; the description goes on its own
+ * line under the reason instead (`reviewGateExtras`).
+ */
+function reviewGatesForList(gates: ChangeOrderGate[], summary: StageReviewSummary): ChangeOrderGate[] {
+  return withReviewApprovers(gates, summary).map((gate) => {
+    const description = reviewGateDescription(gate);
+    if (reviewRequirementOf(gate, summary) === undefined || description === undefined) return gate;
+    const message = gate.reason.slice(0, gate.reason.length - description.length).trim();
+    if (message === '') return gate;
+    return { ...gate, reason: /[.!?]$/.test(message) ? message : `${message}.` };
+  });
+}
+
+/**
+ * The extra content of each review gate row in `ChangeOrderGateList`, keyed by
+ * gate id, matched the way `withReviewApprovers` matches gates.
+ */
+function reviewGateExtras(
+  gates: readonly ChangeOrderGate[],
+  summary: StageReviewSummary,
+  onReview: () => void,
+): Record<string, ChangeOrderGateExtra> {
+  const extras: Record<string, ChangeOrderGateExtra> = {};
+  for (const gate of gates) {
+    const requirement = reviewRequirementOf(gate, summary);
+    if (requirement === undefined) continue;
+    extras[gate.id] = {
+      hideApprovers: true,
+      below: (
+        <>
+          {reviewGateDescription(gate) !== undefined ? (
+            <Box sx={{ marginTop: '2px', fontSize: changeOrderType.size.small, color: changeOrderInk.subtle, lineHeight: changeOrderType.lineHeight.body }}>
+              {reviewGateDescription(gate)}
+            </Box>
+          ) : null}
+          <ReviewGateSpaces requirement={requirement} />
+        </>
+      ),
+      right: <ReviewGateActions requirement={requirement} onReview={onReview} />,
+    };
+  }
+  return extras;
+}
+
+/**
+ * The text of a review chip, for the gate's kind and the stage's readiness.
+ * "Ready to promote" only when `PromoteReadiness` is `ready` (M5): complete
+ * reviews with another gate still holding read "Reviews complete".
+ */
+function reviewChipText(
+  summary: StageReviewSummary,
+  readiness: PromoteReadiness | undefined,
+  words: { waiting: string; rejected: string },
+): { tone: 'bad' | 'accent' | 'ok' | 'warn'; text: string } {
+  if (summary.state === 'rejected') return { tone: 'bad', text: words.rejected };
+  const kind = summary.gate.kind;
+  if (summary.open) {
+    if (kind === 'entry' && readiness?.kind === 'ready') return { tone: 'accent', text: reviewCopy.summaryChip.ready };
+    return { tone: 'ok', text: reviewCopy.summaryChip.reviewsComplete };
+  }
+  if (kind === 'release') return { tone: 'warn', text: reviewCopy.summaryChip.releaseWaiting };
+  if (kind === 'final') return { tone: 'warn', text: reviewCopy.summaryChip.signOffWaiting };
+  return { tone: 'warn', text: words.waiting };
+}
+
+/** The summary chip while a gate is held on review, in place of the console state. */
+function ReviewSummaryChip({ summary, readiness }: { summary: StageReviewSummary; readiness?: PromoteReadiness }) {
+  const chip = reviewChipText(summary, readiness, {
+    waiting: reviewCopy.summaryChip.waiting,
+    rejected: reviewCopy.summaryChip.rejected,
+  });
+  return (
+    <ReviewChip tone={chip.tone} dot>
+      {chip.text}
+    </ReviewChip>
+  );
+}
+
+/** The selected stage's chip while it has reviews. */
+function ReviewStageChip({ summary, readiness }: { summary: StageReviewSummary; readiness?: PromoteReadiness }) {
+  const chip = reviewChipText(summary, readiness, { waiting: reviewCopy.stage.held, rejected: reviewCopy.stage.rejected });
+  return (
+    <ReviewChip tone={chip.tone} dot>
+      {chip.text}
+    </ReviewChip>
+  );
+}
+
+/** "Next: prod-eu", or with the review state when the next stage's entry gate has reviews. */
+function nextStageHint(stage: string, summary: StageReviewSummary | undefined, readiness: PromoteReadiness | undefined): string {
+  if (summary === undefined || summary.gate.kind !== 'entry') return `Next: ${stage}`;
+  if (summary.state === 'rejected') return reviewCopy.progressHint.rejected(stage);
+  if (summary.open && readiness?.kind === 'ready') return reviewCopy.progressHint.ready(stage);
+  if (summary.open) return reviewCopy.progressHint.reviewsComplete(stage);
+  return reviewCopy.progressHint.held(stage);
 }
 
 /**
@@ -589,6 +725,24 @@ function CollapsibleUnitGroup({
 }
 
 /**
+ * Whether a stage is held on review: it is the next stage, it has not taken
+ * the change, and its review requirements are waiting (`held`) or rejected
+ * (`blocked`). `null` for a stage with no reviews, or one not held by them.
+ */
+function reviewHoldTone(
+  state: ChangeOrderStageState,
+  isNext: boolean,
+  review: StageReviewRail | undefined,
+): 'held' | 'blocked' | null {
+  if (review === undefined || state.verdict === 'source') return null;
+  // An entry review holds the next stage; a release review holds a promoted stage's release.
+  if (review.gateKind === 'release' ? state.verdict !== 'promoted' : !isNext) return null;
+  if (review.state === 'rejected') return 'blocked';
+  if (review.state === 'pending' || review.state === 'partial') return 'held';
+  return null;
+}
+
+/**
  * The rail node's leading dot, keyed off `ChangeOrderStageVerdict` the same way
  * the reference keys its own node off `stage.state` (`ICON.check`/`spin`/
  * `play`/`warn`/`lock` at line ~4224 of the mockup). `source`, `promoted` and
@@ -600,9 +754,17 @@ function CollapsibleUnitGroup({
  * `passed` is the console row's own count (`stagePathProgress`): a stage the
  * ChangeOrder has passed is drawn done, so the rail, its pips and "N of M" agree.
  */
-function railDot(state: ChangeOrderStageState, isNext: boolean, passed: boolean) {
+function railDot(state: ChangeOrderStageState, isNext: boolean, passed: boolean, review?: StageReviewRail) {
   const done = { Icon: CheckIcon, bg: changeOrderStatus.successGround, border: changeOrderStatus.successLine, color: changeOrderStatus.success };
   if (passed && state.verdict !== 'restored' && state.verdict !== 'restore-released') return done;
+  // Held on review: the next stage waits on approvals (person) or a rejection blocks it (ban).
+  const reviewTone = reviewHoldTone(state, isNext, review);
+  if (reviewTone === 'blocked') {
+    return { Icon: BlockIcon, bg: changeOrderStatus.dangerSoft, border: changeOrderStatus.dangerLine, color: changeOrderStatus.danger };
+  }
+  if (reviewTone === 'held') {
+    return { Icon: PersonOutlineOutlinedIcon, bg: changeOrderStatus.warnSoft, border: changeOrderStatus.warnLine, color: changeOrderStatus.warn };
+  }
   // The stage selects no Space, so there is no workload of its own to report
   // on: it is drawn neutral rather than in the danger tone of a failed gate.
   // What it does to the stage after it — the server refuses to promote past a
@@ -716,24 +878,36 @@ function StageLink({
   state,
   isNext,
   stagePassed = false,
+  review,
 }: {
   state: ChangeOrderStageState;
   isNext: boolean;
   /** Whether the ChangeOrder has passed the stage on the right, by the console row's count. */
   stagePassed?: boolean;
+  /** The review state of the stage on the right, when it has reviews. */
+  review?: StageReviewRail;
 }) {
   const passed =
     stagePassed || state.verdict === 'promoted' || state.verdict === 'released' || state.verdict === 'source';
   const open = !passed && isNext;
-  const tone = passed
+  const hold = passed ? null : reviewHoldTone(state, isNext, review);
+  let tone: { bg: string; border: string; color: string; Icon: SvgIconComponent } = passed
     ? { bg: changeOrderStatus.successGround, border: changeOrderStatus.successLine, color: changeOrderStatus.success, Icon: LockOpenOutlinedIcon }
     : open
       ? { bg: changeOrderStatus.accentSoft, border: changeOrderStatus.accentLine, color: changeOrderStatus.accent, Icon: ArrowForwardIcon }
       : { bg: changeOrderSurface.sunk, border: changeOrderBorder.strong, color: changeOrderInk.subtle, Icon: LockOutlinedIcon };
+  let tally = changeOrderCopy.laneGateTally(state.gateTally.satisfied, state.gateTally.total);
+  if (hold === 'held') {
+    tone = { bg: changeOrderStatus.warnSoft, border: changeOrderStatus.warnLine, color: changeOrderStatus.warn, Icon: PersonOutlineOutlinedIcon };
+  } else if (hold === 'blocked') {
+    tone = { bg: changeOrderStatus.dangerSoft, border: changeOrderStatus.dangerLine, color: changeOrderStatus.danger, Icon: BlockIcon };
+    tally = reviewCopy.rail.fail;
+  }
   return (
     <Box
       aria-hidden="true"
       data-testid="stage-rail-link"
+      data-review-hold={hold ?? undefined}
       sx={{
         display: 'flex',
         flexDirection: 'column',
@@ -762,13 +936,127 @@ function StageLink({
         sx={{
           fontFamily: changeOrderFontMono,
           fontSize: changeOrderType.size.micro,
-          fontWeight: 600,
+          fontWeight: hold === null ? 600 : 700,
           color: tone.color,
           whiteSpace: 'nowrap',
         }}
       >
-        {changeOrderCopy.laneGateTally(state.gateTally.satisfied, state.gateTally.total)}
+        {tally}
       </Box>
+    </Box>
+  );
+}
+
+/** One step of the rail: the link into a node, and the node. They wrap together. */
+const RAIL_STEP_SX = { display: 'flex', gap: '10px', alignItems: 'stretch', flex: '0 0 auto' } as const;
+
+/** The Complete node's sign-off line: "Sign-off 1/2" while waiting, "Rejected" when a rejection blocks it. */
+function SignOffLine({ review, notOpen }: { review: StageReviewRail; notOpen: boolean }) {
+  let color: string = changeOrderStatus.warn;
+  let Icon: SvgIconComponent = PersonOutlineOutlinedIcon;
+  let text: React.ReactNode = (
+    <>
+      {reviewCopy.rail.signOff}{' '}
+      {/* No server rows for the viewer: no count (#5788). */}
+      {/* Before Final opens it is "not open yet", not a permission problem. */}
+      {!review.evaluated ? (notOpen ? reviewCopy.rail.finalNotOpen : reviewCopy.rail.notEvaluated) : (
+        <Box component="span" sx={{ fontFamily: changeOrderFontMono, fontWeight: changeOrderType.weight.bold }}>
+          {review.passes}/{review.required}
+        </Box>
+      )}
+    </>
+  );
+  if (review.state === 'rejected') {
+    color = changeOrderStatus.danger;
+    Icon = BlockIcon;
+    text = reviewCopy.rail.rejectedBy(review.rejecterFirstName ?? 'a reviewer');
+  } else if (review.state === 'satisfied') {
+    color = changeOrderStatus.success;
+    Icon = CheckIcon;
+  }
+  return (
+    <Box
+      data-testid="stage-rail-signoff"
+      data-review-state={review.state}
+      sx={{
+        marginTop: '8px',
+        paddingTop: '8px',
+        borderTop: `1px dashed ${changeOrderBorder.default}`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        fontSize: changeOrderType.size.small,
+        color,
+      }}
+    >
+      <Icon aria-hidden="true" sx={{ fontSize: 12, flex: '0 0 auto' }} />
+      <span>{text}</span>
+    </Box>
+  );
+}
+
+/**
+ * The review line at the foot of a rail node: "Review 1/2 on security-review"
+ * while held, "Rejected by Tom" when blocked, "Reviewed 2/2" when satisfied,
+ * and "Review required, 2 requirements" on a later stage.
+ */
+function StageReviewLine({
+  review,
+  hold,
+  isNext,
+}: {
+  review: StageReviewRail;
+  hold: 'held' | 'blocked' | null;
+  isNext: boolean;
+}) {
+  let Icon: SvgIconComponent = PersonOutlineOutlinedIcon;
+  let color: string = changeOrderInk.muted;
+  let text: React.ReactNode = reviewCopy.rail.required(review.requirementCount);
+  const fig = (value: string) => (
+    <Box component="span" sx={{ fontFamily: changeOrderFontMono, fontWeight: changeOrderType.weight.bold }}>
+      {value}
+    </Box>
+  );
+  if (hold === 'held') {
+    color = changeOrderStatus.warn;
+    text = (
+      <>
+        {/* No server rows for the viewer: no count (#5788). */}
+        {review.gateKind === 'release' ? reviewCopy.rail.releaseReview : reviewCopy.rail.review}{' '}
+        {review.evaluated ? fig(`${review.passes}/${review.required}`) : null}
+        {review.primaryName !== undefined ? reviewCopy.rail.reviewOn(review.primaryName) : ''}
+      </>
+    );
+  } else if (hold === 'blocked') {
+    Icon = BlockIcon;
+    color = changeOrderStatus.danger;
+    text = reviewCopy.rail.rejectedBy(review.rejecterFirstName ?? 'a reviewer');
+  } else if (isNext && review.state === 'satisfied') {
+    Icon = CheckIcon;
+    color = changeOrderStatus.success;
+    text = (
+      <>
+        {reviewCopy.rail.reviewed}{' '}
+        {review.evaluated ? fig(`${review.passes}/${review.required}`) : null}
+      </>
+    );
+  }
+  return (
+    <Box
+      data-testid="stage-rail-review"
+      sx={{
+        marginTop: '8px',
+        paddingTop: '8px',
+        borderTop: `1px dashed ${changeOrderBorder.default}`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        fontSize: changeOrderType.size.small,
+        color,
+      }}
+    >
+      <Icon aria-hidden="true" sx={{ fontSize: 12, flex: '0 0 auto' }} />
+      <span>{text}</span>
     </Box>
   );
 }
@@ -807,6 +1095,9 @@ function StageRail({
   completeSelected,
   finalGates,
   sourceSummary,
+  reviewRail = {},
+  completeReview,
+  completeNotOpen,
 }: {
   stageStates: ChangeOrderStageState[];
   /** The steps the ChangeOrder has passed: stage `i` is passed when `i < stagesDone`. */
@@ -834,6 +1125,12 @@ function StageRail({
    * ChangeOrder runs. Empty otherwise.
    */
   sourceSummary: string;
+  /** The review state of every stage with reviews (`useChangeOrderReviews`). */
+  reviewRail?: Readonly<Record<string, StageReviewRail>>;
+  /** The Final sign-off's review state, for the Complete node. */
+  completeReview?: StageReviewRail;
+  /** The Final sign-off has no rows because Final is not open yet (PromoteResult.Complete false). */
+  completeNotOpen?: boolean;
 }) {
   const finalTally = tallyGates(finalGates);
   return (
@@ -861,13 +1158,26 @@ function StageRail({
           state.verdict === 'restore-released';
         const held =
           !isSource && !entered && state.spaceCount > 0 && state.gates.length > 0 && !state.gatesOpen;
-        const dot = railDot(state, state.stageId === nextStageId, i < stagesDone);
+        const isNext = state.stageId === nextStageId;
+        const rail = reviewRail[state.stageId];
+        // A release review is for a promoted stage; an entry review only for a stage still ahead.
+        let review: StageReviewRail | undefined;
+        if (rail?.gateKind === 'release') review = state.verdict === 'promoted' ? rail : undefined;
+        else review = isSource || entered || i < stagesDone ? undefined : rail;
+        const dot = railDot(state, isNext, i < stagesDone, review);
+        const hold = reviewHoldTone(state, isNext, review);
+        let stageLabel = state.label;
+        if (hold === 'held') stageLabel = review?.gateKind === 'release' ? reviewCopy.rail.releaseHeld : reviewCopy.rail.held;
+        else if (hold === 'blocked') stageLabel = reviewCopy.rail.rejected;
+        else if (isNext && review?.state === 'satisfied') stageLabel = reviewCopy.rail.ready;
         return (
-          <Fragment key={state.stageId}>
+          /* The link and the node it leads into wrap as one step, so a link is
+             never left at the end of a row with its node on the next. */
+          <Box data-testid="stage-rail-step" sx={RAIL_STEP_SX} key={state.stageId}>
             {/* One `StageLink` per pair, never before the first node — the
                 source has no gate of its own to describe. */}
             {i > 0 && (
-              <StageLink state={state} isNext={state.stageId === nextStageId} stagePassed={i < stagesDone} />
+              <StageLink state={state} isNext={isNext} stagePassed={i < stagesDone} review={review} />
             )}
             <Box
               component={RouterLink}
@@ -932,7 +1242,15 @@ function StageRail({
               {/* `label` and `progress` are composed by the shared derivation, so
                   the rail and every other surface say the same thing about a
                   stage rather than each phrasing it. */}
-              <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.muted }}>{state.label}</Box>
+              <Box
+                sx={{
+                  fontSize: changeOrderType.size.small,
+                  color: hold === null ? changeOrderInk.muted : dot.color,
+                  fontWeight: hold === null ? undefined : changeOrderType.weight.strong,
+                }}
+              >
+                {stageLabel}
+              </Box>
               <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.subtle }}>
                 {state.progress}
                 {/*
@@ -941,10 +1259,11 @@ function StageRail({
                   evaluated, so any negative framing here would assert an
                   assessment the data cannot support.
                 */}
-                {held ? ' · held' : ''}
+                {held && hold === null ? ' · held' : ''}
               </Box>
+              {review !== undefined ? <StageReviewLine review={review} hold={hold} isNext={isNext} /> : null}
             </Box>
-          </Fragment>
+          </Box>
         );
       })}
 
@@ -969,7 +1288,7 @@ function StageRail({
         in front of a ChangeOrder nobody can promote.
       */}
       {completeTone !== null ? (
-        <Fragment>
+        <Box data-testid="stage-rail-step" sx={RAIL_STEP_SX}>
           <StageLink state={completeLinkState(completeTone, finalGates, finalTally)} isNext={false} />
           <Box
             component={RouterLink}
@@ -1023,8 +1342,9 @@ function StageRail({
             <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.subtle }}>
               {changeOrderCopy.laneGateTally(finalTally.satisfied, finalTally.total)}
             </Box>
+            {completeReview !== undefined ? <SignOffLine review={completeReview} notOpen={completeNotOpen === true} /> : null}
           </Box>
-        </Fragment>
+        </Box>
       ) : null}
     </Box>
   );
@@ -1094,10 +1414,22 @@ function completeLinkState(
 function CompleteStepDetail({
   label,
   gates,
+  signOff,
 }: {
   label: string;
   gates: ChangeOrderGate[];
+  /**
+   * The Final sign-off, when `Final.Prerequisites` names a review: its chip,
+   * the gate rows' reviewer extras, and the panel. The card then has the same
+   * two columns as a stage card, with the panel on the right.
+   */
+  signOff?: {
+    summary: StageReviewSummary;
+    extras: Record<string, ChangeOrderGateExtra>;
+    panel: React.ReactNode;
+  };
 }) {
+  const listGates = signOff === undefined ? gates : reviewGatesForList(gates, signOff.summary);
   return (
     <Box
       component="section"
@@ -1110,7 +1442,8 @@ function CompleteStepDetail({
         border: `1px solid ${changeOrderBorder.default}`,
         borderRadius: `${changeOrderCardTokens.radius}px`,
         boxShadow: changeOrderCardTokens.shadow,
-        overflow: 'hidden',
+        // `clip`, not `hidden`, so the sticky sign-off panel can stick.
+        overflow: 'clip',
       }}
     >
       <Box
@@ -1137,10 +1470,30 @@ function CompleteStepDetail({
         >
           {COMPLETE_STEP_LABEL}
         </Box>
-        <StateChip label={label} tone={changeOrderInk.muted} />
+        {signOff !== undefined ? <ReviewStageChip summary={signOff.summary} /> : <StateChip label={label} tone={changeOrderInk.muted} />}
+        {signOff !== undefined ? (
+          <Box component="span" sx={{ marginLeft: 'auto', fontSize: changeOrderType.size.body, color: changeOrderInk.subtle }}>
+            {reviewCopy.stage.signOffEvaluatedOver}{' '}
+            <Box component="span" sx={{ fontFamily: changeOrderFontMono, color: changeOrderInk.muted }}>
+              {signOff.summary.gateSpaces.map((space) => space.spaceSlug).join(', ')}
+            </Box>
+          </Box>
+        ) : null}
       </Box>
 
-      <Box sx={{ padding: '18px 20px 22px' }}>
+      <Box
+        sx={
+          signOff !== undefined
+            ? {
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0,1fr) 384px',
+                alignItems: 'start',
+                '@media (max-width: 1179.98px)': { gridTemplateColumns: 'minmax(0,1fr)' },
+              }
+            : undefined
+        }
+      >
+      <Box sx={{ padding: '18px 20px 22px', minWidth: 0 }}>
         {/*
           Says which question these checks answer, because it is NOT the one
           every other gate list on this screen answers. A stage's gates are
@@ -1164,9 +1517,29 @@ function CompleteStepDetail({
               overflow: 'hidden',
             }}
           >
-            <ChangeOrderGateList stageId={COMPLETE_STAGE_ID} gates={gates} isSource={false} />
+            <ChangeOrderGateList
+              stageId={COMPLETE_STAGE_ID}
+              gates={listGates}
+              isSource={false}
+              extras={signOff?.extras}
+            />
           </Box>
         )}
+      </Box>
+      {signOff !== undefined ? (
+        <Box
+          sx={{
+            borderLeft: `1px solid ${changeOrderBorder.default}`,
+            alignSelf: 'stretch',
+            minWidth: 0,
+            '@media (max-width: 1179.98px)': { borderLeft: 0, borderTop: `1px solid ${changeOrderBorder.default}` },
+          }}
+        >
+          <Box sx={{ position: 'sticky', top: 16, '@media (max-width: 1179.98px)': { position: 'static' } }}>
+            {signOff.panel}
+          </Box>
+        </Box>
+      ) : null}
       </Box>
     </Box>
   );
@@ -1221,6 +1594,60 @@ export default function ChangeOrdersPage() {
   const invocationSourceSelected =
     selectedStage?.verdict === 'source' && detail.invocationSource !== undefined;
 
+  /*
+   * REVIEWS: attestation prerequisites on a stage (`reviews/`). The panel is
+   * for the selected stage; the band in the summary card is for the next
+   * stage, which a reader may not have selected. The promote dry run stays
+   * the authority for "satisfied" (`useStageReviews`).
+   */
+  const { userInfo } = useUserInfo();
+  const coReviews = useChangeOrderReviews(detail, { poll: true });
+  const completeSelectedEarly = stageParam === COMPLETE_STAGE_ID;
+  /**
+   * ONE review panel, for the gate the selected step is at in time
+   * (plan-2 §4): before a stage is promoted, its entry review; once it is
+   * promoted and still to be released, its release review; on the Complete
+   * step, the Final sign-off. Never two at once, and no tabs.
+   */
+  const gateRef: ReviewGateRef | undefined = useMemo(() => {
+    const byKey = coReviews.byGateKey;
+    if (completeSelectedEarly) return Object.values(byKey).find((g) => g.gate.kind === 'final')?.gate;
+    if (selectedStage === undefined) return undefined;
+    const release = byKey[`release:${selectedStage.stageId}`];
+    if (selectedStage.verdict === 'promoted' && release !== undefined) return release.gate;
+    return byKey[`entry:${selectedStage.stageId}`]?.gate;
+  }, [coReviews.byGateKey, completeSelectedEarly, selectedStage]);
+  const reviews = useGateReviews(detail, gateRef);
+  const reviewSummary = reviews.summary;
+  /**
+   * The band: the first held gate in time order (`bandGate`). With nothing
+   * held, the next stage's entry review, so a complete review still shows its
+   * "Reviews complete" band (design C).
+   */
+  const bandSummary: StageReviewSummary | undefined =
+    coReviews.bandGate !== undefined
+      ? coReviews.byGateKey[coReviews.bandGate.key]
+      : detail.nextStageId === null
+        ? undefined
+        : coReviews.byGateKey[`entry:${detail.nextStageId}`];
+  const readinessOf = (summary: StageReviewSummary | undefined): PromoteReadiness | undefined =>
+    summary === undefined || summary.gate.kind !== 'entry' ? undefined : coReviews.readinessByStageId[summary.gate.stageId];
+  const reviewNow = Date.now();
+  const approveRef = useRef<HTMLButtonElement>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  // State 'none' = nothing evaluated. The panel still shows a gate with requirements the
+  // server did not evaluate for this viewer: "Not evaluated for you", the decisions, the form.
+  const reviewedStageSelected =
+    reviewSummary !== undefined &&
+    (reviewSummary.state !== 'none' || reviewSummary.requirements.length > 0) &&
+    reviewSummary.gate.kind !== 'final' &&
+    !invocationSourceSelected &&
+    !completeSelectedEarly;
+  const signOffSelected = completeSelectedEarly && reviewSummary !== undefined && reviewSummary.gate.kind === 'final';
+  /** The release dry run refuses on a review requirement (422): the Release button is held, as Promote is on a 409. */
+  const releaseHeldByReview =
+    reviewSummary?.gate.kind === 'release' && reviewSummary.requirements.some((r) => r.evaluated && !r.satisfied);
+
   /**
    * The console row, when it has a promotion path. The rail, its pips and the
    * "N of M" figure are all drawn from this one row, or not at all: a row with
@@ -1241,7 +1668,28 @@ export default function ChangeOrdersPage() {
     () => (pathRow === undefined ? null : buildCompleteConsoleStage(pathRow)),
     [pathRow],
   );
-  const completeTone: CompleteStepTone | null = pathRow === undefined ? null : completeStepTone(pathRow);
+  /*
+   * THE SERVER'S "COMPLETE" WINS. `ChangeOrder.Stage` can lag the workflow's
+   * completion, while the promote dry run already refuses with "has completed
+   * ChangeWorkflow" (`detail.workflowCompleted`). The console row reads only
+   * `Stage`, so without this the Complete node said "Not complete 1/2" beside
+   * a sign-off panel that the server counts as satisfied. A restored or
+   * abandoned ChangeOrder keeps its own reading.
+   */
+  const rowCompleteTone: CompleteStepTone | null = pathRow === undefined ? null : completeStepTone(pathRow);
+  const completedByServer = detail.workflowCompleted && rowCompleteTone !== null && rowCompleteTone !== 'restored';
+  const completeTone: CompleteStepTone | null = completedByServer ? 'done' : rowCompleteTone;
+  const completeLabel = completedByServer ? changeOrdersConsoleCopy.states.complete.label : (completeStage?.state.label ?? '');
+  /** The Final gates, all satisfied when the server reports the workflow complete, so the tally agrees. */
+  const finalGates = useMemo(
+    () =>
+      completedByServer
+        ? detail.finalGates.map((gate) =>
+            gate.evaluated && gate.ok ? gate : { ...gate, ok: true, evaluated: true, reason: WORKFLOW_COMPLETED_REASON },
+          )
+        : detail.finalGates,
+    [completedByServer, detail.finalGates],
+  );
   const completeAbandoned =
     detail.consoleRow !== undefined && isCompleteStepAbandoned(detail.consoleRow);
   /** The selected stage's name as a reader sees it. Empty when none is selected. */
@@ -1251,6 +1699,21 @@ export default function ChangeOrdersPage() {
       : stageDisplayName(selectedStage.stageId, selectedStage.verdict === 'source');
 
   const gates = selectedStage?.gates ?? [];
+  /**
+   * The selected stage's gates that are not its reviews and are not yet
+   * satisfied: what still holds the stage when the reviews are done. With
+   * none, completing the review can honestly say Promote becomes available
+   * (M5); `PromoteReadiness` says the same for the band and the chips.
+   */
+  const otherHoldingGates = useMemo(
+    () =>
+      reviewSummary === undefined || reviewSummary.gate.kind !== 'entry'
+        ? []
+        : (selectedStage?.gates ?? [])
+            .filter((g) => reviewRequirementOf(g, reviewSummary) === undefined && !(g.evaluated && g.ok))
+            .map((g) => g.name),
+    [selectedStage?.gates, reviewSummary],
+  );
   /**
    * What holds this stage, split by whether anybody checked.
    *
@@ -1373,6 +1836,30 @@ export default function ChangeOrdersPage() {
    * membership is the only honest test for "this belongs in Passed over
    * instead".
    */
+  /** A fan-out source's narrowed paths, by unit id (`FanOutSourceUnit.linkedPaths`). */
+  const linkedPathsByUnitId = useMemo(() => {
+    const index = new Map<string, string[]>();
+    for (const unit of detail.fanOutSource?.units ?? []) {
+      if (unit.linkedPaths !== undefined) index.set(unit.unitId, unit.linkedPaths);
+    }
+    return index;
+  }, [detail.fanOutSource]);
+  /**
+   * A resource's Links of this ChangeOrder's type that cross into other Spaces, which are the
+   * ones it travels over. An Invoke ChangeOrder travels over none.
+   */
+  const unitLinksHrefFor = useCallback(
+    (unit: { spaceId: string; unitId: string }, direction: 'from' | 'to') =>
+      detail.updateType === 'Invoke'
+        ? undefined
+        : unitLinksHref(unit.spaceId, unit.unitId, {
+            // An absent UpdateType is the server's default.
+            updateType: detail.updateType || 'UpgradeUnit',
+            otherSpacesOnly: true,
+            direction,
+          }),
+    [detail.updateType],
+  );
   const visibleSourceUnits = useMemo(
     () => changes.sourceUnits.filter((unit) => !(unit.unitId in detail.skippedUnits)),
     [changes.sourceUnits, detail.skippedUnits],
@@ -1404,6 +1891,7 @@ export default function ChangeOrdersPage() {
     (unit: MergedUnit) => {
       const group = changes.sourceGroupsByUnitId.get(unit.unitId);
       const fieldDiffs = group?.fieldDiffs ?? [];
+      const linkedPaths = linkedPathsByUnitId.get(unit.unitId);
       return (
         <Box key={unit.unitId}>
           <ChangeOrderUnitHeader
@@ -1427,7 +1915,17 @@ export default function ChangeOrdersPage() {
                 ? `/spaces/${unit.spaceId}`
                 : (componentSpaceDeepLink(detail.componentName, unit.spaceId) ?? undefined)
             }
+            // The change leaves a source over the Links to it.
+            linksHref={unitLinksHrefFor(unit, 'to')}
           />
+          {linkedPaths !== undefined && fieldDiffs.length > 0 ? (
+            <Box
+              sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, padding: '4px 12px 6px' }}
+              data-testid={`change-order-unit-linked-paths-${unit.unitId}`}
+            >
+              {changeOrderCopy.linkedPathsCaption(linkedPaths)}
+            </Box>
+          ) : null}
           <ChangeOrderRefusals conflicts={rowRefusals(group)} />
           {fieldDiffs.length === 0 ? (
             <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, padding: '4px 12px 10px' }}>
@@ -1454,6 +1952,8 @@ export default function ChangeOrdersPage() {
       changes.spaceNameBySpaceId,
       detail.componentName,
       detail.fanOutSource,
+      linkedPathsByUnitId,
+      unitLinksHrefFor,
       stableDiffColumnStyle,
       onDiffDividerMouseDown,
       isDiffDragging,
@@ -1614,6 +2114,77 @@ export default function ChangeOrdersPage() {
    * than the ones it writes — a registry fact, not the Deployment taking the
    * image — so they say nothing about which rows of a stage it carries.
    */
+  /**
+   * The band's call to action. Scrolls to the review panel (or the Promote
+   * button) and, for "Review now", focuses the Approve choice. The band is for
+   * the next stage, so it selects that stage first when another one is open.
+   */
+  const goToReview = useCallback(
+    (action: ReviewBandAction, target: string | undefined) => {
+      const needsSelect = target !== undefined && target !== selectedStage?.stageId;
+      if (needsSelect) navigate(`/change-orders/${detail.slug}/${encodeURIComponent(target)}`);
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const go = () => {
+        let element: HTMLElement | null = document.getElementById(REVIEW_PANEL_ID);
+        if (action === 'promote') element = document.querySelector<HTMLElement>('[data-promote-stage]');
+        if (action === 'release') element = document.querySelector<HTMLElement>('[data-release-stage]');
+        if (element === null) return;
+        const toButton = action === 'promote' || action === 'release';
+        element.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: toButton ? 'center' : 'start' });
+        if (action === 'panel') return;
+        /*
+         * Read the target when focusing, not now: the panel can re-render the
+         * form (a poll lands, the dry run returns) while the page scrolls, and
+         * an element held from the click would then be detached. Try again a
+         * few times until the focus holds.
+         */
+        const target = () => (action === 'review' ? approveRef.current : element);
+        let tries = 0;
+        const focus = () => {
+          const el = target();
+          el?.focus({ preventScroll: true });
+          tries += 1;
+          if ((el === null || document.activeElement !== el) && tries < 8) window.setTimeout(focus, 150);
+        };
+        window.setTimeout(focus, reduced ? 0 : 350);
+      };
+      if (needsSelect) window.setTimeout(go, 100);
+      else go();
+    },
+    [selectedStage?.stageId, navigate, detail.slug],
+  );
+  /** The step the band's gate is on: the stage, or Complete for the sign-off. */
+  const bandStep = bandSummary === undefined ? undefined : bandSummary.gate.kind === 'final' ? COMPLETE_STAGE_ID : bandSummary.gate.stageId;
+  const onReviewBandAction = useCallback(
+    (action: ReviewBandAction) => goToReview(action, bandStep),
+    [goToReview, bandStep],
+  );
+
+  /** A decision was recorded: say what it did, in the toast and the live region. */
+  const onReviewRecorded = useCallback(
+    (_outcome: Extract<SubmitReviewOutcome, { ok: true }>, before: StageReviewSummary, result: ReviewChoice) => {
+      const primary = before.primary;
+      const stage = before.gate.stageName;
+      let message: string = reviewCopy.toast.approvedPlain;
+      if (result === 'Fail') {
+        message = reviewCopy.toast.rejected(stage);
+      } else if (primary !== undefined) {
+        const passes = Math.min(primary.passes + 1, primary.rules.required);
+        const othersOpen = before.requirements.every((r) => r.name === primary.name || r.satisfied);
+        const completes = passes >= primary.rules.required && othersOpen && !primary.rejected;
+        if (!completes) message = reviewCopy.toast.approved(passes, primary.rules.required, primary.name);
+        else if (before.gate.kind === 'release') message = reviewCopy.toast.releaseSatisfied(primary.name, stage);
+        else if (before.gate.kind === 'final') message = reviewCopy.toast.approvedPlain;
+        // "can be promoted" only when nothing but this review held the stage (M5).
+        else if (otherHoldingGates.length === 0) message = reviewCopy.toast.approvedSatisfied(primary.name, stage);
+        else message = reviewCopy.toast.reviewsComplete(primary.name, stage);
+      }
+      setToast(message);
+      setAnnouncement(message);
+    },
+    [otherHoldingGates],
+  );
+
   const carriedResourceKeys = useMemo(
     () =>
       detail.fanOutSource !== undefined
@@ -1825,6 +2396,16 @@ export default function ChangeOrdersPage() {
         onConfirm={confirmPromote}
       />
       <EndChangeOrderDialog {...endChangeOrder.dialogProps} />
+      {/* The review toast: what a recorded decision did. The live region above says the same. */}
+      <Snackbar
+        open={toast !== null}
+        autoHideDuration={3600}
+        onClose={() => setToast(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        message={toast ?? ''}
+        data-testid="review-toast"
+        ContentProps={{ sx: { fontFamily: changeOrderFontSans, fontSize: changeOrderType.size.body } }}
+      />
 
       {/*
         Altitude 0. The console renders its own `h1` — it IS the page when no
@@ -1914,13 +2495,23 @@ export default function ChangeOrdersPage() {
               border: `1px solid ${changeOrderBorder.default}`,
               borderRadius: `${changeOrderCardTokens.radius}px`,
               boxShadow: changeOrderCardTokens.shadow,
-              padding: '18px 20px',
-              display: 'grid',
-              gridTemplateColumns: 'minmax(0,1fr) 220px',
-              // No row gap: the full-width row below sets its own top margin.
-              gap: '0 32px',
+              /* Clips the review band's corners to the card's radius. `clip`, not
+                 `hidden`: it creates no scroll container. */
+              overflow: 'clip',
             }}
           >
+            {bandSummary !== undefined ? (
+              <ReviewBand summary={bandSummary} readiness={readinessOf(bandSummary)} now={reviewNow} onAction={onReviewBandAction} />
+            ) : null}
+            <Box
+              sx={{
+                padding: '18px 20px',
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0,1fr) 220px',
+                // No row gap: the full-width row below sets its own top margin.
+                gap: '0 32px',
+              }}
+            >
             <Box sx={{ minWidth: 0 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <Box
@@ -1945,7 +2536,9 @@ export default function ChangeOrdersPage() {
                   `buildConsoleRow` derivation the console uses means this chip
                   and that row cannot tell two stories about one ChangeOrder.
                 */}
-                {detail.consoleRow !== undefined ? (
+                {bandSummary !== undefined ? (
+                  <ReviewSummaryChip summary={bandSummary} readiness={readinessOf(bandSummary)} />
+                ) : detail.consoleRow !== undefined ? (
                   <StateChip
                     label={changeOrdersConsoleCopy.states[detail.consoleRow.state].label}
                     tone={CONSOLE_STATE_TONE[detail.consoleRow.state]}
@@ -2098,7 +2691,12 @@ export default function ChangeOrdersPage() {
                     {[
                       ...detail.stageStates.map((state, i) => ({
                         key: state.stageId,
-                        dot: railDot(state, state.stageId === detail.nextStageId, i < detail.stagesDone),
+                        dot: railDot(
+                          state,
+                          state.stageId === detail.nextStageId,
+                          i < detail.stagesDone,
+                          coReviews.railByStageId[state.stageId],
+                        ),
                       })),
                       ...(completeTone === null
                         ? []
@@ -2134,7 +2732,7 @@ export default function ChangeOrdersPage() {
                       ? changeOrdersConsoleCopy.noStagesBlocker
                       : detail.nextStageId === null
                         ? 'Every stage has taken the change.'
-                        : `Next: ${stageDisplayName(detail.nextStageId, false)}`}
+                        : nextStageHint(stageDisplayName(detail.nextStageId, false), bandSummary, readinessOf(bandSummary))}
                   </Box>
                 </>
               ) : (
@@ -2351,8 +2949,8 @@ export default function ChangeOrdersPage() {
                       NOT AN ERROR, AND NOT WORDED AS ONE. A ChangeOrder over
                       one changed Unit passes over every other Unit in its
                       Space — that is the ordinary case, not a failure. The
-                      tone here is neutral for that reason, and the reason
-                      string is the server's own rather than a gloss on it.
+                      tone here is neutral for that reason. The server gives
+                      the reason as a code, worded by skippedUnitReasonText.
                     */}
                     <Box component="dl" sx={{ margin: 0, fontSize: changeOrderType.size.body }}>
                       {skippedEntries.map(([unitId, reason]) => {
@@ -2384,7 +2982,7 @@ export default function ChangeOrdersPage() {
                               )}
                             </Box>
                             <Box component="dd" sx={{ margin: 0, color: changeOrderInk.muted }}>
-                              {reason}
+                              {skippedUnitReasonText(reason)}
                             </Box>
                           </Box>
                         );
@@ -2399,6 +2997,7 @@ export default function ChangeOrdersPage() {
                   Aborted: {detail.abortedReason}
                 </Box>
               ) : null}
+            </Box>
             </Box>
           </Box>
 
@@ -2446,10 +3045,15 @@ export default function ChangeOrdersPage() {
                 slug={detail.slug}
                 completeTone={completeTone}
                 completeAbandoned={completeAbandoned}
-                completeLabel={completeStage?.state.label ?? ''}
+                completeLabel={completeLabel}
                 completeSelected={completeSelected}
-                finalGates={detail.finalGates}
+                finalGates={finalGates}
                 sourceSummary={sourceSummary}
+                reviewRail={coReviews.railByStageId}
+                completeReview={coReviews.completeRail}
+                completeNotOpen={
+                  Object.values(coReviews.byGateKey).find((g) => g.gate.kind === 'final')?.primary?.notEvaluated === 'finalNotOpen'
+                }
               />
             )}
             {detail.sequence.problems.length > 0 ? (
@@ -2474,7 +3078,9 @@ export default function ChangeOrdersPage() {
                 border: `1px solid ${changeOrderBorder.default}`,
                 borderRadius: `${changeOrderCardTokens.radius}px`,
                 boxShadow: changeOrderCardTokens.shadow,
-                overflow: 'hidden',
+                // `clip`, not `hidden`: `hidden` makes a scroll container, and
+                // the sticky review panel inside would then never stick.
+                overflow: 'clip',
               }}
             >
               <Box
@@ -2503,10 +3109,42 @@ export default function ChangeOrdersPage() {
                 >
                   {selectedStageName}
                 </Box>
-                <StateChip label={selectedStage.label} tone={changeOrderInk.muted} />
+                {reviewedStageSelected ? (
+                  <ReviewStageChip summary={reviewSummary} readiness={readinessOf(reviewSummary)} />
+                ) : (
+                  <StateChip label={selectedStage.label} tone={changeOrderInk.muted} />
+                )}
+                {reviewedStageSelected ? (
+                  <Box
+                    component="span"
+                    sx={{ marginLeft: 'auto', fontSize: changeOrderType.size.body, color: changeOrderInk.subtle }}
+                  >
+                    {reviewSummary.gate.kind === 'release' ? reviewCopy.stage.releaseEvaluatedOver : reviewCopy.stage.evaluatedOver}{' '}
+                    <Box component="span" sx={{ fontFamily: changeOrderFontMono, color: changeOrderInk.muted }}>
+                      {reviewSummary.gateSpaces.map((space) => space.spaceSlug).join(', ')}
+                    </Box>
+                  </Box>
+                ) : null}
               </Box>
 
-              <Box sx={{ padding: '18px 20px 22px' }}>
+              {/*
+                TWO COLUMNS WHEN THE STAGE HAS REVIEWS: the stage content on the
+                left, unchanged, and the review panel on the right, sticky. One
+                column under 1180px, with the panel below and not sticky.
+              */}
+              <Box
+                sx={
+                  reviewedStageSelected
+                    ? {
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(0,1fr) 384px',
+                        alignItems: 'start',
+                        '@media (max-width: 1179.98px)': { gridTemplateColumns: 'minmax(0,1fr)' },
+                      }
+                    : undefined
+                }
+              >
+              <Box sx={{ padding: '18px 20px 22px', minWidth: 0 }}>
               {gates.length > 0 ? (() => {
                 // Same shared derivation the connector pill and the per-component
                 // side pane's gates bar use (`changeOrderGates.ts`), so this summary
@@ -2604,14 +3242,20 @@ export default function ChangeOrdersPage() {
                       >
                         <ChangeOrderGateList
                           stageId={selectedStage.stageId}
-                          gates={gates}
+                          gates={reviewedStageSelected && reviewSummary.gate.kind === 'entry' ? reviewGatesForList(gates, reviewSummary) : gates}
                           isSource={selectedStage.verdict === 'source'}
+                          extras={
+                            reviewedStageSelected && reviewSummary.gate.kind === 'entry'
+                              ? reviewGateExtras(gates, reviewSummary, () => goToReview('panel', undefined))
+                              : undefined
+                          }
                         />
                       </Box>
                     ) : null}
                   </>
                 );
               })() : null}
+              {reviewedStageSelected ? <ReviewGateBlockedLine summary={reviewSummary} /> : null}
 
               <Box sx={{ marginTop: '12px' }}>
                 {/*
@@ -2668,7 +3312,14 @@ export default function ChangeOrdersPage() {
                       backgroundColor: componentTheme.done,
                       '&:hover': { backgroundColor: componentTheme.doneEmphasis },
                     }}
-                    disabled={actions.busy || detail.abortedReason !== ''}
+                    /*
+                      Held by a release review the same way Promote is held by
+                      an entry gate: the release dry run refuses (422) on a
+                      review requirement, and the line above says why. When the
+                      UI cannot read the verdict, the button stays enabled.
+                    */
+                    disabled={actions.busy || detail.abortedReason !== '' || releaseHeldByReview}
+                    data-release-held={releaseHeldByReview ? 'true' : 'false'}
                     onClick={() => {
                       setAnnouncement(`Releasing ${selectedStageName}.`);
                       void actions.release(stageSpaceIds).then((r) => {
@@ -3043,6 +3694,8 @@ export default function ChangeOrdersPage() {
                             undetermined={changes.undeterminedUnitIds.has(unit.unitId)}
                             unchanged={fieldDiffs.length === 0}
                             spaceHref={componentSpaceDeepLink(detail.componentName, unit.spaceId) ?? undefined}
+                            // A promotion reaches a stage's resource over the Links from it.
+                            linksHref={unitLinksHrefFor(unit, 'from')}
                           />
                           <ChangeOrderRefusals conflicts={rowRefusals(g)} />
                           {/*
@@ -3285,6 +3938,40 @@ export default function ChangeOrdersPage() {
                 )}
               </Box>
               </Box>
+              {reviewedStageSelected ? (
+                <Box
+                  sx={{
+                    borderLeft: `1px solid ${changeOrderBorder.default}`,
+                    alignSelf: 'stretch',
+                    minWidth: 0,
+                    '@media (max-width: 1179.98px)': {
+                      borderLeft: 0,
+                      borderTop: `1px solid ${changeOrderBorder.default}`,
+                    },
+                  }}
+                >
+                  <Box
+                    sx={{
+                      position: 'sticky',
+                      top: 16,
+                      '@media (max-width: 1179.98px)': { position: 'static' },
+                    }}
+                  >
+                    <ReviewPanel
+                      reviews={reviews}
+                      summary={reviewSummary}
+                      otherGatesHolding={reviewSummary.gate.kind === 'entry' ? otherHoldingGates : undefined}
+                      orderSlug={detail.slug}
+                      viewerName={userInfo?.DisplayName}
+                      now={reviewNow}
+                      approveRef={approveRef}
+                      onRecorded={onReviewRecorded}
+                      onNotice={setToast}
+                    />
+                  </Box>
+                </Box>
+              ) : null}
+              </Box>
             </Box>
           ) : null}
 
@@ -3294,7 +3981,30 @@ export default function ChangeOrdersPage() {
             `undefined` for it, so no stage panel is stacked above this one.
           */}
           {completeSelected && completeStage !== null ? (
-            <CompleteStepDetail label={completeStage.state.label} gates={detail.finalGates} />
+            <CompleteStepDetail
+              label={completeLabel}
+              gates={finalGates}
+              signOff={
+                signOffSelected
+                  ? {
+                      summary: reviewSummary,
+                      extras: reviewGateExtras(finalGates, reviewSummary, () => goToReview('panel', undefined)),
+                      panel: (
+                        <ReviewPanel
+                          reviews={reviews}
+                          summary={reviewSummary}
+                          orderSlug={detail.slug}
+                          viewerName={userInfo?.DisplayName}
+                          now={reviewNow}
+                          approveRef={approveRef}
+                          onRecorded={onReviewRecorded}
+                          onNotice={setToast}
+                        />
+                      ),
+                    }
+                  : undefined
+              }
+            />
           ) : null}
 
           {/* Last: the record of what happened, below what the selected step does now. */}

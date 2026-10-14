@@ -234,12 +234,12 @@ export const PerUnitResultCard = ({
                 ))}
               </Box>
             )}
-            {response.Error.ErrorCategory && (
+            {response.Error.Type && (
               <Typography
                 variant="caption"
                 sx={{ mt: 1, display: 'block', color: 'error.dark' }}
               >
-                Category: {response.Error.ErrorCategory}
+                Category: {response.Error.Type}
               </Typography>
             )}
           </Alert>

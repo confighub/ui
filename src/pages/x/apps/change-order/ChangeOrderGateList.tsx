@@ -19,7 +19,7 @@
  * and a model built on Attestations can add one from each Attestation's CreatedAt.
  */
 
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 
 import Box from '@mui/material/Box';
 import { styled } from '@mui/material/styles';
@@ -29,11 +29,27 @@ import { changeOrderCopy } from './changeOrderCopy';
 import { tagLabel, toneOf, type GateTone } from './changeOrderGateTone';
 import type { ChangeOrderApprover, ChangeOrderGate } from './changeOrderTypes';
 
+/**
+ * Extra content for one gate row, keyed by gate id. The ChangeOrder detail page
+ * uses it for a review gate: per-Space progress under the reason, and the
+ * reviewers' monograms and a "Review" link on the right. Other callers pass
+ * nothing and the rows render as before.
+ */
+export interface ChangeOrderGateExtra {
+  /** Under the reason. */
+  below?: ReactNode;
+  /** At the right edge of the row. */
+  right?: ReactNode;
+  /** Leave out the named approver list, because `right` shows the same people. */
+  hideApprovers?: boolean;
+}
+
 interface ChangeOrderGateListProps {
   stageId: string;
   gates: ChangeOrderGate[];
   /** The base has no gates for a different reason than a gateless stage does. */
   isSource: boolean;
+  extras?: Readonly<Record<string, ChangeOrderGateExtra>>;
 }
 
 const GateRow = styled(Box)({
@@ -158,7 +174,7 @@ const ApproverEntry = memo(({ approver }: { approver: ChangeOrderApprover }) => 
 ));
 ApproverEntry.displayName = 'ApproverEntry';
 
-export const ChangeOrderGateList = memo(({ stageId, gates, isSource }: ChangeOrderGateListProps) => {
+export const ChangeOrderGateList = memo(({ stageId, gates, isSource, extras }: ChangeOrderGateListProps) => {
   if (gates.length === 0) {
     return (
       <EmptyRow data-testid={`change-order-gates-empty-${stageId}`}>
@@ -171,6 +187,7 @@ export const ChangeOrderGateList = memo(({ stageId, gates, isSource }: ChangeOrd
     <>
       {gates.map((gate) => {
         const tone = toneOf(gate);
+        const extra = extras?.[gate.id];
         return (
           <GateRow key={gate.id} data-testid={`change-order-gate-${stageId}-${gate.id}`}>
             <GateMark $tone={tone} aria-hidden>
@@ -184,7 +201,8 @@ export const ChangeOrderGateList = memo(({ stageId, gates, isSource }: ChangeOrd
                 </GateTag>
               </GateName>
               <GateWhy>{gate.reason}</GateWhy>
-              {gate.approvers !== undefined && gate.approvers.length > 0 && (
+              {extra?.below}
+              {extra?.hideApprovers !== true && gate.approvers !== undefined && gate.approvers.length > 0 && (
                 <ApproverList>
                   {gate.approvers.map((approver) => (
                     <ApproverEntry key={approver.userId} approver={approver} />
@@ -192,6 +210,11 @@ export const ChangeOrderGateList = memo(({ stageId, gates, isSource }: ChangeOrd
                 </ApproverList>
               )}
             </GateBody>
+            {extra?.right !== undefined ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '0 0 auto', alignSelf: 'flex-start' }}>
+                {extra.right}
+              </Box>
+            ) : null}
           </GateRow>
         );
       })}

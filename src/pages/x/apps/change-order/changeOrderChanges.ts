@@ -36,7 +36,8 @@
 import type { PromoteResult } from '@confighub/rtk-query';
 
 import { buildPaths, computeFieldDiffs } from '../entryBuilders';
-import { parseUnitData, resourceIdentitiesOf } from '../configParser';
+import { parseUnitDataStructured, resourceIdentitiesOf } from '../configParser';
+import { groupFieldEntriesByDocument, type DocumentGroup } from '../diffTree';
 import type { ChangeOrderChangeGroup, ChangeOrderResourceConflict } from './changeOrderTypes';
 
 /** One resource's before/after, however the caller obtained them. */
@@ -168,18 +169,92 @@ export function readPromotionPreview(result: PromoteResult | undefined): Promoti
   return preview;
 }
 
+/** The documents of a payload, one group per source document. */
+function documentsOf(data: string | undefined): DocumentGroup[] {
+  return hasConfig(data) ? groupFieldEntriesByDocument(parseUnitDataStructured(data)) : [];
+}
+
+/** `kind` of one document, from its `apiVersion/kind` resource type. */
+function documentKind(document: DocumentGroup): string | undefined {
+  const type = document.resource?.ResourceType;
+  if (!type) return undefined;
+  return type.slice(type.lastIndexOf('/') + 1) || undefined;
+}
+
 /**
- * Kubernetes-style `kind`, when the data has one.
- *
- * Purely a display nicety for the resource row's badge. Absent for formats that
- * have no such concept (ini, properties, plain JSON), and its absence is not an
- * error — the resource still renders, just without a kind badge.
+ * A key for each document that is the same on both sides of a change: its
+ * identity, numbered by occurrence so that documents sharing one (or having
+ * none) still pair up in order rather than collapsing together.
  */
-function resourceKindOf(data: string | undefined): string | undefined {
-  if (data === undefined) return undefined;
-  const parsed = parseUnitData(data);
-  const kind = parsed.get('kind');
-  return typeof kind === 'string' && kind.length > 0 ? kind : undefined;
+function documentKeys(documents: DocumentGroup[]): string[] {
+  const seen = new Map<string, number>();
+  return documents.map((document) => {
+    const identity = JSON.stringify([
+      document.resource?.ResourceType ?? null,
+      document.resource?.ResourceName ?? null,
+    ]);
+    const occurrence = seen.get(identity) ?? 0;
+    seen.set(identity, occurrence + 1);
+    return `${identity}#${occurrence}`;
+  });
+}
+
+function documentValues(document: DocumentGroup): Map<string, string> {
+  return new Map(document.entries.map((entry) => [entry.path, JSON.stringify(entry.value) ?? '']));
+}
+
+function sameDocument(a: DocumentGroup, b: DocumentGroup): boolean {
+  const aValues = documentValues(a);
+  const bValues = documentValues(b);
+  if (aValues.size !== bValues.size) return false;
+  for (const [path, value] of aValues) {
+    if (bValues.get(path) !== value) return false;
+  }
+  return true;
+}
+
+/** Distinct kinds, in document order, as the badge shows them. */
+function joinKinds(documents: DocumentGroup[]): string | undefined {
+  const kinds = [...new Set(documents.map(documentKind).filter((kind) => kind !== undefined))];
+  return kinds.length > 0 ? kinds.join(', ') : undefined;
+}
+
+/**
+ * Kubernetes-style `kind` for the resource row's badge, when the data has one.
+ *
+ * Purely a display nicety. Absent for formats that have no such concept (ini,
+ * properties, plain JSON), and its absence is not an error — the resource still
+ * renders, just without a kind badge.
+ *
+ * A Unit may hold several documents — a Service, a Deployment and an
+ * IngressRoute, say — and its flattened data has one `kind` key, whichever
+ * document came last. So the badge names the kinds of the documents that differ
+ * between the two sides, which are the ones the rows below are about. Where none
+ * differ, or only one side can be read, it names every kind the Unit holds.
+ */
+function resourceKindOf(
+  beforeData: string | undefined,
+  afterData: string | undefined,
+  determinable: boolean,
+): string | undefined {
+  const before = documentsOf(beforeData);
+  const after = documentsOf(afterData);
+  const all = after.length > 0 ? after : before;
+  if (!determinable || before.length === 0 || after.length === 0) return joinKinds(all);
+
+  const beforeByKey = new Map<string, DocumentGroup>();
+  documentKeys(before).forEach((key, i) => beforeByKey.set(key, before[i]));
+  const afterKeys = documentKeys(after);
+  const afterKeySet = new Set(afterKeys);
+  const changed = after.filter((document, i) => {
+    const previous = beforeByKey.get(afterKeys[i]);
+    return previous === undefined || !sameDocument(previous, document);
+  });
+  // A document only the BEFORE side holds is one the change removes.
+  for (const [key, document] of beforeByKey) {
+    if (!afterKeySet.has(key)) changed.push(document);
+  }
+  return joinKinds(changed.length > 0 ? changed : all);
 }
 
 /**
@@ -363,7 +438,7 @@ export function buildChangeOrderChangeGroups(sources: ChangeOrderChangeSource[])
     return {
       unitId: source.unitId,
       resourceName: source.slug,
-      resourceKind: resourceKindOf(source.afterData ?? source.beforeData),
+      resourceKind: resourceKindOf(source.beforeData, source.afterData, determinable),
       // Either side identifies the resource, and the two agree wherever both can
       // be read. The BEFORE side is preferred because it is what the Space holds
       // now, which is the thing the row claims to be about.
