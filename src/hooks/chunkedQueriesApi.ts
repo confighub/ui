@@ -79,6 +79,10 @@ const PUBLISHED_RELEASE_FIELDS: Pick<ListAllReleasesApiArg, 'select'> = {
 const RELEASES_SINCE_FIELDS: Pick<ListAllReleasesApiArg, 'select'> = {
   select: 'ReleaseID,SpaceID,ReleaseNum,CreatedAt,Published,LiveStatus',
 };
+/** Every field, and every entity a Release references, for a table of Releases and their details. */
+const RELEASE_DETAILS_INCLUDE: Pick<ListAllReleasesApiArg, 'include'> = {
+  include: 'SpaceID,TagID,ChangeOrderID,TargetID,UserID',
+};
 
 /** Ids for each request of a by-id read that a page fires on its own, kept short. */
 export const BY_ID_CHUNK_SIZE = 50;
@@ -262,6 +266,30 @@ const chunkedQueriesApi = confighubApi.injectEndpoints({
         }),
       providesTags: ['Release'],
     }),
+    listReleaseDetailsSinceChunked: build.query<ListAllReleasesApiResponse, ReleasesSinceArg>({
+      queryFn: (arg, _api, _extra, baseQuery) =>
+        fetchChunks<ListAllReleasesApiResponse[number]>(
+          'SpaceID',
+          idSet(arg.spaceIds),
+          (where) => ({
+            url: `/release`,
+            params: {
+              where: `${where} AND CreatedAt >= '${arg.since}'`,
+              include: RELEASE_DETAILS_INCLUDE.include,
+              distinct_on: 'Off',
+            },
+          }),
+          baseQuery,
+          { paged: true },
+        ),
+      serializeQueryArgs: ({ endpointName, endpointDefinition, queryArgs }) =>
+        defaultSerializeQueryArgs({
+          endpointName,
+          endpointDefinition,
+          queryArgs: { spaceIds: idSet(queryArgs.spaceIds), since: queryArgs.since },
+        }),
+      providesTags: ['Release'],
+    }),
     listReleasesByIdChunked: build.query<ListAllReleasesApiResponse, ReleaseIdsArg>({
       queryFn: (arg, _api, _extra, baseQuery) =>
         fetchChunks<ListAllReleasesApiResponse[number]>(
@@ -382,6 +410,7 @@ export const {
   useListAllUnitsChunkedQuery,
   useListPublishedReleasesChunkedQuery,
   useListReleasesSinceChunkedQuery,
+  useListReleaseDetailsSinceChunkedQuery,
   useListReleasesByIdChunkedQuery,
   useListUsersByIdChunkedQuery,
   useSearchUnitDataChunkedQuery,

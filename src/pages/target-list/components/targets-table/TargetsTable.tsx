@@ -4,7 +4,10 @@ import { useMemo } from 'react';
 
 import { DATE_TIME_GRID_SLOTS } from '@/components/data-grid/cells';
 import { EntityDataGrid } from '@/components/entity-data-grid/EntityDataGrid';
-import { useAttributeColumnManager } from '@/components/entity-data-grid/hooks/useAttributeColumnManager';
+import {
+  AttributeColumnConfig,
+  useAttributeColumnManager,
+} from '@/components/entity-data-grid/hooks/useAttributeColumnManager';
 import { useGridPersistence } from '@/components/unit-data-grid/hooks/useGridPersistence';
 import { ExtendedTargetRead } from '@confighub/rtk-query';
 import { GridColDef, GridRowSelectionModel } from '@mui/x-data-grid';
@@ -28,6 +31,20 @@ export interface TargetsTableProps {
   /** True when the unfiltered target list is empty */
   hasNoData?: boolean;
 }
+
+// One column per label key and per annotation key, rather than one column holding each whole map.
+const ATTRIBUTE_CONFIGS: AttributeColumnConfig<TargetRowItem>[] = [
+  {
+    fieldName: 'Labels',
+    columnPrefix: 'Labels.',
+    getAttributes: (row) => row.Labels,
+  },
+  {
+    fieldName: 'Annotations',
+    columnPrefix: 'Annotations.',
+    getAttributes: (row) => row.Annotations,
+  },
+];
 
 const GRID_DEFAULTS = {
   sortModel: [{ field: 'Slug', sort: 'asc' as const }],
@@ -60,45 +77,34 @@ export const TargetsTable = ({
       Space: target.Space?.Slug || '',
       SpaceID: target.Space?.SpaceID || '',
       Labels: target.Target?.Labels || {},
+      Annotations: target.Target?.Annotations || {},
       CreatedAt: target.Target?.CreatedAt || '',
       UpdatedAt: target.Target?.UpdatedAt || '',
       _extendedTarget: target, // Store original for edit callback
     }));
   }, [targets]);
 
-  // Use attribute column manager for Labels
   const { availableAttributeKeys, createAttributeColumn } = useAttributeColumnManager(rows, {
-    attributeConfigs: [
-      {
-        fieldName: 'Labels',
-        columnPrefix: 'Labels.',
-        getAttributes: (row) => row.Labels,
-      },
-    ],
+    attributeConfigs: ATTRIBUTE_CONFIGS,
   });
 
-  // Generate label columns
-  const labelColumns = useMemo(() => {
-    const labels = availableAttributeKeys.get('Labels') || [];
-    return labels.map((label) =>
-      createAttributeColumn(
-        {
-          fieldName: 'Labels',
-          columnPrefix: 'Labels.',
-          getAttributes: (row) => row.Labels,
-        },
-        label,
+  const attributeColumns = useMemo(
+    () =>
+      ATTRIBUTE_CONFIGS.flatMap((attrConfig) =>
+        (availableAttributeKeys.get(attrConfig.fieldName) || []).map((key) =>
+          createAttributeColumn(attrConfig, key),
+        ),
       ),
-    );
-  }, [availableAttributeKeys, createAttributeColumn]);
+    [availableAttributeKeys, createAttributeColumn],
+  );
 
   // Create static columns
   const staticColumns = useMemo(() => createTargetStaticColumns(), []);
 
   // Combine all columns
   const baseColumns = useMemo(
-    () => [...staticColumns, ...labelColumns],
-    [labelColumns, staticColumns],
+    () => [...staticColumns, ...attributeColumns],
+    [attributeColumns, staticColumns],
   );
 
   const {
@@ -120,11 +126,11 @@ export const TargetsTable = ({
     [applyStoredWidths, baseColumns],
   );
 
-  // Dynamic columns (Labels) default to hidden unless specified in GRID_DEFAULTS
+  // Dynamic columns (Labels, Annotations) default to hidden unless specified in GRID_DEFAULTS
   const effectiveColumnVisibilityModel = useMemo(() => {
     const dynamicVisibility: Record<string, boolean> = {};
     baseColumns.forEach((col) => {
-      if (col.field.startsWith('Labels.')) {
+      if (ATTRIBUTE_CONFIGS.some((attrConfig) => col.field.startsWith(attrConfig.columnPrefix))) {
         dynamicVisibility[col.field] = GRID_DEFAULTS.columnVisibility[col.field] ?? false;
       }
     });

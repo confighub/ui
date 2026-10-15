@@ -3,13 +3,13 @@
 import type { ComponentRead, ExtendedReleaseRead, ExtendedSpaceRead } from '@confighub/rtk-query';
 import dayjs from 'dayjs';
 
-import { componentOwner } from './componentOwner';
-import { type LiveStatus, releaseTone, type VitalTone, worseTone } from './liveStatus';
+import { componentOwner } from '../x/apps/componentOwner';
+import { type LiveStatus, releaseTone, type VitalTone, worseTone } from '../x/apps/liveStatus';
 
 /**
- * The pure part of the Components Overview's Release heatmap: one row per
- * Component, one column per day, and in each cell the Releases the Component's
- * Spaces published that day.
+ * The pure part of the Releases page's heatmap: one row per Component, one
+ * column per day, and in each cell the Releases the Component's Spaces
+ * published that day.
  *
  * A cell's tone is the worst of its Releases' tones (`releaseTone`), so one
  * failing Release is never averaged away by healthy ones on the same day. A
@@ -145,4 +145,23 @@ export function buildReleaseHeatmap(
 
   const rows = [...rowByComponentId.values()].sort((a, b) => a.componentName.localeCompare(b.componentName));
   return { rows, maxCount, releaseCount };
+}
+
+/**
+ * The rows shown while one Component is selected: its own and up to `context`
+ * on either side, so it stays among its neighbours while leaving the page to
+ * its Releases. More are taken from one side when the other runs out, so the
+ * number shown stays the same at either end. All of them when the Component
+ * has no row.
+ */
+export function heatmapWindow<T extends { componentId: string }>(
+  rows: readonly T[],
+  selectedComponentId: string,
+  context: number,
+): T[] {
+  const index = rows.findIndex((row) => row.componentId === selectedComponentId);
+  if (index < 0) return [...rows];
+  const size = Math.min(rows.length, 2 * context + 1);
+  const start = Math.max(0, Math.min(index - context, rows.length - size));
+  return rows.slice(start, start + size);
 }

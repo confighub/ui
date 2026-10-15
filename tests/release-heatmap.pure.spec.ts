@@ -1,7 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 //
-// The Components Overview's Release heatmap: one row per Component, one column
+// The Releases page's heatmap: one row per Component, one column
 // per day, each cell the Releases of the Component's Spaces that day, coloured
 // by the worst live status among them. Browser-free.
 
@@ -10,7 +10,13 @@ import { expect, test } from '@playwright/test';
 import type { ComponentRead, ExtendedReleaseRead, ExtendedSpaceRead } from '@confighub/rtk-query';
 
 import { type LiveStatus, releaseTone } from '../src/pages/x/apps/liveStatus';
-import { buildReleaseHeatmap, dayKey, heatmapDays, heatmapSince } from '../src/pages/x/apps/releaseHeatmap';
+import {
+  buildReleaseHeatmap,
+  dayKey,
+  heatmapDays,
+  heatmapSince,
+  heatmapWindow,
+} from '../src/pages/releases/releaseHeatmap';
 
 const status = (fields: Partial<LiveStatus>): LiveStatus => ({
   Reporter: 'argobot',
@@ -146,4 +152,14 @@ test('Releases outside the days, or of a Space with no Component, are left out',
 test('a Release is placed on the local day it was created', () => {
   const late = new Date('2026-10-13T23:30:00');
   expect(dayKey(late.toISOString())).toBe('2026-10-13');
+});
+
+test('a selected Component is shown among its neighbours, as many rows at either end', () => {
+  const rows = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((componentId) => ({ componentId }));
+  const ids = (selected: string) => heatmapWindow(rows, selected, 2).map((row) => row.componentId);
+  expect(ids('d')).toEqual(['b', 'c', 'd', 'e', 'f']);
+  expect(ids('a')).toEqual(['a', 'b', 'c', 'd', 'e']);
+  expect(ids('g')).toEqual(['c', 'd', 'e', 'f', 'g']);
+  expect(heatmapWindow(rows.slice(0, 3), 'b', 2).map((row) => row.componentId)).toEqual(['a', 'b', 'c']);
+  expect(heatmapWindow(rows, 'missing', 2)).toHaveLength(7);
 });

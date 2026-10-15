@@ -22,6 +22,7 @@ const FunctionBrowserPage = lazy(() => import('./pages/function-browser/Function
 const ChangeReviewPage = lazy(() => import('./pages/change-review/ChangeReviewPage'));
 const AppsComponentPage = lazy(() => import('./pages/x/apps/AppsComponentPage'));
 const ChangeOrdersPage = lazy(() => import('./pages/change-orders/ChangeOrdersPage'));
+const ReleasesPage = lazy(() => import('./pages/releases/ReleasesPage'));
 const ChangeOrdersOldRouteRedirect = lazy(() => import('./pages/change-orders/OldRouteRedirect'));
 const ViewExplorerPage = lazy(() => import('./pages/x/view-explorer/ViewExplorerPage'));
 const ResourceExplorerPage = lazy(
@@ -171,6 +172,14 @@ const routes = [
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <ChangeOrdersOldRouteRedirect />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/releases',
+        element: (
+          <Suspense fallback={<Loader isLoading={true} />}>
+            <ReleasesPage />
           </Suspense>
         ),
       },

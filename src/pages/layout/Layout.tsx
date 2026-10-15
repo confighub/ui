@@ -16,6 +16,7 @@ import { TOP_NAV_HEIGHT } from '@/utility/constants';
 import { UserSection } from '@/components/user-section/UserSection';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import DataObjectIcon from '@mui/icons-material/DataObject';
 import EngineeringIcon from '@mui/icons-material/Engineering';
 import ExploreIcon from '@mui/icons-material/Explore';
@@ -326,6 +327,12 @@ const ConfigurationItems: INavItem[] = [
     component: <WorkspacesIcon sx={{ color: 'white' }} />,
     disable: false,
     subItems: [
+      {
+        text: 'Releases',
+        component: <CalendarMonthIcon sx={{ fontSize: 18 }} />,
+        navigate: `/releases`,
+        disable: false,
+      },
       {
         text: 'Functions',
         component: <FunctionsIcon sx={{ fontSize: 18 }} />,

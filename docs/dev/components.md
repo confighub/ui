@@ -157,8 +157,6 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
 | `InspectPanel.tsx` | Field-history inspector (`useListExtendedRevisionsQuery`) + sibling variants across deployments. |
 | `entryBuilders.ts` | Pure builders: `computeFieldDiffs`, `buildPaths`, `unionUpstreamOnlyPaths`, `buildUpgradeEntries`, `buildAllApplyEntries` (still needed for the side pane's unapplied-changes/gate display), `buildVariationEntries`, `countLogicalChanges`. |
 | `componentData.ts` | `buildComponentData(spaces, units, …)` → `{deployments, stages}`; parent/child edges from `UpstreamUnitID`; label consts `Component`/`Owner`/`Variant`; `arrowKey`. |
-| `ComponentReleaseHeatmap.tsx` | The Release heatmap at the bottom of `ComponentOverviewMatrix`: one row per Component, one column per day (14, 30 or 90), each cell the Releases the Component's Spaces published that day, coloured by the worst live status among them (`releaseTone`, `LIVE_TONE_COLOR`) and shaded by how many. Reads every Release of the period with `distinct_on=Off` (`listReleasesSinceChunked`): without it the Release search keeps only the newest Release of each Space. |
-| `releaseHeatmap.ts` | The heatmap's pure model: `heatmapDays`, `heatmapSince`, `buildReleaseHeatmap`. Covered by `tests/release-heatmap.pure.spec.ts`. |
 | `componentKeyUtils.ts` | **Dot-index path helpers**: `validateKey`, `isArrayIndexSegment`, `isArrayElementPath`, `pathContainsArrayIndex`. Fixes dormant bracket-vs-dot-index bugs — use these, don't write ad-hoc regex. |
 | `configParser.ts` | `parseUnitData` (base64 → JSON/YAML/multi-YAML/INI/Properties/line-fallback → flat `Map<path,value>`), `flattenObject`, `setValueAtPath`/`deleteValueAtPath`, `mapPathsToLines`. |
 | `protectedPaths.ts` | `buildProtectedPathLookup(mutationSources, fieldPathMeta)` — the read-side "is this path protected" lookup (exact `PathMutationMap` entry → closest ancestor → resource-level default → `false`), mirroring the server's own `previousPathProtection` walk. Array-indexed paths always answer `false` (no `ResolvedPath` translator in `src` — see Terminology → Protected). |
@@ -450,7 +448,7 @@ tree and the detail pane show `QueryErrorState` with Retry, not a skeleton.
 - **Dashboard** (`?display=dashboard`, `AppComponentView`'s `displayMode` prop,
   `appTypes.ts`'s `ComponentDisplayMode`) — a node graph's alternate view: the
   Overview root's own component (`ComponentOverviewMatrix` — KPI header,
-  matrix, activity feed, Release heatmap), reused unmodified with the node's own `spaces`
+  matrix, activity feed), reused unmodified with the node's own `spaces`
   instead of every Component Space on the page. Named `display`, not
   `view`, so it isn't confused with the page's SAVED views
   (`viewID`/`viewGroupBy`/`viewFilterID`, `type=view`). Selected via a

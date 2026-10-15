@@ -21,6 +21,10 @@ export const TARGET_DYNAMIC_GROUPS: DynamicGroupConfig[] = [
     name: 'Labels',
     columnPrefix: 'Labels.',
   },
+  {
+    name: 'Annotations',
+    columnPrefix: 'Annotations.',
+  },
 ];
 
 export interface TargetRowItem {
@@ -30,6 +34,9 @@ export interface TargetRowItem {
   Space: string;
   SpaceID: string;
   Labels: {
+    [key: string]: string;
+  };
+  Annotations: {
     [key: string]: string;
   };
   CreatedAt: string;

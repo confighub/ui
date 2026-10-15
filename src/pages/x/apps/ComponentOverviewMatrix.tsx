@@ -19,7 +19,6 @@ import Typography from '@mui/material/Typography';
 import { alpha, useTheme } from '@mui/material/styles';
 
 import { ComponentActivityFeed } from './ComponentActivityFeed';
-import { ComponentReleaseHeatmap } from './ComponentReleaseHeatmap';
 import { type SelectedApp } from './appTypes';
 import { buildOverviewData, type ComponentKpiRow } from './componentOverview';
 import { useOutstandingChangeOrderBaseSpaceIds } from './change-order/useOutstandingChangeOrdersBulk';
@@ -823,9 +822,6 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
         <Box sx={{ mt: '24px' }}>
           <ComponentActivityFeed spaces={spaces} />
         </Box>
-
-        {/* ── Releases ── */}
-        <ComponentReleaseHeatmap spaces={spaces} onComponentSelect={onComponentSelect} />
 
       </Box>
     </Box>

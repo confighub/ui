@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 import { ReactNode } from 'react';
 
+import { DetailsFields, DetailsSection } from '@/components/details-drawer/DetailsFields';
+import { detailsMono, mapFields } from '@/components/details-drawer/detailsFormat';
 import { NavLink } from '@/components/nav-link/NavLink';
 import {
   Binding,
@@ -32,8 +34,6 @@ export interface LinkDetailsDrawerProps {
 
 const linkStyle = { textDecoration: 'underline', cursor: 'pointer' } as const;
 
-const mono = { fontFamily: 'monospace', fontSize: '0.85rem', wordBreak: 'break-all' } as const;
-
 /** `set-image-reference-by-uri(repository-uri=ghcr.io/x, image-reference=:{{.Params.tag}})` */
 function formatFunctionCall(invocation: FunctionInvocation | undefined): string {
   if (invocation === undefined) return '';
@@ -54,39 +54,6 @@ function formatTime(value: string | undefined): string {
   return value && !isGoZeroTime(value) ? new Date(value).toLocaleString() : '';
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <Box sx={{ mb: 3 }}>
-      <Typography variant='subtitle1' sx={{ fontWeight: 600, mb: 1 }}>
-        {title}
-      </Typography>
-      {children}
-    </Box>
-  );
-}
-
-/** Fields with nothing in them are left out: every Link type uses only some. */
-function Fields({ fields }: { fields: Array<[string, ReactNode]> }) {
-  const present = fields.filter(([, value]) => value !== undefined && value !== null && value !== '' && value !== false);
-  return (
-    <Box
-      component='dl'
-      sx={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 3, rowGap: 0.75, m: 0 }}
-    >
-      {present.map(([name, value]) => (
-        <Box key={name} sx={{ display: 'contents' }}>
-          <Box component='dt' sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
-            {name}
-          </Box>
-          <Box component='dd' sx={{ m: 0, ...mono }}>
-            {value === true ? 'true' : value}
-          </Box>
-        </Box>
-      ))}
-    </Box>
-  );
-}
-
 function ListTable({ columns, rows }: { columns: string[]; rows: Array<Array<ReactNode>> }) {
   return (
     <Table size='small'>
@@ -101,7 +68,7 @@ function ListTable({ columns, rows }: { columns: string[]; rows: Array<Array<Rea
         {rows.map((row, i) => (
           <TableRow key={i}>
             {row.map((cell, j) => (
-              <TableCell key={j} sx={mono}>
+              <TableCell key={j} sx={detailsMono}>
                 {cell}
               </TableCell>
             ))}
@@ -118,10 +85,6 @@ function bindingRows(bindings: Binding[]): Array<Array<ReactNode>> {
     [formatResource(binding.NeededResource), binding.NeededPath].filter((part) => part).join(' '),
     [formatResource(binding.ProvidedResource), binding.ProvidedPath].filter((part) => part).join(' '),
   ]);
-}
-
-function labelRows(map: Record<string, string | boolean> | undefined): Array<[string, ReactNode]> {
-  return Object.entries(map ?? {}).map(([key, value]) => [key, String(value)]);
 }
 
 /**
@@ -160,7 +123,7 @@ export const LinkDetailsDrawer = ({ link: extendedLink, onClose }: LinkDetailsDr
       {link !== undefined && (
         <Box sx={{ p: 3 }} data-testid='link-details-drawer'>
           <Stack direction='row' alignItems='center' justifyContent='space-between' sx={{ mb: 2 }}>
-            <Typography variant='h6' sx={mono}>
+            <Typography variant='h6' sx={detailsMono}>
               {link.Slug}
             </Typography>
             <IconButton aria-label='Close' onClick={onClose}>
@@ -168,8 +131,8 @@ export const LinkDetailsDrawer = ({ link: extendedLink, onClose }: LinkDetailsDr
             </IconButton>
           </Stack>
 
-          <Section title='Link'>
-            <Fields
+          <DetailsSection title='Link'>
+            <DetailsFields
               fields={[
                 ['Display name', link.DisplayName !== link.Slug ? link.DisplayName : ''],
                 ['Update type', link.UpdateType],
@@ -194,10 +157,10 @@ export const LinkDetailsDrawer = ({ link: extendedLink, onClose }: LinkDetailsDr
                 ['Version', link.Version],
               ]}
             />
-          </Section>
+          </DetailsSection>
 
           {(link.UpstreamPaths ?? []).length > 0 && (
-            <Section title='Upstream paths'>
+            <DetailsSection title='Upstream paths'>
               <ListTable
                 columns={['Name', 'Path', 'Resource']}
                 rows={(link.UpstreamPaths ?? []).map((path) => [
@@ -206,11 +169,11 @@ export const LinkDetailsDrawer = ({ link: extendedLink, onClose }: LinkDetailsDr
                   formatResource(path.Resource),
                 ])}
               />
-            </Section>
+            </DetailsSection>
           )}
 
           {(link.UpstreamGetters ?? []).length > 0 && (
-            <Section title='Upstream getters'>
+            <DetailsSection title='Upstream getters'>
               <ListTable
                 columns={['Name', 'Function']}
                 rows={(link.UpstreamGetters ?? []).map((getter) => [
@@ -218,11 +181,11 @@ export const LinkDetailsDrawer = ({ link: extendedLink, onClose }: LinkDetailsDr
                   formatFunctionCall(getter.FunctionInvocation),
                 ])}
               />
-            </Section>
+            </DetailsSection>
           )}
 
           {(link.DownstreamPaths ?? []).length > 0 && (
-            <Section title='Downstream paths'>
+            <DetailsSection title='Downstream paths'>
               <ListTable
                 columns={['Path', 'Resource', 'Expression', 'Evaluator', 'Data type']}
                 rows={(link.DownstreamPaths ?? []).map((path) => [
@@ -233,11 +196,11 @@ export const LinkDetailsDrawer = ({ link: extendedLink, onClose }: LinkDetailsDr
                   path.DataType ?? '',
                 ])}
               />
-            </Section>
+            </DetailsSection>
           )}
 
           {(link.DownstreamSetters ?? []).length > 0 && (
-            <Section title='Downstream setters'>
+            <DetailsSection title='Downstream setters'>
               <ListTable
                 columns={['Function', 'Parameters']}
                 rows={(link.DownstreamSetters ?? []).map((setter) => [
@@ -245,43 +208,43 @@ export const LinkDetailsDrawer = ({ link: extendedLink, onClose }: LinkDetailsDr
                   (setter.Parameters ?? []).join(', '),
                 ])}
               />
-            </Section>
+            </DetailsSection>
           )}
 
           {(link.ManualBindings ?? []).length > 0 && (
-            <Section title='Manual bindings'>
+            <DetailsSection title='Manual bindings'>
               <ListTable columns={['Attribute', 'Needed', 'Provided']} rows={bindingRows(link.ManualBindings ?? [])} />
-            </Section>
+            </DetailsSection>
           )}
 
           {(link.Bindings ?? []).length > 0 && (
-            <Section title='Bindings'>
+            <DetailsSection title='Bindings'>
               <ListTable columns={['Attribute', 'Needed', 'Provided']} rows={bindingRows(link.Bindings ?? [])} />
-            </Section>
+            </DetailsSection>
           )}
 
           {Object.keys(link.Guards ?? {}).length > 0 && (
-            <Section title='Guards'>
-              <Fields fields={labelRows(link.Guards)} />
-            </Section>
+            <DetailsSection title='Guards'>
+              <DetailsFields fields={mapFields(link.Guards)} />
+            </DetailsSection>
           )}
 
           {Object.keys(link.Labels ?? {}).length > 0 && (
-            <Section title='Labels'>
-              <Fields fields={labelRows(link.Labels)} />
-            </Section>
+            <DetailsSection title='Labels'>
+              <DetailsFields fields={mapFields(link.Labels)} />
+            </DetailsSection>
           )}
 
           {Object.keys(link.Annotations ?? {}).length > 0 && (
-            <Section title='Annotations'>
-              <Fields fields={labelRows(link.Annotations)} />
-            </Section>
+            <DetailsSection title='Annotations'>
+              <DetailsFields fields={mapFields(link.Annotations)} />
+            </DetailsSection>
           )}
 
           {Object.keys(link.DeleteGates ?? {}).length > 0 && (
-            <Section title='Delete gates'>
-              <Fields fields={labelRows(link.DeleteGates)} />
-            </Section>
+            <DetailsSection title='Delete gates'>
+              <DetailsFields fields={mapFields(link.DeleteGates)} />
+            </DetailsSection>
           )}
         </Box>
       )}

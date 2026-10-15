@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import {
   HoverCard,
@@ -17,38 +17,24 @@ import type { ExtendedSpaceRead } from '@confighub/rtk-query';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
-import MenuItem from '@mui/material/MenuItem';
 import Paper from '@mui/material/Paper';
-import Select from '@mui/material/Select';
 import Skeleton from '@mui/material/Skeleton';
 import Typography from '@mui/material/Typography';
 import { alpha, useTheme } from '@mui/material/styles';
 import dayjs from 'dayjs';
 
-import { type SelectedApp } from './appTypes';
-import { LIVE_TONE_COLOR } from './componentTheme';
-import {
-  deriveHealthPresentation,
-  deriveSyncPresentation,
-  liveStatusLabel,
-  resolveLiveStatusProvider,
-  type VitalTone,
-} from './liveStatus';
+import { LIVE_TONE_COLOR } from '../x/apps/componentTheme';
+import { liveStatusText, type VitalTone } from '../x/apps/liveStatus';
 import {
   buildReleaseHeatmap,
-  dayKey,
   type HeatmapCell,
-  type HeatmapRelease,
-  heatmapDays,
-  heatmapSince,
+  type HeatmapRow,
+  heatmapWindow,
 } from './releaseHeatmap';
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-
-const RANGE_OPTIONS = [14, 30, 90] as const;
-type RangeDays = (typeof RANGE_OPTIONS)[number];
 
 /** A reporter writes a Release's live status whenever it observes a change, and nothing tells this page when. */
 const POLL_MS = 30_000;
@@ -56,6 +42,9 @@ const POLL_MS = 30_000;
 const LABEL_WIDTH = 160;
 const CELL_GAP = 3;
 const CELL_HEIGHT = 18;
+
+/** How many rows either side of a selected Component stay in view. */
+const CONTEXT_ROWS = 2;
 
 /** Legend order, worst last, with what each tone means for the Releases in a cell. */
 const TONE_LEGEND: { tone: VitalTone; label: string }[] = [
@@ -79,20 +68,6 @@ const columnLabel = (day: string, totalColumns: number): string => {
   if (totalColumns <= 14) return date.format('MMM D');
   if (totalColumns <= 31) return date.date() % 2 === 1 ? date.format('MMM D') : '';
   return date.day() === 1 ? date.format('MMM D') : '';
-};
-
-/** The live status of one Release, in its reporter's words: "Synced · Healthy". */
-const liveStatusText = (release: HeatmapRelease): string => {
-  const status = release.liveStatus;
-  if (!status) return 'Not reported';
-  const provider = resolveLiveStatusProvider(status);
-  const sync = deriveSyncPresentation(status);
-  const health = deriveHealthPresentation(status);
-  const words = [
-    sync && liveStatusLabel(provider, 'sync', sync),
-    health && liveStatusLabel(provider, 'health', health),
-  ].filter(Boolean);
-  return words.length > 0 ? words.join(' · ') : 'Not reported';
 };
 
 // ============================================================================
@@ -150,7 +125,7 @@ const CellHoverContent = ({ componentName, day, cell }: CellHoverContentProps) =
                   }}
                 />
                 <Typography noWrap sx={{ fontSize: '0.6875rem', flex: 1, minWidth: 0 }}>
-                  {liveStatusText(release)}
+                  {liveStatusText(release.liveStatus)}
                 </Typography>
                 <Typography sx={{ fontSize: '0.625rem', color: 'text.secondary', flexShrink: 0 }}>
                   {formatRelative(release.createdAt)}
@@ -212,23 +187,23 @@ const HeatmapLegend = ({ maxCount }: { maxCount: number }) => {
 
 interface ComponentReleaseHeatmapProps {
   spaces: ExtendedSpaceRead[];
-  /** Fires when a row or one of its cells is clicked — opens that Component's own graph. */
-  onComponentSelect: (app: SelectedApp) => void;
+  /** The local days shown, oldest first (`heatmapDays`). */
+  days: string[];
+  /** The start of the first of `days` (`heatmapSince`). */
+  since: string;
+  /** The Component whose row is selected: only it and its neighbours are shown. */
+  selectedComponentId?: string;
+  /** Fires when a row or one of its cells is clicked. */
+  onComponentSelect: (row: HeatmapRow) => void;
 }
 
 /**
  * Releases by Component and day, each cell coloured by the worst live status
  * among its Releases and shaded by how many there were. See releaseHeatmap.ts.
  */
-export const ComponentReleaseHeatmap = ({ spaces, onComponentSelect }: ComponentReleaseHeatmapProps) => {
+export const ComponentReleaseHeatmap = ({ spaces, days, since, selectedComponentId, onComponentSelect }: ComponentReleaseHeatmapProps) => {
   const theme = useTheme();
-  const [rangeDays, setRangeDays] = useState<RangeDays>(30);
   const { componentById } = useComponentSlugs();
-
-  // Recomputed when the day changes, not on every render.
-  const today = dayKey(new Date());
-  const days = useMemo(() => heatmapDays(rangeDays, dayjs(today).toDate()), [rangeDays, today]);
-  const since = useMemo(() => heatmapSince(rangeDays, dayjs(today).toDate()), [rangeDays, today]);
 
   const spaceIds = useMemo(
     () => spaces.flatMap((s) => (s.Space?.SpaceID && s.Space.ComponentID ? [s.Space.SpaceID] : [])),
@@ -245,8 +220,20 @@ export const ComponentReleaseHeatmap = ({ spaces, onComponentSelect }: Component
     () => buildReleaseHeatmap(data ?? [], spaces, componentById, days),
     [data, spaces, componentById, days],
   );
+  const rows = useMemo(
+    () => (selectedComponentId ? heatmapWindow(heatmap.rows, selectedComponentId, CONTEXT_ROWS) : heatmap.rows),
+    [heatmap.rows, selectedComponentId],
+  );
 
-  if (heatmap.rows.length === 0) return null;
+  if (heatmap.rows.length === 0) {
+    return (
+      <Paper variant='outlined' sx={{ borderRadius: '8px', p: 2 }}>
+        <Typography variant='body2' color='text.secondary'>
+          No Space belongs to a Component, so there are no Releases to show.
+        </Typography>
+      </Paper>
+    );
+  }
 
   const gridColumns = `${LABEL_WIDTH}px repeat(${days.length}, minmax(0, 1fr))`;
 
@@ -260,7 +247,7 @@ export const ComponentReleaseHeatmap = ({ spaces, onComponentSelect }: Component
   } else if (isLoading) {
     body = (
       <Box sx={{ p: 2 }}>
-        {heatmap.rows.slice(0, 6).map((row) => (
+        {rows.slice(0, 12).map((row) => (
           <Skeleton key={row.componentId} variant='rounded' height={CELL_HEIGHT} sx={{ mb: `${CELL_GAP}px` }} />
         ))}
       </Box>
@@ -268,7 +255,6 @@ export const ComponentReleaseHeatmap = ({ spaces, onComponentSelect }: Component
   } else {
     body = (
       <Box sx={{ px: 2, pt: 1, pb: 1.5 }}>
-        {/* Column headers stay put while the rows scroll. */}
         <Box sx={{ display: 'grid', gridTemplateColumns: gridColumns, gap: `${CELL_GAP}px`, mb: `${CELL_GAP}px` }}>
           <Box />
           {days.map((day) => (
@@ -279,79 +265,89 @@ export const ComponentReleaseHeatmap = ({ spaces, onComponentSelect }: Component
             </Box>
           ))}
         </Box>
-        <Box sx={{ maxHeight: 320, overflowY: 'auto', overflowX: 'hidden' }}>
-          {heatmap.rows.map((row) => {
-            const select = () => onComponentSelect({ name: row.componentName, owner: row.owner });
-            return (
-              <Box
-                key={row.componentId}
-                data-testid='release-heatmap-row'
-                data-component={row.componentName}
+        {rows.map((row) => {
+          const selected = row.componentId === selectedComponentId;
+          const select = () => onComponentSelect(row);
+          return (
+            <Box
+              key={row.componentId}
+              data-testid='release-heatmap-row'
+              data-component={row.componentName}
+              data-selected={selected || undefined}
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: gridColumns,
+                gap: `${CELL_GAP}px`,
+                mb: `${CELL_GAP}px`,
+                alignItems: 'center',
+                borderRadius: '4px',
+                bgcolor: selected ? alpha(theme.palette.primary.main, 0.08) : undefined,
+              }}
+            >
+              <Typography
+                noWrap
+                onClick={select}
+                title={row.componentName}
                 sx={{
-                  display: 'grid',
-                  gridTemplateColumns: gridColumns,
-                  gap: `${CELL_GAP}px`,
-                  mb: `${CELL_GAP}px`,
-                  alignItems: 'center',
+                  fontSize: '0.75rem',
+                  fontWeight: selected ? 700 : 600,
+                  color: selected ? 'primary.main' : undefined,
+                  pl: 0.5,
+                  pr: 1,
+                  cursor: 'pointer',
+                  '&:hover': { textDecoration: 'underline' },
                 }}
               >
-                <Typography
-                  noWrap
-                  onClick={select}
-                  title={row.componentName}
-                  sx={{
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    pr: 1,
-                    cursor: 'pointer',
-                    '&:hover': { textDecoration: 'underline' },
-                  }}
-                >
-                  {row.componentName}
-                </Typography>
-                {days.map((day) => {
-                  const cell = row.cells.get(day);
-                  if (!cell) {
-                    return (
-                      <Box
-                        key={day}
-                        sx={{ height: CELL_HEIGHT, borderRadius: '3px', border: `1px solid ${theme.palette.divider}` }}
-                      />
-                    );
-                  }
+                {row.componentName}
+              </Typography>
+              {days.map((day) => {
+                const cell = row.cells.get(day);
+                if (!cell) {
                   return (
-                    <HoverCard
+                    <Box
                       key={day}
-                      content={<CellHoverContent componentName={row.componentName} day={day} cell={cell} />}
-                      placement='bottom-start'
-                      offset={[0, 8]}
-                      triggerSx={{ display: 'block', width: 'auto' }}
-                    >
-                      <Box
-                        onClick={select}
-                        data-testid='release-heatmap-cell'
-                        data-day={day}
-                        data-tone={cell.tone}
-                        data-count={cell.releases.length}
-                        sx={{
-                          height: CELL_HEIGHT,
-                          borderRadius: '3px',
-                          cursor: 'pointer',
-                          bgcolor: alpha(LIVE_TONE_COLOR[cell.tone], cellOpacity(cell.releases.length, heatmap.maxCount)),
-                          transition: 'transform 0.1s, box-shadow 0.1s',
-                          '&:hover': { transform: 'scale(1.25)', boxShadow: theme.shadows[3], position: 'relative', zIndex: 1 },
-                        }}
-                      />
-                    </HoverCard>
+                      onClick={select}
+                      sx={{
+                        height: CELL_HEIGHT,
+                        borderRadius: '3px',
+                        border: `1px solid ${theme.palette.divider}`,
+                        cursor: 'pointer',
+                      }}
+                    />
                   );
-                })}
-              </Box>
-            );
-          })}
-        </Box>
+                }
+                return (
+                  <HoverCard
+                    key={day}
+                    content={<CellHoverContent componentName={row.componentName} day={day} cell={cell} />}
+                    placement='bottom-start'
+                    offset={[0, 8]}
+                    triggerSx={{ display: 'block', width: 'auto' }}
+                  >
+                    <Box
+                      onClick={select}
+                      data-testid='release-heatmap-cell'
+                      data-day={day}
+                      data-tone={cell.tone}
+                      data-count={cell.releases.length}
+                      sx={{
+                        height: CELL_HEIGHT,
+                        borderRadius: '3px',
+                        cursor: 'pointer',
+                        bgcolor: alpha(LIVE_TONE_COLOR[cell.tone], cellOpacity(cell.releases.length, heatmap.maxCount)),
+                        transition: 'transform 0.1s, box-shadow 0.1s',
+                        '&:hover': { transform: 'scale(1.25)', boxShadow: theme.shadows[3], position: 'relative', zIndex: 1 },
+                      }}
+                    />
+                  </HoverCard>
+                );
+              })}
+            </Box>
+          );
+        })}
         {heatmap.releaseCount === 0 && (
           <Typography variant='caption' color='text.secondary' sx={{ display: 'block', pt: 1, pl: `${LABEL_WIDTH}px` }}>
-            No Releases in the last {rangeDays} days.
+            No Releases in the last {days.length} days.
           </Typography>
         )}
         <HeatmapLegend maxCount={heatmap.maxCount} />
@@ -360,30 +356,8 @@ export const ComponentReleaseHeatmap = ({ spaces, onComponentSelect }: Component
   }
 
   return (
-    <Box data-testid='release-heatmap' sx={{ mt: '24px' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: '10px' }}>
-        <Typography
-          sx={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'text.secondary' }}
-        >
-          Releases
-        </Typography>
-        <Select
-          size='small'
-          value={rangeDays}
-          onChange={(e) => setRangeDays(Number(e.target.value) as RangeDays)}
-          inputProps={{ 'aria-label': 'Release heatmap range' }}
-          sx={{ fontSize: '0.75rem', height: 28 }}
-        >
-          {RANGE_OPTIONS.map((n) => (
-            <MenuItem key={n} value={n} sx={{ fontSize: '0.75rem' }}>
-              Last {n} days
-            </MenuItem>
-          ))}
-        </Select>
-      </Box>
-      <Paper variant='outlined' sx={{ borderRadius: '8px', overflow: 'hidden' }}>
-        {body}
-      </Paper>
-    </Box>
+    <Paper data-testid='release-heatmap' variant='outlined' sx={{ borderRadius: '8px', overflow: 'hidden' }}>
+      {body}
+    </Paper>
   );
 };

@@ -335,6 +335,19 @@ export function liveStatusLabel(
   }
 }
 
+/** A Release's live status in its reporter's words, "Synced · Healthy", or "Not reported". */
+export function liveStatusText(status: LiveStatus | null | undefined): string {
+  if (!status) return 'Not reported';
+  const provider = resolveLiveStatusProvider(status);
+  const sync = deriveSyncPresentation(status);
+  const health = deriveHealthPresentation(status);
+  const words = [
+    sync && liveStatusLabel(provider, 'sync', sync),
+    health && liveStatusLabel(provider, 'health', health),
+  ].filter(Boolean);
+  return words.length > 0 ? words.join(' · ') : 'Not reported';
+}
+
 // ============================================================================
 // DIGEST
 // ============================================================================
