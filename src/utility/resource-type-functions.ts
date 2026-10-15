@@ -48,3 +48,11 @@ export function sameResourceType(a: string, b: string, toolchainType: string | u
 export function sameKubernetesResourceType(a: string, b: string): boolean {
   return a === b || kubernetesResourceTypeWithoutAPIVersion(a) === kubernetesResourceTypeWithoutAPIVersion(b);
 }
+
+/**
+ * A resource's name as shown to a person. A Kubernetes ResourceName is <namespace>/<name>, so one
+ * without a namespace starts with a slash, which is left off.
+ */
+export function resourceDisplayName(resourceName: string, toolchainType: string | undefined): string {
+  return toolchainType?.startsWith('Kubernetes/') ? resourceName.replace(/^\//, '') : resourceName;
+}

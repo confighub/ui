@@ -27,7 +27,6 @@ import PriorityHighIcon from '@mui/icons-material/PriorityHigh';
 import { Badge, IconButton, Stack, Tooltip } from '@mui/material';
 import { styled } from '@mui/material/styles';
 
-import { UnitEventsTable } from '../unit-list/components/unit-events-table/UnitEventsTable';
 import { Dashboard } from './components/dashboard/Dashboard';
 import {
   IUnitDetailModalComposerProps,
@@ -36,10 +35,10 @@ import {
 import { useUnitActions } from './hooks/useUnitActions';
 import { useUnitComputedData } from './hooks/useUnitComputedData';
 import { useUnitDetailData } from './hooks/useUnitDetailData';
-import { UNIT_DETAIL_TAB } from './unitDetailHrefs';
 import { ModalType } from './rules';
 import { ConfigTab } from './tabs/ConfigTab';
 import { MutationsTab } from './tabs/MutationsTab';
+import { ResourcesTab } from './tabs/ResourcesTab';
 import { useRevisionDataMap } from '@/hooks/useUnitData';
 
 const Container = styled('div')`
@@ -430,8 +429,8 @@ export const UnitDetailPage = () => {
                 'Config',
                 `Revisions (${currentUnit?.HeadRevisionNum || 0})`,
                 `Links (${links?.length || 0})`,
-                `Events (${currentUnit?.HeadUnitEventNum || 0})`,
                 `Mutations (${currentUnit?.HeadMutationNum || 0})`,
+                'Resources',
               ]}
               onTabSelected={onTabSelected}
               defaultValue={selectedTab}
@@ -488,14 +487,12 @@ export const UnitDetailPage = () => {
           spaceId={spaceID}
           onLinkAction={() => setRefresh(!refresh)}
         />
-        <Section $display={selectedTab === UNIT_DETAIL_TAB.events} $direction={Direction.FadeIn} $width='100%'>
-          <UnitEventsTable unitId={id} spaceId={spaceID} />
-        </Section>
         <MutationsTab
           selectedTab={selectedTab}
           unitExtended={currentUnitExtended}
           onTabSelected={onTabSelected}
         />
+        <ResourcesTab key={currentUnit.UnitID} unit={currentUnit} selectedTab={selectedTab} />
         <UnitDetailModalComposer {...composerModalProps} />
         <DiffDrawer
           isDiffDrawerOpen={showDiffOnUpgradeDrawer}

@@ -22,7 +22,11 @@ import {
 } from '@confighub/rtk-query';
 import { GroupNavRow, getCellValue } from '../../cell-value';
 import { CodeEditor } from '@/components/code-editor/CodeEditor';
+import { isKubernetesToolchain } from '@/components/code-editor/language';
+import { ResourceContext } from '@/components/resource-overview/ResourceContext';
+import { ResourceOverview } from '@/components/resource-overview/ResourceOverview';
 import { TOP_NAV_HEIGHT } from '@/utility/constants';
+import { resourceDisplayName } from '@/utility/resource-type-functions';
 
 import { EntityAdapter } from '../../adapters';
 import { isResourceViewRow, ResourceViewRow } from '../../adapters/resource-row';
@@ -37,15 +41,14 @@ interface EntityDetailDrawerProps {
   onClose: () => void;
 }
 
-type ActiveTab = 'details' | 'resources' | 'content';
+type ActiveTab = 'details' | 'resources' | 'overview' | 'yaml';
 
 /**
  * Right-side detail pane for the View Explorer. Replaces the navigate-away
  * row click; the user stays on the explorer page while inspecting one entity
  * at a time. The Resources tab is only available when the adapter declares
- * `supportsResources` (currently Units only) and fetches via the
- * `get-resources` function scoped to that single unit — much cheaper than the
- * org-wide call Resource Explorer makes.
+ * `supportsResources` (currently Units only) and lists that Unit's resources
+ * from the resource API, each as an Overview or as YAML.
  */
 export function EntityDetailDrawer({
   row,
@@ -95,16 +98,24 @@ function DrawerBody({
   onClose: () => void;
 }) {
   const isResource = isResourceViewRow(row);
-  // Resource rows open straight on Content (the YAML), since that's the
-  // primary thing the user clicked through to see. Unit + Space rows show
-  // metadata first.
-  const [activeTab, setActiveTab] = useState<ActiveTab>(isResource ? 'content' : 'details');
+  // Resource rows open straight on the resource itself, as an Overview, since
+  // that's the primary thing the user clicked through to see; they have no
+  // Details tab, as their columns are the row itself and the resource. Unit +
+  // Space rows show metadata first.
+  const [activeTab, setActiveTab] = useState<ActiveTab>(isResource ? 'overview' : 'details');
   const href = adapter.getRowHref(row);
+  const resourceBody = useResourceBody(isResource ? (row as ResourceViewRow) : null);
+  // The friendly views are of Kubernetes resources; other configuration is
+  // shown as written. Until the toolchain is known, the Overview is offered.
+  const hasOverview =
+    resourceBody.toolchainType === undefined || isKubernetesToolchain(resourceBody.toolchainType);
+  const shownTab = activeTab === 'overview' && !hasOverview ? 'yaml' : activeTab;
 
   // Header title varies by entity type. Resource rows show ResourceName +
   // ResourceType so the drawer header matches what the user clicked.
   const title = isResource
-    ? (row as ResourceViewRow).ResourceName || '(unnamed)'
+    ? resourceDisplayName((row as ResourceViewRow).ResourceName, resourceBody.toolchainType) ||
+      '(unnamed)'
     : getCellValue(row, 'Slug') || getCellValue(row, 'DisplayName') || '(unnamed)';
   const subtitle = isResource
     ? (row as ResourceViewRow).ResourceType
@@ -125,7 +136,14 @@ function DrawerBody({
           <Typography variant='subtitle1' fontWeight={600} noWrap>
             {title}
           </Typography>
-          <Typography variant='caption' color='text.secondary' noWrap>
+          <Typography
+            variant='caption'
+            color='text.secondary'
+            noWrap
+            component='div'
+            // Kinds are case-sensitive; the caption variant would capitalize them.
+            sx={isResource ? { textTransform: 'none', fontFamily: 'monospace' } : undefined}
+          >
             {isResource ? subtitle || 'Resource' : adapter.entityType}
             {!isResource && subtitle && subtitle !== title ? ` · ${subtitle}` : ''}
           </Typography>
@@ -150,23 +168,44 @@ function DrawerBody({
         </Stack>
       </Stack>
 
+      {isResource && (
+        <ResourceContext
+          resourceId={(row as ResourceViewRow).ResourceID}
+          unitId={(row as ResourceViewRow).UnitID}
+          unitSlug={(row as ResourceViewRow).UnitSlug}
+          spaceId={(row as ResourceViewRow).SpaceID}
+          spaceSlug={(row as ResourceViewRow).SpaceSlug}
+          targetSlug={resourceBody.targetSlug}
+          toolchainType={resourceBody.toolchainType}
+        />
+      )}
+
       <Tabs
-        value={activeTab}
+        value={shownTab}
         onChange={(_, v: ActiveTab) => setActiveTab(v)}
         sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 36 }}
       >
-        {isResource && (
+        {isResource && hasOverview && (
           <Tab
-            label='Content'
-            value='content'
+            label='Overview'
+            value='overview'
             sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.78rem' }}
           />
         )}
-        <Tab
-          label='Details'
-          value='details'
-          sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.78rem' }}
-        />
+        {isResource && (
+          <Tab
+            label='YAML'
+            value='yaml'
+            sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.78rem' }}
+          />
+        )}
+        {!isResource && (
+          <Tab
+            label='Details'
+            value='details'
+            sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.78rem' }}
+          />
+        )}
         {supportsResources && (
           <Tab
             label='Resources'
@@ -177,37 +216,72 @@ function DrawerBody({
       </Tabs>
 
       <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-        {activeTab === 'details' && <DetailsTab row={row} view={view} adapter={adapter} />}
-        {activeTab === 'resources' && supportsResources && (
+        {shownTab === 'details' && <DetailsTab row={row} view={view} adapter={adapter} />}
+        {shownTab === 'resources' && supportsResources && (
           <ResourcesTab spaceID={spaceID} unitID={unitID} />
         )}
-        {activeTab === 'content' && isResource && (
-          <ResourceContent row={row as ResourceViewRow} />
+        {(shownTab === 'overview' || shownTab === 'yaml') && isResource && (
+          <ResourceContent
+            row={row as ResourceViewRow}
+            resourceBody={resourceBody}
+            view={shownTab}
+          />
         )}
       </Box>
     </>
   );
 }
 
+interface ResourceBody {
+  body: string | undefined;
+  toolchainType: string | undefined;
+  targetSlug: string | undefined;
+  isFetching: boolean;
+  isError: boolean;
+}
+
 /**
- * Inline body view for a Resource row, showing the resource in its original
- * toolchain-native form.
+ * The body of a Resource row, in its original toolchain-native form, the
+ * toolchain it is in, and the Target of its Unit. The row carries the
+ * toolchain and Target only when a column asked for them.
  *
  * Fetched on open rather than carried by every table row: the bodies are bulk
  * and a table has no use for them. It is one row's read, so it is quick.
  */
-function ResourceContent({ row }: { row: ResourceViewRow }) {
+function useResourceBody(row: ResourceViewRow | null): ResourceBody {
   const { data, isFetching, isError } = useListAllResourcesQuery(
     {
-      where: `ResourceID = '${row.ResourceID}'`,
-      select: 'ResourceID',
+      where: `ResourceID = '${row?.ResourceID}'`,
+      select: 'ResourceID,ToolchainType,TargetID',
+      include: 'TargetID',
       rawData: true,
     },
-    { skip: !row.ResourceID },
+    { skip: !row?.ResourceID },
   );
   // Prefer a body the row already carries, so a view fetched with bodies shows
   // one without waiting.
-  const body = row.ResourceBody ?? decodeRawData(data?.[0]?.RawData);
+  return {
+    body: row?.ResourceBody ?? decodeRawData(data?.[0]?.RawData),
+    toolchainType: data?.[0]?.Resource?.ToolchainType ?? row?.UnitToolchainType,
+    targetSlug: data?.[0]?.Target?.Slug ?? row?.TargetSlug,
+    isFetching,
+    isError,
+  };
+}
+
+/**
+ * A Resource row's body, as the resource explorer's Overview or as YAML.
+ */
+function ResourceContent({
+  row,
+  resourceBody,
+  view,
+}: {
+  row: ResourceViewRow;
+  resourceBody: ResourceBody;
+  view: 'overview' | 'yaml';
+}) {
+  const { body, toolchainType, isFetching, isError } = resourceBody;
 
   if (isFetching && !body) {
     return (
@@ -227,11 +301,14 @@ function ResourceContent({ row }: { row: ResourceViewRow }) {
       </Box>
     );
   }
+  if (view === 'overview') {
+    return <ResourceOverview yaml={body} resourceType={row.ResourceType} />;
+  }
   return (
     <Box sx={{ height: '100%', minHeight: 0, p: 1 }}>
       <CodeEditor
         value={body}
-        toolchainType='Kubernetes/YAML'
+        toolchainType={toolchainType ?? 'Kubernetes/YAML'}
         readonly
         // CodeEditor's internal fallback height assumes a full-viewport
         // container. This drawer's paper is offset below the top nav by the
@@ -321,9 +398,9 @@ function DetailsTab({
 }
 
 /**
- * The Resources tab queries `get-resources` via space + unit IDs. Space-typed
- * rows never reach this path (adapter.supportsResources gates the tab), so we
- * can safely assume Unit row shape here.
+ * The Resources tab lists a Unit's resources by its space + unit IDs.
+ * Space-typed rows never reach this path (adapter.supportsResources gates the
+ * tab), so we can safely assume Unit row shape here.
  */
 function extractUnitIDs(row: GroupNavRow): { spaceID?: string; unitID?: string } {
   // ExtendedUnitRead is the only row shape that exposes a Unit field. Casting

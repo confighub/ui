@@ -4,14 +4,11 @@ import React, { memo, useCallback, useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { FeedbackSurveyDialog } from '@/components/feedback-survey/FeedbackSurveyDialog';
-import { Header } from '@/components/header-new/Header';
 import { ConfigHubIcon } from '@/components/icons/ConfigHubIcon';
 import { DiscordIcon } from '@/components/icons/DiscordIcon';
 import { fadeIn } from '@/components/styled';
 import { useAppDispatch, useAppSelector } from '@/hooks/useApp';
 import { useInvokerSidebar } from '@/hooks/useInvokerSidebar';
-import { useResizableSidebar } from '@/hooks/useResizableSidebar';
-import { useWindowSize } from '@/hooks/useWindowResize';
 import { closeAlert, selectAlert } from '@/state/slices/alert';
 import { selectSelectedUnits, setSelectedUnits } from '@/state/slices/selectedUnits';
 import { selectTourId, selectTourStatus } from '@/state/slices/tourSlice';
@@ -19,7 +16,6 @@ import { TOP_NAV_HEIGHT } from '@/utility/constants';
 import { UserSection } from '@/components/user-section/UserSection';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
-import DashboardIcon from '@mui/icons-material/Dashboard';
 import DataObjectIcon from '@mui/icons-material/DataObject';
 import EngineeringIcon from '@mui/icons-material/Engineering';
 import ExploreIcon from '@mui/icons-material/Explore';
@@ -52,7 +48,6 @@ import { styled, useTheme } from '@mui/material/styles';
 import { InvokerSidebar } from '@/components/right-sidebar';
 import { GettingStartedSection } from './GettingStartedSection';
 import { INavItem } from './NavGroup';
-import { COLLAPSED_SIDEBAR_WIDTH, RightSidebar } from './RightSidebar';
 
 // ============================================================================
 // CONSTANTS
@@ -82,14 +77,12 @@ const ContentRow = styled('div')`
   background-color: rgb(249, 250, 251);
 `;
 
-const MainContent = styled('main')<{
-  rightReservedWidth: number;
-}>(({ theme, rightReservedWidth }) => ({
+const MainContent = styled('main')(({ theme }) => ({
   display: 'flex',
   flexDirection: 'column',
   flex: 1,
   minWidth: 0,
-  width: `calc(100% - ${rightReservedWidth}px)`,
+  width: '100%',
   animation: `${fadeIn} 1.5s ease-in`,
   height: '100%',
   backgroundColor: 'rgb(249, 250, 251)',
@@ -334,12 +327,6 @@ const ConfigurationItems: INavItem[] = [
     disable: false,
     subItems: [
       {
-        text: 'Dashboard',
-        component: <DashboardIcon sx={{ fontSize: 18 }} />,
-        navigate: `/unit-dashboard`,
-        disable: false,
-      },
-      {
         text: 'Functions',
         component: <FunctionsIcon sx={{ fontSize: 18 }} />,
         navigate: `/function-browser`,
@@ -418,7 +405,6 @@ export const Layout = memo(() => {
   const theme = useTheme();
   const dispatch = useAppDispatch();
   const { message, isOpen: snackBarIsOpen, type: severity } = useAppSelector(selectAlert);
-  const location = useLocation();
   const [gettingStartedAnchor, setGettingStartedAnchor] = useState<null | HTMLElement>(null);
   const activeTourId = useAppSelector(selectTourId);
   const tourStatus = useAppSelector(selectTourStatus);
@@ -433,30 +419,10 @@ export const Layout = memo(() => {
     Boolean(gettingStartedAnchor) &&
     !(activeTourId && (tourStatus === 'running' || tourStatus === 'finished'));
 
-  const isDashboardPage = location.pathname === '/unit-dashboard';
-
-  const { width: windowWidth } = useWindowSize();
-  const {
-    sidebarWidth,
-    isSidebarOpen,
-    isMaximized,
-    isFeedbackDialogOpen,
-    setIsFeedbackDialogOpen,
-    toggleSidebar,
-    handleResizeStart,
-    toggleMaximize,
-  } = useResizableSidebar();
-
-  const effectiveSidebarWidth = isMaximized && isSidebarOpen ? windowWidth : sidebarWidth;
+  const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
 
   // Invoker sidebar — no left nav offset needed in the top-nav layout
   const invoker = useInvokerSidebar(0);
-
-  const rightReservedWidth = isDashboardPage
-    ? isSidebarOpen
-      ? effectiveSidebarWidth
-      : COLLAPSED_SIDEBAR_WIDTH
-    : 0;
 
   // Feed the global Invoker sidebar the units currently selected anywhere
   // in the app (populated by each page via the selectedUnits slice).
@@ -626,44 +592,28 @@ export const Layout = memo(() => {
       {/* Spacer — pushes content below the fixed AppBar */}
       <Box sx={{ height: `${TOP_NAV_HEIGHT}px`, flexShrink: 0 }} />
 
-      {/* ── Content row: MainContent + right sidebars ────────────────── */}
+      {/* ── Content row: MainContent + Invoker sidebar ───────────────── */}
       <ContentRow>
-        <MainContent rightReservedWidth={rightReservedWidth}>
-          {/* Only show the new header for the dashboard page */}
-          {isDashboardPage && <Header breadcrumbs={[{ name: 'Units' }]} showFilters={true} />}
+        <MainContent>
           <ContentArea>
             <Outlet />
           </ContentArea>
         </MainContent>
 
-        {/* Global Invoker Sidebar — flex sibling on non-dashboard pages */}
-        {!isDashboardPage && (
-          <InvokerSidebar
-            selectedUnits={invokerSelectedUnits.length > 0 ? invokerSelectedUnits : undefined}
-            onRemoveUnit={handleInvokerRemoveUnit}
-            onRemoveAllUnits={handleInvokerRemoveAllUnits}
-            totalVisibleUnits={invokerSelectedUnits.length}
-            isOpen={invoker.isOpen}
-            panelWidth={invoker.panelWidth}
-            isResizing={invoker.isResizing}
-            onToggle={invoker.toggle}
-            onOpen={invoker.open}
-            onClose={invoker.close}
-            onResizeStart={invoker.handleResizeStart}
-          />
-        )}
-
-        {/* Collapsible Right Sidebar — dashboard page only */}
-        {isDashboardPage && (
-          <RightSidebar
-            width={effectiveSidebarWidth}
-            isOpen={isSidebarOpen}
-            isMaximized={isMaximized}
-            onResizeStart={handleResizeStart}
-            onToggle={toggleSidebar}
-            onExpand={toggleMaximize}
-          />
-        )}
+        {/* Global Invoker Sidebar — flex sibling of the content */}
+        <InvokerSidebar
+          selectedUnits={invokerSelectedUnits.length > 0 ? invokerSelectedUnits : undefined}
+          onRemoveUnit={handleInvokerRemoveUnit}
+          onRemoveAllUnits={handleInvokerRemoveAllUnits}
+          totalVisibleUnits={invokerSelectedUnits.length}
+          isOpen={invoker.isOpen}
+          panelWidth={invoker.panelWidth}
+          isResizing={invoker.isResizing}
+          onToggle={invoker.toggle}
+          onOpen={invoker.open}
+          onClose={invoker.close}
+          onResizeStart={invoker.handleResizeStart}
+        />
       </ContentRow>
 
       {/* Feedback Dialog */}

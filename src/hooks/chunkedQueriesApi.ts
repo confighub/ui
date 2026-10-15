@@ -25,7 +25,9 @@ import {
 
 import {
   confighubApi,
+  type ListAllReleasesApiArg,
   type ListAllReleasesApiResponse,
+  type ListAllUnitsApiArg,
   type ListAllUnitsApiResponse,
   type ListUsersApiResponse,
   type SearchRevisionDataApiResponse,
@@ -39,14 +41,18 @@ import { chunkIds, inClause } from './inClauseChunks';
 /** At most this many chunk requests are in flight for one query. */
 export const MAX_PARALLEL_CHUNKS = 4;
 
-export interface ListAllUnitsChunkedArg {
+export interface ListAllUnitsChunkedArg extends Pick<ListAllUnitsApiArg, 'select' | 'include'> {
   spaceIds: string[];
-  select?: string;
-  include?: string;
 }
 
 export interface SpaceIdsArg {
   spaceIds: string[];
+}
+
+export interface ReleasesSinceArg {
+  spaceIds: string[];
+  /** RFC 3339 time; Releases created at or after it are read. */
+  since: string;
 }
 
 export interface UnitIdsArg {
@@ -64,6 +70,15 @@ export interface ReleaseIdsArg {
 export interface UserIdsArg {
   userIds: string[];
 }
+
+// The Release reads' fields, typed as the generated argument's so that
+// tests/api-field-lists.pure.spec.ts checks them against the API.
+const PUBLISHED_RELEASE_FIELDS: Pick<ListAllReleasesApiArg, 'select'> = {
+  select: 'ReleaseID,SpaceID,TargetID,ReleaseNum,ManifestDigest,CreatedAt,Published,LiveStatus',
+};
+const RELEASES_SINCE_FIELDS: Pick<ListAllReleasesApiArg, 'select'> = {
+  select: 'ReleaseID,SpaceID,ReleaseNum,CreatedAt,Published,LiveStatus',
+};
 
 /** Ids for each request of a by-id read that a page fires on its own, kept short. */
 export const BY_ID_CHUNK_SIZE = 50;
@@ -207,7 +222,7 @@ const chunkedQueriesApi = confighubApi.injectEndpoints({
             url: `/release`,
             params: {
               where: `${where} AND Published = true`,
-              select: 'ReleaseID,SpaceID,TargetID,ReleaseNum,ManifestDigest,CreatedAt,Published,LiveStatus',
+              select: PUBLISHED_RELEASE_FIELDS.select,
             },
           }),
           baseQuery,
@@ -218,6 +233,32 @@ const chunkedQueriesApi = confighubApi.injectEndpoints({
           endpointName,
           endpointDefinition,
           queryArgs: { spaceIds: idSet(queryArgs.spaceIds) },
+        }),
+      providesTags: ['Release'],
+    }),
+    // Every Release, withdrawn ones too: each was released on the day it was created. The search
+    // keeps only the newest Release of each Space unless told distinct_on=Off.
+    listReleasesSinceChunked: build.query<ListAllReleasesApiResponse, ReleasesSinceArg>({
+      queryFn: (arg, _api, _extra, baseQuery) =>
+        fetchChunks<ListAllReleasesApiResponse[number]>(
+          'SpaceID',
+          idSet(arg.spaceIds),
+          (where) => ({
+            url: `/release`,
+            params: {
+              where: `${where} AND CreatedAt >= '${arg.since}'`,
+              select: RELEASES_SINCE_FIELDS.select,
+              distinct_on: 'Off',
+            },
+          }),
+          baseQuery,
+          { paged: true },
+        ),
+      serializeQueryArgs: ({ endpointName, endpointDefinition, queryArgs }) =>
+        defaultSerializeQueryArgs({
+          endpointName,
+          endpointDefinition,
+          queryArgs: { spaceIds: idSet(queryArgs.spaceIds), since: queryArgs.since },
         }),
       providesTags: ['Release'],
     }),
@@ -340,6 +381,7 @@ const chunkedQueriesApi = confighubApi.injectEndpoints({
 export const {
   useListAllUnitsChunkedQuery,
   useListPublishedReleasesChunkedQuery,
+  useListReleasesSinceChunkedQuery,
   useListReleasesByIdChunkedQuery,
   useListUsersByIdChunkedQuery,
   useSearchUnitDataChunkedQuery,

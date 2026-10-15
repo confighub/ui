@@ -177,6 +177,66 @@ test.describe('config diff tree', () => {
     expect(leaves[0].node.diff).toEqual({ oldValue: 'db-init', newValue: 'db-init-v2' });
   });
 
+  test('a comment is a row beside the node it annotates', () => {
+    const tree = buildConfigDiffTree([
+      {
+        ChangeType: 'Add',
+        Comment: 'Head',
+        DisplayPath: 'kind',
+        Segments: [field('kind')],
+        ToValue: 'what this ConfigMap is for',
+      },
+      {
+        ChangeType: 'Update',
+        DisplayPath: 'kind',
+        Segments: [field('kind')],
+        FromValue: 'ConfigMap',
+        ToValue: 'Secret',
+      },
+      {
+        ChangeType: 'Update',
+        Comment: 'Line',
+        DisplayPath: `${CONTAINER_PATH}.image`,
+        Segments: [...CONTAINER, field('image')],
+        FromValue: 'pinned',
+        ToValue: 'pinned for the release',
+      },
+      { ChangeType: 'Add', Comment: 'Head', DisplayPath: '', Segments: [], ToValue: '# about this resource' },
+    ]);
+
+    expect(leafPaths(tree).map((l) => l.path)).toEqual([
+      'kind (head comment)',
+      'kind',
+      `${CONTAINER_PATH}.image (line comment)`,
+      '(head comment on the resource)',
+    ]);
+  });
+
+  test('context is dimmed rows around the changes, and is not counted', () => {
+    const changes: PathChange[] = [
+      { ChangeType: 'None', DisplayPath: 'spec.replicas', Segments: [field('spec'), field('replicas')], ToValue: '2' },
+      ...ENV_CHANGES.slice(0, 1),
+      {
+        ChangeType: 'None',
+        DisplayPath: `${CONTAINER_PATH}.env`,
+        Segments: [...CONTAINER, field('env')],
+        ToValue: '- name: A\n  value: a',
+      },
+    ];
+    const leaves = leafPaths(buildConfigDiffTree(changes));
+    expect(leaves.map((l) => `${l.node.context ? 'context' : 'change'} ${l.path}`)).toEqual([
+      'context spec.replicas',
+      `change ${CONTAINER_PATH}.image`,
+      `context ${CONTAINER_PATH}.env`,
+    ]);
+    expect(leaves[0].node.diff).toEqual({ oldValue: '2', newValue: '2' });
+
+    const diff: ConfigDiff = {
+      Resources: [{ ChangeType: 'Update', Resource: { ResourceType: 'apps/v1/Deployment', ResourceName: 'ns/web' }, Changes: changes }],
+    };
+    expect(summarizeConfigDiff(diff)).toEqual({ additions: 0, deletions: 0, changes: 1, total: 1 });
+  });
+
   test('segments are labelled in path syntax', () => {
     expect(segmentLabel(field('app.kubernetes.io/name'))).toBe('app~1kubernetes~1io/name');
     expect(segmentLabel({ FromIndex: 2, ToIndex: 3 })).toBe('3');

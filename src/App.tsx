@@ -12,9 +12,6 @@ import { Layout } from './pages/layout/Layout';
 const SpacesListPage = lazy(() => import('./pages/space-list/SpaceListPage'));
 const SpaceDetailPage = lazy(() => import('./pages/space-detail/SpaceDetailPage'));
 const UnitListPage = lazy(() => import('./pages/unit-list/UnitListPage'));
-const UnitDashboardPage = lazy(
-  () => import('./pages/x/unit-dashboard-page/UnitDashboardPage'),
-);
 const UnitDetailPage = lazy(() => import('./pages/unit-detail/UnitDetailPage'));
 const FunctionListPage = lazy(() => import('./pages/function-list/FunctionListPage'));
 const BridgeWorkersListPage = lazy(
@@ -109,14 +106,6 @@ const routes = [
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <UnitListPage />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/unit-dashboard',
-        element: (
-          <Suspense fallback={<Loader isLoading={true} />}>
-            <UnitDashboardPage />
           </Suspense>
         ),
       },

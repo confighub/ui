@@ -38,6 +38,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   type ExtendedReleaseRead,
+  type ListExtendedReleasesApiArg,
   useBulkTagUnitsMutation,
   useCreateTagMutation,
   usePublishReleaseMutation,
@@ -233,7 +234,7 @@ export function useReleaseActions({
 
   // Stable identity across renders so the query doesn't refire on every parent render.
   const releaseListArg = useMemo(
-    () => ({
+    (): ListExtendedReleasesApiArg => ({
       spaceId: spaceId ?? '',
       where: RELEASE_LIST_WHERE,
       select: RELEASE_LIST_SELECT_FIELDS,

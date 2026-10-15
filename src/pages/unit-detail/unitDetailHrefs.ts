@@ -2,13 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Links into the unit detail page, and the Links tab's filters as they appear in its URL.
+ * Links into the unit detail page, and the Links tab's filters and the Resources tab's
+ * selection as they appear in its URL.
  *
  * The filters live in the URL so that another page can open the tab already narrowed to the
  * Links it is about: a ChangeOrder page opens a Unit's Links of the ChangeOrder's UpdateType
- * that cross into other Spaces, which are the ones the ChangeOrder travels over.
+ * that cross into other Spaces, which are the ones the ChangeOrder travels over. The selected
+ * resource lives there so that a page listing resources can open the one a row is about.
  */
 
+import type { ResourceView } from '@/components/unit-resources/UnitResourceBrowser';
 import type { ExtendedLinkRead } from '@confighub/rtk-query';
 
 /** The unit detail page's tabs, by their position in `?tab=`. */
@@ -17,8 +20,8 @@ export const UNIT_DETAIL_TAB = {
   config: 1,
   revisions: 2,
   links: 3,
-  events: 4,
-  mutations: 5,
+  mutations: 4,
+  resources: 5,
 } as const;
 
 const LINK_UPDATE_TYPE_PARAM = 'linkUpdateType';
@@ -81,6 +84,37 @@ export function filterLinkRows<T extends Pick<ExtendedLinkRead, 'Link'>>(
 
 export function unitConfigHref(spaceId: string, unitId: string): string {
   return `/units/${spaceId}/${unitId}?tab=${UNIT_DETAIL_TAB.config}`;
+}
+
+const RESOURCE_PARAM = 'resource';
+const RESOURCE_VIEW_PARAM = 'resourceView';
+
+
+/** The ResourceID the Resources tab shows; empty for its first resource. */
+export function readSelectedResource(params: URLSearchParams): string {
+  return params.get(RESOURCE_PARAM) ?? '';
+}
+
+export function writeSelectedResource(params: URLSearchParams, resourceId: string): void {
+  if (resourceId === '') params.delete(RESOURCE_PARAM);
+  else params.set(RESOURCE_PARAM, resourceId);
+}
+
+/** The Overview is the default, so only the YAML view appears in the URL. */
+export function readResourceView(params: URLSearchParams): ResourceView {
+  return params.get(RESOURCE_VIEW_PARAM) === 'yaml' ? 'yaml' : 'overview';
+}
+
+export function writeResourceView(params: URLSearchParams, view: ResourceView): void {
+  if (view === 'overview') params.delete(RESOURCE_VIEW_PARAM);
+  else params.set(RESOURCE_VIEW_PARAM, view);
+}
+
+/** The Resources tab of a Unit, showing `resourceId` when one is given. */
+export function unitResourceHref(spaceId: string, unitId: string, resourceId = ''): string {
+  const params = new URLSearchParams({ tab: String(UNIT_DETAIL_TAB.resources) });
+  writeSelectedResource(params, resourceId);
+  return `/units/${spaceId}/${unitId}?${params.toString()}`;
 }
 
 export function unitLinksHref(spaceId: string, unitId: string, filter: LinkFilter = NO_LINK_FILTER): string {

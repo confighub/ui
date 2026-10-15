@@ -17,12 +17,10 @@ import { useAppDispatch } from '@/hooks/useApp';
 import { useKeyValueHandlers } from '@/hooks/useKeyValueHandlers';
 import { usePageHeight } from '@/hooks/usePageHeight';
 import {
-  FunctionInvocationsResponse,
   ListFunctionsApiResponse,
   Unit,
   ExtendedUnitRead,
   UnitRead,
-  useInvokeFunctionsMutation,
 } from '@confighub/rtk-query';
 import {
   RevisionRead,
@@ -235,8 +233,6 @@ export const Dashboard = ({
     },
   );
 
-  const [invokeFunctionsMutation, { data: resources = [] }] = useInvokeFunctionsMutation();
-
   const editorHeight = usePageHeight(sectionOffset);
 
   const unit = currentUnitExtended?.Unit || ({} as UnitRead);
@@ -270,29 +266,6 @@ export const Dashboard = ({
     { spaceId: unit?.SpaceID || '', unitId: unit?.UnitID || '' },
     { skip: !unit?.SpaceID || !unit?.UnitID },
   );
-
-  // Load resources
-  useEffect(() => {
-    if (unit?.UnitID) {
-      invokeFunctionsMutation({
-        spaceId: unit?.SpaceID || '',
-        // unitId: unit?.UnitID || '',
-        where: `UnitID='${unit?.UnitID}'`,
-        functionInvocationsRequest: {
-          FunctionInvocations: [
-            {
-              FunctionName: 'get-resources',
-              Arguments: [],
-            },
-          ],
-        },
-      });
-    }
-  }, [unit]);
-
-  const currentUnit =
-    resources?.find((item) => item?.UnitID === unit?.UnitID) ||
-    ({} as FunctionInvocationsResponse);
 
   const mergedEvents = [...(events || []), ...revisions]
     .map((item: UserExtendedRevision | UnitEventRead) => {
@@ -424,8 +397,8 @@ export const Dashboard = ({
         TargetID: data.TargetID,
         ToolchainType: data.ToolchainType,
       },
-      spaceId: currentUnit.SpaceID ?? '',
-      unitId: currentUnit.UnitID ?? '',
+      spaceId: unit.SpaceID ?? '',
+      unitId: unit.UnitID ?? '',
     };
 
     const response = await updateUnit(input);

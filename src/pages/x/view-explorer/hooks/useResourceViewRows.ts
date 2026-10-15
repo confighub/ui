@@ -52,7 +52,7 @@ const RESOURCE_SELECT =
 const UNIT_SELECT =
   'UnitID,Slug,DisplayName,SpaceID,TargetID,ToolchainType,ProviderType,Labels,' +
   'HeadRevisionNum,LastReleasedRevisionNum,UpstreamRevisionNum,' +
-  'CreatedAt,UpdatedAt,LastChangeDescription,BridgeWorkerID';
+  'CreatedAt,UpdatedAt,LastChangeDescription';
 
 /**
  * The rows backing a Resource-typed view, read from the Resource entity.

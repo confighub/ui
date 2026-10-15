@@ -10,10 +10,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import HistoryIcon from '@mui/icons-material/History';
 import IndeterminateCheckBoxIcon from '@mui/icons-material/IndeterminateCheckBox';
-import { getGroupValue, type GroupByOption } from '@/components/group-by-selector/GroupBySelector';
-import { useAppSelector } from '@/hooks/useApp';
+import { getGroupValue } from '@/components/group-by-selector/GroupBySelector';
 import { FunctionSignature, Invocation, useListAllUnitsQuery, ExtendedUnitRead } from '@confighub/rtk-query';
-import { selectUnitDashboardGroupBy } from '@/state/slices/selectedUnits';
 import { componentTheme } from '@/pages/x/apps/componentTheme';
 import { InvokerContext, InvocationHistoryItem } from '../types/invoker.types';
 import { InvokerContextDisplay } from '../InvokerContextDisplay';
@@ -101,6 +99,9 @@ const SectionAccordion = ({ expanded, onChange, icon, label, count, children }: 
     <AccordionDetails sx={{ p: 0, pb: 0.5 }}>{children}</AccordionDetails>
   </Accordion>
 );
+
+/** The Add-unit popover groups its Units by Space; a header's checkbox adds its whole group. */
+const unitGroup = (unit: ExtendedUnitRead): string => getGroupValue(unit, 'space') ?? 'Ungrouped';
 
 // Extracted component for rendering a single result item.
 // Flat row with hairline top border, optional left accent bar for saved/recent.
@@ -336,14 +337,6 @@ export const FunctionListScreen = ({
 
   const isAddUnitOpen = Boolean(addUnitAnchorEl);
 
-  // Mirror the components view's current GroupBy dimension for dropdown grouping
-  const unitDashboardGroupBy = useAppSelector(selectUnitDashboardGroupBy);
-  const effectiveDropdownGroupBy = useMemo<GroupByOption>(() => {
-    if (unitDashboardGroupBy === 'app>environment') return 'app';
-    if (unitDashboardGroupBy === 'environment>app') return 'environment';
-    return unitDashboardGroupBy;
-  }, [unitDashboardGroupBy]);
-
   // Handle collapse state changes
   const handleSavedExpandChange = (_: React.SyntheticEvent, expanded: boolean) => {
     setSavedExpanded(expanded);
@@ -370,10 +363,10 @@ export const FunctionListScreen = ({
 
   const groupSelectState = useMemo(() => {
     const map = new Map<string, { total: number; selected: number; allGroupUnits: ExtendedUnitRead[] }>();
-    if (!allUnits || effectiveDropdownGroupBy === 'none') return map;
+    if (!allUnits) return map;
     const selectedIdSet = new Set(context.selectedUnits?.map(su => su.id) ?? []);
     allUnits.forEach(unit => {
-      const key = getGroupValue(unit, effectiveDropdownGroupBy) ?? 'Ungrouped';
+      const key = unitGroup(unit);
       const existing = map.get(key) ?? { total: 0, selected: 0, allGroupUnits: [] };
       existing.total += 1;
       if (unit.Unit?.UnitID && selectedIdSet.has(unit.Unit.UnitID)) {
@@ -383,7 +376,7 @@ export const FunctionListScreen = ({
       map.set(key, existing);
     });
     return map;
-  }, [allUnits, context.selectedUnits, effectiveDropdownGroupBy]);
+  }, [allUnits, context.selectedUnits]);
 
   const handleResultClick = (result: (typeof searchResults)[0]) => {
     if (result.invocation) {
@@ -470,7 +463,7 @@ export const FunctionListScreen = ({
           <Autocomplete
             options={availableUnits}
             loading={isLoadingUnits}
-            groupBy={effectiveDropdownGroupBy !== 'none' ? (option) => getGroupValue(option, effectiveDropdownGroupBy) ?? 'Ungrouped' : undefined}
+            groupBy={unitGroup}
             renderGroup={(params) => {
               const groupData = groupSelectState.get(params.group);
               const total = groupData?.total ?? 0;

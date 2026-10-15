@@ -2668,7 +2668,7 @@ function SkeletonsSection() {
         </Box>
       </Paper>
 
-      <SubLabel>Stat card row skeleton (UnitStatusCards)</SubLabel>
+      <SubLabel>Stat card row skeleton</SubLabel>
       <Paper
         elevation={1}
         sx={{ p: 1.5, borderRadius: 'var(--r-md)', display: 'flex', gap: 2 }}

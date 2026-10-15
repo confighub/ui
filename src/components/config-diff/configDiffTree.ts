@@ -11,6 +11,8 @@ import { collapseFolderChains, VALUE_PLACEHOLDER, type DiffTreeNode } from '../.
  * The server matches array elements by merge key and resources across renames, and
  * returns both sides of each changed path. Nothing here matches anything: it only
  * arranges the changes it is given, one row per `PathChange`, in the order they came.
+ * A diff read with `include=Context` also holds the unchanged paths around the changes,
+ * as `None`, which become dimmed rows.
  */
 
 /** The leaf under a reordered array: the array's own row is its folder. */
@@ -52,11 +54,18 @@ function newFolder(key: string): FolderBuilder {
  *
  * A Reorder is reported at the array and a Rename at the element, each of which is
  * also the folder of any change beneath it, so their rows go inside that folder: the
- * order under the array, and the merge key under the element it renamed.
+ * order under the array, and the merge key under the element it renamed. A comment is
+ * reported at the node it annotates, so its row is beside that node's, labelled as the
+ * node's comment, as `cub unit diff` labels it.
  */
 function placeChange(change: PathChange): { folders: string[]; leafKey: string } {
   const segments = change.Segments ?? [];
   const labels = segments.map(segmentLabel);
+  if (change.Comment) {
+    const comment = `${change.Comment.toLowerCase()} comment`;
+    if (labels.length === 0) return { folders: [], leafKey: `(${comment} on the resource)` };
+    return { folders: labels.slice(0, -1), leafKey: `${labels[labels.length - 1]} (${comment})` };
+  }
   if (labels.length === 0) return { folders: [], leafKey: change.DisplayPath ?? '' };
 
   if (change.ChangeType === 'Reorder') return { folders: labels, leafKey: ORDER_LEAF_KEY };
@@ -91,6 +100,13 @@ export function buildConfigDiffTree(changes: PathChange[]): DiffTreeNode[] {
       current = child;
     }
 
+    if (change.ChangeType === 'None') {
+      // An unchanged path, returned as context: the To side's value is the value on both.
+      const value = change.ToValue ?? '';
+      current.node.children!.push({ key: leafKey, type: 'leaf', context: true, diff: { oldValue: value, newValue: value } });
+      continue;
+    }
+
     // An added path has nothing on the From side, and a deleted one nothing on the To side.
     const oldValue = change.ChangeType === 'Add' ? VALUE_PLACEHOLDER : (change.FromValue ?? '');
     const newValue = change.ChangeType === 'Delete' ? VALUE_PLACEHOLDER : (change.ToValue ?? '');
@@ -118,7 +134,8 @@ export interface ConfigDiffSummary {
 
 /**
  * Count a diff's changes: one per changed path, and one for a resource that was added
- * or deleted whole, whose `Changes` are empty because the resource is the change.
+ * or deleted whole, whose `Changes` are empty because the resource is the change. The
+ * unchanged paths returned as context are not counted.
  */
 export function summarizeConfigDiff(diff: ConfigDiff | undefined): ConfigDiffSummary {
   const summary: ConfigDiffSummary = { additions: 0, deletions: 0, changes: 0, total: 0 };
@@ -134,7 +151,9 @@ export function summarizeConfigDiff(diff: ConfigDiff | undefined): ConfigDiffSum
       count(resource.ChangeType);
       continue;
     }
-    for (const change of resource.Changes ?? []) count(change.ChangeType);
+    for (const change of resource.Changes ?? []) {
+      if (change.ChangeType !== 'None') count(change.ChangeType);
+    }
   }
   return summary;
 }

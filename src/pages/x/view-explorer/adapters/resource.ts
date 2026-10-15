@@ -1,6 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
+import { unitResourceHref } from '@/pages/unit-detail/unitDetailHrefs';
 import { Column } from '@confighub/rtk-query';
 
 import { ResourceViewRow } from './resource-row';
@@ -91,10 +92,11 @@ export const resourceAdapter: EntityAdapter = {
   getRowId(row) {
     return (row as ResourceViewRow).id;
   },
-  // Resources have no detail page; the drawer is the only entry point.
-  // Returning undefined disables the "Open detail" affordance.
-  getRowHref() {
-    return undefined;
+  // A resource's detail page is its Unit's Resources tab, opened on it.
+  getRowHref(row) {
+    const r = row as ResourceViewRow;
+    if (!r.SpaceID || !r.UnitID) return undefined;
+    return unitResourceHref(r.SpaceID, r.UnitID, r.ResourceID);
   },
   navigateToRow() {
     // Intentional no-op: ViewExplorerPage opens the drawer on row click

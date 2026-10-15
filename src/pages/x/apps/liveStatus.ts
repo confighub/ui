@@ -166,6 +166,33 @@ export function deriveHealthPresentation(status: LiveStatus | null | undefined):
   return null;
 }
 
+/** How severe each tone is, for picking the worst of several: danger > attention > progress > neutral > ok. */
+export const TONE_SEVERITY: Record<VitalTone, number> = {
+  ok: 0,
+  neutral: 1,
+  progress: 2,
+  attention: 3,
+  danger: 4,
+};
+
+/** The more severe of two tones. */
+export function worseTone(a: VitalTone, b: VitalTone): VitalTone {
+  return TONE_SEVERITY[b] > TONE_SEVERITY[a] ? b : a;
+}
+
+/**
+ * One tone for a Release's live status: the worse of its sync and health
+ * vitals, so a Release that is Synced but Degraded reads as failing. A Release
+ * with no status, or with neither axis reported, is `neutral`: nothing says it
+ * is fine.
+ */
+export function releaseTone(status: LiveStatus | null | undefined): VitalTone {
+  const sync = deriveSyncPresentation(status);
+  const health = deriveHealthPresentation(status);
+  if (!sync && !health) return 'neutral';
+  return worseTone(sync?.tone ?? 'ok', health?.tone ?? 'ok');
+}
+
 /**
  * Peek lines carrying the reporter's own words for an axis, and the operation
  * applying the Release. The normalized state loses detail a person debugging

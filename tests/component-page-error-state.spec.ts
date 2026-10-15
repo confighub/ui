@@ -20,8 +20,8 @@ import { test, expect } from './fixtures/test';
 // query entirely, so exactly two `/api/space` requests are in flight: the
 // live query (`select=...`, no `summary` param) and the summary query
 // (`summary=true`). Nothing else on this route calls `/api/space` — the
-// `Header` used by `AppsComponentPage` (`@/components/header/Header`, not
-// the `header-new` variant) does not query spaces, and `AuthenticatedContext`
+// `Header` used by `AppsComponentPage` (`@/components/header/Header`) does
+// not query spaces, and `AuthenticatedContext`
 // bootstraps via `GET /api/me`, not `/api/space`. So narrowing on
 // `summary !== 'true'` is sufficient here and does not touch app bootstrap.
 // ============================================================================

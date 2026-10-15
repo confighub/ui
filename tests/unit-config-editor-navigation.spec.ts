@@ -168,35 +168,4 @@ test.describe('unit config editor', () => {
     });
     expect(await readData(spaceId, alphaId)).toBe(concurrent);
   });
-
-  test('the dashboard editor saves an edit as typed, conditional on what it loaded', async ({
-    page,
-  }) => {
-    const ifMatch: (string | undefined)[] = [];
-    page.on('request', (r) => {
-      if (r.method() === 'PUT' && r.url().includes(`/unit/${alphaId}/data`)) {
-        ifMatch.push(r.headers()['if-match']);
-      }
-    });
-
-    await page.goto(
-      `/unit-dashboard?filterWhere=${encodeURIComponent(`UnitID = '${alphaId}'`)}`,
-    );
-    await expect(page.getByText('bravo', { exact: true })).toHaveCount(0, { timeout: 15000 });
-    await page.getByRole('checkbox').nth(1).check();
-    await page.locator('button:has([data-testid="MoreVertIcon"])').first().click();
-    await page.getByRole('menuitem', { name: 'Edit Config' }).click();
-    await expect(page.getByText('Editing: alpha')).toBeVisible();
-
-    await replaceEditorContent(page, configMap('alpha', 'dashboard'));
-    await page.getByRole('button', { name: 'Save' }).click();
-
-    // Byte for byte: an editor whose model was created before the configuration arrived
-    // saved it with CRLF line endings.
-    await expect
-      .poll(() => readData(spaceId, alphaId), { timeout: 10000 })
-      .toBe(configMap('alpha', 'dashboard'));
-    expect(ifMatch).toHaveLength(1);
-    expect(ifMatch[0]).toMatch(/^"[0-9a-f]{64}"$/);
-  });
 });

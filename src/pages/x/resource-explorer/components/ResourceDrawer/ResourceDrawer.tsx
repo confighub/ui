@@ -3,6 +3,7 @@
 import { useCallback, useState } from 'react';
 
 import { CodeEditor } from '@/components/code-editor/CodeEditor';
+import { resourceDisplayName } from '@/utility/resource-type-functions';
 import { useLazyListAllResourcesQuery } from '@confighub/rtk-query';
 import { TOP_NAV_HEIGHT } from '@/utility/constants';
 import CloseIcon from '@mui/icons-material/Close';
@@ -11,15 +12,15 @@ import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import Drawer from '@mui/material/Drawer';
 import IconButton from '@mui/material/IconButton';
-import Link from '@mui/material/Link';
 import Stack from '@mui/material/Stack';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import Typography from '@mui/material/Typography';
 
 import { ResourceRow } from '../../hooks/useResourceRows';
-import { ResourceOverview } from './friendly/ResourceOverview';
-import { hasFriendlyView } from './friendly/registry';
+import { ResourceContext } from '@/components/resource-overview/ResourceContext';
+import { ResourceOverview } from '@/components/resource-overview/ResourceOverview';
+import { hasFriendlyView } from '@/components/resource-overview/registry';
 
 interface ResourceDrawerProps {
   /** Row to display. When null, drawer is closed. */
@@ -124,9 +125,16 @@ export function ResourceDrawer({ row, onClose }: ResourceDrawerProps) {
           >
             <Box sx={{ minWidth: 0 }}>
               <Typography variant='subtitle1' fontWeight={600} noWrap>
-                {row.ResourceName}
+                {resourceDisplayName(row.ResourceName, row.ToolchainType)}
               </Typography>
-              <Typography variant='caption' color='text.secondary' noWrap>
+              <Typography
+                variant='caption'
+                color='text.secondary'
+                noWrap
+                component='div'
+                // Kinds are case-sensitive; the caption variant would capitalize them.
+                sx={{ textTransform: 'none', fontFamily: 'monospace' }}
+              >
                 {row.ResourceType}
               </Typography>
             </Box>
@@ -135,40 +143,15 @@ export function ResourceDrawer({ row, onClose }: ResourceDrawerProps) {
             </IconButton>
           </Stack>
 
-          <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-            <Stack direction='row' spacing={2} flexWrap='wrap'>
-              <MetaItem label='Unit'>
-                <Link
-                  href={`/units/${row.SpaceID}/${row.UnitID}`}
-                  target='_blank'
-                  rel='noopener noreferrer'
-                  underline='hover'
-                  sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}
-                >
-                  {row.UnitSlug}
-                </Link>
-              </MetaItem>
-              <MetaItem label='Space'>
-                <Typography variant='caption' sx={{ fontFamily: 'monospace' }}>
-                  {row.SpaceSlug}
-                </Typography>
-              </MetaItem>
-              {row.TargetSlug && (
-                <MetaItem label='Target'>
-                  <Typography variant='caption' sx={{ fontFamily: 'monospace' }}>
-                    {row.TargetSlug}
-                  </Typography>
-                </MetaItem>
-              )}
-              {row.ToolchainType && (
-                <MetaItem label='Toolchain'>
-                  <Typography variant='caption' sx={{ fontFamily: 'monospace' }}>
-                    {row.ToolchainType}
-                  </Typography>
-                </MetaItem>
-              )}
-            </Stack>
-          </Box>
+          <ResourceContext
+            resourceId={row.ResourceID}
+            unitId={row.UnitID}
+            unitSlug={row.UnitSlug}
+            spaceId={row.SpaceID}
+            spaceSlug={row.SpaceSlug}
+            targetSlug={row.TargetSlug}
+            toolchainType={row.ToolchainType}
+          />
 
           <Tabs
             value={tab}
@@ -221,20 +204,5 @@ export function ResourceDrawer({ row, onClose }: ResourceDrawerProps) {
         </>
       )}
     </Drawer>
-  );
-}
-
-function MetaItem({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <Box>
-      <Typography
-        variant='caption'
-        color='text.secondary'
-        sx={{ display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}
-      >
-        {label}
-      </Typography>
-      {children}
-    </Box>
   );
 }

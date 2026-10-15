@@ -1,5 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
+import type { VitalTone } from './liveStatus';
 
 /**
  * Design tokens for the component view UX.
@@ -152,3 +153,12 @@ export const componentTheme = {
   fontSans: '"Manrope", system-ui, -apple-system, sans-serif',
   fontMono: '"JetBrains Mono", "Courier New", monospace',
 } as const;
+
+/** The colour of each live status tone: the vitals on a deployment's card, and the Release heatmap's cells. */
+export const LIVE_TONE_COLOR: Record<VitalTone, string> = {
+  ok: componentTheme.success,
+  neutral: componentTheme.fgSubtle,
+  progress: componentTheme.variation,
+  attention: componentTheme.attention,
+  danger: componentTheme.danger,
+};

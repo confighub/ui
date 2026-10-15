@@ -70,12 +70,10 @@ test.describe('unit detail page', () => {
     expect(results?.[0]?.Passed).toBe(false);
   };
 
-  // The Overview dashboard (Dashboard.tsx) fires its own background `get-resources`
-  // /function/invoke POST every time the unit reloads, independent of anything the
-  // test does. A predicate that only checks the URL/method races against that call and
-  // can capture its response -- whose Outputs only ever has ResourceList -- instead of
-  // the vet-* invocation the test actually triggered by clicking Invoke. Matching on the
-  // request body's FunctionName pins the wait to the invocation under test.
+  // A predicate that only checks the URL/method would accept the response of any
+  // /function/invoke POST the page makes, not only the vet-* invocation the test
+  // triggered by clicking Invoke. Matching on the request body's FunctionName pins the
+  // wait to the invocation under test.
   const waitForFunctionInvokeResponse = (page: Page, functionName: string) =>
     page.waitForResponse((resp) => {
       if (!resp.url().includes('/function/invoke') || resp.request().method() !== 'POST') {

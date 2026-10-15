@@ -12,7 +12,7 @@ import AddIcon from '@mui/icons-material/Add';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
 import type { ComponentDeployment } from '../componentTypes';
-import { componentTheme } from '../componentTheme';
+import { componentTheme, LIVE_TONE_COLOR } from '../componentTheme';
 import { formatRelative } from '@/utility/date-format';
 import {
   deriveHealthPresentation,
@@ -22,6 +22,7 @@ import {
   type LiveStatus,
   type LiveStatusProvider,
   liveStatusLabel,
+  TONE_SEVERITY,
   reporterDetailLines,
   type VitalPresentation,
   type VitalTone,
@@ -30,19 +31,6 @@ import { LiveStatusProviderMark } from './LiveStatusProviderMark';
 import type { ConditionKind, WaveCondition } from './fold/deploymentCondition';
 import { MARK_LABEL, markStyle } from './fold/markStyle';
 import { INFO_PEEK_TOOLTIP_SX, InfoPeekCard, type InfoPeekSpec } from '@/components/info-peek/InfoPeek';
-
-// Config-side (desired) chip colors, and the Live/Synced tag color map.
-// Previously lived in a shared `nodeStatusModel.ts` alongside the signal
-// rail's geometry — folded back in here once the rail was removed (per
-// direct product direction: "it's pointless"), since these four one-line
-// color lookups no longer need a dedicated module of their own.
-const LIVE_TONE_COLOR: Record<VitalTone, string> = {
-  ok: componentTheme.success,
-  neutral: componentTheme.fgSubtle,
-  progress: componentTheme.variation,
-  attention: componentTheme.attention,
-  danger: componentTheme.danger,
-};
 
 /**
  * Every tone a status chip can take — the live status tones plus the three
@@ -998,14 +986,6 @@ const LiveStateChip = ({
 // Stalled" amber next to "● Stalled" red) — reading as a rendering bug rather
 // than two real signals. `deriveFluxVital` picks the single more-severe axis
 // to represent as the one chip Flux itself would show.
-
-const TONE_SEVERITY: Record<VitalTone, number> = {
-  ok: 0,
-  neutral: 1,
-  progress: 2,
-  attention: 3,
-  danger: 4,
-};
 
 /**
  * Collapse a Flux node's independently-derived sync/health vitals to the ONE

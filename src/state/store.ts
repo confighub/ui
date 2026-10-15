@@ -7,7 +7,6 @@ import { confighubApi } from '@confighub/rtk-query';
 import { alertSlice } from './slices/alert';
 import { functionInvocationSlice } from './slices/functionInvocation';
 import { initiativeInvocationSlice } from './slices/initiativeInvocation';
-import { layoutSlice } from './slices/layoutSlice';
 import { tourSlice } from './slices/tourSlice';
 import { applyInvalidationMap } from './liveness/invalidationMap';
 
@@ -24,7 +23,6 @@ const store = configureStore({
     alert: alertSlice.reducer,
     functionInvocation: functionInvocationSlice.reducer,
     initiativeInvocation: initiativeInvocationSlice.reducer,
-    layout: layoutSlice.reducer,
     selectedUnits: selectedUnitsSlice.reducer,
     tour: tourSlice.reducer,
   },
