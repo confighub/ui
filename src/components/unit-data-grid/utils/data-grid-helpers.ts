@@ -4,6 +4,7 @@
 import { ExtendedUnitRead } from '@confighub/rtk-query';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
+import { hasUnreleasedChanges } from '@/utility/unit-release-functions';
 
 dayjs.extend(relativeTime);
 
@@ -79,13 +80,7 @@ export const createUnitListRow = (unit: ExtendedUnitRead): UnitRowItem => {
   const upgradeNeeded: 'Yes' | 'No' =
     upstreamRevisionNum > 0 && upstreamRevisionNum < upstreamUnitHeadRevisionNum ? 'Yes' : 'No';
 
-  // Compute unreleased changes status. LastReleasedRevisionNum is advanced by
-  // `release publish`, so head > lastReleased means "not yet in a Release".
-  const headRevisionNum = unit?.Unit?.HeadRevisionNum || 0;
-  const lastReleasedRevisionNum = unit?.Unit?.LastReleasedRevisionNum || 0;
-  const targetID = unit?.Unit?.TargetID || '';
-  const unreleasedChanges: 'Yes' | 'No' =
-    headRevisionNum > lastReleasedRevisionNum && targetID != '' ? 'Yes' : 'No';
+  const unreleasedChanges: 'Yes' | 'No' = hasUnreleasedChanges(unit?.Unit) ? 'Yes' : 'No';
 
   const baseRow: UnitRowItem = {
     id: unit?.Unit?.UnitID || '',

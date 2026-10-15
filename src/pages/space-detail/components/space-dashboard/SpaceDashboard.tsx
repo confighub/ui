@@ -40,6 +40,7 @@ import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
 
 import { formatRelative } from '@/utility/date-format';
+import { UNRELEASED_CHANGES_WHERE } from '@/utility/unit-release-functions';
 
 const Container = styled('div')`
   width: 100%;
@@ -378,7 +379,7 @@ export const SpaceDashboard = ({
                       value={extendedSpace?.UnreleasedUnitCount || 0}
                       loading={isSpacesLoading}
                       onClick={() =>
-                        handleNavigateToUnits('HeadRevisionNum > LastReleasedRevisionNum')
+                        handleNavigateToUnits(UNRELEASED_CHANGES_WHERE)
                       }
                     />
                   </Grid>

@@ -8,6 +8,7 @@ import { Box, Chip, Typography, styled } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import WarningIcon from '@mui/icons-material/Warning';
+import { hasUnreleasedChanges } from '@/utility/unit-release-functions';
 
 const NodeContainer = styled(Box)(({ theme }) => ({
   padding: theme.spacing(1.5),
@@ -69,8 +70,7 @@ export const UnitTreeNode = memo(({ data }: UnitTreeNodeProps) => {
   };
 
   // Determine status indicators
-  const hasUnreleasedChanges =
-    !!unit.Unit?.TargetID && unit.Unit?.HeadRevisionNum !== unit.Unit?.LastReleasedRevisionNum;
+  const unreleased = hasUnreleasedChanges(unit.Unit);
   const needsUpgrade =
     unit.Unit?.UpstreamUnitID &&
     unit.Unit?.UpstreamRevisionNum !== undefined &&
@@ -86,7 +86,7 @@ export const UnitTreeNode = memo(({ data }: UnitTreeNodeProps) => {
   if (hasValidationErrors) {
     statusColor = 'error';
     StatusIcon = ErrorIcon;
-  } else if (needsUpgrade || hasUnreleasedChanges) {
+  } else if (needsUpgrade || unreleased) {
     statusColor = 'warning';
     StatusIcon = WarningIcon;
   }
@@ -105,7 +105,7 @@ export const UnitTreeNode = memo(({ data }: UnitTreeNodeProps) => {
         <NodeSublabel>{sublabel}</NodeSublabel>
 
         <StatusContainer>
-          {hasUnreleasedChanges && (
+          {unreleased && (
             <Chip
               label="Unapplied"
               size="small"

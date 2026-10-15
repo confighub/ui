@@ -20,6 +20,7 @@ import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
+import { hasUnreleasedChanges } from '@/utility/unit-release-functions';
 
 const DetailItem = styled(Box)(({ theme }) => ({
   padding: theme.spacing(1.5, 0),
@@ -134,13 +135,7 @@ export const DetailCard = ({ unit }: IDetailCardProps) => {
     }
   }, [unit.Unit?.UnitID]);
 
-  // Compute unreleased changes status. LastReleasedRevisionNum is advanced by
-  // `release publish`, so head > lastReleased means "not yet in a Release".
-  const headRevisionNum = unit?.Unit?.HeadRevisionNum || 0;
-  const lastReleasedRevisionNum = unit?.Unit?.LastReleasedRevisionNum || 0;
-  const targetID = unit?.Unit?.TargetID || '';
-  const unreleasedChanges: 'Yes' | 'No' =
-    headRevisionNum > lastReleasedRevisionNum && targetID != '' ? 'Yes' : 'No';
+  const unreleasedChanges: 'Yes' | 'No' = hasUnreleasedChanges(unit?.Unit) ? 'Yes' : 'No';
   const upgradeAvailable: 'Yes' | 'No' =
     (unit?.UpstreamUnit?.HeadRevisionNum ?? 0) > (unit?.Unit?.UpstreamRevisionNum ?? 0)
       ? 'Yes'

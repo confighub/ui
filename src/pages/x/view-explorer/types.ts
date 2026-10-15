@@ -10,6 +10,7 @@ import {
 } from '@/components/group-nav';
 
 import { ViewEntityType } from './adapters';
+import { UNRELEASED_CHANGES_WHERE } from '@/utility/unit-release-functions';
 
 export { ALL_GROUPS, LABEL_PREFIX, SPACE_LABEL_PREFIX, getGroupByColumns };
 
@@ -118,8 +119,8 @@ export const FILTER_SNIPPETS_BY_ENTITY: Record<ViewEntityType, FilterSnippet[]> 
   Unit: [
     {
       label: 'Unreleased Changes',
-      description: 'Units where head revision is ahead of live and a target is assigned',
-      expression: "HeadRevisionNum > LastReleasedRevisionNum AND TargetID IS NOT NULL",
+      description: 'Units that can be released whose head revision is past the last released one',
+      expression: UNRELEASED_CHANGES_WHERE,
     },
     {
       label: 'Needs Upgrade',

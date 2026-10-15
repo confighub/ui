@@ -5,6 +5,7 @@ import { ExtendedUnitRead } from '@confighub/rtk-query';
 import { formatAbsolute } from '@/utility/date-format';
 
 import { LABEL_PREFIX, SPACE_LABEL_PREFIX } from './types';
+import { hasUnreleasedChanges } from '@/utility/unit-release-functions';
 
 // Pixel constants mirror the styled components in GroupNavPanel.tsx and the
 // MUI x-tree-view layout. Keep in sync with GroupNavPanel.tsx if its styling
@@ -206,11 +207,8 @@ export function getCellValue(eu: ExtendedUnitRead, column: string): string {
       return formatAbsolute(eu.HeadRevision?.CreatedAt);
     // UnappliedChanges is the pre-Release name, still present in saved Views.
     case 'UnappliedChanges':
-    case 'UnreleasedChanges': {
-      const head = unit.HeadRevisionNum ?? 0;
-      const lastReleased = unit.LastReleasedRevisionNum ?? 0;
-      return head > lastReleased && unit.TargetID ? 'Yes' : 'No';
-    }
+    case 'UnreleasedChanges':
+      return hasUnreleasedChanges(unit) ? 'Yes' : 'No';
     case 'UpgradeNeeded': {
       const upstream = unit.UpstreamRevisionNum ?? 0;
       const upstreamHead = eu.UpstreamUnit?.HeadRevisionNum ?? 0;

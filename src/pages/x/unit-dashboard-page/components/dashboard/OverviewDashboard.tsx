@@ -26,6 +26,7 @@ import {
 } from './OverviewDashboardSkeleton';
 import { OverviewHeader } from './OverviewHeader';
 import { SyncActivityHeatmap } from './SyncActivityHeatmap';
+import { hasUnreleasedChanges } from '@/utility/unit-release-functions';
 
 // ============================================================================
 // TYPES
@@ -98,12 +99,10 @@ const computeStats = (units: ExtendedUnitRead[]): DashboardStats => {
   for (const u of units) {
     const id = u.Unit?.UnitID;
     if (!id) continue;
-    const head = u.Unit?.HeadRevisionNum ?? 0;
-    const live = u.Unit?.LastReleasedRevisionNum ?? 0;
     const hasTarget = !!u.Unit?.TargetID;
     const eventStatus = u.LatestUnitEvent?.Status ?? '';
 
-    if (head !== live) {
+    if (hasUnreleasedChanges(u.Unit)) {
       unapplied++;
       unappliedIds.push(id);
     } else if (hasTarget) {

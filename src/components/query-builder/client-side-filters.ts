@@ -30,8 +30,8 @@ import { assertNever } from './types';
  * |-----------------------|------------------------------------------------------------------|
  * | upgradeNeeded: Yes    | `unit.UpstreamRevisionNum > 0 && unit.UpstreamRevisionNum > unit.HeadRevisionNum` |
  * | upgradeNeeded: No     | `unit.UpstreamRevisionNum === 0 || unit.UpstreamRevisionNum <= unit.HeadRevisionNum` |
- * | unreleasedChanges: Yes | `unit.TargetID != '' && unit.HeadRevisionNum > unit.LastReleasedRevisionNum` |
- * | unreleasedChanges: No  | `unit.TargetID == '' || unit.HeadRevisionNum <= unit.LastReleasedRevisionNum` |
+ * | unreleasedChanges: Yes | `hasUnreleasedChanges(unit)`: a Target and `unit.HeadRevisionNum > unit.LastReleasedRevisionNum` |
+ * | unreleasedChanges: No  | `!hasUnreleasedChanges(unit)` |
  * | validationErrorsCount = N   | `(unit.ValidationErrors?.length || 0) === N`                          |
  * | lastActionStatus      | Query with include=UnitEventID, check `unit.Action?.ActionResult` |
  *
