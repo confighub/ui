@@ -40,6 +40,7 @@ import { inClause } from '@/hooks/inClauseChunks';
 import { usePolling } from '@/hooks/usePolling';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import {
+  useListAllRevisionsQuery,
   useListGroupsQuery,
   useListSpacesQuery,
   type AttestationRead,
@@ -51,7 +52,7 @@ import {
 import { authFetch } from '@/auth/session';
 import { SERVER_GATES_POLL_INTERVAL_MS } from '../../x/apps/change-order/useServerStageGates';
 import type { ChangeOrderDetail } from '../useChangeOrderDetail';
-import { DEFAULT_ATTESTATION_TYPE, deriveGateReviews, promoteReadiness } from './changeOrderReviews';
+import { DEFAULT_ATTESTATION_TYPE, combineGateReviews, deriveGateReviews, promoteReadiness } from './changeOrderReviews';
 import type {
   GateReviewSummary,
   NotEvaluatedReason,
@@ -74,7 +75,9 @@ import { useAttestDryRunsByTypeQuery, useListAttestationRecordsQuery, useListRev
 import { useListGroupMembersQuery, useReleaseGatesQuery } from './reviewServerApi';
 import {
   attestSpaceErrors,
+  changedUnitIdsOf,
   gateKey,
+  markUnchanged,
   planRevocations,
   refusalText,
   releaseAnswerOf,
@@ -91,8 +94,13 @@ import {
 } from './stageReviewInputs';
 
 const NOW_TICK_MS = 60_000;
+/** How long a recorded decision waits for the server's fresh gate verdicts before saying it could not. */
+const VERDICT_WAIT_MS = 20_000;
+/** Two Revisions per Unit (start and end Tags) of the Spaces reviewed, at the server's largest page. */
+const CHANGED_REVISION_LIMIT = 1000;
 const EMPTY_RECORDS: AttestationRead[] = [];
 const EMPTY_DEFINITIONS: ChangeWorkflowAttestationPrerequisite[] = [];
+const NO_GATES: readonly ReviewGateRef[] = [];
 
 /** The message of an RTK error: the server's own when it sent one. */
 function errorText(error: unknown, fallback: string): string {
@@ -431,11 +439,41 @@ function decisionTypes(summary: GateReviewSummary | undefined): string[] {
   return [];
 }
 
-export function useGateReviews(detail: ChangeOrderDetail, gate: ReviewGateRef | undefined): UseGateReviewsResult {
+/**
+ * The review of one or more gates that read the same Spaces (see `combineGateReviews`):
+ * a stage's release gate and the next stage's entry gate are one review, on that stage.
+ */
+export function useGateReviews(detail: ChangeOrderDetail, gates: readonly ReviewGateRef[]): UseGateReviewsResult {
   const data = useReviewData(detail, { poll: true });
-  const { changeOrderId, refreshServerGates, baseSpaceId } = detail;
-  const summary = gate === undefined ? undefined : data.byGateKey[gate.key];
-  const reviewed = data.gates.find((candidate) => candidate.gate.key === gate?.key);
+  const { changeOrderId, refreshServerGates, baseSpaceId, startTagId, endTagId } = detail;
+  const keys = gates.map((gate) => gate.key).join(',');
+  const summary = useMemo(
+    () => combineGateReviews(keys.split(',').flatMap((key) => (data.byGateKey[key] === undefined ? [] : [data.byGateKey[key]]))),
+    [keys, data.byGateKey],
+  );
+  const reviewed = data.gates.find((candidate) => candidate.gate.key === gates[0]?.key);
+
+  // Which Units the change changed in the Spaces reviewed: entry and Final gates read only those.
+  const onlyChanged = summary !== undefined && (summary.feeds ?? [summary.gate]).every((gate) => gate.kind !== 'release');
+  const tagWhere = useMemo(() => {
+    if (!onlyChanged || summary === undefined || startTagId === undefined || endTagId === undefined) return undefined;
+    const spaces = summary.gateSpaces.map((space) => `'${space.spaceId}'`).sort();
+    if (spaces.length === 0) return undefined;
+    return `SpaceID IN (${spaces.join(', ')}) AND Tags.*.TagID IN ('${startTagId}', '${endTagId}')`;
+  }, [onlyChanged, summary, startTagId, endTagId]);
+  const tagged = useListAllRevisionsQuery(
+    tagWhere === undefined ? skipToken : { where: tagWhere, distinctOn: 'Off', limit: CHANGED_REVISION_LIMIT, select: 'UnitID,RevisionNum,Tags' },
+  );
+  const changedUnitIds = useMemo(() => {
+    const rows = tagged.data;
+    // A full page may have left some out: then nothing is called unchanged.
+    if (rows === undefined || rows.length >= CHANGED_REVISION_LIMIT) return undefined;
+    return changedUnitIdsOf(
+      rows.flatMap((row) => (row.Revision === undefined ? [] : [row.Revision])),
+      startTagId,
+      endTagId,
+    );
+  }, [tagged.data, startTagId, endTagId]);
 
   const types = useMemo(() => decisionTypes(summary), [summary]);
   const dryRunArg = useMemo(() => {
@@ -448,10 +486,10 @@ export function useGateReviews(detail: ChangeOrderDetail, gate: ReviewGateRef | 
     const out: Record<string, ReviewCoverage> = {};
     for (const [type, answer] of Object.entries(dryRuns.data ?? {})) {
       const coverage = reviewCoverageOf(type, answer.result);
-      if (coverage !== undefined) out[type] = coverage;
+      if (coverage !== undefined) out[type] = markUnchanged(coverage, changedUnitIds, onlyChanged);
     }
     return out;
-  }, [dryRuns.data]);
+  }, [dryRuns.data, changedUnitIds, onlyChanged]);
   const coverageErrors = Object.entries(dryRuns.data ?? {}).flatMap(([type, answer]) => (answer.error === undefined ? [] : [`${type}: ${answer.error}`]));
   let coverageError: string | undefined;
   if (dryRuns.error !== undefined) coverageError = errorText(dryRuns.error, 'Coverage is not available.');
@@ -479,6 +517,41 @@ export function useGateReviews(detail: ChangeOrderDetail, gate: ReviewGateRef | 
       }
       setIsSubmitting(true);
       let wrote = false;
+      let reread = false;
+      /**
+       * The records again, THEN the server verdicts, so the count and the decisions move
+       * together. These writes bypass RTK, so no tag invalidates the records or the
+       * coverage. A failed read never fails the decision: it is recorded either way.
+       */
+      const rereadRecords = async () => {
+        reread = true;
+        try {
+          await refetch();
+          if (refetchDryRuns !== undefined) void refetchDryRuns();
+        } catch {
+          // The next poll reads them.
+        }
+      };
+      /**
+       * The server's fresh verdicts, for the page to word its result from. False when they
+       * did not arrive in time or could not be read, and the page then says so.
+       */
+      const awaitVerdicts = async (): Promise<boolean> => {
+        let timer: number | undefined;
+        try {
+          return await Promise.race([
+            refreshServerGates().then(
+              () => true,
+              () => false,
+            ),
+            new Promise<boolean>((resolve) => {
+              timer = window.setTimeout(() => resolve(false), VERDICT_WAIT_MS);
+            }),
+          ]);
+        } finally {
+          window.clearTimeout(timer);
+        }
+      };
       let revokedSpaceSlugs: string[] = [];
       const recordedTypes: string[] = [];
       const recorded: { type: string; revisionCount: number; spaceCount: number }[] = [];
@@ -524,14 +597,14 @@ export function useGateReviews(detail: ChangeOrderDetail, gate: ReviewGateRef | 
         if (spaceErrors.length > 0) {
           return failure('record', spaceErrors.map((e) => `${e.spaceSlug}: ${e.message}`).join('; '), { revokedSpaceSlugs, recordedTypes, spaceErrors });
         }
-        return { ok: true, recorded };
+        await rereadRecords();
+        const refreshed = await awaitVerdicts();
+        return { ok: true, recorded, refreshed };
       } finally {
-        if (wrote) {
-          // The records first, THEN the server verdicts, so the count and the decisions move together.
-          // (These writes bypass RTK, so no tag invalidates the coverage either.)
-          await refetch();
-          if (refetchDryRuns !== undefined) void refetchDryRuns();
-          refreshServerGates();
+        if (wrote && !reread) {
+          // A partial failure shows at once: the verdicts follow without being waited for.
+          await rereadRecords();
+          refreshServerGates().catch(() => undefined);
         }
         setIsSubmitting(false);
       }
@@ -595,7 +668,7 @@ export function useStageReviews(detail: ChangeOrderDetail, stageId: string | und
   const stage = detail.sequence.stages.find((candidate) => candidate.id === stageId);
   const key = stage === undefined ? undefined : currentGateKey(stage.id, stage.spaceIds, detail, reviews.byGateKey);
   const gate = key === undefined ? undefined : reviews.byGateKey[key]?.gate;
-  const one = useGateReviews(detail, gate);
+  const one = useGateReviews(detail, gate === undefined ? NO_GATES : [gate]);
   const summaryByStageId = useMemo(() => {
     const out: Record<string, GateReviewSummary> = {};
     for (const summary of Object.values(reviews.byGateKey)) if (summary.gate.kind === 'entry') out[summary.gate.stageId] = summary;

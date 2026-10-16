@@ -654,6 +654,24 @@ export interface BuildChangeOrderFixtureOptions {
    * offers — see `NO_HEALTH_CHECK_STAGES`.
    */
   workflow?: 'standard' | 'none' | 'whole-component' | 'custom-prerequisite' | 'no-health-check';
+  /**
+   * Seed these Units instead of the built-in resources: each starts every Space
+   * at `before`, and `after` is the change the ChangeOrder carries. Lets a spec
+   * give a ChangeOrder a particular shape of change (which images, which
+   * fields, how many Units) without a fixture of its own. `toolchain` defaults
+   * to Kubernetes/YAML. Leaving `content` unset seeds the built-in resources
+   * exactly as before.
+   */
+  content?: {
+    units: { slug: string; before: string; after: string; toolchain?: string }[];
+    description?: string;
+  };
+  /**
+   * The name every seeded entity is prefixed with (Component, Spaces, the
+   * ChangeOrder `<appLabel>-order`). Random by default; a spec that seeds
+   * several ChangeOrders names them so one list search finds them all.
+   */
+  appLabel?: string;
 }
 
 /**
@@ -673,10 +691,21 @@ export async function buildChangeOrderFixture(
     stageLabels = 'sequence',
     stageDepth = 'four-stage',
     workflow = 'standard',
+    content,
   } = options;
   const api = new ApiHelper(page);
-  const appLabel = `e2e-change-order-${RandomSlugGenerator.randomSlugName()}`;
-  const seeded: ResourceName[] = resources === 'full' ? ALL_RESOURCES : ['app'];
+  const appLabel = options.appLabel ?? `e2e-change-order-${RandomSlugGenerator.randomSlugName()}`;
+  const seeded: string[] = content
+    ? content.units.map((unit) => unit.slug)
+    : resources === 'minimal'
+      ? ['app']
+      : ALL_RESOURCES;
+  const contentUnit = (slug: string) => content?.units.find((unit) => unit.slug === slug);
+  const bodyFor = (resource: string, at: typeof BEFORE): string => {
+    const unit = contentUnit(resource);
+    if (unit) return at === BEFORE ? unit.before : unit.after;
+    return render(resource as ResourceName, at);
+  };
   const TOPOLOGY = topologyFor(labelBaseStage, stageLabels, stageDepth);
   const spaces: Record<string, ChangeOrderSpace> = {};
   /** What each deployment Space's deploying tool reports, written onto each Release it publishes. */
@@ -826,14 +855,14 @@ export async function buildChangeOrderFixture(
         spaceId: spaces.base.spaceId,
         unit: {
           Slug: resource,
-          ToolchainType: 'Kubernetes/YAML',
+          ToolchainType: contentUnit(resource)?.toolchain ?? 'Kubernetes/YAML',
         } as never,
       });
       const unitId = (baseUnit as { UnitID: string }).UnitID;
       await api.uploadUnitData({
         spaceId: spaces.base.spaceId,
         unitId,
-        body: render(resource, BEFORE),
+        body: bodyFor(resource, BEFORE),
       });
       spaces.base.units[resource] = unitId;
     }
@@ -983,7 +1012,7 @@ export async function buildChangeOrderFixture(
         await api.uploadUnitData({
           spaceId: spaces.base.spaceId,
           unitId: spaces.base.units[resource],
-          body: render(resource, AFTER),
+          body: bodyFor(resource, AFTER),
           changeSetId,
         });
       }
@@ -1010,7 +1039,7 @@ export async function buildChangeOrderFixture(
         await api.uploadUnitData({
           spaceId: spaces.base.spaceId,
           unitId: spaces.base.units[resource],
-          body: render(resource, AFTER),
+          body: bodyFor(resource, AFTER),
         });
       }
     }
@@ -1055,7 +1084,7 @@ export async function buildChangeOrderFixture(
       spaceId: changeOrderSpaceId,
       changeOrder: {
         Slug: changeOrderSlug,
-        Description: `Promote release v${AFTER.version}`,
+        Description: content?.description ?? `Promote release v${AFTER.version}`,
         InScopeSpaceIDs: inScopeSpaceIds,
         // Naming the workflow is the whole of the association. The server
         // looks it up, checks Use permission, and stores a frozen copy of its

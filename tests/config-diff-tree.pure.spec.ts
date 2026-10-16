@@ -20,6 +20,7 @@ import {
   buildConfigDiffTree,
   ORDER_LEAF_KEY,
   segmentLabel,
+  resourceDiffLabel,
   summarizeConfigDiff,
 } from '../src/components/config-diff/configDiffTree';
 import type { DiffTreeNode } from '../src/pages/x/apps/diffTree';
@@ -264,5 +265,11 @@ test.describe('config diff tree', () => {
 
     expect(summarizeConfigDiff(diff)).toEqual({ additions: 3, deletions: 4, changes: 1, total: 8 });
     expect(summarizeConfigDiff(undefined)).toEqual({ additions: 0, deletions: 0, changes: 0, total: 0 });
+  });
+
+  test('a resource heading leaves out the placeholders of a resource that names nothing', () => {
+    expect(resourceDiffLabel({ ResourceType: 'apps/v1/Deployment', ResourceName: 'app/web' })).toBe('apps/v1/Deployment app/web');
+    expect(resourceDiffLabel({ ResourceType: 'NoSchema', ResourceName: 'NoName' })).toBe('');
+    expect(resourceDiffLabel({ ResourceType: 'NoSchema', ResourceName: 'policy' })).toBe('policy');
   });
 });

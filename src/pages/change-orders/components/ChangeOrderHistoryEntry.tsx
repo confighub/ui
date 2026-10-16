@@ -1188,30 +1188,53 @@ function MonoList({ names }: { names: string[] }) {
  * One review event: an approval, a rejection, a revocation, an approval that
  * expired, or the moment a stage started to wait on review.
  */
-/** "for prod", "for the release in prod", "for sign-off": what the review was for. */
-function GateTarget({ entry }: { entry: HistoryReviewEntry }) {
-  const stage = <StageName stage={entry.stage} />;
-  if (entry.gateKind === 'release') {
-    return (
-      <>
-        <span>for the release in</span>
-        {stage}
-      </>
-    );
+/** "the gate to prod", "the release in staging", "sign-off": one gate a review counts toward. */
+function gateName(gate: { kind: HistoryReviewEntry['gateKind']; stage: string }): string {
+  if (gate.kind === 'release') return `the release in ${gate.stage}`;
+  if (gate.kind === 'final') return 'sign-off';
+  return `the gate to ${gate.stage}`;
+}
+
+/** "a", "a and b", "a, b and c". */
+function andList(parts: readonly string[]): string {
+  if (parts.length <= 1) return parts[0] ?? '';
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
+
+/** Every gate the review counts toward, in words. */
+function gatesText(entry: HistoryReviewEntry): string {
+  const gates = entry.gates ?? [{ kind: entry.gateKind, stage: entry.stage }];
+  return andList(gates.map(gateName));
+}
+
+/** Where the decision was made, when not on this ChangeOrder. */
+const ORIGIN_TEXT: Record<'other' | 'none', string> = {
+  other: 'Made on another ChangeOrder',
+  none: 'Made outside a ChangeOrder',
+};
+
+/**
+ * The stage whose change was reviewed: "approved staging". What it counts toward
+ * ("For the gate to prod") is in the tooltip. Without a reviewed stage (an older
+ * entry), the gate alone.
+ */
+function ReviewTarget({ entry }: { entry: HistoryReviewEntry }) {
+  if (entry.reviewedStage === undefined) {
+    return <span>for {gatesText(entry)}</span>;
   }
-  if (entry.gateKind === 'final') return <span>for sign-off</span>;
+  const gates = `For ${gatesText(entry)}`;
   return (
-    <>
-      <span>for</span>
-      {stage}
-    </>
+    <Tooltip title={gates}>
+      <Box component="span" data-history-gates={gates} sx={{ display: 'inline-flex' }}>
+        <StageName stage={entry.reviewedStage} />
+      </Box>
+    </Tooltip>
   );
 }
 
 function gateText(entry: HistoryReviewEntry): string {
-  if (entry.gateKind === 'release') return `the release in ${entry.stage}`;
-  if (entry.gateKind === 'final') return 'sign-off';
-  return entry.stage;
+  if (entry.reviewedStage === undefined) return `for ${gatesText(entry)}`;
+  return `${entry.reviewedStage}, for ${gatesText(entry)}`;
 }
 
 function ReviewEntry({ entry }: { entry: HistoryReviewEntry }) {
@@ -1222,7 +1245,7 @@ function ReviewEntry({ entry }: { entry: HistoryReviewEntry }) {
   let label = '';
   const who = entry.person.name;
   const satisfied = entry.satisfiedRequirementNames ?? [];
-  const target = <GateTarget entry={entry} />;
+  const target = <ReviewTarget entry={entry} />;
   switch (entry.reviewKind) {
     case 'approved':
       tag = <ReviewKindTag tone="ok">Approved</ReviewKindTag>;
@@ -1342,6 +1365,14 @@ function ReviewEntry({ entry }: { entry: HistoryReviewEntry }) {
         {tag}
         {head}
       </Box>
+      {entry.origin !== undefined ? (
+        <Box
+          data-testid="history-review-origin"
+          sx={{ marginTop: '2px', fontSize: changeOrderType.size.small, color: changeOrderInk.subtle }}
+        >
+          {ORIGIN_TEXT[entry.origin]}
+        </Box>
+      ) : null}
       {entry.note !== undefined && entry.note !== '' ? (
         <Box
           component="q"

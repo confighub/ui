@@ -24,15 +24,31 @@ import InsertLinkIcon from '@mui/icons-material/InsertLink';
 
 import { changeOrderBorder, changeOrderFontMono, changeOrderInk, changeOrderShape, changeOrderStatus, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
 import { reviewTextButtonSx } from './reviewButtons';
-import { agoText, authorInText, entryText, decisionTypes, durationText, epochOf, fromText, groupLabel, placesText, reviewCopy, reviewTime } from './reviewCopy';
+import {
+  agoText,
+  authorInText,
+  entryText,
+  decisionTypes,
+  durationText,
+  epochOf,
+  fromText,
+  gateThing,
+  groupLabel,
+  listText,
+  placesText,
+  reviewCopy,
+  reviewFeeds,
+  reviewSubject,
+  reviewTime,
+} from './reviewCopy';
 import { ReviewConfirmDialog, type ReviewConfirmError } from './ReviewConfirmDialog';
 import { ReviewCoverageList } from './ReviewCoverageList';
 import { ReviewDecisionForm } from './ReviewDecisionForm';
 import { ReviewDecisionList } from './ReviewDecisionList';
 import { ReviewRequirementList } from './ReviewRequirementList';
 import { ReviewRequestsSection } from './ReviewRequestsSection';
-import { reviewInitials } from './changeOrderReviews';
-import { Monogram, Pips, SectionLabel } from './reviewParts';
+import { outOfDateDecisions, reviewInitials } from './changeOrderReviews';
+import { CollapsibleSection, Monogram, Pips, SectionLabel } from './reviewParts';
 import type {
   ReviewChoice,
   ReviewCoverage,
@@ -48,7 +64,7 @@ export const REVIEW_PANEL_ID = 'review';
 interface ReviewPanelProps {
   reviews: UseGateReviewsResult;
   summary: StageReviewSummary;
-  /** For an entry gate: the other gates still holding the stage (see `ReviewConfirmDialog`). */
+  /** For the entry gate the review counts toward: the other gates still holding its stage (see `ReviewConfirmDialog`). */
   otherGatesHolding?: string[];
   orderSlug: string;
   /** The viewer's display name, for "Priya Nair, you can review". */
@@ -272,8 +288,12 @@ export function ReviewPanel({
 
   const { eligibility, ownByType } = summary.viewer;
   const owns = Object.values(ownByType);
+  /** Own decisions the server does not count on what a gate reads now: the form shows again. */
+  const outOfDate = outOfDateDecisions(summary);
   const primary = summary.primary;
-  const stage = summary.gate.stageName;
+  const subject = reviewSubject(summary);
+  const feeds = reviewFeeds(summary);
+  const held = listText(feeds.map(gateThing));
   const types = decisionTypes(summary);
   const coverages = types.map((type) => reviews.coverageByType[type]).filter((c): c is ReviewCoverage => c !== undefined);
   const replaces = editing && !revokeDone ? owns : [];
@@ -285,11 +305,17 @@ export function ReviewPanel({
     const ofType = summary.requirements.filter((r) => r.rules.type === type);
     return ofType.length > 0 && ofType.every((r) => r.rules.allowAuthors);
   };
-  /** Revisions where a decision from the viewer counts, over every Type. */
+  /** Revisions a gate reads and where a decision from the viewer counts, over every Type. */
   const countingRevisions =
     coverages.length === 0
       ? undefined
-      : coverages.reduce((n, c) => n + c.covered.filter((row) => authorsCountFor(c.type) || !row.authored).length, 0);
+      : coverages.reduce((n, c) => n + c.covered.filter((row) => row.unchanged !== true && (authorsCountFor(c.type) || !row.authored)).length, 0);
+  /**
+   * The coverage is known and the decision would count on none of the Units the gates
+   * read: every one is the viewer's own work and authors do not count. No form then.
+   */
+  const countsNowhere =
+    countingRevisions === 0 && coverages.length === types.length && coverages.some((c) => c.covered.some((row) => row.unchanged !== true));
   /** The viewer wrote a gate Revision: the server's Caller, or the attest dry run's `Authored`. */
   const viewerWrote =
     summary.requirements.some((r) => r.perSpace.some((space) => (space.caller?.authoredRevisions ?? 0) > 0)) ||
@@ -385,6 +411,8 @@ export function ReviewPanel({
   };
 
   let you: ReactNode;
+  /** The decision form is shown: its coverage is then a section of its own, below it. */
+  let formShown = false;
   if (eligibility.kind === 'author') {
     you = (
       <>
@@ -443,7 +471,21 @@ export function ReviewPanel({
         {reviewCopy.notEvaluated[eligibility.why]}
       </Box>
     );
-  } else if (owns.length > 0 && !editing) {
+  } else if (countsNowhere && !editing && (eligibility.kind === 'counts' || eligibility.kind === 'partial')) {
+    // The server's row and the coverage can disagree; the coverage is per Unit, so it wins.
+    you = (
+      <>
+        <YouLine initials={initials} tone="idle">
+          <Box component="span" data-testid="review-would-not-count">
+            <b>{name}</b>
+            {reviewCopy.you.wouldNotCount}
+          </Box>
+        </YouLine>
+        <WhoCan summary={summary} now={now} />
+        {coverageList}
+      </>
+    );
+  } else if (owns.length > 0 && !editing && outOfDate.length === 0) {
     // One line per Type the viewer decided (S1).
     you = (
       <>
@@ -463,6 +505,11 @@ export function ReviewPanel({
                 <b>{line.lead}</b>
                 {owns.length > 1 ? ` (${own.type})` : ''}
                 {line.rest}
+                {own.origin !== undefined ? (
+                  <Box component="span" data-testid="review-own-origin" sx={{ display: 'block', marginTop: '4px' }}>
+                    {reviewCopy.decision.origin(own.origin, own.countsToward.length > 0)}
+                  </Box>
+                ) : null}
               </YouLine>
             </Box>
           );
@@ -480,8 +527,20 @@ export function ReviewPanel({
       .flatMap((r) => r.rejecters)
       .find((p) => !p.isYou);
     const first = owns[0];
+    formShown = true;
     let lead: ReactNode;
-    if (editing && first !== undefined) {
+    const stale = outOfDate[0];
+    if (!editing && stale !== undefined) {
+      const line = reviewCopy.you.outOfDate(stale.result, reviewTime(stale.createdAt), stale.notCovering ?? []);
+      lead = (
+        <YouLine initials={stale.person.initials} tone="idle">
+          <Box component="span" data-testid="review-out-of-date">
+            <b>{line.lead}</b>
+            {line.rest}
+          </Box>
+        </YouLine>
+      );
+    } else if (editing && first !== undefined) {
       lead = (
         <YouLine initials={first.person.initials} tone={first.result === 'Pass' ? 'ok' : 'bad'}>
           <b>{reviewCopy.you.changeLead}</b>
@@ -515,7 +574,7 @@ export function ReviewPanel({
       lead = (
         <YouLine initials={initials} tone="idle">
           <b>{name}</b>
-          {viewerWrote ? reviewCopy.you.eligibleAuthorLead(names) : reviewCopy.you.eligibleLead(names)}
+          {viewerWrote && types.every(authorsCountFor) ? reviewCopy.you.eligibleAuthorLead(names) : reviewCopy.you.eligibleLead(names)}
         </YouLine>
       );
     }
@@ -537,14 +596,12 @@ export function ReviewPanel({
             }}
           >
             <b>{reviewCopy.you.rejectionStands}</b>
-            {reviewCopy.you.rejectionStandsRest(stage, otherRejecter.name)}
+            {reviewCopy.you.rejectionStandsRest(held, otherRejecter.name)}
           </Box>
         ) : null}
         <ReviewDecisionForm
           key={formKey}
-          stageName={stage}
-          revisionCount={countingRevisions}
-          coverage={coverageList}
+          stageName={subject.name}
           blockedReason={nothingRecordable ? reviewCopy.coverage.nothingRecordable : undefined}
           approveRef={approveRef}
           submitRef={submitRef}
@@ -563,7 +620,7 @@ export function ReviewPanel({
     <Box
       component="aside"
       id={REVIEW_PANEL_ID}
-      aria-label={reviewCopy.gate.regionLabel[summary.gate.kind](stage)}
+      aria-label={summary.gate.kind === 'final' ? reviewCopy.gate.signOffRegionLabel : reviewCopy.gate.regionLabel(subject.name)}
       data-gate-kind={summary.gate.kind}
       data-testid="review-panel"
       data-review-state={summary.state}
@@ -613,6 +670,20 @@ export function ReviewPanel({
             </IconButton>
           </Tooltip>
         </Box>
+        {summary.gate.kind === 'final' ? null : (
+          <Box data-testid="review-subject" sx={{ ...txtSx, marginTop: '4px', fontSize: changeOrderType.size.small }}>
+            <b>{reviewCopy.panel.subject(subject.name, subject.base)}</b>
+            {subject.base ? null : (
+              <>
+                {' '}
+                (<MonoText>{summary.gateSpaces.map((space) => space.spaceSlug).join(', ')}</MonoText>)
+              </>
+            )}
+            <Box component="span" data-testid="review-counts-toward" sx={{ display: 'block' }}>
+              {reviewCopy.panel.countsToward(held)}
+            </Box>
+          </Box>
+        )}
         <Score summary={summary} now={now} />
         {reviews.error !== undefined ? (
           <Alert severity="warning" sx={{ marginTop: '10px' }}>
@@ -645,27 +716,53 @@ export function ReviewPanel({
         {reviews.isLoading ? <Skeleton variant="rounded" height={120} /> : you}
       </Box>
 
+      {/* Below the decision, each part is closed until the reader opens it. */}
+      {formShown && !reviews.isLoading ? (
+        <Box data-rv-wide sx={sectionSx}>
+          <CollapsibleSection
+            section="coverage"
+            label={reviewCopy.panel.coverageSection}
+            summary={
+              countingRevisions === undefined
+                ? reviewCopy.panel.coverageChecking
+                : reviewCopy.panel.coverageSummary(countingRevisions, coverages[0]?.spaceCount ?? summary.gateSpaces.length)
+            }
+          >
+            {coverageList}
+          </CollapsibleSection>
+        </Box>
+      ) : null}
+
       {summary.requests.length > 0 || reviews.canRequestReview ? (
         <Box data-rv-wide sx={sectionSx}>
-          <ReviewRequestsSection
-            summary={summary}
-            canRequest={reviews.canRequestReview}
-            now={now}
-            onRequest={reviews.requestReview}
-            onWithdraw={reviews.withdrawReviewRequest}
-            onNotice={onNotice}
-          />
+          <CollapsibleSection section="requests" label={reviewCopy.requests.label} summary={reviewCopy.panel.requestsSummary(summary.requests.length)}>
+            <ReviewRequestsSection
+              summary={summary}
+              canRequest={reviews.canRequestReview}
+              now={now}
+              onRequest={reviews.requestReview}
+              onWithdraw={reviews.withdrawReviewRequest}
+              onNotice={onNotice}
+              hideLabel
+            />
+          </CollapsibleSection>
         </Box>
       ) : null}
 
       <Box data-rv-reqs sx={sectionSx}>
-        <SectionLabel>{reviewCopy.panel.requirementsFor[summary.gate.kind](stage)}</SectionLabel>
-        <ReviewRequirementList requirements={summary.requirements} />
+        <CollapsibleSection
+          section="requirements"
+          label={reviewCopy.panel.requirementsFor(held)}
+          summary={reviewCopy.panel.requirementsSummary(summary.requirements.filter((r) => r.satisfied).length, summary.requirements.length)}
+        >
+          <ReviewRequirementList requirements={summary.requirements} showGate={feeds.length > 1} />
+        </CollapsibleSection>
       </Box>
 
       <Box sx={sectionSx}>
-        <SectionLabel right={reviewCopy.panel.recorded(summary.decisions.length)}>{reviewCopy.panel.decisions}</SectionLabel>
-        <ReviewDecisionList decisions={summary.decisions} requirements={summary.requirements} now={now} />
+        <CollapsibleSection section="decisions" label={reviewCopy.panel.decisions} summary={reviewCopy.panel.recorded(summary.decisions.length)}>
+          <ReviewDecisionList decisions={summary.decisions} requirements={summary.requirements} now={now} />
+        </CollapsibleSection>
       </Box>
 
       {pending !== null ? (

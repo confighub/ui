@@ -106,6 +106,7 @@ import { LiveRegion } from '@/components/live-region/LiveRegion';
 import { PromoteDialog } from './components/PromoteDialog';
 import { ChangeOrderExceptions } from './components/ChangeOrderExceptions';
 import { buildCompleteConsoleStage } from './changeOrderCompleteStep';
+import { ImageChangeCell } from './components/ImageChangeCell';
 import { useChangeOrderConsole, type ChangeOrderConsoleData } from './useChangeOrderConsole';
 
 /**
@@ -200,8 +201,10 @@ const T = {
 /**
  * The row grid, shared by the column head and every row so the two cannot drift
  * apart. This is the reference's own template (`7-typographic.html`, `.grid`)
- * with one track added: the Component, second, which the reference does not
- * have. The reference's own tracks are members of the contract's closed
+ * with one track added: the Image change, second, which the reference does not
+ * have. It is the widest track, because most ChangeOrders only move an image tag
+ * and that move is what a reader scans the list for; the Component it replaced
+ * now sits in the name cell's sub-line. The reference's own tracks are members of the contract's closed
  * `grid-columns-vocabulary`, so they are not values to round off.
  *
  * ⚠️ NO BARE `auto` OR CONTENT-SIZED TRACK. Each row is its OWN grid — they
@@ -219,9 +222,14 @@ const GRID = {
   padding: '0 14px',
   display: 'grid',
   alignItems: 'center',
-  gridTemplateColumns: 'minmax(190px, 1.5fr) minmax(120px, .8fr) 198px minmax(190px, 1.4fr) 56px 186px',
-  '@media (max-width: 1150px)': {
-    gridTemplateColumns: 'minmax(170px, 1.4fr) minmax(80px, .7fr) 180px minmax(180px, 1.3fr) 168px',
+  gridTemplateColumns: 'minmax(160px, 1fr) minmax(400px, 2.8fr) 164px minmax(120px, .9fr) 44px 112px',
+  // Below 1400 the page is tight, and near 1280 it also carries the Functions rail. The Blocker gives up width first; the image tags never do.
+  '@media (max-width: 1400px)': {
+    gridTemplateColumns: 'minmax(140px, .9fr) minmax(440px, 3fr) 156px minmax(120px, .7fr) 40px 112px',
+  },
+  // Below 1275 the image change no longer fits beside the other cells; it takes the row's second line.
+  '@media (max-width: 1275px)': {
+    gridTemplateColumns: 'minmax(170px, 1fr) 180px minmax(180px, 2fr) 112px',
   },
   '@media (max-width: 860px)': {
     gridTemplateColumns: 'minmax(150px, 1.4fr) 170px minmax(160px, 1.3fr)',
@@ -229,9 +237,14 @@ const GRID = {
 } as const;
 
 /** Hidden at the same widths the grid stops reserving a track for them. */
-const HIDE_AGE = { '@media (max-width: 1150px)': { display: 'none' } } as const;
+const HIDE_AGE = { '@media (max-width: 1275px)': { display: 'none' } } as const;
 const HIDE_ACTION = { '@media (max-width: 860px)': { display: 'none' } } as const;
-const HIDE_COMPONENT = HIDE_ACTION;
+const HIDE_IMAGE_HEAD = HIDE_AGE;
+/** Below 1275 the image change is the row's second line, across every column. */
+const IMAGE_CHANGE_CELL = {
+  minWidth: 0,
+  '@media (max-width: 1275px)': { gridColumn: '1 / -1', gridRow: 2, marginTop: '8px', maxWidth: 640 },
+} as const;
 
 /**
  * The reference's radii, by name. `componentTheme.radiusSm` is 5px and
@@ -659,70 +672,77 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
         <Typography
           component="span"
           sx={{
-            display: 'block',
             fontFamily: T.mono,
             fontSize: 13.5,
             lineHeight: T.lh,
             fontWeight: 600,
             letterSpacing: '-.01em',
             color: T.ink,
-            whiteSpace: 'nowrap',
+            // Two lines before it is cut: a slug often carries a version, and half a version misleads.
+            overflowWrap: 'anywhere',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
-            textOverflow: 'ellipsis',
           }}
+          title={row.slug}
         >
           {row.slug}
         </Typography>
         <Typography
           component="span"
           sx={{
-            display: 'block',
             fontSize: 11.5,
             lineHeight: T.lh,
             marginTop: '2px',
             color: T.ink3,
+            display: 'block',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
           }}
+          title={[row.spaceSlug, row.appName, workflowLabel].filter(Boolean).join(' · ')}
           data-workflow-id={row.changeWorkflowId ?? ''}
         >
           {row.spaceSlug ?? ''}
+          {row.appName === undefined ? null : (
+            <>
+              {' · '}
+              <Typography
+                component={RouterLink}
+                data-testid="change-order-component"
+                to={`${ROUTE_COMPONENTS}?app=${encodeURIComponent(row.appName)}`}
+                title={row.appName}
+                // The row navigates on click; this link goes somewhere else.
+                onClick={(event: React.MouseEvent) => event.stopPropagation()}
+                sx={{
+                  fontSize: 11.5,
+                  lineHeight: T.lh,
+                  color: T.ink2,
+                  textDecoration: 'underline',
+                  textDecorationColor: T.lineStrong,
+                  '&:hover': { color: T.accentInk, textDecorationColor: T.accentInk },
+                  '&:focus-visible': { outline: `2px solid ${T.accent}`, outlineOffset: 1, borderRadius: R_MICRO },
+                }}
+              >
+                {row.appName}
+              </Typography>
+            </>
+          )}
           {' · '}
           {workflowLabel}
         </Typography>
       </Box>
 
-      <Box data-testid="change-order-component" sx={{ ...HIDE_COMPONENT, minWidth: 0 }}>
-        {row.appName === undefined ? (
-          <Typography component="span" sx={{ fontSize: 12.5, lineHeight: T.lh, color: T.ink3 }}>
-            —
-          </Typography>
-        ) : (
-          <Typography
-            component={RouterLink}
-            to={`${ROUTE_COMPONENTS}?app=${encodeURIComponent(row.appName)}`}
-            title={row.appName}
-            // The row navigates on click; this link goes somewhere else.
-            onClick={(event: React.MouseEvent) => event.stopPropagation()}
-            sx={{
-              display: 'block',
-              fontFamily: T.mono,
-              fontSize: 12.5,
-              lineHeight: T.lh,
-              color: T.ink2,
-              textDecoration: 'underline',
-              textDecorationColor: T.lineStrong,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              '&:hover': { color: T.accentInk, textDecorationColor: T.accentInk },
-              '&:focus-visible': { outline: `2px solid ${T.accent}`, outlineOffset: 1, borderRadius: R_MICRO },
-            }}
-          >
-            {row.appName}
-          </Typography>
-        )}
+      <Box sx={IMAGE_CHANGE_CELL}>
+        <ImageChangeCell
+          changeOrderId={row.changeOrderId}
+          baseSpaceId={row.spaceId}
+          updateType={row.updateType}
+          startTagId={row.startTagId}
+          endTagId={row.endTagId}
+          inScopeSpaceIds={row.inScopeSpaceIds}
+        />
       </Box>
 
       <Stack
@@ -1429,7 +1449,7 @@ function Legend() {
  */
 const COLUMNS = [
   { key: 'name', label: changeOrdersConsoleCopy.columns.name, sx: {} },
-  { key: 'component', label: changeOrdersConsoleCopy.columns.component, sx: HIDE_COMPONENT },
+  { key: 'image', label: changeOrdersConsoleCopy.columns.imageChange, sx: HIDE_IMAGE_HEAD },
   { key: 'stages', label: changeOrdersConsoleCopy.columns.stages, sx: {} },
   { key: 'blocker', label: changeOrdersConsoleCopy.columns.blocker, sx: {} },
   { key: 'age', label: changeOrdersConsoleCopy.columns.age, sx: { ...HIDE_AGE, textAlign: 'right' } },

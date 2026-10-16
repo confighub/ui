@@ -22,10 +22,14 @@
 
 import { expect, test } from '@playwright/test';
 
+import type { ConfigDiff, ResourceDiff, ResourceInfo } from '@confighub/rtk-query';
 import {
   buildChangeOrderChangeGroups,
+  changeEntriesOf,
   type ChangeOrderChangeSource,
 } from '../src/pages/x/apps/change-order/changeOrderChanges';
+import { resourceIdentitiesOf } from '../src/pages/x/apps/configParser';
+import { computeFieldDiffs } from '../src/pages/x/apps/entryBuilders';
 import { resourceIdentityJoinKeysOf, resourceIdentityKeyOf } from '../src/pages/x/apps/change-order/changeOrderChanges';
 import { buildStageMatrix } from '../src/pages/x/apps/change-order/changeOrderMatrix';
 import { buildChangeOrderOutcome, carriedResourceKeysOf, partitionShortfall } from '../src/pages/change-orders/changeOrderOutcome';
@@ -65,12 +69,59 @@ interface SourceSpec {
   afterData: string | undefined;
 }
 
+function resourceInfoOf(document: string): ResourceInfo | undefined {
+  const [identity] = resourceIdentitiesOf(document);
+  if (identity === undefined) return undefined;
+  const name = identity.ResourceName ?? '';
+  return { ...identity, ResourceNameWithoutScope: name.slice(name.indexOf('/') + 1) };
+}
+
+/**
+ * The diff the server reports for these cases, close enough to stand in for it: each
+ * document diffed on its own, paired with the document of the same identity on the
+ * other side, its changed paths split on dots. None of these fixtures has an array.
+ */
+function serverDiffOf(beforeData: string | undefined, afterData: string | undefined): ConfigDiff | undefined {
+  if (!beforeData || !afterData) return undefined;
+  const documentsOf = (data: string) =>
+    data.split(/^---\n/m).map((text, i) => {
+      const resource = resourceInfoOf(text);
+      return { text, resource, key: resource ? `${resource.ResourceType} ${resource.ResourceName}` : `#${i}` };
+    });
+  const before = documentsOf(beforeData);
+  const after = documentsOf(afterData);
+  const resources: ResourceDiff[] = [];
+  for (const document of after) {
+    const previous = before.find((b) => b.key === document.key);
+    if (previous === undefined) {
+      resources.push({ ChangeType: 'Add', Resource: document.resource, ToValue: document.text });
+      continue;
+    }
+    const changes = computeFieldDiffs(previous.text, document.text).map((d) => ({
+      ChangeType: d.oldValue === '-' ? 'Add' : d.newValue === '-' ? 'Delete' : 'Update',
+      Path: d.path,
+      DisplayPath: d.path,
+      Segments: d.path.split('.').map((field) => ({ Field: field })),
+      FromValue: d.oldValue === '-' ? undefined : d.oldValue,
+      ToValue: d.newValue === '-' ? undefined : d.newValue,
+    }));
+    if (changes.length > 0) resources.push({ ChangeType: 'Update', Resource: document.resource, Changes: changes });
+  }
+  for (const document of before) {
+    if (!after.some((a) => a.key === document.key)) {
+      resources.push({ ChangeType: 'Delete', Resource: document.resource, FromValue: document.text });
+    }
+  }
+  return { Resources: resources };
+}
+
 function source(spec: SourceSpec): ChangeOrderChangeSource {
   return {
     unitId: `${spec.space}/${spec.slug}`,
     slug: spec.slug,
     beforeData: spec.beforeData,
     afterData: spec.afterData,
+    diff: serverDiffOf(spec.beforeData, spec.afterData),
     written: false,
     cannotDetermineAfter: false,
   };
@@ -176,6 +227,189 @@ test.describe('buildChangeOrderChangeGroups', () => {
     expect(g.allPaths).toBeUndefined();
     expect(g.fieldDiffs.some((d) => d.newValue === '-')).toBe(false);
   });
+
+  test('AFTER data with no diff to say what changes is undetermined, never unchanged', () => {
+    const [g] = buildChangeOrderChangeGroups([
+      {
+        ...source({ space: 'a', slug: 'deployment', beforeData: deployment(OLD_IMAGE), afterData: deployment(NEW_IMAGE) }),
+        diff: undefined,
+      },
+    ]);
+    expect(g.determinable).toBe(false);
+    expect(g.fieldDiffs).toEqual([]);
+    expect(g.diff).toBeUndefined();
+  });
+
+  test('a Unit the promotion leaves as it is has an empty diff and no changes', () => {
+    const [g] = buildChangeOrderChangeGroups([
+      {
+        ...source({ space: 'a', slug: 'deployment', beforeData: deployment(OLD_IMAGE), afterData: deployment(OLD_IMAGE) }),
+        diff: { Resources: [] },
+      },
+    ]);
+    expect(g.determinable).toBe(true);
+    expect(g.fieldDiffs).toEqual([]);
+  });
+
+  test('the rows are the server diff, without the resources it lists as unchanged', () => {
+    const unchanged: ResourceDiff = { ChangeType: 'None', Resource: { ResourceType: 'v1/Service', ResourceName: 'app/api' } };
+    const changed: ResourceDiff = {
+      ChangeType: 'Update',
+      Resource: { ResourceType: 'apps/v1/Deployment', ResourceName: 'app/web' },
+      Changes: [{ ChangeType: 'Update', Path: 'spec.replicas', Segments: [{ Field: 'spec' }, { Field: 'replicas' }], FromValue: '1', ToValue: '2' }],
+    };
+    const [g] = buildChangeOrderChangeGroups([
+      {
+        ...source({ space: 'a', slug: 'app', beforeData: deployment(OLD_IMAGE), afterData: deployment(NEW_IMAGE) }),
+        diff: { Resources: [unchanged, changed] },
+      },
+    ]);
+    expect(g.diff?.Resources).toEqual([changed]);
+    expect(g.fieldDiffs).toEqual([{ path: 'apps/v1/Deployment app/web: spec.replicas', oldValue: '1', newValue: '2' }]);
+    expect(g.resourceKind).toBe('Deployment');
+  });
+});
+
+test('context in the diff is kept for the image summary and is not a change', () => {
+  const resource: ResourceDiff = {
+    ChangeType: 'Update',
+    Resource: { ResourceType: 'apps/v1/Deployment', ResourceName: 'app/web' },
+    Changes: [
+      { ChangeType: 'None', Path: 'spec.paused', Segments: [{ Field: 'spec' }, { Field: 'paused' }], ToValue: 'false' },
+      { ChangeType: 'Update', Path: 'spec.replicas', Segments: [{ Field: 'spec' }, { Field: 'replicas' }], FromValue: '1', ToValue: '2' },
+    ],
+  };
+  const [g] = buildChangeOrderChangeGroups([
+    {
+      ...source({ space: 'a', slug: 'web', beforeData: deployment(OLD_IMAGE), afterData: deployment(NEW_IMAGE) }),
+      diff: { Resources: [resource] },
+    },
+  ]);
+  expect(g.diff?.Resources?.[0].Changes).toHaveLength(2);
+  expect(g.fieldDiffs.map((d) => d.path)).toEqual(['apps/v1/Deployment app/web: spec.replicas']);
+});
+
+test('a resource that names nothing has no kind badge', () => {
+  const [g] = buildChangeOrderChangeGroups([
+    {
+      ...source({ space: 'a', slug: 'policy', beforeData: '{"a": 1}', afterData: '{"a": 2}' }),
+      diff: {
+        Resources: [
+          {
+            ChangeType: 'Update',
+            Resource: { ResourceType: 'NoSchema', ResourceName: 'NoName' },
+            Changes: [{ ChangeType: 'Update', Path: 'a', Segments: [{ Field: 'a' }], FromValue: '1', ToValue: '2' }],
+          },
+        ],
+      },
+    },
+  ]);
+  expect(g.resourceKind).toBeUndefined();
+  expect(g.fieldDiffs).toHaveLength(1);
+});
+
+// ── changeEntriesOf ─────────────────────────────────────────────────────────
+
+test.describe('changeEntriesOf', () => {
+  const service: ResourceInfo = { ResourceType: 'v1/Service', ResourceName: 'app/ui', ResourceNameWithoutScope: 'ui' };
+  const route: ResourceInfo = {
+    ResourceType: 'traefik.io/v1alpha1/IngressRoute',
+    ResourceName: 'app/ui',
+    ResourceNameWithoutScope: 'ui',
+  };
+  const labelChange = (toValue: string) => ({
+    ChangeType: 'Update',
+    Path: 'metadata.labels.app',
+    Segments: [{ Field: 'metadata' }, { Field: 'labels' }, { Field: 'app' }],
+    FromValue: 'ui',
+    ToValue: toValue,
+  });
+
+  test('the same path in two documents of a Unit is two changes', () => {
+    // A Unit's data flattened into one map holds this path once, the last
+    // document's, which hid the Service's change behind the IngressRoute's value.
+    const entries = changeEntriesOf({
+      Resources: [
+        { ChangeType: 'Update', Resource: service, Changes: [labelChange('ui-v2')] },
+        { ChangeType: 'Update', Resource: route, Changes: [labelChange('ui-v2')] },
+      ],
+    });
+    expect(entries.map((e) => e.path)).toEqual([
+      'v1/Service ui: metadata.labels.app',
+      'traefik.io/v1alpha1/IngressRoute ui: metadata.labels.app',
+    ]);
+  });
+
+  test('a resource added or deleted whole is one change, and context is none', () => {
+    const entries = changeEntriesOf({
+      Resources: [
+        { ChangeType: 'Add', Resource: service, ToValue: 'kind: Service\n' },
+        { ChangeType: 'Delete', Resource: route, FromValue: 'kind: IngressRoute\n' },
+        {
+          ChangeType: 'Update',
+          Resource: { ResourceType: 'apps/v1/Deployment', ResourceName: 'app/ui', ResourceNameWithoutScope: 'ui' },
+          Changes: [
+            { ChangeType: 'None', Path: 'spec.paused', Segments: [{ Field: 'spec' }, { Field: 'paused' }], ToValue: 'false' },
+            {
+              ChangeType: 'Update',
+              Path: 'spec.template.spec.containers.?name=ui.image',
+              Segments: [
+                { Field: 'spec' },
+                { Field: 'template' },
+                { Field: 'spec' },
+                { Field: 'containers' },
+                { MergeKeys: [{ Key: 'name', Value: 'ui' }] },
+                { Field: 'image' },
+              ],
+              FromValue: 'ui:v1',
+              ToValue: 'ui:v2',
+            },
+          ],
+        },
+      ],
+    });
+    expect(entries).toEqual([
+      { path: 'v1/Service ui', oldValue: '-', newValue: 'kind: Service\n' },
+      { path: 'traefik.io/v1alpha1/IngressRoute ui', oldValue: 'kind: IngressRoute\n', newValue: '-' },
+      { path: 'apps/v1/Deployment ui: spec.template.spec.containers.?name=ui.image', oldValue: 'ui:v1', newValue: 'ui:v2' },
+    ]);
+  });
+
+  test('the entries leave the namespace out, so variants that differ only in it compare alike', () => {
+    const inNamespace = (namespace: string) =>
+      changeEntriesOf({
+        Resources: [
+          {
+            ChangeType: 'Update',
+            Resource: { ResourceType: 'v1/Service', ResourceName: `${namespace}/ui`, ResourceNameWithoutScope: 'ui' },
+            Changes: [labelChange('ui-v2')],
+          },
+        ],
+      });
+    expect(inNamespace('prod')).toEqual(inNamespace('staging'));
+  });
+});
+
+test('a change to a path another document of the Unit shares is not hidden', () => {
+  // Flattened into one map, the Service's label was compared in the IngressRoute,
+  // the last document, where it does not change: `a` read as changing nothing, the
+  // same as `b`, which changes nothing.
+  const svcDoc = (app: string) => `apiVersion: v1\nkind: Service\nmetadata:\n  name: ui\n  namespace: app\n  labels:\n    app: ${app}\n`;
+  const routeDoc = (app: string) =>
+    `apiVersion: traefik.io/v1alpha1\nkind: IngressRoute\nmetadata:\n  name: ui\n  namespace: app\n  labels:\n    app: ${app}\n`;
+  const bundle = (svc: string, route: string) => [svcDoc(svc), routeDoc(route)].join('---\n');
+  const { groups, matrix } = outcomeOf(
+    [
+      { space: 'a', slug: 'ui', beforeData: bundle('ui', 'ui'), afterData: bundle('ui-v2', 'ui') },
+      { space: 'b', slug: 'ui', beforeData: bundle('ui', 'ui'), afterData: bundle('ui', 'ui') },
+    ],
+    ['a', 'b'],
+  );
+  expect(groups.find((g) => g.unitId === 'a/ui')?.fieldDiffs.map((d) => d.path)).toEqual([
+    'v1/Service ui: metadata.labels.app',
+  ]);
+  expect(matrix.rows).toHaveLength(1);
+  expect(matrix.rows[0].cells.map((c) => c.state)).toEqual(['same', 'differs']);
 });
 
 // ── Multi-document payloads ─────────────────────────────────────────────────

@@ -29,8 +29,8 @@ import CloseIcon from '@mui/icons-material/Close';
 
 import { changeOrderBorder, changeOrderFontMono, changeOrderFontSans, changeOrderInk, changeOrderShape, changeOrderStatus, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
 import { reviewDangerButtonSx, reviewQuietButtonSx } from './reviewButtons';
-import { decisionTypes, reviewCopy } from './reviewCopy';
-import type { RequirementProgress, ReviewChoice, ReviewCoverage, ReviewDecision, StageReviewSummary } from './changeOrderReviewTypes';
+import { decisionTypes, gateThing, listText, reviewCopy, reviewFeeds, reviewSubject } from './reviewCopy';
+import type { RequirementProgress, ReviewChoice, ReviewCoverage, ReviewDecision, ReviewGateRef, StageReviewSummary } from './changeOrderReviewTypes';
 
 const copy = reviewCopy.confirm;
 
@@ -54,9 +54,9 @@ interface ReviewConfirmDialogProps {
   /** The viewer's live decisions that this one replaces, one per Type. */
   replaces: ReviewDecision[];
   /**
-   * For an entry gate: the other gates (not reviews) that still hold the stage,
-   * `[]` when none, `undefined` when unknown. "Promote becomes available" is
-   * said only for `[]` (M5).
+   * For the entry gate the review counts toward: the other gates (not reviews)
+   * that still hold its stage, `[]` when none, `undefined` when unknown. "This
+   * opens the gate" is said only for `[]` (M5).
    */
   otherGatesHolding?: string[];
   submitting: boolean;
@@ -74,41 +74,73 @@ function requirementsOfType(summary: StageReviewSummary, type: string): Requirem
   );
 }
 
-/** What the gate holds, as the object of "This blocks …". */
-function heldThing(summary: StageReviewSummary): string {
-  if (summary.gate.kind === 'release') return `the release in ${summary.gate.stageName}`;
-  if (summary.gate.kind === 'final') return 'the sign-off';
-  return summary.gate.stageName;
+/** The Units a decision of `type` covers that a gate needs, and those where it counts. */
+function countingOf(summary: StageReviewSummary, type: string, cover: ReviewCoverage | undefined): { counting: number; needed: number } | undefined {
+  if (cover === undefined) return undefined;
+  const reqs = requirementsOfType(summary, type);
+  const authorsCount = reqs.length > 0 && reqs.every((r) => r.rules.allowAuthors);
+  const needed = cover.covered.filter((row) => row.unchanged !== true);
+  return { counting: needed.filter((row) => authorsCount || !row.authored).length, needed: needed.length };
 }
 
-function effectSentence(
+/** What the review's gates hold, as the object of "This blocks …": "the gate to prod and the release in staging". */
+function heldThings(summary: StageReviewSummary): string {
+  return listText(reviewFeeds(summary).map(gateThing));
+}
+
+/** Whether a requirement is done once the viewer's approval is added: it was, or this approval is the last one needed. */
+function doneAfter(requirement: RequirementProgress, mine: readonly RequirementProgress[]): boolean {
+  if (requirement.satisfied) return true;
+  if (requirement.rejected) return false;
+  return mine.includes(requirement) && requirement.evaluated && requirement.need <= 1;
+}
+
+/** One line per gate the review counts toward: whether this approval opens it. */
+function gateLines(summary: StageReviewSummary, mine: readonly RequirementProgress[], otherGatesHolding: string[] | undefined): string[] {
+  return reviewFeeds(summary).map((gate: ReviewGateRef) => {
+    const thing = gateThing(gate);
+    const own = summary.requirements.filter((r) => r.gate.key === gate.key);
+    if (!own.every((r) => doneAfter(r, mine))) {
+      return own.some((r) => mine.includes(r) && !r.satisfied) ? copy.gateNotYet(thing) : copy.gateStaysClosed(thing);
+    }
+    if (gate.kind === 'final') return copy.gateSignOff;
+    if (gate.kind === 'release') return copy.gateOpens(thing);
+    if (otherGatesHolding === undefined) return copy.gateUnknown(thing);
+    if (otherGatesHolding.length > 0) return copy.gateOthersHold(thing, otherGatesHolding);
+    return copy.gateOpens(thing);
+  });
+}
+
+/** What the decision does: a line about the requirements, then one about each gate. */
+function effectLines(
   result: ReviewChoice,
   summary: StageReviewSummary,
   types: string[],
   replaces: ReviewDecision[],
   otherGatesHolding: string[] | undefined,
-): string {
-  const stage = summary.gate.stageName;
+  coverageByType: Record<string, ReviewCoverage>,
+): { lead: string; gates: string[] } {
   const primary = summary.primary;
   const mine = types.flatMap((type) => requirementsOfType(summary, type));
   if (result === 'Fail') {
     // A rejection blocks only through a requirement that does not ignore rejections (S4).
-    if (mine.length > 0 && mine.every((r) => r.rules.ignoreFail)) return copy.effectRecordedNotBlocking(mine.map((r) => r.name));
-    return copy.effectBlocks(heldThing(summary));
+    if (mine.length > 0 && mine.every((r) => r.rules.ignoreFail)) return { lead: copy.effectRecordedNotBlocking(mine.map((r) => r.name)), gates: [] };
+    return { lead: copy.effectBlocks(heldThings(summary)), gates: [] };
   }
-  if (replaces.some((d) => d.result === 'Pass')) return copy.effectReplaces;
-  if (primary === undefined) return '';
+  if (replaces.some((d) => d.result === 'Pass')) return { lead: copy.effectReplaces, gates: [] };
+  if (primary === undefined) return { lead: '', gates: [] };
   const rejecter = summary.requirements.filter((r) => !r.rules.ignoreFail).flatMap((r) => r.rejecters).find((p) => !p.isYou);
-  if (rejecter !== undefined) return copy.effectStaysBlocked(heldThing(summary), rejecter.name);
-  if (primary.satisfied) return copy.effectSatisfied;
-  if (primary.need > 1) return copy.effectMoves(primary.name, primary.passes + 1, primary.rules.required);
-  const othersOpen = summary.requirements.every((r) => r.name === primary.name || r.satisfied);
-  if (!othersOpen) return copy.effectCompletesOnly(primary.name);
-  if (summary.gate.kind === 'release') return copy.effectReleaseOpens(primary.name, stage);
-  if (summary.gate.kind === 'final') return copy.effectSignOff(primary.name);
-  if (otherGatesHolding === undefined) return copy.effectCompletesUnknown(primary.name);
-  if (otherGatesHolding.length > 0) return copy.effectReviewsCompleteOthers(primary.name, otherGatesHolding);
-  return copy.effectCompletes(primary.name, stage);
+  if (rejecter !== undefined) return { lead: copy.effectStaysBlocked(heldThings(summary), rejecter.name), gates: [] };
+  if (!primary.satisfied) {
+    // Where the viewer wrote some of the Units, the approval cannot complete them: never say it does.
+    const short = types
+      .map((type) => countingOf(summary, type, coverageByType[type]))
+      .find((c) => c !== undefined && c.needed > 0 && c.counting < c.needed);
+    if (short !== undefined) return { lead: copy.effectPartlyCounts(short.counting, short.needed), gates: [] };
+  }
+  let lead: string = copy.effectSatisfied;
+  if (!primary.satisfied) lead = primary.need > 1 ? copy.effectMoves(primary.name, primary.passes + 1, primary.rules.required) : copy.effectCompletes(primary.name);
+  return { lead, gates: gateLines(summary, mine, otherGatesHolding) };
 }
 
 /**
@@ -121,11 +153,10 @@ function validUntilText(requirements: RequirementProgress[]): string {
   return parts.length === 0 ? copy.noLimit : parts.join(', ');
 }
 
-/** "ChangeOrder → stage", or the release or sign-off it is for. */
-function targetText(summary: StageReviewSummary, orderSlug: string): string {
-  if (summary.gate.kind === 'release') return `${orderSlug}, release in ${summary.gate.stageName}`;
-  if (summary.gate.kind === 'final') return `${orderSlug}, sign-off`;
-  return `${orderSlug} → ${summary.gate.stageName}`;
+/** "staging: staging-eu, staging-us": the stage reviewed and its Spaces, or the own Space alone. */
+function reviewsText(summary: StageReviewSummary): string {
+  const subject = reviewSubject(summary);
+  return copy.reviewsValue(subject.name, summary.gateSpaces.map((space) => space.spaceSlug).join(', '), subject.base);
 }
 
 /** `text` with each requirement name in it set in the mono face. */
@@ -178,6 +209,7 @@ export function ReviewConfirmDialog({
   const pass = result === 'Pass';
   const confirmRef = useRef<HTMLButtonElement>(null);
   const types = decisionTypes(summary);
+  const effect = effectLines(result, summary, types, replaces, otherGatesHolding, coverageByType);
   let title: string = pass ? copy.titleApprove : copy.titleReject;
   if (replaces.length > 0) title = copy.titleReplace;
   const tone = pass ? changeOrderStatus.success : changeOrderStatus.danger;
@@ -240,7 +272,8 @@ export function ReviewConfirmDialog({
         {types.map((type) => {
           const reqs = requirementsOfType(summary, type);
           const cover = coverageByType[type];
-          const counting = cover?.covered.filter((row) => !row.authored).length;
+          // Only the Revisions a gate reads, and where the decision counts: as the submit button counts them.
+          const counting = countingOf(summary, type, cover)?.counting;
           return (
             <Box
               key={type}
@@ -270,7 +303,9 @@ export function ReviewConfirmDialog({
           );
         })}
         <Box component="dl" sx={{ display: 'flex', flexDirection: 'column', gap: '7px', margin: '10px 0 0' }}>
-          <Row term={copy.target}>{targetText(summary, orderSlug)}</Row>
+          <Row term={copy.target}>{orderSlug}</Row>
+          <Row term={copy.reviews}>{reviewsText(summary)}</Row>
+          <Row term={copy.opens}>{heldThings(summary)}</Row>
           {replaces.map((d) => (
             <Row key={d.id} term={copy.revokes}>
               {copy.revokesValue(d)}
@@ -296,12 +331,19 @@ export function ReviewConfirmDialog({
           {note}
         </Box>
         <Box component="p" data-testid="review-confirm-effect" sx={{ margin: '12px 0 0', fontSize: changeOrderType.size.body, color: changeOrderInk.muted, lineHeight: 1.5 }}>
-          <WithMonoName
-            text={effectSentence(result, summary, types, replaces, otherGatesHolding)}
-            names={summary.requirements.map((r) => r.name)}
-          />
+          <WithMonoName text={effect.lead} names={summary.requirements.map((r) => r.name)} />
           {copy.cannotEdit}
         </Box>
+        {effect.gates.map((line) => (
+          <Box
+            key={line}
+            component="p"
+            data-testid="review-confirm-gate-effect"
+            sx={{ margin: '6px 0 0', fontSize: changeOrderType.size.body, color: changeOrderInk.default, fontWeight: changeOrderType.weight.semibold, lineHeight: 1.5 }}
+          >
+            {line}
+          </Box>
+        ))}
         {errorText !== undefined ? (
           <Alert severity="error" sx={{ marginTop: '12px' }} data-testid="review-confirm-error">
             {errorText}

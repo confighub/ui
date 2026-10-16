@@ -6,11 +6,15 @@
  * the progress pips, the uppercase tag and the section label.
  */
 
-import type { ReactNode } from 'react';
+import { Fragment, useId, useState, type ReactNode } from 'react';
 
 import Box from '@mui/material/Box';
+import Collapse from '@mui/material/Collapse';
+import Link from '@mui/material/Link';
 import BlockIcon from '@mui/icons-material/Block';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import CheckIcon from '@mui/icons-material/Check';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 
 
@@ -24,8 +28,45 @@ import {
   changeOrderType,
 } from '../changeOrdersTokens';
 import { REVIEW_TONE, reviewLinkButtonSx, type ReviewTone } from './reviewButtons';
-import { reviewCopy } from './reviewCopy';
+import { reviewCopy, reviewSubject, splitAroundStage } from './reviewCopy';
 import type { RequirementProgress, RequirementSpaceProgress, ReviewPerson, StageReviewSummary } from './changeOrderReviewTypes';
+
+const stageLinkSx = {
+  font: 'inherit',
+  // The name reads as part of the sentence, so every state keeps the sentence's colour.
+  color: 'inherit',
+  textDecoration: 'underline',
+  textDecorationColor: 'currentColor',
+  verticalAlign: 'baseline',
+  cursor: 'pointer',
+  '&:hover, &:active, &:visited': { color: 'inherit', textDecorationColor: 'currentColor' },
+  '&:focus-visible': { outline: `2px solid ${changeOrderStatus.accent}`, outlineOffset: 2, borderRadius: '2px' },
+} as const;
+
+/**
+ * A sentence that names a stage, with the name as an underlined link to that stage's
+ * card when `onGo` is given. The sentence is the copy function's, so the text reads the
+ * same linked or not. Pass no `onGo` where the reader is already on that card, the
+ * change has not landed (no form to go to), or the name is not a stage with a card.
+ */
+export function StageText({ build, stage, onGo, testId }: { build: (stage: string) => string; stage: string; onGo: (() => void) | undefined; testId?: string }) {
+  if (onGo === undefined) return <>{build(stage)}</>;
+  const parts = splitAroundStage(build);
+  return (
+    <>
+      {parts.map((part, i) => (
+        <Fragment key={i}>
+          {i === 0 ? null : (
+            <Link component="button" type="button" role="link" aria-label={reviewCopy.entryStatus.goTo(stage)} onClick={onGo} sx={stageLinkSx} data-testid={testId}>
+              {stage}
+            </Link>
+          )}
+          {part}
+        </Fragment>
+      ))}
+    </>
+  );
+}
 
 /** A person's initials in a round chip, green for an approval, red for a rejection. */
 export function Monogram({
@@ -180,6 +221,81 @@ export function ReviewChip({ tone, children, dot = false }: { tone: ReviewTone; 
 }
 
 /** The uppercase section label: "YOUR REVIEW", "DECISIONS". */
+/**
+ * A part of the review panel below the decision: a header that names it and sums it up
+ * in a few words, and its content, closed until the reader opens it.
+ */
+export function CollapsibleSection({
+  section,
+  label,
+  summary,
+  children,
+}: {
+  /** Names the section for tests and styling: `data-section`. */
+  section: string;
+  label: ReactNode;
+  /** What the reader would find inside, shown beside the label while it is closed and open. */
+  summary?: ReactNode;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const contentId = useId();
+  return (
+    <>
+      <Box
+        component="button"
+        type="button"
+        aria-expanded={open}
+        aria-controls={contentId}
+        onClick={() => setOpen((value) => !value)}
+        data-testid="review-section-toggle"
+        data-section={section}
+        sx={{
+          all: 'unset',
+          boxSizing: 'border-box',
+          width: '100%',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          fontSize: changeOrderType.size.micro,
+          fontWeight: changeOrderType.weight.bold,
+          letterSpacing: '.07em',
+          textTransform: 'uppercase',
+          color: changeOrderInk.subtle,
+          '&:hover': { color: changeOrderInk.default },
+          '&:focus-visible': { outline: `2px solid ${changeOrderStatus.accent}`, outlineOffset: 2 },
+        }}
+      >
+        <ExpandMoreIcon
+          aria-hidden="true"
+          sx={{ fontSize: 16, transition: 'transform 120ms', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+        />
+        <span>{label}</span>
+        {summary !== undefined ? (
+          <Box
+            component="span"
+            data-testid="review-section-summary"
+            sx={{
+              marginLeft: 'auto',
+              letterSpacing: 0,
+              textTransform: 'none',
+              fontWeight: changeOrderType.weight.medium,
+              fontSize: changeOrderType.size.small,
+              color: changeOrderInk.muted,
+            }}
+          >
+            {summary}
+          </Box>
+        ) : null}
+      </Box>
+      <Collapse in={open} id={contentId} data-section-content={section}>
+        <Box sx={{ paddingTop: '10px' }}>{children}</Box>
+      </Collapse>
+    </>
+  );
+}
+
 export function SectionLabel({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
     <Box
@@ -281,14 +397,33 @@ function spaceTag(space: RequirementSpaceProgress): ReactNode {
   );
 }
 
-/** The right edge of a review gate row: the reviewers' monograms and a "Review" link to the panel. */
-export function ReviewGateActions({ requirement, onReview }: { requirement: RequirementProgress; onReview: () => void }) {
+/**
+ * The right edge of a review gate row: the reviewers' monograms and a link to the review,
+ * labelled with where it is when that is another stage ("Review in staging").
+ */
+export function ReviewGateActions({
+  requirement,
+  onReview,
+  label,
+  labelStage,
+}: {
+  requirement: RequirementProgress;
+  /** Undefined while no card has the review's form: no link then. */
+  onReview: (() => void) | undefined;
+  label?: string;
+  /** The stage `label` names: underlined in it, so the row reads as a way to that stage. */
+  labelStage?: string;
+}) {
   return (
     <>
       <MonogramRow passers={requirement.passers} rejecters={requirement.rejecters} />
-      {requirement.satisfied ? null : (
+      {requirement.satisfied || onReview === undefined ? null : (
         <Box component="button" type="button" onClick={onReview} sx={reviewLinkButtonSx} data-testid={`review-gate-link-${requirement.name}`}>
-          {reviewCopy.stage.reviewLink}
+          {label !== undefined && labelStage !== undefined
+            ? splitAroundStage(reviewCopy.stage.reviewIn).flatMap((part, i) =>
+                i === 0 ? [part] : [<u key={i} data-testid="review-gate-link-stage">{labelStage}</u>, part],
+              )
+            : (label ?? reviewCopy.stage.reviewLink)}
           <ChevronRightIcon aria-hidden="true" sx={{ fontSize: 14 }} />
         </Box>
       )}
@@ -296,8 +431,8 @@ export function ReviewGateActions({ requirement, onReview }: { requirement: Requ
   );
 }
 
-/** "Promote is refused (409) until check/<name> is satisfied. 1 more approval needed." */
-export function ReviewGateBlockedLine({ summary }: { summary: StageReviewSummary }) {
+/** "Promote to prod is blocked until <name> is met for the change in staging. 1 more approval needed." */
+export function ReviewGateBlockedLine({ summary, onGoToSubject }: { summary: StageReviewSummary; onGoToSubject?: () => void }) {
   const primary = summary.primary;
   if (primary === undefined || summary.open) return null;
   // Final holds no button of its own: the sign-off panel says what it waits on.
@@ -306,7 +441,8 @@ export function ReviewGateBlockedLine({ summary }: { summary: StageReviewSummary
   if (!primary.evaluated) return null;
   const release = summary.gate.kind === 'release';
   const rejected = primary.rejected;
-  const lead: string = release ? reviewCopy.stage.releaseRefused : reviewCopy.stage.refused;
+  const stage = summary.gate.stageName;
+  const lead: string = release ? reviewCopy.stage.releaseRefused(stage) : reviewCopy.stage.refused(stage);
   const tail: string = rejected ? reviewCopy.stage.rejectionStands : reviewCopy.stage.moreNeeded(primary.need);
   const t = REVIEW_TONE[rejected ? 'bad' : 'warn'];
   const Icon = rejected ? BlockIcon : LockOutlinedIcon;
@@ -332,10 +468,77 @@ export function ReviewGateBlockedLine({ summary }: { summary: StageReviewSummary
       <Box sx={{ color: changeOrderInk.default }}>
         {lead}{' '}
         <Box component="span" sx={{ fontFamily: changeOrderFontMono, fontSize: changeOrderType.size.small }}>
-          {release ? primary.name : `check/${primary.name}`}
+          {primary.name}
         </Box>{' '}
-        {reviewCopy.stage.isSatisfied} {tail}
+        {/* The subject is named when it is not the stage the gate holds: an entry gate reads the stage before. */}
+        {reviewSubject(summary).name === stage ? (
+          reviewCopy.stage.isSatisfied
+        ) : (
+          <StageText build={reviewCopy.stage.isSatisfiedFor} stage={reviewSubject(summary).name} onGo={onGoToSubject} testId="review-blocked-stage-link" />
+        )}{' '}
+        {tail}
       </Box>
+    </Box>
+  );
+}
+
+/**
+ * A stage's entry gate that reviews the stage before it: its state, and the way to the
+ * review, which sits on that stage's card beside the change it approves. `onGo`
+ * undefined: the change has not landed in that stage, so there is no review to go to yet.
+ */
+export function ReviewEntryStatus({ summary, onGo }: { summary: StageReviewSummary; onGo: (() => void) | undefined }) {
+  const subject = reviewSubject(summary).name;
+  const copy = reviewCopy.entryStatus;
+  let tone: ReviewTone = 'warn';
+  let build: (stage: string) => string = copy.waiting;
+  if (summary.state === 'rejected') {
+    tone = 'bad';
+    build = copy.rejected;
+  } else if (summary.open) {
+    tone = 'ok';
+    build = copy.open;
+  } else if (!summary.evaluated) {
+    tone = 'idle';
+    build = copy.notEvaluated;
+  }
+  const t = REVIEW_TONE[tone];
+  let Icon = LockOutlinedIcon;
+  if (tone === 'bad') Icon = BlockIcon;
+  else if (tone === 'ok') Icon = CheckIcon;
+  return (
+    <Box
+      data-testid="review-entry-status"
+      data-review-state={summary.state}
+      data-landed={onGo !== undefined}
+      sx={{
+        marginTop: '14px',
+        display: 'flex',
+        gap: '8px',
+        alignItems: 'flex-start',
+        flexWrap: 'wrap',
+        padding: '8px 12px',
+        border: `1px solid ${t.line}`,
+        borderLeftWidth: `${changeOrderShape.accentEdge}px`,
+        borderRadius: `${changeOrderShape.radius.md}px`,
+        background: t.bg,
+        color: t.fg,
+        fontSize: changeOrderType.size.body,
+      }}
+    >
+      <Icon aria-hidden="true" sx={{ fontSize: 14, marginTop: '2px' }} />
+      <Box sx={{ color: changeOrderInk.default, flex: '1 1 240px' }}>
+        <StageText build={build} stage={subject} onGo={onGo} testId="review-entry-stage-link" />
+        <Box component="span" sx={{ display: 'block', fontSize: changeOrderType.size.small, color: changeOrderInk.muted }}>
+          {onGo === undefined ? copy.notLanded(subject) : copy.where(subject)}
+        </Box>
+      </Box>
+      {onGo === undefined ? null : (
+        <Box component="button" type="button" onClick={onGo} sx={reviewLinkButtonSx} data-testid="review-entry-go">
+          {copy.goTo(subject)}
+          <ChevronRightIcon aria-hidden="true" sx={{ fontSize: 14 }} />
+        </Box>
+      )}
     </Box>
   );
 }

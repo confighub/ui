@@ -119,9 +119,18 @@ export function buildConfigDiffTree(changes: PathChange[]): DiffTreeNode[] {
   return collapseFolderChains(root.node.children ?? []);
 }
 
-/** A resource's type and name, as `cub unit diff -o mutations` heads it. */
+/**
+ * The type and name a toolchain gives a resource that does not name itself, such as a
+ * JSON document with no `configHub` block. They name nothing, so nothing shows them.
+ */
+export const PLACEHOLDER_RESOURCE_TYPE = 'NoSchema';
+export const PLACEHOLDER_RESOURCE_NAME = 'NoName';
+
+/** A resource's type and name, as `cub unit diff -o mutations` heads it, without placeholders. */
 export function resourceDiffLabel(resource: ResourceDiff['Resource']): string {
-  return [resource?.ResourceType, resource?.ResourceName].filter(Boolean).join(' ');
+  const type = resource?.ResourceType === PLACEHOLDER_RESOURCE_TYPE ? undefined : resource?.ResourceType;
+  const name = resource?.ResourceName === PLACEHOLDER_RESOURCE_NAME ? undefined : resource?.ResourceName;
+  return [type, name].filter(Boolean).join(' ');
 }
 
 export interface ConfigDiffSummary {

@@ -99,7 +99,7 @@ cub unit tree --edge link
 cub unit tree --node space
 
 # Clone tree across all spaces
-cub unit tree --space "*"
+cub unit tree
 ```
 
 ## Dependencies

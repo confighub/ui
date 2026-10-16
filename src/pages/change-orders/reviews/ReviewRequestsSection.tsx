@@ -36,9 +36,11 @@ interface ReviewRequestsSectionProps {
   onWithdraw: (userId: string) => Promise<ReviewRequestOutcome>;
   /** A short message for the page's toast. */
   onNotice: (message: string) => void;
+  /** The section's header is drawn by the panel (a collapsible section). */
+  hideLabel?: boolean;
 }
 
-export function ReviewRequestsSection({ summary, canRequest, now, onRequest, onWithdraw, onNotice }: ReviewRequestsSectionProps) {
+export function ReviewRequestsSection({ summary, canRequest, now, onRequest, onWithdraw, onNotice, hideLabel = false }: ReviewRequestsSectionProps) {
   const [chosen, setChosen] = useState<ReviewPerson[]>([]);
   const [busy, setBusy] = useState(false);
   const requested = new Set(summary.requests.map((r) => r.user.userId));
@@ -70,7 +72,7 @@ export function ReviewRequestsSection({ summary, canRequest, now, onRequest, onW
 
   return (
     <Box data-testid="review-requests">
-      <SectionLabel>{copy.label}</SectionLabel>
+      {hideLabel ? null : <SectionLabel>{copy.label}</SectionLabel>}
       {summary.requests.length === 0 ? (
         <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.subtle }}>{copy.none}</Box>
       ) : (

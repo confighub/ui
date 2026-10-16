@@ -29,10 +29,14 @@ interface ResourceDiffSectionProps {
   columnStyle: CSSProperties;
   onDividerMouseDown: (columnIndex: 0 | 1, e: React.MouseEvent) => void;
   isDragging: boolean;
+  hideContext: boolean;
 }
 
-const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDividerMouseDown, isDragging }: ResourceDiffSectionProps) => {
-  const tree = useMemo(() => buildConfigDiffTree(resource.Changes ?? []), [resource.Changes]);
+const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDividerMouseDown, isDragging, hideContext }: ResourceDiffSectionProps) => {
+  const tree = useMemo(() => {
+    const changes = resource.Changes ?? [];
+    return buildConfigDiffTree(hideContext ? changes.filter((change) => change.ChangeType !== 'None') : changes);
+  }, [resource.Changes, hideContext]);
   const entry = useMemo(() => ({ unitId: resourceKey, fieldDiffs: NO_FIELD_DIFFS }), [resourceKey]);
 
   const added = resource.ChangeType === 'Add';
@@ -41,10 +45,12 @@ const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDivide
     resource.PreviousResource && resource.PreviousResource.ResourceName !== resource.Resource?.ResourceName
       ? resource.PreviousResource.ResourceName
       : undefined;
+  const label = resourceDiffLabel(resource.Resource);
 
   return (
     <Box data-testid='config-diff-resource' sx={{ mb: 2 }}>
-      <Stack
+      {/* A resource that names nothing, changed in place, has nothing to head it. */}
+      {(label || added || deleted || renamedFrom) && <Stack
         direction='row'
         spacing={1}
         alignItems='center'
@@ -53,14 +59,14 @@ const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDivide
         <Typography
           sx={{ fontFamily: componentTheme.fontMono, fontSize: 12, fontWeight: 600, color: componentTheme.fgDefault }}
         >
-          {resourceDiffLabel(resource.Resource)}
+          {label}
         </Typography>
         {added && <Chip label='added' size='small' color='success' variant='outlined' sx={{ height: 18 }} />}
         {deleted && <Chip label='deleted' size='small' color='error' variant='outlined' sx={{ height: 18 }} />}
         {renamedFrom && (
           <Typography sx={{ fontSize: 12, color: componentTheme.fgMuted }}>renamed from {renamedFrom}</Typography>
         )}
-      </Stack>
+      </Stack>}
 
       {added || deleted ? (
         // A resource added or deleted whole has no path changes: the document is the change.
@@ -101,9 +107,20 @@ const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDivide
 
 ResourceDiffSection.displayName = 'ResourceDiffSection';
 
+/** Column widths a caller shares across several views, so that all of their columns line up. */
+export interface ConfigDiffColumns {
+  columnStyle: CSSProperties;
+  onDividerMouseDown: (columnIndex: 0 | 1, e: React.MouseEvent) => void;
+  isDragging: boolean;
+}
+
 export interface ConfigDiffViewProps {
   /** A diff the server computed: `GET .../unit/{id}/diff`, `POST /diff`, or a write's `include=Diff`. */
   diff: ConfigDiff;
+  /** Widths shared with other diffs on the page. Absent, the view sizes its own columns. */
+  columns?: ConfigDiffColumns;
+  /** Leave out the unchanged paths a diff read with `include=Context` holds, and draw the changes only. */
+  hideContext?: boolean;
 }
 
 /**
@@ -114,9 +131,10 @@ export interface ConfigDiffViewProps {
  * renames -- so an element inserted into a list is one added row, and the elements
  * after it are not reported as changed.
  */
-export const ConfigDiffView = ({ diff }: ConfigDiffViewProps) => {
+export const ConfigDiffView = ({ diff, columns, hideContext = false }: ConfigDiffViewProps) => {
   // One set of column widths for every resource, so their columns line up.
-  const { columnStyle, onDividerMouseDown, isDragging } = useColumnResize();
+  const ownColumns = useColumnResize();
+  const { columnStyle, onDividerMouseDown, isDragging } = columns ?? ownColumns;
 
   return (
     <Box data-testid='config-diff'>
@@ -128,6 +146,7 @@ export const ConfigDiffView = ({ diff }: ConfigDiffViewProps) => {
           columnStyle={columnStyle}
           onDividerMouseDown={onDividerMouseDown}
           isDragging={isDragging}
+          hideContext={hideContext}
         />
       ))}
     </Box>

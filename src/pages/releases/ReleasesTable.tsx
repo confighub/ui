@@ -100,7 +100,7 @@ export interface ReleasesTableProps {
 
 /**
  * The Releases of a Component's Spaces, newest first: what `cub release list`
- * shows of each, with its Space, as `cub release list --space '*'` does.
+ * shows of each, with its Space, as `cub release list` without `--space` does.
  */
 export const ReleasesTable = ({ rows, isLoading, onReleaseSelect }: ReleasesTableProps) => {
   const {

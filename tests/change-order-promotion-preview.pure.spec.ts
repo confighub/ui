@@ -19,13 +19,31 @@ function result(units: NonNullable<PromoteResult['Spaces']>[number]['Units'], ac
   return { DryRun: true, Spaces: [{ SpaceID: SPACE, Action: action, Units: units }] };
 }
 
-test('a Unit the promotion writes carries what it would hold', () => {
+const DIFF = {
+  Resources: [
+    {
+      ChangeType: 'Update' as const,
+      Changes: [{ ChangeType: 'Update', Path: 'image', FromValue: 'nginx:v1.0.0', ToValue: 'nginx:v1.1.0' }],
+    },
+  ],
+};
+
+test('a Unit the promotion writes carries what it would hold, and what changes in it', () => {
+  const preview = readPromotionPreview(
+    result([{ UnitID: 'web', Action: 'Resolve', ConfigData: 'image: nginx:v1.1.0\n', Diff: DIFF }]),
+  );
+  expect(preview.dataByUnitId.get('web')).toBe('image: nginx:v1.1.0\n');
+  expect(preview.diffByUnitId.get('web')).toEqual(DIFF);
+  expect(preview.unchangedUnitIds.size).toBe(0);
+  expect(preview.undeterminedUnitIds.size).toBe(0);
+});
+
+test('a Unit the promotion writes with no diff of what changes is undetermined', () => {
   const preview = readPromotionPreview(
     result([{ UnitID: 'web', Action: 'Resolve', ConfigData: 'image: nginx:v1.1.0\n' }]),
   );
-  expect(preview.dataByUnitId.get('web')).toBe('image: nginx:v1.1.0\n');
-  expect(preview.unchangedUnitIds.size).toBe(0);
-  expect(preview.undeterminedUnitIds.size).toBe(0);
+  expect(preview.undeterminedUnitIds.has('web')).toBe(true);
+  expect(preview.dataByUnitId.has('web')).toBe(false);
 });
 
 test('a Unit the promotion marks, skips or leaves alone is unchanged', () => {
@@ -61,6 +79,7 @@ test('what the promotion would withhold is kept per Unit', () => {
         UnitID: 'web',
         Action: 'Resolve',
         ConfigData: 'image: nginx:v1.1.0\n',
+        Diff: DIFF,
         Conflicts: [{ Reason: 'Guarded', Path: 'spec.replicas' }],
       },
     ]),

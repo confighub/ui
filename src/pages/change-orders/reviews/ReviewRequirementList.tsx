@@ -20,7 +20,7 @@ import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 
 import { changeOrderFontMono, changeOrderInk, changeOrderType } from '../changeOrdersTokens';
-import { fromText, fromTitle, reviewCopy } from './reviewCopy';
+import { fromText, fromTitle, gateThing, reviewCopy } from './reviewCopy';
 import { Pips, ReviewTag } from './reviewParts';
 import type { RequirementProgress } from './changeOrderReviewTypes';
 
@@ -35,7 +35,7 @@ function Rule({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   );
 }
 
-function RequirementRow({ req }: { req: RequirementProgress }) {
+function RequirementRow({ req, showGate }: { req: RequirementProgress; showGate: boolean }) {
   const { rules } = req;
   // No server rows for the viewer: no count, no pips, one line saying why (#5788).
   const evaluated = req.evaluated;
@@ -44,7 +44,7 @@ function RequirementRow({ req }: { req: RequirementProgress }) {
   else if (req.rejected) tag = <ReviewTag tone="bad">{copy.rejected}</ReviewTag>;
   else if (req.satisfied) tag = <ReviewTag tone="ok">{copy.satisfied}</ReviewTag>;
   return (
-    <Box data-testid={`review-requirement-${req.name}`} data-evaluated={evaluated ? 'true' : 'false'} title={req.description}>
+    <Box data-testid={`review-requirement-${req.name}`} data-gate-kind={req.gate.kind} data-evaluated={evaluated ? 'true' : 'false'} title={req.description}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <Box component="code" sx={{ fontFamily: changeOrderFontMono, fontSize: changeOrderType.size.body, fontWeight: changeOrderType.weight.strong }}>
           {req.name}
@@ -59,6 +59,11 @@ function RequirementRow({ req }: { req: RequirementProgress }) {
           </Box>
         ) : null}
       </Box>
+      {showGate ? (
+        <Box data-testid="review-requirement-gate" sx={{ marginTop: '2px', fontSize: changeOrderType.size.small, color: changeOrderInk.muted }}>
+          {copy.forGate(gateThing(req.gate))}
+        </Box>
+      ) : null}
       {evaluated ? (
         <Box sx={{ marginTop: '6px' }}>
           <Pips passes={Math.min(req.passes, req.required)} required={req.required} rejected={req.rejected} />
@@ -106,11 +111,12 @@ function blockingFirst(requirements: RequirementProgress[]): RequirementProgress
   return [...requirements].sort((a, b) => rank(a) - rank(b));
 }
 
-export function ReviewRequirementList({ requirements }: { requirements: RequirementProgress[] }) {
+/** `showGate`: the requirements hold more than one gate, so each says which. */
+export function ReviewRequirementList({ requirements, showGate = false }: { requirements: RequirementProgress[]; showGate?: boolean }) {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
       {blockingFirst(requirements).map((req) => (
-        <RequirementRow key={req.name} req={req} />
+        <RequirementRow key={req.gate.key + req.name} req={req} showGate={showGate} />
       ))}
     </Box>
   );

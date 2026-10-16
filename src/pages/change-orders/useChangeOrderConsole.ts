@@ -220,6 +220,7 @@ export function useChangeOrderConsole(): ChangeOrderConsoleData {
         // write needs it, and a row carrying `undefined` refuses rather than
         // assuming the change covers the whole base Space.
         startTagId: order.StartTagID,
+        endTagId: order.EndTagID,
       };
       return [consoleOrder];
     });

@@ -29,21 +29,26 @@
 import { useMemo } from 'react';
 
 import { useUnitDataMap } from '@/hooks/useUnitData';
-import { useListAllUnitsQuery } from '@confighub/rtk-query';
+import { useListAllUnitsQuery, type UnitDiff } from '@confighub/rtk-query';
 
-import { buildPaths, computeFieldDiffs } from '../x/apps/entryBuilders';
-import { diffsUnderPaths } from '../x/apps/change-order/linkedSourcePaths';
 import { buildStageMatrix } from '../x/apps/change-order/changeOrderMatrix';
 import type { ChangeOrderStageMatrix } from '../x/apps/change-order/changeOrderMatrix';
 import { buildChangeOrderMergedUnits } from '../x/apps/change-order/changeOrderMergedUnits';
 import { useChangeOrderBaseline } from '../x/apps/change-order/useChangeOrderBaseline';
-import { useChangeOrderChanges } from '../x/apps/change-order/useChangeOrderChanges';
+import { useChangeOrderChanges, useChangeOrderChangesWithStatus } from '../x/apps/change-order/useChangeOrderChanges';
+import type { ChangeOrderChangesStatus } from '../x/apps/change-order/changeOrderChanges';
 import type { FanOutSource } from '../x/apps/change-order/useFanOutSource';
-import { resourceIdentityJoinKeysOf, resourceIdentityKeyOf } from '../x/apps/change-order/changeOrderChanges';
+import {
+  resourceIdentityJoinKeysOf,
+  resourceIdentityKeyOf,
+  serverDiffGroupParts,
+} from '../x/apps/change-order/changeOrderChanges';
 import type { ChangeOrderChangeGroup, ChangeOrderStage } from '../x/apps/change-order/changeOrderTypes';
 import type { MergedUnit } from '../x/apps/componentTypes';
 import type { ChangeOrderSpace } from './useChangeOrderDetail';
 import { buildChangeOrderOutcome, type ChangeOrderOutcomeGroup } from './changeOrderOutcome';
+import { useGetChangeOrderSourceDiffQuery, useGetFanOutSourceDiffQuery } from './changeOrderImageDiffApi';
+import { narrowUnitDiffsToPaths } from './imageChange';
 
 export interface ChangeOrderConsoleChanges {
   units: MergedUnit[];
@@ -86,23 +91,35 @@ export interface ChangeOrderConsoleChanges {
    */
   sourceGroupsByUnitId: ReadonlyMap<string, ChangeOrderChangeGroup>;
   /**
-   * Resources omitted from the source card for want of a recorded starting
-   * point. Returned rather than logged: a console warning is invisible to the
-   * person the omission is about, and the card is not the whole change when
+   * For a fan-out ChangeOrder only: whether `sourceGroupsByUnitId` can be read yet. `loading`
+   * while its source Units or their diffs are on their way, `failed` when either could not
+   * be read. `undefined` for every other kind of ChangeOrder.
+   */
+  fanOutSourceStatus: 'loading' | 'resolved' | 'failed' | undefined;
+  /**
+   * For an Invoke ChangeOrder only: whether `sourceGroupsByUnitId` can be read yet. `loading`
+   * while its dry run (for the Spaces that have not run it) or its written Revisions are on
+   * their way; `failed` when the dry run was refused or answered a Unit with nothing to diff,
+   * so an empty diff is not evidence of "no change"; `resolved` once the groups are in.
+   * `undefined` for every other kind of ChangeOrder.
+   */
+  invocationSourceStatus?: ChangeOrderChangesStatus;
+  /**
+   * Resources omitted from the source card because what the change did to them
+   * could not be read. Returned rather than logged: a console warning is invisible
+   * to the person the omission is about, and the card is not the whole change when
    * this is non-zero.
    */
   sourceDropped: number;
   /**
-   * Resource identities this ChangeOrder CREATES — present at the base with no
-   * recorded starting point.
+   * Resource identities this ChangeOrder CREATES — Units at the base whose diff
+   * has no Revision before the change, only the one it ends at.
    *
-   * Separate from `sourceGroupsByUnitId` because such a resource has no honest
-   * diff to render (diffing against absence reports every path as new), so it is
-   * deliberately absent from the source tree. It is still part of what the
-   * change carries, and the outcome filter must hear about it: a variant that
-   * does not hold a resource the change creates is the "Adds resources" case
-   * this page exists to report, and a filter that never sees it reports that
-   * variant as taking the change identically.
+   * Kept apart from `sourceGroupsByUnitId`, which shows such a Unit as its
+   * resources added, because the outcome filter must hear about it under every
+   * spelling: a variant that does not hold a resource the change creates is the
+   * "Adds resources" case this page exists to report, and a filter that never
+   * sees it reports that variant as taking the change identically.
    */
   sourceCreatedResourceKeys: ReadonlySet<string>;
   /**
@@ -291,27 +308,40 @@ function invocationSourceChanges(input: {
 
 /**
  * "At the source" for a fan-out ChangeOrder: each source Unit from the change's start
- * Tag to its end Tag. Both ends are recorded Revisions, so every Unit here has an honest
- * diff and nothing is dropped for want of a starting point. Nothing is reported as
- * created: a source Unit is not a resource of the Spaces the change is promoted into.
- * Where the Links read only some of a Unit's paths, its diff is those paths: nothing else
- * in it reaches a Space the change is promoted into.
+ * Tag to its end Tag, as the server diffs them. Nothing is reported as created: a source
+ * Unit is not a resource of the Spaces the change is promoted into. Where the Links read
+ * only some of a Unit's paths, its diff is those paths: nothing else in it reaches a
+ * Space the change is promoted into. A Unit whose diff could not be read is dropped, and
+ * counted.
  */
-function fanOutSourceChanges(fanOutSource: FanOutSource, takenSpaceIds: ReadonlySet<string>): SourceChanges {
-  if (fanOutSource.status !== 'resolved' || fanOutSource.units.length === 0) {
+function fanOutSourceChanges(
+  fanOutSource: FanOutSource,
+  diffs: readonly UnitDiff[] | undefined,
+  takenSpaceIds: ReadonlySet<string>,
+): SourceChanges {
+  if (fanOutSource.status !== 'resolved' || fanOutSource.units.length === 0 || diffs === undefined) {
     return { units: EMPTY_UNITS, dropped: 0, createdResourceKeys: EMPTY_KEYS, groupsByUnitId: EMPTY_SOURCE_GROUPS };
   }
+  const narrowed = narrowUnitDiffsToPaths(
+    diffs,
+    new Map(fanOutSource.units.map((unit) => [unit.unitId, unit.linkedPaths])),
+  );
+  const diffByUnitId = new Map(narrowed.map((unitDiff) => [unitDiff.UnitID, unitDiff]));
   const groups: ChangeOrderChangeGroup[] = [];
   const context = new Map<string, { slug: string; spaceId: string; data?: string; toolchainType?: string }>();
+  let dropped = 0;
   for (const unit of fanOutSource.units) {
+    const unitDiff = diffByUnitId.get(unit.unitId);
+    if (unitDiff?.Diff === undefined || unitDiff.Error !== undefined) {
+      dropped += 1;
+      continue;
+    }
     groups.push({
       unitId: unit.unitId,
       resourceName: unit.slug,
-      resourceKind: undefined,
       resourceIdentity: resourceIdentityKeyOf(unit.before) ?? resourceIdentityKeyOf(unit.after),
       resourceIdentityJoinKeys: resourceIdentityJoinKeysOf(unit.before, unit.after),
-      fieldDiffs: diffsUnderPaths(computeFieldDiffs(unit.before, unit.after), unit.linkedPaths),
-      allPaths: buildPaths(unit.after),
+      ...serverDiffGroupParts(unitDiff.Diff, unit.before, unit.after),
       written: true,
       determinable: true,
     });
@@ -336,7 +366,7 @@ function fanOutSourceChanges(fanOutSource: FanOutSource, takenSpaceIds: Readonly
   for (const group of groups) groupsByUnitId.set(group.unitId, group);
   return {
     units: built.units,
-    dropped: built.droppedUnitIds.size,
+    dropped: dropped + built.droppedUnitIds.size,
     createdResourceKeys: EMPTY_KEYS,
     groupsByUnitId,
   };
@@ -495,7 +525,7 @@ export function useChangeOrderConsoleChanges(args: {
     };
   }, [runsInvocation, inScopeSpaceIds, stages]);
   const invocationStages = useMemo(() => (invocationStage === null ? [] : [invocationStage]), [invocationStage]);
-  const invocationGroupsByStageId = useChangeOrderChanges({
+  const { groups: invocationGroupsByStageId, status: invocationChangesStatus } = useChangeOrderChangesWithStatus({
     changeOrderId,
     stages: invocationStages,
     selectedStageId: invocationStage === null ? null : INVOCATION_SOURCE_STAGE_ID,
@@ -511,6 +541,40 @@ export function useChangeOrderConsoleChanges(args: {
     skip: skip || baseUnitSlugById.size === 0 || fanOutSource !== undefined || runsInvocation,
   });
 
+  /*
+   * What the change made at the base: each base Unit from the ChangeOrder's start Tag to
+   * its end Tag. The same read, and so the same cache entry, as the image summary's.
+   */
+  const { currentData: baseDiffs, isError: baseDiffFailed } = useGetChangeOrderSourceDiffQuery(
+    { baseSpaceId: baseSpaceId ?? '', changeOrderId: changeOrderId ?? '' },
+    {
+      skip:
+        skip || fanOutSource !== undefined || runsInvocation || baseSpaceId === undefined || changeOrderId === undefined,
+    },
+  );
+
+  // A fan-out ChangeOrder's change, in each of its source Units.
+  const fanOutUnitIds = useMemo(
+    () => (fanOutSource?.units ?? []).map((unit) => unit.unitId).sort((a, b) => a.localeCompare(b)),
+    [fanOutSource],
+  );
+  const { currentData: fanOutDiffs, isError: fanOutDiffFailed } = useGetFanOutSourceDiffQuery(
+    { changeOrderId: changeOrderId ?? '', unitIds: fanOutUnitIds },
+    { skip: skip || changeOrderId === undefined || fanOutUnitIds.length === 0 },
+  );
+  const fanOutSourceStatus: ChangeOrderConsoleChanges['fanOutSourceStatus'] =
+    fanOutSource === undefined
+      ? undefined
+      : fanOutSource.status !== 'resolved'
+        ? fanOutSource.status
+        : fanOutUnitIds.length === 0
+          ? 'resolved'
+          : fanOutDiffFailed
+            ? 'failed'
+            : fanOutDiffs === undefined
+              ? 'loading'
+              : 'resolved';
+
   const currentBySlug = useMemo(() => {
     const index = new Map<string, string>();
     for (const ctx of currentDataByUnitId.values()) {
@@ -520,7 +584,7 @@ export function useChangeOrderConsoleChanges(args: {
   }, [currentDataByUnitId, baseSpaceId]);
 
   const source = useMemo((): SourceChanges => {
-    if (fanOutSource !== undefined) return fanOutSourceChanges(fanOutSource, resolvedSpaceIds);
+    if (fanOutSource !== undefined) return fanOutSourceChanges(fanOutSource, fanOutDiffs, resolvedSpaceIds);
     if (runsInvocation) {
       return invocationSourceChanges({
         groups: invocationGroupsByStageId.get(INVOCATION_SOURCE_STAGE_ID) ?? [],
@@ -531,61 +595,56 @@ export function useChangeOrderConsoleChanges(args: {
         takenSpaceIds: resolvedSpaceIds,
       });
     }
-    if (baseSpaceId === undefined || baseline.status !== 'resolved') {
-      return { units: EMPTY_UNITS, dropped: 0, createdResourceKeys: EMPTY_KEYS, groupsByUnitId: EMPTY_SOURCE_GROUPS };
+    if (baseSpaceId === undefined || baseDiffs === undefined) {
+      return {
+        units: EMPTY_UNITS,
+        dropped: baseDiffFailed ? baseUnitSlugById.size : 0,
+        createdResourceKeys: EMPTY_KEYS,
+        groupsByUnitId: EMPTY_SOURCE_GROUPS,
+      };
     }
+    const diffByUnitId = new Map(baseDiffs.map((unitDiff) => [unitDiff.UnitID, unitDiff]));
     const sourceGroups: ChangeOrderChangeGroup[] = [];
     const createdResourceKeys = new Set<string>();
     let droppedFromSource = 0;
     for (const [unitId, ctx] of currentDataByUnitId) {
       if (ctx.spaceId !== baseSpaceId) continue;
-      const before = baseline.dataBySlug.get(ctx.slug);
+      const unitDiff = diffByUnitId.get(unitId);
+      const fromRevisionNum = unitDiff?.FromRevisionNum ?? 0;
+      const toRevisionNum = unitDiff?.ToRevisionNum ?? 0;
       /*
-       * No recorded starting point means no honest diff, so the resource is
-       * dropped rather than shown with every path reading as new — which is
-       * what diffing against absence reports.
+       * A Unit the change made nothing of is still in scope, and holds the value
+       * already: no Revision on either side. One whose diff could not be read, or
+       * that has a Revision before the change and none it ends at, has no honest
+       * diff, and is dropped rather than shown with every path removed.
        *
-       * ⚠️ AND THE DROP IS COUNTED. I wrote this without a trace first, which
-       * is the same defect one pair over from the one fixed in
-       * `useChangeOrderChanges`: there, "no answer" became "no change"; here,
-       * "unreadable" would become "not part of the change". Dropping is the
-       * right call either way — a decision that leaves no record is what makes
-       * it indistinguishable from never having faced it.
+       * ⚠️ AND THE DROP IS COUNTED. A decision that leaves no record is what makes
+       * "unreadable" indistinguishable from "not part of the change".
        */
-      if (before === undefined || ctx.data === undefined) {
+      if (
+        unitDiff === undefined
+        || unitDiff.Error !== undefined
+        || ctx.data === undefined
+        || (fromRevisionNum > 0 && toRevisionNum === 0)
+      ) {
         droppedFromSource += 1;
-        /*
-         * ⚠️ `before` IS ABSENT FOR TWO REASONS AND THIS CANNOT TELL THEM APART.
-         * The resource is genuinely new, OR the baseline simply has no entry for
-         * that slug -- `useChangeOrderBaseline` resolves on `dataBySlug.size > 0`, so
-         * a partially returned baseline resolves and every slug it missed looks
-         * created here. A slug renamed at the base lands here too, where
-         * "created" is arguably the right reading.
-         *
-         * The error runs in the safe direction: a resource wrongly called
-         * created enters the carried set, and a variant lacking it reads `adds`
-         * rather than a quiet `same`. It is still a claim the data does not
-         * support, and closing it needs a signal the baseline does not currently
-         * return -- whether a slug was asked for and had no revision, as against
-         * never asked for.
-         *
-         * NO STARTING POINT MEANS THIS CHANGE CREATES THE RESOURCE, and that is
-         * a fact worth keeping even though the diff is not. The tree cannot show
-         * it -- there is nothing to diff against -- but the outcome filter asks
-         * a different question, "does the change carry this", and for a created
-         * resource the answer is unambiguously yes. Losing it here reported a
-         * variant that does not hold the resource as taking the change
-         * identically, which is precisely the case the card exists to raise.
-         */
-        if (before === undefined && ctx.data !== undefined) {
-          for (const key of resourceIdentityJoinKeysOf(ctx.data)) createdResourceKeys.add(key);
-        }
         continue;
       }
+      /*
+       * NO REVISION BEFORE THE CHANGE MEANS THE CHANGE CREATES THE UNIT. Its rows
+       * are its resources added, and the outcome filter also hears of it under
+       * every spelling: a variant that does not hold a resource the change creates
+       * is the "Adds resources" case the card exists to raise.
+       */
+      if (fromRevisionNum === 0 && toRevisionNum > 0) {
+        for (const key of resourceIdentityJoinKeysOf(ctx.data)) createdResourceKeys.add(key);
+      }
+      // The base before the change, where the baseline has it, for the spellings a
+      // change that alters identity (a rename, a namespace rewrite) leaves behind.
+      const before = baseline.status === 'resolved' ? baseline.dataBySlug.get(ctx.slug) : undefined;
       sourceGroups.push({
         unitId,
         resourceName: ctx.slug,
-        resourceKind: undefined,
         // The same identity the stage rows are keyed on, so "does the change
         // carry this resource" can be asked of a stage row at all. Without it
         // the authored change and the stage grid share no vocabulary.
@@ -600,8 +659,7 @@ export function useChangeOrderConsoleChanges(args: {
          * costs one entry and removes a near-miss.
          */
         resourceIdentityJoinKeys: resourceIdentityJoinKeysOf(before, ctx.data),
-        fieldDiffs: computeFieldDiffs(before, ctx.data),
-        allPaths: buildPaths(ctx.data),
+        ...serverDiffGroupParts(unitDiff.Diff ?? { Resources: [] }, before, ctx.data),
         written: true,
         determinable: true,
       });
@@ -635,6 +693,10 @@ export function useChangeOrderConsoleChanges(args: {
     invocationStage,
     unitSpaceIdIndex,
     baseSpaceId,
+    baseDiffs,
+    baseDiffFailed,
+    baseUnitSlugById,
+    fanOutDiffs,
     baseline.status,
     baseline.dataBySlug,
     currentDataByUnitId,
@@ -642,6 +704,13 @@ export function useChangeOrderConsoleChanges(args: {
     currentBySlug,
     resolvedSpaceIds,
   ]);
+
+  // No Spaces in scope: there is nothing for the Invocation to run on, which is a settled answer.
+  const invocationSourceStatus: ChangeOrderChangesStatus | undefined = !runsInvocation
+    ? undefined
+    : invocationStage === null
+      ? 'resolved'
+      : invocationChangesStatus;
 
   return useMemo(() => {
     /*
@@ -664,6 +733,8 @@ export function useChangeOrderConsoleChanges(args: {
         spaceIdByUnitId: sourceSpaceIdByUnitId,
         sourceUnits: source.units,
         sourceGroupsByUnitId: source.groupsByUnitId,
+        fanOutSourceStatus,
+        invocationSourceStatus,
         sourceDropped: source.dropped,
         sourceCreatedResourceKeys: source.createdResourceKeys,
         sourceSpaceGroups: source.spaceGroups ?? EMPTY_SPACE_GROUPS,
@@ -677,7 +748,7 @@ export function useChangeOrderConsoleChanges(args: {
                 spaceNameBySpaceId,
                 stageId: selectedStageId ?? '',
               }),
-        isLoading: fanOutSource.status === 'loading',
+        isLoading: fanOutSourceStatus === 'loading',
       };
     }
     const groups = selectedStageId === null ? [] : (groupsByStageId.get(selectedStageId) ?? []);
@@ -692,6 +763,8 @@ export function useChangeOrderConsoleChanges(args: {
         spaceIdByUnitId: unitSpaceIdIndex,
         sourceUnits: source.units,
         sourceGroupsByUnitId: source.groupsByUnitId,
+        fanOutSourceStatus,
+        invocationSourceStatus,
         sourceDropped: source.dropped,
         sourceCreatedResourceKeys: source.createdResourceKeys,
         sourceSpaceGroups: source.spaceGroups ?? EMPTY_SPACE_GROUPS,
@@ -738,6 +811,8 @@ export function useChangeOrderConsoleChanges(args: {
       spaceIdByUnitId: unitSpaceIdIndex,
       sourceUnits: source.units,
       sourceGroupsByUnitId: source.groupsByUnitId,
+      fanOutSourceStatus,
+      invocationSourceStatus,
       sourceDropped: source.dropped,
       sourceCreatedResourceKeys: source.createdResourceKeys,
       sourceSpaceGroups: source.spaceGroups ?? EMPTY_SPACE_GROUPS,
@@ -759,5 +834,7 @@ export function useChangeOrderConsoleChanges(args: {
     currentBySlug,
     resolvedSpaceIds,
     skip,
+    fanOutSourceStatus,
+    invocationSourceStatus,
   ]);
 }

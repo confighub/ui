@@ -14,8 +14,9 @@
  * change — see `takenSpaceIds` below, and U16:
  *
  *  - NOT YET PROMOTED — a dry run of the promotion itself (`POST /promote`
- *    with `DryRun` and `include=ConfigData`). The server plans and runs the
- *    promotion without persisting it and returns what each Unit would hold, so
+ *    with `DryRun` and `include=ConfigData,Diff,Context`). The server plans and runs the
+ *    promotion without persisting it and returns what each Unit would hold, and
+ *    what would change in it, so
  *    the "incoming" value is what the Promote button would genuinely write, by
  *    whatever means the ChangeOrder's UpdateType takes — an upgrade, a resolve
  *    over its Links, or an invocation — and not a guess assembled in the
@@ -35,6 +36,11 @@
  *    for the SAME unit (`priorDataByUnitId`) — this works identically for
  *    the source stage too, since its own ChangeSet-closing revision is
  *    found by the exact same `ChangeOrders ? '<id>'` query.
+ *
+ *    What the promotion changed is the server's diff of the Unit from
+ *    `Before:ChangeOrder:<id>` to `ChangeOrder:<id>`: the ChangeOrder's start Tag
+ *    goes on a Unit's head before a promotion writes it and its end Tag on what it
+ *    writes, so the two bound the change however many Revisions it took.
  *
  * Both read real configuration data. Neither infers what changed from
  * `ResolvedSpaceIDs`, which is a claim about Link pointers and can legitimately
@@ -62,10 +68,18 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { useListAllRevisionsQuery, usePromoteMutation } from '@confighub/rtk-query';
+import { useListAllRevisionsQuery, usePromoteMutation, type ConfigDiff } from '@confighub/rtk-query';
 import { useRevisionDataMap } from '@/hooks/useUnitData';
 
-import { buildChangeOrderChangeGroups, readPromotionPreview, type ChangeOrderChangeSource } from './changeOrderChanges';
+import { useGetChangeOrderUnitDiffQuery } from '../../../change-orders/changeOrderImageDiffApi';
+
+import {
+  buildChangeOrderChangeGroups,
+  changeOrderChangesStatus,
+  readPromotionPreview,
+  type ChangeOrderChangeSource,
+  type ChangeOrderChangesStatus,
+} from './changeOrderChanges';
 import type { ChangeOrderChangeGroup, ChangeOrderResourceConflict, ChangeOrderStage } from './changeOrderTypes';
 
 export interface UseChangeOrderChangesArgs {
@@ -90,6 +104,16 @@ export interface UseChangeOrderChangesArgs {
 
 const EMPTY_GROUPS: ReadonlyMap<string, ChangeOrderChangeGroup[]> = new Map();
 
+export interface ChangeOrderChangesResult {
+  groups: ReadonlyMap<string, ChangeOrderChangeGroup[]>;
+  status: ChangeOrderChangesStatus;
+}
+
+const LOADING_RESULT: ChangeOrderChangesResult = { groups: EMPTY_GROUPS, status: 'loading' };
+
+/** The diff of a Unit the promotion leaves as it is. */
+const NO_CHANGE: ConfigDiff = { Resources: [] };
+
 /**
  * Recorded on nothing, since a dry run records no override, but the server requires a reason
  * with Force.
@@ -97,6 +121,11 @@ const EMPTY_GROUPS: ReadonlyMap<string, ChangeOrderChangeGroup[]> = new Map();
 const PREVIEW_FORCE_REASON = 'Previewing what the promotion would write';
 
 export function useChangeOrderChanges(args: UseChangeOrderChangesArgs): ReadonlyMap<string, ChangeOrderChangeGroup[]> {
+  return useChangeOrderChangesWithStatus(args).groups;
+}
+
+/** {@link useChangeOrderChanges}, with whether the groups can be trusted yet. */
+export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs): ChangeOrderChangesResult {
   const { changeOrderId, stages, selectedStageId, takenSpaceIds, currentDataByUnitId, skip } = args;
 
   const selectedStage = useMemo(
@@ -106,6 +135,9 @@ export function useChangeOrderChanges(args: UseChangeOrderChangesArgs): Readonly
 
   const [runPromote] = usePromoteMutation();
   const [dryRunDataByUnitId, setDryRunDataByUnitId] = useState<ReadonlyMap<string, string>>(
+    () => new Map(),
+  );
+  const [dryRunDiffByUnitId, setDryRunDiffByUnitId] = useState<ReadonlyMap<string, ConfigDiff>>(
     () => new Map(),
   );
   /**
@@ -190,7 +222,8 @@ export function useChangeOrderChanges(args: UseChangeOrderChangesArgs): Readonly
       .join(', ')})`;
 
     runPromote({
-      include: 'ConfigData',
+      // Context: the unchanged paths around each change, which the image summary reads.
+      include: 'ConfigData,Diff,Context',
       // As the query parameter too, as the Promote dialog's own preview sends it: it is
       // what tells a dry run from a promotion without reading the body.
       dryRun: true,
@@ -206,6 +239,7 @@ export function useChangeOrderChanges(args: UseChangeOrderChangesArgs): Readonly
       .then((result) => {
         const preview = readPromotionPreview(result);
         setDryRunDataByUnitId((prev) => new Map([...prev, ...preview.dataByUnitId]));
+        setDryRunDiffByUnitId((prev) => new Map([...prev, ...preview.diffByUnitId]));
         /*
          * The refusals arrive on the SAME envelope as the configuration, keyed
          * by the resource they belong to. Attribution needs no name matching:
@@ -320,6 +354,26 @@ export function useChangeOrderChanges(args: UseChangeOrderChangesArgs): Readonly
     return { writtenDataByUnitId: dataIndex, writtenRevisionNumByUnitId: revisionNumIndex };
   }, [carryingRevisions, carryingDataFor]);
 
+  const writtenUnitIds = useMemo(
+    () => [...writtenRevisionNumByUnitId.keys()].sort((a, b) => a.localeCompare(b)),
+    [writtenRevisionNumByUnitId],
+  );
+  const { currentData: writtenUnitDiffs, isError: writtenDiffErrored } = useGetChangeOrderUnitDiffQuery(
+    { changeOrderId: changeOrderId ?? '', unitIds: writtenUnitIds },
+    { skip: skip || changeOrderId === undefined || writtenUnitIds.length === 0 },
+  );
+  // Waited on through its data, for the reason `priorDataPending` gives below.
+  const writtenDiffPending = writtenUnitIds.length > 0 && writtenUnitDiffs === undefined && !writtenDiffErrored;
+  /** A Unit whose diff came back with an error has none here, and reads as undetermined. */
+  const writtenDiffByUnitId = useMemo(() => {
+    const index = new Map<string, ConfigDiff>();
+    for (const unitDiff of writtenUnitDiffs ?? []) {
+      if (unitDiff.UnitID === undefined || unitDiff.Error !== undefined) continue;
+      index.set(unitDiff.UnitID, unitDiff.Diff ?? NO_CHANGE);
+    }
+    return index;
+  }, [writtenUnitDiffs]);
+
   /**
    * A written unit's "before" is the revision immediately PRECEDING the one
    * that carries the ChangeOrder — for the SAME unit, in the SAME Space —
@@ -400,7 +454,7 @@ export function useChangeOrderChanges(args: UseChangeOrderChangesArgs): Readonly
 
   // ── Assemble the selected stage ─────────────────────────────────────────────
   return useMemo(() => {
-    if (skip || changeOrderId === undefined || selectedStage === undefined) return EMPTY_GROUPS;
+    if (skip || changeOrderId === undefined || selectedStage === undefined) return LOADING_RESULT;
 
     /*
      * Hard rule 16, caller half: do not answer "what does this promotion write"
@@ -414,11 +468,11 @@ export function useChangeOrderChanges(args: UseChangeOrderChangesArgs): Readonly
      */
     const writtenPending =
       writtenSpaceIds.length > 0 &&
-      (revisionsLoading || carryingDataFetching || priorRevisionsLoading || priorDataPending);
+      (revisionsLoading || carryingDataFetching || priorRevisionsLoading || priorDataPending || writtenDiffPending);
     const scopeKey = `${changeOrderId}|${pendingKey}`;
     const dryRunOutcome = pendingKey === '' ? undefined : dryRunOutcomeByKey.get(scopeKey);
     const dryRunPending = pendingKey !== '' && dryRunOutcome === undefined;
-    if (writtenPending || dryRunPending) return EMPTY_GROUPS;
+    if (writtenPending || dryRunPending) return LOADING_RESULT;
 
     const dryRunFailed = pendingKey !== '' && dryRunOutcome === 'failed';
 
@@ -439,11 +493,12 @@ export function useChangeOrderChanges(args: UseChangeOrderChangesArgs): Readonly
         if (unit.spaceId !== spaceId) continue;
         const writtenValue = writtenDataByUnitId.get(unitId);
         const written = writtenValue !== undefined;
+        const unwritten = !written && !dryRunDataByUnitId.has(unitId) && unwrittenUnitIds.has(unitId);
         // A Unit the promotion would not write keeps what it holds now.
         const afterData =
           writtenValue
           ?? dryRunDataByUnitId.get(unitId)
-          ?? (unwrittenUnitIds.has(unitId) ? unit.data : undefined);
+          ?? (unwritten ? unit.data : undefined);
         // A written unit's "before" is its own pre-promotion revision (see
         // priorDataByUnitId above), never `unit.data` — that's the CURRENT,
         // already-promoted value, which is what afterData is too for any
@@ -457,6 +512,9 @@ export function useChangeOrderChanges(args: UseChangeOrderChangesArgs): Readonly
           conflicts: dryRunConflictsByUnitId.get(unitId),
           beforeData: written ? priorDataByUnitId.get(unitId) : unit.data,
           afterData,
+          diff: written
+            ? writtenDiffByUnitId.get(unitId)
+            : (dryRunDiffByUnitId.get(unitId) ?? (unwritten ? NO_CHANGE : undefined)),
           written,
           /*
            * Undeterminable when the request failed outright, OR when this
@@ -472,8 +530,9 @@ export function useChangeOrderChanges(args: UseChangeOrderChangesArgs): Readonly
     }
 
     const result = new Map<string, ChangeOrderChangeGroup[]>();
-    result.set(selectedStage.id, buildChangeOrderChangeGroups(sources));
-    return result;
+    const built = buildChangeOrderChangeGroups(sources);
+    result.set(selectedStage.id, built);
+    return { groups: result, status: changeOrderChangesStatus({ pending: false, dryRunFailed, groups: built }) };
   }, [
     skip,
     changeOrderId,
@@ -482,6 +541,9 @@ export function useChangeOrderChanges(args: UseChangeOrderChangesArgs): Readonly
     writtenDataByUnitId,
     priorDataByUnitId,
     dryRunDataByUnitId,
+    dryRunDiffByUnitId,
+    writtenDiffByUnitId,
+    writtenDiffPending,
     dryRunConflictsByUnitId,
     answeredWithNoDataUnitIds,
     unwrittenUnitIds,

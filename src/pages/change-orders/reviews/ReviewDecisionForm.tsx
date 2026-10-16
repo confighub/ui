@@ -10,7 +10,7 @@
  * read), and it is at most 4096 characters, the server's limit.
  */
 
-import { type ReactNode, type Ref } from 'react';
+import { type Ref } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 
 import Box from '@mui/material/Box';
@@ -33,10 +33,6 @@ export interface ReviewDecisionValues {
 
 interface ReviewDecisionFormProps {
   stageName: string;
-  /** Revisions the dry run says the decision covers. `undefined` while unknown. */
-  revisionCount?: number;
-  /** The coverage list, rendered between the reason and the submit button. */
-  coverage: ReactNode;
   /** Why nothing can be submitted (M6: the dry run says nothing would be recorded). Disables submit. */
   blockedReason?: string;
   defaultValues?: ReviewDecisionValues;
@@ -109,8 +105,6 @@ function ChoiceButton({
 
 export function ReviewDecisionForm({
   stageName,
-  revisionCount,
-  coverage,
   blockedReason,
   defaultValues = { choice: null, note: '' },
   cancelLabel,
@@ -130,7 +124,7 @@ export function ReviewDecisionForm({
   let submitLabel: string = copy.choose;
   let submitSx: object = reviewQuietButtonSx;
   if (choice !== null) {
-    submitLabel = copy.submit(choice, revisionCount);
+    submitLabel = copy.submit(choice, stageName);
     submitSx = choice === 'Pass' ? reviewQuietButtonSx : reviewDangerButtonSx;
   }
 
@@ -231,8 +225,6 @@ export function ReviewDecisionForm({
           </Box>
         )}
       </Box>
-
-      {coverage}
 
       <Box sx={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
         <Button

@@ -58,7 +58,37 @@ export interface FanOutSource {
 }
 
 /** Far more than one ChangeOrder marks: two Revisions per source Unit. */
-const SOURCE_REVISION_LIMIT = 1000;
+export const SOURCE_REVISION_LIMIT = 1000;
+
+/**
+ * The Revisions the ChangeOrder's two Tags mark outside its scope: the source Units, at the start and at the end.
+ * `undefined` until both Tags are known. `inScope` is sorted, so equal scopes read equal.
+ */
+export function fanOutRevisionWhere(
+  startTagId: string | undefined,
+  endTagId: string | undefined,
+  inScope: readonly string[],
+): string | undefined {
+  if (startTagId === undefined || endTagId === undefined) return undefined;
+  const tags = `Tags.*.TagID IN ('${startTagId}', '${endTagId}')`;
+  return inScope.length === 0 ? tags : `${tags} AND SpaceID NOT IN (${inScope.map((id) => `'${id}'`).join(', ')})`;
+}
+
+/**
+ * The in-scope Links that take from the source Units, which say which of their paths the change can carry.
+ * Only a TransformPaths Link reads named paths; every other kind carries the whole Unit, so there is nothing to ask.
+ */
+export function fanOutLinkWhere(
+  updateType: string | undefined,
+  inScope: readonly string[],
+  unitIds: readonly string[],
+): string | undefined {
+  if (updateType !== 'TransformPaths' || inScope.length === 0 || unitIds.length === 0) return undefined;
+  return (
+    `UpdateType = 'TransformPaths' AND ToUnitID IN (${[...unitIds].sort().map((id) => `'${id}'`).join(', ')})`
+    + ` AND SpaceID IN (${inScope.map((id) => `'${id}'`).join(', ')})`
+  );
+}
 
 const EMPTY: FanOutSource = { status: 'loading', units: [], spaceIds: [], spaceNameBySpaceId: new Map() };
 
@@ -74,13 +104,7 @@ export function useFanOutSource(args: {
 
   const inScope = useMemo(() => [...(inScopeSpaceIds ?? [])].sort(), [inScopeSpaceIds]);
 
-  const where = useMemo(() => {
-    if (startTagId === undefined || endTagId === undefined) return undefined;
-    const tags = `Tags.*.TagID IN ('${startTagId}', '${endTagId}')`;
-    return inScope.length === 0
-      ? tags
-      : `${tags} AND SpaceID NOT IN (${inScope.map((id) => `'${id}'`).join(', ')})`;
-  }, [startTagId, endTagId, inScope]);
+  const where = useMemo(() => fanOutRevisionWhere(startTagId, endTagId, inScope), [startTagId, endTagId, inScope]);
 
   const { data: revisions, isError } = useListAllRevisionsQuery(
     {
@@ -97,13 +121,8 @@ export function useFanOutSource(args: {
 
   // Only a TransformPaths Link reads named paths; every other kind carries the whole Unit.
   const linkWhere = useMemo(() => {
-    if (updateType !== 'TransformPaths' || inScope.length === 0) return undefined;
     const unitIds = [...new Set((revisions ?? []).map((r) => r.Revision?.UnitID).filter((id) => id !== undefined))];
-    if (unitIds.length === 0) return undefined;
-    return (
-      `UpdateType = 'TransformPaths' AND ToUnitID IN (${unitIds.sort().map((id) => `'${id}'`).join(', ')})`
-      + ` AND SpaceID IN (${inScope.map((id) => `'${id}'`).join(', ')})`
-    );
+    return fanOutLinkWhere(updateType, inScope, unitIds);
   }, [updateType, inScope, revisions]);
   const { data: links, isError: linksFailed } = useSearchListLinksQuery(
     { where: linkWhere },

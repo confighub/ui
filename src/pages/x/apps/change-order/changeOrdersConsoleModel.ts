@@ -287,6 +287,11 @@ export interface ConsoleChangeOrder {
    * is issued from surfaces that hold a row and no ChangeOrder.
    */
   startTagId?: string;
+  /**
+   * `ChangeOrder.EndTagID` — the Tag marking each Unit's Revision as the change ends. With
+   * `startTagId` it names a fan-out ChangeOrder's source Units and what changed in them.
+   */
+  endTagId?: string;
 }
 
 /**
@@ -410,6 +415,10 @@ export interface ConsoleRow {
   restored: boolean;
   /** `ChangeOrder.StartTagID`, passed through — see `ConsoleChangeOrder`. */
   startTagId?: string;
+  /** `ChangeOrder.EndTagID`, passed through: with `startTagId`, what a fan-out row's change is read from. */
+  endTagId?: string;
+  /** The Spaces the change is headed for, passed through: a fan-out row's source Units are the marked ones outside them. */
+  inScopeSpaceIds?: string[];
 }
 
 /**
@@ -1348,6 +1357,8 @@ function stagelessRow(
     workflowComplete: false,
     restored: (order.restoreTagId ?? '') !== '',
     startTagId: order.startTagId,
+    endTagId: order.endTagId,
+    inScopeSpaceIds: order.inScopeSpaceIds,
   };
 }
 
@@ -1594,6 +1605,8 @@ export function buildConsoleRow(
     workflowComplete,
     restored: (order.restoreTagId ?? '') !== '',
     startTagId: order.startTagId,
+    endTagId: order.endTagId,
+    inScopeSpaceIds: order.inScopeSpaceIds,
   };
 }
 

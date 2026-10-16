@@ -20,8 +20,9 @@ import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined
 
 import { changeOrderFontMono, changeOrderInk, changeOrderShape, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
 import { reviewPromoteButtonSx, reviewQuietButtonSx } from './reviewButtons';
-import { agoText, durationText, epochOf, firstName, fromText, fromTitle, reviewCopy, reviewTime } from './reviewCopy';
-import { MonogramRow } from './reviewParts';
+import { agoText, durationText, epochOf, firstName, fromText, fromTitle, reviewCopy, reviewSubject, reviewTime } from './reviewCopy';
+import { outOfDateDecisions } from './changeOrderReviews';
+import { MonogramRow, StageText } from './reviewParts';
 import { REVIEW_TONE, type ReviewTone } from './reviewButtons';
 import type { PromoteReadiness, RequirementProgress, ReviewGateKind, StageReviewSummary } from './changeOrderReviewTypes';
 
@@ -36,8 +37,18 @@ interface ReviewBandProps {
    */
   readiness?: PromoteReadiness;
   now: number;
+  /**
+   * False while no card has the review's form (the change it reads has not landed):
+   * the band then says so, and offers no `review` or `panel` action.
+   */
+  reviewable?: boolean;
   /** `review` focuses the form, `panel` only scrolls to it, `promote` goes to the Promote button. */
   onAction: (action: ReviewBandAction) => void;
+  /**
+   * Undefined where the stage the title names cannot be linked: the reader is on its card,
+   * its change has not landed, or the subject is the ChangeOrder's own Space.
+   */
+  onGoToSubject?: () => void;
 }
 
 const copy = reviewCopy.band;
@@ -82,19 +93,19 @@ function completeFact(req: RequirementProgress, first: boolean): ReactNode {
   );
 }
 
-/** "rejected the change for prod", or for its release, or the sign-off. */
-function blockedTitle(kind: ReviewGateKind, stage: string): string {
+/** "rejected the change in staging, so prod is blocked", or its release, or the sign-off. */
+function blockedTitle(kind: ReviewGateKind, stage: string, subject: string, onGo: (() => void) | undefined): ReactNode {
   if (kind === 'release') return copy.blockedReleaseTitle(stage);
   if (kind === 'final') return copy.blockedFinalTitle;
-  return copy.blockedTitle(stage);
+  return <StageText build={(s) => copy.blockedTitle(stage, s)} stage={subject} onGo={onGo} testId="review-band-stage-link" />;
 }
 
-/** "prod needs 1 more approval on", for the gate's own action. */
-function waitingTitle(kind: ReviewGateKind, stage: string, need: number): string {
+/** "prod needs 1 more approval of the change in staging on", for the gate's own action. */
+function waitingTitle(kind: ReviewGateKind, stage: string, subject: string, need: number, onGo: (() => void) | undefined): ReactNode {
   if (need === 0) return copy.heldTitle(stage);
   if (kind === 'release') return copy.releaseWaitingTitle(stage, need);
   if (kind === 'final') return copy.finalWaitingTitle(need);
-  return copy.waitingTitle(stage, need);
+  return <StageText build={(s) => copy.waitingTitle(stage, s, need)} stage={subject} onGo={onGo} testId="review-band-stage-link" />;
 }
 
 /**
@@ -140,6 +151,9 @@ function viewerLine(summary: StageReviewSummary, now: number): { you: string; ct
   if (eligibility.kind === 'notEligible') {
     return { you: copy.youNotListed, cta: { label: copy.seeWhoCan, action: 'panel' } };
   }
+  if (outOfDateDecisions(summary).length > 0) {
+    return { you: copy.youOutOfDate, cta: { label: copy.reviewNow, action: 'review' } };
+  }
   const own = Object.values(ownByType)[0];
   if (own !== undefined) {
     return {
@@ -159,11 +173,12 @@ function viewerLine(summary: StageReviewSummary, now: number): { you: string; ct
   };
 }
 
-export function ReviewBand({ summary, readiness, now, onAction }: ReviewBandProps) {
+export function ReviewBand({ summary, readiness, now, reviewable = true, onAction, onGoToSubject }: ReviewBandProps) {
   const primary = summary.primary;
   if (primary === undefined || summary.state === 'none') return null;
 
   const stage = summary.gate.stageName;
+  const subject = reviewSubject(summary).name;
   const kind = summary.gate.kind;
   const rejecter = primary.rejecters[0];
   const blocked = summary.state === 'rejected' && rejecter !== undefined;
@@ -183,7 +198,7 @@ export function ReviewBand({ summary, readiness, now, onAction }: ReviewBandProp
     kicker = copy.blockedKicker;
     title = (
       <>
-        <b>{rejecter.name}</b>&nbsp;{blockedTitle(kind, stage)}
+        <b>{rejecter.name}</b>&nbsp;{blockedTitle(kind, stage, subject, onGoToSubject)}
       </>
     );
     facts.push(
@@ -223,7 +238,7 @@ export function ReviewBand({ summary, readiness, now, onAction }: ReviewBandProp
   } else {
     title = (
       <>
-        {waitingTitle(kind, stage, primary.need)}&nbsp;
+        {waitingTitle(kind, stage, subject, primary.need, onGoToSubject)}&nbsp;
         <MonoName>{primary.name}</MonoName>
       </>
     );
@@ -266,6 +281,9 @@ export function ReviewBand({ summary, readiness, now, onAction }: ReviewBandProp
     you = line.you;
     cta = line.cta;
   }
+
+  const noForm = !reviewable && (cta.action === 'review' || cta.action === 'panel');
+  if (noForm) you = kind === 'release' ? copy.releaseNotYet(stage) : reviewCopy.entryStatus.notLanded(subject);
 
   const t = REVIEW_TONE[tone];
   return (
@@ -353,16 +371,18 @@ export function ReviewBand({ summary, readiness, now, onAction }: ReviewBandProp
             {you}
           </Box>
         ) : null}
-        <Button
-          size="small"
-          variant={leadsToAction(cta) ? 'contained' : 'outlined'}
-          disableElevation
-          data-review-cta={cta.action}
-          onClick={() => onAction(cta.action)}
-          sx={leadsToAction(cta) ? reviewPromoteButtonSx : reviewQuietButtonSx}
-        >
-          {cta.label}
-        </Button>
+        {noForm ? null : (
+          <Button
+            size="small"
+            variant={leadsToAction(cta) ? 'contained' : 'outlined'}
+            disableElevation
+            data-review-cta={cta.action}
+            onClick={() => onAction(cta.action)}
+            sx={leadsToAction(cta) ? reviewPromoteButtonSx : reviewQuietButtonSx}
+          >
+            {cta.label}
+          </Button>
+        )}
       </Box>
     </Box>
   );

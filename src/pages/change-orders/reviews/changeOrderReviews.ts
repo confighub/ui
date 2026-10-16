@@ -220,6 +220,35 @@ function gateEntryOf(ids: ReadonlySet<string>, requirement: Requirement): Decisi
   return { countedOn, ...(reason ? { reason } : {}), ...(untils.length > 0 ? { validUntil: untils[0] } : {}) };
 }
 
+/** Discard reasons that say the decision is not the viewer's to replace: other UI explains them. */
+const NOT_A_COVERAGE_GAP: ReadonlySet<string> = new Set(['NotEligible', 'Author', 'FailIgnored', 'Revoked', 'Expired']);
+
+/**
+ * Whether a server row for a requirement that does not hold yet fails to count a decision
+ * on every Revision it reads. A row lists every Attestation of its Type that covers a Revision it reads,
+ * so a record absent from an evaluated row, or counted on fewer Revisions than the row
+ * reads, does not cover the current change there.
+ */
+function notCoveringRequirement(ids: ReadonlySet<string>, type: string, requirement: Requirement): boolean {
+  if (requirement.rules.type !== type) return false;
+  return requirement.rows.some((row) => {
+    const result = row.Attestation;
+    if (result === undefined || row.Satisfied === true) return false;
+    const mine = (result.Attestations ?? []).filter((entry) => ids.has(entry.AttestationID ?? ''));
+    if (mine.length === 0) return true;
+    if (mine.some((entry) => entry.Reason !== undefined && NOT_A_COVERAGE_GAP.has(entry.Reason))) return false;
+    const counted = Math.max(...mine.map((entry) => entry.CountedOn ?? 0));
+    return counted < (result.Revisions ?? 0);
+  });
+}
+
+/** Where a decision was made, when not on this ChangeOrder. */
+function originOf(recordChangeOrderId: string | undefined, changeOrderId: string): Pick<ReviewDecision, 'origin' | 'otherChangeOrderId'> {
+  if (!recordChangeOrderId) return { origin: 'none' };
+  if (recordChangeOrderId !== changeOrderId) return { origin: 'other', otherChangeOrderId: recordChangeOrderId };
+  return {};
+}
+
 interface DecisionWork {
   decision: ReviewDecision;
   records: ReviewRecord[];
@@ -246,6 +275,7 @@ function buildDecisions(records: ReviewRecord[], requirements: Requirement[], in
       ? group.reduce((latest, record) => ((record.revokedAt ?? '') > (latest.revokedAt ?? '') ? record : latest))
       : undefined;
     const countsToward = requirements.map((r) => r.name).filter((name) => (byRequirement[name]?.countedOn ?? 0) > 0);
+    const notCovering = requirements.filter((requirement) => notCoveringRequirement(ids, first.type, requirement)).map((r) => r.name);
     const decision: ReviewDecision = {
       id: first.id,
       attestationIds: group.map((record) => record.id),
@@ -263,6 +293,8 @@ function buildDecisions(records: ReviewRecord[], requirements: Requirement[], in
       countsToward,
       // A Fail the server counts blocks; one it ignores (FailIgnored, CountedOn 0) does not.
       blocksPromotion: first.result === 'Fail' && countsToward.length > 0,
+      ...(notCovering.length > 0 ? { notCovering } : {}),
+      ...originOf(first.attestation.ChangeOrderID, input.attestTarget.ChangeOrderID),
     };
     return { decision, records: group };
   });
@@ -434,8 +466,8 @@ function stageState(requirements: RequirementProgress[]): StageReviewState {
   return 'partial';
 }
 
-function viewerEligibility(requirements: RequirementProgress[], viewerUserId: string | undefined): ViewerEligibility {
-  if (!viewerUserId) return { kind: 'signedOut' };
+function viewerEligibility(requirements: RequirementProgress[], signedIn: boolean): ViewerEligibility {
+  if (!signedIn) return { kind: 'signedOut' };
   const deciding = requirements.filter((r) => r.viewer.kind === 'counts' || r.viewer.kind === 'partial');
   const authorIn = [
     ...new Set(
@@ -546,7 +578,7 @@ export function deriveGateReviews(input: DeriveGateReviewsInput): GateReviewSumm
     requests,
     ...(requestedOfViewer ? { requestedOfViewer } : {}),
     decisions,
-    viewer: { eligibility: viewerEligibility(progress, input.viewerUserId), ownByType },
+    viewer: { eligibility: viewerEligibility(progress, !!input.viewerUserId), ownByType },
     whoCanStillApprove,
     attestTarget: input.attestTarget,
   };
@@ -589,3 +621,99 @@ export function withReviewApprovers(gates: ChangeOrderGate[], summary: GateRevie
     return { ...gate, approvers: uniquePeople([...requirement.passers, ...requirement.rejecters]).map(toApprover) };
   });
 }
+
+function coveringGaps(a: ReviewDecision, b: ReviewDecision): Pick<ReviewDecision, 'notCovering'> {
+  const names = [...new Set([...(a.notCovering ?? []), ...(b.notCovering ?? [])])];
+  return names.length > 0 ? { notCovering: names } : {};
+}
+
+/** The viewer's live decisions that do not cover every requirement of their Type: the viewer decides again. */
+export function outOfDateDecisions(summary: GateReviewSummary): ReviewDecision[] {
+  return Object.values(summary.viewer.ownByType).filter((decision) => (decision.notCovering?.length ?? 0) > 0);
+}
+
+/**
+ * One review of several gates that read the same Spaces: a stage's release gate and the
+ * next stage's entry gate both read the stage's own Spaces, and one `/attest` there
+ * records for both. Shown as one review, so the same Revisions are never offered in two
+ * forms. `summaries` share `attestTarget` and `gateSpaces`; the first names the review.
+ */
+export function combineGateReviews(summaries: readonly GateReviewSummary[]): GateReviewSummary | undefined {
+  const [first, ...rest] = summaries;
+  if (first === undefined) return undefined;
+  if (rest.length === 0) return { ...first, feeds: [first.gate] };
+
+  const requirements = summaries.flatMap((summary) => summary.requirements);
+  // Each summary reads the same records; a decision differs only in what each gate's server rows say of it.
+  const decisionsById = new Map<string, ReviewDecision>();
+  for (const summary of summaries) {
+    for (const decision of summary.decisions) {
+      const known = decisionsById.get(decision.id);
+      if (known === undefined) {
+        decisionsById.set(decision.id, decision);
+        continue;
+      }
+      const byRequirement = { ...known.byRequirement, ...decision.byRequirement };
+      const countsToward = [...new Set([...known.countsToward, ...decision.countsToward])];
+      decisionsById.set(decision.id, {
+        ...known,
+        live: known.live && decision.live,
+        expired: known.expired && decision.expired,
+        byRequirement,
+        countsToward,
+        blocksPromotion: known.blocksPromotion === true || decision.blocksPromotion === true,
+        ...coveringGaps(known, decision),
+      });
+    }
+  }
+  const decisions = [...decisionsById.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+  const ownByType: Record<string, ReviewDecision> = {};
+  for (const decision of decisions) {
+    if (decision.live && decision.person.isYou && ownByType[decision.type] === undefined) ownByType[decision.type] = decision;
+  }
+  const primary = primaryRequirement(requirements);
+  const primarySummary = summaries.find((summary) => primary !== undefined && summary.requirements.includes(primary)) ?? first;
+  const signedIn = summaries.every((summary) => summary.viewer.eligibility.kind !== 'signedOut');
+  // A request names one user for the Spaces read, so each gate may list it: one per user, over every gate.
+  const requestByUser = new Map<string, ReviewRequestView>();
+  for (const request of summaries.flatMap((summary) => summary.requests)) {
+    const known = requestByUser.get(request.user.userId);
+    requestByUser.set(
+      request.user.userId,
+      known === undefined
+        ? request
+        : { ...known, gateKeys: [...new Set([...known.gateKeys, ...request.gateKeys])], reviewed: known.reviewed || request.reviewed },
+    );
+  }
+  const requests = [...requestByUser.values()];
+  // Who can still approve any gate of the review, the primary requirement's first, each person once.
+  const whoCanStillApprove: GateReviewSummary['whoCanStillApprove'] = [];
+  for (const entry of [primarySummary, ...summaries.filter((summary) => summary !== primarySummary)].flatMap((s) => s.whoCanStillApprove)) {
+    if (whoCanStillApprove.some((known) => known.person.userId === entry.person.userId)) continue;
+    const requested = requestByUser.get(entry.person.userId);
+    whoCanStillApprove.push({
+      person: entry.person,
+      ...(entry.decision ? { decision: entry.decision } : {}),
+      ...(entry.viaGroupId ? { viaGroupId: entry.viaGroupId } : {}),
+      ...(requested ? { requested } : {}),
+    });
+  }
+  const waits = summaries.filter((summary) => summary.waitingSince !== undefined).sort((a, b) => (a.waitingSince ?? '').localeCompare(b.waitingSince ?? ''));
+  const earliest = waits[0];
+  return {
+    ...first,
+    requirements,
+    primary,
+    state: stageState(requirements),
+    open: requirements.every((r) => r.evaluated && r.satisfied),
+    evaluated: requirements.some((r) => r.evaluated),
+    ...(earliest !== undefined ? { waitingSince: earliest.waitingSince, waitingSinceSource: earliest.waitingSinceSource } : {}),
+    requests,
+    requestedOfViewer: requests.find((request) => request.user.isYou),
+    decisions,
+    viewer: { eligibility: viewerEligibility(requirements, signedIn), ownByType },
+    whoCanStillApprove,
+    feeds: summaries.map((summary) => summary.gate),
+  };
+}
+

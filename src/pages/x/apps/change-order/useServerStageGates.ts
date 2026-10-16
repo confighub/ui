@@ -28,7 +28,7 @@
  * matter of course, and must keep the page (`refusedByStage` says 403).
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { PromoteGateResult, PromoteResult } from '@confighub/rtk-query';
 
@@ -60,6 +60,11 @@ const NO_REFUSALS: ServerGateRefusals = {};
 export interface ServerStageGateReads {
   byStage: ServerGatesByStage;
   refusedByStage: ServerGateRefusals;
+  /**
+   * Asks again now, and resolves once an answer asked for after this call has arrived, so
+   * a caller that wrote something the verdicts depend on can read them afresh.
+   */
+  refresh: () => Promise<void>;
 }
 
 export interface UseServerStageGatesArgs {
@@ -96,11 +101,29 @@ export function useServerStageGateReads({
   const poll = useCallback(() => setTick((t) => t + 1), []);
   usePolling(poll, SERVER_GATES_POLL_INTERVAL_MS);
 
+  /** Each `refresh` call's number; an answer settles the calls made before it was asked for. */
+  const asked = useRef(0);
+  const waiting = useRef<{ call: number; resolve: () => void }[]>([]);
+  const settle = useCallback((upTo: number) => {
+    const done = waiting.current.filter((waiter) => waiter.call <= upTo);
+    waiting.current = waiting.current.filter((waiter) => waiter.call > upTo);
+    for (const waiter of done) waiter.resolve();
+  }, []);
+  const refresh = useCallback(() => {
+    asked.current += 1;
+    const call = asked.current;
+    const settled = new Promise<void>((resolve) => waiting.current.push({ call, resolve }));
+    setTick((t) => t + 1);
+    return settled;
+  }, []);
+
   const stagesKey = stageNames.join('\u0000');
 
   useEffect(() => {
+    const call = asked.current;
     if (changeOrderId === undefined || stageNames.length === 0) {
       setGates({ changeOrderId, byStage: NO_GATES, refusedByStage: NO_REFUSALS });
+      settle(call);
       return;
     }
     let cancelled = false;
@@ -132,6 +155,7 @@ export function useServerStageGateReads({
           ? previous
           : { changeOrderId, byStage, refusedByStage },
       );
+      settle(call);
     });
     return () => {
       cancelled = true;
@@ -139,11 +163,11 @@ export function useServerStageGateReads({
     // `stagesKey` stands for `stageNames`, whose identity may change while its
     // contents do not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [changeOrderId, stagesKey, refreshKey, tick]);
+  }, [changeOrderId, stagesKey, refreshKey, tick, settle]);
 
   // Verdicts about another ChangeOrder are never shown for this one, even for
   // the moment before this one's arrive.
   return gates.changeOrderId === changeOrderId
-    ? { byStage: gates.byStage, refusedByStage: gates.refusedByStage }
-    : { byStage: NO_GATES, refusedByStage: NO_REFUSALS };
+    ? { byStage: gates.byStage, refusedByStage: gates.refusedByStage, refresh }
+    : { byStage: NO_GATES, refusedByStage: NO_REFUSALS, refresh };
 }

@@ -236,6 +236,20 @@ export interface ReviewDecision {
   countsToward: string[];
   /** A Fail the server counts (not FailIgnored) for a requirement. */
   blocksPromotion?: boolean;
+  /**
+   * Where the decision was made, when not on this ChangeOrder: `other`, another
+   * ChangeOrder (`otherChangeOrderId`); `none`, outside any ChangeOrder (for example
+   * `cub attestation create`). The server carries an Attestation forward to a later
+   * Revision with the same data, so its gates can count such a decision here.
+   */
+  origin?: 'other' | 'none';
+  otherChangeOrderId?: string;
+  /**
+   * Requirements of its Type whose server rows do not count it on every Revision the
+   * gate reads: it was recorded on other Revisions, or in Spaces another gate reads.
+   * The viewer must decide again for these. Absent or empty: it covers every row.
+   */
+  notCovering?: string[];
 }
 
 /** A review request on the ChangeOrder (`ChangeOrder.ReviewRequests`), placed on the gates it is for. */
@@ -297,6 +311,12 @@ export interface GateReviewSummary {
   viewer: { eligibility: ViewerEligibility; ownByType: Record<string, ReviewDecision> };
   whoCanStillApprove: { person: ReviewPerson; decision?: ReviewDecision; viaGroupId?: string; requested?: ReviewRequestView }[];
   attestTarget: { ChangeOrderID: string; TargetStage?: string; WhereSpace?: string };
+  /**
+   * The gates a decision here counts toward, when one review serves several:
+   * a stage's release gate and the next stage's entry gate read the same
+   * Spaces and record the same Attestations. Absent: `gate` alone.
+   */
+  feeds?: ReviewGateRef[];
 }
 
 /** Kept as an alias so the UI's v1 imports keep compiling. */
@@ -313,6 +333,12 @@ export interface ReviewCoverageRow {
   revisionNum: number;
   /** The server's `Subject.Authored`: the viewer wrote a Revision of the change on this Unit here. */
   authored: boolean;
+  unitId?: string;
+  /**
+   * The change did not change this Unit, and every gate of the review reads
+   * only the Units it changed, so the record is kept but no gate needs it.
+   */
+  unchanged?: boolean;
 }
 
 /** What one /attest call of one Type would cover (dry run). */
@@ -335,7 +361,12 @@ export interface SubmitReviewInput {
 }
 
 export type SubmitReviewOutcome =
-  | { ok: true; recorded: { type: string; revisionCount: number; spaceCount: number }[] }
+  | {
+      ok: true;
+      recorded: { type: string; revisionCount: number; spaceCount: number }[];
+      /** False when the server's gate verdicts were not read again in time: the page then says so. */
+      refreshed?: boolean;
+    }
   | {
       ok: false;
       stage: 'revoke' | 'record' | 'nothingRecorded';
@@ -457,7 +488,15 @@ export interface HistoryReviewEntry {
   originalPerson?: HistoryPerson;
   /** For `requested`: who was asked. */
   requestedOf?: HistoryPerson;
+  /** The stage the gate holds: the stage entered, released, or the last one. The history's stage filter reads it, except where `reviewedStage` is a stage. */
   stage: string;
+  /** The stage whose change was reviewed (whose Spaces the decision is recorded in), or the ChangeOrder's own Space with `reviewedBase`. */
+  reviewedStage?: string;
+  reviewedBase?: boolean;
+  /** Every gate the decision counts toward, when one review serves several. */
+  gates?: { kind: ReviewGateKind; stage: string }[];
+  /** Made on another ChangeOrder, or outside any (see `ReviewDecision.origin`). */
+  origin?: 'other' | 'none';
   requirementNames: string[];
   type: string;
   note?: string;

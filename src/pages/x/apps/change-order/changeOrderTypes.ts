@@ -18,6 +18,8 @@
  * is prefixed `ChangeOrder` so the two can never be confused at a call site.
  */
 
+import type { ConfigDiff } from '@confighub/rtk-query';
+
 /**
  * One step of the promotion sequence: a stage name, and every Space the stage
  * selects that the ChangeOrder is headed for.
@@ -336,14 +338,31 @@ export interface ChangeOrderChangeGroup {
    * and needs no list.
    */
   resourceIdentityJoinKeys?: readonly string[];
+  /**
+   * What changes, one entry per change: what counts, compares and tests for
+   * emptiness read.
+   *
+   * For a group with a `diff`, one entry per change the server reported, keyed by
+   * the resource and the change's path, so that a change in one document of a Unit
+   * is never mistaken for a change in another. Those keys name no path in the
+   * Unit's flattened data. Otherwise a flattened path of the Unit's data each.
+   */
   fieldDiffs: { path: string; oldValue: string; newValue: string }[];
+  /**
+   * What changes, resource by resource, as the server computed it: array elements
+   * matched by merge key, each document of the Unit diffed on its own. Present on a
+   * stage's groups wherever their change could be established and there is AFTER
+   * data, and empty where nothing changes; the rows are rendered from it.
+   */
+  diff?: ConfigDiff;
   /**
    * Every flattened path/value pair of the AFTER side, for `TreeDiffSection`'s
    * context expansion — the folder-row "show N more" affordance and
    * `injectKeyContext`'s array-element identifying sibling. `undefined` when
    * `afterData` could not be read at all (mirrors `fieldDiffs` being empty in
    * that same case): a tree with no context list falls back to changed-paths-only,
-   * which is the honest answer when there is nothing to expand into.
+   * which is the honest answer when there is nothing to expand into. Absent from a
+   * group with a `diff`, whose paths are not flattened ones.
    */
   allPaths?: { path: string; value: string }[];
   /**

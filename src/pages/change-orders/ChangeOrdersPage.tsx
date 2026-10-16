@@ -58,7 +58,7 @@ import { gateStateFor, gatesOpen, partitionBlockingGates, tallyGates } from '../
 import { gatesBlockPromotion } from '../x/apps/change-order/changeOrderFooterModel';
 import { changeOrderCopy, skippedUnitReasonText, stageDisplayName } from '../x/apps/change-order/changeOrderCopy';
 import { changeOrdersConsoleCopy } from '../x/apps/change-order/changeOrdersConsoleCopy';
-import { promotionTargets } from '../x/apps/change-order/changeOrderStages';
+import { changeOrderOwnSpaceReached, promotionTargets } from '../x/apps/change-order/changeOrderStages';
 import { componentSpaceDeepLink } from '../x/apps/change-order/changeOrdersConsoleModel';
 import { unitLinksHref } from '../unit-detail/unitDetailHrefs';
 import type { ConsoleState } from '../x/apps/change-order/changeOrdersConsoleModel';
@@ -70,6 +70,7 @@ import type {
   ChangeOrderStageState,
 } from '../x/apps/change-order/changeOrderTypes';
 import { TreeDiffSection } from '../x/apps/TreeDiffSection';
+import { ConfigDiffView, type ConfigDiffColumns } from '@/components/config-diff/ConfigDiffView';
 import { useColumnResize } from '../x/apps/useColumnResize';
 import { ROUTE_COMPONENTS } from '../x/apps/appTypes';
 import { componentTheme } from '../x/apps/componentTheme';
@@ -118,13 +119,18 @@ import {
 import { ChangeOrderBlockedResources, ChangeOrderRefusals } from './changeOrderRefusals';
 import { changeOrderPath } from './changeOrderAddress';
 import { useChangeOrderDetail, type ChangeOrderSpace } from './useChangeOrderDetail';
+import { useChangeOrderImageChanges } from './useChangeOrderImageChanges';
+import { FullDiffDisclosure, ImageChangeSummary } from './components/ImageChangeHero';
+import { onlyChangesHint } from './imageChangeCopy';
+import { imageChangesForSource } from './imageChange';
 import Snackbar from '@mui/material/Snackbar';
 import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined';
 import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
 import { ReviewBand, type ReviewBandAction } from './reviews/ReviewBand';
-import { ReviewChip, ReviewGateActions, ReviewGateBlockedLine, ReviewGateSpaces } from './reviews/reviewParts';
+import { ReviewChip, ReviewEntryStatus, ReviewGateActions, ReviewGateBlockedLine, ReviewGateSpaces } from './reviews/reviewParts';
 import type { ChangeOrderGateExtra } from '../x/apps/change-order/ChangeOrderGateList';
-import { reviewCopy } from './reviews/reviewCopy';
+import { recordedToastText, reviewCopy, reviewFeeds, reviewSubject } from './reviews/reviewCopy';
+import { reviewCardStageId, reviewFormStageId, stageChangeLanded } from './reviews/stageReviewInputs';
 import { REVIEW_PANEL_ID, ReviewPanel } from './reviews/ReviewPanel';
 import { withReviewApprovers } from './reviews/changeOrderReviews';
 import type {
@@ -302,7 +308,11 @@ function reviewGatesForList(gates: ChangeOrderGate[], summary: StageReviewSummar
 function reviewGateExtras(
   gates: readonly ChangeOrderGate[],
   summary: StageReviewSummary,
-  onReview: () => void,
+  /** Undefined while no card has the review's form: the rows then have no link. */
+  onReview: (() => void) | undefined,
+  reviewLabel?: string,
+  /** The stage `reviewLabel` names. */
+  reviewLabelStage?: string,
 ): Record<string, ChangeOrderGateExtra> {
   const extras: Record<string, ChangeOrderGateExtra> = {};
   for (const gate of gates) {
@@ -320,7 +330,7 @@ function reviewGateExtras(
           <ReviewGateSpaces requirement={requirement} />
         </>
       ),
-      right: <ReviewGateActions requirement={requirement} onReview={onReview} />,
+      right: <ReviewGateActions requirement={requirement} onReview={onReview} label={reviewLabel} labelStage={reviewLabelStage} />,
     };
   }
   return extras;
@@ -1624,21 +1634,51 @@ export default function ChangeOrdersPage() {
   const coReviews = useChangeOrderReviews(detail, { poll: true });
   const completeSelectedEarly = stageParam === COMPLETE_STAGE_ID;
   /**
-   * ONE review panel, for the gate the selected step is at in time
-   * (plan-2 §4): before a stage is promoted, its entry review; once it is
-   * promoted and still to be released, its release review; on the Complete
-   * step, the Final sign-off. Never two at once, and no tabs.
+   * ONE review panel, on the card of the stage whose change it approves, beside
+   * that change. Once a stage's change has landed in its Spaces, its card reviews
+   * it for every gate that reads those Spaces: its own release gate while it is
+   * to be released, and the next stage's entry gate. Both record the same
+   * Attestations, so they are one review with one form, never two. The first
+   * stage's entry gate reads the ChangeOrder's own Space, which has no card, so it
+   * is reviewed on the first stage. The Complete step has the Final sign-off.
+   * Which card has a gate's form is `reviewFormStageId`, the rule every link to a
+   * review follows too.
    */
-  const gateRef: ReviewGateRef | undefined = useMemo(() => {
-    const byKey = coReviews.byGateKey;
-    if (completeSelectedEarly) return Object.values(byKey).find((g) => g.gate.kind === 'final')?.gate;
-    if (selectedStage === undefined) return undefined;
-    const release = byKey[`release:${selectedStage.stageId}`];
-    if (selectedStage.verdict === 'promoted' && release !== undefined) return release.gate;
-    return byKey[`entry:${selectedStage.stageId}`]?.gate;
-  }, [coReviews.byGateKey, completeSelectedEarly, selectedStage]);
-  const reviews = useGateReviews(detail, gateRef);
+  const stageVerdictOf = useCallback(
+    (stageId: string) => detail.stageStates.find((s) => s.stageId === stageId)?.verdict,
+    [detail.stageStates],
+  );
+  const selectedLanded = stageChangeLanded(selectedStage?.verdict);
+  const sectionGates: ReviewGateRef[] = useMemo(() => {
+    const summaries = Object.values(coReviews.byGateKey);
+    if (completeSelectedEarly) return summaries.filter((g) => g.gate.kind === 'final').map((g) => g.gate);
+    if (selectedStage === undefined) return [];
+    const stageId = selectedStage.stageId;
+    const onCard = summaries.filter((g) => reviewFormStageId(g, stageVerdictOf) === stageId);
+    const ofChange = onCard.filter((g) => g.attestTarget.TargetStage === stageId);
+    if (ofChange.length > 0) {
+      const order = (kind: string) => (kind === 'release' ? 0 : 1);
+      return ofChange.sort((a, b) => order(a.gate.kind) - order(b.gate.kind)).map((g) => g.gate);
+    }
+    return onCard.filter((g) => g.gate.kind === 'entry' && g.attestTarget.TargetStage === undefined).map((g) => g.gate);
+  }, [coReviews.byGateKey, completeSelectedEarly, selectedStage, stageVerdictOf]);
+  const reviews = useGateReviews(detail, sectionGates);
   const reviewSummary = reviews.summary;
+  /** The selected stage's own entry gate: its gate rows, and its state when it reviews the stage before. */
+  const ownEntrySummary: StageReviewSummary | undefined =
+    selectedStage === undefined ? undefined : coReviews.byGateKey[`entry:${selectedStage.stageId}`];
+  /** Where the own entry gate is reviewed, when that is another stage's card. */
+  const ownEntryReviewedOn =
+    ownEntrySummary === undefined || reviewCardStageId(ownEntrySummary) === selectedStage?.stageId
+      ? undefined
+      : reviewCardStageId(ownEntrySummary);
+  /**
+   * Where the own entry gate's form is now: undefined while the change it reads has not
+   * landed, and then the status says so instead of linking to a card without the form.
+   */
+  const ownEntryFormOn = ownEntryReviewedOn === undefined || ownEntrySummary === undefined ? undefined : reviewFormStageId(ownEntrySummary, stageVerdictOf);
+  /** Before the stage's own change lands, its card says how the review of the stage before stands. */
+  const entryStatusSummary = ownEntryReviewedOn !== undefined && !selectedLanded && !completeSelectedEarly ? ownEntrySummary : undefined;
   /**
    * The band: the first held gate in time order (`bandGate`). With nothing
    * held, the next stage's entry review, so a complete review still shows its
@@ -1655,6 +1695,8 @@ export default function ChangeOrdersPage() {
   const reviewNow = Date.now();
   const approveRef = useRef<HTMLButtonElement>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /** The decision last recorded here, until its toast closes. */
+  const [recorded, setRecorded] = useState<{ gateKeys: string[]; subject: string; result: ReviewChoice; refreshed: boolean } | null>(null);
   // State 'none' = nothing evaluated. The panel still shows a gate with requirements the
   // server did not evaluate for this viewer: "Not evaluated for you", the decisions, the form.
   const reviewedStageSelected =
@@ -1666,7 +1708,11 @@ export default function ChangeOrdersPage() {
   const signOffSelected = completeSelectedEarly && reviewSummary !== undefined && reviewSummary.gate.kind === 'final';
   /** The release dry run refuses on a review requirement (422): the Release button is held, as Promote is on a 409. */
   const releaseHeldByReview =
-    reviewSummary?.gate.kind === 'release' && reviewSummary.requirements.some((r) => r.evaluated && !r.satisfied);
+    reviewSummary !== undefined && reviewSummary.requirements.some((r) => r.gate.kind === 'release' && r.evaluated && !r.satisfied);
+  /** The gates a review on this card holds, one summary each, for their blocked lines and chip. */
+  const sectionSummaries = sectionGates.flatMap((gate) => (coReviews.byGateKey[gate.key] === undefined ? [] : [coReviews.byGateKey[gate.key]]));
+  /** This stage's own gates among them (its release, or the first stage's entry): the card's chip follows them. */
+  const ownSectionSummary = sectionSummaries.find((summary) => summary.gate.stageId === selectedStage?.stageId);
 
   /**
    * The console row, when it has a promotion path. The rail, its pips and the
@@ -1720,19 +1766,22 @@ export default function ChangeOrdersPage() {
 
   const gates = selectedStage?.gates ?? [];
   /**
-   * The selected stage's gates that are not its reviews and are not yet
-   * satisfied: what still holds the stage when the reviews are done. With
-   * none, completing the review can honestly say Promote becomes available
-   * (M5); `PromoteReadiness` says the same for the band and the chips.
+   * The gates of the stage the review's entry gate leads into that are not its
+   * reviews and are not yet satisfied: what still holds that stage when the
+   * reviews are done. With none, completing the review can honestly say the
+   * gate opens (M5); `PromoteReadiness` says the same for the band and the chips.
+   * Undefined when the review counts toward no entry gate.
    */
+  const sectionEntry = sectionSummaries.find((summary) => summary.gate.kind === 'entry');
+  const sectionEntryStageGates = detail.stageStates.find((s) => s.stageId === sectionEntry?.gate.stageId)?.gates;
   const otherHoldingGates = useMemo(
     () =>
-      reviewSummary === undefined || reviewSummary.gate.kind !== 'entry'
-        ? []
-        : (selectedStage?.gates ?? [])
-            .filter((g) => reviewRequirementOf(g, reviewSummary) === undefined && !(g.evaluated && g.ok))
+      sectionEntry === undefined
+        ? undefined
+        : (sectionEntryStageGates ?? [])
+            .filter((g) => reviewRequirementOf(g, sectionEntry) === undefined && !(g.evaluated && g.ok))
             .map((g) => g.name),
-    [selectedStage?.gates, reviewSummary],
+    [sectionEntryStageGates, sectionEntry],
   );
   /**
    * What holds this stage, split by whether anybody checked.
@@ -1839,6 +1888,11 @@ export default function ChangeOrdersPage() {
     () => ({ '--col1-width': diffCol1, '--col2-width': diffCol2 }) as CSSProperties,
     [diffCol1, diffCol2],
   );
+  // The same widths for the server diffs a group renders resource by resource.
+  const diffColumns = useMemo<ConfigDiffColumns>(
+    () => ({ columnStyle: stableDiffColumnStyle, onDividerMouseDown: onDiffDividerMouseDown, isDragging: isDiffDragging }),
+    [stableDiffColumnStyle, onDiffDividerMouseDown, isDiffDragging],
+  );
   /**
    * "At the source" units the ChangeOrder actually covers. A unit the
    * ChangeOrder declined to touch at all is already accounted for in "Passed
@@ -1895,6 +1949,63 @@ export default function ChangeOrdersPage() {
     () => partitionSourceUnitsByChange(visibleSourceUnits, changes.sourceGroupsByUnitId),
     [visibleSourceUnits, changes.sourceGroupsByUnitId],
   );
+  /*
+   * IMAGE CHANGES: the hero card above the source diff.
+   *
+   * A fan-out ChangeOrder makes its change in Units outside its own Space, and
+   * an Invoke ChangeOrder's change is what running its Invocation writes, so the
+   * diff of the ChangeOrder's own Space says nothing for either. Their hero is
+   * read from the source diffs this page already holds, not from a request. The
+   * status says whether they are still arriving or could not be read, so an
+   * empty diff there is never shown as "No image change".
+   */
+  const sourceDataStatus = changes.fanOutSourceStatus ?? changes.invocationSourceStatus;
+  const readsSourceData = sourceDataStatus !== undefined;
+  const heroEligible = readsSourceData || changeOrderOwnSpaceReached(detail.updateType);
+  const ownSpaceImageChanges = useChangeOrderImageChanges({
+    changeOrderId: detail.changeOrderId,
+    baseSpaceId: detail.baseSpaceId,
+    skip: !heroEligible || readsSourceData || detail.changeOrderId === undefined || detail.baseSpaceId === undefined,
+  });
+  const sourceDataImageChanges = useMemo(
+    () =>
+      sourceDataStatus === undefined
+        ? undefined
+        : imageChangesForSource(sourceDataStatus, [...changes.sourceGroupsByUnitId.values()]),
+    [sourceDataStatus, changes.sourceGroupsByUnitId],
+  );
+  const imageChanges = sourceDataImageChanges ?? ownSpaceImageChanges;
+  const heroStageNames = useMemo(
+    () => detail.sequence.stages.filter((stage) => !stage.isSource).map((stage) => stage.id),
+    [detail.sequence.stages],
+  );
+  /** What the "Full diff" header counts: changed fields, and the Units that carry them. */
+  const fullDiffCounts = useMemo(() => {
+    const units = changes.sourceSpaceGroups.length > 0 ? changes.sourceUnits : changedSourceUnits;
+    let changeCount = 0;
+    let unitCount = 0;
+    for (const unit of units) {
+      const n = changes.sourceGroupsByUnitId.get(unit.unitId)?.fieldDiffs.length ?? 0;
+      if (n > 0) {
+        changeCount += n;
+        unitCount += 1;
+      }
+    }
+    return { changes: changeCount, units: unitCount };
+  }, [changes.sourceSpaceGroups.length, changes.sourceUnits, changedSourceUnits, changes.sourceGroupsByUnitId]);
+  /**
+   * The "Full diff" disclosure, `undefined` meaning "no manual override yet" —
+   * the same idiom as `gateOverride`. Shut by default only when the change is
+   * images and nothing else, which the hero above already says in full; open
+   * whenever there is anything the hero does not show, including while it
+   * cannot tell (an unreadable diff is never read as "images only").
+   */
+  const [fullDiffOverride, setFullDiffOverride] = useState<boolean | undefined>(undefined);
+  const fullDiffDefaultOpen = !(
+    heroEligible && (imageChanges.status === 'loading' || (imageChanges.status === 'some' && imageChanges.fieldChanges.count === 0))
+  );
+  const fullDiffOpen = fullDiffOverride ?? fullDiffDefaultOpen;
+  const toggleFullDiff = useCallback(() => setFullDiffOverride(!fullDiffOpen), [fullDiffOpen]);
   /**
    * The unchanged group's own disclosure, `undefined` meaning "no manual
    * override yet" — the same idiom as `gateOverride` above, and for the same
@@ -1951,6 +2062,8 @@ export default function ChangeOrdersPage() {
             <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, padding: '4px 12px 10px' }}>
               No fields differ here.
             </Box>
+          ) : group?.diff !== undefined ? (
+            <ConfigDiffView diff={group.diff} columns={diffColumns} hideContext />
           ) : (
             <TreeDiffSection
               entry={{ unitId: unit.unitId, fieldDiffs }}
@@ -1977,6 +2090,7 @@ export default function ChangeOrdersPage() {
       stableDiffColumnStyle,
       onDiffDividerMouseDown,
       isDiffDragging,
+      diffColumns,
     ],
   );
   /**
@@ -2144,11 +2258,17 @@ export default function ChangeOrdersPage() {
       const needsSelect = target !== undefined && target !== selectedStage?.stageId;
       if (needsSelect) navigate(changeOrderPath(detail.baseSpaceSlug, detail.slug, target));
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      // The review is often on another stage's card, which renders some time after it is selected.
+      let waits = 0;
       const go = () => {
         let element: HTMLElement | null = document.getElementById(REVIEW_PANEL_ID);
         if (action === 'promote') element = document.querySelector<HTMLElement>('[data-promote-stage]');
         if (action === 'release') element = document.querySelector<HTMLElement>('[data-release-stage]');
-        if (element === null) return;
+        if (element === null) {
+          waits += 1;
+          if (needsSelect && waits < 40) window.setTimeout(go, 150);
+          return;
+        }
         const toButton = action === 'promote' || action === 'release';
         element.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: toButton ? 'center' : 'start' });
         if (action === 'panel') return;
@@ -2173,37 +2293,59 @@ export default function ChangeOrdersPage() {
     },
     [selectedStage?.stageId, navigate, detail.baseSpaceSlug, detail.slug],
   );
-  /** The step the band's gate is on: the stage, or Complete for the sign-off. */
-  const bandStep = bandSummary === undefined ? undefined : bandSummary.gate.kind === 'final' ? COMPLETE_STAGE_ID : bandSummary.gate.stageId;
+  /**
+   * The step whose card has the band's review form: the stage whose change it reads
+   * (the stage before, for an entry gate), or Complete for the sign-off. Undefined while
+   * that change has not landed: the band then offers no way to a review.
+   */
+  const bandFormStep =
+    bandSummary === undefined
+      ? undefined
+      : bandSummary.gate.kind === 'final'
+        ? COMPLETE_STAGE_ID
+        : reviewFormStageId(bandSummary, stageVerdictOf);
+  /** Promote and Release are on the card of the stage the gate holds, not where it is reviewed. */
+  const bandGateStep = bandSummary?.gate.kind === 'final' ? COMPLETE_STAGE_ID : bandSummary?.gate.stageId;
   const onReviewBandAction = useCallback(
-    (action: ReviewBandAction) => goToReview(action, bandStep),
-    [goToReview, bandStep],
+    (action: ReviewBandAction) => {
+      const target = action === 'promote' || action === 'release' ? bandGateStep : bandFormStep;
+      if (target !== undefined) goToReview(action, target);
+    },
+    [goToReview, bandFormStep, bandGateStep],
   );
 
-  /** A decision was recorded: say what it did, in the toast and the live region. */
+  /**
+   * A decision was recorded. The toast is worded from the gates as the server
+   * reports them after the write (`submit` waits for them), read at render, so
+   * it says what the server counts rather than what the page expected.
+   */
   const onReviewRecorded = useCallback(
-    (_outcome: Extract<SubmitReviewOutcome, { ok: true }>, before: StageReviewSummary, result: ReviewChoice) => {
-      const primary = before.primary;
-      const stage = before.gate.stageName;
-      let message: string = reviewCopy.toast.approvedPlain;
-      if (result === 'Fail') {
-        message = reviewCopy.toast.rejected(stage);
-      } else if (primary !== undefined) {
-        const passes = Math.min(primary.passes + 1, primary.rules.required);
-        const othersOpen = before.requirements.every((r) => r.name === primary.name || r.satisfied);
-        const completes = passes >= primary.rules.required && othersOpen && !primary.rejected;
-        if (!completes) message = reviewCopy.toast.approved(passes, primary.rules.required, primary.name);
-        else if (before.gate.kind === 'release') message = reviewCopy.toast.releaseSatisfied(primary.name, stage);
-        else if (before.gate.kind === 'final') message = reviewCopy.toast.approvedPlain;
-        // "can be promoted" only when nothing but this review held the stage (M5).
-        else if (otherHoldingGates.length === 0) message = reviewCopy.toast.approvedSatisfied(primary.name, stage);
-        else message = reviewCopy.toast.reviewsComplete(primary.name, stage);
-      }
-      setToast(message);
-      setAnnouncement(message);
+    (outcome: Extract<SubmitReviewOutcome, { ok: true }>, summary: StageReviewSummary, result: ReviewChoice) => {
+      setAnnouncement('');
+      setToast(null);
+      setRecorded({
+        gateKeys: reviewFeeds(summary).map((gate) => gate.key),
+        subject: reviewSubject(summary).name,
+        result,
+        refreshed: outcome.refreshed !== false,
+      });
     },
-    [otherHoldingGates],
+    [],
   );
+  const showNotice = useCallback((message: string) => {
+    setRecorded(null);
+    setToast(message);
+  }, []);
+  const recordedText =
+    recorded === null
+      ? null
+      : recordedToastText(
+          recorded.gateKeys.flatMap((key) => (coReviews.byGateKey[key] === undefined ? [] : [coReviews.byGateKey[key]])),
+          recorded.subject,
+          recorded.result,
+          (stageId) => coReviews.readinessByStageId[stageId],
+          recorded.refreshed,
+        );
 
   const carriedResourceKeys = useMemo(
     () =>
@@ -2370,7 +2512,7 @@ export default function ChangeOrdersPage() {
         screen. Present from the start so nothing has to be retrofitted around it.
       */}
       <Box id="announce" role="status" aria-live="polite" sx={{ position: 'absolute', left: -9999 }}>
-        {announcement}
+        {recordedText ?? announcement}
       </Box>
 
       {/*
@@ -2418,11 +2560,16 @@ export default function ChangeOrdersPage() {
       <EndChangeOrderDialog {...endChangeOrder.dialogProps} />
       {/* The review toast: what a recorded decision did. The live region above says the same. */}
       <Snackbar
-        open={toast !== null}
-        autoHideDuration={3600}
-        onClose={() => setToast(null)}
+        open={recordedText !== null || toast !== null}
+        autoHideDuration={recordedText !== null ? 6000 : 3600}
+        onClose={() => {
+          // The live region keeps the last result once the toast has gone.
+          if (recordedText !== null) setAnnouncement(recordedText);
+          setRecorded(null);
+          setToast(null);
+        }}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        message={toast ?? ''}
+        message={recordedText ?? toast ?? ''}
         data-testid="review-toast"
         ContentProps={{ sx: { fontFamily: changeOrderFontSans, fontSize: changeOrderType.size.body } }}
       />
@@ -2550,7 +2697,21 @@ export default function ChangeOrdersPage() {
             }}
           >
             {bandSummary !== undefined ? (
-              <ReviewBand summary={bandSummary} readiness={readinessOf(bandSummary)} now={reviewNow} onAction={onReviewBandAction} />
+              <ReviewBand
+                summary={bandSummary}
+                readiness={readinessOf(bandSummary)}
+                now={reviewNow}
+                reviewable={bandFormStep !== undefined}
+                onAction={onReviewBandAction}
+                onGoToSubject={
+                  bandFormStep === undefined ||
+                  bandFormStep === COMPLETE_STAGE_ID ||
+                  bandFormStep === selectedStage?.stageId ||
+                  bandSummary.attestTarget.TargetStage === undefined
+                    ? undefined
+                    : () => goToReview('panel', bandFormStep)
+                }
+              />
             ) : null}
             <Box
               sx={{
@@ -2848,7 +3009,23 @@ export default function ChangeOrdersPage() {
                 Costs no extra request: both sides are already fetched for the
                 comparison above, and the answer cannot vary by stage.
               */}
-              {changes.sourceSpaceGroups.length > 0 ? (
+              {heroEligible ? (
+                <ImageChangeSummary
+                  changes={imageChanges}
+                  stageNames={heroStageNames}
+                />
+              ) : null}
+              {changes.sourceSpaceGroups.length > 0 || changes.sourceUnits.length > 0 ? (
+                <>
+                  <FullDiffDisclosure
+                    changeCount={fullDiffCounts.changes}
+                    unitCount={fullDiffCounts.units}
+                    imagesOnly={heroEligible && imageChanges.status === 'some' && imageChanges.fieldChanges.count === 0}
+                    hintText={onlyChangesHint(imageChanges.images)}
+                    expanded={fullDiffOpen}
+                    onToggle={toggleFullDiff}
+                    renderBody={() =>
+              changes.sourceSpaceGroups.length > 0 ? (
                 /*
                   An Invoke ChangeOrder's source is what running its Invocation
                   changes: the in-scope Spaces grouped as a stage's are, so
@@ -2921,7 +3098,7 @@ export default function ChangeOrdersPage() {
                     <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, marginBottom: '8px' }}>
                       {changes.sourceDropped}{' '}
                       {changes.sourceDropped === 1 ? 'resource is' : 'resources are'} not shown here —
-                      no state was recorded for them before the change.
+                      what the change did to them could not be read.
                     </Box>
                   ) : null}
                   <Box>
@@ -2960,6 +3137,9 @@ export default function ChangeOrdersPage() {
                     )}
                   </Box>
                 </Box>
+              ) : null}
+                  />
+                </>
               ) : null}
               {/*
                 ⚠️ THIS IS NOT THE REFERENCE'S "N variants are not in scope"
@@ -3159,19 +3339,28 @@ export default function ChangeOrdersPage() {
                 >
                   {selectedStageName}
                 </Box>
-                {reviewedStageSelected ? (
-                  <ReviewStageChip summary={reviewSummary} readiness={readinessOf(reviewSummary)} />
+                {/*
+                  The chip follows this stage's own review gates: its release, the first
+                  stage's entry over the own Space, or (before its change lands) its entry
+                  gate over the stage before. A review here of the next stage's entry gate
+                  is not this stage's state, so the stage keeps its own label then.
+                */}
+                {reviewedStageSelected && ownSectionSummary !== undefined ? (
+                  <ReviewStageChip summary={ownSectionSummary} readiness={readinessOf(ownSectionSummary)} />
+                ) : entryStatusSummary !== undefined ? (
+                  <ReviewStageChip summary={entryStatusSummary} readiness={readinessOf(entryStatusSummary)} />
                 ) : (
                   <StateChip label={selectedStage.label} tone={changeOrderInk.muted} />
                 )}
-                {reviewedStageSelected ? (
+                {reviewedStageSelected || entryStatusSummary !== undefined ? (
                   <Box
                     component="span"
+                    data-testid="review-stage-spaces"
                     sx={{ marginLeft: 'auto', fontSize: changeOrderType.size.body, color: changeOrderInk.subtle }}
                   >
-                    {reviewSummary.gate.kind === 'release' ? reviewCopy.stage.releaseEvaluatedOver : reviewCopy.stage.evaluatedOver}{' '}
+                    {reviewedStageSelected ? reviewCopy.stage.reviewedIn : reviewCopy.stage.evaluatedOver}{' '}
                     <Box component="span" sx={{ fontFamily: changeOrderFontMono, color: changeOrderInk.muted }}>
-                      {reviewSummary.gateSpaces.map((space) => space.spaceSlug).join(', ')}
+                      {(reviewedStageSelected ? reviewSummary : entryStatusSummary)?.gateSpaces.map((space) => space.spaceSlug).join(', ')}
                     </Box>
                   </Box>
                 ) : null}
@@ -3290,14 +3479,26 @@ export default function ChangeOrdersPage() {
                           marginBottom: '4px',
                         }}
                       >
+                        {/*
+                          The rows are this stage's own entry gates, so their review
+                          progress is its own entry gate's, whichever card reviews it.
+                        */}
                         <ChangeOrderGateList
                           stageId={selectedStage.stageId}
-                          gates={reviewedStageSelected && reviewSummary.gate.kind === 'entry' ? reviewGatesForList(gates, reviewSummary) : gates}
+                          gates={ownEntrySummary !== undefined ? reviewGatesForList(gates, ownEntrySummary) : gates}
                           isSource={selectedStage.verdict === 'source'}
                           extras={
-                            reviewedStageSelected && reviewSummary.gate.kind === 'entry'
-                              ? reviewGateExtras(gates, reviewSummary, () => goToReview('panel', undefined))
-                              : undefined
+                            ownEntrySummary === undefined
+                              ? undefined
+                              : ownEntryReviewedOn === undefined
+                                ? reviewGateExtras(gates, ownEntrySummary, () => goToReview('panel', undefined))
+                                : reviewGateExtras(
+                                    gates,
+                                    ownEntrySummary,
+                                    ownEntryFormOn === undefined ? undefined : () => goToReview('review', ownEntryFormOn),
+                                    reviewCopy.stage.reviewIn(reviewSubject(ownEntrySummary).name),
+                                    reviewSubject(ownEntrySummary).name,
+                                  )
                           }
                         />
                       </Box>
@@ -3305,7 +3506,21 @@ export default function ChangeOrdersPage() {
                   </>
                 );
               })() : null}
-              {reviewedStageSelected ? <ReviewGateBlockedLine summary={reviewSummary} /> : null}
+              {reviewedStageSelected
+                ? sectionSummaries.map((summary) => <ReviewGateBlockedLine key={summary.gate.key} summary={summary} />)
+                : null}
+              {entryStatusSummary !== undefined && ownEntryReviewedOn !== undefined ? (
+                <>
+                  <ReviewGateBlockedLine
+                    summary={entryStatusSummary}
+                    onGoToSubject={ownEntryFormOn === undefined ? undefined : () => goToReview('panel', ownEntryFormOn)}
+                  />
+                  <ReviewEntryStatus
+                    summary={entryStatusSummary}
+                    onGo={ownEntryFormOn === undefined ? undefined : () => goToReview('panel', ownEntryFormOn)}
+                  />
+                </>
+              ) : null}
 
               <Box sx={{ marginTop: '12px' }}>
                 {/*
@@ -3749,23 +3964,13 @@ export default function ChangeOrdersPage() {
                           />
                           <ChangeOrderRefusals conflicts={rowRefusals(g)} />
                           {/*
-                            `TreeDiffSection` — the same shared
-                            path | before | after tree the function
-                            invoker's per-unit result card, the
-                            Releases pane and the activity feed all
-                            use — not `ComponentValuesSection`'s own,
-                            separate implementation.
-
-                            `g.fieldDiffs` needs no filtering to get
-                            "what would this promotion write":
-                            `ChangeOrderChangeGroup.fieldDiffs` never
-                            applied `ComponentValuesSection`'s
-                            `variationPaths` exclusion in the first
-                            place (that exclusion lived entirely
-                            inside the tree component this replaces),
-                            so there is no "changed" vs "upgradable"
-                            filter-mode distinction to carry over —
-                            this was always the un-excluded set.
+                            The server's diff, resource by resource,
+                            through `ConfigDiffView` — the Revision
+                            compare drawer's view — so each document of
+                            a Unit is diffed on its own and array
+                            elements are matched by merge key. It is the
+                            whole of what the promotion writes: nothing
+                            here filters it.
 
                             Can genuinely be empty here — a `same`
                             group's members already hold the value
@@ -3781,6 +3986,8 @@ export default function ChangeOrdersPage() {
                             <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, padding: '4px 12px 10px' }}>
                               No fields differ here.
                             </Box>
+                          ) : g?.diff !== undefined ? (
+                            <ConfigDiffView diff={g.diff} columns={diffColumns} hideContext />
                           ) : (
                             <TreeDiffSection
                               entry={{ unitId: unit.unitId, fieldDiffs }}
@@ -4010,13 +4217,13 @@ export default function ChangeOrdersPage() {
                     <ReviewPanel
                       reviews={reviews}
                       summary={reviewSummary}
-                      otherGatesHolding={reviewSummary.gate.kind === 'entry' ? otherHoldingGates : undefined}
+                      otherGatesHolding={otherHoldingGates}
                       orderSlug={detail.slug}
                       viewerName={userInfo?.DisplayName}
                       now={reviewNow}
                       approveRef={approveRef}
                       onRecorded={onReviewRecorded}
-                      onNotice={setToast}
+                      onNotice={showNotice}
                     />
                   </Box>
                 </Box>
@@ -4048,7 +4255,7 @@ export default function ChangeOrdersPage() {
                           now={reviewNow}
                           approveRef={approveRef}
                           onRecorded={onReviewRecorded}
-                          onNotice={setToast}
+                          onNotice={showNotice}
                         />
                       ),
                     }

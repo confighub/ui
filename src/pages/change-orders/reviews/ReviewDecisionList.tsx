@@ -170,6 +170,16 @@ function DecisionRow({
             {agoText(decision.createdAt, now)}
           </Box>
         </Box>
+        {decision.origin !== undefined ? (
+          <Box
+            data-testid="review-decision-origin"
+            data-origin={decision.origin}
+            title={decision.otherChangeOrderId}
+            sx={{ marginTop: '2px', fontSize: changeOrderType.size.small, color: changeOrderInk.subtle }}
+          >
+            {copy.origin(decision.origin, decision.countsToward.length > 0)}
+          </Box>
+        ) : null}
         {decision.note !== '' ? (
           <Box
             component="q"

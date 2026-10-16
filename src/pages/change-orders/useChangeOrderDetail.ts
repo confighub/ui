@@ -49,7 +49,7 @@
  */
 
 import { skipToken } from '@reduxjs/toolkit/query';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import { useComponentSlugs } from '@/hooks/useComponentSlugs';
 import { usePolling } from '@/hooks/usePolling';
@@ -258,8 +258,11 @@ export interface ChangeOrderDetail {
   serverGatesByStage: ServerGatesByStage;
   /** Stages the dry run was refused for, by status (403: no permission to promote). */
   serverGateRefusals: ServerGateRefusals;
-  /** Asks the server for fresh gate verdicts now, for example after an Attestation is recorded. */
-  refreshServerGates: () => void;
+  /**
+   * Asks the server for fresh gate verdicts now, for example after an Attestation is
+   * recorded, and resolves once they have arrived.
+   */
+  refreshServerGates: () => Promise<void>;
 
   isLoading: boolean;
   isFetching: boolean;
@@ -554,9 +557,6 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
    * that selects no Space, which it refuses before evaluating anything. A
    * completed ChangeOrder is refused outright, so nothing is asked.
    */
-  // Bumped by `refreshServerGates`, so an Attestation recorded here is followed by fresh verdicts.
-  const [gateRefreshCount, setGateRefreshCount] = useState(0);
-  const refreshServerGates = useCallback(() => setGateRefreshCount((count) => count + 1), []);
 
   /*
    * Whether the workflow is complete. `ChangeOrder.Stage` says `Completed` only when
@@ -576,7 +576,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
   // every stage has the change, and the completed refusal once Final holds.
   const finalProbe = usePromoteFinalQuery(
     probeCompletion && order?.ChangeOrderID !== undefined
-      ? { changeOrderId: order.ChangeOrderID, refreshKey: JSON.stringify([order.UpdatedAt, gateRefreshCount]) }
+      ? { changeOrderId: order.ChangeOrderID, refreshKey: JSON.stringify([order.UpdatedAt]) }
       : skipToken,
   );
   const finalAnswer = useMemo(
@@ -613,11 +613,15 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
       order?.ResolvedSpaceIDs,
       order?.ReleasedSpaceIDs,
       order?.Stage,
-      gateRefreshCount,
     ]),
   });
   const serverGates = serverGateReads.byStage;
   const serverGateRefusals = serverGateReads.refusedByStage;
+  const refreshStageGates = serverGateReads.refresh;
+  const finalProbeStarted = !finalProbe.isUninitialized;
+  const refreshServerGates = useCallback(async () => {
+    await Promise.all([refreshStageGates(), probeCompletion && finalProbeStarted ? refetchFinal() : undefined]);
+  }, [refreshStageGates, probeCompletion, finalProbeStarted, refetchFinal]);
   const reviewRequests = order?.ReviewRequests ?? EMPTY_REVIEW_REQUESTS;
 
   return useMemo<ChangeOrderDetail>(() => {

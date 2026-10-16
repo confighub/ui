@@ -40,9 +40,12 @@ interface ReviewCoverageListProps {
 
 const copy = reviewCopy.coverage;
 
-/** A covered Revision where a decision from the viewer counts: one the viewer did not write (#5788 `Authored`), or any when authors count. */
+/**
+ * A covered Revision where a decision from the viewer counts: one a gate reads (of a Unit
+ * the change changed) that the viewer did not write (#5788 `Authored`), or any when authors count.
+ */
 function coverageRowCounts(row: ReviewCoverageRow, authorsCount: boolean): boolean {
-  return authorsCount || !row.authored;
+  return row.unchanged !== true && (authorsCount || !row.authored);
 }
 
 const frameSx = {
@@ -76,13 +79,6 @@ const rowSx = {
   '&:last-of-type': { borderBottom: 0 },
 } as const;
 
-function DryRunTag() {
-  return (
-    <Box component="span" sx={{ marginLeft: 'auto', flex: '0 0 auto', whiteSpace: 'nowrap', fontFamily: changeOrderFontMono, fontSize: changeOrderType.size.micro, color: changeOrderInk.subtle }}>
-      {copy.dryRun}
-    </Box>
-  );
-}
 
 function Where({ unit, space, skipped }: { unit: string; space: string; skipped: boolean }) {
   return (
@@ -112,7 +108,6 @@ export function ReviewCoverageList({ coverage, loading, author: authorProp = fal
       <Box sx={frameSx} aria-label={copy.label} aria-busy="true" data-testid="review-coverage">
         <Box sx={headSx}>
           <span>{copy.loading}</span>
-          <DryRunTag />
         </Box>
         {[0, 1, 2].map((i) => (
           <Box key={i} sx={rowSx}>
@@ -133,8 +128,9 @@ export function ReviewCoverageList({ coverage, loading, author: authorProp = fal
     );
   }
   const counting = coverage.covered.filter((row) => rowCounts(row));
+  const needed = coverage.covered.filter((row) => row.unchanged !== true);
   const counts = copy.covers(counting.length, coverage.spaceCount, coverage.skipped.length);
-  const authoredOnly = coverage.covered.length > 0 && counting.length === 0;
+  const authoredOnly = needed.length > 0 && counting.length === 0;
   let head: ReactNode = (
     <>
       <CheckIcon aria-hidden="true" sx={{ fontSize: 13, color: changeOrderStatus.success }} />
@@ -149,7 +145,7 @@ export function ReviewCoverageList({ coverage, loading, author: authorProp = fal
       <>
         <InfoOutlinedIcon aria-hidden="true" sx={{ fontSize: 13, color: changeOrderInk.subtle }} />
         <span>
-          {copy.authorHead} <b>{copy.covers(coverage.covered.length, coverage.spaceCount, 0).revisions}</b>
+          {copy.authorHead} <b>{copy.covers(needed.length, coverage.spaceCount, 0).revisions}</b>
           {copy.authorTail}
         </span>
       </>
@@ -169,7 +165,6 @@ export function ReviewCoverageList({ coverage, loading, author: authorProp = fal
       ) : null}
       <Box sx={headSx}>
         {head}
-        <DryRunTag />
       </Box>
       {coverage.spaceErrors.map((error) => (
         <Box key={`err-${error.spaceSlug}`} sx={rowSx} data-coverage="space-error">
@@ -183,11 +178,16 @@ export function ReviewCoverageList({ coverage, loading, author: authorProp = fal
           </Box>
         </Box>
       ))}
-      {coverage.covered.map((row) => {
+      {/* The Revisions a gate reads first; those of Units the change did not change after them. */}
+      {[...coverage.covered].sort((a, b) => Number(a.unchanged === true) - Number(b.unchanged === true)).map((row) => {
         const counted = rowCounts(row) && !author;
-        const note: string | null = !counted ? copy.authorHere : null;
+        let note: string | null = null;
+        if (row.unchanged === true) note = copy.notChanged;
+        else if (!counted) note = copy.authorHere;
+        let kind = counted ? 'covered' : 'recorded-only';
+        if (row.unchanged === true) kind = 'not-needed';
         return (
-          <Box key={`in-${row.revisionId}`} sx={rowSx} data-coverage={counted ? 'covered' : 'recorded-only'}>
+          <Box key={`in-${row.revisionId}`} sx={rowSx} data-coverage={kind}>
             {/* Recorded but not counted: a neutral mark, not a green tick. */}
             {counted ? (
               <CheckIcon aria-hidden="true" sx={{ fontSize: 12, marginTop: '2px', color: changeOrderStatus.success }} />

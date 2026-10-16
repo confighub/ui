@@ -78,14 +78,23 @@ export function buildReviewHistory(input: BuildReviewHistoryInput): HistoryRevie
       return;
     }
     known.requirementNames = mergeNames(known.requirementNames, entry.requirementNames) ?? [];
+    // One review of several gates: the event names every gate it counts toward.
+    const gates = [...(known.gates ?? []), ...(entry.gates ?? [])];
+    known.gates = gates.filter((gate, i) => gates.findIndex((g) => g.kind === gate.kind && g.stage === gate.stage) === i);
     known.satisfiedRequirementNames = mergeNames(known.satisfiedRequirementNames, entry.satisfiedRequirementNames);
     if (entry.blocksPromotion === true) known.blocksPromotion = true;
   };
 
   for (const summary of input.summaries) {
     const completing = completingDecisions(summary);
-    const stage = summary.gate.stageName;
     const gateKind = summary.gate.kind;
+    // The history files a review under the stage whose change was reviewed. The first
+    // stage's entry gate reviews the ChangeOrder's own Space, which is no stage: it stays
+    // under the stage entered.
+    const reviewedBase = summary.attestTarget.TargetStage === undefined;
+    const reviewedStage = summary.gateStageName;
+    const stage = reviewedBase ? summary.gate.stageName : reviewedStage;
+    const gates = [{ kind: gateKind, stage: summary.gate.stageName }];
     for (const decision of summary.decisions) {
       const createdAt = epoch(decision.createdAt);
       if (createdAt === undefined) continue;
@@ -94,6 +103,10 @@ export function buildReviewHistory(input: BuildReviewHistoryInput): HistoryRevie
         kind: 'review' as const,
         gateKind,
         stage,
+        reviewedStage,
+        reviewedBase,
+        gates,
+        ...(decision.origin ? { origin: decision.origin } : {}),
         type: decision.type,
         ...(decision.note === '' ? {} : { note: decision.note }),
       };
@@ -158,7 +171,10 @@ export function buildReviewHistory(input: BuildReviewHistoryInput): HistoryRevie
         ...(request.requestedBy ? { userId: request.requestedBy.userId } : {}),
         person: input.person(request.requestedBy?.userId),
         requestedOf: input.person(request.user.userId),
-        stage: request.stage === '' ? summary.gateStageName : request.stage,
+        stage,
+        reviewedStage,
+        reviewedBase,
+        gates,
         type: summary.primary?.rules.type ?? 'Approval',
         requirementNames: summary.requirements.map((requirement) => requirement.name),
       });

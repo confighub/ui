@@ -292,7 +292,7 @@ test.describe('select, include and orderBy field lists', () => {
     const promote = result.lists.find(
       (l) => l.where.startsWith('src/pages/x/apps/change-order/useChangeOrderChanges.ts:') && l.param === 'include',
     );
-    expect(promote?.supported).toEqual(new Set(['Mutations', 'Diff', 'ConfigData']));
+    expect(promote?.supported).toEqual(new Set(['Mutations', 'Diff', 'Context', 'ConfigData']));
   });
 
   test('a field the API does not have is caught', () => {

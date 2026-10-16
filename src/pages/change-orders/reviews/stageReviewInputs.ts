@@ -30,7 +30,7 @@ import type {
 
 import { classifyPrerequisite } from '../../x/apps/change-order/changeOrderWorkflow';
 import { previousStageOf } from '../../x/apps/change-order/changeOrderStages';
-import type { ChangeOrderSequence } from '../../x/apps/change-order/changeOrderTypes';
+import type { ChangeOrderSequence, ChangeOrderStageVerdict } from '../../x/apps/change-order/changeOrderTypes';
 import { reviewInitials } from './changeOrderReviews';
 import type {
   GateReviewSummary,
@@ -153,6 +153,46 @@ export function reviewedGates(
   return gates;
 }
 
+/**
+ * The stage whose card holds a gate's review: the stage whose Spaces it reads. A stage's
+ * entry gate reads the stage before it, so its review sits with that stage's change; the
+ * first stage's entry gate reads the ChangeOrder's own Space, which has no card, so it
+ * stays on the first stage. Final is on the Complete step: undefined.
+ */
+export function reviewCardStageId(summary: Pick<GateReviewSummary, 'gate' | 'attestTarget'>): string | undefined {
+  if (summary.gate.kind === 'final') return undefined;
+  return summary.attestTarget.TargetStage ?? summary.gate.stageId;
+}
+
+/**
+ * Whether a stage's change has landed in at least one of its Spaces. Only a stage known
+ * to have none ('gated', 'waiting') has not: any other verdict, 'unknown' included,
+ * counts as landed, so the only place to review a gate is never hidden.
+ */
+export function stageChangeLanded(verdict: ChangeOrderStageVerdict | undefined): boolean {
+  return verdict !== 'gated' && verdict !== 'waiting';
+}
+
+/**
+ * The stage whose card shows a gate's review form now. The card is `reviewCardStageId`;
+ * it has the form while the change it reads is there: for an entry gate, once that
+ * stage's change has landed anywhere (`stageChangeLanded`); for a release gate, while the
+ * stage is promoted and still to be released, as its Release button is. The first stage's
+ * entry gate reads the ChangeOrder's own Space, which always has the change. Undefined
+ * for Final (the Complete step) and while no card has the form. The card selection and
+ * every link to a review use this, so a link never leads to a card without the form.
+ */
+export function reviewFormStageId(
+  summary: Pick<GateReviewSummary, 'gate' | 'attestTarget'>,
+  verdictOf: (stageId: string) => ChangeOrderStageVerdict | undefined,
+): string | undefined {
+  const card = reviewCardStageId(summary);
+  if (card === undefined || summary.attestTarget.TargetStage === undefined) return card;
+  const verdict = verdictOf(card);
+  if (summary.gate.kind === 'release') return verdict === 'promoted' ? card : undefined;
+  return stageChangeLanded(verdict) ? card : undefined;
+}
+
 /** The `/attest` target of a gate. */
 export function reviewAttestTarget(
   changeOrderId: string,
@@ -271,6 +311,7 @@ export function reviewCoverageOf(type: string, result: AttestResultRead | undefi
     covered: working.flatMap((space) =>
       (space.Subjects ?? []).map((subject) => ({
         revisionId: subject.RevisionID ?? '',
+        ...(subject.UnitID ? { unitId: subject.UnitID } : {}),
         unitSlug: subject.UnitSlug ?? subject.UnitID ?? '',
         spaceSlug: space.SpaceSlug ?? space.SpaceID ?? '',
         revisionNum: subject.RevisionNum ?? 0,
@@ -289,6 +330,43 @@ export function reviewCoverageOf(type: string, result: AttestResultRead | undefi
     spaceErrors: attestSpaceErrors(result),
     spaceCount: working.length,
     recordable: working.some((space) => (space.Subjects?.length ?? 0) > 0),
+  };
+}
+
+/**
+ * The Units the change changed in the Spaces read: those whose start and end Tags mark
+ * different Revisions, or that only the end Tag marks (`changeGateRevisions`). `revisions`
+ * are the Revisions carrying either Tag. Undefined when they are not known.
+ */
+export function changedUnitIdsOf(
+  revisions: readonly { UnitID?: string; RevisionNum?: number; Tags?: Record<string, unknown> | null }[] | undefined,
+  startTagId: string | undefined,
+  endTagId: string | undefined,
+): ReadonlySet<string> | undefined {
+  if (revisions === undefined || startTagId === undefined || endTagId === undefined) return undefined;
+  const starts = new Map<string, number>();
+  const ends = new Map<string, number>();
+  for (const revision of revisions) {
+    if (!revision.UnitID || revision.RevisionNum === undefined) continue;
+    const tags = revision.Tags ?? {};
+    if (startTagId in tags) starts.set(revision.UnitID, revision.RevisionNum);
+    if (endTagId in tags) ends.set(revision.UnitID, revision.RevisionNum);
+  }
+  const changed = new Set<string>();
+  for (const [unitId, end] of ends) if (starts.get(unitId) !== end) changed.add(unitId);
+  return changed;
+}
+
+/**
+ * Marks the covered Revisions of Units the change did not change. Only when every gate of
+ * the review reads changed Units alone (entry and Final): a release gate reads every
+ * Revision its Release bundles, so then nothing is marked.
+ */
+export function markUnchanged(coverage: ReviewCoverage, changed: ReadonlySet<string> | undefined, onlyChanged: boolean): ReviewCoverage {
+  if (changed === undefined || !onlyChanged) return coverage;
+  return {
+    ...coverage,
+    covered: coverage.covered.map((row) => (row.unitId === undefined || changed.has(row.unitId) ? row : { ...row, unchanged: true })),
   };
 }
 

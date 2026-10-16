@@ -17,9 +17,11 @@
  * the counts and the values disagree, show the values, because the values are
  * what the user actually gets.
  *
- * The diffing itself is `computeFieldDiffs` from entryBuilders — the same
- * function the rest of the component view uses, so a ChangeOrder diff and an
- * upgrade diff can never drift apart.
+ * The diffing itself is the server's (`ConfigDiff`): it diffs each document of a
+ * Unit on its own and matches array elements by merge key. Flattening a Unit's
+ * documents into one map instead compares a path two documents share in the last
+ * of them only, which hides a change to any of the others, and matching arrays by
+ * index reports every element after an insertion as changed.
  *
  * RULE 11 BINDS THIS FILE. The other ten bind the row key and the outcome
  * filter; all eleven are listed in `changeOrderMatrix.ts`'s header.
@@ -33,11 +35,11 @@
  *     whether it goes through it.
  */
 
-import type { PromoteResult } from '@confighub/rtk-query';
+import type { ConfigDiff, PathChange, PromoteResult, ResourceInfo } from '@confighub/rtk-query';
 
-import { buildPaths, computeFieldDiffs } from '../entryBuilders';
+import { PLACEHOLDER_RESOURCE_TYPE, segmentLabel } from '../../../../components/config-diff/configDiffTree';
 import { parseUnitDataStructured, resourceIdentitiesOf } from '../configParser';
-import { groupFieldEntriesByDocument, type DocumentGroup } from '../diffTree';
+import { groupFieldEntriesByDocument, VALUE_PLACEHOLDER } from '../diffTree';
 import type { ChangeOrderChangeGroup, ChangeOrderResourceConflict } from './changeOrderTypes';
 
 /** One resource's before/after, however the caller obtained them. */
@@ -49,6 +51,13 @@ export interface ChangeOrderChangeSource {
   beforeData: string | undefined;
   /** Base64 configuration data AFTER it. */
   afterData: string | undefined;
+  /**
+   * What changes from BEFORE to AFTER, as the server computed it: the promote dry
+   * run's `Diff`, or the diff of the Revisions a promotion wrote. Empty for a Unit
+   * the promotion leaves as it is. `undefined` when it could not be had, which
+   * makes the change undeterminable wherever there is AFTER data to diff.
+   */
+  diff: ConfigDiff | undefined;
   /** True when `afterData` came from a written Revision rather than a dry run. */
   written: boolean;
   /**
@@ -96,6 +105,8 @@ export function conflictBlocks(reason: string | undefined): boolean {
 export interface PromotionPreview {
   /** The configuration each Unit the promotion writes would hold. */
   dataByUnitId: Map<string, string>;
+  /** What the promotion would change in each Unit in `dataByUnitId`. */
+  diffByUnitId: Map<string, ConfigDiff>;
   /** What the promotion would withhold from each Unit, where it would withhold anything. */
   conflictsByUnitId: Map<string, ChangeOrderResourceConflict[]>;
   /** Units the promotion would not write: their configuration stays as it is. */
@@ -122,18 +133,19 @@ const NON_WRITING_UNIT_ACTIONS: ReadonlySet<string> = new Set(['Mark', 'Unchange
 const PLANNED_SPACE_ACTIONS: ReadonlySet<string> = new Set(['Promote', 'Unchanged', 'Skipped']);
 
 /**
- * Read a `POST /promote` dry run made with `include=ConfigData` into what each Unit would
- * hold.
+ * Read a `POST /promote` dry run made with `include=ConfigData,Diff` into what each Unit
+ * would hold, and what would change in it.
  *
  * ⚠️ A UNIT WITH NO CONFIGURATION IS ONE OF TWO THINGS. The server returns `ConfigData`
- * only for a Unit the promotion writes, so a Unit it marks, skips or leaves unchanged has
- * none and is unchanged. One it would write and still has none for, or reports an error
- * for, is not: it is undetermined, and must not read as "this promotion changes nothing
- * here".
+ * and `Diff` only for a Unit the promotion writes, so a Unit it marks, skips or leaves
+ * unchanged has neither and is unchanged. One it would write and still lacks either for,
+ * or reports an error for, is not: it is undetermined, and must not read as "this
+ * promotion changes nothing here".
  */
 export function readPromotionPreview(result: PromoteResult | undefined): PromotionPreview {
   const preview: PromotionPreview = {
     dataByUnitId: new Map(),
+    diffByUnitId: new Map(),
     conflictsByUnitId: new Map(),
     unchangedUnitIds: new Set(),
     undeterminedUnitIds: new Set(),
@@ -157,8 +169,9 @@ export function readPromotionPreview(result: PromoteResult | undefined): Promoti
       if (conflicts.length > 0) preview.conflictsByUnitId.set(unitId, conflicts);
       if (unit.Error !== undefined) {
         preview.undeterminedUnitIds.add(unitId);
-      } else if (unit.ConfigData !== undefined && unit.ConfigData !== '') {
+      } else if (unit.ConfigData !== undefined && unit.ConfigData !== '' && unit.Diff !== undefined) {
         preview.dataByUnitId.set(unitId, unit.ConfigData);
+        preview.diffByUnitId.set(unitId, unit.Diff);
       } else if (NON_WRITING_UNIT_ACTIONS.has(unit.Action ?? '')) {
         preview.unchangedUnitIds.add(unitId);
       } else {
@@ -169,53 +182,21 @@ export function readPromotionPreview(result: PromoteResult | undefined): Promoti
   return preview;
 }
 
-/** The documents of a payload, one group per source document. */
-function documentsOf(data: string | undefined): DocumentGroup[] {
-  return hasConfig(data) ? groupFieldEntriesByDocument(parseUnitDataStructured(data)) : [];
+/** The resource type of each document of a payload, in document order. */
+function documentTypesOf(data: string | undefined): (string | undefined)[] {
+  if (!hasConfig(data)) return [];
+  return groupFieldEntriesByDocument(parseUnitDataStructured(data)).map((document) => document.resource?.ResourceType);
 }
 
-/** `kind` of one document, from its `apiVersion/kind` resource type. */
-function documentKind(document: DocumentGroup): string | undefined {
-  const type = document.resource?.ResourceType;
-  if (!type) return undefined;
+/** `kind` from an `apiVersion/kind` resource type. A placeholder type names no kind. */
+function kindOfType(type: string | undefined): string | undefined {
+  if (!type || type === PLACEHOLDER_RESOURCE_TYPE) return undefined;
   return type.slice(type.lastIndexOf('/') + 1) || undefined;
 }
 
-/**
- * A key for each document that is the same on both sides of a change: its
- * identity, numbered by occurrence so that documents sharing one (or having
- * none) still pair up in order rather than collapsing together.
- */
-function documentKeys(documents: DocumentGroup[]): string[] {
-  const seen = new Map<string, number>();
-  return documents.map((document) => {
-    const identity = JSON.stringify([
-      document.resource?.ResourceType ?? null,
-      document.resource?.ResourceName ?? null,
-    ]);
-    const occurrence = seen.get(identity) ?? 0;
-    seen.set(identity, occurrence + 1);
-    return `${identity}#${occurrence}`;
-  });
-}
-
-function documentValues(document: DocumentGroup): Map<string, string> {
-  return new Map(document.entries.map((entry) => [entry.path, JSON.stringify(entry.value) ?? '']));
-}
-
-function sameDocument(a: DocumentGroup, b: DocumentGroup): boolean {
-  const aValues = documentValues(a);
-  const bValues = documentValues(b);
-  if (aValues.size !== bValues.size) return false;
-  for (const [path, value] of aValues) {
-    if (bValues.get(path) !== value) return false;
-  }
-  return true;
-}
-
-/** Distinct kinds, in document order, as the badge shows them. */
-function joinKinds(documents: DocumentGroup[]): string | undefined {
-  const kinds = [...new Set(documents.map(documentKind).filter((kind) => kind !== undefined))];
+/** Distinct kinds, in order, as the badge shows them. */
+function joinKinds(types: (string | undefined)[]): string | undefined {
+  const kinds = [...new Set(types.map(kindOfType).filter((kind) => kind !== undefined))];
   return kinds.length > 0 ? kinds.join(', ') : undefined;
 }
 
@@ -227,34 +208,96 @@ function joinKinds(documents: DocumentGroup[]): string | undefined {
  * renders, just without a kind badge.
  *
  * A Unit may hold several documents — a Service, a Deployment and an
- * IngressRoute, say — and its flattened data has one `kind` key, whichever
- * document came last. So the badge names the kinds of the documents that differ
- * between the two sides, which are the ones the rows below are about. Where none
- * differ, or only one side can be read, it names every kind the Unit holds.
+ * IngressRoute, say. The badge names the kinds of the resources the diff says
+ * change, which are the ones the rows below are about. Where none change, or the
+ * change cannot be established, it names every kind the Unit holds.
  */
 function resourceKindOf(
   beforeData: string | undefined,
   afterData: string | undefined,
-  determinable: boolean,
+  diff: ConfigDiff | undefined,
 ): string | undefined {
-  const before = documentsOf(beforeData);
-  const after = documentsOf(afterData);
-  const all = after.length > 0 ? after : before;
-  if (!determinable || before.length === 0 || after.length === 0) return joinKinds(all);
+  const changed = joinKinds((diff?.Resources ?? []).map((resource) => resource.Resource?.ResourceType));
+  if (changed !== undefined) return changed;
+  return joinKinds(documentTypesOf(hasConfig(afterData) ? afterData : beforeData));
+}
 
-  const beforeByKey = new Map<string, DocumentGroup>();
-  documentKeys(before).forEach((key, i) => beforeByKey.set(key, before[i]));
-  const afterKeys = documentKeys(after);
-  const afterKeySet = new Set(afterKeys);
-  const changed = after.filter((document, i) => {
-    const previous = beforeByKey.get(afterKeys[i]);
-    return previous === undefined || !sameDocument(previous, document);
-  });
-  // A document only the BEFORE side holds is one the change removes.
-  for (const [key, document] of beforeByKey) {
-    if (!afterKeySet.has(key)) changed.push(document);
+/** The resources a diff changes: a read may also list the ones it does not. */
+function changedResourcesOf(diff: ConfigDiff): ConfigDiff {
+  return { Resources: (diff.Resources ?? []).filter((resource) => resource.ChangeType !== 'None') };
+}
+
+/**
+ * What a group shows of a server diff: the resources it changes (with any context
+ * the read returned, which the rows leave out and the image summary reads), one
+ * entry per change, and the kind badge. The data is only for the badge of a Unit
+ * the diff says nothing changes in.
+ */
+export function serverDiffGroupParts(
+  diff: ConfigDiff,
+  beforeData: string | undefined,
+  afterData: string | undefined,
+): Pick<ChangeOrderChangeGroup, 'diff' | 'fieldDiffs' | 'resourceKind'> {
+  const changed = changedResourcesOf(diff);
+  return {
+    diff: changed,
+    fieldDiffs: changeEntriesOf(changed),
+    resourceKind: resourceKindOf(beforeData, afterData, changed),
+  };
+}
+
+/**
+ * A resource as the change entries name it: type and name, without the namespace.
+ * The entries are compared across variants, and a per-variant namespace is the
+ * ordinary way to make one (see `resourceIdentityKeyOf`).
+ */
+function entryResourceLabel(resource: ResourceInfo | undefined): string {
+  return [resource?.ResourceType, resource?.ResourceNameWithoutScope || resource?.ResourceName]
+    .filter(Boolean)
+    .join(' ');
+}
+
+/** A change's path, as the entry names it: the path syntax, and what about the node changed. */
+function entryPath(change: PathChange): string {
+  const path = (change.Segments ?? []).map(segmentLabel).join('.') || change.DisplayPath || change.Path || '';
+  if (change.Comment) return `${path} (${change.Comment.toLowerCase()} comment)`;
+  if (change.ChangeType === 'Reorder' || change.ChangeType === 'Rename') return `${path} (${change.ChangeType.toLowerCase()})`;
+  return path;
+}
+
+function entryValues(changeType: string | undefined, fromValue: string | undefined, toValue: string | undefined) {
+  return {
+    oldValue: changeType === 'Add' ? VALUE_PLACEHOLDER : (fromValue ?? ''),
+    newValue: changeType === 'Delete' ? VALUE_PLACEHOLDER : (toValue ?? ''),
+  };
+}
+
+/**
+ * A diff as one entry per change: a path changed, or a resource added or deleted
+ * whole, which is one change however much it holds. The unchanged paths a read
+ * may return as context are not changes.
+ *
+ * Each entry's path names the resource as well as the path within it, so that the
+ * same path in two documents of one Unit is two entries, and two variants making
+ * the same change produce the same entries.
+ */
+export function changeEntriesOf(diff: ConfigDiff): { path: string; oldValue: string; newValue: string }[] {
+  const entries: { path: string; oldValue: string; newValue: string }[] = [];
+  for (const resource of diff.Resources ?? []) {
+    const label = entryResourceLabel(resource.Resource);
+    if (resource.ChangeType === 'Add' || resource.ChangeType === 'Delete') {
+      entries.push({ path: label, ...entryValues(resource.ChangeType, resource.FromValue, resource.ToValue) });
+      continue;
+    }
+    for (const change of resource.Changes ?? []) {
+      if (change.ChangeType === 'None') continue;
+      entries.push({
+        path: `${label}: ${entryPath(change)}`,
+        ...entryValues(change.ChangeType, change.FromValue, change.ToValue),
+      });
+    }
   }
-  return joinKinds(changed.length > 0 ? changed : all);
+  return entries;
 }
 
 /**
@@ -433,12 +476,19 @@ export function buildChangeOrderChangeGroups(sources: ChangeOrderChangeSource[])
   return sources.map((source) => {
     // Rule 16's mirror image: no "before" data means there is nothing honest to
     // diff against, so this resource's fate is undetermined too — never "every
-    // path is new", which is what diffing against absence would report.
-    const determinable = hasConfig(source.beforeData) && !source.cannotDetermineAfter;
+    // path is new", which is what diffing against absence would report. Nor is
+    // AFTER data with no diff to say what changes in it.
+    const writes = hasConfig(source.afterData);
+    const determinable =
+      hasConfig(source.beforeData) && !source.cannotDetermineAfter && (!writes || source.diff !== undefined);
+    const parts =
+      determinable && writes && source.diff !== undefined
+        ? serverDiffGroupParts(source.diff, source.beforeData, source.afterData)
+        : { diff: undefined, fieldDiffs: [], resourceKind: resourceKindOf(source.beforeData, source.afterData, undefined) };
     return {
       unitId: source.unitId,
       resourceName: source.slug,
-      resourceKind: resourceKindOf(source.beforeData, source.afterData, determinable),
+      resourceKind: parts.resourceKind,
       // Either side identifies the resource, and the two agree wherever both can
       // be read. The BEFORE side is preferred because it is what the Space holds
       // now, which is the thing the row claims to be about.
@@ -456,14 +506,8 @@ export function buildChangeOrderChangeGroups(sources: ChangeOrderChangeSource[])
       // shown — the group records what the dry run said, and the card decides
       // what to do with it.
       conflicts: source.conflicts,
-      fieldDiffs:
-        !determinable || !hasConfig(source.afterData)
-          ? []
-          : computeFieldDiffs(source.beforeData, source.afterData),
-      // Same guard as `fieldDiffs`: undetermined or absent AFTER data has
-      // nothing honest to build a context list from either.
-      allPaths:
-        !determinable || !hasConfig(source.afterData) ? undefined : buildPaths(source.afterData),
+      fieldDiffs: parts.fieldDiffs,
+      diff: parts.diff,
       written: source.written,
       determinable,
     };
@@ -487,4 +531,24 @@ export function countChangedPaths(groups: ChangeOrderChangeGroup[]): number {
  */
 export function hasOutstandingDifferences(groups: ChangeOrderChangeGroup[]): boolean {
   return groups.some((group) => group.fieldDiffs.length > 0);
+}
+
+/**
+ * Whether a stage's groups can be read yet. `loading` until every read the stage needs has
+ * arrived (or has not started); `failed` when the dry run was refused or a Unit it answered
+ * for has no configuration to diff, so an empty diff is not evidence of "no change";
+ * `resolved` otherwise.
+ */
+export type ChangeOrderChangesStatus = 'loading' | 'resolved' | 'failed';
+
+export function changeOrderChangesStatus(input: {
+  /** A read the stage needs has not arrived, or was never started. */
+  pending: boolean;
+  /** The whole dry-run request failed. */
+  dryRunFailed: boolean;
+  groups: readonly Pick<ChangeOrderChangeGroup, 'determinable'>[];
+}): ChangeOrderChangesStatus {
+  if (input.pending) return 'loading';
+  if (input.dryRunFailed || input.groups.some((group) => !group.determinable)) return 'failed';
+  return 'resolved';
 }

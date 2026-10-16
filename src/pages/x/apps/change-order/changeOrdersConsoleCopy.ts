@@ -101,6 +101,7 @@ export const changeOrdersConsoleCopy = {
   columns: {
     name: featureName,
     component: 'Component',
+    imageChange: 'Image change',
     stages: 'Stages',
     blocker: 'Blocker',
     age: 'Age',
