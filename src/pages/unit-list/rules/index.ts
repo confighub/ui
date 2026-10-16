@@ -1,23 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
-export type ModalType = 'add' | 'link' | 'invoke' | 'bulk_edit' | 'clone' | 'changesets' | 'upgrade' | 'bulk_restore';
-
-const changesetModal = {
-  conditions: {
-    any: [
-      {
-        fact: 'type',
-        operator: 'equal',
-        value: 'changesets',
-      },
-    ],
-  },
-  event: {
-    type: 'changesets' as ModalType,
-    params: {},
-  },
-};
+export type ModalType = 'add' | 'link' | 'invoke' | 'bulk_edit' | 'clone' | 'upgrade' | 'bulk_restore';
 
 const addUnitsModal = {
   conditions: {
@@ -137,7 +121,6 @@ const rules = [
   invokeUnitsFunctionModal,
   bulkEditUnits,
   cloneUnitsModal,
-  changesetModal,
   upgradUnitsModal,
   bulkRestoreUnitsModal
 ];

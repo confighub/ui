@@ -11,6 +11,7 @@ import AddIcon from '@mui/icons-material/Add';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import {
+  Alert,
   Box,
   Button,
   CircularProgress,
@@ -74,6 +75,8 @@ export interface InvokerContentProps {
   totalVisibleUnits?: number;
   onSaveAttributes?: (unitId: string, spaceId: string, attributes: AttributeValueItem[], changeDescription: string) => Promise<void>;
   isSavingAttributes?: boolean;
+  /** Set when a page asked for a Trigger to be created in its Space */
+  saveAsTrigger?: { requestSeq: number; spaceId: string; spaceName: string; onCancel: () => void };
 }
 
 export const InvokerContent = ({
@@ -102,6 +105,7 @@ export const InvokerContent = ({
   functionsByToolchain,
   totalVisibleUnits,
   onSaveAttributes,
+  saveAsTrigger,
 }: InvokerContentProps) => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const savePanelRef = useRef<HTMLDivElement>(null);
@@ -150,6 +154,15 @@ export const InvokerContent = ({
   if (!selectedFunction && showInlineSavePanel) {
     setShowInlineSavePanel(false);
   }
+
+  // Creating a Trigger: the save panel is the point, so it opens with the function.
+  const selectedFunctionName = selectedFunction?.FunctionName;
+  const createTriggerRequestSeq = saveAsTrigger?.requestSeq;
+  useEffect(() => {
+    if (selectedFunctionName && createTriggerRequestSeq) {
+      setShowInlineSavePanel(true);
+    }
+  }, [selectedFunctionName, createTriggerRequestSeq]);
 
   // Fuzzy search
   const { query, setQuery, results, savedResults, recentResults, hasResults } = useFuzzySearch({
@@ -220,6 +233,18 @@ export const InvokerContent = ({
 
   const canInvoke = context.selectedUnits?.length > 0;
 
+  // With no Units to take it from, a saved function call is for a toolchain that has the function,
+  // Kubernetes/YAML when it is one of them.
+  const saveToolchainType = (() => {
+    const fromContext = toolchainFilter || context.primaryToolchainType;
+    const functionName = selectedFunction?.FunctionName;
+    if (fromContext || !functionName || !functionsByToolchain) return fromContext || '';
+    const withFunction = Object.keys(functionsByToolchain).filter(
+      (toolchain) => !!functionsByToolchain[toolchain]?.[functionName],
+    );
+    return withFunction.includes('Kubernetes/YAML') ? 'Kubernetes/YAML' : withFunction[0] || '';
+  })();
+
   return (
     <>
       {/* Content - Screen Routing */}
@@ -232,6 +257,22 @@ export const InvokerContent = ({
       >
         {!selectedFunction ? (
           <Box sx={{ p: 2, flex: 1 }}>
+            {saveAsTrigger && (
+              <Alert
+                severity="info"
+                sx={{ mb: 2 }}
+                data-testid="invoker-create-trigger-hint"
+                action={
+                  <Button color="inherit" size="small" onClick={saveAsTrigger.onCancel}>
+                    Cancel
+                  </Button>
+                }
+              >
+                Pick a function and set its arguments to save it as a Trigger
+                {saveAsTrigger.spaceName ? ` in Space ${saveAsTrigger.spaceName}` : ''}. Select Units
+                to try it on them first.
+              </Alert>
+            )}
             <FunctionListScreen
               context={context}
               searchQuery={query}
@@ -325,9 +366,11 @@ export const InvokerContent = ({
                 onClose={() => setShowInlineSavePanel(false)}
                 defaultName={loadedInvocation?.DisplayName || selectedFunction?.FunctionName}
                 loadedInvocation={loadedInvocation}
-                defaultToolchainType={toolchainFilter || context.primaryToolchainType || ''}
+                defaultToolchainType={saveToolchainType}
                 availableToolchainTypes={availableToolchainTypes}
-                defaultSpaceId={context.selectedUnits?.[0]?.spaceId}
+                defaultSpaceId={saveAsTrigger?.spaceId || context.selectedUnits?.[0]?.spaceId}
+                defaultSaveType={saveAsTrigger ? 'trigger' : 'invocation'}
+                presetKey={saveAsTrigger?.requestSeq}
               />
             </Box>
           </>

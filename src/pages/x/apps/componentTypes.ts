@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { LiveStatus, LiveStatusProvider, RunningRelease } from './liveStatus';
+import type { DeploymentChangeSet, WaitingChangeSet } from './changeSets';
 
 // ============================================================================
 // TYPES
@@ -128,6 +129,16 @@ export interface ComponentDeployment {
   owner?: string;
   /** Per-Space unit counts behind the card's config chips; see `ConfigSignals`. */
   configSignals: ConfigSignals;
+  /**
+   * The ChangeSets open on this Space's units, or that their head Revisions
+   * were made in (`changeSets.ts`). Absent when there are none.
+   */
+  changeSets?: DeploymentChangeSet[];
+  /**
+   * Upstream ChangeSets still open that this Space's upgrade waits for
+   * (`upstreamChangeSetBlocking`). Absent when it waits for none.
+   */
+  waitingOnChangeSets?: WaitingChangeSet[];
 }
 
 /**

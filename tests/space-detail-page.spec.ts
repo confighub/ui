@@ -92,6 +92,6 @@ test.describe('space detail page', () => {
     // The drawer closes on success; the table then refetches, which can take
     // longer than the default expect timeout under CI load.
     await expect(page.getByRole('button', { name: 'Create Trigger' })).toBeHidden({ timeout: 15000 });
-    await expect(page.getByText(triggerName)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('link', { name: triggerName })).toBeVisible({ timeout: 15000 });
   });
 });

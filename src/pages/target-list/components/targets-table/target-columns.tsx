@@ -11,6 +11,10 @@ export const TARGET_COLUMN_GROUPS: ColumnGroup[] = [
     columns: ['Slug', 'TargetID', 'Space', 'SpaceID'],
   },
   {
+    header: 'Triggers',
+    columns: ['WhereTrigger', 'TriggerFilter', 'AppliedTriggerCount'],
+  },
+  {
     header: 'Timestamps',
     columns: ['CreatedAt', 'UpdatedAt'],
   },
@@ -24,6 +28,10 @@ export const TARGET_DYNAMIC_GROUPS: DynamicGroupConfig[] = [
   {
     name: 'Annotations',
     columnPrefix: 'Annotations.',
+  },
+  {
+    name: 'Facts',
+    columnPrefix: 'Facts.',
   },
 ];
 
@@ -39,6 +47,12 @@ export interface TargetRowItem {
   Annotations: {
     [key: string]: string;
   };
+  Facts: {
+    [key: string]: string;
+  };
+  WhereTrigger: string;
+  TriggerFilter: string;
+  AppliedTriggerCount: number;
   CreatedAt: string;
   UpdatedAt: string;
   _extendedTarget?: ExtendedTargetRead; // Store original ExtendedTargetRead for callbacks
@@ -74,6 +88,27 @@ export const createTargetStaticColumns = () =>
       headerName: 'Space ID',
       minWidth: 300,
       flex: 1.5,
+    },
+
+    WhereTrigger: {
+      type: 'string',
+      headerName: 'Where Trigger',
+      minWidth: 200,
+      flex: 1.5,
+    },
+
+    TriggerFilter: {
+      type: 'string',
+      headerName: 'Trigger Filter',
+      minWidth: 160,
+      flex: 1,
+    },
+
+    AppliedTriggerCount: {
+      type: 'number',
+      headerName: 'Applied Triggers',
+      minWidth: 80,
+      flex: 1,
     },
 
     CreatedAt: {

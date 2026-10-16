@@ -604,6 +604,14 @@ export const InitiativesPage = () => {
                 checkedAt={selectedInitiative.checkSummary?.checkedAt}
                 unitCount={checkResults ? checkResults.length : selectedInitiative.checkSummary?.total}
                 toolchain={selectedInitiative.triggerId ? 'Kyverno' : undefined}
+                onOpenTrigger={
+                  selectedInitiative.triggerId && selectedInitiative.spaceId
+                    ? () =>
+                        navigate(
+                          `/spaces/${selectedInitiative.spaceId}?tab=1&edit=${selectedInitiative.triggerId}`,
+                        )
+                    : undefined
+                }
               />
               <Box sx={{ pt: 2, pb: 3, maxWidth: 1200, mx: 'auto', width: '100%' }}>
                 <ErrorBox error={errorMessage} onClose={() => setErrorMessage(null)} sx={{ mb: 2 }} />

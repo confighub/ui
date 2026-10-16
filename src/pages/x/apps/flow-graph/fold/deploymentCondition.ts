@@ -6,7 +6,8 @@ import { deriveHealthPresentation, deriveSyncPresentation } from '../../liveStat
 /**
  * The conditions that decide where a Deployment goes in a folded graph.
  * Live health: degraded, outOfSync, progressing. Config (desired state):
- * gated, unreleased, stale.
+ * gated, unreleased, stale, and changeSet: a ChangeSet is open on one of its
+ * units, or its last change was made in one (`changeSets.ts`).
  */
 export type ConditionKind =
   | 'degraded'
@@ -14,7 +15,8 @@ export type ConditionKind =
   | 'gated'
   | 'progressing'
   | 'unreleased'
-  | 'stale';
+  | 'stale'
+  | 'changeSet';
 
 /**
  * The conditions that can become a wave. Only config conditions: one bulk
@@ -30,7 +32,8 @@ export const WAVE_CONDITIONS: readonly WaveCondition[] = ['stale', 'unreleased',
 /**
  * The conditions that earn a full card, worst first. Stale is not here: it
  * is the normal state between an Upgrade and the next, so a card for it is
- * noise.
+ * noise. A ChangeSet is not a problem, so it is last, but it is work somebody
+ * is in the middle of, and a stack would hide which Deployment it is on.
  */
 export const CARD_SEVERITY: readonly ConditionKind[] = [
   'degraded',
@@ -38,6 +41,7 @@ export const CARD_SEVERITY: readonly ConditionKind[] = [
   'gated',
   'progressing',
   'unreleased',
+  'changeSet',
 ];
 
 /**
@@ -55,6 +59,7 @@ export function conditionsOf(d: ComponentDeployment): Record<ConditionKind, bool
     progressing: health === 'Progressing' || sync === 'Progressing',
     unreleased: d.configSignals.unreleasedUnits > 0,
     stale: d.configSignals.staleUnits > 0,
+    changeSet: (d.changeSets?.length ?? 0) > 0,
   };
 }
 
@@ -73,8 +78,8 @@ function worstCardKind(
 }
 
 /**
- * How badly a Deployment needs a card: 5 (Degraded) down to 1 (Unreleased
- * changes), 0 when it is quiet. A condition that is a wave on its Base does
+ * How badly a Deployment needs a card: 6 (Degraded) down to 1 (a
+ * ChangeSet), 0 when it is quiet. A condition that is a wave on its Base does
  * not count, because the wave chip already says it for all members.
  */
 export function cardSeverity(

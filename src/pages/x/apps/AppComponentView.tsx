@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Alert from '@mui/material/Alert';
 
 import {
+  type ChangeSetRead,
   type ExtendedSpaceRead,
   type ExtendedTargetRead,
   type ExtendedUnitRead,
@@ -14,6 +15,7 @@ import {
   type UnitCreateOrUpdateResponseRead,
   useBulkPatchUnitsMutation,
   useLazyGetUnitQuery,
+  useListAllChangeSetsQuery,
   useListAllUnitsQuery,
   useSetUnitProtectionMutation,
   useUpdateUnitMutation,
@@ -44,6 +46,8 @@ import { useListAllUnitsChunkedQuery } from '@/hooks/chunkedQueriesApi';
 import { buildAllApplyEntries, buildUpgradeEntries, buildVariationEntries } from './entryBuilders';
 import { type SetValueResult } from './configParser';
 import { arrowKey, buildComponentData } from './componentData';
+import { buildChangeSetsBySpace, changeSetIdsOf, openChangeSetIdOf, upstreamChangeSetBlocking, type WaitingChangeSet } from './changeSets';
+import { useChangeSetEntries } from './useChangeSetEntries';
 import { batchIds } from './componentGroupFields';
 import { useBatchedQuery } from './useBatchedQuery';
 import { isYamlToolchain, useSetAttributesMutation } from './useSetAttributesMutation';
@@ -140,11 +144,12 @@ const RUNNING_RELEASE_POLL_MS = 5_000;
 
 // Configuration is not a selectable field any more -- it is read from the data
 // endpoints -- so this asks only for the metadata, plus the Revision ids the data
-// and mutation-source reads are keyed by. Shared by every units-fetching batch
+// and mutation-source reads are keyed by, and the ChangeSet each unit is in or its head Revision
+// was made in (see changeSets.ts). Shared by every units-fetching batch
 // (the chunked SpaceID read and the upstream-outside-set UnitID lookup) so they all narrow the payload identically.
 const UNITS_QUERY_SELECT =
-  'UnitID,Slug,SpaceID,TargetID,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ToolchainType,DataHash,DataSize,'
-  + 'HeadRevision.RevisionID,HeadRevision.CreatedAt,HeadRevision.Description,LastReleasedRevision.RevisionID';
+  'UnitID,Slug,SpaceID,TargetID,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ToolchainType,DataHash,DataSize,ChangeSetID,'
+  + 'HeadRevision.RevisionID,HeadRevision.CreatedAt,HeadRevision.Description,HeadRevision.ChangeSetID,LastReleasedRevision.RevisionID';
 const UNITS_QUERY_INCLUDE = 'SpaceID,TargetID,UpstreamUnitID,HeadRevisionNum,LastReleasedRevisionNum';
 
 // ============================================================================
@@ -226,7 +231,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   // tab and leave the user to find it.
   const [tabFocus, setTabFocus] = useState<{
     id: string;
-    tab: 'config' | 'releases';
+    tab: 'config' | 'releases' | 'changeset';
     nonce: number;
     releaseNum?: number;
   } | null>(null);
@@ -676,6 +681,9 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
       if (!unit.SpaceID || !selectedDeploymentIds.has(unit.SpaceID)) continue;
       const upstream = unitById.get(unit.UpstreamUnitID);
       if (!upstream) continue;
+      // An upgrade from the middle of an open upstream ChangeSet is refused, preview
+      // included, so it is not offered; the pane says what it waits for instead.
+      if (upstreamChangeSetBlocking(u, upstream)) continue;
       const upstreamRevNum = unit.UpstreamRevisionNum ?? 0;
       const upstreamHead = upstream.Unit?.HeadRevisionNum ?? 0;
       if (upstreamRevNum < upstreamHead) ids.push(unit.UnitID);
@@ -709,11 +717,24 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     // can overflow the same 8192-byte limit as any GET — split into batches
     // and merge. Each batch is an independent, self-contained dry run (one
     // unit's upgrade preview never depends on another's), so `Promise.allSettled`
-    // applies every batch that succeeds even if a sibling batch fails.
+    // applies every batch that succeeds even if a sibling batch fails. Units a
+    // ChangeSet is open on are batched by ChangeSet: a write to one, a dry run
+    // included, has to name its ChangeSet, and a request names only one.
+    const byChangeSet = new Map<string | undefined, string[]>();
+    for (const id of upgradeableUnitIds) {
+      const changeSetId = openChangeSetIdOf(unitById, id);
+      const group = byChangeSet.get(changeSetId);
+      if (group) group.push(id);
+      else byChangeSet.set(changeSetId, [id]);
+    }
+    const batches = [...byChangeSet].flatMap(([changeSetId, ids]) =>
+      batchIds(ids).map((batch) => ({ changeSetId, batch })),
+    );
     Promise.allSettled(
-      batchIds(upgradeableUnitIds).map((batch) =>
+      batches.map(({ changeSetId, batch }) =>
         dryRunPatch({
           where: `UnitID IN (${batch.map((id) => `'${id}'`).join(',')})`,
+          changeSetId,
           // A dry run stores nothing, so the configuration it would produce comes back on the
           // response only when asked for. It is what this preview diffs against.
           include: 'ConfigData',
@@ -767,7 +788,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
         });
       }
     });
-  }, [upgradeableUnitIds, dryRunPatch, setErrorsForDeployments]);
+  }, [upgradeableUnitIds, unitById, dryRunPatch, setErrorsForDeployments]);
 
   const isDryRunLoading = dryRunPendingIds.size > 0;
 
@@ -881,10 +902,58 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
 
   // The Component and Owner of each Deployment: the graph frames and names
   // Components only when it spans two or more of them.
-  const deployments = useMemo(
+  const componentDeployments = useMemo(
     () => withComponents(builtDeployments, spaces, slugById, ownerByComponentId),
     [builtDeployments, spaces, slugById, ownerByComponentId],
   );
+
+  // The ChangeSets open on each Deployment's units, or that their head Revisions were made in.
+  // One read for every ChangeSet on the graph, for the slug, State and Description the units do
+  // not carry. Not polled: a ChangeSet's own fields change only when someone edits it.
+  // Upstream units outside the graph count too: a node can wait on a ChangeSet open there.
+  const changeSetIds = useMemo(() => changeSetIdsOf([...unitById.values()]), [unitById]);
+  const { currentData: changeSetsData } = useListAllChangeSetsQuery(
+    { where: `ChangeSetID IN (${changeSetIds.map((id) => `'${id}'`).join(',')})` },
+    { skip: changeSetIds.length === 0 },
+  );
+  const deployments = useMemo(() => {
+    const changeSetById = new Map<string, ChangeSetRead>();
+    for (const ecs of changeSetsData ?? []) {
+      if (ecs.ChangeSet?.ChangeSetID) changeSetById.set(ecs.ChangeSet.ChangeSetID, ecs.ChangeSet);
+    }
+    const bySpace = buildChangeSetsBySpace(allUnits, changeSetById);
+    const waitingBySpace = new Map<string, Map<string, WaitingChangeSet>>();
+    for (const u of allUnits) {
+      const spaceId = u.Unit?.SpaceID;
+      const upstream = u.Unit?.UpstreamUnitID ? unitById.get(u.Unit.UpstreamUnitID) : undefined;
+      const changeSetId = upstreamChangeSetBlocking(u, upstream);
+      const upstreamDeploymentId = upstream?.Unit?.SpaceID;
+      if (!spaceId || !changeSetId || !upstreamDeploymentId) continue;
+      const waiting = waitingBySpace.get(spaceId) ?? new Map<string, WaitingChangeSet>();
+      waiting.set(changeSetId, { changeSetId, label: changeSetById.get(changeSetId)?.Slug ?? changeSetId, upstreamDeploymentId });
+      waitingBySpace.set(spaceId, waiting);
+    }
+    if (bySpace.size === 0 && waitingBySpace.size === 0) return componentDeployments;
+    return componentDeployments.map((d) => {
+      const changeSets = bySpace.get(d.deploymentId);
+      const waiting = waitingBySpace.get(d.deploymentId);
+      if (!changeSets && !waiting) return d;
+      return {
+        ...d,
+        ...(changeSets ? { changeSets } : {}),
+        ...(waiting ? { waitingOnChangeSets: [...waiting.values()] } : {}),
+      };
+    });
+  }, [componentDeployments, allUnits, unitById, changeSetsData]);
+
+  // What the selected Deployment's ChangeSets changed, for the side pane's ChangeSet filter.
+  const { entries: changeSetEntries, isLoading: isChangeSetLoading } = useChangeSetEntries({
+    deployments,
+    selectedDeploymentIds,
+    unitById,
+    unitDataFor,
+    isUnitDataFetching,
+  });
 
   // Map deployment ID → display name, used by entry builders.
   const deploymentNameById = useMemo(() => {
@@ -1158,7 +1227,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   // peeks. Unlike handleDeploymentToggle, re-invoking on the already-open node
   // never closes it — it just (re)focuses the requested tab via the nonce.
   const handleOpenTab = useCallback(
-    (deploymentId: string, tab: 'config' | 'releases', releaseNum?: number) => {
+    (deploymentId: string, tab: 'config' | 'releases' | 'changeset', releaseNum?: number) => {
       if (composerParentId != null) {
         const phase = composerPhaseRef.current;
         if (phase === 'inFlight') return;
@@ -1221,13 +1290,19 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
           await bulkPatch({
             where: `UnitID='${unitId}'`,
             upgrade: true,
+            changeSetId: openChangeSetIdOf(unitById, unitId),
             // @ts-expect-error RTK Query merge-patch+json content type requires pre-stringified body
             body: JSON.stringify({}),
           }).unwrap();
         } else {
           // Configuration goes to the Unit's data endpoint. A Unit body has nowhere to put
           // one, so a PATCH carrying Data would report success and write nothing.
-          await uploadUnitData({ spaceId, unitId, body: payload.data }).unwrap();
+          await uploadUnitData({
+            spaceId,
+            unitId,
+            body: payload.data,
+            changeSetId: openChangeSetIdOf(unitById, unitId),
+          }).unwrap();
         }
         setDeploymentErrors((prev) => {
           if (!prev.has(spaceId)) return prev;
@@ -1308,6 +1383,50 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   // success here already triggers a refetch of every unit query with that
   // tag, including the lazily-fetched MutationSources query in
   // ComponentSidePane — no manual cache-poking needed here.
+  // Close a ChangeSet: take every unit it is open on out of it, wherever they are, which is
+  // what closes it and marks each unit's head with its end Tag. The Deployments waiting on
+  // it can upgrade from then on, so a refusal they recorded while it was open is cleared.
+  const handleCloseChangeSet = useCallback(
+    async (changeSetId: string): Promise<boolean> => {
+      const affected = new Set(selectedDeploymentIdsRef.current);
+      for (const d of deployments) {
+        if (d.waitingOnChangeSets?.some((w) => w.changeSetId === changeSetId)) affected.add(d.deploymentId);
+      }
+      try {
+        await bulkPatch({
+          where: `ChangeSetID = '${changeSetId}'`,
+          changeSetId,
+          // @ts-expect-error RTK Query merge-patch+json content type requires pre-stringified body
+          body: JSON.stringify({ ChangeSetID: null }),
+        }).unwrap();
+        setDeploymentErrors((prev) => {
+          let next: typeof prev | undefined;
+          for (const id of affected) {
+            if (!prev.has(id)) continue;
+            next ??= new Map(prev);
+            next.delete(id);
+          }
+          return next ?? prev;
+        });
+        flashSuccess(new Set(selectedDeploymentIdsRef.current), 'ChangeSet closed');
+        return true;
+      } catch (err: unknown) {
+        setErrorsForDeployments(selectedDeploymentIdsRef.current, {
+          title: 'Closing the ChangeSet failed',
+          detail: getApiErrorMessage(err),
+          timestamp: new Date(),
+        });
+        return false;
+      }
+    },
+    [deployments, bulkPatch, flashSuccess, setErrorsForDeployments],
+  );
+
+  const handleOpenChangeSet = useCallback(
+    (deploymentId: string) => handleOpenTab(deploymentId, 'changeset'),
+    [handleOpenTab],
+  );
+
   const handleCommitProtection = useCallback(
     async (unitId: string, spaceId: string, protection: ResourceProtection[]): Promise<boolean> => {
       try {
@@ -1499,12 +1618,17 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
       return;
     }
     try {
-      await uploadUnitData({ spaceId, unitId, body: result.data }).unwrap();
+      await uploadUnitData({
+        spaceId,
+        unitId,
+        body: result.data,
+        changeSetId: openChangeSetIdOf(unitById, unitId),
+      }).unwrap();
     } catch (err: unknown) {
       recordError(getApiErrorMessage(err));
       throw err;
     }
-  }, [uploadUnitData]);
+  }, [uploadUnitData, unitById]);
 
   const handleSaveData = useCallback(async (unitId: string, spaceId: string, newEncodedData: string) => {
     await applyFieldPatch(unitId, spaceId, { ok: true as const, data: newEncodedData }, 'Save failed');
@@ -1714,6 +1838,10 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
                 upgradeEntries={upgradeEntries}
                 allApplyEntries={allApplyEntries}
                 variationEntries={variationEntries}
+                changeSetEntries={changeSetEntries}
+                isChangeSetLoading={isChangeSetLoading}
+                onCloseChangeSet={handleCloseChangeSet}
+                onOpenChangeSet={handleOpenChangeSet}
                 deployments={deployments}
                 targets={targets}
                 unitsByDeployment={unitsByDeployment}

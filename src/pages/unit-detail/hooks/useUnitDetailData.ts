@@ -66,7 +66,7 @@ export const useUnitDetailData = ({ id, spaceID, refresh }: IUseUnitDetailDataPr
       {
         spaceId: spaceID,
         unitId: id,
-        include: 'UserID, Tags',
+        include: 'UserID,Tags,ChangeSetID,ChangeOrders,Releases,Attestations',
       },
       {
         skip: isIDInvalid(spaceID) || isIDInvalid(id),

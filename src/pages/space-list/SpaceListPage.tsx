@@ -20,6 +20,9 @@ import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import { styled } from '@mui/material/styles';
 
+// The entities the Component, Trigger Filter and Release Target columns name.
+const SPACE_LIST_INCLUDE = 'ComponentID,TriggerFilterID,ReleaseTargetID';
+
 const Container = styled('div')`
   width: 100%;
 `;
@@ -31,7 +34,7 @@ export const SpaceListPage = () => {
   const [selectedSpaces, setSelectedSpaces] = useState<Array<string>>([]);
 
   // Fetch all spaces first (without filter) to get label options
-  const { data: allSpaces = [], isFetching: isFetchingAll, refetch: refetchAll } = useListSpacesQuery({ summary: true }, { refetchOnFocus: true });
+  const { data: allSpaces = [], isFetching: isFetchingAll, refetch: refetchAll } = useListSpacesQuery({ summary: true, include: SPACE_LIST_INCLUDE }, { refetchOnFocus: true });
 
   // Extract label options from all spaces for the Labels filter dropdown
   const labelOptions = useMemo(() => {
@@ -69,6 +72,7 @@ export const SpaceListPage = () => {
   const { data: filteredSpaces = [], isFetching: isFetchingFiltered, refetch: refetchFiltered } = useListSpacesQuery(
     {
       summary: true,
+      include: SPACE_LIST_INCLUDE,
       where: whereClause,
     },
     { skip: !whereClause, refetchOnFocus: true },

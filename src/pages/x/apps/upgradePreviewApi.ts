@@ -21,7 +21,7 @@ import {
   confighubApi,
 } from '@confighub/rtk-query';
 
-type UpgradePreviewArg = Pick<BulkPatchUnitsApiArg, 'where' | 'include' | 'body'>;
+type UpgradePreviewArg = Pick<BulkPatchUnitsApiArg, 'where' | 'include' | 'body' | 'changeSetId'>;
 
 const upgradePreviewApi = confighubApi.injectEndpoints({
   endpoints: (build) => ({
@@ -36,6 +36,7 @@ const upgradePreviewApi = confighubApi.injectEndpoints({
           include: queryArg.include,
           upgrade: true,
           dry_run: true,
+          change_set_id: queryArg.changeSetId,
         },
       }),
     }),

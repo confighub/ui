@@ -4,6 +4,7 @@
 import type { Initiative } from '@/types/initiative';
 import { PRIORITY_COLORS } from '@/types/initiative';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import BoltIcon from '@mui/icons-material/Bolt';
 import EditIcon from '@mui/icons-material/Edit';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import Box from '@mui/material/Box';
@@ -23,6 +24,8 @@ interface InitiativeDetailHeaderProps {
   checkedAt?: string;
   unitCount?: number;
   toolchain?: string;
+  /** Open the initiative's compliance check Trigger, when it has one */
+  onOpenTrigger?: () => void;
 }
 
 export const InitiativeDetailHeader = ({
@@ -35,6 +38,7 @@ export const InitiativeDetailHeader = ({
   checkedAt,
   unitCount,
   toolchain,
+  onOpenTrigger,
 }: InitiativeDetailHeaderProps) => {
   const priorityStyle = PRIORITY_COLORS[initiative.priority];
   const deadlineLabel = initiative.deadline ? `Due ${dayjs(initiative.deadline).format('MMM D')}` : null;
@@ -123,6 +127,18 @@ export const InitiativeDetailHeader = ({
         <Typography variant='caption' color='text.secondary' sx={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
           {deadlineLabel}
         </Typography>
+      )}
+      {onOpenTrigger && (
+        <Button
+          size='small'
+          variant='outlined'
+          startIcon={<BoltIcon />}
+          onClick={onOpenTrigger}
+          title='The Trigger that runs the compliance check'
+          sx={{ textTransform: 'none', flexShrink: 0 }}
+        >
+          Trigger
+        </Button>
       )}
       <Button
         size='small'

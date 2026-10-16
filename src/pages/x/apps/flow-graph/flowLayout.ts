@@ -67,7 +67,7 @@ export interface DeploymentNodeContext {
   deploymentSuccessMessages?: ReadonlyMap<string, string>;
   latestReleaseBySpaceId?: ReadonlyMap<string, { num: number; createdAt?: string }>;
   releasingDeploymentIds?: ReadonlySet<string>;
-  onOpenTab?: (deploymentId: string, tab: 'config' | 'releases', releaseNum?: number) => void;
+  onOpenTab?: (deploymentId: string, tab: 'config' | 'releases' | 'changeset', releaseNum?: number) => void;
   onComposerOpen?: (deploymentId: string) => void;
 }
 
@@ -170,7 +170,7 @@ export function computeLayout(
   /** The Space that just finished a publish — pulses its OUTGOING promotion edge(s) toward the next stage ("graph-forward" signature move). */
   pulseFromDeploymentId?: string | null,
   /** Deep-link a deployment's side pane to a tab from a status-chip peek (Stale → config, Unreleased/Gated → releases). `releaseNum`, when given (the release-stamp peek), asks the Releases tab to scroll to and highlight that specific release. */
-  onOpenTab?: (deploymentId: string, tab: 'config' | 'releases', releaseNum?: number) => void,
+  onOpenTab?: (deploymentId: string, tab: 'config' | 'releases' | 'changeset', releaseNum?: number) => void,
   /** Opens the inline variant composer anchored to this deployment as parent. Fired by the node's own click affordance or the 'V' key — never routed through onDeploymentToggle. */
   onComposerOpen?: (deploymentId: string) => void,
   /** Every deployment (Space) ID in this graph, comma-joined — each promotion edge uses this to fetch its own Link data (see PromotionEdge.tsx). */

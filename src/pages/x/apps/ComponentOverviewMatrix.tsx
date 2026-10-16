@@ -15,6 +15,7 @@ import TableContainer from '@mui/material/TableContainer';
 import TableFooter from '@mui/material/TableFooter';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import { alpha, useTheme } from '@mui/material/styles';
 
@@ -22,6 +23,7 @@ import { ComponentActivityFeed } from './ComponentActivityFeed';
 import { type SelectedApp } from './appTypes';
 import { buildOverviewData, type ComponentKpiRow } from './componentOverview';
 import { useOutstandingChangeOrderBaseSpaceIds } from './change-order/useOutstandingChangeOrdersBulk';
+import { useOpenChangeSets } from './useOpenChangeSets';
 
 // ============================================================================
 // TYPES
@@ -36,7 +38,8 @@ type FilterKey =
   | 'unapplied'
   | 'gatesPending'
   | 'upgrades'
-  | 'outstandingChangeOrder';
+  | 'outstandingChangeOrder'
+  | 'openChangeSet';
 
 type SortKey =
   | 'health'
@@ -44,7 +47,8 @@ type SortKey =
   | 'unapplied'
   | 'gatesPending'
   | 'upgrades'
-  | 'outstandingChangeOrder';
+  | 'outstandingChangeOrder'
+  | 'openChangeSet';
 
 type ColKey =
   | 'unapplied'
@@ -84,6 +88,7 @@ const FILTER_LABELS: Record<FilterKey, string> = {
   gatesPending:       'Blocking Gates',
   upgrades:           'Upgrades Available',
   outstandingChangeOrder: 'Outstanding ChangeOrders',
+  openChangeSet:      'Open ChangeSets',
 };
 
 const KPI_SORT_FIELDS: Partial<Record<SortKey, keyof ComponentKpiRow>> = {
@@ -97,6 +102,13 @@ function getKpiValue(row: ComponentKpiRow, key: NumericKpiKey): number {
   return row[key];
 }
 
+/** The number a row sorts by for a KPI: its count, or 1/0 for the ChangeOrder flag. */
+function getSortValue(row: ComponentKpiRow, key: SortKey): number {
+  if (key === 'openChangeSet') return row.openChangeSets.length;
+  const field = KPI_SORT_FIELDS[key];
+  return field ? Number(row[field]) : 0;
+}
+
 /**
  * Whether a KPI "counts" for filter/dimming purposes — true for a nonzero
  * numeric KPI, or for `hasOutstandingChangeOrder` directly. Kept separate from
@@ -106,6 +118,7 @@ function getKpiValue(row: ComponentKpiRow, key: NumericKpiKey): number {
  */
 function isKpiFlagged(row: ComponentKpiRow, key: FilterKey): boolean {
   if (key === 'outstandingChangeOrder') return row.hasOutstandingChangeOrder;
+  if (key === 'openChangeSet') return row.openChangeSets.length > 0;
   return getKpiValue(row, key) > 0;
 }
 
@@ -302,10 +315,11 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const outstandingChangeOrderBaseSpaceIds = useOutstandingChangeOrderBaseSpaceIds();
+  const openChangeSets = useOpenChangeSets();
   const { componentById } = useComponentSlugs();
   const { rows, org } = useMemo(
-    () => buildOverviewData(spaces, componentById, outstandingChangeOrderBaseSpaceIds),
-    [spaces, componentById, outstandingChangeOrderBaseSpaceIds],
+    () => buildOverviewData(spaces, componentById, outstandingChangeOrderBaseSpaceIds, openChangeSets),
+    [spaces, componentById, outstandingChangeOrderBaseSpaceIds, openChangeSets],
   );
 
 
@@ -330,10 +344,8 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
         const cmp = a.componentName.localeCompare(b.componentName);
         return sortDir === 'asc' ? cmp : -cmp;
       }
-      const field = KPI_SORT_FIELDS[sortBy];
-      if (!field) return 0;
-      const aVal = a[field] as number;
-      const bVal = b[field] as number;
+      const aVal = getSortValue(a, sortBy);
+      const bVal = getSortValue(b, sortBy);
       return sortDir === 'desc' ? bVal - aVal : aVal - bVal;
     });
   }, [rows, sortBy, sortDir]);
@@ -370,8 +382,7 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
 
   const filterCount = useMemo(() => {
     if (!activeFilter) return 0;
-    const field = KPI_SORT_FIELDS[activeFilter];
-    return rows.filter((r) => field && (r[field] as number) > 0).length;
+    return rows.filter((r) => isKpiFlagged(r, activeFilter)).length;
   }, [rows, activeFilter]);
 
   const sortArrow = (key: SortKey) => {
@@ -443,7 +454,7 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
 
         {/* ── KPI tiles ── */}
         <SectionLabel title='Status' hint='Click a tile to scope the matrix below' />
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', mb: '10px' }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', mb: '10px' }}>
           <KpiTile
             label='Blocking Gates'
             value={org.gatesPending}
@@ -479,6 +490,15 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
             severity='info'
             isActive={activeFilter === 'outstandingChangeOrder'}
             onClick={() => handleFilterToggle('outstandingChangeOrder')}
+          />
+          <KpiTile
+            label='Open ChangeSets'
+            value={org.openChangeSetComponents}
+            unit='components'
+            description='Has a ChangeSet open on its units'
+            severity='info'
+            isActive={activeFilter === 'openChangeSet'}
+            onClick={() => handleFilterToggle('openChangeSet')}
           />
         </Box>
 
@@ -635,6 +655,45 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
                       </Typography>
                     </Box>
                   </TableCell>
+
+                  {/* Open-ChangeSet column header: the number of ChangeSets
+                      open on the component's units, named in the cell's tooltip. */}
+                  <TableCell
+                    align='center'
+                    sx={{
+                      bgcolor: activeFilter === 'openChangeSet' ? alpha(theme.palette.warning.main, 0.05) : 'background.default',
+                      borderBottom: `1px solid ${theme.palette.divider}`,
+                      p: 0,
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: 3,
+                    }}
+                  >
+                    <Box
+                      component='button'
+                      onClick={() => handleSort('openChangeSet')}
+                      sx={{
+                        width: '100%', border: 0, background: 'transparent', cursor: 'pointer',
+                        p: '11px 10px', fontFamily: 'inherit', color: 'text.secondary',
+                        fontWeight: 600, fontSize: 11, lineHeight: 1.2,
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px',
+                        '&:hover': { color: 'text.primary', bgcolor: alpha(theme.palette.action.hover, 0.06) },
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <Box component='span' sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'info.main', flexShrink: 0 }} />
+                        <Typography component='span' sx={{ fontWeight: sortBy === 'openChangeSet' ? 700 : 600, fontSize: 11, color: sortBy === 'openChangeSet' ? 'text.primary' : 'inherit' }}>
+                          Open ChangeSets
+                        </Typography>
+                        <Typography component='span' sx={{ fontSize: 9, color: sortBy === 'openChangeSet' ? 'error.main' : 'text.disabled' }}>
+                          {sortArrow('openChangeSet')}
+                        </Typography>
+                      </Box>
+                      <Typography component='span' sx={{ fontSize: 9.5, fontWeight: 500, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        open
+                      </Typography>
+                    </Box>
+                  </TableCell>
                 </TableRow>
               </TableHead>
 
@@ -757,6 +816,35 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
                           )}
                         </Box>
                       </TableCell>
+
+                      {/* Open-ChangeSet count, the ChangeSets named on hover. */}
+                      <TableCell
+                        align='center'
+                        sx={{
+                          p: 0, height: 50,
+                          bgcolor: activeFilter === 'openChangeSet'
+                            ? alpha(theme.palette.warning.main, 0.05)
+                            : row.openChangeSets.length > 0 ? alpha(theme.palette.info.main, 0.08) : 'transparent',
+                          borderBottom: `1px solid ${theme.palette.divider}`,
+                          transition: 'background 0.12s ease',
+                        }}
+                      >
+                        {row.openChangeSets.length > 0 ? (
+                          <Tooltip title={row.openChangeSets.join(', ')} placement='top' arrow>
+                            <Typography
+                              data-testid='open-changeset-count'
+                              sx={{
+                                fontFamily: MONO_FONT, fontSize: 15, fontWeight: 600, color: 'info.main',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%',
+                              }}
+                            >
+                              {row.openChangeSets.length}
+                            </Typography>
+                          </Tooltip>
+                        ) : (
+                          <Typography sx={{ fontFamily: MONO_FONT, fontSize: 13, color: 'text.disabled', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>·</Typography>
+                        )}
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -810,6 +898,18 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
                     }}
                   >
                     {org.outstandingChangeOrders}
+                  </TableCell>
+                  <TableCell
+                    align='center'
+                    sx={{
+                      borderTop: `2px solid ${theme.palette.divider}`,
+                      height: 42,
+                      bgcolor: activeFilter === 'openChangeSet' ? alpha(theme.palette.warning.main, 0.05) : 'background.default',
+                      fontFamily: MONO_FONT,
+                      fontSize: 13, fontWeight: 600, color: 'text.secondary',
+                    }}
+                  >
+                    {org.openChangeSetComponents}
                   </TableCell>
                 </TableRow>
               </TableFooter>

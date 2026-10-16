@@ -5,18 +5,15 @@ import { memo, useCallback, useMemo } from 'react';
 import { Header } from '@/components/header/Header';
 import { fadeIn } from '@/components/styled';
 import type { UnitRead } from '@confighub/rtk-query';
-import { COMPONENT_DIMENSIONS } from '@/utility/constants';
 import { isIDInvalid } from '@/utility/validation-functions';
-import AltRouteIcon from '@mui/icons-material/AltRoute';
 import RefreshIcon from '@mui/icons-material/Cached';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditIcon from '@mui/icons-material/Edit';
-import LayersIcon from '@mui/icons-material/Layers';
 import LinkIcon from '@mui/icons-material/Link';
 import RestoreIcon from '@mui/icons-material/Restore';
 import UpgradeIcon from '@mui/icons-material/Upgrade';
-import { Button, IconButton, ToggleButton, Tooltip } from '@mui/material';
+import { Button, IconButton } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material/Select';
 
 // Moved to constants for better maintainability
@@ -27,7 +24,6 @@ const BULK_ACTIONS = {
   ADD: 'Add',
   CLONE: 'Clone',
   BULK_RESTORE: 'Bulk_Restore',
-  CREATE_CHANGESET: 'Change_Set',
   UPGRADE: 'Upgrade',
 } as const;
 
@@ -47,8 +43,6 @@ export interface UnitListHeaderProps {
   compactBottom?: boolean;
   onRefreshUnits?: () => void;
   isLinkWorkflowMode?: boolean;
-  onToggleChangesetWorkflowMode?: () => void;
-  isChangesetWorkflowMode?: boolean;
 }
 
 export const UnitListHeader = memo<UnitListHeaderProps>(
@@ -62,8 +56,6 @@ export const UnitListHeader = memo<UnitListHeaderProps>(
     compactBottom,
     onRefreshUnits,
     isLinkWorkflowMode = false,
-    onToggleChangesetWorkflowMode,
-    isChangesetWorkflowMode = false,
   }) => {
     // Memoized computed values
     const computedState = useMemo(() => {
@@ -214,37 +206,6 @@ export const UnitListHeader = memo<UnitListHeaderProps>(
             >
               <RefreshIcon />
             </IconButton>
-
-            <Tooltip
-              arrow
-              placement='bottom'
-              title={
-                isChangesetWorkflowMode ? 'Exit Change Set bench' : 'Open Change Set bench'
-              }
-            >
-              <ToggleButton
-                value='changeset'
-                selected={isChangesetWorkflowMode}
-                onChange={onToggleChangesetWorkflowMode}
-                size='small'
-                data-testid='changeset-button'
-                sx={{
-                  height: COMPONENT_DIMENSIONS.INPUT_HEIGHT,
-                  width: COMPONENT_DIMENSIONS.INPUT_HEIGHT,
-                  color: isChangesetWorkflowMode ? 'primary.contrastText' : 'primary.main',
-                  border: 'none',
-                  '&.Mui-selected': {
-                    backgroundColor: 'primary.main',
-                    color: 'primary.contrastText',
-                    '&:hover': {
-                      backgroundColor: 'primary.dark',
-                    },
-                  },
-                }}
-              >
-                {isChangesetWorkflowMode ? <LayersIcon /> : <AltRouteIcon />}
-              </ToggleButton>
-            </Tooltip>
 
             <Button
               variant='contained'

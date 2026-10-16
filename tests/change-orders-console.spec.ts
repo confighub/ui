@@ -63,9 +63,9 @@ test.describe('ChangeOrders console', () => {
     const entry = nav.getByRole('button', { name: 'ChangeOrders', exact: true });
     await expect(entry).toBeVisible();
 
-    // Sits between Components and Units, per the design's ordering.
+    // Sits between Components and Releases, per the design's ordering.
     await expect(nav.getByRole('button', { name: 'Components' })).toBeVisible();
-    await expect(nav.getByRole('button', { name: 'Units', exact: true })).toBeVisible();
+    await expect(nav.getByRole('button', { name: 'Releases', exact: true })).toBeVisible();
 
     // The entry has to actually go somewhere — a nav item that renders but does
     // not navigate is the failure mode worth testing for.

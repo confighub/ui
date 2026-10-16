@@ -93,7 +93,8 @@ test('selecting a deployment node feeds the invoker context; deselecting and lea
   await expect(page.getByRole('link', { name: UNIT_SLUG_B }).first()).toBeVisible();
 
   // Leaving the page unmounts the view, and its cleanup clears the context.
-  await page.getByRole('banner').getByRole('button', { name: 'Units', exact: true }).click();
+  await page.getByRole('banner').getByRole('button', { name: 'Explorers', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Units', exact: true }).click();
   await page.waitForURL('**/units**', { timeout: 10000 });
   await expect(counter).toHaveText('0 units', { timeout: 10000 });
 });

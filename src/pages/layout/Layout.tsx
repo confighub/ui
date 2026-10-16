@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { FeedbackSurveyDialog } from '@/components/feedback-survey/FeedbackSurveyDialog';
@@ -10,6 +10,7 @@ import { fadeIn } from '@/components/styled';
 import { useAppDispatch, useAppSelector } from '@/hooks/useApp';
 import { useInvokerSidebar } from '@/hooks/useInvokerSidebar';
 import { closeAlert, selectAlert } from '@/state/slices/alert';
+import { selectInvokerRequestSeq } from '@/state/slices/invokerRequest';
 import { selectSelectedUnits, setSelectedUnits } from '@/state/slices/selectedUnits';
 import { selectTourId, selectTourStatus } from '@/state/slices/tourSlice';
 import { TOP_NAV_HEIGHT } from '@/utility/constants';
@@ -18,17 +19,16 @@ import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import DataObjectIcon from '@mui/icons-material/DataObject';
-import EngineeringIcon from '@mui/icons-material/Engineering';
 import ExploreIcon from '@mui/icons-material/Explore';
 import FeedbackIcon from '@mui/icons-material/Feedback';
 import FolderCopyIcon from '@mui/icons-material/FolderCopy';
-import FunctionsIcon from '@mui/icons-material/Functions';
 import LocalLibraryIcon from '@mui/icons-material/LocalLibrary';
 import PublishedWithChangesIcon from '@mui/icons-material/PublishedWithChanges';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import SchemaIcon from '@mui/icons-material/Schema';
 import SearchIcon from '@mui/icons-material/Search';
 import Storage from '@mui/icons-material/Storage';
+import TravelExploreIcon from '@mui/icons-material/TravelExplore';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import WorkspacesIcon from '@mui/icons-material/Workspaces';
 import Alert from '@mui/material/Alert';
@@ -158,10 +158,10 @@ const TopNavButton = memo(({ item }: { item: INavItem }) => {
 TopNavButton.displayName = 'TopNavButton';
 
 /**
- * "Tools" dropdown button — opens an MUI Menu listing sub-items.
+ * Dropdown button ("Explorers", "Tools") — opens an MUI Menu listing sub-items.
  * Highlights when the current route matches any child route.
  */
-const TopNavToolsButton = memo(({ item }: { item: INavItem }) => {
+const TopNavMenuButton = memo(({ item }: { item: INavItem }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
@@ -258,7 +258,7 @@ const TopNavToolsButton = memo(({ item }: { item: INavItem }) => {
   );
 });
 
-TopNavToolsButton.displayName = 'TopNavToolsButton';
+TopNavMenuButton.displayName = 'TopNavMenuButton';
 
 // ============================================================================
 // NAVIGATION CONFIGURATION
@@ -287,7 +287,7 @@ const ConfigurationItems: INavItem[] = [
     navigate: `/components`,
     disable: false,
   },
-  // Sits between Components and Units, per the approved design.
+  // Sits between Components and Releases, per the approved design.
   ...(SHOW_CHANGE_ORDERS_NAV
     ? [
         {
@@ -299,28 +299,47 @@ const ConfigurationItems: INavItem[] = [
       ]
     : []),
   {
-    text: 'Units',
-    component: <DataObjectIcon sx={{ color: 'white' }} />,
-    navigate: `/units`,
+    text: 'Releases',
+    component: <CalendarMonthIcon sx={{ color: 'white' }} />,
+    navigate: `/releases`,
     disable: false,
   },
   {
-    text: 'Spaces',
-    component: <FolderCopyIcon sx={{ color: 'white' }} />,
-    navigate: `/spaces`,
+    text: 'Explorers',
+    component: <TravelExploreIcon sx={{ color: 'white' }} />,
     disable: false,
-  },
-  {
-    text: 'Targets',
-    component: <Storage sx={{ color: 'white' }} />,
-    navigate: `/targets`,
-    disable: false,
-  },
-  {
-    text: 'Workers',
-    component: <EngineeringIcon sx={{ color: 'white' }} />,
-    navigate: `/bridge-workers`,
-    disable: false,
+    subItems: [
+      {
+        text: 'Units',
+        component: <DataObjectIcon sx={{ fontSize: 18 }} />,
+        navigate: `/units`,
+        disable: false,
+      },
+      {
+        text: 'Spaces',
+        component: <FolderCopyIcon sx={{ fontSize: 18 }} />,
+        navigate: `/spaces`,
+        disable: false,
+      },
+      {
+        text: 'Targets',
+        component: <Storage sx={{ fontSize: 18 }} />,
+        navigate: `/targets`,
+        disable: false,
+      },
+      {
+        text: 'Views',
+        component: <SearchIcon sx={{ fontSize: 18 }} />,
+        navigate: `/x/view-explorer`,
+        disable: false,
+      },
+      {
+        text: 'Resources',
+        component: <ViewListIcon sx={{ fontSize: 18 }} />,
+        navigate: `/x/resource-explorer`,
+        disable: false,
+      },
+    ],
   },
   {
     text: 'Tools',
@@ -328,40 +347,16 @@ const ConfigurationItems: INavItem[] = [
     disable: false,
     subItems: [
       {
-        text: 'Releases',
-        component: <CalendarMonthIcon sx={{ fontSize: 18 }} />,
-        navigate: `/releases`,
-        disable: false,
-      },
-      {
-        text: 'Functions',
-        component: <FunctionsIcon sx={{ fontSize: 18 }} />,
-        navigate: `/function-browser`,
-        disable: false,
-      },
-      {
-        text: 'View Explorer',
-        component: <SearchIcon sx={{ fontSize: 18 }} />,
-        navigate: `/x/view-explorer`,
-        disable: false,
-      },
-      {
-        text: 'Resource Explorer',
-        component: <ViewListIcon sx={{ fontSize: 18 }} />,
-        navigate: `/x/resource-explorer`,
+        // Authoring a ChangeWorkflow. Runs on local fixtures, not the API yet.
+        text: 'Workflow Builder',
+        component: <SchemaIcon sx={{ fontSize: 18 }} />,
+        navigate: `/x/workflow-builder`,
         disable: false,
       },
       {
         text: 'Initiatives',
         component: <PublishedWithChangesIcon sx={{ fontSize: 18 }} />,
         navigate: `/x/initiatives`,
-        disable: false,
-      },
-      {
-        // Authoring a ChangeWorkflow. Runs on local fixtures, not the API yet.
-        text: 'Workflow Builder',
-        component: <SchemaIcon sx={{ fontSize: 18 }} />,
-        navigate: `/x/workflow-builder`,
         disable: false,
       },
     ],
@@ -430,6 +425,13 @@ export const Layout = memo(() => {
 
   // Invoker sidebar — no left nav offset needed in the top-nav layout
   const invoker = useInvokerSidebar(0);
+
+  // A page asked for the invoker, e.g. to create a Trigger in its Space.
+  const invokerRequestSeq = useAppSelector(selectInvokerRequestSeq);
+  const openInvoker = invoker.open;
+  useEffect(() => {
+    if (invokerRequestSeq > 0) openInvoker();
+  }, [invokerRequestSeq, openInvoker]);
 
   // Feed the global Invoker sidebar the units currently selected anywhere
   // in the app (populated by each page via the selectedUnits slice).
@@ -530,7 +532,7 @@ export const Layout = memo(() => {
           {/* Primary nav items */}
           {ConfigurationItems.map((item) =>
             item.subItems ? (
-              <TopNavToolsButton key={item.text} item={item} />
+              <TopNavMenuButton key={item.text} item={item} />
             ) : (
               <TopNavButton key={item.text} item={item} />
             ),

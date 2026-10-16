@@ -43,6 +43,13 @@ interface InlineSavePanelProps {
   availableToolchainTypes?: string[];
   /** Default space ID from context (selected units) */
   defaultSpaceId?: string;
+  /** What the panel saves when it opens, unless a loaded Invocation or Trigger says otherwise */
+  defaultSaveType?: 'invocation' | 'trigger';
+  /**
+   * Changes with each page request to save in a given Space and type, which then applies even
+   * to a panel that is already open or holds a loaded Invocation
+   */
+  presetKey?: number;
 }
 
 export interface SaveInvocationOptions {
@@ -76,11 +83,13 @@ export const InlineSavePanel = ({
   defaultToolchainType = '',
   availableToolchainTypes = [],
   defaultSpaceId = '',
+  defaultSaveType = 'invocation',
+  presetKey,
 }: InlineSavePanelProps) => {
   // Basic fields
   const [name, setName] = useState(defaultName);
   const [selectedSpaceId, setSelectedSpaceId] = useState(defaultSpaceId);
-  const [saveType, setSaveType] = useState<'invocation' | 'trigger'>('invocation');
+  const [saveType, setSaveType] = useState<'invocation' | 'trigger'>(defaultSaveType);
   const [toolchainType, setToolchainType] = useState(defaultToolchainType);
 
   // Trigger-specific fields
@@ -96,7 +105,7 @@ export const InlineSavePanel = ({
   // UI state
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState(0);
+  const [activeTab, setActiveTab] = useState(defaultSaveType === 'trigger' ? 1 : 0);
   const errorRef = useRef<HTMLDivElement>(null);
 
   // Fetch spaces
@@ -122,11 +131,17 @@ export const InlineSavePanel = ({
       if (defaultName) {
         setName(defaultName);
       }
+      if (!loadedInvocation) {
+        if (defaultSpaceId) setSelectedSpaceId(defaultSpaceId);
+        if (defaultToolchainType) setToolchainType(defaultToolchainType);
+        setSaveType(defaultSaveType);
+        setActiveTab(defaultSaveType === 'trigger' ? 1 : 0);
+      }
     } else if (!open && prevOpenRef.current) {
       // Panel just closed - reset form
       setName(defaultName);
       setSelectedSpaceId(defaultSpaceId);
-      setSaveType('invocation');
+      setSaveType(defaultSaveType);
       setToolchainType(defaultToolchainType);
       setEventType('Mutation');
       setDisabled(false);
@@ -135,10 +150,10 @@ export const InlineSavePanel = ({
       setAnnotations([]);
       setBridgeWorkerId('');
       setError('');
-      setActiveTab(0);
+      setActiveTab(defaultSaveType === 'trigger' ? 1 : 0);
     }
     prevOpenRef.current = open;
-  }, [open, defaultName, defaultSpaceId, defaultToolchainType]);
+  }, [open, defaultName, defaultSpaceId, defaultToolchainType, defaultSaveType, loadedInvocation]);
 
   // Pre-fill form fields from loaded invocation
   useEffect(() => {
@@ -169,6 +184,18 @@ export const InlineSavePanel = ({
     if (loadedInvocation.BridgeWorkerID) setBridgeWorkerId(loadedInvocation.BridgeWorkerID);
   }, [loadedInvocation]);
 
+  // A page's request applies over the panel's current state, including a loaded Invocation's
+  // Space, so this runs after the effect above.
+  // Only a new request re-applies the preset; later edits to the form stand.
+  const appliedPresetKey = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!presetKey || presetKey === appliedPresetKey.current) return;
+    appliedPresetKey.current = presetKey;
+    if (defaultSpaceId) setSelectedSpaceId(defaultSpaceId);
+    setSaveType(defaultSaveType);
+    setActiveTab(defaultSaveType === 'trigger' ? 1 : 0);
+  }, [presetKey, defaultSpaceId, defaultSaveType]);
+
   // Scroll to error when it appears
   useEffect(() => {
     if (error && errorRef.current) {
@@ -196,6 +223,11 @@ export const InlineSavePanel = ({
     // Validate space selection
     if (!selectedSpaceId) {
       setError('Space is required');
+      return;
+    }
+
+    if (!toolchainType) {
+      setError('Toolchain Type is required');
       return;
     }
 
@@ -254,7 +286,7 @@ export const InlineSavePanel = ({
   const resetForm = () => {
     setName(defaultName);
     setSelectedSpaceId(defaultSpaceId);
-    setSaveType('invocation');
+    setSaveType(defaultSaveType);
     setToolchainType(defaultToolchainType);
     setEventType('Mutation');
     setDisabled(false);
@@ -263,7 +295,7 @@ export const InlineSavePanel = ({
     setAnnotations([]);
     setBridgeWorkerId('');
     setError('');
-    setActiveTab(0);
+    setActiveTab(defaultSaveType === 'trigger' ? 1 : 0);
   };
 
   const validateName = (value: string) => {

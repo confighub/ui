@@ -120,6 +120,7 @@ const noConditions: Record<ConditionKind, boolean> = {
   progressing: false,
   unreleased: false,
   stale: false,
+  changeSet: false,
 };
 /** A tree node's mark shows only what would earn it a card, so Stale is left out. */
 const STALE_ONLY: ReadonlySet<WaveCondition> = new Set(['stale']);

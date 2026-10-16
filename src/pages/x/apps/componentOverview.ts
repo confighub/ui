@@ -3,6 +3,7 @@
 import type { ComponentRead, ExtendedSpaceRead } from '@confighub/rtk-query';
 
 import { componentOwner } from './componentOwner';
+import type { OpenChangeSet } from './useOpenChangeSets';
 
 // ============================================================================
 // TYPES
@@ -27,6 +28,12 @@ export interface ComponentKpiRow {
    * here reading 0 before its data has arrived.
    */
   hasOutstandingChangeOrder: boolean;
+  /**
+   * The ChangeSets open on units in this component's Spaces, by slug
+   * (qualified with their Space when it is not one of the component's).
+   * Empty when the caller passes no `openChangeSets` at all.
+   */
+  openChangeSets: string[];
 }
 
 export interface OrgKpiSummary {
@@ -36,6 +43,8 @@ export interface OrgKpiSummary {
   upgrades: number;
   /** Count of components (rows) with `hasOutstandingChangeOrder` true. */
   outstandingChangeOrders: number;
+  /** Count of components (rows) with a ChangeSet open on one of their units. */
+  openChangeSetComponents: number;
 }
 
 export interface OverviewData {
@@ -70,6 +79,10 @@ export interface OverviewData {
  * base included, since a ChangeOrder's SpaceID is where it resides, and that
  * space is typically the base.
  *
+ * `openChangeSets` comes from its own fetch too (`useOpenChangeSets`): a
+ * ChangeSet is open on a unit, so a component has one when any of its Spaces
+ * holds such a unit.
+ *
  * `owner` is read with `componentOwner`, from the Component and every one of
  * its Spaces in `spaces`.
  */
@@ -77,6 +90,7 @@ export function buildOverviewData(
   spaces: ExtendedSpaceRead[],
   componentById: ReadonlyMap<string, ComponentRead>,
   outstandingChangeOrderBaseSpaceIds?: ReadonlySet<string>,
+  openChangeSets?: ReadonlyMap<string, OpenChangeSet>,
 ): OverviewData {
   // 1. Group component spaces by Component
   const componentGroups = new Map<string, { component: ComponentRead; spaces: ExtendedSpaceRead[] }>();
@@ -119,6 +133,15 @@ export function buildOverviewData(
       }
     }
 
+    const spaceIds = new Set(compSpaces.flatMap((s) => (s.Space?.SpaceID ? [s.Space.SpaceID] : [])));
+    const spaceSlugs = new Set(compSpaces.flatMap((s) => (s.Space?.Slug ? [s.Space.Slug] : [])));
+    const componentChangeSets: string[] = [];
+    for (const cs of openChangeSets?.values() ?? []) {
+      if (![...cs.spaceIds].some((id) => spaceIds.has(id))) continue;
+      componentChangeSets.push(cs.spaceSlug && !spaceSlugs.has(cs.spaceSlug) ? `${cs.spaceSlug}/${cs.slug}` : cs.slug);
+    }
+    componentChangeSets.sort();
+
     rows.push({
       componentName,
       owner,
@@ -127,6 +150,7 @@ export function buildOverviewData(
       gatesPending,
       upgrades,
       hasOutstandingChangeOrder,
+      openChangeSets: componentChangeSets,
     });
   }
 
@@ -137,6 +161,7 @@ export function buildOverviewData(
     gatesPending: rows.reduce((s, r) => s + r.gatesPending, 0),
     upgrades: rows.reduce((s, r) => s + r.upgrades, 0),
     outstandingChangeOrders: rows.reduce((s, r) => s + (r.hasOutstandingChangeOrder ? 1 : 0), 0),
+    openChangeSetComponents: rows.reduce((s, r) => s + (r.openChangeSets.length > 0 ? 1 : 0), 0),
   };
 
   return { rows, org };

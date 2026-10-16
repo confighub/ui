@@ -13,7 +13,6 @@ export interface IUnitDataGridTabProps {
   defaultRowSelection?: number;
   onRowSelectionChange: (selectedIds: string[]) => void;
   onRowItemEdit: (id: string) => void;
-  disableToolbar: boolean;
   selectedUnitIds?: string[];
   filterElement?: React.ReactNode;
   customToolbarActions?: React.ReactNode;
@@ -27,7 +26,6 @@ export const UnitDataGridTab = ({
   defaultRowSelection,
   onRowSelectionChange,
   onRowItemEdit,
-  disableToolbar,
   selectedUnitIds = [],
   filterElement,
   customToolbarActions,
@@ -41,7 +39,6 @@ export const UnitDataGridTab = ({
         onRowSelectionChange={onRowSelectionChange}
         defaultRowSelection={defaultRowSelection}
         onRowItemEdit={onRowItemEdit}
-        disableToolbar={disableToolbar}
         selectedUnitIds={selectedUnitIds}
         filterElement={filterElement}
         customToolbarActions={customToolbarActions}

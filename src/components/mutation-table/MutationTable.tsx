@@ -2,21 +2,25 @@
 // SPDX-License-Identifier: MIT
 import { useMemo } from 'react';
 
+import { DATE_TIME_GRID_SLOTS, DateTimeCell, UuidCell } from '@/components/data-grid/cells';
+import { EntityDataGrid } from '@/components/entity-data-grid/EntityDataGrid';
+import { ColumnGroup } from '@/components/entity-data-grid/column-groups-types';
 import { NavLink } from '@/components/nav-link/NavLink';
-import { CenteredTableCell, Ellipses, StripedDataGrid } from '@/components/styled';
+import { CenteredTableCell, Ellipses } from '@/components/styled';
 import { EmptyMutations } from '@/components/mutation-table/components/empty-mutations/EmptyMutations';
-import { DataGridToolbar } from '@/components/unit-data-grid/components/DataGridToolbar';
 import { useGridPersistence } from '@/components/unit-data-grid/hooks/useGridPersistence';
 import {
   ExtendedMutationRead,
   ExtendedUnitRead,
+  FunctionArgument,
   useListExtendedMutationsQuery,
 } from '@confighub/rtk-query';
 import { UNIT_DETAIL_TAB } from '@/pages/unit-detail/unitDetailHrefs';
 import { CmpProps } from '@/types';
+import { isGoZeroTime } from '@/utility/datetime-utils';
 import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
-import { GridColDef } from '@mui/x-data-grid';
+import { GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 
@@ -29,6 +33,98 @@ export type MutationRow = { id: string } & ExtendedMutationRead;
 
 dayjs.extend(relativeTime);
 
+/**
+ * The Columns panel lists the columns by group, so every column the table defines is named in
+ * exactly one of these.
+ */
+const MUTATION_COLUMN_GROUPS: ColumnGroup[] = [
+  {
+    header: 'Mutation',
+    columns: ['mutationNum', 'MutationID', 'revisionNum', 'source', 'Subgroup'],
+  },
+  {
+    header: 'Function',
+    columns: ['functionName', 'arguments', 'whereResource', 'invocation', 'BridgeWorkerID'],
+  },
+  {
+    header: 'Cause',
+    columns: ['trigger', 'link', 'providedPath', 'providedResource'],
+  },
+  {
+    header: 'Restore & Merge',
+    columns: ['RestoredRevisionNum', 'mergeSource', 'MergeBaseRevisionNum', 'MergeEndRevisionNum'],
+  },
+  {
+    header: 'Replay',
+    columns: ['ReplayOutcome', 'ReplayReason'],
+  },
+  {
+    header: 'Timestamps',
+    columns: ['createdAt'],
+  },
+];
+
+const MUTATION_COLUMN_VISIBILITY: Record<string, boolean> = {
+  mutationNum: true,
+  MutationID: false,
+  revisionNum: true,
+  source: true,
+  Subgroup: false,
+  functionName: true,
+  arguments: true,
+  whereResource: false,
+  invocation: false,
+  BridgeWorkerID: false,
+  trigger: true,
+  link: true,
+  providedPath: true,
+  providedResource: false,
+  RestoredRevisionNum: false,
+  mergeSource: false,
+  MergeBaseRevisionNum: false,
+  MergeEndRevisionNum: false,
+  ReplayOutcome: false,
+  ReplayReason: false,
+  createdAt: false,
+};
+
+/** The arguments the function ran with, or the Trigger's when the Mutation records none. */
+const mutationArguments = (row: MutationRow): string => {
+  const functionArgs = row.Mutation?.FunctionInvocation?.Arguments ?? [];
+  const triggerArgs = row.Trigger?.Arguments ?? [];
+  return (functionArgs.length > 0 ? functionArgs : triggerArgs)
+    .map((arg: FunctionArgument) => `${arg.ParameterName || 'arg'}=${arg.Value?.toString() || ''}`)
+    .join(', ');
+};
+
+const renderText = (params: GridRenderCellParams<MutationRow>) => {
+  const text = params.value === undefined || params.value === null ? '' : String(params.value);
+  return (
+    <CenteredTableCell>
+      <Tooltip title={text}>
+        <Ellipses variant='body1'>{text}</Ellipses>
+      </Tooltip>
+    </CenteredTableCell>
+  );
+};
+
+const renderUuid = (params: GridRenderCellParams<MutationRow>) => <UuidCell params={params} />;
+
+/** A revision number column; 0 is what the server reports for none. */
+const revisionNumColumn = (
+  field: string,
+  headerName: string,
+  value: (row: MutationRow) => number | undefined,
+): GridColDef<MutationRow> => ({
+  field,
+  headerName,
+  type: 'number',
+  minWidth: 100,
+  flex: 0.5,
+  valueGetter: (_, row) => value(row) || null,
+  renderCell: renderText,
+});
+
 export const MutationsTable = ({ unitExtended, onTabSelected }: IMutationsTableProps) => {
   const {
     handleColumnResize,
@@ -37,14 +133,11 @@ export const MutationsTable = ({ unitExtended, onTabSelected }: IMutationsTableP
     onColumnVisibilityModelChange,
     sortModel,
     onSortModelChange,
-    filterModel,
-    onFilterModelChange,
-    paginationModel,
-    onPaginationModelChange,
     clearStoredState,
     hasStateChanged,
   } = useGridPersistence('mutations-table', {
     sortModel: [{ field: 'mutationNum', sort: 'desc' }],
+    columnVisibility: MUTATION_COLUMN_VISIBILITY,
   });
   const unitId = unitExtended?.Unit?.UnitID || '';
   const spaceId = unitExtended?.Unit?.SpaceID || '';
@@ -53,14 +146,16 @@ export const MutationsTable = ({ unitExtended, onTabSelected }: IMutationsTableP
     {
       spaceId,
       unitId,
-      include: 'RevisionID,LinkID,TriggerID,SpaceID,UnitID',
+      include: 'RevisionID,LinkID,TriggerID,SpaceID,UnitID,MergeSourceID,InvocationID',
     },
     {
       selectFromResult: ({ data }) => ({
-        mutations: data?.map((mutation) => ({
-          id: mutation.Mutation?.MutationID,
-          ...mutation,
-        })),
+        mutations: data?.map(
+          (mutation): MutationRow => ({
+            id: mutation.Mutation?.MutationID ?? '',
+            ...mutation,
+          }),
+        ),
       }),
       skip: !spaceId || !unitId,
     },
@@ -153,15 +248,9 @@ export const MutationsTable = ({ unitExtended, onTabSelected }: IMutationsTableP
       headerName: 'Arguments',
       minWidth: 150,
       flex: 1,
-      valueGetter: (_, row) => row?.Trigger?.Arguments,
+      valueGetter: (_, row) => mutationArguments(row),
       renderCell: (params) => {
-        const functionArgs = params.row?.Mutation?.FunctionInvocation?.Arguments || [];
-        const triggerArgs = params.row?.Trigger?.Arguments || [];
-
-        // Use functionArgs if available, otherwise fallback to triggerArgs
-        const aggregatedArguments = (functionArgs.length > 0 ? functionArgs : triggerArgs)
-          .map((arg) => `${arg.ParameterName || 'arg'}=${arg.Value?.toString() || ''}`)
-          .join(', '); // Aggregate arguments as a comma-separated string
+        const aggregatedArguments = mutationArguments(params.row);
         return (
           <CenteredTableCell>
             {aggregatedArguments && aggregatedArguments.length > 0 && (
@@ -203,7 +292,114 @@ export const MutationsTable = ({ unitExtended, onTabSelected }: IMutationsTableP
         </CenteredTableCell>
       ),
     },
-  ] as GridColDef<MutationRow>[], [onTabSelected]);
+    {
+      field: 'MutationID',
+      headerName: 'Mutation ID',
+      minWidth: 160,
+      flex: 1,
+      valueGetter: (_, row) => row.Mutation?.MutationID ?? '',
+      renderCell: renderUuid,
+    },
+    {
+      field: 'Subgroup',
+      headerName: 'Subgroup',
+      type: 'number',
+      minWidth: 90,
+      flex: 0.4,
+      valueGetter: (_, row) => row.Mutation?.Subgroup,
+      renderCell: renderText,
+    },
+    {
+      field: 'whereResource',
+      headerName: 'Where Resource',
+      minWidth: 150,
+      flex: 1,
+      valueGetter: (_, row) => row.Mutation?.FunctionInvocation?.WhereResource ?? '',
+      renderCell: renderText,
+    },
+    {
+      field: 'invocation',
+      headerName: 'Invocation',
+      minWidth: 130,
+      flex: 0.8,
+      valueGetter: (_, row) => row.Invocation?.Slug ?? '',
+      renderCell: renderText,
+    },
+    {
+      field: 'BridgeWorkerID',
+      headerName: 'Bridge Worker ID',
+      minWidth: 160,
+      flex: 1,
+      valueGetter: (_, row) => row.Mutation?.BridgeWorkerID ?? '',
+      renderCell: renderUuid,
+    },
+    {
+      field: 'providedResource',
+      headerName: 'Provided Resource',
+      minWidth: 160,
+      flex: 1,
+      valueGetter: (_, row) => {
+        const resource = row.Mutation?.ProvidedResource;
+        return resource?.ResourceName
+          ? `${resource.ResourceType ?? ''} ${resource.ResourceName}`.trim()
+          : '';
+      },
+      renderCell: renderText,
+    },
+    revisionNumColumn('RestoredRevisionNum', 'Restored Revision', (row) => row.Mutation?.RestoredRevisionNum),
+    {
+      field: 'mergeSource',
+      headerName: 'Merge Source',
+      minWidth: 130,
+      flex: 0.8,
+      valueGetter: (_, row) => row.MergeSource?.Slug ?? '',
+      renderCell: (params) => {
+        const source = params.row.MergeSource;
+        if (!source?.Slug) return <CenteredTableCell />;
+        return (
+          <CenteredTableCell>
+            <Tooltip title={source.Slug}>
+              <NavLink to={`/units/${source.SpaceID}/${source.UnitID}`}>
+                <Ellipses variant='body1' sx={{ textDecoration: 'underline' }}>
+                  {source.Slug}
+                </Ellipses>
+              </NavLink>
+            </Tooltip>
+          </CenteredTableCell>
+        );
+      },
+    },
+    revisionNumColumn('MergeBaseRevisionNum', 'Merge Base', (row) => row.Mutation?.MergeBaseRevisionNum),
+    revisionNumColumn('MergeEndRevisionNum', 'Merge End', (row) => row.Mutation?.MergeEndRevisionNum),
+    {
+      field: 'ReplayOutcome',
+      headerName: 'Replay Outcome',
+      minWidth: 130,
+      flex: 0.8,
+      valueGetter: (_, row) => row.Mutation?.ReplayOutcome ?? '',
+      renderCell: renderText,
+    },
+    {
+      field: 'ReplayReason',
+      headerName: 'Replay Reason',
+      minWidth: 150,
+      flex: 1,
+      valueGetter: (_, row) => row.Mutation?.ReplayReason ?? '',
+      renderCell: renderText,
+    },
+    {
+      field: 'createdAt',
+      headerName: 'Created At',
+      type: 'dateTime',
+      minWidth: 140,
+      flex: 1,
+      valueGetter: (_, row) => {
+        const createdAt = row.Mutation?.CreatedAt;
+        return createdAt && !isGoZeroTime(createdAt) ? new Date(createdAt) : null;
+      },
+      renderCell: (params) => <DateTimeCell params={params} />,
+    },
+  ], [onTabSelected]);
 
   // Apply stored widths to columns
   const columns = useMemo(
@@ -211,36 +407,29 @@ export const MutationsTable = ({ unitExtended, onTabSelected }: IMutationsTableP
     [applyStoredWidths, baseColumns]
   );
 
-  const filteredColumns = useMemo(() => columns.filter(Boolean), [columns]);
-
-  const Toolbar = () => (
-    <DataGridToolbar hasStateChanged={hasStateChanged} onResetState={clearStoredState} />
+  // A model stored before a column existed does not name it, and the grid shows every column a
+  // model leaves out, so the defaults fill in whatever the stored model does not say.
+  const effectiveColumnVisibilityModel = useMemo(
+    () => ({ ...MUTATION_COLUMN_VISIBILITY, ...columnVisibilityModel }),
+    [columnVisibilityModel],
   );
 
-  return mutations && mutations.length > 0 ? (
-    <StripedDataGrid
-      rows={[...mutations]}
-      // @ts-expect-error It's fine
-      columns={filteredColumns}
-      onColumnWidthChange={handleColumnResize}
-      columnVisibilityModel={columnVisibilityModel}
+  if (mutations.length === 0) return <EmptyMutations />;
+
+  return (
+    <EntityDataGrid
+      rows={mutations}
+      columns={columns}
+      columnVisibilityModel={effectiveColumnVisibilityModel}
       onColumnVisibilityModelChange={onColumnVisibilityModelChange}
       sortModel={sortModel}
       onSortModelChange={onSortModelChange}
-      filterModel={filterModel}
-      onFilterModelChange={onFilterModelChange}
-      paginationModel={paginationModel}
-      onPaginationModelChange={onPaginationModelChange}
-      slots={{
-        toolbar: Toolbar,
-      }}
-      getRowClassName={(params) =>
-        params.indexRelativeToCurrentPage % 2 === 0 ? 'even' : 'odd'
-      }
+      onColumnWidthChange={handleColumnResize}
+      onClearState={clearStoredState}
+      hasStateChanged={hasStateChanged}
+      columnGroups={MUTATION_COLUMN_GROUPS}
+      slots={DATE_TIME_GRID_SLOTS}
       disableRowSelectionOnClick
-      rowHeight={40}
     />
-  ) : (
-    <EmptyMutations />
   );
 };

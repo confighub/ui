@@ -19,6 +19,7 @@ import {
   useCreateInvocationMutation,
   useCreateTriggerMutation,
   useDeleteInvocationMutation,
+  useGetSpaceQuery,
   useInvokeFunctionsMutation,
   useLazySearchUnitDataQuery,
   useListAllUnitsQuery,
@@ -32,7 +33,12 @@ import {
 } from '@/components/invoker/utils/diff-from-invocation';
 import type { UnitDiff } from '@/components/invoker/utils/diff-from-revisions';
 import { InvokerContent } from '../invoker/InvokerContent';
-import { useAppSelector } from '@/hooks/useApp';
+import { useAppDispatch, useAppSelector } from '@/hooks/useApp';
+import {
+  clearInvokerRequest,
+  selectCreateTriggerInSpaceId,
+  selectInvokerRequestSeq,
+} from '@/state/slices/invokerRequest';
 import { selectInvocationInitiativeId } from '@/state/slices/selectedUnits';
 import { useInvokeInChangeSet } from '@/components/invoker/hooks/useInvokeInChangeSet';
 import { LockedUnitsError } from '@/components/invoker/hooks/useInitiativeChangeSetLifecycle';
@@ -444,6 +450,36 @@ export const InvokerSidebar = ({
     onClose();
   }, [onClose]);
 
+  // A page asked for a Trigger to be created in its Space: the save panel opens as a Trigger in
+  // that Space once a function is picked. The request lasts until the invoker closes or a Trigger
+  // is saved.
+  const dispatch = useAppDispatch();
+  const createTriggerInSpaceId = useAppSelector(selectCreateTriggerInSpaceId);
+  const invokerRequestSeq = useAppSelector(selectInvokerRequestSeq);
+  const { data: createTriggerSpace } = useGetSpaceQuery(
+    { spaceId: createTriggerInSpaceId || '' },
+    { skip: !createTriggerInSpaceId },
+  );
+  const wasOpenRef = useRef(isOpen);
+  useEffect(() => {
+    if (wasOpenRef.current && !isOpen && createTriggerInSpaceId) {
+      dispatch(clearInvokerRequest());
+    }
+    wasOpenRef.current = isOpen;
+  }, [isOpen, createTriggerInSpaceId, dispatch]);
+  const saveAsTrigger = useMemo(
+    () =>
+      createTriggerInSpaceId
+        ? {
+            requestSeq: invokerRequestSeq,
+            spaceId: createTriggerInSpaceId,
+            spaceName: createTriggerSpace?.Space?.Slug || '',
+            onCancel: () => dispatch(clearInvokerRequest()),
+          }
+        : undefined,
+    [createTriggerInSpaceId, invokerRequestSeq, createTriggerSpace?.Space?.Slug, dispatch],
+  );
+
   // Back button handler
   const handleBack = useCallback(() => {
     setSelectedFunction(null);
@@ -766,6 +802,7 @@ export const InvokerSidebar = ({
               success: true,
               message: `Trigger "${options.displayName}" saved successfully`,
             });
+            dispatch(clearInvokerRequest());
 
             return { success: true };
           } else {
@@ -848,6 +885,7 @@ export const InvokerSidebar = ({
       createInvocationMutation,
       createTriggerMutation,
       patchInvocationMutation,
+      dispatch,
     ]
   );
 
@@ -1019,6 +1057,7 @@ export const InvokerSidebar = ({
             totalVisibleUnits={totalVisibleUnits}
             onSaveAttributes={handleSaveAttributes}
             isSavingAttributes={isSavingAttributes}
+            saveAsTrigger={saveAsTrigger}
           />
         </SidebarContent>
       </SidebarPanel>

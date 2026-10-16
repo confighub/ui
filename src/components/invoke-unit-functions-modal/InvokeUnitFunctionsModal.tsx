@@ -53,7 +53,6 @@ export const InvokeUnitFunctionsModal = ({
   unitsToEdit = [],
   onSubmit,
   defaultToolchainType,
-  defaultChangeSetId,
   invocationToEdit,
 }: IUnitMutationModalProps) => {
   const {
@@ -64,10 +63,6 @@ export const InvokeUnitFunctionsModal = ({
   } = useForm<FormValues>({
     defaultValues: {},
   });
-
-  useEffect(() => {
-    setSelectedChangeSet(defaultChangeSetId || '');
-  }, [defaultChangeSetId]);
 
   // Reset form when function or invocation changes
   useEffect(() => {
@@ -107,7 +102,7 @@ export const InvokeUnitFunctionsModal = ({
   const [triggerName, setTriggerName] = useState('');
   const [triggerEventType, setTriggerEventType] = useState('Mutation');
   const [invocationName, setInvocationName] = useState('');
-  const [selectedChangeSet, setSelectedChangeSet] = useState<string>(defaultChangeSetId || '');
+  const [selectedChangeSet, setSelectedChangeSet] = useState<string>('');
 
   const { data: spacesData } = useListSpacesQuery({});
   const spaces = spacesData?.map((item) => item.Space).filter(Boolean) || [];
@@ -433,12 +428,11 @@ export const InvokeUnitFunctionsModal = ({
               options={changeSets}
               getOptionLabel={(option) => option?.DisplayName || ''}
               value={changeSets.find((cs) => cs?.ChangeSetID === selectedChangeSet) || null}
-              readOnly={defaultChangeSetId ? true : false}
               onChange={(_, newValue) => setSelectedChangeSet(newValue?.ChangeSetID || '')}
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label={`Changeset ${defaultChangeSetId ? '' : '(Optional)'}`}
+                  label='Changeset (Optional)'
                   required={false}
                 />
               )}

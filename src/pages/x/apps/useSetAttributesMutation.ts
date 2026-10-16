@@ -18,6 +18,7 @@ import {
 } from './configParser';
 import type { FieldEntry, FieldPathMeta, ResourceInfo, SetValueResult } from './configParser';
 import { isYamlToolchain } from './componentValues';
+import { openChangeSetIdOf } from './changeSets';
 
 // ============================================================================
 // TYPES
@@ -300,6 +301,7 @@ export function useSetAttributesMutation({
         await invokeFunctions({
           spaceId,
           where: `UnitID='${unitId}'`,
+          changeSetId: openChangeSetIdOf(unitById, unitId),
           functionInvocationsRequest: {
             FunctionInvocations: [
               {
@@ -323,6 +325,7 @@ export function useSetAttributesMutation({
     },
     [
       allUnits,
+      unitById,
       synthesizeUpstreamMeta,
       invokeFunctions,
       dispatch,
@@ -373,6 +376,7 @@ export function useSetAttributesMutation({
           await invokeFunctions({
             spaceId,
             where: `UnitID='${unitId}'`,
+            changeSetId: openChangeSetIdOf(unitById, unitId),
             functionInvocationsRequest: {
               FunctionInvocations: [
                 {
@@ -410,6 +414,7 @@ export function useSetAttributesMutation({
             await invokeFunctions({
               spaceId,
               where: `UnitID='${unitId}'`,
+              changeSetId: openChangeSetIdOf(unitById, unitId),
               functionInvocationsRequest: {
                 FunctionInvocations: [
                   {
@@ -433,6 +438,7 @@ export function useSetAttributesMutation({
     },
     [
       allUnits,
+      unitById,
       synthesizeUpstreamMeta,
       invokeFunctions,
       dispatch,

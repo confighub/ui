@@ -47,7 +47,6 @@ export interface UnitModalComposerProps {
   toUnit?: UnitRead;
   refresh?: () => void;
   defaultToolchainType?: string;
-  defaultChangeSetId?: string;
   /** Invocation to pre-populate the invoke modal with (for edit & invoke flow) */
   invocationToEdit?: Invocation;
 }
@@ -65,7 +64,6 @@ export const UnitModalComposer = ({
   fromUnit,
   toUnit,
   defaultToolchainType,
-  defaultChangeSetId,
   invocationToEdit,
 }: UnitModalComposerProps) => {
   const [modalType, setModalType] = useState('');
@@ -93,7 +91,6 @@ export const UnitModalComposer = ({
       fromUnit,
       toUnit,
       defaultToolchainType,
-      defaultChangeSetId,
       invocationToEdit,
     }) || null
   );

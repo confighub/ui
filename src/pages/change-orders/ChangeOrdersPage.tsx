@@ -120,6 +120,8 @@ import { ChangeOrderBlockedResources, ChangeOrderRefusals } from './changeOrderR
 import { changeOrderPath } from './changeOrderAddress';
 import { useChangeOrderDetail, type ChangeOrderSpace } from './useChangeOrderDetail';
 import { useChangeOrderImageChanges } from './useChangeOrderImageChanges';
+import { useChangeOrderChangeSets } from './useChangeOrderChangeSets';
+import { ChangeOrderChangeSets } from './components/ChangeOrderChangeSets';
 import { FullDiffDisclosure, ImageChangeSummary } from './components/ImageChangeHero';
 import { onlyChangesHint } from './imageChangeCopy';
 import { imageChangesForSource } from './imageChange';
@@ -1824,6 +1826,15 @@ export default function ChangeOrdersPage() {
     skip: !detail.found,
   });
 
+  const { changeSets } = useChangeOrderChangeSets({
+    changeOrderId: detail.found ? detail.changeOrderId : undefined,
+    baseSpaceId: detail.baseSpaceId,
+    updateType: detail.updateType,
+    ownSpaceReached: detail.ownSpaceReached,
+    inScopeSpaceIds: detail.inScopeSpaceIds,
+    adoptedEndTagId: detail.adoptedEndTagId,
+  });
+
   /*
    * ⚠️ THE GATED PROMOTE IS EXERCISED; THE ORDINARY ONE IS NOT.
    *
@@ -3009,6 +3020,11 @@ export default function ChangeOrdersPage() {
                 Costs no extra request: both sides are already fetched for the
                 comparison above, and the answer cannot vary by stage.
               */}
+              {/*
+                The ChangeSets the change was made in, with their Descriptions, ahead of the
+                diff: what the change is meant to be, then what it did.
+              */}
+              <ChangeOrderChangeSets changeSets={changeSets} baseSpaceId={detail.baseSpaceId} />
               {heroEligible ? (
                 <ImageChangeSummary
                   changes={imageChanges}

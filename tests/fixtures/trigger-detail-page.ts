@@ -14,18 +14,9 @@ export class TriggerDetailPage {
   }
 
   async goToTriggerDetail(triggerName: string) {
-    // Click on the trigger name in the table to open edit drawer
-    // Try exact match first
-    const exactText = this.page.getByText(triggerName, { exact: true }).first();
-    const exactCount = await exactText.count();
-
-    if (exactCount > 0) {
-      await exactText.click();
-    } else {
-      // Fall back to partial match for HighlightedCell
-      const text = this.page.locator(`text=${triggerName}`).first();
-      await text.click();
-    }
+    // The name links to the edit drawer from the Triggers table. The Overview tab names the
+    // Space's applied Triggers too, so the table's link is the one to click.
+    await this.page.getByRole('link', { name: triggerName, exact: true }).click();
   }
 
   async editTrigger(olderTriggerName: string, triggerName: string) {
@@ -45,15 +36,6 @@ export class TriggerDetailPage {
   }
 
   async expectToBeVisibileByText(name: string) {
-    // Try exact match first
-    const exactText = this.page.getByText(name);
-    const exactCount = await exactText.count();
-
-    if (exactCount > 0) {
-      await expect(exactText).toBeVisible();
-    } else {
-      // Fall back to partial match for HighlightedCell
-      await expect(this.page.locator(`text=${name}`)).toBeVisible();
-    }
+    await expect(this.page.getByRole('link', { name, exact: true })).toBeVisible();
   }
 }

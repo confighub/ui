@@ -37,6 +37,12 @@ import Tooltip from '@mui/material/Tooltip';
 
 import { componentTheme } from './componentTheme';
 
+/**
+ * What the pane's values are filtered to: the incoming upgrade, everything, or
+ * what the node's ChangeSet changed (read-only, drawn as Incoming is).
+ */
+export type PaneFilterMode = 'incoming' | 'all' | 'changeset';
+
 export interface ComponentToolbarProps {
   /** Distinguishes this mount's testids (`${testIdPrefix}-filter-all`, etc.) so auto and ChangeOrder mode never collide. */
   testIdPrefix: string;
@@ -51,14 +57,23 @@ export interface ComponentToolbarProps {
   /** False hides the Tree/Source buttons, fixing the caller to whatever `viewMode` it passes. */
   showViewToggle?: boolean;
 
-  filterMode: 'incoming' | 'all';
-  onFilterModeChange: (mode: 'incoming' | 'all') => void;
+  filterMode: PaneFilterMode;
+  onFilterModeChange: (mode: PaneFilterMode) => void;
   totalUpgradableFields: number;
   /** Show "…" instead of a count while the Incoming total is still resolving. Omit where there is no such state. */
   isDryRunLoading?: boolean;
   hasUpgradableUnits?: boolean;
   totalAllFields: number;
   allFieldsPartial: boolean;
+  /**
+   * The ChangeSet segment, shown only when the node has a ChangeSet open on a
+   * unit, or one whose change is still each unit's head. Its count is the
+   * fields the ChangeSet changed; `changeSetTooltip` names the ChangeSet.
+   */
+  hasChangeSet?: boolean;
+  totalChangeSetFields?: number;
+  isChangeSetLoading?: boolean;
+  changeSetTooltip?: React.ReactNode;
 
   /**
    * The scope-filter row (Local overrides / Local only). Provide both or
@@ -102,6 +117,10 @@ export function ComponentToolbar({
   hasUpgradableUnits = false,
   totalAllFields,
   allFieldsPartial,
+  hasChangeSet = false,
+  totalChangeSetFields = 0,
+  isChangeSetLoading = false,
+  changeSetTooltip,
   scopeFilter,
   onScopeFilterChange,
   totalLocalOverrides,
@@ -273,6 +292,39 @@ export function ComponentToolbar({
                     </Box>
                   </Tooltip>
                 </Box>
+              );
+            })()}
+
+            {hasChangeSet && (() => {
+              const active = filterMode === 'changeset';
+              const activeColor = componentTheme.upgrade;
+              return (
+                <Tooltip title={changeSetTooltip ?? ''} placement='bottom'>
+                  <Box
+                    component="button"
+                    aria-pressed={active}
+                    data-testid={`${testIdPrefix}-filter-changeset`}
+                    onClick={() => onFilterModeChange('changeset')}
+                    sx={{
+                      display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      fontSize: 11, fontWeight: 600,
+                      color: active ? activeColor : componentTheme.fgMuted,
+                      padding: '3px 11px', borderRadius: '7px',
+                      border: `1px solid ${active ? componentTheme.borderDefault : 'transparent'}`,
+                      background: active ? componentTheme.bgDefault : 'transparent',
+                      boxShadow: active ? componentTheme.shadowSm : 'none',
+                      cursor: 'pointer',
+                      fontFamily: componentTheme.fontSans, lineHeight: '18px',
+                      transition: 'all .12s', whiteSpace: 'nowrap',
+                    }}
+                  >
+                    <Box component="span" sx={{ width: 6, height: 6, borderRadius: '50%', background: active ? activeColor : componentTheme.fgSubtle, flexShrink: 0 }} />
+                    ChangeSet
+                    <Box component="span" data-testid={`${testIdPrefix}-changeset-count`} sx={{ fontFamily: componentTheme.fontMono, fontSize: 10, fontWeight: 700, color: active ? activeColor : componentTheme.fgSubtle }}>
+                      {isChangeSetLoading ? '…' : totalChangeSetFields}
+                    </Box>
+                  </Box>
+                </Tooltip>
               );
             })()}
           </Box>

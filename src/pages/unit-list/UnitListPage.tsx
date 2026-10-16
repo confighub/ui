@@ -4,7 +4,6 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { useNavigate } from 'react-router-dom';
 
 import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
-import { CreateChangeSetAccordion } from '@/components/create-changeset-accordion/CreateChangeSetAccordion';
 import { ErrorList } from '@/components/error-list/ErrorList';
 import {
   ALL_GROUPS,
@@ -21,7 +20,6 @@ import {
   extractSlugs,
   useQueryBuilder,
 } from '@/components/query-builder';
-import { SettingsTabs } from '@/components/settings-tabs/SettingsTabs';
 import { Main, Section as SectionSlider } from '@/components/styled';
 import { UnitDataGrid } from '@/components/unit-data-grid/UnitDataGrid';
 import { createUnitListRow } from '@/components/unit-data-grid/utils/data-grid-helpers';
@@ -40,8 +38,6 @@ import { usePolling } from '@/hooks/usePolling';
 import { ENTITY_TYPES } from '@/utility/analytics-constants';
 import { AddTargetDrawer } from '@/pages/target-list/components/add-target-drawer/AddTargetDrawer';
 import {
-  ChangeSet,
-  type ChangeSetRead,
   type ExtendedViewRead,
   ExtendedUnitRead,
   FunctionInvocationsResponse,
@@ -83,24 +79,16 @@ import { styled, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material'
 import Box from '@mui/material/Box';
 import isEmpty from 'lodash/isEmpty';
 
-import { FunctionInvocationDrawer } from './components/function-invocation-drawer/FunctionInvocationDrawer';
 import { GettingStarted } from './components/getting-started/GettingStarted';
 import { UnitModalComposer } from './components/modals/unit-modal-composer/UnitModalComposer';
 import { UnitListHeader } from './components/unit-list-header/UnitListHeader';
-import { WorkBenchFloatingActions } from './components/work-bench-floating-actions/WorkBenchFloatingActions';
-import { useChangeSetWorkflow } from './hooks/useChangeSetWorkflow';
 import { useGroupByLevels } from './hooks/useGroupByLevels';
 import { useModalState } from './hooks/useModalState';
-import { CloseChangeSetModal } from './modals/CloseChangeSetModal';
-import { RestoreChangesModal } from './modals/RestoreChangesModal';
 import type { ModalType } from './rules';
-import { ChangeSetTab } from './tabs/changeset-tab/ChangeSetTab';
-import { RevisionsTab } from './tabs/revisions-tab/RevisionsTab';
 import { UnitDataGridTab } from './tabs/unit-data-grid-tab';
 
 // Constants
 const BULK_ACTIONS = {
-  CHANGE_SET: 'Change_Set',
   LINK: 'Link',
   ADD: 'Add',
   BULK_EDIT: 'Bulk_Edit',
@@ -129,7 +117,7 @@ export const UnitListPage = () => {
   // ============================================================================
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
-  const { clearSearchParams, searchParams, setSearchParams } = useAdvancedSearchQueryParams();
+  const { searchParams, setSearchParams } = useAdvancedSearchQueryParams();
 
   // Custom hooks
   const { modalState, updateModalState } = useModalState();
@@ -165,8 +153,6 @@ export const UnitListPage = () => {
   const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(hasUrlFilters);
   const [isTargetDrawerOpen, setIsTargetDrawerOpen] = useState(false);
   const [existingTarget, setExistingTarget] = useState<TargetRead | null>(null);
-  const [isCloseChangeSetModalOpen, setIsCloseChangeSetModalOpen] = useState(false);
-  const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
 
   // ============================================================================
   // STATE - BULK ACTIONS & PROGRESS
@@ -177,12 +163,6 @@ export const UnitListPage = () => {
   // ============================================================================
   const selectedFunction = EMPTY_FUNCTION;
   const preInvocationUnits: ExtendedUnitRead[] = [];
-  const [functionInvocationResults, setFunctionInvocationResults] = useState<
-    FunctionInvocationsResponse[]
-  >([]);
-  const [functionInvocationError, setFunctionInvocationError] = useState<string>('');
-  const [isFunctionResultsDrawerOpen, setIsFunctionResultsDrawerOpen] = useState(false);
-  const [isFunctionResultsMinimized, setIsFunctionResultsMinimized] = useState(false);
   const [invocationToEdit, setInvocationToEdit] = useState<Invocation | undefined>(undefined);
 
   // ============================================================================
@@ -764,42 +744,6 @@ export const UnitListPage = () => {
     { data: bulkDeleteData, isSuccess: isBulkDeleteSuccess, error: bulkDeleteError },
   ] = useBulkDeleteUnitsMutation();
 
-  // ============================================================================
-  // CHANGESET WORKFLOW HOOK
-  // ============================================================================
-  const {
-    isCreateChangesetMode,
-    setIsCreateChangesetMode,
-    isChangesetWorkflowMode,
-    setIsChangesetWorkflowMode,
-    selectedChangesetId,
-    setSelectedChangesetId,
-    selectedWorkflowTab,
-    setSelectedWorkflowTab,
-    isChangesetEditMode,
-    setIsChangesetEditMode,
-    setEditedChangesetSlug,
-    setEditedChangesetDescription,
-    refreshChangesets,
-    setRefreshChangesets,
-
-    openChangeSets,
-    selectedChangeset,
-    refetchChangeSets,
-    onChangeSetSelected,
-    handleToggleChangesetEditMode,
-    handleConfirmSaveChangeset,
-
-    changeSetError,
-    setChangeSetError,
-    errorFormatter,
-  } = useChangeSetWorkflow({
-    setSelectedUnits,
-    setDefaultRowSelection,
-    units,
-    setErrorMessage,
-  });
-
   const [refetchCompleteUnits] = useLazyListAllUnitsQuery();
 
   // ============================================================================
@@ -811,10 +755,6 @@ export const UnitListPage = () => {
   );
 
   const modalMapping = () => ({
-    [BULK_ACTIONS.CHANGE_SET]: {
-      type: 'changesets' as ModalType,
-      setter: (open: boolean) => updateModalState({ isCreateChangesetModalOpen: open }),
-    },
     [BULK_ACTIONS.LINK]: {
       type: 'link' as ModalType,
       setter: (open: boolean) => updateModalState({ isLinkToModalOpen: open }),
@@ -912,18 +852,13 @@ export const UnitListPage = () => {
   usePolling(refetchUnits, 5000);
 
   // Error handling for API errors
-  useApiErrorMessage(unitsError, isUnitsSuccess, errorFormatter);
+  useApiErrorMessage(unitsError, isUnitsSuccess, (message) => setErrorMessage([message]));
   useBulkApiErrorMessage(
     bulkDeleteError,
     isBulkDeleteSuccess,
     bulkDeleteData,
     setErrorMessage,
   );
-
-  // Stable callback for the GettingStarted "Add" button (used in noRowsOverlay)
-  const handleAddUnit = useCallback(() => {
-    handleBulkActionChange(BULK_ACTIONS.ADD);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ============================================================================
   // EVENT HANDLERS - BULK ACTIONS
@@ -933,16 +868,6 @@ export const UnitListPage = () => {
     const mapping = mappingObj[action as keyof typeof mappingObj];
     if (mapping) {
       setModalType(mapping.type);
-
-      if (mapping.type === 'changesets') {
-        const selectedUnitIds = selectedUnits.map((id) => `'${id}'`).join(',');
-        const workflowSourceUnits = units.filter((unit) =>
-          selectedUnitIds.includes(unit?.Unit?.UnitID ?? ''),
-        );
-        setLinkWorkflowSourceUnits(workflowSourceUnits);
-        setIsCreateChangesetMode(true);
-        setIsAdvancedFiltersOpen(true);
-      }
 
       // Handle link action - open link workflow
       if (mapping.type === 'link') {
@@ -1008,11 +933,7 @@ export const UnitListPage = () => {
         ? preInvocationUnitsFromInvocation
         : preInvocationUnits;
 
-    // Store results locally to show in the function invocation tab
-    setFunctionInvocationResults(data);
-    setFunctionInvocationError(apiError || '');
-
-    // Also store in Redux for the standalone function list page (if they navigate there)
+    // The function page shows the results.
     dispatch(
       setFunctionInvocationResponse({
         functions: data,
@@ -1024,19 +945,10 @@ export const UnitListPage = () => {
     const functionToUse =
       (isEmpty(selectedFunction) ? func : selectedFunction) || ({} as FunctionSignature);
 
-    if (!isChangesetWorkflowMode) navigate(`/functions/${functionToUse.FunctionName}`);
-    else setIsFunctionResultsDrawerOpen(true); // Switch to function invocation tab
-
-    if (isChangesetWorkflowMode) {
-      setRefreshChangesets((prev) => !prev);
-    }
+    navigate(`/functions/${functionToUse.FunctionName}`);
   };
 
   const handleErrorClose = () => setErrorMessage([]);
-
-  const handleClearFunctionInvocationErrors = () => {
-    setFunctionInvocationError('');
-  };
 
   // ============================================================================
   // MODAL CLOSE HANDLERS
@@ -1052,7 +964,6 @@ export const UnitListPage = () => {
       bulk_edit: () => updateModalState({ isBulkEditModalOpen: false }),
       clone: () => updateModalState({ isCloneModalOpen: false }),
       destroy: () => updateModalState({ isDeleteModalOpen: false }), // Handle destroy modal
-      changesets: () => updateModalState({ isCreateChangesetModalOpen: false }),
       upgrade: () => updateModalState({ isUpgradeModalOpen: false }),
       bulk_restore: () => updateModalState({ isBulkRestoreModalOpen: false }),
     }),
@@ -1065,13 +976,6 @@ export const UnitListPage = () => {
   // Show the standalone GettingStarted page when there are truly no units
   // (not just filtered to zero) and the data has loaded
   const shouldShowGettingStarted = units.length === 0 && !isLoading && filterConditions.length === 0;
-
-  const shouldShowUnitList = isChangesetWorkflowMode
-    ? !selectedChangesetId // Show table only when no changeset is selected in workflow mode
-    : true; // Show table if not in changeset workflow mode
-
-  // When in changeset workflow mode we don't want to allow any additional filtering for the changeset units being worked on as this could break the flow.
-  const disableFilters = isChangesetWorkflowMode && !!selectedChangesetId;
 
   const viewSwitcher = useMemo(
     () => (
@@ -1105,70 +1009,33 @@ export const UnitListPage = () => {
 
   const Tabs = useMemo(
     () => (
-      <>
-        <UnitDataGridTab
-          disableToolbar={disableFilters}
-          units={displayedUnits}
-          isLoading={isLoading || isTransitioning}
-          isVisible={shouldShowUnitList}
-          defaultRowSelection={defaultRowSelection}
-          onRowSelectionChange={setSelectedUnits}
-          selectedUnitIds={selectedUnits}
-          filterElement={QueryBuilderElement}
-          customToolbarActions={viewSwitcher}
-          noRowsOverlay={undefined}
-          onRowItemEdit={(id) => {
-            const target = displayedUnits.find((unit) => unit?.Unit?.TargetID === id)?.Target;
-            if (target) {
-              getTargetByIdAsync(target, id, target.SpaceID ?? '');
-            }
-          }}
-        />
-        {isChangesetWorkflowMode && selectedChangesetId && selectedWorkflowTab === 0 && (
-          <ChangeSetTab
-            refreshChangesets={refreshChangesets}
-            changeSet={selectedChangeset}
-            isVisible={isChangesetWorkflowMode && selectedWorkflowTab === 0}
-            isEditMode={isChangesetEditMode}
-            onSaveChanges={(slug, description) => {
-              setEditedChangesetSlug(slug);
-              setEditedChangesetDescription(description);
-            }}
-            errorMessages={changeSetError}
-            selectedUnitIds={selectedUnits}
-            onSelectionChange={setSelectedUnits}
-          />
-        )}
-        {isChangesetWorkflowMode && selectedChangesetId && selectedWorkflowTab === 1 && (
-          <RevisionsTab
-            changeSet={selectedChangeset || ({} as ChangeSetRead)}
-            isVisible={isChangesetWorkflowMode && selectedWorkflowTab === 1}
-            setErrorMessage={setErrorMessage}
-          />
-        )}
-      </>
+      <UnitDataGridTab
+        units={displayedUnits}
+        isLoading={isLoading || isTransitioning}
+        isVisible
+        defaultRowSelection={defaultRowSelection}
+        onRowSelectionChange={setSelectedUnits}
+        selectedUnitIds={selectedUnits}
+        filterElement={QueryBuilderElement}
+        customToolbarActions={viewSwitcher}
+        noRowsOverlay={undefined}
+        onRowItemEdit={(id) => {
+          const target = displayedUnits.find((unit) => unit?.Unit?.TargetID === id)?.Target;
+          if (target) {
+            getTargetByIdAsync(target, id, target.SpaceID ?? '');
+          }
+        }}
+      />
     ),
     [
       displayedUnits,
       isLoading,
       isTransitioning,
       defaultRowSelection,
-      selectedWorkflowTab,
-      shouldShowUnitList,
       selectedUnits,
-      isChangesetEditMode,
-      changeSetError,
-      refreshChangesets,
-      selectedChangeset,
-      isChangesetWorkflowMode,
-      selectedChangesetId,
       QueryBuilderElement,
-      disableFilters,
-      filterConditions,
-      handleAddUnit,
+      viewSwitcher,
       getTargetByIdAsync,
-      setEditedChangesetSlug,
-      setEditedChangesetDescription,
     ],
   );
 
@@ -1190,16 +1057,10 @@ export const UnitListPage = () => {
             refetchViewsRef.current?.();
             refetchFiltersRef.current?.();
           }}
-          onToggleChangesetWorkflowMode={() => {
-            setIsChangesetWorkflowMode(!isChangesetWorkflowMode);
-            setSelectedChangesetId(null);
-            setSelectedWorkflowTab(0);
-          }}
-          isChangesetWorkflowMode={selectedChangeset?.ChangeSetID ? true : false}
           isLinkWorkflowMode={isLinkWorkflowMode}
-          compactBottom={!isLinkWorkflowMode && !isCreateChangesetMode}
+          compactBottom={!isLinkWorkflowMode}
           searchBox={
-            <Box sx={{ pb: isLinkWorkflowMode || isCreateChangesetMode ? 1 : 0, display: 'flex', flexDirection: 'column' }}>
+            <Box sx={{ pb: isLinkWorkflowMode ? 1 : 0, display: 'flex', flexDirection: 'column' }}>
               {isLinkWorkflowMode ? (
                 <LinkWorkflow
                   sourceUnits={linkWorkflowSourceUnits}
@@ -1220,33 +1081,6 @@ export const UnitListPage = () => {
                     setIsAdvancedFiltersOpen(!isAdvancedFiltersOpen);
                   }}
                 />
-              ) : isCreateChangesetMode ? (
-                <CreateChangeSetAccordion
-                  onClose={() => {
-                    setIsCreateChangesetMode(false);
-                    setIsAdvancedFiltersOpen(!isAdvancedFiltersOpen);
-                  }}
-                  selectedUnits={filteredUnits
-                    .map((unit: ExtendedUnitRead) => unit.Unit)
-                    .filter((u): u is NonNullable<typeof u> => u !== undefined)}
-                  onSuccess={(changesetId: string, spaceId: string) => {
-                    setIsCreateChangesetMode(false);
-                    setIsAdvancedFiltersOpen(false);
-
-                    // Immediately select the changeset with minimal data
-                    // The full data will be populated when refetchChangeSets completes
-                    onChangeSetSelected({
-                      ChangeSetID: changesetId,
-                      SpaceID: spaceId,
-                      Slug: '', // Will be populated by refetch
-                    });
-
-                    // Refetch to get the full changeset data and updated units
-                    refetchChangeSets();
-                    refetchUnits();
-                  }}
-                  selectedUnitIds={selectedUnits}
-                />
               ) : (
                 renderViewTabs({
                   spaceId: activeView?.View?.SpaceID || spaces[0]?.SpaceID || '',
@@ -1257,13 +1091,6 @@ export const UnitListPage = () => {
                   localGroupByColumns,
                   onViewCreated: handleViewCreated,
                 })
-              )}
-              {isChangesetWorkflowMode && selectedChangesetId && (
-                <SettingsTabs
-                  tabs={[`Change Set Details`, `Revisions`]}
-                  onTabSelected={(tabIndex) => setSelectedWorkflowTab(tabIndex)}
-                  defaultValue={selectedWorkflowTab}
-                />
               )}
             </Box>
           }
@@ -1358,37 +1185,6 @@ export const UnitListPage = () => {
               </Box>
             </SectionSlider>
 
-            {/* Floating Actions for Changeset Workflow */}
-            {isChangesetWorkflowMode && (
-              <WorkBenchFloatingActions
-                setErrorMessage={(errorMessage: string) => setChangeSetError([errorMessage])}
-                changesets={openChangeSets}
-                selectedChangeset={selectedChangeset}
-                onCreateChangeSet={() => handleBulkActionChange(BULK_ACTIONS.CHANGE_SET)}
-                onChangesetSelect={onChangeSetSelected}
-                onClose={() => {
-                  setIsChangesetWorkflowMode(false);
-                  setSelectedChangesetId(null);
-                  setIsTreeViewMode(false);
-                  setSelectedWorkflowTab(0);
-                  setSelectedUnits([]);
-                  setDefaultRowSelection(0);
-                  setIsChangesetEditMode(false);
-                  // Clear the changeset filter when closing
-                  clearSearchParams();
-                }}
-                selectedTab={selectedWorkflowTab}
-                onCloseChangeSetModalOpened={() => setIsCloseChangeSetModalOpen(true)}
-                isEditMode={isChangesetEditMode}
-                onToggleEditMode={handleToggleChangesetEditMode}
-                onSave={handleConfirmSaveChangeset}
-                onRestoreChanges={() => setIsRestoreModalOpen(true)}
-                onChangesetDeleted={() => {
-                  refetchChangeSets();
-                  refetchUnits();
-                }}
-              />
-            )}
           </Section>
 
           {/* TODO: rip all this out and replace it with something more simple */}
@@ -1400,7 +1196,6 @@ export const UnitListPage = () => {
               bulk_edit: modalState.isBulkEditModalOpen,
               clone: modalState.isCloneModalOpen,
               link: modalState.isLinkToModalOpen,
-              changesets: modalState.isCreateChangesetModalOpen,
               upgrade: modalState.isUpgradeModalOpen,
               bulk_restore: modalState.isBulkRestoreModalOpen,
             }}
@@ -1422,14 +1217,7 @@ export const UnitListPage = () => {
             defaultToolchainType={selectedUnit?.ToolchainType}
             refresh={() => {
               refetchUnits();
-              if (isChangesetWorkflowMode) {
-                setRefreshChangesets((prev) => {
-                  return !prev;
-                });
-              }
             }}
-            // When in changeset workflow mode, default to selected changeset for invoking functions...
-            defaultChangeSetId={selectedChangeset?.ChangeSetID}
             invocationToEdit={invocationToEdit}
           />
 
@@ -1448,58 +1236,6 @@ export const UnitListPage = () => {
               setExistingTarget(null);
             }}
             existingTarget={existingTarget ?? undefined}
-          />
-
-          <CloseChangeSetModal
-            changeSet={selectedChangeset as ChangeSet}
-            isCloseChangeSetModalOpen={isCloseChangeSetModalOpen}
-            onCloseChangesetModalClosed={() => setIsCloseChangeSetModalOpen(false)}
-            onCloseChangeSet={() => refetchChangeSets()}
-            setErrorMessage={setErrorMessage}
-            selectedUnits={units.filter(
-              (unit: ExtendedUnitRead) =>
-                unit?.Unit?.ChangeSetID === selectedChangeset?.ChangeSetID,
-            )}
-          />
-
-          <RestoreChangesModal
-            setErrorMessage={setChangeSetError}
-            units={
-              units
-                .filter((unit) => selectedUnits.includes(unit?.Unit?.UnitID ?? ''))
-                ?.map((unit) => unit?.Unit)
-                .filter(Boolean) as UnitRead[]
-            }
-            changeSet={selectedChangeset as ChangeSet}
-            changeSets={openChangeSets}
-            isRestoreChangesModalOpen={isRestoreModalOpen}
-            onRestoreChangesModalClosed={() => setIsRestoreModalOpen(false)}
-            onRefresh={() => {
-              setRefreshChangesets((prev) => {
-                return !prev;
-              });
-              refetchUnits();
-            }}
-          />
-
-          <FunctionInvocationDrawer
-            isOpen={isFunctionResultsDrawerOpen}
-            isMinimized={isFunctionResultsMinimized}
-            functionInvocationResponse={functionInvocationResults}
-            preInvocationUnits={preInvocationUnits}
-            functionSignature={selectedFunction}
-            apiError={functionInvocationError}
-            onClose={() => {
-              setIsFunctionResultsDrawerOpen(false);
-              setFunctionInvocationResults([]);
-              setFunctionInvocationError('');
-            }}
-            onMinimize={() => setIsFunctionResultsMinimized(true)}
-            onMaximize={() => setIsFunctionResultsMinimized(false)}
-            onClearErrors={handleClearFunctionInvocationErrors}
-            onCancelAll={() => {
-              // No-op for now, functions are synchronous
-            }}
           />
         </Main>
       </Container>

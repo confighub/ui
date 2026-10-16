@@ -6,14 +6,14 @@ import { expect } from '@playwright/test';
 
 export class SpaceDetailPage {
   private readonly triggersTab: Locator;
-  private readonly addTriggerButton: Locator;
+  private readonly createTriggerButton: Locator;
   private readonly deleteSpaceButton: Locator;
   private readonly confirmationButton: Locator;
   private readonly saveButton: Locator;
 
   constructor(public readonly page: Page) {
     this.triggersTab = this.page.getByRole('tab', { name: 'Triggers' });
-    this.addTriggerButton = this.page.getByRole('button', { name: 'Add Trigger' });
+    this.createTriggerButton = this.page.getByTestId('create-trigger-button');
     this.deleteSpaceButton = this.page.getByRole('button', { name: 'Delete Space' });
     this.confirmationButton = this.page.getByRole('button', { name: 'Confirm' });
     // exact:true so this never also matches buttons whose name merely contains
@@ -24,11 +24,17 @@ export class SpaceDetailPage {
 
   async clickTriggersTab() {
     await this.triggersTab.click();
-    await this.addTriggerButton.waitFor({ state: 'visible' });
+    await this.createTriggerButton.waitFor({ state: 'visible' });
+  }
+
+  // Create opens the function invoker; the Trigger form is the other way, in its menu.
+  async openTriggerForm() {
+    await this.page.getByRole('button', { name: 'More ways to create a Trigger' }).click();
+    await this.page.getByRole('menuitem', { name: 'With the Trigger form' }).click();
   }
 
   async addCelTrigger(name: string) {
-    await this.addTriggerButton.click();
+    await this.openTriggerForm();
     await this.page.getByRole('textbox', { name: 'Name' }).fill(name);
 
     const combobox = await this.page.getByRole('combobox', { name: 'Function Name' });
@@ -46,7 +52,7 @@ export class SpaceDetailPage {
   }
 
   async addValidatedTrigger(name: string) {
-    await this.addTriggerButton.click();
+    await this.openTriggerForm();
 
     await this.page.getByRole('textbox', { name: 'Name' }).fill(name);
     await this.page.getByRole('combobox', { name: 'Function Name' }).click();
@@ -69,7 +75,7 @@ export class SpaceDetailPage {
   }
 
   async editSpace(name: string) {
-    await this.page.getByRole('textbox', { name: 'Name' }).fill(name);
+    await this.page.getByRole('textbox', { name: 'Name', exact: true }).fill(name);
 
     // Click save and wait for the space update API call to complete
     await Promise.all([

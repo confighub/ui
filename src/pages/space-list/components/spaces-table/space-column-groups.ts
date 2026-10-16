@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ColumnGroup, DynamicGroupConfig } from '@/components/entity-data-grid/column-groups-types';
+import { SPACE_SUMMARY_COUNTS } from '@/utility/space-summary-counts';
 
 /**
  * Column groups configuration for the Spaces grid
@@ -9,11 +10,19 @@ import { ColumnGroup, DynamicGroupConfig } from '@/components/entity-data-grid/c
 export const SPACE_COLUMN_GROUPS: ColumnGroup[] = [
   {
     header: 'Core Identity',
-    columns: ['Slug', 'SpaceID'],
+    columns: ['Component', 'Slug', 'SpaceID'],
   },
   {
-    header: 'Resources',
-    columns: ['TotalUnitCount', 'TotalBridgeWorkerCount', 'TotalTargets', 'TotalTriggers'],
+    header: 'Units',
+    columns: SPACE_SUMMARY_COUNTS.filter((c) => c.group === 'Units').map((c) => c.field),
+  },
+  {
+    header: 'Entities',
+    columns: SPACE_SUMMARY_COUNTS.filter((c) => c.group === 'Entities').map((c) => c.field),
+  },
+  {
+    header: 'Triggers and Release',
+    columns: ['WhereTrigger', 'TriggerFilter', 'AppliedTriggerCount', 'ReleaseTarget'],
   },
   {
     header: 'Timestamps',

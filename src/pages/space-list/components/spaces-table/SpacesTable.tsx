@@ -10,20 +10,28 @@ import { ExtendedSpaceRead } from '@confighub/rtk-query';
 import { CmpProps } from '@/types';
 import { GridColDef, GridRowSelectionModel } from '@mui/x-data-grid';
 
+import { SPACE_SUMMARY_COUNTS } from '@/utility/space-summary-counts';
+
 import { createSpaceTableColumns } from './components/space-table-columns';
 import { SPACE_COLUMN_GROUPS, SPACE_DYNAMIC_GROUPS } from './space-column-groups';
+
+// The counts shown before the user picks others; the rest are in the column picker.
+const DEFAULT_COUNT_COLUMNS = new Set(['TotalUnitCount', 'TotalTargetCount', 'TriggerCountByEventType']);
 
 export type SpaceRow = {
   id: string;
   Slug: string;
   SpaceID: string;
+  Component: string;
   Labels: Record<string, string>;
   CreatedAt: string;
   UpdatedAt: string;
-  TotalUnitCount: number;
-  TotalBridgeWorkerCount: number;
-  TotalTargets: number;
-  TotalTriggers: number;
+  WhereTrigger: string;
+  TriggerFilter: string;
+  AppliedTriggerCount: number;
+  ReleaseTarget: string;
+  /** The summary counts, by their ExtendedSpace field */
+  Counts: Record<string, number>;
   _extendedSpace: ExtendedSpaceRead;
 };
 
@@ -42,16 +50,19 @@ export interface SpacesTableProps extends CmpProps {
 export const SpacesTable = ({ spaces = [], onRowSelected, filterElement, noRowsOverlay, emptyState, hasNoData = false, isLoading = false }: SpacesTableProps) => {
   const gridDefaults = useMemo(() => ({
     sortModel: [
-      { field: 'UpdatedAt', sort: 'desc' as const },
+      { field: 'Component', sort: 'asc' as const },
     ],
     columnVisibility: {
+      Component: true,
       Slug: true,
       SpaceID: false,
       'Labels.Environment': true,
-      TotalUnitCount: true,
-      TotalBridgeWorkerCount: true,
-      TotalTargets: true,
-      TotalTriggers: true,
+      // The summary counts other than these are offered in the column picker
+      ...Object.fromEntries(SPACE_SUMMARY_COUNTS.map((c) => [c.field, DEFAULT_COUNT_COLUMNS.has(c.field)])),
+      WhereTrigger: false,
+      TriggerFilter: false,
+      AppliedTriggerCount: false,
+      ReleaseTarget: false,
       CreatedAt: false,
       UpdatedAt: true,
     } as Record<string, boolean>,
@@ -59,25 +70,21 @@ export const SpacesTable = ({ spaces = [], onRowSelected, filterElement, noRowsO
 
   // Convert spaces to row items
   const rows = useMemo<SpaceRow[]>(() => {
-    return spaces.map((space) => {
-      const triggerCount = space.TriggerCountByEventType
-        ? Object.values(space.TriggerCountByEventType).reduce((sum, count) => sum + count, 0)
-        : 0;
-
-      return {
-        id: space.Space?.SpaceID || '',
-        Slug: space.Space?.Slug || '',
-        SpaceID: space.Space?.SpaceID || '',
-        Labels: space.Space?.Labels || {},
-        CreatedAt: space.Space?.CreatedAt || '',
-        UpdatedAt: space.Space?.UpdatedAt || '',
-        TotalUnitCount: space.TotalUnitCount || 0,
-        TotalBridgeWorkerCount: space.TotalBridgeWorkerCount || 0,
-        TotalTargets: space.TotalTargetCount || 0,
-        TotalTriggers: triggerCount,
-        _extendedSpace: space,
-      };
-    });
+    return spaces.map((space) => ({
+      id: space.Space?.SpaceID || '',
+      Slug: space.Space?.Slug || '',
+      SpaceID: space.Space?.SpaceID || '',
+      Component: space.Component?.Slug || '',
+      Labels: space.Space?.Labels || {},
+      CreatedAt: space.Space?.CreatedAt || '',
+      UpdatedAt: space.Space?.UpdatedAt || '',
+      WhereTrigger: space.Space?.WhereTrigger || '',
+      TriggerFilter: space.TriggerFilter?.Slug || '',
+      AppliedTriggerCount: space.Space?.TriggerIDs?.length || 0,
+      ReleaseTarget: space.ReleaseTarget?.Slug || '',
+      Counts: Object.fromEntries(SPACE_SUMMARY_COUNTS.map((c) => [c.field, c.getValue(space)])),
+      _extendedSpace: space,
+    }));
   }, [spaces]);
 
   // Use attribute column manager for Labels
@@ -109,10 +116,10 @@ export const SpacesTable = ({ spaces = [], onRowSelected, filterElement, noRowsO
   // Create static columns
   const staticColumns = useMemo(() => createSpaceTableColumns(), []);
 
-  // Combine all columns - insert label columns after Slug (index 0)
+  // Combine all columns - insert label columns after Component and Slug
   const baseColumns = useMemo(() => {
-    const [slugCol, ...restCols] = staticColumns;
-    return [slugCol, ...labelColumns, ...restCols];
+    const [componentCol, slugCol, ...restCols] = staticColumns;
+    return [componentCol, slugCol, ...labelColumns, ...restCols];
   }, [labelColumns, staticColumns]);
 
   const {

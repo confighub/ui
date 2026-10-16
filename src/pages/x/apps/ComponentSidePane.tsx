@@ -92,6 +92,10 @@ import type {
   VariationEntry,
 } from './componentTypes';
 import type { ReleaseActions } from './useReleaseActions';
+import type { ChangeSetEntry } from './useChangeSetEntries';
+import type { PaneFilterMode } from './ComponentToolbar';
+import { changeSetLabel, isChangeSetOpenHere } from './changeSets';
+import { ChangeSetCloseBar, ChangeSetWaitNotice } from './ChangeSetPaneNotices';
 
 // Lazy-loaded: pulls in CodeEditor -> @monaco-editor/react, monaco-editor, and
 // monaco-yaml (a multi-MB stack with a module-level initMonaco() side effect).
@@ -233,7 +237,7 @@ interface UnitExpansionState {
   recentlyUpgradedUnitIds: Set<string>;
   /** Oversized units the user has explicitly asked to render (see `isUnitGated`). */
   materializedUnitIds: Set<string>;
-  filterMode: 'incoming' | 'all';
+  filterMode: PaneFilterMode;
   scopeFilter: 'local-overrides' | 'local-only' | 'kept-on-merge' | null;
   /** How many units the selected node has, so a lone unit can open with nothing to click. */
   unitCount: number;
@@ -266,7 +270,8 @@ interface UnitExpansionState {
  */
 const isUnitExpandedInPane = (unit: MergedUnit, state: UnitExpansionState): boolean =>
   !state.collapsedGroups.has(unit.unitId) && (
-    (state.filterMode === 'incoming' && !!unit.upgradeEntry) ||
+    // Incoming and ChangeSet both show a unit's diff; a unit with one opens.
+    (state.filterMode !== 'all' && !!unit.upgradeEntry) ||
     (state.scopeFilter === 'local-overrides' && (unit.variationEntry?.fieldDiffs.length ?? 0) > 0) ||
     (state.scopeFilter === 'local-only' && (unit.variationEntry?.localOnlyPaths?.length ?? 0) > 0) ||
     // Over-inclusive on purpose (same reasoning as 'local-overrides'): a unit
@@ -331,6 +336,18 @@ export interface ComponentSidePaneProps {
   upgradeEntries: UpgradeEntry[];
   allApplyEntries: ApplyEntryWithGates[];
   variationEntries: VariationEntry[];
+  /**
+   * What the selected Deployment's ChangeSets changed, one entry per unit
+   * (`useChangeSetEntries`). Drawn by the ChangeSet filter, read-only, in the
+   * Incoming view's style.
+   */
+  changeSetEntries?: ChangeSetEntry[];
+  /** The ChangeSet entries are still being read. */
+  isChangeSetLoading?: boolean;
+  /** Closes a ChangeSet on every unit it is open on; resolves true on success. */
+  onCloseChangeSet?: (changeSetId: string) => Promise<boolean>;
+  /** Opens a Deployment on the ChangeSet filter. */
+  onOpenChangeSet?: (deploymentId: string) => void;
   deployments: ComponentDeployment[];
   /** Org-wide targets (from `useListAllTargetsQuery`) — the Space settings sheet filters these to OCI-provider ones for the release-target row (design-mockups/variant-settings/BUILD-PLAN.md commit 3). */
   targets: ExtendedTargetRead[];
@@ -356,7 +373,7 @@ export interface ComponentSidePaneProps {
    * `releaseNum`, set only by the release-stamp peek, asks the Releases tab
    * to scroll to and highlight that specific release.
    */
-  tabFocus?: { id: string; tab: 'config' | 'releases'; nonce: number; releaseNum?: number } | null;
+  tabFocus?: { id: string; tab: 'config' | 'releases' | 'changeset'; nonce: number; releaseNum?: number } | null;
   width: number;
   defaultWidth: number;
   onWidthChange: (width: number) => void;
@@ -489,6 +506,10 @@ export const ComponentSidePane = memo(
     upgradeEntries,
     allApplyEntries,
     variationEntries,
+    changeSetEntries,
+    isChangeSetLoading = false,
+    onCloseChangeSet,
+    onOpenChangeSet,
     deployments,
     targets,
     unitsByDeployment,
@@ -639,7 +660,7 @@ export const ComponentSidePane = memo(
     // "Stop keeping N keys" — the Scope chip's flattened-view bulk-reverse
     // (Section 7/card 4b). See ComponentValuesSectionProps.stopKeepingAllSignal.
     const [stopKeepingAllSignal, setStopKeepingAllSignal] = useState(0);
-    const [filterMode, setFilterMode] = useState<'incoming' | 'all'>(
+    const [filterMode, setFilterMode] = useState<PaneFilterMode>(
       (upgradeEntries.length > 0 || hasUpgradableUnits) ? 'incoming' : 'all'
     );
     const [scopeFilter, setScopeFilter] = useState<'local-overrides' | 'local-only' | 'kept-on-merge' | null>(null);
@@ -650,7 +671,7 @@ export const ComponentSidePane = memo(
     //   - leaving 'incoming'  → discard the staged selection (same as Discard)
     // Clearing staged never touches committedDiffs, so committed/"done" rows stay
     // visible; re-staging stages only currently-upgradable paths (committed excluded).
-    const setFilterModeWithStaging = useCallback((next: 'incoming' | 'all') => {
+    const setFilterModeWithStaging = useCallback((next: PaneFilterMode) => {
       setFilterMode((prev) => {
         if (next !== prev) {
           if (next === 'incoming') setStageAllSignal((s) => s + 1);
@@ -687,7 +708,7 @@ export const ComponentSidePane = memo(
     // Persist the full upgrade-all preview (inline value-swap + dim unchanged
     // rows + pill scaling) whenever the Upgradable tab is active, not just while
     // the footer Upgrade-all button is hovered.
-    const showUpgradePreview = upgradeHovered || filterMode === 'incoming';
+    const showUpgradePreview = upgradeHovered || filterMode !== 'all';
     // Hoisted so the Scope row's render gate and the protection-lookup fetch's
     // skip condition read the IDENTICAL predicate — they must never disagree
     // about whether the "Kept on merge" chip exists (the fetch would either run
@@ -951,6 +972,74 @@ export const ComponentSidePane = memo(
       dryRunPendingIds,
     ]);
 
+    // The ChangeSet filter's view of the same units: a unit a ChangeSet covers
+    // shows what the ChangeSet changed, drawn as Incoming draws an upgrade --
+    // before the ChangeSet as the current value, the unit now as the incoming
+    // one -- and read-only. Every other unit is listed with nothing to show, so
+    // switching filters never unmounts a unit's values section, and staged
+    // manual edits survive it (components.md rule 9).
+    const changeSetCoveredUnitIds = useMemo(() => {
+      const ids = new Set<string>();
+      for (const d of deployments) {
+        if (!selectedDeploymentIds.has(d.deploymentId)) continue;
+        for (const cs of d.changeSets ?? []) {
+          for (const id of [...cs.openUnitIds, ...cs.closedOnHeadUnitIds]) ids.add(id);
+        }
+      }
+      return ids;
+    }, [deployments, selectedDeploymentIds]);
+    const hasChangeSet = changeSetCoveredUnitIds.size > 0;
+    const changeSetUnits = useMemo(() => {
+      const byUnit = new Map((changeSetEntries ?? []).map((e) => [e.unitId, e]));
+      const units: MergedUnit[] = mergedUnits.map((u) => {
+        const entry = byUnit.get(u.unitId);
+        const covered = changeSetCoveredUnitIds.has(u.unitId);
+        return {
+          ...u,
+          data: entry ? entry.beforeData : u.data,
+          upgradeEntry: entry,
+          applyEntry: undefined,
+          variationEntry: undefined,
+          isUpgradeLoading: covered && !entry && isChangeSetLoading,
+          hasAction: covered,
+        };
+      });
+      units.sort((a, b) => {
+        if (a.hasAction !== b.hasAction) return a.hasAction ? -1 : 1;
+        return a.slug.localeCompare(b.slug);
+      });
+      return units;
+    }, [mergedUnits, changeSetEntries, changeSetCoveredUnitIds, isChangeSetLoading]);
+    const totalChangeSetFields = useMemo(
+      () => changeSetUnits.reduce((n, u) => n + (u.upgradeEntry ? countUpgradableBadgeFields(u) : 0), 0),
+      [changeSetUnits],
+    );
+    // A node whose ChangeSet is gone -- another change made since it closed --
+    // has no ChangeSet filter to stay on.
+    if (filterMode === 'changeset' && !hasChangeSet) setFilterMode('all');
+    const displayUnits = filterMode === 'changeset' ? changeSetUnits : mergedUnits;
+    // Which ChangeSets the filter shows, and what each is, for its button's tooltip.
+    const changeSetTooltip = useMemo(() => {
+      const items = deployments
+        .filter((d) => selectedDeploymentIds.has(d.deploymentId))
+        .flatMap((d) => (d.changeSets ?? []).map((cs) => ({ d, cs })));
+      if (items.length === 0) return undefined;
+      return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '6px', maxWidth: 360 }}>
+          {items.map(({ d, cs }) => (
+            <Box key={`${d.deploymentId}:${cs.changeSetId}`}>
+              <Box sx={{ fontFamily: componentTheme.fontMono, fontWeight: 600 }}>
+                {changeSetLabel(cs, d.slug)} · {isChangeSetOpenHere(cs) ? 'open' : 'closed'}
+              </Box>
+              {cs.changeSet?.Description && (
+                <Box sx={{ whiteSpace: 'pre-wrap' }}>{cs.changeSet.Description}</Box>
+              )}
+            </Box>
+          ))}
+        </Box>
+      );
+    }, [deployments, selectedDeploymentIds]);
+
     // Units belonging to the selected Space's Release target set — the SAME
     // filter release_core.go applies when bundling a publish (TargetID ==
     // Space.ReleaseTargetID). Feeds the "Unreleased changes" section (task
@@ -997,11 +1086,11 @@ export const ComponentSidePane = memo(
     // opened: the name is already on screen in the header, so there's nothing
     // hidden that the search was looking for.
     const { filteredUnits, searchContentMatchedUnitIds } = useMemo(() => {
-      if (!filterText) return { filteredUnits: mergedUnits, searchContentMatchedUnitIds: EMPTY_STRING_SET };
+      if (!filterText) return { filteredUnits: displayUnits, searchContentMatchedUnitIds: EMPTY_STRING_SET };
       const lower = filterText.toLowerCase();
       const units: MergedUnit[] = [];
       const contentMatchedIds = new Set<string>();
-      for (const u of mergedUnits) {
+      for (const u of displayUnits) {
         const slugMatches = u.slug.toLowerCase().includes(lower);
         const allDiffs = [
           ...(u.upgradeEntry?.fieldDiffs ?? []),
@@ -1026,7 +1115,7 @@ export const ComponentSidePane = memo(
         if (contentMatches) contentMatchedIds.add(u.unitId);
       }
       return { filteredUnits: units, searchContentMatchedUnitIds: contentMatchedIds };
-    }, [mergedUnits, filterText]);
+    }, [displayUnits, filterText]);
 
     // The expansion inputs, bundled so the row rendering and the field-count chip
     // evaluate the SAME predicate against the SAME state.
@@ -1469,16 +1558,32 @@ export const ComponentSidePane = memo(
     // node still lands on the requested tab; the nonce guard means it also
     // re-focuses when the node is already open, and never re-fires for a stale
     // request when the user later navigates normally.
+    //
+    // The request can arrive a render before the selection it names: the
+    // selection comes back through the URL, the request does not. So a request
+    // for another node waits for the selection to catch up, and is dropped only
+    // once the selection moves somewhere else instead.
+    const tabFocusWaitingOnRef = useRef<string | undefined>(undefined);
     useEffect(() => {
       if (!tabFocus || tabFocus.nonce === prevTabFocusNonceRef.current) return;
-      prevTabFocusNonceRef.current = tabFocus.nonce;
       const selectedId = selectedDeploymentIds.values().next().value;
+      if (tabFocus.id !== selectedId) {
+        if (tabFocusWaitingOnRef.current === undefined) {
+          tabFocusWaitingOnRef.current = selectedId;
+          return;
+        }
+        if (tabFocusWaitingOnRef.current === selectedId) return;
+      }
+      prevTabFocusNonceRef.current = tabFocus.nonce;
+      tabFocusWaitingOnRef.current = undefined;
       if (tabFocus.id !== selectedId) return;
-      setActiveTab(tabFocus.tab);
+      // 'changeset' is the Configuration tab on the ChangeSet filter.
+      setActiveTab(tabFocus.tab === 'changeset' ? 'config' : tabFocus.tab);
+      if (tabFocus.tab === 'changeset') setFilterModeWithStaging('changeset');
       if (tabFocus.releaseNum != null) {
         setHighlightRelease({ num: tabFocus.releaseNum, nonce: tabFocus.nonce });
       }
-    }, [tabFocus, selectedDeploymentIds]);
+    }, [tabFocus, selectedDeploymentIds, setFilterModeWithStaging]);
 
     // Initial mount: if we land already on the Incoming tab, no tab CHANGE fires,
     // so stage-all wouldn't trigger via the setter. Fire it once here. Minimal
@@ -2147,6 +2252,10 @@ export const ComponentSidePane = memo(
           hasUpgradableUnits={hasUpgradableUnits}
           totalAllFields={totalAllFields}
           allFieldsPartial={allFieldsPartial}
+          hasChangeSet={hasChangeSet}
+          totalChangeSetFields={totalChangeSetFields}
+          isChangeSetLoading={isChangeSetLoading}
+          changeSetTooltip={changeSetTooltip}
           scopeFilter={scopeFilter}
           onScopeFilterChange={setScopeFilter}
           totalLocalOverrides={totalLocalOverrides}
@@ -2181,6 +2290,16 @@ export const ComponentSidePane = memo(
             tour anchor resolved to whichever row happened to match first
             (`apiVersion`) while the copy described the entire view. */}
         <PaneContent data-testid='component-values-list'>
+          {selectedDeployment && (
+            <ChangeSetWaitNotice
+              deployment={selectedDeployment}
+              deployments={deployments}
+              onOpenChangeSet={onOpenChangeSet}
+            />
+          )}
+          {filterMode === 'changeset' && selectedDeployment && onCloseChangeSet && (
+            <ChangeSetCloseBar deployment={selectedDeployment} onCloseChangeSet={onCloseChangeSet} />
+          )}
           {showDormantBanner && (
             <Box
               data-testid='dormant-upgrade-banner'
@@ -2502,8 +2621,9 @@ export const ComponentSidePane = memo(
                         key={unit.unitId}
                         unit={unit}
                         filterText={filterText}
-                        filterMode={filterMode === 'incoming' ? 'upgradable' : 'all'}
+                        filterMode={filterMode === 'all' ? 'all' : 'upgradable'}
                         scopeFilter={filterMode === 'all' ? scopeFilter : null}
+                        readOnly={filterMode === 'changeset'}
                         valueOverlay={fieldOverlay?.get(unit.unitId)}
                         onSetFieldValue={setFieldValueByUnit?.get(unit.unitId)}
                         onDeleteFieldValue={deleteFieldValueByUnit?.get(unit.unitId)}
@@ -2833,7 +2953,7 @@ export const ComponentSidePane = memo(
                         data-testid='component-upgrade-button'
                         variant='contained'
                         size='small'
-                        disabled={isUpgrading || (totalStaged === 0 && totalStagedProtection === 0 && !(totalUpgradableFields === 0 && hasUpgradableUnits))}
+                        disabled={isUpgrading || filterMode === 'changeset' || (totalStaged === 0 && totalStagedProtection === 0 && !(totalUpgradableFields === 0 && hasUpgradableUnits))}
                         onClick={() => {
                           // Commit all staged changes immediately — no review step.
                           handleConfirmCommit();

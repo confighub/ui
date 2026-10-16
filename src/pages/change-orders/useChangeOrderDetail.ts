@@ -187,6 +187,11 @@ export interface ChangeOrderDetail {
   endTagId?: string;
   /** `ChangeOrder.ReleaseTagID`: the Tag a Release of the change is published at. */
   releaseTagId?: string;
+  /**
+   * `ChangeOrder.AdoptedEndTagID`: the Tag whose marks the end boundary was taken from, when it
+   * was created with one -- a ChangeSet's end Tag, or one cut by hand.
+   */
+  adoptedEndTagId?: string;
   /** `ChangeOrder.Stage`, verbatim (`Completed` once Final holds). */
   orderStage?: string;
   /** The ChangeOrder's own Space holds the change from the start (`changeOrderOwnSpaceReached`). */
@@ -805,6 +810,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
       startTagId: order.StartTagID,
       endTagId: order.EndTagID,
       releaseTagId: order.ReleaseTagID,
+      adoptedEndTagId: order.AdoptedEndTagID,
       orderStage: order.Stage,
       ownSpaceReached,
       workflowCompleted,

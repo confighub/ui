@@ -1,7 +1,8 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import React, { useState, useMemo } from 'react';
-import { Accordion, AccordionDetails, AccordionSummary, Autocomplete, Box, Checkbox, CircularProgress, IconButton, InputAdornment, ListSubheader, Popover, Stack, TextField, Typography, useTheme } from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
+import { Accordion, AccordionDetails, AccordionSummary, Autocomplete, Box, Checkbox, CircularProgress, IconButton, InputAdornment, Link, ListSubheader, Popover, Stack, TextField, Typography, useTheme } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import CheckBoxIcon from '@mui/icons-material/CheckBox';
@@ -638,7 +639,7 @@ export const FunctionListScreen = ({
           ),
         }}
         sx={{
-          mb: 1.5,
+          mb: 0.5,
           '& .MuiOutlinedInput-root': {
             backgroundColor: componentTheme.bgSubtle,
             borderRadius: 1,
@@ -658,6 +659,19 @@ export const FunctionListScreen = ({
           },
         }}
       />
+
+      {/* The Function Browser filters by more than a search string. */}
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1.5 }}>
+        <Link
+          component={RouterLink}
+          to="/function-browser"
+          underline="hover"
+          data-testid="invoker-browse-functions"
+          sx={{ fontFamily: componentTheme.fontSans, fontSize: 11, color: brandAccent }}
+        >
+          Browse Functions
+        </Link>
+      </Box>
 
       {/* Toolchain Filter — compact text pills. Selection renders in the
           component theme accent family; unselected stays muted with a hairline. */}

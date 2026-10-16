@@ -12,7 +12,6 @@ export interface ModalState {
   isDeleteModalOpen: boolean;
   isUpgradeModalOpen: boolean;
   showDiffOnApplyDrawer: boolean;
-  isCreateChangesetModalOpen: boolean;
 }
 
 export const useModalState = () => {
@@ -24,7 +23,6 @@ export const useModalState = () => {
     isCloneModalOpen: false,
     isDeleteModalOpen: false,
     showDiffOnApplyDrawer: false,
-    isCreateChangesetModalOpen: false,
     isUpgradeModalOpen: false,
     isBulkRestoreModalOpen: false,
   });

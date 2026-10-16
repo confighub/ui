@@ -110,7 +110,7 @@ you can cite them in review.
 | **Inline diff / superimposition** | `computeInlineDiff` (token-LCS via `tokenizeForDiff`) overlays the proposed value onto the current; changed *tokens* (whole words/numbers) are highlighted, not individual characters. Driven by CSS `.pill-group :has(.upgrade-pill:hover) …` — **rule 15, do not touch.** |
 | **Preview / upgrade-preview active** | Globally dims unchanged rows and shows the proposed values for all upgradable rows. Active when the Upgradable tab is open or the footer Upgrade button is hovered. |
 | **Variation** | A field that intentionally differs between upstream HEAD and the post-upgrade downstream (env overrides, e.g. namespace). `VariationEntry`. |
-| **Filter tabs** | Two segments: `Incoming·N` (purple, upgradable) and `All`. `filterMode: 'incoming' \| 'all'` in `ComponentSidePane.tsx`. Entering Incoming auto-stages all upgradable picks; leaving clears them. |
+| **Filter tabs** | `Incoming·N` (purple, upgradable), `All`, and — only on a node with a ChangeSet — `ChangeSet·N`. `filterMode: PaneFilterMode` (`'incoming' \| 'all' \| 'changeset'`, `ComponentToolbar.tsx`). Entering Incoming auto-stages all upgradable picks; leaving clears them. The ChangeSet filter is read-only and greys out Upgrade, as All does. |
 | **Inspect panel** | Click a field path → revision history (incoming value, source attribution, sibling-variant values across deployments). `InspectPanel.tsx`. Access via the **kebab menu** (inspect magnifier is no longer on hover). |
 | **Treeview node** | `DiffTreeNode {key, type:'folder'\|'leaf', children, diff, context}`. `context:true` = a dimmed surrounding row shown for context. |
 | **Key-deletion (swallowed / blocked)** | Upstream issued a `Delete` mutation. **Case 1**: child never modified the key → deletion passes through as a normal upgrade (`newValue` = `-`). **Case 2**: child locally modified the key → `SubtractMutations` drops the upstream Delete (`ConflictReasonSubtracted`) and the key persists, *silently swallowed*. #4570 makes Case 2 an opt-in upgrade. |
@@ -178,92 +178,82 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
 
 **The URL is the sole source of truth for selection — there is no localStorage
 fallback.** `AppsComponentLayout` is the ONLY component that touches `useSearchParams`; it derives
-node selection and the three rollout ids from the URL during render and passes them
-DOWN to `AppComponentView` as controlled props with setter callbacks (the same idiom the file
-already uses for `selectedDeploymentIds`/`onSelectedDeploymentIdsChange`). Every write goes through
-ONE helper, `updateParams(patch)`, doing a single `setSearchParams(prev => next, { replace: true })`
-call — one atomic write per gesture, so the whole view collapses to zero pushed history entries
-beyond the page's own initial navigation (a reader can click through a dozen nodes and still leave
-with one `goBack()`). The only effects that write back are convergent normalisers — they fire only
-when a param disagrees with the derived truth (e.g. a resolved-but-unlinked rollout ChangeOrder id
-getting written into `?changeOrder=`) — never a state→URL mirroring effect for ordinary user
-gestures. **Param contract:** the graph carries `space=<SpaceID>` (single-valued — a click always
-selects at most one node). Rollout carries `changeOrder`, `stage`, `rolloutSpace`. A `mode` param on
-an older link is ignored. An id that fails to resolve (a stale
-`?stage=`/`?rolloutSpace=`) is deleted from the URL rather than left dangling.
+node selection from the URL during render and passes it DOWN to `AppComponentView` as controlled
+props with setter callbacks (`selectedDeploymentIds`/`onSelectedDeploymentIdsChange`). Every write
+goes through ONE helper, `updateParams(patch)`, doing a single `setSearchParams(prev => next, {
+replace: true })` call — one atomic write per gesture, so the whole view collapses to zero pushed
+history entries beyond the page's own initial navigation (a reader can click through a dozen nodes
+and still leave with one `goBack()`). **Param contract:** the graph carries `space=<SpaceID>`
+(single-valued — a click always selects at most one node). The `mode`, `changeOrder`, `stage` and
+`rolloutSpace` params of the retired rollout mode are ignored on an older link.
 
-**Rollout mode** is a different kind of thing from the graph view: it follows ONE ChangeOrder through a promotion sequence rather than arranging the graph.
-Code lives in `src/pages/x/apps/change-order/`, with the graph pieces in `flow-graph/rolloutLayout.ts`,
-`RolloutLaneNode.tsx` and `RolloutStrip.tsx`. Playwright coverage: `ui/tests/rollout-mode.spec.ts`.
-
-**The rollout pane mounts `ComponentValuesSection` directly — the SAME tree auto mode renders —
-not a separate one.** `RolloutSidePane.tsx` renders `ChangeOrderLine` (collapsed identity) →
-`ChangeOrderGateList` (promotion-precondition gates, reused verbatim) → a thin per-unit
-`ChangeOrderUnitHeader` + `ComponentValuesSection` mounted `readOnly`, one per real unit across every
-Space of the *selected* stage (there is no accordion — the pane's whole subject is one stage,
-chosen in the graph; the graph is the cross-stage view) → the footer. The ChangeOrder feeds the
-tree as a synthetic `UpgradeEntry`/`VariationEntry` built by `changeOrderMergedUnits.ts`, the one new
-derivation this reuse needed — everything else (`changeOrderStages`, `changeOrderGates`, `changeOrderChanges`,
-`rolloutOverrides`, `useChangeOrderBaseline`, `useChangeOrderData`) is untouched pure logic feeding it.
-`ComponentSidePane.tsx` is never opened, and neither it nor `ComponentValuesSection.tsx` gains any
-rollout knowledge — reuse is a data adapter into a shared component, not a shared pane. An earlier
-version of the pane (deleted) was a bespoke accordion (`RolloutStepper.tsx`) over its own diff tree
-(`RolloutChangeTree.tsx`, wrapping `TreeDiffSection`) — do not resurrect that shape; see Rejected
-approaches for why the obvious alternative (forking `ComponentSidePane`) was also rejected.
-
-**`readOnly` on `ComponentValuesSection` had to be completed, not just used.** It existed
-(added for an earlier task) but three of its guarded sites were still staging-derived rather than
-entry-derived, so mounting it read-only silently reintroduced problems this view already has rules
-against: every row would classify as unchanged (rule-16-adjacent — a real incoming change with no
-visible tint or accent), the Upgradable auto-stage effect had no `readOnly` guard at all (a
-"read-only" mount that secretly staged), and the folder kebab's destructive actions stayed reachable
-because the caller happened not to wire handlers rather than because the mode forbade them. Fixed at
-four sites, each keyed off `readOnly` itself (`rowChangeType`, `isUnchangedField`, the Upgradable
-auto-stage effect, `hasFolderEditHandlers`) — each fix is correct for any read-only caller, not a
-rollout-specific branch, and none of it touches rule 15's hover CSS. The pane also has to set the
-`pane-upgrade-preview` class itself, unconditionally (auto mode only sets it on Upgrade-button hover
-or the Incoming tab, which rollout has neither of) — without it, `isUnchangedField` being correct is
-inert, since nothing dims.
-
-The rules that are easy to get wrong, all of them learned the hard way:
+**A ChangeOrder's promotion is not drawn on this graph.** The graph's rollout mode was retired: the
+ChangeOrders console and detail page (`/change-orders`, `src/pages/change-orders/`) tell that story,
+reading the pure logic in `src/pages/x/apps/change-order/`. The rules that logic learned the hard
+way still hold there:
 
 - **Stage order comes from the governing ChangeWorkflow Unit, not a label.** Its `spec.stages`
   array declares the sequence directly, in array order — fetched via the Unit's provenance
   annotation and pinned to the revision recorded at ChangeOrder creation, so a later edit to the
   workflow does not reorder a rollout already in flight. Each stage's `whereSpace` expression is
-  resolved server-side to find its member Spaces; there is no client-side label to derive order
-  from any more. `cub variant promote`'s `validateStageEntryGates` is the CLI-side twin this UI's
-  `changeOrderGates.ts` mirrors.
-- **Gates are a client-side port of that CLI function**, reusing its wording verbatim so a user
-  refused here and refused by `cub` is told the same thing. There is no gate entity in the backend.
-  If the two ever disagree, the CLI is right.
+  resolved server-side to find its member Spaces.
 - **`ResolvedSpaceIDs` absent ≠ nothing promoted.** `setChangeOrderPropagation` swallows derivation
   failures by design and returns 200 with the fields missing. The discriminator is that the set
   always contains the ChangeOrder's own Space; if it does not, report progress as *unavailable*
-  rather than as zero (`deriveProgress`).
-- **Read-only is structural.** Dragging, connecting, selection and edge interaction are off at the
-  reactflow props, and variant creation is severed at the shared `onComposerOpen` callback rather
-  than at each of its three entry points (knob, `V` key, connect-end on empty canvas). Verify it by
-  PERFORMING gestures — counting absent controls cannot find a gesture outcome.
-- **Values, never counts.** The treeview reads real configuration data on both sides (a dry-run for
-  a pending stage, the Revisions carrying the ChangeOrder for a promoted one). Resolution is a claim
-  about Link pointers and can legitimately disagree with the bytes.
+  rather than as zero.
+- **Values, never counts.** A diff reads real configuration data on both sides. Resolution is a
+  claim about Link pointers and can legitimately disagree with the bytes.
 - **A local override is divergence from UPSTREAM, not from the incoming payload**, and the upstream
   baseline is per Space — the source *before* the change for a Space that has not taken it, the
-  source *as it is now* for one that has. Comparing against the incoming payload reports every
-  carried path as an override; comparing every Space against the pre-change state does the same for
-  already-promoted ones. Both mistakes have been made here, and the second is worse than useless:
-  it told a Space whose pinned image was about to be replaced that the promote would not touch it.
-- **An override the promotion is about to overwrite is not a blocked override — it is an incoming
-  change.** The tree's own override machinery (rule 1: overridden ⇒ not upgradable) has no concept of
-  "overridden, but overwritten anyway"; feeding it every local divergence from the baseline, including
-  paths the ChangeOrder itself writes, makes it tell the user "your value is protected" about a value
-  about to change. Filter the synthetic `VariationEntry` to paths the incoming change does NOT touch
-  before it ever reaches the tree.
-- **Per-unit, not per-stage, for anything the tree renders.** A stage can hold several Spaces, and a
-  promote's two-call sequence (clone, then upgrade) can leave a fan-out stage with some Spaces written
-  and others not. A stage-level "written"/"promoted" flag marks the un-written ones as written too —
-  provenance (and anything else the tree needs) has to travel with the real unit, not the stage.
+  source *as it is now* for one that has.
+- **Per-unit, not per-stage.** A stage can hold several Spaces, and a promote's two-call sequence
+  (clone, then upgrade) can leave a fan-out stage with some Spaces written and others not, so
+  provenance travels with the real unit, not the stage.
+
+`ComponentValuesSection`'s `readOnly` is complete — keyed off `readOnly` itself at every site that
+stages or classifies (`rowChangeType`, `isUnchangedField`, the Upgradable auto-stage effect,
+`hasFolderEditHandlers`) — so a read-only caller need not unwire handlers to make it safe. A caller
+that wants unchanged rows dimmed sets the `pane-upgrade-preview` class itself.
+
+### ChangeSets on the graph
+
+A unit is in a ChangeSet while `Unit.ChangeSetID` is set. Closing the ChangeSet clears it, so a
+unit read after the close names its ChangeSet only through `HeadRevision.ChangeSetID` — until
+something else changes the unit. `changeSets.ts` reads both (`unitChangeSet`): the graph shows a
+ChangeSet that is **open** on a unit, or **closed on the head** (nothing changed since), and nothing
+older. Both fields are in `UNITS_QUERY_SELECT`; the ChangeSets themselves (slug, State,
+Description) come from one `GET /change_set?where=ChangeSetID IN (...)` in `AppComponentView`, and
+land on `ComponentDeployment.changeSets`.
+
+- **Node.** `DeploymentFlowNode` draws a `ChangeSet` chip (progress tone while open, neutral once
+  closed). The face carries no slug — slugs are too long for it — only a count when there are
+  several; the peek names each ChangeSet with the first line of its Description. Clicking it opens
+  the Configuration tab on the ChangeSet filter (the `'changeset'` value of the open-tab request). A Deployment with a ChangeSet earns a card when the graph folds — the
+  `changeSet` condition, last in `CARD_SEVERITY` (`fold/deploymentCondition.ts`) — so a stack never
+  hides which Deployment the work is on.
+- **Side pane.** The `ChangeSet` filter beside Incoming and All draws what the ChangeSet changed
+  in the Incoming view's own style, so there is one diff format in the pane. `useChangeSetEntries`
+  builds an upgrade-shaped `ChangeSetEntry` per unit: "current" is the unit before the ChangeSet
+  (the Revision before its first Revision in the ChangeSet), "incoming" is the unit now. The pane
+  swaps those into its units (`changeSetUnits`) and mounts `ComponentValuesSection` `readOnly`, so
+  nothing stages and Upgrade is disabled. Every unit stays listed, with the same key, so switching
+  filters never unmounts a section and loses staged edits (rule 9). A separate server-diff section
+  (`ConfigDiffView`) was tried first and rejected: two diff formats in one pane confused.
+- **Closing.** On a node with an open ChangeSet, the ChangeSet filter has a Close ChangeSet bar
+  (`ChangeSetPaneNotices.tsx`). Closing bulk-patches `ChangeSetID: null` over every unit the
+  ChangeSet is open on, in any Space, which is what closes it and lands its end Tag.
+- **Downstream of an open ChangeSet.** The server refuses to take a Revision from the middle of an
+  open ChangeSet (`checkSourceChangeSet`), dry runs included. A unit whose upstream is in one it is
+  not in itself (`upstreamChangeSetBlocking`) is left out of the upgrade preview and of
+  `hasUpgradableUnits`, and its node carries `waitingOnChangeSets`; the pane says what it waits for
+  and links to the upstream's ChangeSet filter, instead of reporting a failed preview and offering
+  an Upgrade that cannot run.
+- **Writes.** A unit a ChangeSet is open on accepts a write only when it names the ChangeSet, so
+  every write this view makes passes `openChangeSetIdOf(unitById, unitId)`, and the upgrade preview
+  batches its dry runs by ChangeSet.
+- **Overview.** `useOpenChangeSets` reads every unit with `ChangeSetID IS NOT NULL` in one request,
+  for the "Open ChangeSets" tile and column of `ComponentOverviewMatrix`. Only open ChangeSets count
+  there.
 
 **Modifier-click compares.** Shift or Cmd/Ctrl + click on a node adds it to, or takes it out of,
 the side pane's comparison and does NOT toggle the side pane (`handleNodeClick` checks
@@ -873,8 +863,8 @@ Do not re-propose these — they were explicitly rejected by the people who buil
 - **Phantom deletions** — treating a no-data dry-run as mass deletions. Guard: rule 16.
 - **Bracket notation in path handling** (`env[0]`). Canonical runtime format is dot-index
   (`env.0.name`). Use helpers from `componentKeyUtils.ts` — don't write ad-hoc bracket regexes.
-- **A third `mode` prop on `ComponentSidePane` for rollout.** Considered when redesigning the rollout
-  pane to reuse the treeview. Rejected: the pane owns the Configuration/Releases tabs, all four
+- **A third `mode` prop on `ComponentSidePane`** (considered for the since-retired rollout mode).
+  Rejected: the pane owns the Configuration/Releases tabs, all four
   staging signals, release publish/withdraw, the Space settings sheet, the heavy-unit gate, the
   source-view toggle and the inspect panel — a third mode means threading "but not in rollout"
   through all of it, and every thread is a live regression path into the mode people use all day.
@@ -941,10 +931,9 @@ Do not re-propose these — they were explicitly rejected by the people who buil
 - **Verifying against the wrong backend is silent, not loud.** A dev server started without
   `CONFIGHUB_URL` defaults to `:9090`, and a `:9090` whose server
   predates the ChangeOrder progress fields returns **200 with the ChangeOrder's
-  derived progress fields simply absent** — so rollout mode renders a promotion that has never
-  moved, with nothing failing. The ports, the correct start command, and a binary capability check
-  are documented once, in `ui/tests/rollout-mode.testplan.md` §8.2b; that copy is canonical and this
-  is only a pointer to it.
+  derived progress fields simply absent** — so a ChangeOrder page renders a promotion that has
+  never moved, with nothing failing. Check which server the dev UI is talking to before trusting
+  what it shows.
 
 - **CI does not protect component view e2e.** `playwright.yml` runs
   `npx playwright test --only-changed=origin/${{ github.base_ref }}` (`playwright.yml:305`;

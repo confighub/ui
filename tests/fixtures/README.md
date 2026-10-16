@@ -1,13 +1,13 @@
 # Entity Grid Testing System
 
-This directory contains fixtures for testing entity grids using Playwright. All entity grids (Targets, Triggers, Workers, Spaces, Units) now extend from a common `EntityGridFixture` base class.
+This directory contains fixtures for testing entity grids using Playwright. All entity grids (Targets, Triggers, Spaces, Units) now extend from a common `EntityGridFixture` base class.
 
 ## Architecture
 
 ```
 EntityGridFixture (Base class)
     ↓ extends
-TargetListPage, WorkerListPage, etc. (Entity-specific pages)
+TargetListPage, UnitListPage, etc. (Entity-specific pages)
 ```
 
 ## EntityGridFixture
@@ -149,7 +149,6 @@ To migrate existing page fixtures to use EntityGridFixture:
 tests/fixtures/
 ├── entity-grid-fixture.ts          # Base class for all grids
 ├── target-list-page.ts             # Extends EntityGridFixture
-├── worker-list-page.ts             # Extends EntityGridFixture
 ├── unit-list-page.ts               # Extends EntityGridFixture
 ├── space-list-page.ts              # Extends EntityGridFixture
 └── README.md                       # This file

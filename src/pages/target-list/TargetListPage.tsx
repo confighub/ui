@@ -33,6 +33,9 @@ import Tooltip from '@mui/material/Tooltip';
 
 import { TargetsTable } from './components/targets-table/TargetsTable';
 
+// The Space of each Target, and the Trigger Filter its column names.
+const TARGET_LIST_INCLUDE = 'SpaceID,TriggerFilterID';
+
 const Container = styled('div')`
   width: 100%;
 `;
@@ -76,7 +79,7 @@ export const TargetListPage = () => {
 
   // Fetch all targets first (without filter) to get label options
   const { data: allTargets = [], isFetching: isFetchingAll, refetch: refetchAll } = useListAllTargetsQuery({
-    include: 'SpaceID',
+    include: TARGET_LIST_INCLUDE,
   }, { refetchOnFocus: true });
 
   // Extract label options from all targets for the Labels filter dropdown
@@ -111,7 +114,7 @@ export const TargetListPage = () => {
     refetch: refetchFiltered,
     error: filterError,
   } = useListAllTargetsQuery(
-    { where: whereClause, include: 'SpaceID' },
+    { where: whereClause, include: TARGET_LIST_INCLUDE },
     { skip: !whereClause, refetchOnFocus: true },
   );
 

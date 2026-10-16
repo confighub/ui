@@ -37,6 +37,9 @@ export interface FanOutSourceDiffArgs {
   unitIds: string[];
 }
 
+/** ChangeSetID is what `include` expands, so it has to be selected for the ChangeSet to come back. */
+const CHANGE_SET_REVISION_SELECT = 'RevisionID,UnitID,SpaceID,RevisionNum,CreatedAt,ChangeSetID';
+
 const changeOrderImageDiffApi = confighubApi.injectEndpoints({
   endpoints: (build) => ({
     getChangeOrderSourceDiff: build.query<SearchUnitDiffApiResponse, ChangeOrderImageDiffArgs>({
@@ -94,6 +97,20 @@ const changeOrderImageDiffApi = confighubApi.injectEndpoints({
     getFanOutSourceLinks: build.query<SearchListLinksApiResponse, { where: string }>({
       query: ({ where }) => ({ url: '/link', params: { where } }),
     }),
+    // The Revisions at the source made in a ChangeSet, with the ChangeSet expanded: the change as its
+    // author grouped it, named and described there. Untagged for the same reason as the reads above.
+    getChangeOrderChangeSetRevisions: build.query<ListAllRevisionsApiResponse, { where: string }>({
+      query: ({ where }) => ({
+        url: '/revision',
+        params: {
+          where,
+          distinct_on: 'Off',
+          limit: SOURCE_REVISION_LIMIT,
+          select: CHANGE_SET_REVISION_SELECT,
+          include: 'ChangeSetID',
+        },
+      }),
+    }),
   }),
   overrideExisting: false,
 });
@@ -104,4 +121,5 @@ export const {
   useGetFanOutSourceDiffQuery,
   useGetFanOutSourceRevisionsQuery,
   useGetFanOutSourceLinksQuery,
+  useGetChangeOrderChangeSetRevisionsQuery,
 } = changeOrderImageDiffApi;

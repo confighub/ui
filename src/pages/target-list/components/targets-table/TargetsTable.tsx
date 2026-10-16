@@ -32,7 +32,7 @@ export interface TargetsTableProps {
   hasNoData?: boolean;
 }
 
-// One column per label key and per annotation key, rather than one column holding each whole map.
+// One column per label, annotation and fact key, rather than one column holding each whole map.
 const ATTRIBUTE_CONFIGS: AttributeColumnConfig<TargetRowItem>[] = [
   {
     fieldName: 'Labels',
@@ -44,6 +44,11 @@ const ATTRIBUTE_CONFIGS: AttributeColumnConfig<TargetRowItem>[] = [
     columnPrefix: 'Annotations.',
     getAttributes: (row) => row.Annotations,
   },
+  {
+    fieldName: 'Facts',
+    columnPrefix: 'Facts.',
+    getAttributes: (row) => row.Facts,
+  },
 ];
 
 const GRID_DEFAULTS = {
@@ -53,6 +58,9 @@ const GRID_DEFAULTS = {
     TargetID: false,
     Space: true,
     SpaceID: false,
+    WhereTrigger: false,
+    TriggerFilter: false,
+    AppliedTriggerCount: true,
     CreatedAt: false,
     UpdatedAt: true,
   } as Record<string, boolean>,
@@ -78,6 +86,10 @@ export const TargetsTable = ({
       SpaceID: target.Space?.SpaceID || '',
       Labels: target.Target?.Labels || {},
       Annotations: target.Target?.Annotations || {},
+      Facts: target.Target?.Facts || {},
+      WhereTrigger: target.Target?.WhereTrigger || '',
+      TriggerFilter: target.TriggerFilter?.Slug || '',
+      AppliedTriggerCount: target.Target?.TriggerIDs?.length || 0,
       CreatedAt: target.Target?.CreatedAt || '',
       UpdatedAt: target.Target?.UpdatedAt || '',
       _extendedTarget: target, // Store original for edit callback
@@ -126,7 +138,7 @@ export const TargetsTable = ({
     [applyStoredWidths, baseColumns],
   );
 
-  // Dynamic columns (Labels, Annotations) default to hidden unless specified in GRID_DEFAULTS
+  // Dynamic columns (Labels, Annotations, Facts) default to hidden unless specified in GRID_DEFAULTS
   const effectiveColumnVisibilityModel = useMemo(() => {
     const dynamicVisibility: Record<string, boolean> = {};
     baseColumns.forEach((col) => {

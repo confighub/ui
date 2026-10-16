@@ -5,13 +5,22 @@ import { buildColumns } from '@/components/data-grid/cells';
 import { KeyValueListCell } from '@/components/entity-data-grid';
 import { ColumnGroup, DynamicGroupConfig } from '@/components/entity-data-grid/column-groups-types';
 import { CenteredTableCell } from '@/components/styled';
+import {
+  TRIGGER_SELECTION_STATUS_DISPLAY,
+  type TriggerSelectionStatus,
+} from '@/components/trigger-selection/useTriggerSelection';
 import { ExtendedTriggerRead } from '@confighub/rtk-query';
 import Chip from '@mui/material/Chip';
+import Tooltip from '@mui/material/Tooltip';
 
 export const TRIGGER_COLUMN_GROUPS: ColumnGroup[] = [
   {
     header: 'Core Identity',
-    columns: ['Slug', 'TriggerID', 'SpaceID'],
+    columns: ['Slug', 'TriggerID', 'Space', 'SpaceID'],
+  },
+  {
+    header: 'Selection',
+    columns: ['Selection'],
   },
   {
     header: 'Configuration',
@@ -47,6 +56,11 @@ export interface TriggerRowItem {
   Slug: string;
   TriggerID: string;
   SpaceID: string;
+  Space: string;
+  /** Where the name links: the edit drawer, on the page of the Space the Trigger is in */
+  EditLink: string;
+  /** Whether the Space or Target lists the Trigger, and whether it still selects it */
+  Selection?: TriggerSelectionStatus;
   FunctionName: string;
   ToolchainType: string;
   Event: string;
@@ -71,8 +85,27 @@ export const createTriggerStaticColumns = () =>
       headerName: 'Name',
       minWidth: 150,
       flex: 1.5,
-      linkTo: (row) => `?edit=${row.TriggerID}`,
+      linkTo: (row) => row.EditLink,
       getText: (row) => row.Slug,
+    },
+
+    Selection: {
+      type: 'custom',
+      headerName: 'Selection',
+      minWidth: 150,
+      flex: 1,
+      valueGetter: (row) => (row.Selection ? TRIGGER_SELECTION_STATUS_DISPLAY[row.Selection].label : ''),
+      renderCell: (params) => {
+        if (!params.row.Selection) return null;
+        const display = TRIGGER_SELECTION_STATUS_DISPLAY[params.row.Selection];
+        return (
+          <CenteredTableCell>
+            <Tooltip title={display.description} arrow>
+              <Chip size='small' variant='outlined' color={display.color} label={display.label} />
+            </Tooltip>
+          </CenteredTableCell>
+        );
+      },
     },
 
     TriggerID: {
@@ -80,6 +113,15 @@ export const createTriggerStaticColumns = () =>
       headerName: 'Trigger ID',
       minWidth: 300,
       flex: 1.5,
+    },
+
+    Space: {
+      type: 'link',
+      headerName: 'Space',
+      minWidth: 150,
+      flex: 1,
+      linkTo: (row) => `/spaces/${row.SpaceID}?tab=1`,
+      getText: (row) => row.Space,
     },
 
     SpaceID: {
@@ -104,10 +146,8 @@ export const createTriggerStaticColumns = () =>
     },
 
     BridgeWorkerSlug: {
-      type: 'link',
+      type: 'string',
       headerName: 'Bridge Worker',
-      linkTo: (row) => `/bridge-workers/${row.SpaceID}/${row.BridgeWorkerID}`,
-      getText: (row) => row.BridgeWorkerSlug,
       minWidth: 120,
       flex: 1,
     },

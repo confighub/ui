@@ -9,17 +9,24 @@
  *
  * Features:
  * - Add new targets or edit existing ones
- * - Labels and annotations management
+ * - Labels, annotations and facts management
  * - Space selection
+ * - Selecting the Triggers invoked on the Units attached to the target, and showing which are
  * - Granting a worker access to the target, so it can pull the target's releases
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Control, Controller, FieldErrors, useForm } from 'react-hook-form';
 
 import { CopyToClipboard } from '@/components/copy-to-clipboard/CopyToClipboard';
+import { EntityRefSelect } from '@/components/entity-ref-select/EntityRefSelect';
+import { useFilterRefOptions } from '@/components/entity-ref-select/useEntityRefOptions';
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { SimpleGateCard } from '@/components/simple-gate-card/SimpleGateCard';
 import { FixedSubmitContainer, SectionCard } from '@/components/styled';
+import { TriggerSelectionBar } from '@/components/trigger-selection/TriggerSelectionBar';
+import { useTriggerSelection } from '@/components/trigger-selection/useTriggerSelection';
+import { TriggersTable } from '@/pages/space-detail/components/triggers-table/TriggersTable';
+import { getApiErrorMessage } from '@/utility/error-functions';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
 import {
@@ -32,6 +39,7 @@ import {
   useCreateTargetMutation,
   useListAllBridgeWorkersQuery,
   useListSpacesQuery,
+  usePatchTargetMutation,
   useUpdateTargetMutation,
 } from '@confighub/rtk-query';
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
@@ -110,6 +118,23 @@ const BasicInfoCard = ({
                 error={!!errors.Slug}
                 helperText={errors.Slug?.message}
                 placeholder='my-target-name'
+              />
+            )}
+          />
+        </Grid>
+
+        <Grid size={{ xs: 12 }}>
+          <Controller
+            name='DisplayName'
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                value={field.value || ''}
+                label='Display Name'
+                fullWidth
+                size='small'
+                placeholder='Defaults to the name'
               />
             )}
           />
@@ -341,6 +366,248 @@ const LabelsAndAnnotationsCard = ({
   );
 };
 
+// How long the Where Trigger has to stay unchanged before the Triggers it selects are listed.
+const WHERE_TRIGGER_PREVIEW_DELAY_MS = 400;
+
+/**
+ * FactsCard
+ *
+ * Facts are properties of the infrastructure the target represents. Fact collection rewrites the
+ * ones it collects; any others are the user's own.
+ */
+const FactsCard = ({
+  facts,
+  onChange,
+}: {
+  facts: Record<string, string>;
+  onChange: (facts: Record<string, string>) => void;
+}) => {
+  const [newKey, setNewKey] = useState('');
+  const [newValue, setNewValue] = useState('');
+
+  const addFact = () => {
+    if (!newKey.trim()) return;
+    onChange({ ...facts, [newKey.trim()]: newValue.trim() });
+    setNewKey('');
+    setNewValue('');
+  };
+
+  const removeFact = (key: string) => {
+    const rest = { ...facts };
+    delete rest[key];
+    onChange(rest);
+  };
+
+  return (
+    <SectionCard title='Facts'>
+      <Typography variant='body2' color='text.secondary' sx={{ mb: 2 }}>
+        Properties of the infrastructure this target represents, available to functions and in
+        where expressions. Fact collection rewrites the facts it collects.
+      </Typography>
+      {Object.keys(facts).length > 0 && (
+        <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+          {Object.entries(facts).map(([key, value]) => (
+            <Chip
+              key={key}
+              label={`${key}: ${value}`}
+              onDelete={() => removeFact(key)}
+              variant='outlined'
+            />
+          ))}
+        </Box>
+      )}
+      <Grid container spacing={2}>
+        <Grid size={{ xs: 5 }}>
+          <TextField
+            label='Fact Key'
+            fullWidth
+            size='small'
+            value={newKey}
+            onChange={(e) => setNewKey(e.target.value)}
+            placeholder='region'
+            onKeyDown={(e) => e.key === 'Enter' && addFact()}
+          />
+        </Grid>
+        <Grid size={{ xs: 5 }}>
+          <TextField
+            label='Fact Value'
+            fullWidth
+            size='small'
+            value={newValue}
+            onChange={(e) => setNewValue(e.target.value)}
+            placeholder='us-west-2'
+            onKeyDown={(e) => e.key === 'Enter' && addFact()}
+          />
+        </Grid>
+        <Grid size={{ xs: 2 }}>
+          <Button
+            variant='outlined'
+            fullWidth
+            startIcon={<Add />}
+            onClick={addFact}
+            disabled={!newKey.trim()}
+            sx={{ minWidth: 'auto', borderRadius: '8px' }}
+          >
+            Add
+          </Button>
+        </Grid>
+      </Grid>
+    </SectionCard>
+  );
+};
+
+/**
+ * TriggersCard
+ *
+ * Selects the Triggers invoked on the Units attached to the target, and lists them: those it
+ * applies, and those its selector, as edited, selects.
+ */
+const TriggersCard = ({
+  control,
+  whereTrigger,
+  triggerFilterId,
+  existingTarget,
+}: {
+  control: Control<Target>;
+  whereTrigger: string;
+  triggerFilterId: string;
+  existingTarget?: TargetRead;
+}) => {
+  const { options: triggerFilterOptions, isFetching: isTriggerFiltersLoading } =
+    useFilterRefOptions('Trigger');
+  const [patchTarget, { isLoading: isRefreshing, error: refreshError }] = usePatchTargetMutation();
+
+  const [previewWhere, setPreviewWhere] = useState(whereTrigger);
+  useEffect(() => {
+    const timer = setTimeout(() => setPreviewWhere(whereTrigger), WHERE_TRIGGER_PREVIEW_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [whereTrigger]);
+
+  const selection = useTriggerSelection({
+    selector: {
+      WhereTrigger: previewWhere.trim(),
+      TriggerFilterID: triggerFilterId,
+      TriggerIDs: existingTarget?.TriggerIDs,
+    },
+  });
+
+  const selectorChanged =
+    whereTrigger.trim() !== (existingTarget?.WhereTrigger || '') ||
+    triggerFilterId !== (existingTarget?.TriggerFilterID || '');
+
+  const refreshTriggers = async () => {
+    if (!existingTarget?.TargetID || !existingTarget.SpaceID) return;
+    await patchTarget({
+      spaceId: existingTarget.SpaceID,
+      targetId: existingTarget.TargetID,
+      refreshTriggers: true,
+      body: {},
+    });
+    selection.refetch();
+  };
+
+  const triggerFilterName = triggerFilterOptions.find((o) => o.id === triggerFilterId)?.label;
+
+  return (
+    <SectionCard title='Triggers'>
+      <Typography variant='body2' color='text.secondary' sx={{ mb: 2 }}>
+        Triggers selected here are invoked on the Units attached to this target, in addition to
+        those their Space selects. With neither a Where Trigger nor a Trigger Filter, none are;
+        with both, a Trigger must match both.
+      </Typography>
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        <Grid size={{ xs: 7 }}>
+          <Controller
+            name='WhereTrigger'
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                value={field.value || ''}
+                label='Where Trigger'
+                fullWidth
+                size='small'
+                placeholder="Labels.Purpose = 'policy'"
+                helperText='A where expression over Triggers in any Space'
+                slotProps={{
+                  inputLabel: { shrink: true },
+                  htmlInput: {
+                    'data-testid': 'target-where-trigger-input',
+                    style: { fontFamily: 'monospace' },
+                  },
+                }}
+              />
+            )}
+          />
+        </Grid>
+        <Grid size={{ xs: 5 }}>
+          <Controller
+            name='TriggerFilterID'
+            control={control}
+            render={({ field }) => (
+              <EntityRefSelect
+                label='Trigger Filter'
+                value={field.value || ''}
+                onChange={field.onChange}
+                options={triggerFilterOptions}
+                loading={isTriggerFiltersLoading}
+                helperText='A Trigger Filter from any Space'
+                testId='target-trigger-filter-select'
+              />
+            )}
+          />
+        </Grid>
+      </Grid>
+      <TriggerSelectionBar
+        entityName='Target'
+        whereTrigger={previewWhere.trim()}
+        triggerFilterName={triggerFilterName}
+        selection={selection}
+        onRefresh={existingTarget ? refreshTriggers : undefined}
+        isRefreshing={isRefreshing}
+        refreshError={
+          refreshError
+            ? getApiErrorMessage(refreshError, 'The Triggers could not be refreshed.')
+            : undefined
+        }
+        selectorChanged={selectorChanged}
+      />
+      <TriggersTable
+        where={`TriggerID IN (${selection.allIds.map((id) => `'${id}'`).join(',')})`}
+        skip={selection.allIds.length === 0}
+        selectionStatusById={selection.statusById}
+        persistenceKey='target-triggers-table'
+        emptyState={
+          <Typography variant='body2' color='text.secondary'>
+            No Triggers are selected.
+          </Typography>
+        }
+      />
+    </SectionCard>
+  );
+};
+
+// The fields the form edits besides the slug and metadata maps; an empty one is cleared.
+const selectionFields = (data: Target): Partial<Target> => ({
+  DisplayName: data.DisplayName || undefined,
+  Facts: data.Facts,
+  WhereTrigger: (data.WhereTrigger || '').trim(),
+  TriggerFilterID: data.TriggerFilterID || undefined,
+});
+
+// The form's values for a target, or for a new one.
+const targetFormValues = (target: TargetRead | undefined): Target => ({
+  Slug: target?.Slug || '',
+  DisplayName: target?.DisplayName || '',
+  SpaceID: target?.SpaceID || '',
+  Labels: target?.Labels || {},
+  Annotations: target?.Annotations || {},
+  DeleteGates: target?.DeleteGates || {},
+  Facts: target?.Facts || {},
+  WhereTrigger: target?.WhereTrigger || '',
+  TriggerFilterID: target?.TriggerFilterID || '',
+});
+
 /**
  * AddTargetDrawer
  *
@@ -381,13 +648,7 @@ export const AddTargetDrawer = ({
     watch,
     reset,
   } = useForm<Target>({
-    defaultValues: {
-      Slug: existingTarget?.Slug || '',
-      SpaceID: existingTarget?.SpaceID || '',
-      Labels: existingTarget?.Labels || {},
-      Annotations: existingTarget?.Annotations || {},
-      DeleteGates: existingTarget?.DeleteGates || {},
-    },
+    defaultValues: targetFormValues(existingTarget),
   });
 
   // A grant may be to a worker in another Space, so every worker in the organization is offered.
@@ -434,13 +695,7 @@ export const AddTargetDrawer = ({
   useEffect(() => {
     if (existingTarget) {
       // Reset form with existing target values
-      reset({
-        Slug: existingTarget.Slug || '',
-        SpaceID: existingTarget.SpaceID || '',
-        Labels: existingTarget.Labels || {},
-        Annotations: existingTarget.Annotations || {},
-        DeleteGates: existingTarget.DeleteGates || {},
-      });
+      reset(targetFormValues(existingTarget));
 
       // Initialize labels and annotations lists
       const labelsList = Object.entries(existingTarget.Labels || {}).map(([key, value]) => ({
@@ -459,13 +714,7 @@ export const AddTargetDrawer = ({
       setAnnotations(annotationsList);
     } else {
       // Reset to empty state for add mode
-      reset({
-        Slug: '',
-        SpaceID: '',
-        Labels: {},
-        Annotations: {},
-        DeleteGates: {},
-      });
+      reset(targetFormValues(undefined));
       setLabels([]);
       setAnnotations([]);
     }
@@ -590,6 +839,7 @@ export const AddTargetDrawer = ({
           spaceId: data.SpaceID || '',
           target: {
             ...existingTarget,
+            ...selectionFields(data),
             Slug: data.Slug,
             Labels: data.Labels,
             Annotations: data.Annotations,
@@ -610,6 +860,7 @@ export const AddTargetDrawer = ({
         const input: CreateTargetApiArg = {
           spaceId: data.SpaceID || '',
           target: {
+            ...selectionFields(data),
             Slug: data.Slug,
             SpaceID: data.SpaceID,
             OrganizationID: space.OrganizationID || '',
@@ -710,6 +961,16 @@ export const AddTargetDrawer = ({
               removeAnnotation={removeAnnotation}
               labels={labels}
               annotations={annotations}
+            />
+            <TriggersCard
+              control={control}
+              whereTrigger={watch('WhereTrigger') || ''}
+              triggerFilterId={watch('TriggerFilterID') || ''}
+              existingTarget={existingTarget}
+            />
+            <FactsCard
+              facts={watch('Facts') || {}}
+              onChange={(facts) => setValue('Facts', facts)}
             />
             <SimpleGateCard
               watch={watch}

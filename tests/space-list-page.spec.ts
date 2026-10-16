@@ -19,6 +19,6 @@ test.describe('space list page', () => {
 
     await spaceListPage.goToSpaceDetailPageByName(spaceName);
 
-    await expect(page.getByRole('textbox', { name: 'Name' })).toHaveValue(spaceName);
+    await expect(page.getByRole('textbox', { name: 'Name', exact: true })).toHaveValue(spaceName);
   });
 });

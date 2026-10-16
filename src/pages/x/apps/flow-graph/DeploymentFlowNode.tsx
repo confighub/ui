@@ -12,6 +12,7 @@ import AddIcon from '@mui/icons-material/Add';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
 import type { ComponentDeployment } from '../componentTypes';
+import { changeSetLabel, changeSetUnitIds, isChangeSetOpenHere } from '../changeSets';
 import { componentTheme, LIVE_TONE_COLOR } from '../componentTheme';
 import { formatRelative } from '@/utility/date-format';
 import {
@@ -127,7 +128,7 @@ export interface DeploymentFlowNodeData {
    * the Releases tab to scroll to and highlight that specific release rather
    * than just land on the tab and leave the user to hunt for it.
    */
-  onOpenTab?: (deploymentId: string, tab: 'config' | 'releases', releaseNum?: number) => void;
+  onOpenTab?: (deploymentId: string, tab: 'config' | 'releases' | 'changeset', releaseNum?: number) => void;
   /**
    * Opens the inline variant composer anchored to this node as parent —
    * fired by the node's own "+" affordance or the 'V' key while hovering
@@ -180,7 +181,7 @@ export interface DeploymentFlowNodeData {
 }
 
 /** Which side-pane tab a status chip's peek deep-links to. */
-export type ChipTab = 'config' | 'releases';
+export type ChipTab = 'config' | 'releases' | 'changeset';
 
 // ============================================================================
 // STATUS MODEL
@@ -867,6 +868,13 @@ const UpgradingIcon = () => (
   </svg>
 );
 
+const ChangeSetIcon = () => (
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+    <path d="M8 2.5l5.5 3L8 8.5l-5.5-3z" />
+    <path d="M2.5 9L8 12l5.5-3" />
+  </svg>
+);
+
 const TickIcon = () => (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <path d="M3 8.5l3.5 3.5 6.5-8" />
@@ -1334,6 +1342,26 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
     action: 'Review the gate',
   };
 
+  // ChangeSets: open on a unit here, or closed with nothing changed here since.
+  // A slug is too long for the face, which counts them only when there are
+  // several; the peek names each with the first line of its Description.
+  const changeSets = deployment.changeSets ?? [];
+  const showChangeSetChip = showConfig && changeSets.length > 0;
+  const anyChangeSetOpen = changeSets.some(isChangeSetOpenHere);
+  const changeSetSpec: PeekSpec = {
+    tab: 'changeset',
+    eyebrow: `ChangeSet · ${anyChangeSetOpen ? 'open' : 'closed'}`,
+    lines: changeSets.flatMap((cs) => {
+      const units = changeSetUnitIds(cs).length;
+      const firstLine = cs.changeSet?.Description?.split('\n')[0]?.trim();
+      return [
+        `${changeSetLabel(cs, deployment.slug)} · ${isChangeSetOpenHere(cs) ? 'open' : 'closed'} on ${units} unit${units === 1 ? '' : 's'}`,
+        ...(firstLine ? [firstLine] : []),
+      ];
+    }),
+    action: 'Review the ChangeSet diff',
+  };
+
   // Release-stamp peek. The timestamp removed from the face becomes the hero
   // metric here (same "strip the trailing 'ago', it's carried by `unit`"
   // trick as the Stale peek, so it reads "3 hours ago" rather than "3 hours
@@ -1365,10 +1393,21 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
     (!isTransient && !!localSuccess) ||
     isStale ||
     isUnreleased ||
-    isGated;
+    isGated ||
+    showChangeSetChip;
 
   const renderConfigChips = (pinGatedRight: boolean) => (
     <>
+      {showChangeSetChip && (
+        <StatusChipWithPeek
+          tone={anyChangeSetOpen ? 'progress' : 'neutral'}
+          leading={<ChangeSetIcon />}
+          label="ChangeSet"
+          meta={changeSets.length > 1 ? `${changeSets.length}` : undefined}
+          spec={changeSetSpec}
+          onGo={openTab}
+        />
+      )}
       {showStaleChip && (
         <StatusChipWithPeek
           tone="stale"
@@ -1723,10 +1762,10 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
           )}
 
           {/* Desired-side (config) signals — tinted, borderless, fixed order
-              Stale → Unreleased changes → Gated, with Gated right-anchored.
+              ChangeSet → Stale → Unreleased changes → Gated, with Gated right-anchored.
               Status by exception: every all-clear signal shows nothing, so a
               healthy card has no chips at all. */}
-          {(showStaleChip || showUnreleasedChip || showGatedChip) && (
+          {(showChangeSetChip || showStaleChip || showUnreleasedChip || showGatedChip) && (
             <ChipRow>{renderConfigChips(true)}</ChipRow>
           )}
         </NodeBody>

@@ -16,6 +16,7 @@ export const MARK_LABEL: Record<MarkKind, string> = {
   progressing: 'Progressing',
   unreleased: 'Unreleased changes',
   stale: 'Stale',
+  changeSet: 'ChangeSet',
   quiet: 'Quiet',
 };
 
@@ -49,6 +50,9 @@ export function markStyle(kind: MarkKind): CSSProperties {
       return { background: componentTheme.variation };
     case 'stale':
       return { background: componentTheme.upgrade };
+    case 'changeSet':
+      // A square ring: Gated's ring is round, and Unreleased fills the same tone.
+      return { background: 'transparent', boxShadow: `inset 0 0 0 1.5px ${componentTheme.variation}` };
     case 'quiet':
       return { background: QUIET_MARK };
   }

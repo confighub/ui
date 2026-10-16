@@ -64,7 +64,6 @@ export interface IUnitMutationModalProps {
   modalTitleText?: string;
   modalDescriptionText?: string;
   defaultToolchainType?: string;
-  defaultChangeSetId?: string;
   /** Invocation to pre-populate the form with (for edit & invoke flow) */
   invocationToEdit?: Invocation;
 }

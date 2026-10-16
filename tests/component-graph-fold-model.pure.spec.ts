@@ -138,17 +138,23 @@ test.describe('conditions and severity', () => {
   const cond = (id: string) => conditionsOf(byId.get(id)!);
   const noWaves = new Set<never>();
 
-  test('severity runs Degraded > Out of sync > Gated > Progressing > Unreleased', () => {
-    expect(cardSeverity(cond('eu-central-payments-prod2'), noWaves)).toBe(5);
-    expect(cardSeverity(cond('eu-west-retail-prod2'), noWaves)).toBe(4);
-    expect(cardSeverity(cond('eu-central-prod3'), noWaves)).toBe(2);
-    expect(cardSeverity(cond('eu-central-payments-prod1'), noWaves)).toBe(1);
+  test('severity runs Degraded > Out of sync > Gated > Progressing > Unreleased > ChangeSet', () => {
+    expect(cardSeverity(cond('eu-central-payments-prod2'), noWaves)).toBe(6);
+    expect(cardSeverity(cond('eu-west-retail-prod2'), noWaves)).toBe(5);
+    expect(cardSeverity(cond('eu-central-prod3'), noWaves)).toBe(3);
+    expect(cardSeverity(cond('eu-central-payments-prod1'), noWaves)).toBe(2);
     expect(cardSeverity(cond('eu-central-prod1'), noWaves)).toBe(0);
     const gated = conditionsOf({
       ...byId.get('eu-central-prod1')!,
       configSignals: { staleUnits: 0, unreleasedUnits: 0, gatedUnits: 1 },
     });
-    expect(cardSeverity(gated, noWaves)).toBe(3);
+    expect(cardSeverity(gated, noWaves)).toBe(4);
+    const inChangeSet = conditionsOf({
+      ...byId.get('eu-central-prod1')!,
+      changeSets: [{ changeSetId: 'cs', openUnitIds: ['u'], closedOnHeadUnitIds: [] }],
+    });
+    expect(cardSeverity(inChangeSet, noWaves)).toBe(1);
+    expect(stripMark(inChangeSet, noWaves)).toBe('changeSet');
   });
 
   test('Stale never earns a card, and a wave condition does not count', () => {
@@ -156,7 +162,7 @@ test.describe('conditions and severity', () => {
       ...byId.get('eu-central-prod1')!,
       configSignals: { staleUnits: 2, unreleasedUnits: 3, gatedUnits: 0 },
     });
-    expect(cardSeverity(stale, noWaves)).toBe(1);
+    expect(cardSeverity(stale, noWaves)).toBe(2);
     expect(cardSeverity(stale, new Set(['unreleased'] as const))).toBe(0);
     expect(stripMark(stale, new Set(['unreleased'] as const))).toBe('stale');
     expect(stripMark(stale, new Set(['unreleased', 'stale'] as const))).toBe('quiet');
@@ -290,7 +296,7 @@ test.describe('the card cap', () => {
     });
     const root = baseFold(model, 'root');
     expect(root.cards).toHaveLength(12);
-    expect(root.cards.every((c) => c.reason === 'exception' && c.severity === 5)).toBe(true);
+    expect(root.cards.every((c) => c.reason === 'exception' && c.severity === 6)).toBe(true);
     expect(root.overCapIds).toEqual(['bad13', 'bad14', 'bad15']);
     expect(root.quietCount).toBe(13);
     for (const id of root.overCapIds) {

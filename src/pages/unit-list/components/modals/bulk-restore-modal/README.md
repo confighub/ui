@@ -14,7 +14,7 @@ The modal focuses on special revision states that are meaningful in the context 
 
 ## Restore Options
 
-All options use radio button cards with hover effects, matching the style of `RestoreChangesModal`.
+All options use radio button cards with hover effects.
 
 ### 1. **Last Applied Revision** (Default)
 **Restore String:** `LastReleasedRevisionNum`
@@ -38,7 +38,7 @@ Restore to the current head revision (latest change).
 
 ## UI Design
 
-The modal uses the same visual style as `RestoreChangesModal`:
+The modal's visual style:
 - **HoverCard** components for each option
 - Radio buttons with descriptive labels
 - Hover effects on selection cards
@@ -57,17 +57,6 @@ The restore operation is applied to all selected units individually, with each u
 - Shows errors in an ErrorList component
 - Disables actions during submission
 
-## Differences from RestoreChangesModal
-
-| Feature | BulkRestoreModal | RestoreChangesModal |
-|---------|------------------|---------------------|
-| **Target Use Case** | Any unit selection | Specific changeset context |
-| **Restore Options** | Special revisions only | ChangeSet/Tag + rebase workflows |
-| **Visual Style** | HoverCard radio buttons | HoverCard radio buttons |
-| **Complexity** | Simple (2 options) | Complex (multiple workflows) |
-| **Default** | LastReleasedRevisionNum | Simple restore before changeset |
-| **Context** | Per-unit revision states | Changeset-specific operations |
-
 ## When to Use
 
 **Use BulkRestoreModal when:**
@@ -75,9 +64,3 @@ The restore operation is applied to all selected units individually, with each u
 - Need to restore to the last published state
 - Working with units that span multiple changesets or have no changeset association
 - Want a simple, focused restore workflow
-
-**Use RestoreChangesModal when:**
-- Working within a specific changeset context
-- Need to restore to changeset start/end tags
-- Want rebase workflows (simple, rebase, selective)
-- Undoing specific changeset changes

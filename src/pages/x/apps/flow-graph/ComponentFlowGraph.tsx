@@ -125,7 +125,7 @@ interface ComponentFlowGraphProps {
   onDeploymentToggle: (deploymentId: string) => void;
   onUpgradeToggle?: (parentDeploymentId: string, childDeploymentId: string) => void;
   /** Deep-link a deployment's side pane to a tab from a status-chip peek (Stale → config, Unreleased/Gated → releases). `releaseNum`, when given (the release-stamp peek), asks the Releases tab to scroll to and highlight that specific release. */
-  onOpenTab?: (deploymentId: string, tab: 'config' | 'releases', releaseNum?: number) => void;
+  onOpenTab?: (deploymentId: string, tab: 'config' | 'releases' | 'changeset', releaseNum?: number) => void;
   /** Identity of the open node graph — replaces a single Component name so a
    * mixed-Component node graph still gets a stable `structuralKey` (any
    * unique-per-graph string works; it is never displayed). */
@@ -391,7 +391,7 @@ function ComponentFlowGraphInner({
     onDeploymentToggle,
     onDeploymentCompareToggle: undefined as ((deploymentId: string) => void) | undefined,
     onUpgradeToggle: safeOnUpgradeToggle,
-    onOpenTab: undefined as ((deploymentId: string, tab: 'config' | 'releases', releaseNum?: number) => void) | undefined,
+    onOpenTab: undefined as ((deploymentId: string, tab: 'config' | 'releases' | 'changeset', releaseNum?: number) => void) | undefined,
     onComposerOpen: undefined as ((deploymentId: string) => void) | undefined,
   });
   // Store nodes in a ref so handleNodeClick doesn't need nodes as a dependency
@@ -822,7 +822,7 @@ function ComponentFlowGraphInner({
     [],
   );
   const stableOnOpenTab = useCallback(
-    (id: string, tab: 'config' | 'releases', releaseNum?: number) => callbacksRef.current.onOpenTab?.(id, tab, releaseNum),
+    (id: string, tab: 'config' | 'releases' | 'changeset', releaseNum?: number) => callbacksRef.current.onOpenTab?.(id, tab, releaseNum),
     [],
   );
   const stableOnUpgradeToggle = useCallback(

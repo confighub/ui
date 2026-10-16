@@ -210,7 +210,7 @@ test.describe('cards, worst first, capped at 12', () => {
       'b-progressing',
       'a-unreleased',
     ]);
-    expect(root.cards.map((c) => c.severity)).toEqual([5, 4, 3, 2, 1]);
+    expect(root.cards.map((c) => c.severity)).toEqual([6, 5, 4, 3, 2]);
     expect(root.cards.every((c) => c.reason === 'exception')).toBe(true);
   });
 
@@ -354,7 +354,7 @@ test.describe('a config condition on most of a Base is one wave', () => {
     const root = fold(model, 'root');
     expect(waveKinds(root)).toEqual(['unreleased']);
     expect(root.waves[0].count).toBe(11);
-    expect(root.cards).toMatchObject([{ id: 'bad', severity: 5 }]);
+    expect(root.cards).toMatchObject([{ id: 'bad', severity: 6 }]);
     // The Unreleased-only members are covered by the wave: no card, no colour.
     expect(model.location.get('u01')?.kind).toBe('stack');
     expect(stripMark(model.conditions.get('u01')!, root.waveSet)).toBe('quiet');

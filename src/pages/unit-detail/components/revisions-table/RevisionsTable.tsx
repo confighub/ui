@@ -35,7 +35,11 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import { RemoveTagModal } from '../../../../components/remove-tag-modal/RemoveTagModal';
 import { TagRevisionModal } from '../../../../components/tag-revision-modal/TagRevisionModal';
 import { RevisionsTreeView } from '../revisions-tree-view/RevisionsTreeView';
-import { createRevisionTableColumns } from './revision-columns';
+import {
+  REVISION_COLUMN_GROUPS,
+  REVISION_COLUMN_VISIBILITY,
+  createRevisionTableColumns,
+} from './revision-columns';
 
 export interface IRevisionsTableProps extends CmpProps {
   rows: Array<RevisionRow>;
@@ -44,7 +48,6 @@ export interface IRevisionsTableProps extends CmpProps {
   onRowSelected?: (newSelection: Array<string>) => void;
   onRevisionApplied?: () => void;
   disableToolbar?: boolean;
-  changesetId?: string;
   onRefresh?: () => void;
 }
 
@@ -58,29 +61,20 @@ export const RevisionsTable = ({
   onRevisionApplied,
   upstreamUnit,
   disableToolbar = false,
-  changesetId,
   onRefresh,
 }: IRevisionsTableProps) => {
   const {
+    handleColumnResize,
     applyStoredWidths,
     columnVisibilityModel,
     onColumnVisibilityModelChange,
     sortModel,
     onSortModelChange,
+    clearStoredState,
+    hasStateChanged,
   } = useGridPersistence('revisions-table', {
     sortModel: [{ field: 'RevisionNum', sort: 'desc' }],
-    columnVisibility: {
-      RevisionNum: true,
-      tags: true,
-      markers: true,
-      source: true,
-      description: true,
-      userName: true,
-      validationErrors: true,
-      createdAt: false,
-      updatedAt: true,
-      liveAt: true,
-    } as Record<string, boolean>,
+    columnVisibility: REVISION_COLUMN_VISIBILITY,
   });
 
   const [updateUnit, { isSuccess: isUpdateSuccess, error: updateError }] =
@@ -173,7 +167,6 @@ export const RevisionsTable = ({
           ...(currentUnitExtended?.Unit || ({} as UnitRead)),
         },
         revisionId,
-        ...(changesetId ? { changesetId } : {}),
       };
 
       await updateUnit(input);
@@ -262,6 +255,13 @@ export const RevisionsTable = ({
     [currentUnitExtended],
   );
 
+  // A model stored before a column existed does not name it, and the grid shows every column a
+  // model leaves out, so the defaults fill in whatever the stored model does not say.
+  const effectiveColumnVisibilityModel = useMemo(
+    () => ({ ...REVISION_COLUMN_VISIBILITY, ...columnVisibilityModel }),
+    [columnVisibilityModel],
+  );
+
   // Apply stored widths to columns
   const columns = useMemo(
     () => applyStoredWidths(baseColumns),
@@ -289,10 +289,14 @@ export const RevisionsTable = ({
           checkboxSelection
           loading={false}
           slots={DATE_TIME_GRID_SLOTS}
-          columnVisibilityModel={columnVisibilityModel}
+          columnVisibilityModel={effectiveColumnVisibilityModel}
           onColumnVisibilityModelChange={onColumnVisibilityModelChange}
           sortModel={sortModel}
           onSortModelChange={onSortModelChange}
+          onColumnWidthChange={handleColumnResize}
+          onClearState={clearStoredState}
+          hasStateChanged={hasStateChanged}
+          columnGroups={REVISION_COLUMN_GROUPS}
           rowSelectionModel={selectedRows}
           onRowSelectionModelChange={handleRowSelection}
           customToolbarActions={disableToolbar ? undefined : customToolbarActions}

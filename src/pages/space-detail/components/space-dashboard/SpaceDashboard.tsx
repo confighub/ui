@@ -14,16 +14,21 @@ import { BorderedAccordion } from '@/components/styled';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
 import { useKeyValueHandlers } from '@/hooks/useKeyValueHandlers';
 import { usePageHeight } from '@/hooks/usePageHeight';
+import { EntityRefSelect } from '@/components/entity-ref-select/EntityRefSelect';
+import {
+  useComponentRefOptions,
+  useFilterRefOptions,
+  useTargetRefOptions,
+} from '@/components/entity-ref-select/useEntityRefOptions';
 import {
   ExtendedSpaceRead,
   SpaceRead,
-  useListSpacesQuery,
   useUpdateSpaceMutation,
 } from '@confighub/rtk-query';
 import { Direction } from '@/types/enums';
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
 import { FILTER_URL_PARAMS } from '@/utility/constants/url-params';
-import { sumMap } from '@/utility/object-functions';
+import { SPACE_SUMMARY_COUNTS, type SpaceSummaryCount } from '@/utility/space-summary-counts';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import AccordionSummary from '@mui/material/AccordionSummary';
@@ -31,8 +36,10 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
+import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import Grid from '@mui/material/Grid2';
+import Link from '@mui/material/Link';
 import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
@@ -40,7 +47,6 @@ import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
 
 import { formatRelative } from '@/utility/date-format';
-import { UNRELEASED_CHANGES_WHERE } from '@/utility/unit-release-functions';
 
 const Container = styled('div')`
   width: 100%;
@@ -111,17 +117,49 @@ const StickyTab = styled(Box)`
 const sectionOffset = 212;
 
 export interface SpaceDashboardProps {
-  space: SpaceRead;
+  /** The Space with its summary counts and the entities it references */
+  extendedSpace: ExtendedSpaceRead;
+  isLoading?: boolean;
   onSpaceUpdated: () => void;
   setServerError: (message: string) => void;
+  /** Switch to the Triggers tab, showing the Triggers applied to the Space */
+  onShowAppliedTriggers: () => void;
 }
 
 interface SpaceFormData {
   Slug: string;
+  DisplayName: string;
   Labels?: Record<string, string>;
   Annotations?: Record<string, string>;
   DeleteGates?: Record<string, string>;
+  ComponentID: string;
+  ReleaseTargetID: string;
+  WhereTrigger: string;
+  TriggerFilterID: string;
+  WhereAttribute: string;
+  AttributeFilterID: string;
 }
+
+const spaceFormValues = (space: SpaceRead | undefined): SpaceFormData => ({
+  Slug: space?.Slug || '',
+  DisplayName: space?.DisplayName || '',
+  Labels: space?.Labels || {},
+  Annotations: space?.Annotations || {},
+  DeleteGates: space?.DeleteGates
+    ? Object.fromEntries(
+        Object.entries(space.DeleteGates).map(([key, value]) => [key, String(value)]),
+      )
+    : {},
+  ComponentID: space?.ComponentID || '',
+  ReleaseTargetID: space?.ReleaseTargetID || '',
+  WhereTrigger: space?.WhereTrigger || '',
+  TriggerFilterID: space?.TriggerFilterID || '',
+  WhereAttribute: space?.WhereAttribute || '',
+  AttributeFilterID: space?.AttributeFilterID || '',
+});
+
+// How many applied Triggers the settings panel names before linking to the rest.
+const APPLIED_TRIGGER_CHIP_LIMIT = 8;
 
 const StatCard = ({
   title,
@@ -179,11 +217,14 @@ const StatCard = ({
 };
 
 export const SpaceDashboard = ({
-  space,
+  extendedSpace,
+  isLoading = false,
   onSpaceUpdated,
   setServerError,
+  onShowAppliedTriggers,
 }: SpaceDashboardProps) => {
   const navigate = useNavigate();
+  const space = extendedSpace.Space;
 
   const [selectedTab, setSelectedTab] = useState(0);
   const [isAddLabelModalOpen, setIsAddLabelModalOpen] = useState(false);
@@ -193,14 +234,12 @@ export const SpaceDashboard = ({
   const [updateSpace, { isSuccess, error }] = useUpdateSpaceMutation();
   const editorHeight = usePageHeight(sectionOffset);
 
-  // Fetch extended space data with all statistics
-  const { data: spaces = [], isLoading: isSpacesLoading } = useListSpacesQuery({
-    summary: true,
-  });
-
-  const extendedSpace = spaces.find((s) => s?.Space?.SpaceID === space?.SpaceID) as
-    | ExtendedSpaceRead
-    | undefined;
+  const { options: componentOptions, isFetching: isComponentsLoading } = useComponentRefOptions();
+  const { options: targetOptions, isFetching: isTargetsLoading } = useTargetRefOptions();
+  const { options: triggerFilterOptions, isFetching: isTriggerFiltersLoading } =
+    useFilterRefOptions('Trigger');
+  const { options: attributeFilterOptions, isFetching: isAttributeFiltersLoading } =
+    useFilterRefOptions('Attribute');
 
   const {
     control,
@@ -210,16 +249,7 @@ export const SpaceDashboard = ({
     setValue,
     reset,
   } = useForm<SpaceFormData>({
-    values: {
-      Slug: space?.Slug || '',
-      Labels: space?.Labels || {},
-      Annotations: space?.Annotations || {},
-      DeleteGates: space?.DeleteGates
-        ? Object.fromEntries(
-            Object.entries(space.DeleteGates).map(([key, value]) => [key, String(value)]),
-          )
-        : {},
-    },
+    values: spaceFormValues(space),
   });
 
   const { labelHandlers, annotationHandlers, deleteGateHandlers } = useKeyValueHandlers(
@@ -229,17 +259,7 @@ export const SpaceDashboard = ({
 
   useEffect(() => {
     if (!space?.SpaceID) return;
-
-    reset({
-      Slug: space?.Slug || '',
-      Labels: space?.Labels || {},
-      Annotations: space?.Annotations || {},
-      DeleteGates: space?.DeleteGates
-        ? Object.fromEntries(
-            Object.entries(space.DeleteGates).map(([key, value]) => [key, String(value)]),
-          )
-        : {},
-    });
+    reset(spaceFormValues(space));
   }, [space, reset]);
 
   useApiErrorMessage(error, isSuccess, setServerError);
@@ -250,6 +270,14 @@ export const SpaceDashboard = ({
       space: {
         ...space,
         Slug: data.Slug,
+        DisplayName: data.DisplayName || undefined,
+        // An empty reference or expression is cleared rather than kept
+        ComponentID: data.ComponentID || undefined,
+        ReleaseTargetID: data.ReleaseTargetID || undefined,
+        WhereTrigger: data.WhereTrigger.trim(),
+        TriggerFilterID: data.TriggerFilterID || undefined,
+        WhereAttribute: data.WhereAttribute.trim(),
+        AttributeFilterID: data.AttributeFilterID || undefined,
         Labels: data.Labels || {},
         Annotations: data.Annotations || {},
         DeleteGates: Object.fromEntries(
@@ -268,23 +296,28 @@ export const SpaceDashboard = ({
 
   const handleNavigateToUnits = (whereClause: string) => {
     const params = new URLSearchParams();
-    const spaceFilter = `SpaceID = '${space.SpaceID}'`;
+    const spaceFilter = `SpaceID = '${space?.SpaceID}'`;
     const fullWhere = whereClause ? `${spaceFilter} AND ${whereClause}` : spaceFilter;
     params.set(FILTER_URL_PARAMS.WHERE, fullWhere);
     navigate(`/units?${params.toString()}`);
   };
 
-  const handleNavigateToBridgeWorkers = () => {
-    const params = new URLSearchParams();
-    params.set(FILTER_URL_PARAMS.WHERE, `SpaceID = '${space.SpaceID}'`);
-    navigate(`/bridge-workers?${params.toString()}`);
-  };
-
   const handleNavigateToTargets = () => {
     const params = new URLSearchParams();
-    params.set(FILTER_URL_PARAMS.WHERE, `SpaceID = '${space.SpaceID}'`);
+    params.set(FILTER_URL_PARAMS.WHERE, `SpaceID = '${space?.SpaceID}'`);
     navigate(`/targets?${params.toString()}`);
   };
+
+  // A Unit count opens the Units it counts; Targets and Triggers open their lists.
+  const statClickHandler = (c: SpaceSummaryCount): (() => void) | undefined => {
+    if (c.unitWhere !== undefined) return () => handleNavigateToUnits(c.unitWhere || '');
+    if (c.field === 'TotalTargetCount') return handleNavigateToTargets;
+    if (c.field === 'TriggerCountByEventType') return onShowAppliedTriggers;
+    return undefined;
+  };
+
+  const appliedTriggers = extendedSpace.Triggers || [];
+  const appliedTriggerCount = space?.TriggerIDs?.length || 0;
 
   return (
     <Container>
@@ -314,92 +347,28 @@ export const SpaceDashboard = ({
             }}
           >
             <Stack spacing={2.5}>
-              {/* Primary Statistics Section */}
-              <Box>
-                <Stack direction='row' alignItems='center' spacing={1} mb={1.5}>
-                  <TimelineIcon />
-                  <Typography variant='h6'>Overview</Typography>
-                </Stack>
-                <Grid container spacing={1.5}>
-                  <Grid size={{ xs: 6, sm: 4 }}>
-                    <StatCard
-                      title='Total Units'
-                      value={extendedSpace?.TotalUnitCount || 0}
-                      loading={isSpacesLoading}
-                      onClick={() => handleNavigateToUnits('')}
-                    />
+              {(['Units', 'Entities'] as const).map((group) => (
+                <Box key={group}>
+                  <Stack direction='row' alignItems='center' spacing={1} mb={1.5}>
+                    {group === 'Units' && <TimelineIcon />}
+                    <Typography variant={group === 'Units' ? 'h6' : 'subtitle2'} color={group === 'Units' ? undefined : 'text.secondary'}>
+                      {group === 'Units' ? 'Units' : 'Contents'}
+                    </Typography>
+                  </Stack>
+                  <Grid container spacing={1.5}>
+                    {SPACE_SUMMARY_COUNTS.filter((c) => c.group === group).map((c) => (
+                      <Grid key={c.field} size={{ xs: 6, sm: 4, md: 3 }}>
+                        <StatCard
+                          title={c.label}
+                          value={c.getValue(extendedSpace)}
+                          loading={isLoading}
+                          onClick={statClickHandler(c)}
+                        />
+                      </Grid>
+                    ))}
                   </Grid>
-                  <Grid size={{ xs: 6, sm: 4 }}>
-                    <StatCard
-                      title='Bridge Workers'
-                      value={extendedSpace?.TotalBridgeWorkerCount || 0}
-                      loading={isSpacesLoading}
-                      onClick={handleNavigateToBridgeWorkers}
-                    />
-                  </Grid>
-                  <Grid size={{ xs: 6, sm: 4 }}>
-                    <StatCard
-                      title='Event Triggers'
-                      value={sumMap(extendedSpace?.TriggerCountByEventType) || 0}
-                      loading={isSpacesLoading}
-                    />
-                  </Grid>
-                  <Grid size={{ xs: 6, sm: 4 }}>
-                    <StatCard
-                      title='Targets'
-                      value={extendedSpace?.TotalTargetCount || 0}
-                      loading={isSpacesLoading}
-                      onClick={handleNavigateToTargets}
-                    />
-                  </Grid>
-                </Grid>
-              </Box>
-
-              {/* Status & Issues Section */}
-              <Box>
-                <Typography variant='subtitle2' color='text.secondary' mb={1.5}>
-                  Status & Issues
-                </Typography>
-                <Grid container spacing={1.5}>
-                  <Grid size={{ xs: 6, sm: 3 }}>
-                    <StatCard
-                      title='Upgradable Units'
-                      value={extendedSpace?.UpgradableUnitCount || 0}
-                      loading={isSpacesLoading}
-                      onClick={() =>
-                        handleNavigateToUnits(
-                          'UpstreamRevisionNum < UpstreamUnit.HeadRevisionNum',
-                        )
-                      }
-                    />
-                  </Grid>
-                  <Grid size={{ xs: 6, sm: 3 }}>
-                    <StatCard
-                      title='Unreleased Units'
-                      value={extendedSpace?.UnreleasedUnitCount || 0}
-                      loading={isSpacesLoading}
-                      onClick={() =>
-                        handleNavigateToUnits(UNRELEASED_CHANGES_WHERE)
-                      }
-                    />
-                  </Grid>
-                  <Grid size={{ xs: 6, sm: 3 }}>
-                    <StatCard
-                      title='Gated Units'
-                      value={extendedSpace?.GatedUnitCount || 0}
-                      loading={isSpacesLoading}
-                      onClick={() => handleNavigateToUnits('LEN(ValidationErrors) > 0')}
-                    />
-                  </Grid>
-                  <Grid size={{ xs: 6, sm: 3 }}>
-                    <StatCard
-                      title='Unlinked Units'
-                      value={extendedSpace?.UnlinkedUnitCount || 0}
-                      loading={isSpacesLoading}
-                    />
-                  </Grid>
-                </Grid>
-              </Box>
+                </Box>
+              ))}
             </Stack>
           </Main>
 
@@ -520,6 +489,229 @@ export const SpaceDashboard = ({
                       limit={2}
                     />
                   </Grid>
+
+                  <Grid size={{ xs: 12 }}>
+                    <Controller
+                      name='DisplayName'
+                      control={control}
+                      render={({ field }) => (
+                        <TextField
+                          fullWidth
+                          label='Display Name'
+                          size='small'
+                          slotProps={{ inputLabel: { shrink: true } }}
+                          {...field}
+                        />
+                      )}
+                    />
+                  </Grid>
+
+                  <Grid size={{ xs: 6 }}>
+                    <Controller
+                      name='ComponentID'
+                      control={control}
+                      render={({ field }) => (
+                        <EntityRefSelect
+                          label='Component'
+                          value={field.value}
+                          onChange={field.onChange}
+                          options={componentOptions}
+                          currentLabel={extendedSpace.Component?.Slug}
+                          loading={isComponentsLoading}
+                          helperText='The Component this Space is a Variant of'
+                          testId='space-component-select'
+                        />
+                      )}
+                    />
+                  </Grid>
+
+                  <Grid size={{ xs: 6 }}>
+                    <Controller
+                      name='ReleaseTargetID'
+                      control={control}
+                      render={({ field }) => (
+                        <EntityRefSelect
+                          label='Release Target'
+                          value={field.value}
+                          onChange={field.onChange}
+                          options={targetOptions}
+                          currentLabel={extendedSpace.ReleaseTarget?.Slug}
+                          loading={isTargetsLoading}
+                          helperText='The default Target of its Units'
+                          testId='space-release-target-select'
+                        />
+                      )}
+                    />
+                  </Grid>
+
+                  <Grid size={{ xs: 12 }}>
+                    <Divider textAlign='left' sx={{ my: 0.5 }}>
+                      <Typography variant='caption' color='text.secondary'>
+                        Triggers
+                      </Typography>
+                    </Divider>
+                    <Typography variant='body2' color='text.secondary'>
+                      The Triggers invoked on this Space&apos;s Units, from any Space. With neither a
+                      Where Trigger nor a Trigger Filter, the Triggers in this Space apply; with both,
+                      a Trigger must match both.
+                    </Typography>
+                  </Grid>
+
+                  <Grid size={{ xs: 12 }}>
+                    <Controller
+                      name='WhereTrigger'
+                      control={control}
+                      render={({ field }) => (
+                        <TextField
+                          fullWidth
+                          multiline
+                          minRows={1}
+                          label='Where Trigger'
+                          size='small'
+                          placeholder="Labels.Purpose = 'validation'"
+                          slotProps={{
+                            inputLabel: { shrink: true },
+                            htmlInput: { 'data-testid': 'space-where-trigger-input', style: { fontFamily: 'monospace' } },
+                          }}
+                          {...field}
+                        />
+                      )}
+                    />
+                  </Grid>
+
+                  <Grid size={{ xs: 12 }}>
+                    <Controller
+                      name='TriggerFilterID'
+                      control={control}
+                      render={({ field }) => (
+                        <EntityRefSelect
+                          label='Trigger Filter'
+                          value={field.value}
+                          onChange={field.onChange}
+                          options={triggerFilterOptions}
+                          currentLabel={extendedSpace.TriggerFilter?.Slug}
+                          loading={isTriggerFiltersLoading}
+                          helperText='A Trigger Filter from any Space'
+                          testId='space-trigger-filter-select'
+                        />
+                      )}
+                    />
+                  </Grid>
+
+                  <Grid size={{ xs: 12 }}>
+                    <Stack direction='row' alignItems='center' spacing={1} sx={{ mb: 0.5 }}>
+                      <Typography variant='caption' color='text.secondary'>
+                        Applied Triggers ({appliedTriggerCount})
+                      </Typography>
+                      <Link
+                        component='button'
+                        type='button'
+                        variant='caption'
+                        onClick={onShowAppliedTriggers}
+                        data-testid='space-applied-triggers-link'
+                      >
+                        Show and refresh
+                      </Link>
+                    </Stack>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                      {appliedTriggerCount === 0 && (
+                        <Typography variant='body2' color='text.secondary'>
+                          None
+                        </Typography>
+                      )}
+                      {appliedTriggers.slice(0, APPLIED_TRIGGER_CHIP_LIMIT).map((trigger) => (
+                        <Chip
+                          key={trigger.TriggerID}
+                          size='small'
+                          variant='outlined'
+                          label={trigger.Slug}
+                          title={`${trigger.FunctionName} on ${trigger.Event}`}
+                          onClick={() =>
+                            navigate(
+                              trigger.SpaceID === space?.SpaceID
+                                ? `?tab=1&edit=${trigger.TriggerID}`
+                                : `/spaces/${trigger.SpaceID}?tab=1&edit=${trigger.TriggerID}`,
+                            )
+                          }
+                        />
+                      ))}
+                      {appliedTriggerCount > APPLIED_TRIGGER_CHIP_LIMIT && (
+                        <Chip
+                          size='small'
+                          label={`+${appliedTriggerCount - APPLIED_TRIGGER_CHIP_LIMIT} more`}
+                          onClick={onShowAppliedTriggers}
+                        />
+                      )}
+                    </Box>
+                  </Grid>
+
+                  <Grid size={{ xs: 12 }}>
+                    <Divider textAlign='left' sx={{ my: 0.5 }}>
+                      <Typography variant='caption' color='text.secondary'>
+                        Attributes
+                      </Typography>
+                    </Divider>
+                    <Typography variant='body2' color='text.secondary'>
+                      The Attributes registered for this Space&apos;s Units, from any Space. With
+                      neither a Where Attribute nor an Attribute Filter, the Attributes in this Space
+                      are.
+                    </Typography>
+                  </Grid>
+
+                  <Grid size={{ xs: 12 }}>
+                    <Controller
+                      name='WhereAttribute'
+                      control={control}
+                      render={({ field }) => (
+                        <TextField
+                          fullWidth
+                          multiline
+                          minRows={1}
+                          label='Where Attribute'
+                          size='small'
+                          slotProps={{
+                            inputLabel: { shrink: true },
+                            htmlInput: { style: { fontFamily: 'monospace' } },
+                          }}
+                          {...field}
+                        />
+                      )}
+                    />
+                  </Grid>
+
+                  <Grid size={{ xs: 12 }}>
+                    <Controller
+                      name='AttributeFilterID'
+                      control={control}
+                      render={({ field }) => (
+                        <EntityRefSelect
+                          label='Attribute Filter'
+                          value={field.value}
+                          onChange={field.onChange}
+                          options={attributeFilterOptions}
+                          currentLabel={extendedSpace.AttributeFilter?.Slug}
+                          loading={isAttributeFiltersLoading}
+                          helperText='An Attribute Filter from any Space'
+                        />
+                      )}
+                    />
+                  </Grid>
+
+                  {space?.UpstreamSpaceID && (
+                    <Grid size={{ xs: 12 }}>
+                      <Typography variant='caption' color='text.secondary' sx={{ display: 'block' }}>
+                        Cloned from
+                      </Typography>
+                      <Link
+                        component='button'
+                        type='button'
+                        variant='body2'
+                        onClick={() => navigate(`/spaces/${space.UpstreamSpaceID}`)}
+                      >
+                        {space.UpstreamSpaceID}
+                      </Link>
+                    </Grid>
+                  )}
 
                   <Grid size={{ xs: 12 }}>
                     <Button variant='contained' fullWidth type='submit'>

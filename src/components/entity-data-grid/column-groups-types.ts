@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Column group configuration. Previously used by `GroupedColumnsPanel` (a
- * Premium-DataGrid sidebar). The panel was removed when the codebase migrated
- * off the Premium DataGrid, but the column-group config objects across the
- * grid pages still reference these types — kept for source compatibility.
+ * Column group configuration: how `GroupedColumnsPanel`, the panel behind
+ * `EntityDataGrid`'s Columns button, groups a grid's columns. A column no
+ * group names is not listed there.
  */
 export interface ColumnGroup {
   header: string;

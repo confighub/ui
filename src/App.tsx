@@ -14,9 +14,6 @@ const SpaceDetailPage = lazy(() => import('./pages/space-detail/SpaceDetailPage'
 const UnitListPage = lazy(() => import('./pages/unit-list/UnitListPage'));
 const UnitDetailPage = lazy(() => import('./pages/unit-detail/UnitDetailPage'));
 const FunctionListPage = lazy(() => import('./pages/function-list/FunctionListPage'));
-const BridgeWorkersListPage = lazy(
-  () => import('./pages/bridge-worker-list/BridgeWorkerListPage'),
-);
 const TargetListPage = lazy(() => import('./pages/target-list/TargetListPage'));
 const FunctionBrowserPage = lazy(() => import('./pages/function-browser/FunctionBrowserPage'));
 const ChangeReviewPage = lazy(() => import('./pages/change-review/ChangeReviewPage'));
@@ -91,14 +88,6 @@ const routes = [
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <SpacesListPage />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/bridge-workers',
-        element: (
-          <Suspense fallback={<Loader isLoading={true} />}>
-            <BridgeWorkersListPage />
           </Suspense>
         ),
       },
