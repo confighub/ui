@@ -1,7 +1,7 @@
 name: Image
 
 # Builds the UI image on each release tag and pushes it to GHCR as ghcr.io/confighub/ui,
-# tagged with the version (0.6.3), its minor line (0.6) and `latest`. Release tags arrive
+# tagged with the version (v0.6.3), its minor line (v0.6) and `latest`. Release tags arrive
 # with each ConfigHub release, together with the code they tag. The image is configured
 # at runtime (see README), so the same image works with any ConfigHub instance.
 # Pull requests (and a manual run on a branch) build it without pushing; a manual run on
@@ -83,8 +83,8 @@ jobs:
           images: ${{ env.IMAGE }}
           flavor: latest=false
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{raw}}
+            type=semver,pattern=v{{major}}.{{minor}}
             type=raw,value=latest
       - name: Join the per-arch images into one tagged manifest
         run: |
