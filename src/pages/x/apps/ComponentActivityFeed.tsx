@@ -37,7 +37,7 @@ import {
   type ActivityFeedTab,
   type FeedEntry,
 } from './activityFeedEntries';
-import { AUTOMATED_USER_ID, ROUTE_COMPONENTS } from './appTypes';
+import { ROUTE_COMPONENTS } from './appTypes';
 import { TreeDiffSection } from './TreeDiffSection';
 import { useColumnResize } from './useColumnResize';
 import { useRevisionDataMap } from '@/hooks/useUnitData';
@@ -672,7 +672,8 @@ export const ComponentActivityFeed = ({ spaces }: ComponentActivityFeedProps) =>
         const componentName = revision.SpaceID ? spaceIdToComponent.get(revision.SpaceID) : undefined;
         if (!componentName) return null;
         const timestamp = revision.CreatedAt ? new Date(revision.CreatedAt).getTime() : 0;
-        const automated = revision.UserID === AUTOMATED_USER_ID;
+        // A Revision written by no User, such as by a Trigger, has no UserID.
+        const automated = !revision.UserID;
         const unitSlug = extended.Unit?.Slug;
 
         if (automated) {

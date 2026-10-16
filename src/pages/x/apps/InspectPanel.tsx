@@ -47,8 +47,6 @@ function nameToHue(name: string): number {
   return h % 360;
 }
 
-const AUTOMATED_USER_ID = '00000000-0000-0000-0000-000000000000';
-
 // ============================================================================
 // SUB-COMPONENTS
 // ============================================================================
@@ -253,7 +251,8 @@ export const InspectPanel = memo(({
 
       if (value === lastEmittedValue) continue;
 
-      const isAutomated = rev?.UserID === AUTOMATED_USER_ID;
+      // A Revision written by no User, such as by a Trigger, has no UserID.
+      const isAutomated = rev !== undefined && !rev.UserID;
       const user = item.User;
       const authorName = isAutomated
         ? 'Automated'

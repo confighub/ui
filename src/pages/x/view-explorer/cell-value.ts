@@ -74,8 +74,8 @@ function getSpaceCellValue(es: ExtendedSpaceRead, column: string): string {
   if (!space) return '';
   // The docs/CLI dialect prefixes Space view columns with the entity name
   // ("Space.Slug", "Space.Labels.Region"); the UI dialect uses bare names.
-  // Space rows have no server-side ViewColumns fallback (ExtractViewColumns
-  // runs for unit lists only), so both dialects must resolve here: strip the
+  // Space rows have no server-side ViewColumns fallback (the Space query does
+  // not pass the view), so both dialects must resolve here: strip the
   // prefix and match on the bare name. "Space.Labels.X" is left intact for
   // the default branch, which already matches that prefix.
   if (column.startsWith('Space.') && !column.startsWith(SPACE_LABEL_PREFIX)) {
