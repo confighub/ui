@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The review requests of one gate (`ChangeOrder.ReviewRequests`): who was
- * asked, by whom and when, whether they reviewed, and — for a viewer who may
- * edit the ChangeOrder — "Request review from…" and "Withdraw".
+ * The review requests of a change (`ChangeOrder.ReviewRequests` for one gate, or
+ * `ChangeSet.ReviewRequests`): who was asked, by whom and when, whether they
+ * reviewed, and — for a viewer who may edit the entity — "Request review from…"
+ * and "Withdraw".
  *
- * A request is stored on the ChangeOrder with a merge PATCH of the whole list
- * (the data hook sends `Version`). When the server refuses that PATCH (403),
- * the hook sets `canRequestReview` to false and this section stops offering
- * the actions: a viewer is never shown a control that cannot work.
+ * A request is stored with a merge PATCH of the whole list (the caller sends
+ * `Version`). When the server refuses that PATCH (403), the caller sets
+ * `canRequest` to false and this section stops offering the actions: a viewer
+ * is never shown a control that cannot work.
  */
 
 import { useState } from 'react';
@@ -23,12 +24,14 @@ import { changeOrderInk, changeOrderType } from '../changeOrdersTokens';
 import { reviewQuietButtonSx, reviewTextButtonSx } from './reviewButtons';
 import { agoText, reviewCopy } from './reviewCopy';
 import { Monogram, ReviewTag, SectionLabel } from './reviewParts';
-import type { GateReviewSummary, ReviewPerson, ReviewRequestOutcome } from './changeOrderReviewTypes';
+import type { ReviewPerson, ReviewRequestOutcome, ReviewRequestView } from './changeOrderReviewTypes';
 
 const copy = reviewCopy.requests;
 
 interface ReviewRequestsSectionProps {
-  summary: GateReviewSummary;
+  requests: readonly Pick<ReviewRequestView, 'stage' | 'user' | 'requestedAt' | 'requestedBy' | 'reviewed'>[];
+  /** Who may be asked. The people already asked, and the viewer, are left out here. */
+  candidates: readonly ReviewPerson[];
   /** False once the server refused a request PATCH (403): no request actions. */
   canRequest: boolean;
   now: number;
@@ -40,12 +43,21 @@ interface ReviewRequestsSectionProps {
   hideLabel?: boolean;
 }
 
-export function ReviewRequestsSection({ summary, canRequest, now, onRequest, onWithdraw, onNotice, hideLabel = false }: ReviewRequestsSectionProps) {
+export function ReviewRequestsSection({
+  requests,
+  candidates,
+  canRequest,
+  now,
+  onRequest,
+  onWithdraw,
+  onNotice,
+  hideLabel = false,
+}: ReviewRequestsSectionProps) {
   const [chosen, setChosen] = useState<ReviewPerson[]>([]);
   const [busy, setBusy] = useState(false);
-  const requested = new Set(summary.requests.map((r) => r.user.userId));
-  // The who-can list, less the people already asked: the server refuses a duplicate (stage, user).
-  const options = summary.whoCanStillApprove.map((w) => w.person).filter((p) => !requested.has(p.userId) && !p.isYou);
+  const requested = new Set(requests.map((r) => r.user.userId));
+  // Less the people already asked: the server refuses a duplicate request.
+  const options = candidates.filter((p) => !requested.has(p.userId) && !p.isYou);
 
   const say = (outcome: ReviewRequestOutcome, ok: string) => {
     if (outcome.ok) onNotice(ok);
@@ -68,16 +80,16 @@ export function ReviewRequestsSection({ summary, canRequest, now, onRequest, onW
     say(outcome, copy.withdrawn(person.name));
   };
 
-  if (summary.requests.length === 0 && (!canRequest || options.length === 0)) return null;
+  if (requests.length === 0 && (!canRequest || options.length === 0)) return null;
 
   return (
     <Box data-testid="review-requests">
       {hideLabel ? null : <SectionLabel>{copy.label}</SectionLabel>}
-      {summary.requests.length === 0 ? (
+      {requests.length === 0 ? (
         <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.subtle }}>{copy.none}</Box>
       ) : (
         <Box component="ul" sx={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {summary.requests.map((r) => (
+          {requests.map((r) => (
             <Box
               component="li"
               key={`${r.stage}:${r.user.userId}`}

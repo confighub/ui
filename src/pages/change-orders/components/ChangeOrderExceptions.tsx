@@ -36,14 +36,10 @@
  * call site; a shared-token change costs a blast-radius argument every time.
  */
 
-import Box from '@mui/material/Box';
-import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
+import { KpiStrip } from './KpiStrip';
 import { CONSOLE_GROUPS, type ConsoleGroup } from '../../x/apps/change-order/changeOrdersConsoleModel';
 import { changeOrdersConsoleCopy } from '../../x/apps/change-order/changeOrdersConsoleCopy';
 import { groupCardStatus, type StateSelection } from '../../x/apps/change-order/changeOrdersConsoleStateFilter';
-
-const ARIA_PRESSED = { on: 'true', partial: 'mixed', off: 'false' } as const;
 
 export function ChangeOrderExceptions({
   counts,
@@ -83,85 +79,24 @@ export function ChangeOrderExceptions({
   /** A card whose group is only partly selected, or selected alongside other states. */
   partialCardSx: Record<string, unknown>;
 }) {
-  // Nothing in any group (still loading, an empty org, or only rows in no
-  // group) is the one case that hides the whole bar — a strip of disabled
-  // chips with nothing to report is not status-by-exception, it is noise
-  // with extra steps.
-  const nothingToCount = CONSOLE_GROUPS.every((group) => counts[group] === 0);
-  if (nothingToCount) return null;
-
   return (
-    <Stack direction='row' spacing={1} flexWrap='wrap' useFlexGap sx={{ px: 3, pb: 2 }}>
-      {CONSOLE_GROUPS.map((group) => {
-        const copy = changeOrdersConsoleCopy.groups[group];
-        const status = groupCardStatus(selection, group);
-        const isActive = status === 'on';
-        const isPartial = status === 'partial';
-        const isDisabled = counts[group] === 0 && status === 'off';
-        return (
-          <Box
-            key={group}
-            component='button'
-            type='button'
-            data-testid={`change-order-exception-${group}`}
-            aria-pressed={ARIA_PRESSED[status]}
-            aria-disabled={isDisabled}
-            disabled={isDisabled}
-            onClick={isDisabled ? undefined : () => onSelect(group)}
-            sx={{
-              all: 'unset',
-              cursor: isDisabled ? 'default' : 'pointer',
-              opacity: isDisabled ? 0.5 : 1,
-              display: 'flex',
-              alignItems: 'baseline',
-              gap: 1,
-              px: 1.5,
-              py: 1,
-              border: 1,
-              borderRadius: 1,
-              borderColor: isActive || isPartial ? 'primary.main' : 'divider',
-              borderStyle: isPartial ? 'dashed' : 'solid',
-              bgcolor: isActive ? 'action.selected' : 'background.paper',
-              '&:hover': { bgcolor: isDisabled ? 'background.paper' : 'action.hover' },
-              '&:focus-visible': { outline: 2, outlineColor: 'primary.main', outlineOffset: 2 },
-              ...cardSx,
-              ...(isActive ? activeCardSx : undefined),
-              ...(isPartial ? partialCardSx : undefined),
-            }}
-          >
-            <Typography
-              variant='h6'
-              component='span'
-              sx={{ color: isDisabled ? 'text.disabled' : tones[group], lineHeight: 1, ...numSx }}
-            >
-              {counts[group]}
-            </Typography>
-            <Stack>
-              <Typography
-                variant='body2'
-                component='span'
-                fontWeight={600}
-                color={isDisabled ? 'text.disabled' : undefined}
-                sx={labelSx}
-              >
-                {copy.label}
-              </Typography>
-              {/*
-                ⚠️ `variant='caption'` UPPERCASES: this theme's `caption`
-                role carries `textTransform: uppercase` globally
-                (`ThemeProvider.tsx:195`). Sentence case is the caller's to
-                ask for — `hintSx={{ textTransform: 'none' }}` alongside its
-                colour override — so the role keeps the theme default here
-                and the override stays visible at the call site that wants
-                it. Same shape as `ChangeOrderStageStrip.tsx:186`.
-              */}
-              <Typography variant='caption' component='span' color='text.secondary' sx={hintSx}>
-                {copy.hint}
-              </Typography>
-            </Stack>
-          </Box>
-        );
-      })}
-    </Stack>
+    <KpiStrip
+      cards={CONSOLE_GROUPS.map((group) => ({
+        key: group,
+        label: changeOrdersConsoleCopy.groups[group].label,
+        hint: changeOrdersConsoleCopy.groups[group].hint,
+        count: counts[group],
+        status: groupCardStatus(selection, group),
+        tone: tones[group],
+      }))}
+      onSelect={(key) => onSelect(key as ConsoleGroup)}
+      testIdPrefix="change-order-exception"
+      numSx={numSx}
+      labelSx={labelSx}
+      hintSx={hintSx}
+      cardSx={cardSx}
+      activeCardSx={activeCardSx}
+      partialCardSx={partialCardSx}
+    />
   );
 }

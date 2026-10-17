@@ -2,13 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The image change at the top of a ChangeOrder's detail page, and the "Full
- * diff" disclosure that holds the source diff beneath it.
+ * The image change at the top of a ChangeOrder's or ChangeSet's page, and the
+ * "Full diff" disclosure that holds the diff beneath it.
  *
- * Most ChangeOrders only move a container image to a new image tag. The hero
- * says that change in full (which image, from which image tag to which, how
- * big a bump, in how many Units), so the source diff below can stay shut when
- * it would only repeat it.
+ * Most changes only move a container image to a new image tag. The hero says
+ * that change in full (which image, from which image tag to which, in how many
+ * Units), so the diff below can stay shut when it would only repeat it.
  */
 
 import type { ReactNode } from 'react';
@@ -16,9 +15,9 @@ import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
-import { kindsOf } from '../imageChangeCopy';
-import { shortDigest, versionPathOf, type ChangeOrderImageChanges, type ImageChange } from '../imageChange';
-import { BumpPill, ImageMark, ImageTag, RolePill, TagArrow } from './ImageChangeAtoms';
+import { CHANGE_ORDER_IMAGE_SUBJECT, kindsOf, unitsInText, type ImageChangeSubject } from '../imageChangeCopy';
+import { shortDigest, versionPathOf, type ImageChanges, type ImageChange } from '../imageChange';
+import { ImageMark, ImageTag, RolePill, TagArrow } from './ImageChangeAtoms';
 import { BUMP_TONE } from '../imageChangeTone';
 import {
   changeOrderBorder,
@@ -30,8 +29,6 @@ import {
   changeOrderSurface,
   changeOrderType,
 } from '../changeOrdersTokens';
-
-const FULL_DIFF_BODY_ID = 'change-order-full-diff';
 
 /**
  * `Deployment/payments-api`, `payments-api` when only the name is known, or null
@@ -137,13 +134,22 @@ function TagPane({ image, side }: { image: ImageChange; side: 'from' | 'to' }) {
   );
 }
 
-function HeroRow({ image, stageNames, first }: { image: ImageChange; stageNames: readonly string[]; first: boolean }) {
+function HeroRow({
+  image,
+  stageNames,
+  first,
+  subject,
+}: {
+  image: ImageChange;
+  stageNames: readonly string[];
+  first: boolean;
+  subject: ImageChangeSubject;
+}) {
   const workload = workloadLabel(image);
   const isVersion = image.kind === 'version';
-  const unitsAtSource = `In ${image.unitCount} ${image.unitCount === 1 ? 'Unit' : 'Units'} at the source`;
   return (
     <Box
-      data-testid="change-order-image-hero-row"
+      data-testid={`${subject.idPrefix}-image-hero-row`}
       data-change-kind={image.kind}
       data-image-key={image.key}
       sx={{
@@ -175,7 +181,7 @@ function HeroRow({ image, stageNames, first }: { image: ImageChange; stageNames:
                 {versionPathOf(image)}
               </Box>
               <Box sx={{ fontSize: changeOrderType.size.body, lineHeight: changeOrderType.lineHeight.body, color: changeOrderInk.muted, marginTop: '6px' }}>
-                {unitsAtSource}
+                {unitsInText(image.unitCount, subject)}
                 {workload !== null ? (
                   <>
                     {' '}· in <Code>{workload}</Code>
@@ -253,10 +259,9 @@ function HeroRow({ image, stageNames, first }: { image: ImageChange; stageNames:
       </Box>
 
       <Box sx={{ display: 'grid', gap: '6px', justifyItems: 'start' }}>
-        <BumpPill bump={image.bump} suffix="bump" size="md" />
         {/*
-          The count is of Units in the ChangeOrder's own Space, where the change
-          was made. It is not a count of Units in the stages, so the stages are a
+          The count is of Units where the change was made: for a ChangeOrder, its
+          own Space. It is not a count of Units in the stages, so the stages are a
           separate line that says only the order the change promotes through.
         */}
         {isVersion ? null : (
@@ -264,8 +269,8 @@ function HeroRow({ image, stageNames, first }: { image: ImageChange; stageNames:
             In{' '}
             <Box component="b" sx={{ color: changeOrderInk.default, fontWeight: changeOrderType.weight.semibold }}>
               {image.unitCount} {image.unitCount === 1 ? 'Unit' : 'Units'}
-            </Box>{' '}
-            at the source
+            </Box>
+            {subject.unitsWhere === '' ? null : ` ${subject.unitsWhere}`}
           </Box>
         )}
         {stageNames.length > 0 ? (
@@ -306,10 +311,12 @@ function ImageChangeHero({
   images,
   fieldChangeCount,
   stageNames,
+  subject,
 }: {
   images: readonly ImageChange[];
   fieldChangeCount: number;
   stageNames: readonly string[];
+  subject: ImageChangeSubject;
 }) {
   const n = images.length;
   const kinds = kindsOf(images);
@@ -317,7 +324,7 @@ function ImageChangeHero({
     kinds === 'both' ? 'Image and version changes' : kinds === 'versions' ? (n === 1 ? 'Version change' : 'Version changes') : n === 1 ? 'Image change' : 'Image changes';
   const count = kinds === 'both' ? `${n} changes` : kinds === 'versions' ? `${n} version changes` : `${n} image changes`;
   return (
-    <Panel testId="change-order-image-hero">
+    <Panel testId={`${subject.idPrefix}-image-hero`}>
       <Box
         sx={{
           display: 'flex',
@@ -344,7 +351,7 @@ function ImageChangeHero({
         </Box>
       </Box>
       {images.map((image, i) => (
-        <HeroRow key={image.key} image={image} stageNames={stageNames} first={i === 0} />
+        <HeroRow key={image.key} image={image} stageNames={stageNames} first={i === 0} subject={subject} />
       ))}
     </Panel>
   );
@@ -385,26 +392,36 @@ function QuietNote({ testId, children }: { testId: string; children: ReactNode }
 export function ImageChangeSummary({
   changes,
   stageNames,
+  subject = CHANGE_ORDER_IMAGE_SUBJECT,
 }: {
-  changes: ChangeOrderImageChanges;
+  changes: ImageChanges;
+  /** The stages the change promotes through, in order; none for a change that is not promoted. */
   stageNames: readonly string[];
+  subject?: ImageChangeSubject;
 }) {
   switch (changes.status) {
     case 'some':
-      return <ImageChangeHero images={changes.images} fieldChangeCount={changes.fieldChanges.count} stageNames={stageNames} />;
+      return (
+        <ImageChangeHero
+          images={changes.images}
+          fieldChangeCount={changes.fieldChanges.count}
+          stageNames={stageNames}
+          subject={subject}
+        />
+      );
     case 'none':
       return (
-        <QuietNote testId="change-order-no-image-change">
+        <QuietNote testId={`${subject.idPrefix}-no-image-change`}>
           <Box component="b" sx={{ color: changeOrderInk.default, fontWeight: changeOrderType.weight.semibold }}>
             No image change.
           </Box>
-          {changes.fieldChanges.count > 0 ? ' This ChangeOrder changes configuration fields only.' : null}
+          {changes.fieldChanges.count > 0 ? ` This ${subject.noun} changes configuration fields only.` : null}
         </QuietNote>
       );
     case 'unavailable':
       return (
-        <QuietNote testId="change-order-image-changes-unavailable">
-          The image changes could not be read. The full diff below shows everything this ChangeOrder changes.
+        <QuietNote testId={`${subject.idPrefix}-image-changes-unavailable`}>
+          The image changes could not be read. The full diff below shows everything this {subject.noun} changes.
         </QuietNote>
       );
     default:
@@ -413,8 +430,8 @@ export function ImageChangeSummary({
 }
 
 /**
- * "Full diff · N changes in M Units", around the existing "At the source"
- * sections. The body is a render function so a shut disclosure mounts no tree.
+ * "Full diff · N changes in M Units", around the per-Unit diffs. The body is a
+ * render function so a shut disclosure mounts no tree.
  */
 export function FullDiffDisclosure({
   changeCount,
@@ -424,6 +441,7 @@ export function FullDiffDisclosure({
   expanded,
   onToggle,
   renderBody,
+  idPrefix = CHANGE_ORDER_IMAGE_SUBJECT.idPrefix,
 }: {
   changeCount: number;
   unitCount: number;
@@ -434,11 +452,14 @@ export function FullDiffDisclosure({
   expanded: boolean;
   onToggle: () => void;
   renderBody: () => ReactNode;
+  /** `ImageChangeSubject.idPrefix` of the summary above it. */
+  idPrefix?: string;
 }) {
+  const bodyId = `${idPrefix}-full-diff`;
   const count = `${changeCount} ${changeCount === 1 ? 'change' : 'changes'} in ${unitCount} ${unitCount === 1 ? 'Unit' : 'Units'}`;
   return (
     <Box
-      data-testid="change-order-full-diff"
+      data-testid={`${idPrefix}-full-diff`}
       data-expanded={expanded}
       sx={{
         background: changeOrderSurface.card,
@@ -453,7 +474,7 @@ export function FullDiffDisclosure({
         component="button"
         type="button"
         aria-expanded={expanded}
-        aria-controls={FULL_DIFF_BODY_ID}
+        aria-controls={bodyId}
         onClick={onToggle}
         sx={{
           all: 'unset',
@@ -498,7 +519,7 @@ export function FullDiffDisclosure({
         </Box>
       </Box>
       {expanded ? (
-        <Box id={FULL_DIFF_BODY_ID} sx={{ padding: '0 16px 12px' }}>
+        <Box id={bodyId} sx={{ padding: '0 16px 12px' }}>
           {renderBody()}
         </Box>
       ) : null}

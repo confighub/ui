@@ -737,7 +737,8 @@ export function ReviewPanel({
         <Box data-rv-wide sx={sectionSx}>
           <CollapsibleSection section="requests" label={reviewCopy.requests.label} summary={reviewCopy.panel.requestsSummary(summary.requests.length)}>
             <ReviewRequestsSection
-              summary={summary}
+              requests={summary.requests}
+              candidates={summary.whoCanStillApprove.map((w) => w.person)}
               canRequest={reviews.canRequestReview}
               now={now}
               onRequest={reviews.requestReview}

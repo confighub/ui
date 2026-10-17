@@ -208,7 +208,6 @@ function StageDetail({
 function FinalDetail({ api }: { api: LoadedBuilderApi }) {
   const wf = api.workflow;
   const last = wf.stages[wf.stages.length - 1];
-  if (!last) return null;
 
   return (
     <div className='detail' id='det'>
@@ -222,16 +221,33 @@ function FinalDetail({ api }: { api: LoadedBuilderApi }) {
       </div>
 
       <div className='detbody'>
-        <div className='sec'>
-          <p className='prose'>
-            {`Nothing is promoted into ${COMPLETE_LABEL}. A Stage\u2019s prerequisites gate entry to the Stage after it, so the last Stage gates nothing: there is no hop left. These checks are what say the change has landed everywhere it was going, and a ChangeOrder reads as completed when they hold.`}
-          </p>
-          <p className='prose' style={{ marginTop: 8 }}>
-            {'It covers the same variants as '}
-            <Mono>{last.name}</Mono>
-            {', the last Stage, because that is what it is checked over. It selects none of its own.'}
-          </p>
-        </div>
+        {last ? (
+          <div className='sec'>
+            <p className='prose'>
+              {`Nothing is promoted into ${COMPLETE_LABEL}. A Stage\u2019s prerequisites gate entry to the Stage after it, so the last Stage gates nothing: there is no hop left. These checks are what say the change has landed everywhere it was going, and a ChangeOrder reads as completed when they hold.`}
+            </p>
+            <p className='prose' style={{ marginTop: 8 }}>
+              {'It covers the same variants as '}
+              <Mono>{last.name}</Mono>
+              {', the last Stage, because that is what it is checked over. It selects none of its own.'}
+            </p>
+          </div>
+        ) : (
+          <div className='sec'>
+            <p className='prose'>
+              {`With no Stages, ${COMPLETE_LABEL} gates closing a ChangeSet. When the ChangeSet\u2019s Units are taken out of it, every prerequisite here is checked in every Space it was opened in, against the latest Revision it made of each Unit, and the close is refused unless they all hold or it is forced with a reason.`}
+            </p>
+            <p className='prose' style={{ marginTop: 8 }}>
+              {'It can name '}
+              <Mono>Validated</Mono>
+              {', custom prerequisites and attestation prerequisites, but not '}
+              <Mono>Released</Mono>
+              {' or '}
+              <Mono>Healthy</Mono>
+              {': a ChangeSet\u2019s change is released by a ChangeOrder after it closes.'}
+            </p>
+          </div>
+        )}
         <div className='sec'>
           <p className='fhelp' style={{ marginTop: 0 }}>
             {'In the stored definition this is '}
@@ -259,7 +275,20 @@ function NoSelection({
   componentPrompt: React.ReactNode;
   componentField: React.ReactNode;
 }) {
-  if (!wf.stages.length) return null;
+  if (!wf.stages.length) {
+    // A workflow with no Stages governs ChangeSets: nothing selects variants, so there is
+    // no coverage to read, only what closing one waits on.
+    return (
+      <div className='detail' id='det'>
+        <div className='detempty'>
+          <h3>Nothing selected</h3>
+          <p className='lede'>
+            {`Open ${COMPLETE_LABEL} to choose what closing a ChangeSet waits on. The prerequisites it can name are declared in the column beside this one.`}
+          </p>
+        </div>
+      </div>
+    );
+  }
   const c = coverage(wf, preview.resolutions, preview.inventory);
 
   return (

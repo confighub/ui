@@ -92,7 +92,7 @@ export function buildChangeOrderSequence(
     }
     realStages.push({
       id: stageDef.Name,
-      previousStageId: i === 0 ? null : workflow.Stages[i - 1].Name,
+      previousStageId: i === 0 ? null : stageDefs[i - 1].Name,
       spaceIds,
       index: i + 1,
       isSource: false,

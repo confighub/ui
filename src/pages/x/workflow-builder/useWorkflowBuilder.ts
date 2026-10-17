@@ -16,10 +16,23 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { customById, problemCount, problems, stageById, stageIndex, usedBy } from './model';
+import {
+  attestationById,
+  customById,
+  problemCount,
+  problems,
+  releasedBy,
+  renameGate,
+  stageById,
+  stageIndex,
+  usedBy,
+} from './model';
 import { describeMove } from './reorder';
 import { IMPLICIT_GATE } from './vocabulary';
-import type { ReorderNote, Selection, Stage, Workflow } from './types';
+import type { AttestationPrerequisite, ReorderNote, Selection, Stage, Workflow } from './types';
+
+/** The fields of an attestation prerequisite an editor sets one at a time. */
+export type AttestationField = Omit<AttestationPrerequisite, 'id' | 'Name'>;
 
 export type Screen = 'builder' | 'console';
 
@@ -58,8 +71,10 @@ interface BuilderState {
   selection: Selection;
   /**
    * The column's own selection, separate from the rail's: a Stage can be open on
-   * the left while a custom prerequisite is open on the right, which is the whole
-   * reason for putting them side by side.
+   * the left while a declaration is open on the right, which is the whole reason
+   * for putting them side by side. It holds the id of whichever declaration is
+   * open, a custom prerequisite's or an attestation one's; the ids are minted per
+   * kind, so one id never names both.
    */
   cpSel: string | null;
   reorder: ReorderNote | null;
@@ -98,6 +113,7 @@ export interface BuilderApi extends BuilderState {
   selectStage: (id: string) => void;
   selectFinal: () => void;
   clearSelection: () => void;
+  /** Open a declaration in the column, custom or attestation, and scroll to it. */
   selectCustom: (id: string) => void;
   /** The column's own toggle: an empty id closes whatever is open. */
   toggleCustom: (id: string) => void;
@@ -153,6 +169,15 @@ export interface BuilderApi extends BuilderState {
   setCustomExpression: (id: string, value: string) => void;
   setCustomDescription: (id: string, value: string) => void;
   fixPrefix: (id: string) => void;
+  addAttestation: () => void;
+  removeAttestation: (id: string) => void;
+  setAttestationName: (id: string, value: string) => void;
+  /** Set one field of an attestation prerequisite. The Name has its own setter, since a rename has to be followed. */
+  setAttestationField: <K extends keyof AttestationField>(
+    id: string,
+    field: K,
+    value: AttestationField[K],
+  ) => void;
   setWorkflowName: (value: string) => void;
   setWorkflowSlug: (value: string) => void;
   save: () => void;
@@ -160,7 +185,7 @@ export interface BuilderApi extends BuilderState {
   /** Set on the render after a Stage is opened, so the detail can be scrolled to once. */
   revealNonce: number;
   customRevealNonce: number;
-  /** Set when a newly declared prerequisite's name field should take focus. */
+  /** Set when a newly declared prerequisite's name field, custom or attestation, should take focus. */
   focusCustomId: string | null;
   clearFocusCustom: () => void;
 }
@@ -489,15 +514,7 @@ export function useWorkflowBuilder(
       edit((wf) => {
         const c = customById(wf, id);
         if (!c) return {};
-        /* Declared once, named wherever it applies: a rename has to follow the
-           name into every array that carries it, or the workflow stops saving. */
-        const old = c.name;
-        wf.stages.forEach((st) => {
-          const i = st.prereqs.indexOf(old);
-          if (i !== -1) st.prereqs[i] = value;
-        });
-        const fi = wf.final.prereqs.indexOf(old);
-        if (fi !== -1) wf.final.prereqs[fi] = value;
+        renameGate(wf, c.name, value);
         c.name = value;
       });
     },
@@ -529,6 +546,72 @@ export function useWorkflowBuilder(
       edit((wf) => {
         const c = customById(wf, id);
         if (c) c.expression = `cel:${c.expression.trim()}`;
+      });
+    },
+    [edit],
+  );
+
+  const addAttestation = useCallback(() => {
+    const created = nextId('a');
+    edit((wf) => {
+      let name = 'approved';
+      let k = 1;
+      const taken = (n: string) =>
+        wf.attestations.some((x) => x.Name === n) || wf.custom.some((x) => x.name === n);
+      while (taken(name)) {
+        k += 1;
+        name = `approved-${k}`;
+      }
+      /* Only the Name: every other field left out is the server's default -- one
+         Approval, from anyone who may attest in the Space, not from an author. */
+      wf.attestations.push({ id: created, Name: name });
+      return { cpSel: created };
+    });
+    setFocusCustomId(created);
+  }, [edit, nextId]);
+
+  const removeAttestation = useCallback(
+    (id: string) => {
+      if (!s.workflow) return;
+      const a = attestationById(s.workflow, id);
+      if (!a) return;
+      const used = [...usedBy(s.workflow, a.Name), ...releasedBy(s.workflow, a.Name).map((n) => `Releases in ${n}`)];
+      if (
+        used.length &&
+        !window.confirm(
+          `Delete ${a.Name}? It is named by ${used.join(', ')}. Those names will be left declared by nothing until you clear them.`,
+        )
+      ) {
+        return;
+      }
+      edit((wf, prev) => {
+        wf.attestations = wf.attestations.filter((x) => x.id !== id);
+        return prev.cpSel === id ? { cpSel: null } : {};
+      });
+    },
+    [edit, s.workflow],
+  );
+
+  const setAttestationName = useCallback(
+    (id: string, value: string) => {
+      edit((wf) => {
+        const a = attestationById(wf, id);
+        if (!a) return {};
+        renameGate(wf, a.Name, value);
+        a.Name = value;
+      });
+    },
+    [edit],
+  );
+
+  const setAttestationField = useCallback(
+    <K extends keyof AttestationField>(id: string, field: K, value: AttestationField[K]) => {
+      edit((wf) => {
+        const a = attestationById(wf, id);
+        /* `AttestationField` is the same object minus two keys, so a key of it is a key
+           of the full shape with the same value type; TypeScript cannot see through the
+           indexed access to say so. */
+        if (a) (a as AttestationField)[field] = value;
       });
     },
     [edit],
@@ -572,6 +655,7 @@ export function useWorkflowBuilder(
       if (!first) return prev;
       if (first.kind === 'stage') return { ...prev, selection: { kind: 'stage', id: first.id } };
       if (first.kind === 'final') return { ...prev, selection: { kind: 'final' } };
+      /* A custom or an attestation prerequisite: both open in the column. */
       return { ...prev, cpSel: first.id };
     });
     setRevealNonce((n) => n + 1);
@@ -613,6 +697,10 @@ export function useWorkflowBuilder(
       setCustomExpression,
       setCustomDescription,
       fixPrefix,
+      addAttestation,
+      removeAttestation,
+      setAttestationName,
+      setAttestationField,
       setWorkflowName,
       setWorkflowSlug,
       save,
@@ -653,6 +741,10 @@ export function useWorkflowBuilder(
       setCustomExpression,
       setCustomDescription,
       fixPrefix,
+      addAttestation,
+      removeAttestation,
+      setAttestationName,
+      setAttestationField,
       setWorkflowName,
       setWorkflowSlug,
       save,

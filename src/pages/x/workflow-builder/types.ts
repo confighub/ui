@@ -43,6 +43,16 @@ export interface CustomPrerequisite {
   description: string;
 }
 
+/**
+ * An attestation requirement: who must have recorded what on each Revision a gate is
+ * evaluated over. The fields are `ChangeWorkflowAttestationPrerequisite`'s, with the same
+ * client-side `id` a custom prerequisite has, and for the same reason: the Name is edited,
+ * so it cannot also be the key.
+ */
+export interface AttestationPrerequisite extends ChangeWorkflowAttestationPrerequisite {
+  id: string;
+}
+
 /** The terminal node. Stored as `Final`; called Complete in the interface. */
 export interface FinalStage {
   prereqs: string[];
@@ -71,12 +81,8 @@ export interface Workflow {
   stages: Stage[];
   final: FinalStage;
   custom: CustomPrerequisite[];
-  /**
-   * `AttestationPrerequisites`, carried as read. The builder gates on them by name but does
-   * not edit their fields, so they go back to the server exactly as they came: a save that
-   * dropped them would remove the approvals a workflow requires.
-   */
-  attestations: ChangeWorkflowAttestationPrerequisite[];
+  /** `AttestationPrerequisites`. Declared here, named by Stages, their Releases and Complete. */
+  attestations: AttestationPrerequisite[];
 }
 
 /** A Space in the mock inventory. A Space belongs to exactly one component. */
@@ -96,6 +102,7 @@ export type ProblemTarget =
   | { kind: 'stage'; id: string }
   | { kind: 'final' }
   | { kind: 'custom'; id: string }
+  | { kind: 'attestation'; id: string }
   | null;
 
 export interface Problem {

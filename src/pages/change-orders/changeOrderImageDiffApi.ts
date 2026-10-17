@@ -40,46 +40,39 @@ export interface FanOutSourceDiffArgs {
 /** ChangeSetID is what `include` expands, so it has to be selected for the ChangeSet to come back. */
 const CHANGE_SET_REVISION_SELECT = 'RevisionID,UnitID,SpaceID,RevisionNum,CreatedAt,ChangeSetID';
 
+/** A ChangeOrder's change in the Units `where` selects: from the Revision before it to its own. */
+function changeOrderDiffQuery(where: string, changeOrderId: string) {
+  return {
+    url: '/unit_diff',
+    params: {
+      where,
+      from: `Before:ChangeOrder:${changeOrderId}`,
+      to: `ChangeOrder:${changeOrderId}`,
+      // The unchanged siblings of each changed container: where `restartPolicy: Always`
+      // marks an init container as a native sidecar.
+      include: 'Context',
+    },
+  };
+}
+
+function unitIdsWhere(unitIds: readonly string[]): string {
+  return `UnitID IN (${unitIds.map((id) => `'${id}'`).join(', ')})`;
+}
+
 const changeOrderImageDiffApi = confighubApi.injectEndpoints({
   endpoints: (build) => ({
     getChangeOrderSourceDiff: build.query<SearchUnitDiffApiResponse, ChangeOrderImageDiffArgs>({
-      query: ({ baseSpaceId, changeOrderId }) => ({
-        url: '/unit_diff',
-        params: {
-          where: `SpaceID = '${baseSpaceId}'`,
-          from: `Before:ChangeOrder:${changeOrderId}`,
-          to: `ChangeOrder:${changeOrderId}`,
-          // The unchanged siblings of each changed container: where `restartPolicy: Always`
-          // marks an init container as a native sidecar.
-          include: 'Context',
-        },
-      }),
+      query: ({ baseSpaceId, changeOrderId }) => changeOrderDiffQuery(`SpaceID = '${baseSpaceId}'`, changeOrderId),
     }),
     // A fan-out ChangeOrder's change is made in source Units outside its own Space, where the read above
     // sees nothing. The same diff, over the Units its Tags mark.
     getFanOutSourceDiff: build.query<SearchUnitDiffApiResponse, FanOutSourceDiffArgs>({
-      query: ({ changeOrderId, unitIds }) => ({
-        url: '/unit_diff',
-        params: {
-          where: `UnitID IN (${unitIds.map((id) => `'${id}'`).join(', ')})`,
-          from: `Before:ChangeOrder:${changeOrderId}`,
-          to: `ChangeOrder:${changeOrderId}`,
-          include: 'Context',
-        },
-      }),
+      query: ({ changeOrderId, unitIds }) => changeOrderDiffQuery(unitIdsWhere(unitIds), changeOrderId),
     }),
     // What the ChangeOrder wrote into each of these Units: a promotion puts the start Tag on the Unit's head
     // before it writes and the end Tag on what it writes, so the two name its change in every Unit it reached.
     getChangeOrderUnitDiff: build.query<SearchUnitDiffApiResponse, ChangeOrderUnitDiffArgs>({
-      query: ({ changeOrderId, unitIds }) => ({
-        url: '/unit_diff',
-        params: {
-          where: `UnitID IN (${unitIds.map((id) => `'${id}'`).join(', ')})`,
-          from: `Before:ChangeOrder:${changeOrderId}`,
-          to: `ChangeOrder:${changeOrderId}`,
-          include: 'Context',
-        },
-      }),
+      query: ({ changeOrderId, unitIds }) => changeOrderDiffQuery(unitIdsWhere(unitIds), changeOrderId),
     }),
     // The two reads that find the source Units and the paths the Links carry, as `useFanOutSource` makes them, but
     // untagged: a Revision or a Link written elsewhere must not refetch what a ChangeOrder's list row shows.

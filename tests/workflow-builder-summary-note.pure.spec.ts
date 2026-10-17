@@ -49,8 +49,11 @@ function workflow(stages: Stage[] = []): UnresolvedWorkflow {
 
 /* The blank draft the page opens with: no slug, no Space, no Stages. */
 const BLANK = workflow();
-/* Enough to save: one named Stage, so `definitionFaults` reports nothing. */
+/* A rollout with one named Stage, about which `definitionFaults` reports nothing. */
 const ONE_STAGE = workflow([stage('canary')]);
+/* A Stage with no name, which `definitionFaults` reports as a problem. No Stages at all is
+   not one: such a workflow governs ChangeSets. */
+const UNNAMED_STAGE = workflow([stage('')]);
 
 test.describe('summaryNote, never-saved draft', () => {
   test('an untouched draft is told what a Space is, not what it has failed', () => {
@@ -59,9 +62,8 @@ test.describe('summaryNote, never-saved draft', () => {
     expect(note.text).toBe(DRAFT_SPACE_NOTE);
     // Plain, not `wait` or `bad`: nothing is wrong yet, so nothing is warned.
     expect(note.tone).toBe('');
-    // The regression this guards: `definitionFaults` genuinely reports the
-    // empty Stage list as a problem, and an earlier ladder let that reach the
-    // reader before they had touched anything.
+    // The regression this guards: an earlier ladder let what `definitionFaults`
+    // reports reach the reader before they had touched anything.
     expect(note.text).not.toContain('problem');
   });
 
@@ -91,11 +93,11 @@ test.describe('summaryNote, never-saved draft', () => {
     expect(note.tone).toBe('wait');
   });
 
-  test('an edited draft still short of a Stage reports the real fault', () => {
+  test('an edited draft with a fault reports the real fault', () => {
     // Once a Space is chosen and the reader has acted, the fault count is
     // theirs to see -- the suppression above is about timing, not about
     // hiding faults on a draft for good.
-    const note = summaryNote(BLANK, true, true, true);
+    const note = summaryNote(UNNAMED_STAGE, true, true, true);
 
     expect(note.tone).toBe('bad');
     expect(note.text).toBe('1 problem to fix before this can be saved.');
@@ -111,7 +113,7 @@ test.describe('summaryNote, saved workflow', () => {
       expect(summaryNote(ONE_STAGE, true, false, spaceChosen).text).toBe(
         'Unsaved changes. Saving writes a revision.',
       );
-      expect(summaryNote(BLANK, false, false, spaceChosen).tone).toBe('bad');
+      expect(summaryNote(UNNAMED_STAGE, false, false, spaceChosen).tone).toBe('bad');
     }
   });
 
@@ -126,15 +128,17 @@ test.describe('summaryNote, saved workflow', () => {
 test.describe('the chip and the note agree', () => {
   /* Every combination the saved card can be in. The chip and the note are
      derived separately; this is what stops them drifting apart. */
-  const cases: Array<{ wf: UnresolvedWorkflow; dirty: boolean }> = [
-    { wf: BLANK, dirty: false },
-    { wf: BLANK, dirty: true },
-    { wf: ONE_STAGE, dirty: false },
-    { wf: ONE_STAGE, dirty: true },
+  const cases: Array<{ name: string; wf: UnresolvedWorkflow; dirty: boolean }> = [
+    { name: 'no stages', wf: BLANK, dirty: false },
+    { name: 'no stages', wf: BLANK, dirty: true },
+    { name: 'one stage', wf: ONE_STAGE, dirty: false },
+    { name: 'one stage', wf: ONE_STAGE, dirty: true },
+    { name: 'unnamed stage', wf: UNNAMED_STAGE, dirty: false },
+    { name: 'unnamed stage', wf: UNNAMED_STAGE, dirty: true },
   ];
 
-  for (const { wf, dirty } of cases) {
-    test(`stages=${wf.stages.length} dirty=${dirty}`, () => {
+  for (const { name, wf, dirty } of cases) {
+    test(`${name} dirty=${dirty}`, () => {
       const chip = definitionState(wf, dirty);
       const note = summaryNote(wf, dirty, false, false);
 

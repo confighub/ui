@@ -21,6 +21,7 @@ const AppsComponentPage = lazy(() => import('./pages/x/apps/AppsComponentPage'))
 const ChangeOrdersPage = lazy(() => import('./pages/change-orders/ChangeOrdersPage'));
 const ReleasesPage = lazy(() => import('./pages/releases/ReleasesPage'));
 const ChangeOrdersOldRouteRedirect = lazy(() => import('./pages/change-orders/OldRouteRedirect'));
+const ChangeSetsPage = lazy(() => import('./pages/change-sets/ChangeSetsPage'));
 const ViewExplorerPage = lazy(() => import('./pages/x/view-explorer/ViewExplorerPage'));
 const ResourceExplorerPage = lazy(
   () => import('./pages/x/resource-explorer/ResourceExplorerPage'),
@@ -152,6 +153,15 @@ const routes = [
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <ChangeOrdersPage />
+          </Suspense>
+        ),
+      },
+      {
+        // A sibling of /change-orders rather than nested in it: its optional :space would take the segment.
+        path: '/change-sets/:space?/:slug?',
+        element: (
+          <Suspense fallback={<Loader isLoading={true} />}>
+            <ChangeSetsPage />
           </Suspense>
         ),
       },

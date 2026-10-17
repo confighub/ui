@@ -8,6 +8,29 @@
 
 import type { ImageChange } from './imageChange';
 
+/** What a set of image changes belongs to, as the hero and the full diff name it. */
+export interface ImageChangeSubject {
+  /** The entity whose change it is, in a sentence: "This ChangeOrder changes...". */
+  noun: string;
+  /** Where the Units a row counts are, after "In N Units": `at the source`, or empty. */
+  unitsWhere: string;
+  /** Prefix of the test ids and element ids, so the elements of two subjects never share one. */
+  idPrefix: string;
+}
+
+/** A ChangeOrder's change, counted in the Units at its source. */
+export const CHANGE_ORDER_IMAGE_SUBJECT: ImageChangeSubject = {
+  noun: 'ChangeOrder',
+  unitsWhere: 'at the source',
+  idPrefix: 'change-order',
+};
+
+/** `In 3 Units at the source`, or `In 3 Units`. */
+export function unitsInText(unitCount: number, subject: ImageChangeSubject): string {
+  const units = `${unitCount} ${unitCount === 1 ? 'Unit' : 'Units'}`;
+  return subject.unitsWhere === '' ? `In ${units}` : `In ${units} ${subject.unitsWhere}`;
+}
+
 /** Which kinds of change a set holds: images, version fields, or both. */
 export function kindsOf(images: readonly ImageChange[]): 'images' | 'versions' | 'both' {
   const versions = images.filter((image) => image.kind === 'version').length;

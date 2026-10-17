@@ -11,9 +11,16 @@
  * wrong.
  */
 
-import { BUILTIN_NAMES, COMPLETE_LABEL, IMPLICIT_GATE } from './vocabulary';
+import { BUILTIN_NAMES, CHANGESET_REFUSED_BUILTINS, COMPLETE_LABEL, IMPLICIT_GATE } from './vocabulary';
 import type { ChangeWorkflowAttestationPrerequisite } from '@confighub/rtk-query';
 
+import {
+  MAX_ATTESTATION_COUNT,
+  MAX_ATTESTATION_PREREQUISITES,
+  MAX_ATTESTATION_TYPE_LENGTH,
+  MAX_ATTESTATION_USERS,
+  MAX_DESCRIPTION_LENGTH,
+} from './api/limits';
 import type { SpaceRow, StageResolution } from './api/resolution/stageResolution';
 import type { MessagePart, Problem, StageProblem, Stage, Workflow } from './types';
 
@@ -37,6 +44,16 @@ export type UnresolvedWorkflow = Omit<Workflow, 'component' | 'governs'>;
  * Where a fraction reads badly at one -- "1 of 1 workflows" -- say the thing
  * instead of expressing it as a fraction. A ratio of one to one is not a ratio.
  */
+/**
+ * Whether the workflow governs ChangeSets rather than ChangeOrders. One with no Stages
+ * has nowhere to promote a change to, so a ChangeOrder refuses it; a ChangeSet is not
+ * promoted, so it takes one, and Complete -- its Final -- is what closing the ChangeSet
+ * is gated on, in every Space the ChangeSet was opened in.
+ */
+export function governsChangeSets(wf: { stages: readonly unknown[] }): boolean {
+  return wf.stages.length === 0;
+}
+
 export function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
@@ -151,6 +168,62 @@ export function customById(wf: UnresolvedWorkflow, id: string) {
   return wf.custom.find((c) => c.id === id);
 }
 
+export function attestationById(wf: UnresolvedWorkflow, id: string) {
+  return wf.attestations.find((a) => a.id === id);
+}
+
+/** The declaration an id names, whichever kind it is. Ids are minted per kind, so one names at most one. */
+export function declaredById(wf: UnresolvedWorkflow, id: string) {
+  return customById(wf, id) ?? attestationById(wf, id);
+}
+
+/**
+ * Follow a declaration's new name into every list that carried the old one: each
+ * Stage's entry gates and release gates, and Complete's. Declared once and named
+ * wherever it applies, so a rename that stopped at the declaration would leave the
+ * names it was known by declared by nothing, and the workflow would stop saving.
+ *
+ * Mutates `wf`, which the builder hands it as a draft copy.
+ */
+export function renameGate(wf: UnresolvedWorkflow, from: string, to: string): void {
+  const follow = (list: string[]) => {
+    const i = list.indexOf(from);
+    if (i !== -1) list[i] = to;
+  };
+  wf.stages.forEach((st) => {
+    follow(st.prereqs);
+    follow(st.releasePrereqs);
+  });
+  follow(wf.final.prereqs);
+}
+
+/**
+ * What a Type may look like, as the server checks it (`internal/models/attestation.go`): a
+ * name, as a Label key's name part is.
+ */
+const ATTESTATION_TYPE = /^[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$/;
+
+export function isValidAttestationType(type: string): boolean {
+  return type.length <= MAX_ATTESTATION_TYPE_LENGTH && ATTESTATION_TYPE.test(type);
+}
+
+/**
+ * A positive Go duration, which is what the server parses `MaxAge` with: one or more
+ * number-and-unit pairs such as `72h`, `1h30m` or `90m`, where the units are `ns`, `us`,
+ * `ms`, `s`, `m` and `h`. A duration of all zeros parses but is refused, since no
+ * Attestation is younger than nothing.
+ */
+const GO_DURATION = /^(\d+(\.\d*)?(ns|us|µs|ms|s|m|h))+$/;
+
+export function isValidMaxAge(maxAge: string): boolean {
+  return GO_DURATION.test(maxAge) && /[1-9]/.test(maxAge);
+}
+
+/** A UUID as the API writes one, for a Group ID typed rather than picked. */
+export function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
 export function isKnownGate(wf: UnresolvedWorkflow, name: string): boolean {
   return BUILTIN_NAMES.includes(name) || declaredNames(wf).includes(name);
 }
@@ -217,16 +290,19 @@ export function stageResolutionFault(st: Stage, res: StageResolution | undefined
 export function definitionFaults(wf: UnresolvedWorkflow): Problem[] {
   const out: Problem[] = [];
 
-  if (wf.stages.length === 0) {
-    out.push({
-      sev: 'problem',
-      msg: [
-        {
-          text: 'This workflow has no Stages, so a ChangeOrder created from it would have nowhere to go.',
-        },
-      ],
-      go: null,
-    });
+  if (governsChangeSets(wf)) {
+    const refused = wf.final.prereqs.filter((pr) => CHANGESET_REFUSED_BUILTINS.includes(pr));
+    if (refused.length) {
+      out.push({
+        sev: 'problem',
+        msg: [
+          { text: `With no Stages this workflow governs ChangeSets, and ${COMPLETE_LABEL} names ` },
+          { text: refused[0], code: true },
+          { text: ', which closing a ChangeSet cannot wait on: its change is released by a ChangeOrder after it closes.' },
+        ],
+        go: { kind: 'final' },
+      });
+    }
   }
 
   const seen: Record<string, boolean> = {};
@@ -387,18 +463,141 @@ export function definitionFaults(wf: UnresolvedWorkflow): Problem[] {
     }
   });
 
+  if (wf.attestations.length > MAX_ATTESTATION_PREREQUISITES) {
+    out.push({
+      sev: 'problem',
+      msg: [
+        {
+          text: `This workflow declares ${plural(wf.attestations.length, 'attestation prerequisite', 'attestation prerequisites')}, and a workflow may carry at most ${MAX_ATTESTATION_PREREQUISITES}.`,
+        },
+      ],
+      go: null,
+    });
+  }
+
+  const aseen: Record<string, boolean> = {};
   wf.attestations.forEach((a) => {
-    if (usedBy(wf, a.Name).length === 0 && releasedBy(wf, a.Name).length === 0) {
+    const n = (a.Name || '').trim();
+    const go = { kind: 'attestation' as const, id: a.id };
+    const who = (what: string): MessagePart[] =>
+      n
+        ? [{ text: 'Attestation prerequisite ' }, { text: n, code: true }, { text: ` ${what}` }]
+        : [{ text: `An attestation prerequisite ${what}` }];
+
+    if (!n) {
+      out.push({ sev: 'problem', msg: [{ text: 'An attestation prerequisite has no name.' }], go });
+    } else {
+      if (aseen[n]) {
+        out.push({
+          sev: 'problem',
+          msg: [{ text: 'Two attestation prerequisites are named ' }, { text: n, code: true }, { text: '.' }],
+          go,
+        });
+      }
+      aseen[n] = true;
+
+      if (BUILTIN_NAMES.includes(n)) {
+        out.push({
+          sev: 'problem',
+          msg: [
+            { text: n, code: true },
+            {
+              text: ' shadows a built-in gate, which would leave its meaning depending on which was consulted.',
+            },
+          ],
+          go,
+        });
+      }
+
+      if (n === IMPLICIT_GATE) {
+        out.push({
+          sev: 'problem',
+          msg: [
+            { text: IMPLICIT_GATE, code: true },
+            {
+              text: ' is checked whatever a Stage declares, so it cannot be declared as a gate of your own.',
+            },
+          ],
+          go,
+        });
+      }
+    }
+
+    const type = a.Type?.trim() ?? '';
+    if (type && !isValidAttestationType(type)) {
+      out.push({
+        sev: 'problem',
+        msg: who(
+          `has a Type of ${type}, and a Type is at most ${MAX_ATTESTATION_TYPE_LENGTH} characters of letters, digits, '-', '_' and '.', beginning and ending with a letter or digit.`,
+        ),
+        go,
+      });
+    }
+
+    if (a.Count !== undefined && (a.Count < 0 || a.Count > MAX_ATTESTATION_COUNT)) {
+      out.push({
+        sev: 'problem',
+        msg: who(`asks for ${a.Count} attesters, and a count is between 1 and ${MAX_ATTESTATION_COUNT}.`),
+        go,
+      });
+    }
+
+    const users = a.FromUserIDs ?? [];
+    if (users.length > MAX_ATTESTATION_USERS) {
+      out.push({
+        sev: 'problem',
+        msg: who(`names ${plural(users.length, 'User', 'Users')}, and at most ${MAX_ATTESTATION_USERS} may be named.`),
+        go,
+      });
+    }
+
+    const groups = a.FromGroupIDs ?? [];
+    if (groups.some((g) => !isUuid(g))) {
+      out.push({
+        sev: 'problem',
+        msg: who(`names a Group by something other than its ID.`),
+        go,
+      });
+    }
+
+    if (a.DistinctGroups && groups.length === 0) {
+      out.push({
+        sev: 'problem',
+        msg: who('requires an attester from each Group but names no Groups to draw them from.'),
+        go,
+      });
+    }
+
+    const maxAge = a.MaxAge?.trim() ?? '';
+    if (maxAge && !isValidMaxAge(maxAge)) {
+      out.push({
+        sev: 'problem',
+        msg: who(`has a maximum age of ${maxAge}, and a maximum age is a positive duration such as 72h.`),
+        go,
+      });
+    }
+
+    if ((a.Description ?? '').length > MAX_DESCRIPTION_LENGTH) {
+      out.push({
+        sev: 'problem',
+        msg: who(
+          `has a description of ${(a.Description ?? '').length} characters, and a description is at most ${MAX_DESCRIPTION_LENGTH}.`,
+        ),
+        go,
+      });
+    }
+
+    if (n && usedBy(wf, n).length === 0 && releasedBy(wf, n).length === 0) {
       out.push({
         sev: 'note',
         msg: [
           { text: 'Attestation prerequisite ' },
-          { text: a.Name, code: true },
+          { text: n, code: true },
           {
             text: ` is named by no Stage, no Stage's Releases and not by ${COMPLETE_LABEL}, so it gates nothing.`,
           },
         ],
-        go: null,
+        go,
       });
     }
   });

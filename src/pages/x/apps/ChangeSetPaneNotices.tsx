@@ -1,6 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { useState } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -11,6 +12,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import Typography from '@mui/material/Typography';
 
+import { changeSetPath } from '../../change-sets/changeSetAddress';
 import { changeSetLabel, isChangeSetOpenHere, type DeploymentChangeSet } from './changeSets';
 import { componentTheme } from './componentTheme';
 import type { ComponentDeployment } from './componentTypes';
@@ -66,7 +68,12 @@ export const ChangeSetCloseBar = ({ deployment, onCloseChangeSet }: ChangeSetClo
         <Box key={cs.changeSetId} sx={noticeSx} data-testid='component-changeset-open-bar'>
           <Box component='span' sx={{ flex: 1, lineHeight: 1.4 }}>
             ChangeSet{' '}
-            <Box component='span' sx={{ fontFamily: componentTheme.fontMono, color: componentTheme.fgDefault }}>
+            <Box
+              {...(cs.changeSet?.SpaceSlug
+                ? { component: RouterLink, to: changeSetPath(cs.changeSet.SpaceSlug, cs.changeSet.Slug), 'data-testid': 'component-changeset-page-link' }
+                : { component: 'span' })}
+              sx={{ fontFamily: componentTheme.fontMono, color: componentTheme.fgDefault }}
+            >
               {changeSetLabel(cs, deployment.slug)}
             </Box>{' '}
             is open on {cs.openUnitIds.length} unit{cs.openUnitIds.length === 1 ? '' : 's'} here. Close it when the change is

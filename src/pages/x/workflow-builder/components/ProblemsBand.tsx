@@ -43,13 +43,19 @@ export function ProblemsBand({ api }: { api: LoadedBuilderApi }) {
               className='linkbtn'
               type='button'
               data-act={
-                go.kind === 'stage' ? 'selstage' : go.kind === 'final' ? 'selfinal' : 'selcustom'
+                go.kind === 'stage'
+                  ? 'selstage'
+                  : go.kind === 'final'
+                    ? 'selfinal'
+                    : go.kind === 'attestation'
+                      ? 'selattestation'
+                      : 'selcustom'
               }
               data-id={go.kind === 'final' ? '' : go.id}
               onClick={() => {
                 if (go.kind === 'stage') api.selectStage(go.id);
                 else if (go.kind === 'final') api.selectFinal();
-                else api.selectCustom(go.id);
+                else api.selectCustom(go.id); // a custom or an attestation prerequisite: both open in the column
               }}
             >
               Go to it

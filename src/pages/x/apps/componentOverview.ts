@@ -29,11 +29,18 @@ export interface ComponentKpiRow {
    */
   hasOutstandingChangeOrder: boolean;
   /**
-   * The ChangeSets open on units in this component's Spaces, by slug
-   * (qualified with their Space when it is not one of the component's).
+   * The ChangeSets open on units in this component's Spaces: a label (the slug,
+   * qualified with its Space when it is not one of the component's) and the
+   * ChangeSet's own Space and slug, which address its page.
    * Empty when the caller passes no `openChangeSets` at all.
    */
-  openChangeSets: string[];
+  openChangeSets: OverviewChangeSet[];
+}
+
+export interface OverviewChangeSet {
+  label: string;
+  slug: string;
+  spaceSlug?: string;
 }
 
 export interface OrgKpiSummary {
@@ -135,12 +142,16 @@ export function buildOverviewData(
 
     const spaceIds = new Set(compSpaces.flatMap((s) => (s.Space?.SpaceID ? [s.Space.SpaceID] : [])));
     const spaceSlugs = new Set(compSpaces.flatMap((s) => (s.Space?.Slug ? [s.Space.Slug] : [])));
-    const componentChangeSets: string[] = [];
+    const componentChangeSets: OverviewChangeSet[] = [];
     for (const cs of openChangeSets?.values() ?? []) {
       if (![...cs.spaceIds].some((id) => spaceIds.has(id))) continue;
-      componentChangeSets.push(cs.spaceSlug && !spaceSlugs.has(cs.spaceSlug) ? `${cs.spaceSlug}/${cs.slug}` : cs.slug);
+      componentChangeSets.push({
+        label: cs.spaceSlug && !spaceSlugs.has(cs.spaceSlug) ? `${cs.spaceSlug}/${cs.slug}` : cs.slug,
+        slug: cs.slug,
+        spaceSlug: cs.spaceSlug,
+      });
     }
-    componentChangeSets.sort();
+    componentChangeSets.sort((a, b) => a.label.localeCompare(b.label));
 
     rows.push({
       componentName,

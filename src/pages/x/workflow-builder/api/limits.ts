@@ -33,8 +33,16 @@ export const MAX_STAGE_NAME_LENGTH = 128;
 export const MAX_WHERE_SPACE_LENGTH = 4096;
 /** A custom prerequisite's cel expression. */
 export const MAX_EXPRESSION_LENGTH = 4096;
-/** A custom prerequisite's description, which is a sentence explaining the gate. */
+/** A custom or attestation prerequisite's description, which is a sentence explaining the gate. */
 export const MAX_DESCRIPTION_LENGTH = 1024;
+/** Attestation requirements one workflow carries. */
+export const MAX_ATTESTATION_PREREQUISITES = 64;
+/** Attesters one requirement may ask for. */
+export const MAX_ATTESTATION_COUNT = 100;
+/** Users one requirement may name as eligible. */
+export const MAX_ATTESTATION_USERS = 1000;
+/** An Attestation Type, which requirements match exactly. Bounded in `internal/models/attestation.go`. */
+export const MAX_ATTESTATION_TYPE_LENGTH = 63;
 
 export type LimitName =
   | 'stages'

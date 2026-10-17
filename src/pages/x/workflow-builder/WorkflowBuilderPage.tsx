@@ -53,7 +53,7 @@ import { ComponentPicker } from './components/ComponentPicker';
 import { NoComponentChosen } from './components/NoComponentChosen';
 import { emptyWorkflow } from './api/mapping';
 import type { Preview } from './preview';
-import { customById, litStageNames, plural } from './model';
+import { declaredById, litStageNames, plural } from './model';
 import { isLoaded, useWorkflowBuilder } from './useWorkflowBuilder';
 import type { Workflow } from './types';
 
@@ -362,8 +362,9 @@ export default function WorkflowBuilderPage() {
   const wf = api.workflow;
   const lit = useMemo(() => {
     if (!wf) return new Set<string>();
-    const selected = api.cpSel ? customById(wf, api.cpSel) : undefined;
-    const fromSelection = litStageNames(wf, selected?.name ?? null, false);
+    const selected = api.cpSel ? declaredById(wf, api.cpSel) : undefined;
+    const selectedName = selected ? ('name' in selected ? selected.name : selected.Name) : null;
+    const fromSelection = litStageNames(wf, selectedName, false);
     litStageNames(wf, hover?.name ?? null, hover?.implicit ?? false).forEach((n) =>
       fromSelection.add(n),
     );
@@ -450,24 +451,17 @@ export default function WorkflowBuilderPage() {
                 whether a Stage can be renamed, re-selected, re-gated or moved.
                 Withholding the pane withheld the editor -- and said, in the copy
                 that replaced it, that editing does not wait. */}
-            {api.workflow.stages.length ? (
-              <div className='detwrap'>
-                <DetailPane
-                  api={api}
-                  preview={preview}
-                  componentPrompt={componentPrompt}
-                  componentField={componentField}
-                />
-                <PrereqColumn api={api} onHover={onHover} />
-              </div>
-            ) : (
+            {/* A workflow with no Stages governs ChangeSets, and still declares
+                prerequisites and names them in Complete, so the column stays. */}
+            <div className='detwrap'>
               <DetailPane
                 api={api}
                 preview={preview}
                 componentPrompt={componentPrompt}
                 componentField={componentField}
               />
-            )}
+              <PrereqColumn api={api} onHover={onHover} />
+            </div>
           </section>
         </div>
       )}

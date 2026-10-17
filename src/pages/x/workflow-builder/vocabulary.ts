@@ -45,6 +45,14 @@ export const COMPLETE_KEY = 'final';
 export const IMPLICIT_GATE = 'promoted';
 
 /**
+ * The built-in gates closing a ChangeSet cannot wait on. Both read a Release, and a
+ * ChangeSet's change is released by a ChangeOrder after the ChangeSet closes, so
+ * neither could hold while it is open; the server refuses a workflow naming either in
+ * its Final for a ChangeSet.
+ */
+export const CHANGESET_REFUSED_BUILTINS: readonly string[] = ['Released', 'Healthy'];
+
+/**
  * Every description names the Stage it is checked over. The first Stage has
  * none, so the clause that would have named one comes out rather than being
  * filled with nothing -- the same thing the `promoted` row does, which is why no

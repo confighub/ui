@@ -14,6 +14,8 @@ import Box from '@mui/material/Box';
 
 import { FILTER_URL_PARAMS } from '@/utility/constants/url-params';
 
+import { changeSetPath } from '../../change-sets/changeSetAddress';
+
 import {
   changeOrderBorder,
   changeOrderFontMono,
@@ -87,7 +89,7 @@ export function ChangeOrderChangeSets({ changeSets, baseSpaceId }: ChangeOrderCh
           >
             <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: `${changeOrderShape.gap.md}px` }}>
               <Box
-                component="span"
+                {...(changeSet.spaceSlug ? { component: RouterLink, to: changeSetPath(changeSet.spaceSlug, changeSet.slug) } : { component: 'span' })}
                 data-testid="change-order-change-set-slug"
                 sx={{
                   fontFamily: changeOrderFontMono,

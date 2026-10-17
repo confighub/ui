@@ -25,7 +25,7 @@
  * full beside the promote state below, where the affordance is.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link as RouterLink, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
@@ -70,8 +70,7 @@ import type {
   ChangeOrderStageState,
 } from '../x/apps/change-order/changeOrderTypes';
 import { TreeDiffSection } from '../x/apps/TreeDiffSection';
-import { ConfigDiffView, type ConfigDiffColumns } from '@/components/config-diff/ConfigDiffView';
-import { useColumnResize } from '../x/apps/useColumnResize';
+import { ConfigDiffView } from '@/components/config-diff/ConfigDiffView';
 import { ROUTE_COMPONENTS } from '../x/apps/appTypes';
 import { componentTheme } from '../x/apps/componentTheme';
 import type { MergedUnit } from '../x/apps/componentTypes';
@@ -118,6 +117,9 @@ import {
 } from './changeOrdersTokens';
 import { ChangeOrderBlockedResources, ChangeOrderRefusals } from './changeOrderRefusals';
 import { changeOrderPath } from './changeOrderAddress';
+import { useSharedDiffColumns } from './useSharedDiffColumns';
+import { UnitDiffRow } from './components/UnitDiffRow';
+import { Fact, FactLink, OpenedAt, StateChip, SummaryCard } from './components/SummaryFacts';
 import { useChangeOrderDetail, type ChangeOrderSpace } from './useChangeOrderDetail';
 import { useChangeOrderImageChanges } from './useChangeOrderImageChanges';
 import { useChangeOrderChangeSets } from './useChangeOrderChangeSets';
@@ -145,7 +147,6 @@ import type {
 } from './reviews/changeOrderReviewTypes';
 import { useChangeOrderReviews, useGateReviews } from './reviews/useStageReviews';
 import { useChangeOrderHistory } from './useChangeOrderHistory';
-import { clockTime, shortDate, utcTime, zoneName } from './changeOrderHistory';
 import { changeWorkflowHref, changeWorkflowLabel, useChangeWorkflowNames } from './useChangeWorkflowNames';
 
 /**
@@ -251,27 +252,6 @@ const EMPTY_UNIT_PARTITION: SourceUnitPartition<MergedUnit> = {
 const WORKFLOW_COMPLETED_REASON = 'Satisfied: the server reports this ChangeWorkflow as complete.';
 
 export const CHANGE_ORDERS_ROOT_ID = 'change-orders-root';
-
-function StateChip({ label, tone }: { label: string; tone: string }) {
-  return (
-    <Box
-      component="span"
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        borderRadius: `${changeOrderShape.radius.pill}px`,
-        border: `1px solid ${tone}`,
-        color: tone,
-        padding: '2px 10px',
-        fontSize: changeOrderType.size.small,
-        fontWeight: 600,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {label}
-    </Box>
-  );
-}
 
 function reviewRequirementOf(gate: ChangeOrderGate, summary: StageReviewSummary) {
   return summary.requirements.find(
@@ -389,95 +369,6 @@ function nextStageHint(stage: string, summary: StageReviewSummary | undefined, r
   if (summary.open && readiness?.kind === 'ready') return reviewCopy.progressHint.ready(stage);
   if (summary.open) return reviewCopy.progressHint.reviewsComplete(stage);
   return reviewCopy.progressHint.held(stage);
-}
-
-/**
- * A fact's value, as a link to somewhere else in the product. New tab,
- * deliberately: this page is a stopping point in its own right (a URL people
- * come back to, poll, share), and navigating away in place would discard it —
- * the same reasoning `ChangeOrderUnitHeader`'s own unit-detail link already
- * states for this module.
- */
-function FactLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <Box
-      component="a"
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      sx={{ color: 'inherit', textDecoration: 'underline', textDecorationColor: changeOrderBorder.strong }}
-    >
-      {children}
-    </Box>
-  );
-}
-
-/**
- * One term/value pair in the header's fact grid. `icon` sits before the term,
- * in the term's ink; it is decorative (the term names the fact), so it stays
- * out of the accessibility tree.
- */
-function Fact({
-  term,
-  icon: Icon,
-  children,
-  wide = false,
-}: {
-  term: string;
-  icon?: SvgIconComponent;
-  children: React.ReactNode;
-  wide?: boolean;
-}) {
-  return (
-    <Box sx={{ minWidth: 0, gridColumn: wide ? 'span 2' : undefined }}>
-      <Box
-        component="dt"
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-          fontSize: changeOrderType.size.micro,
-          letterSpacing: '.07em',
-          color: changeOrderInk.subtle,
-          margin: 0,
-        }}
-      >
-        {Icon !== undefined ? <Icon aria-hidden="true" sx={{ fontSize: 14, flex: '0 0 auto' }} /> : null}
-        {term}
-      </Box>
-      <Box
-        component="dd"
-        sx={{ fontSize: changeOrderType.size.prose, color: changeOrderInk.default, margin: 0, overflowWrap: 'anywhere' }}
-      >
-        {children}
-      </Box>
-    </Box>
-  );
-}
-
-/**
- * The Opened fact, in the viewer's time zone with the zone named, as the History
- * card writes its times. Hover gives UTC, readable and then verbatim as the
- * server sent it. No weekday, so it fits its column on one line. A value that
- * does not parse is shown as it came, rather than as "Invalid Date".
- */
-function OpenedAt({ value }: { value: string | undefined }) {
-  if (value === undefined) return <>—</>;
-  const at = Date.parse(value);
-  if (Number.isNaN(at)) return <>{value}</>;
-  const utc = (
-    <>
-      <div>{utcTime(at)}</div>
-      <div>{value}</div>
-    </>
-  );
-  return (
-    <Tooltip title={utc} describeChild placement="bottom-start">
-      <Box component="time" dateTime={value}>
-        {`${shortDate(at)}, ${clockTime(at)} ${zoneName(at)}`}
-      </Box>
-    </Tooltip>
-  );
 }
 
 /**
@@ -1883,27 +1774,13 @@ export default function ChangeOrdersPage() {
   const [gateOverride, setGateOverride] = useState<Record<string, boolean>>({});
   /** The "Passed over" list's own disclosure — one switch, closed by default: it can list every Unit in the Space and is not what a reader opens this screen to see first. */
   const [skippedExpanded, setSkippedExpanded] = useState(false);
-  /*
-   * ONE column model for the whole page, exactly as `ReleaseDiffPanel` and
-   * `ComponentActivityFeed` do it: every `TreeDiffSection` on the page (the
-   * source tree and every group card's tree) stays aligned down the page, and
-   * dragging any one divider rebalances all of them at once.
-   */
-  const { columnStyle: diffColumnStyle, onDividerMouseDown: onDiffDividerMouseDown, isDragging: isDiffDragging } =
-    useColumnResize();
-  const diffCol1 = (diffColumnStyle as Record<string, string>)['--col1-width'];
-  const diffCol2 = (diffColumnStyle as Record<string, string>)['--col2-width'];
-  // `useColumnResize` rebuilds `columnStyle` as a fresh object literal on every
-  // render, which would defeat `TreeDiffSection`'s memo for every unit.
-  const stableDiffColumnStyle = useMemo(
-    () => ({ '--col1-width': diffCol1, '--col2-width': diffCol2 }) as CSSProperties,
-    [diffCol1, diffCol2],
-  );
-  // The same widths for the server diffs a group renders resource by resource.
-  const diffColumns = useMemo<ConfigDiffColumns>(
-    () => ({ columnStyle: stableDiffColumnStyle, onDividerMouseDown: onDiffDividerMouseDown, isDragging: isDiffDragging }),
-    [stableDiffColumnStyle, onDiffDividerMouseDown, isDiffDragging],
-  );
+  // Every diff on the page (the source's and every group card's) shares one set of columns.
+  const {
+    columns: diffColumns,
+    columnStyle: stableDiffColumnStyle,
+    onDividerMouseDown: onDiffDividerMouseDown,
+    isDragging: isDiffDragging,
+  } = useSharedDiffColumns();
   /**
    * "At the source" units the ChangeOrder actually covers. A unit the
    * ChangeOrder declined to touch at all is already accounted for in "Passed
@@ -2035,47 +1912,41 @@ export default function ChangeOrdersPage() {
       const fieldDiffs = group?.fieldDiffs ?? [];
       const linkedPaths = linkedPathsByUnitId.get(unit.unitId);
       return (
-        <Box key={unit.unitId}>
-          <ChangeOrderUnitHeader
-            unitId={unit.unitId}
-            spaceId={unit.spaceId}
-            slug={unit.slug}
-            resourceKind={group?.resourceKind}
-            spaceName={changes.spaceNameBySpaceId.get(unit.spaceId) ?? unit.spaceId}
-            // Not a promotion record — this is the change as
-            // authored at the source, never something a stage wrote.
-            written={false}
-            // Every unit reaching `sourceUnits` was determinable
-            // by construction — one that was not is dropped and
-            // counted in `sourceDropped` instead, never rendered.
-            undetermined={false}
-            unchanged={fieldDiffs.length === 0}
-            // A fan-out ChangeOrder's sources are outside the component, so
-            // they open as Spaces rather than in the component view.
-            spaceHref={
-              detail.fanOutSource !== undefined
-                ? `/spaces/${unit.spaceId}`
-                : (componentSpaceDeepLink(detail.componentName, unit.spaceId) ?? undefined)
-            }
-            // The change leaves a source over the Links to it.
-            linksHref={unitLinksHrefFor(unit, 'to')}
-          />
-          {linkedPaths !== undefined && fieldDiffs.length > 0 ? (
-            <Box
-              sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, padding: '4px 12px 6px' }}
-              data-testid={`change-order-unit-linked-paths-${unit.unitId}`}
-            >
-              {changeOrderCopy.linkedPathsCaption(linkedPaths)}
-            </Box>
-          ) : null}
-          <ChangeOrderRefusals conflicts={rowRefusals(group)} />
-          {fieldDiffs.length === 0 ? (
-            <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, padding: '4px 12px 10px' }}>
-              No fields differ here.
-            </Box>
-          ) : group?.diff !== undefined ? (
-            <ConfigDiffView diff={group.diff} columns={diffColumns} hideContext />
-          ) : (
+        <UnitDiffRow
+          key={unit.unitId}
+          unitId={unit.unitId}
+          spaceId={unit.spaceId}
+          slug={unit.slug}
+          resourceKind={group?.resourceKind}
+          spaceName={changes.spaceNameBySpaceId.get(unit.spaceId) ?? unit.spaceId}
+          // A fan-out ChangeOrder's sources are outside the component, so
+          // they open as Spaces rather than in the component view.
+          spaceHref={
+            detail.fanOutSource !== undefined
+              ? `/spaces/${unit.spaceId}`
+              : (componentSpaceDeepLink(detail.componentName, unit.spaceId) ?? undefined)
+          }
+          // The change leaves a source over the Links to it.
+          linksHref={unitLinksHrefFor(unit, 'to')}
+          // Every unit reaching `sourceUnits` was determinable by construction: one
+          // that was not is dropped and counted in `sourceDropped` instead.
+          changed={fieldDiffs.length > 0}
+          diff={group?.diff}
+          columns={diffColumns}
+          notes={
+            <>
+              {linkedPaths !== undefined && fieldDiffs.length > 0 ? (
+                <Box
+                  sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, padding: '4px 12px 6px' }}
+                  data-testid={`change-order-unit-linked-paths-${unit.unitId}`}
+                >
+                  {changeOrderCopy.linkedPathsCaption(linkedPaths)}
+                </Box>
+              ) : null}
+              <ChangeOrderRefusals conflicts={rowRefusals(group)} />
+            </>
+          }
+          fallback={
             <TreeDiffSection
               entry={{ unitId: unit.unitId, fieldDiffs }}
               allPaths={group?.allPaths}
@@ -2087,8 +1958,8 @@ export default function ChangeOrdersPage() {
               onDividerMouseDown={onDiffDividerMouseDown}
               isDragging={isDiffDragging}
             />
-          )}
-        </Box>
+          }
+        />
       );
     },
     [
@@ -2684,29 +2555,7 @@ export default function ChangeOrdersPage() {
 
       {detail.found ? (
         <>
-          <Box
-            component="section"
-            role="region"
-            aria-label="ChangeOrder summary"
-            sx={{
-              /*
-                CARD CHROME, MATCHING THE REFERENCE'S `.head`. Every major
-                region in the design is a white card on the page's grey
-                ground — `.head`, `.rail-block`, `.detail`, `.panel` all share
-                one border/radius/shadow rule. Rendering flat on the page with
-                a hairline divider, as this section did before, was the single
-                largest structural gap against the design: right content,
-                wrong container.
-              */
-              background: changeOrderSurface.card,
-              border: `1px solid ${changeOrderBorder.default}`,
-              borderRadius: `${changeOrderCardTokens.radius}px`,
-              boxShadow: changeOrderCardTokens.shadow,
-              /* Clips the review band's corners to the card's radius. `clip`, not
-                 `hidden`: it creates no scroll container. */
-              overflow: 'clip',
-            }}
-          >
+          <SummaryCard label="ChangeOrder summary">
             {bandSummary !== undefined ? (
               <ReviewBand
                 summary={bandSummary}
@@ -3244,7 +3093,7 @@ export default function ChangeOrdersPage() {
               ) : null}
             </Box>
             </Box>
-          </Box>
+          </SummaryCard>
 
           <Box
             component="section"

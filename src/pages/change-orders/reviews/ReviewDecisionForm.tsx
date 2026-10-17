@@ -33,6 +33,8 @@ export interface ReviewDecisionValues {
 
 interface ReviewDecisionFormProps {
   stageName: string;
+  /** What is reviewed, for the hint under the reason: "Everyone on this ChangeOrder can read it." */
+  subjectNoun?: string;
   /** Why nothing can be submitted (M6: the dry run says nothing would be recorded). Disables submit. */
   blockedReason?: string;
   defaultValues?: ReviewDecisionValues;
@@ -105,6 +107,7 @@ function ChoiceButton({
 
 export function ReviewDecisionForm({
   stageName,
+  subjectNoun = 'ChangeOrder',
   blockedReason,
   defaultValues = { choice: null, note: '' },
   cancelLabel,
@@ -221,7 +224,7 @@ export function ReviewDecisionForm({
           </Box>
         ) : (
           <Box component="p" id="review-note-hint" sx={{ margin: 0, fontSize: changeOrderType.size.small, color: changeOrderInk.subtle }}>
-            {copy.hint(choice)}
+            {copy.hint(choice, subjectNoun)}
           </Box>
         )}
       </Box>

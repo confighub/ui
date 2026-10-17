@@ -59,7 +59,7 @@ export interface ImageChange {
   from: ImageSide;
   to: ImageSide;
   bump: BumpKind;
-  /** Units in the base Space that carry this move. */
+  /** Units the diff was read over that carry this move. */
   unitCount: number;
 }
 
@@ -73,7 +73,7 @@ export interface FieldChangeDetail {
   to: string;
 }
 
-export interface ChangeOrderImageChanges {
+export interface ImageChanges {
   status: 'loading' | 'unavailable' | 'none' | 'some';
   images: ImageChange[];
   /**
@@ -81,18 +81,18 @@ export interface ChangeOrderImageChanges {
    * fields with their values, in the same order, for chips that show them.
    */
   fieldChanges: { count: number; sample: string[]; details: FieldChangeDetail[] };
-  /** Units in the base Space with at least one change. */
+  /** Units the diff was read over with at least one change. */
   unitCount: number;
 }
 
 /** How many field changes are kept for display. The count is always the true total. */
 const FIELD_SAMPLE_LIMIT = 6;
 
-export const EMPTY_FIELD_CHANGES: ChangeOrderImageChanges['fieldChanges'] = Object.freeze({
+export const EMPTY_FIELD_CHANGES: ImageChanges['fieldChanges'] = Object.freeze({
   count: 0,
   sample: [],
   details: [],
-}) as ChangeOrderImageChanges['fieldChanges'];
+}) as ImageChanges['fieldChanges'];
 
 // ---------------------------------------------------------------------------
 // Versions
@@ -435,7 +435,7 @@ const roleKey = (role: ContainerRole): keyof typeof ROLE_ORDER => role ?? 'app';
  * they are read only for a container's `restartPolicy`, which is what makes an
  * init container a native sidecar.
  */
-export function imageChangesFromUnitDiffs(diffs: readonly UnitDiff[]): ChangeOrderImageChanges {
+export function imageChangesFromUnitDiffs(diffs: readonly UnitDiff[]): ImageChanges {
   let failed = false;
   const groups = new Map<string, { change: Omit<ImageChange, 'unitCount'>; units: Set<string> }>();
   const fieldDetails: FieldChangeDetail[] = [];
@@ -607,12 +607,38 @@ export function imageChangesFromUnitDiffs(diffs: readonly UnitDiff[]): ChangeOrd
     sample: fieldDetails.map((d) => d.label),
     details: fieldDetails,
   };
-  let status: ChangeOrderImageChanges['status'] = images.length > 0 ? 'some' : 'none';
+  let status: ImageChanges['status'] = images.length > 0 ? 'some' : 'none';
   // No Unit has a Revision on either side: the ChangeOrder's Revisions were not found, which
   // says nothing about what it changed, so it must not read as "No image change".
   const noRevisions = diffs.every((d) => !d.FromRevisionNum && !d.ToRevisionNum);
   if (failed || noRevisions) status = 'unavailable';
   return { status, images, fieldChanges, unitCount: changedUnits.size };
+}
+
+/** A read still under way: say nothing yet rather than something that may be wrong. */
+export const IMAGE_CHANGES_LOADING: ImageChanges = Object.freeze({
+  status: 'loading',
+  images: [],
+  fieldChanges: EMPTY_FIELD_CHANGES,
+  unitCount: 0,
+}) as ImageChanges;
+
+/** A read that failed, or one with nothing it can read. */
+export const IMAGE_CHANGES_UNAVAILABLE: ImageChanges = Object.freeze({
+  status: 'unavailable',
+  images: [],
+  fieldChanges: EMPTY_FIELD_CHANGES,
+  unitCount: 0,
+}) as ImageChanges;
+
+/**
+ * The image changes of one `GET /api/unit_diff` read, by its state: `unavailable` when it
+ * failed, never "No image change", since a failed read says nothing about what changed.
+ */
+export function imageChangesOfRead(diffs: readonly UnitDiff[] | undefined, failed: boolean): ImageChanges {
+  if (failed) return IMAGE_CHANGES_UNAVAILABLE;
+  if (diffs === undefined) return IMAGE_CHANGES_LOADING;
+  return imageChangesFromUnitDiffs(diffs);
 }
 
 // ---------------------------------------------------------------------------
@@ -642,9 +668,9 @@ export interface SourceDiffGroup {
 export function imageChangesForSource(
   sourceStatus: 'loading' | 'resolved' | 'failed',
   groups: readonly SourceDiffGroup[],
-): ChangeOrderImageChanges {
-  if (sourceStatus === 'loading') return { status: 'loading', images: [], fieldChanges: EMPTY_FIELD_CHANGES, unitCount: 0 };
-  if (sourceStatus === 'failed') return { status: 'unavailable', images: [], fieldChanges: EMPTY_FIELD_CHANGES, unitCount: 0 };
+): ImageChanges {
+  if (sourceStatus === 'loading') return IMAGE_CHANGES_LOADING;
+  if (sourceStatus === 'failed') return IMAGE_CHANGES_UNAVAILABLE;
   const diffs = groups.flatMap((group): UnitDiff[] =>
     // Revision numbers on both sides: the diff is of a change, never of nothing.
     group.diff === undefined ? [] : [{ UnitID: group.unitId, FromRevisionNum: 1, ToRevisionNum: 2, Diff: group.diff }],

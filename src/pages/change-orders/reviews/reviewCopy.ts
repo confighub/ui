@@ -461,10 +461,10 @@ export const reviewCopy = {
     counter: (n: number) => `${n} / ${REVIEW_NOTE_MAX}`,
     placeholderPass: 'What did you check?',
     placeholderFail: (subject: string) => `What must change in ${subject}?`,
-    hint: (choice: ReviewChoice | null) =>
+    hint: (choice: ReviewChoice | null, noun: string) =>
       choice === 'Fail'
-        ? 'Stored with your rejection. Everyone on this ChangeOrder can read it.'
-        : 'Saved with your approval. Everyone on this ChangeOrder can read it.',
+        ? `Stored with your rejection. Everyone on this ${noun} can read it.`
+        : `Saved with your approval. Everyone on this ${noun} can read it.`,
     reasonRequired: 'A reason is required.',
     choose: 'Choose approve or reject',
     submit: (choice: ReviewChoice, subject: string) => `${choice === 'Pass' ? 'Approve' : 'Reject'} the change in ${subject}`,

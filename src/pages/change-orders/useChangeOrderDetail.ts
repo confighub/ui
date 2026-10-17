@@ -510,7 +510,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
   const stageSpacesByClause: Record<string, ExtendedSpaceRead[]> = useMemo(() => {
     if (workflow === undefined) return {};
     const byClause: Record<string, ExtendedSpaceRead[]> = {};
-    for (const stage of workflow.Stages) {
+    for (const stage of workflow.Stages ?? []) {
       byClause[stageWhereSpace(stage)] = stageSpaces[stage.Name] ?? [];
     }
     return byClause;
@@ -570,7 +570,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
    * while the Stage still names the last stage. So that refusal is asked for, once the
    * last stage has been promoted into and until the Stage says it.
    */
-  const lastStage = workflow?.Stages[workflow.Stages.length - 1];
+  const lastStage = workflow?.Stages?.[workflow.Stages.length - 1];
   const resolvedIds = order?.ResolvedSpaceIDs;
   const lastStageReached =
     lastStage !== undefined &&
@@ -600,7 +600,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
     if (workflow === undefined || workflowCompleted) return [];
     // The first stage too, when the own Space holds the change: the server evaluates its
     // prerequisites over that Space (`evaluateStageGates`).
-    return workflow.Stages.filter((_, index) => index > 0 || ownSpaceReached)
+    return (workflow.Stages ?? []).filter((_, index) => index > 0 || ownSpaceReached)
       .filter(
         (stage) =>
           (stageSpaces[stage.Name]?.length ?? 0) > 0 &&

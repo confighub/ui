@@ -125,3 +125,138 @@ test('the summary says what is required, with the server’s defaults', () => {
     'One SecurityReview from a member of each of 2 groups on each Revision. Authors of the change do not count. A Fail does not block.',
   );
 });
+
+// ---------------------------------------------------------------------------
+// Editing them: the builder declares, renames and removes attestation
+// prerequisites, so what it sends has to be what the server accepts, and what
+// it refuses has to be refused at the keystroke rather than at the save.
+// ---------------------------------------------------------------------------
+
+import { applySaved } from '../src/pages/x/workflow-builder/api/mapping';
+import {
+  attestationById,
+  isValidMaxAge,
+  renameGate,
+} from '../src/pages/x/workflow-builder/model';
+
+test('a declaration carries a client-side id, which never reaches the wire', () => {
+  const { workflow, identity } = fromWire(wire());
+
+  expect(workflow.attestations.map((a) => a.id)).toEqual(['a0']);
+  const sent = toWire(workflow, identity);
+  expect(sent.AttestationPrerequisites?.[0]).not.toHaveProperty('id');
+});
+
+test('fields left at the server’s defaults are omitted rather than sent as their zero', () => {
+  const { workflow, identity } = fromWire(wire({ AttestationPrerequisites: [] }));
+  workflow.attestations.push({
+    id: 'a5',
+    Name: 'approved',
+    Type: '',
+    Count: 0,
+    FromUserIDs: [],
+    FromGroupIDs: [],
+    DistinctGroups: false,
+    AllowAuthors: false,
+    MaxAge: '',
+    IgnoreFail: false,
+    Description: '',
+  });
+
+  const sent = toWire(workflow, identity).AttestationPrerequisites?.[0];
+  expect(sent).toEqual({ Name: 'approved' });
+});
+
+test('a save keeps the ids the draft had, so an open editor does not remount', () => {
+  const { workflow } = fromWire(wire({ AttestationPrerequisites: [] }));
+  workflow.attestations.push({ id: 'a27', Name: 'approved' });
+  const saved = wire({ AttestationPrerequisites: [{ Name: 'approved' }] });
+
+  expect(applySaved(workflow, saved).workflow.attestations[0].id).toBe('a27');
+});
+
+test('a rename follows the name into entry gates, release gates and Complete', () => {
+  const { workflow } = fromWire(
+    wire({ Final: { Prerequisites: ['release-approval'] } }),
+  );
+  const a = attestationById(workflow, 'a0')!;
+
+  renameGate(workflow, a.Name, 'prod-approval');
+  a.Name = 'prod-approval';
+
+  expect(workflow.stages[1].prereqs).toEqual(['Released', 'Healthy', 'prod-approval']);
+  expect(workflow.stages[1].releasePrereqs).toEqual(['prod-approval']);
+  expect(workflow.final.prereqs).toEqual(['prod-approval']);
+  expect(definitionFaults(workflow).filter((p) => p.sev === 'problem')).toEqual([]);
+});
+
+test('a maximum age is a positive Go duration', () => {
+  for (const ok of ['72h', '1h30m', '90m', '1.5h', '30s', '500ms']) expect(isValidMaxAge(ok)).toBe(true);
+  for (const bad of ['', '0h', '0', '72', '3 days', '-1h', '1d', '1w']) expect(isValidMaxAge(bad)).toBe(false);
+});
+
+test('what the server would refuse is a problem at the keystroke, and goes to the declaration', () => {
+  const { workflow } = fromWire(
+    wire({
+      Stages: [{ Name: 'production', Prerequisites: ['release-approval'] }],
+      Final: {},
+      AttestationPrerequisites: [
+        RELEASE_APPROVAL,
+        { Name: '' },
+        { Name: 'release-approval' },
+        { Name: 'Released' },
+        { Name: 'odd-type', Type: '-Approval' },
+        { Name: 'too-many', Count: 101 },
+        { Name: 'no-groups', DistinctGroups: true },
+        { Name: 'by-slug', FromGroupIDs: ['sre'] },
+        { Name: 'stale', MaxAge: 'three days' },
+      ],
+    }),
+  );
+
+  const faults = definitionFaults(workflow).filter((p) => p.sev === 'problem');
+  expect(faults.map((p) => messageText(p.msg))).toEqual([
+    'An attestation prerequisite has no name.',
+    'Two attestation prerequisites are named release-approval.',
+    'Released shadows a built-in gate, which would leave its meaning depending on which was consulted.',
+    "Attestation prerequisite odd-type has a Type of -Approval, and a Type is at most 63 characters of letters, digits, '-', '_' and '.', beginning and ending with a letter or digit.",
+    'Attestation prerequisite too-many asks for 101 attesters, and a count is between 1 and 100.',
+    'Attestation prerequisite no-groups requires an attester from each Group but names no Groups to draw them from.',
+    'Attestation prerequisite by-slug names a Group by something other than its ID.',
+    'Attestation prerequisite stale has a maximum age of three days, and a maximum age is a positive duration such as 72h.',
+  ]);
+  // Every one of them can be gone to: the declaration opens in the column.
+  expect(faults.map((p) => p.go)).toEqual([
+    { kind: 'attestation', id: 'a1' },
+    { kind: 'attestation', id: 'a2' },
+    { kind: 'attestation', id: 'a3' },
+    { kind: 'attestation', id: 'a4' },
+    { kind: 'attestation', id: 'a5' },
+    { kind: 'attestation', id: 'a6' },
+    { kind: 'attestation', id: 'a7' },
+    { kind: 'attestation', id: 'a8' },
+  ]);
+});
+
+test('a well-formed declaration with every field set is no fault', () => {
+  const { workflow } = fromWire(
+    wire({
+      AttestationPrerequisites: [
+        {
+          Name: 'release-approval',
+          Type: 'Security.Review-2',
+          Count: 2,
+          FromUserIDs: [REVIEWER_A],
+          FromGroupIDs: ['00000000-0000-4000-8000-0000000000aa', '00000000-0000-4000-8000-0000000000bb'],
+          DistinctGroups: true,
+          AllowAuthors: true,
+          MaxAge: '72h',
+          IgnoreFail: true,
+          Description: 'Two teams sign off.',
+        },
+      ],
+    }),
+  );
+
+  expect(definitionFaults(workflow).filter((p) => p.sev === 'problem')).toEqual([]);
+});

@@ -3,8 +3,8 @@
 
 /**
  * The small, shared pieces of an image change, used by the list cell and the
- * detail hero: the image's monogram, the bump pill, and an image tag with its
- * changed part marked.
+ * detail hero: the image's monogram and an image tag with its changed part
+ * marked.
  *
  * None of them is interactive: the list row they sit in is itself a button,
  * and a control inside it would be a control inside a control.
@@ -17,7 +17,7 @@ import Box from '@mui/material/Box';
 import { componentTheme } from '../../x/apps/componentTheme';
 import { changeOrderInk, changeOrderSurface } from '../changeOrdersTokens';
 import { markDelta, monogramHueOf, monogramOf, type BumpKind, type ContainerRole, type ImageChange } from '../imageChange';
-import { BUMP_LABEL, BUMP_TONE } from '../imageChangeTone';
+import { BUMP_TONE } from '../imageChangeTone';
 
 const MONOGRAM_SIZE = {
   sm: { box: 26, font: 11, radius: 6 },
@@ -94,40 +94,6 @@ export const VersionGlyph = memo(function VersionGlyph({ size = 'sm' }: { size?:
 export function ImageMark({ image, size = 'sm' }: { image: Pick<ImageChange, 'kind' | 'repository'>; size?: keyof typeof MONOGRAM_SIZE }) {
   return image.kind === 'version' ? <VersionGlyph size={size} /> : <Monogram repository={image.repository} size={size} />;
 }
-
-export interface BumpPillProps {
-  bump: BumpKind;
-  /** Appended to the label: the detail page says "Minor bump". */
-  suffix?: string;
-  size?: 'sm' | 'md';
-}
-
-export const BumpPill = memo(function BumpPill({ bump, suffix, size = 'sm' }: BumpPillProps) {
-  const tone = BUMP_TONE[bump];
-  return (
-    <Box
-      component="span"
-      data-bump={bump}
-      sx={{
-        flex: 'none',
-        display: 'inline-block',
-        fontFamily: componentTheme.fontSans,
-        fontSize: size === 'md' ? 12 : 11,
-        fontWeight: 600,
-        lineHeight: 1.5,
-        padding: size === 'md' ? '2px 10px' : '1px 8px',
-        borderRadius: '999px',
-        border: `1px solid ${tone.line}`,
-        background: tone.soft,
-        color: tone.ink,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {BUMP_LABEL[bump]}
-      {suffix ? ` ${suffix}` : ''}
-    </Box>
-  );
-});
 
 export interface RolePillProps {
   role: ContainerRole;

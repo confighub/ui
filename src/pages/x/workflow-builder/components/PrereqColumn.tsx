@@ -18,13 +18,13 @@ import { Fragment, useEffect, useMemo, useRef } from 'react';
 
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import Tooltip from '@mui/material/Tooltip';
-import type { ChangeWorkflowAttestationPrerequisite } from '@confighub/rtk-query';
 
 import { useListUsersByIdChunkedQuery } from '@/hooks/chunkedQueriesApi';
 
 import {
   BUILTINS,
   BUILTIN_NAMES,
+  CHANGESET_REFUSED_BUILTINS,
   COMPLETE_LABEL,
   IMPLICIT_GATE,
   builtinDesc,
@@ -34,15 +34,23 @@ import {
   andJoinText,
   attestationSummary,
   declaredNames,
+  governsChangeSets,
   isAttestationName,
   isKnownGate,
   releasedBy,
   stageIndex,
   usedBy,
 } from '../model';
+import { AttestationEditor } from './AttestationEditor';
 import { Mono } from './Msg';
 import type { LoadedBuilderApi } from '../useWorkflowBuilder';
-import type { CustomPrerequisite, FinalStage, Stage, Workflow } from '../types';
+import type {
+  AttestationPrerequisite,
+  CustomPrerequisite,
+  FinalStage,
+  Stage,
+  Workflow,
+} from '../types';
 
 /** What the open target is called to a reader: `Complete`, or the Stage's own name. */
 function targetLabel(api: LoadedBuilderApi): string | null {
@@ -66,6 +74,19 @@ function targetOver(api: LoadedBuilderApi): string | null {
     return i > 0 ? wf.stages[i - 1].name : null;
   }
   return null;
+}
+
+/**
+ * Whether the open target is Complete of a workflow with no Stages: the gate on closing a
+ * ChangeSet, checked in every Space it was opened in rather than over a Stage ahead.
+ */
+function closesChangeSet(api: LoadedBuilderApi): boolean {
+  return api.selection?.kind === 'final' && governsChangeSets(api.workflow);
+}
+
+/** A target with no hop into it: the first Stage. Complete of a ChangeSet workflow has none either, but it gates closing. */
+function noHop(api: LoadedBuilderApi, target: string | null): boolean {
+  return Boolean(target) && !targetOver(api) && !closesChangeSet(api);
 }
 
 function gateTarget(api: LoadedBuilderApi): Stage | FinalStage | null {
@@ -129,6 +150,30 @@ function Sentence({ api }: { api: LoadedBuilderApi }) {
 
   const over = targetOver(api);
   const label = targetLabel(api);
+
+  if (closesChangeSet(api)) {
+    return (
+      <div className={`cpsent${t.prereqs.length ? '' : ' none'}`}>
+        <p className='s' aria-live='polite'>
+          {t.prereqs.length ? (
+            <>
+              {'For a ChangeSet to close, every Space it was opened in must be '}
+              {andJoin(t.prereqs).map((w, i) =>
+                w.sep !== undefined ? <Fragment key={i}>{w.sep}</Fragment> : <GateWord wf={wf} name={w.item} key={i} />,
+              )}
+              {'.'}
+            </>
+          ) : (
+            'Closing a ChangeSet governed by this workflow waits on nothing.'
+          )}
+        </p>
+        <p className='over'>
+          Checked when the ChangeSet&rsquo;s Units are taken out of it, against the latest Revision it made of each
+          Unit. A close is refused unless they all hold, or is forced with a reason the ChangeSet records.
+        </p>
+      </div>
+    );
+  }
 
   if (!over) {
     return (
@@ -295,8 +340,10 @@ function BuiltinRow({
   const t = gateTarget(api);
   const on = t ? t.prereqs.includes(name) : false;
   /* A Stage with nothing ahead of it has no hop to gate, so the boxes are
-     refused rather than hidden. */
-  const noPrev = Boolean(target) && !over;
+     refused rather than hidden. Closing a ChangeSet cannot wait on a Release, so those
+     two are refused there, unless one is already named and is being cleared. */
+  const refusedForChangeSet = closesChangeSet(api) && CHANGESET_REFUSED_BUILTINS.includes(name);
+  const noPrev = noHop(api, target) || (refusedForChangeSet && !on);
 
   return (
     <div
@@ -322,7 +369,15 @@ function BuiltinRow({
         <span className='cpfix'>{name}</span>
         <span className='tagmini cptag'>built in</span>
         {target ? (
-          <Tooltip title={builtinDesc(name, over)}>
+          <Tooltip
+            title={
+              refusedForChangeSet
+                ? 'A ChangeSet\u2019s change is released by a ChangeOrder after it closes, so closing it cannot wait on this.'
+                : closesChangeSet(api)
+                  ? builtinDesc(name, null).replace('the ChangeOrder\u2019s end tag marks', 'the ChangeSet last made of it')
+                  : builtinDesc(name, over)
+            }
+          >
             <InfoOutlinedIcon fontSize='inherit' className='infoicon' />
           </Tooltip>
         ) : null}
@@ -348,7 +403,7 @@ function CustomRow({
   const on = t ? t.prereqs.includes(c.name) : false;
   const missing = !c.expression.trim().startsWith('cel:');
   const sel = api.cpSel === c.id;
-  const noPrev = Boolean(target) && !targetOver(api);
+  const noPrev = noHop(api, target);
   const used = usedBy(wf, c.name);
 
   const nameRef = useRef<HTMLInputElement | null>(null);
@@ -532,9 +587,10 @@ function CustomRow({
 
 /**
  * An attestation prerequisite: declared with its rules on the workflow, gated on
- * by name here. Its fields are not edited on this page, so it is plain text like a
- * built-in, with what it requires written out beneath it. A Stage can name it as
- * an entry gate, as the others are, and also require it of its Releases.
+ * by name here. The name opens its fields, as a custom prerequisite's does, and
+ * what it requires is written out beneath it whether open or not. A Stage can
+ * name it as an entry gate, as the others are, and also require it of its
+ * Releases.
  */
 function AttestationRow({
   api,
@@ -544,7 +600,7 @@ function AttestationRow({
   onHover,
 }: {
   api: LoadedBuilderApi;
-  a: ChangeWorkflowAttestationPrerequisite;
+  a: AttestationPrerequisite;
   target: string | null;
   nameOf: (userId: string) => string;
   onHover: (name: string | null, implicit: boolean) => void;
@@ -552,19 +608,18 @@ function AttestationRow({
   const wf = api.workflow;
   const t = gateTarget(api);
   const on = t ? t.prereqs.includes(a.Name) : false;
-  const noPrev = Boolean(target) && !targetOver(api);
+  const noPrev = noHop(api, target);
   const st = openStage(api);
   const releaseOn = st ? st.releasePrereqs.includes(a.Name) : false;
   const entry = usedBy(wf, a.Name);
   const releases = releasedBy(wf, a.Name);
+  const sel = api.cpSel === a.id;
+  const bad = !a.Name.trim();
+
+  const cls = `cprow${bad ? ' bad' : sel ? ' sel' : on || releaseOn ? ' on' : ''}`;
 
   return (
-    <div
-      className={`cprow${on || releaseOn ? ' on' : ''}`}
-      data-cplight={a.Name}
-      onMouseEnter={() => onHover(a.Name, false)}
-      onMouseLeave={() => onHover(null, false)}
-    >
+    <div className={cls} id={`cp-${a.id}`}>
       <span className='cptop'>
         {target ? (
           <input
@@ -572,14 +627,26 @@ function AttestationRow({
             data-act='togglegate'
             data-gate={a.Name}
             checked={on}
-            disabled={noPrev}
+            disabled={noPrev || bad}
             aria-label={`${on ? 'Stop' : 'Have'} ${target} ${on ? 'naming' : 'name'} ${a.Name}`}
             onChange={(e) => api.toggleGate(a.Name, e.target.checked)}
           />
         ) : (
           <TickSlot />
         )}
-        <span className='cpfix'>{a.Name}</span>
+        <button
+          className='cpname'
+          type='button'
+          data-act='selcp'
+          data-id={a.id}
+          data-cplight={a.Name}
+          aria-expanded={sel}
+          onClick={() => api.toggleCustom(a.id)}
+          onMouseEnter={() => onHover(a.Name, false)}
+          onMouseLeave={() => onHover(null, false)}
+        >
+          {a.Name || 'unnamed'}
+        </button>
         <span className='tagmini cptag'>{(a.Type?.trim() || 'Approval').toLowerCase()}</span>
       </span>
 
@@ -603,6 +670,7 @@ function AttestationRow({
             data-act='togglerelease'
             data-gate={a.Name}
             checked={releaseOn}
+            disabled={bad}
             onChange={(e) => api.toggleReleaseGate(a.Name, e.target.checked)}
           />
           <span>
@@ -611,6 +679,8 @@ function AttestationRow({
           </span>
         </label>
       ) : null}
+
+      {sel ? <AttestationEditor api={api} a={a} nameOf={nameOf} /> : null}
     </div>
   );
 }
@@ -648,11 +718,10 @@ function AttestationRows({
   return (
     <>
       <div className='cpgroup'>
-        Attestation prerequisites, declared once and named wherever they apply. Their rules are
-        edited with <span className='mono'>cub changeworkflow update</span>.
+        Attestation prerequisites, declared once and named wherever they apply
       </div>
       {attestations.map((a) => (
-        <AttestationRow key={a.Name} api={api} a={a} target={target} nameOf={nameOf} onHover={onHover} />
+        <AttestationRow key={a.id} api={api} a={a} target={target} nameOf={nameOf} onHover={onHover} />
       ))}
     </>
   );
@@ -729,7 +798,8 @@ export function PrereqColumn({
       <Sentence api={api} />
 
       <div className='cplist'>
-        <ImplicitRow target={target} over={over} onHover={onHover} />
+        {/* `promoted` holds on every hop of a rollout; a ChangeSet is not promoted. */}
+        {governsChangeSets(wf) ? null : <ImplicitRow target={target} over={over} onHover={onHover} />}
         {BUILTINS.map((b) => (
           <BuiltinRow key={b.name} api={api} name={b.name} target={target} over={over} onHover={onHover} />
         ))}
@@ -749,7 +819,7 @@ export function PrereqColumn({
         <AttestationRows api={api} target={target} onHover={onHover} />
       </div>
 
-      {/* Adding is at the foot of the column, and only a custom one can be added. */}
+      {/* Adding is at the foot of the column: a custom check, or an attestation requirement. */}
       <div className='cpadd'>
         {wf.custom.length ? (
           <button className='btn sm' type='button' data-act='addcustom' onClick={api.addCustom}>
@@ -768,6 +838,26 @@ export function PrereqColumn({
           >
             <button className='btn sm' type='button' data-act='addcustom' onClick={api.addCustom}>
               + Declare a custom prerequisite
+            </button>
+          </Tooltip>
+        )}
+        {wf.attestations.length ? (
+          <button className='btn sm' type='button' data-act='addattestation' onClick={api.addAttestation}>
+            + Declare an attestation prerequisite
+          </button>
+        ) : (
+          <Tooltip
+            title={
+              <>
+                An approval, a security review, a change record: something a person or a system
+                has to have recorded on each Revision before it moves. Declared once with who may
+                record it and how many must, then named by a Stage, required of its Releases, or
+                named by {COMPLETE_LABEL}.
+              </>
+            }
+          >
+            <button className='btn sm' type='button' data-act='addattestation' onClick={api.addAttestation}>
+              + Declare an attestation prerequisite
             </button>
           </Tooltip>
         )}

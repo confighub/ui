@@ -65,7 +65,6 @@ import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import type { SxProps, Theme } from '@mui/material/styles';
-import RefreshIcon from '@mui/icons-material/Cached';
 import CheckBoxIcon from '@mui/icons-material/CheckBox';
 import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import IndeterminateCheckBoxIcon from '@mui/icons-material/IndeterminateCheckBox';
@@ -73,7 +72,6 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 
 import { ROUTE_COMPONENTS } from '../x/apps/appTypes';
-import { componentTheme } from '../x/apps/componentTheme';
 import { EndChangeOrderDialog } from '../x/apps/change-order/EndChangeOrderDialog';
 import { ChangeOrderStageStrip } from '../x/apps/change-order/ChangeOrderStageStrip';
 import { actionFor, promotionFor, changeOrderIntents } from '../x/apps/change-order/changeOrdersConsoleModel';
@@ -108,95 +106,38 @@ import { ChangeOrderExceptions } from './components/ChangeOrderExceptions';
 import { buildCompleteConsoleStage } from './changeOrderCompleteStep';
 import { ImageChangeCell } from './components/ImageChangeCell';
 import { useChangeOrderConsole, type ChangeOrderConsoleData } from './useChangeOrderConsole';
-
-/**
- * THE CONSOLE'S OWN TOKENS, TAKEN FROM `tools/design-fidelity/contract.json`.
- *
- * Local, not shared, and that is the whole point. `componentTheme` is read by
- * the Component view as well, so correcting its values here would restyle
- * screens outside this task. These shadow it for this page only.
- *
- * ⚠️ EVERY VALUE IS THE CONTRACT'S, NOT AN EYEBALLED MATCH. The reference's
- * designer refused to copy `#8e9aaa` out of the product on the grounds that
- * "copying a colour I had already established as unreadable would be fidelity
- * to the bug", so the contract holds a CORRECTION rather than a variant. Read
- * a value from the contract before changing one here.
- *
- * The worst offender was `fgSubtle` — `#8e9aaa` on white is **2.86:1**, under
- * the 4.5 floor, and it was carrying ten roles on this page: the space slug,
- * the age, the stage key, the column heads and the freshness line. Every piece
- * of secondary information on the screen was the least readable thing on it.
- * `#646b78` is the contract's answer at 5.36:1 on white and 5.09:1 on sunk.
- */
-const T = {
-  /** #191d23, 16.92:1 on white. Not `#111214` — the design contains no pure-black-adjacent ink. */
-  ink: '#191d23',
-  /** #4b5361, 7.75:1. Prose and secondary text. */
-  ink2: '#4b5361',
-  /** #646b78, 5.36:1 on white / 5.09:1 on sunk. Meta, labels, the quiet half of a two-ended line. */
-  ink3: '#646b78',
-  onEmphasis: '#ffffff',
-
-  surface: '#ffffff',
-  /** Not a row: column head and footer. */
-  surfaceSunk: '#f8f9fb',
-  /** Row and control hover. Distinct from `surfaceSunk`, which means "not a row". */
-  surfaceHover: '#f2f5fa',
-
-  /** Every internal rule and card border. */
-  line: '#e2e5ea',
-  /** Control borders. */
-  lineStrong: '#cdd2da',
-  /** The ring on a stage not yet reached. */
-  idleLine: '#d3d8df',
-  idleSoft: '#eef0f3',
-
-  /** The ONLY accent: selection and primary action. */
-  accent: '#2f5fd0',
-  /** The text-on-white and hover value of the accent. */
-  accentInk: '#234ba6',
-  accentSoft: '#eaf0fd',
-
-  ok: '#1c7a4c',
-  wait: '#8a6100',
-  waitSoft: '#fbf1dc',
-  bad: '#ad2b2b',
-  badSoft: '#fbeaea',
-  badLine: '#eec5c5',
-
-  shadow: '0 1px 2px rgba(25,29,35,.05), 0 1px 1px rgba(25,29,35,.04)',
-
-  /**
-   * ⚠️ DELIBERATELY NOT THE CONTRACT'S FAMILIES, and the one place this file
-   * knowingly departs from a measured value.
-   *
-   * The reference declares `"Segoe UI", system-ui, …` and `ui-monospace, …`.
-   * Those are a mockup author's system stacks, not a decision about the
-   * product: ConfigHub's face is Manrope and every other screen uses it.
-   * Adopting the reference's stack would make this the only page in the product
-   * set in a different typeface — a brand change smuggled in as a fidelity fix.
-   *
-   * Expect `type-vocabulary` and `font-rendering` findings on the family field
-   * of every role here. That is the deviation being visible, which is what the
-   * instrument is for. It is a decision for the user, not for this file.
-   */
-  sans: componentTheme.fontSans,
-  mono: componentTheme.fontMono,
-
-  /**
-   * The contract never renders `line-height: normal`. Its ramp is 1.25 / 1.35 /
-   * 1.45 / 1.55, and 1.45 carries almost everything, so leaving it unset — which
-   * is what `normal` means — is the single most repeated type defect available.
-   *
-   * ⚠️ LETTER-SPACING IS NOT THE SAME CASE, THOUGH IT LOOKS LIKE IT. The
-   * contract stores `0px` and Chrome reports `normal` for the same declaration,
-   * so the two READ as drift and are not. `probe.mjs:224` maps `normal` to
-   * `0px` before comparing. Do not "fix" it: setting `letterSpacing: 0` changes
-   * no pixel and no measurement, and leaves a comment claiming a correction
-   * that never happened.
-   */
-  lh: 1.45,
-} as const;
+import {
+  consoleTokens as T,
+  FILTER_SELECT_SX,
+  KPI_ACTIVE_CARD_SX,
+  KPI_CARD_SX,
+  KPI_HINT_SX,
+  KPI_LABEL_SX,
+  KPI_NUM_SX,
+  KPI_PARTIAL_CARD_SX,
+  R_CONTROL,
+  R_MICRO,
+  ageFrom,
+  controlSx,
+  freshnessFrom,
+  sentenceCase,
+  truncateWords,
+} from './consoleStyle';
+import {
+  ConsoleClearButton,
+  ConsoleColumnHead,
+  ConsoleDateRange,
+  ConsoleEmpty,
+  ConsoleFilterBar,
+  ConsoleFooter,
+  ConsoleIntro,
+  ConsoleList,
+  ConsoleLoading,
+  ConsoleSearch,
+  ConsoleSelectFilter,
+  ConsoleTitleRow,
+  FieldLabel,
+} from './components/ConsoleParts';
 
 /**
  * The row grid, shared by the column head and every row so the two cannot drift
@@ -245,16 +186,6 @@ const IMAGE_CHANGE_CELL = {
   minWidth: 0,
   '@media (max-width: 1275px)': { gridColumn: '1 / -1', gridRow: 2, marginTop: '8px', maxWidth: 640 },
 } as const;
-
-/**
- * The reference's radii, by name. `componentTheme.radiusSm` is 5px and
- * `radiusMd` 9px; the contract's closed `radius-vocabulary` holds neither 5px
- * nor the 4px that MUI's `borderRadius: 0.5` resolves to. These three are
- * members of it.
- */
-const R_MICRO = '3px';
-const R_CONTROL = '8px';
-const R_SURFACE = '10px';
 
 /**
  * The strip's segment tones, re-hued for this page.
@@ -354,115 +285,6 @@ const KPI_TONES: Record<ConsoleGroup, string> = {
   'in-progress': T.ink2,
   finished: STATE_INK.complete,
 };
-/** The contract's own figure type: `ui-monospace | 18px | 650 | 1 | -0.36px`. */
-const KPI_NUM_SX = {
-  fontFamily: T.mono,
-  fontSize: '18px',
-  fontWeight: 650,
-  lineHeight: 1,
-  letterSpacing: '-0.36px',
-} as const;
-const KPI_LABEL_SX = { fontFamily: T.sans, fontSize: '12.5px', lineHeight: T.lh, color: T.ink } as const;
-/**
- * `textTransform: 'none'` is the one override this file exists to make: the
- * component's own hint line is `variant='caption'`, which this theme
- * uppercases globally, and the ruling against uppercase applies here. The
- * reduced tracking matches every other place this file removes the same
- * transform — `.07em` was sized for capitals and reads loose without them.
- */
-const KPI_HINT_SX = {
-  fontFamily: T.sans,
-  fontSize: '11.5px',
-  lineHeight: T.lh,
-  color: T.ink3,
-  textTransform: 'none',
-  letterSpacing: '.02em',
-} as const;
-/**
- * ⚠️ `opacity: 1` HERE IS NOT A NO-OP — it is overriding the component's own
- * `opacity: isDisabled ? 0.5 : 1` (R11: de-emphasis is a chosen colour, never
- * an opacity composite). Measured, not assumed: without this line the sweep
- * found five faded text elements — every zero-count chip. `cardSx` is layered
- * on top of the base rules by the component's own design (its header says
- * so), which is exactly the mechanism this uses; nothing in
- * `ChangeOrderExceptions.tsx` was touched.
- *
- * The visual distinction survives losing the opacity: the component already
- * sends a disabled chip's count and label to `text.disabled` (a real colour,
- * not a composite) — only the hint line stops dimming further, which costs
- * nothing a reader needs, since the count and label already say "empty".
- */
-const KPI_CARD_SX = {
-  border: `1px solid ${T.line}`,
-  borderRadius: R_CONTROL,
-  background: T.surface,
-  padding: '9px 13px 9px 11px',
-  opacity: 1,
-} as const;
-const KPI_ACTIVE_CARD_SX = {
-  borderColor: T.accent,
-  background: T.accentSoft,
-  boxShadow: `inset 0 0 0 1px ${T.accent}`,
-} as const;
-/**
- * The State dropdown holds some of this card's states, or these and others.
- * The accent border says the card takes part in the filter; the dash and the
- * plain surface say it is not the whole of it. Line style, never opacity (R11).
- */
-const KPI_PARTIAL_CARD_SX = {
-  borderColor: T.accent,
-  borderStyle: 'dashed',
-  background: T.surface,
-  boxShadow: 'none',
-} as const;
-
-/** `"needs a Release"` -> `"Needs a Release"`. The copy module writes hints as fragments; this is the only place they are read as sentences. */
-function sentenceCase(s: string): string {
-  return s.length === 0 ? s : s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-/**
- * A short label, not a clipped sentence — cut at the last whole word inside
- * `max`, never mid-word.
- *
- * ⚠️ THE CSS ELLIPSIS ON THE DETAIL LINE TRUNCATES THE PIXELS, NOT THE
- * CHARACTERS. `text-overflow: ellipsis` hides overflow visually; the full
- * sentence is still every one of its own characters in the DOM, so a reader
- * using a browser's own "find in page", copy, or any tool that reads
- * `textContent` — including a structural fidelity probe — sees the whole
- * paragraph regardless of what is painted. Cutting the STRING here, not just
- * its rendering, is what makes "a short label" actually true rather than
- * only true to the eye. The full sentence survives as the `title` tooltip.
- */
-function truncateWords(s: string, max: number): string {
-  if (s.length <= max) return s;
-  const cut = s.slice(0, max);
-  const lastSpace = cut.lastIndexOf(' ');
-  return `${(lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
-}
-
-/** Coarse on purpose: an exact duration on a list row is noise, not information. */
-function ageFrom(createdAt: string | undefined, now: number): string {
-  if (createdAt === undefined) return '';
-  const then = Date.parse(createdAt);
-  if (Number.isNaN(then)) return '';
-  return elapsed(now - then);
-}
-
-function elapsed(ms: number): string {
-  const mins = Math.max(0, Math.round(ms / 60000));
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.round(mins / 60);
-  if (hours < 48) return `${hours}h`;
-  return `${Math.round(hours / 24)}d`;
-}
-
-/** `Updated 4m ago`. The number is the message; there is no sentence around it. */
-function freshnessFrom(lastLoadedAt: number | null, now: number): string {
-  if (lastLoadedAt === null) return '';
-  const ms = now - lastLoadedAt;
-  return ms < 60000 ? 'Updated just now' : `Updated ${elapsed(ms)} ago`;
-}
 
 /**
  * The two faces, and the rule that decides between them.
@@ -472,71 +294,6 @@ function freshnessFrom(lastLoadedAt: number | null, now: number): string {
  * the interface talking about one." Slug, stage key and age are mono here for
  * that reason and no other.
  */
-
-/** A control's chrome, shared so `Refresh` and a row action cannot drift apart. */
-function controlSx(variant: 'primary' | 'quiet', enabled: boolean): SxProps<Theme> {
-  return {
-    all: 'unset',
-    boxSizing: 'border-box',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 28,
-    padding: '0 11px',
-    fontFamily: T.sans,
-    fontSize: 12.5,
-    lineHeight: T.lh,
-    fontWeight: 600,
-    borderRadius: R_CONTROL,
-    border: '1px solid',
-    cursor: enabled ? 'pointer' : 'not-allowed',
-    /*
-     * ⚠️ DISABLED IS A CHOSEN COLOUR, NEVER `opacity` (R11).
-     *
-     * An opacity composite produces a value nobody picked and no vocabulary
-     * check can see: the token says `#2f5fd0`, the screen shows whatever 0.55
-     * of it over whatever happens to be behind it comes to. That mechanism is
-     * behind the reference's four worst below-AA pairs — the ratio is never
-     * wrong on purpose, it is simply never anybody's decision.
-     *
-     * The disabled TEXT is measured, not assumed: `#646b78` on white is
-     * **5.36:1**, clearing the 4.5 floor.
-     *
-     * ⚠️ THE BORDER IS NOT AT THE 3:1 TIER AND THIS COMMENT ORIGINALLY CLAIMED
-     * IT WAS. `#cdd2da` on white measures **1.52:1**. It is the reference's own
-     * `--line-strong`, carried deliberately and used on every quiet control
-     * here, enabled ones included — so it is a property of the contract rather
-     * than of this button, and WCAG exempts a disabled control's boundary in
-     * any case. The ENABLED controls using it are not exempt; recorded as a
-     * finding against the palette rather than patched locally, which would
-     * leave this one button inconsistent with every other.
-     *
-     * Left as a warning about the shape: I wrote the ratio into the comment
-     * before measuring it, in the same edit that removed an opacity for being
-     * a value nobody had checked.
-     */
-    ...(!enabled
-      ? { background: T.surface, color: T.ink3, borderColor: T.lineStrong }
-      : variant === 'primary'
-        ? {
-            background: T.accent,
-            color: T.onEmphasis,
-            borderColor: T.accentInk,
-            '&:hover': { background: T.accentInk },
-          }
-        : {
-            background: T.surface,
-            color: T.ink,
-            borderColor: T.lineStrong,
-            '&:hover': { background: T.surfaceSunk },
-          }),
-    '&:focus-visible': {
-      outline: `2px solid ${T.accent}`,
-      outlineOffset: 2,
-      borderRadius: R_MICRO,
-    },
-  };
-}
 
 export interface ChangeOrdersConsoleProps {
   /**
@@ -991,44 +748,6 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
 });
 
 /** A control's own label, paired to its `<select>`/`<input>` by `htmlFor`, never by placement alone. */
-function FieldLabel({ htmlFor, id, children }: { htmlFor: string; id?: string; children: React.ReactNode }) {
-  return (
-    <Typography
-      component="label"
-      htmlFor={htmlFor}
-      id={id}
-      sx={{ fontSize: 11.5, lineHeight: T.lh, fontWeight: 600, color: T.ink3, whiteSpace: 'nowrap' }}
-    >
-      {children}
-    </Typography>
-  );
-}
-
-const SELECT_SX: SxProps<Theme> = {
-  height: 30,
-  fontFamily: T.sans,
-  fontSize: 13,
-  lineHeight: T.lh,
-  color: T.ink,
-  background: T.surface,
-  border: `1px solid ${T.lineStrong}`,
-  borderRadius: R_CONTROL,
-  padding: '0 8px',
-  '&:focus-visible': { outline: `2px solid ${T.accent}`, outlineOffset: 1 },
-};
-
-/**
- * A native `<select>` sizes itself to its widest option, which leaves the
- * label pressed against the arrow. A floor gives both filters the same width
- * and room around their text; the filter bar wraps rather than shrinking them.
- */
-const FILTER_SELECT_SX: SxProps<Theme> = {
-  ...SELECT_SX,
-  minWidth: 180,
-  flexShrink: 0,
-  padding: '0 10px',
-};
-
 const CHECK_ICON: Record<SectionCheck, typeof CheckBoxIcon> = {
   checked: CheckBoxIcon,
   indeterminate: IndeterminateCheckBoxIcon,
@@ -1264,133 +983,43 @@ function FilterBar({
   onClear: () => void;
   clearDisabled: boolean;
 }) {
-  const spaceId = useId();
-  const componentId = useId();
-  const updateTypeId = useId();
-  const createdFromId = useId();
-  const createdToId = useId();
   return (
-    <Stack
-      direction="row"
-      alignItems="center"
-      flexWrap="wrap"
-      sx={{
-        gap: '8px',
-        padding: '10px 12px',
-        background: T.surface,
-        border: `1px solid ${T.line}`,
-        borderBottom: 'none',
-        borderRadius: `${R_SURFACE} ${R_SURFACE} 0 0`,
-      }}
-    >
-      {/*
-        `type="search"` maps to `role="searchbox"` on its own — no `role`
-        attribute needed, and one fewer place for the DOM and the accessibility
-        tree to disagree.
-      */}
-      <Box
-        component="input"
-        type="search"
-        value={search}
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => onSearch(e.target.value)}
-        placeholder={changeOrdersConsoleCopy.filters.searchPlaceholder}
-        aria-label={changeOrdersConsoleCopy.filters.searchPlaceholder}
-        sx={{ ...SELECT_SX, width: 220, '&::placeholder': { color: T.ink3 } }}
-      />
-
+    <ConsoleFilterBar>
+      <ConsoleSearch value={search} onChange={onSearch} placeholder={changeOrdersConsoleCopy.filters.searchPlaceholder} />
       <StateFilter selection={selectedStates} onChange={onSelectedStates} counts={stateCounts} />
-
-      <Stack direction="row" alignItems="center" sx={{ gap: '6px' }}>
-        <FieldLabel htmlFor={spaceId}>{changeOrdersConsoleCopy.filters.space}</FieldLabel>
-        <Box
-          component="select"
-          id={spaceId}
-          value={spaceFilter}
-          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onSpaceFilter(e.target.value)}
-          sx={FILTER_SELECT_SX}
-        >
-          <option value="all">{changeOrdersConsoleCopy.filters.allSpaces}</option>
-          {spaceSlugs.map((slug) => (
-            <option key={slug} value={slug}>
-              {slug}
-            </option>
-          ))}
-        </Box>
-      </Stack>
-
-      <Stack direction="row" alignItems="center" sx={{ gap: '6px' }}>
-        <FieldLabel htmlFor={componentId}>{changeOrdersConsoleCopy.filters.component}</FieldLabel>
-        <Box
-          component="select"
-          id={componentId}
-          value={componentFilter}
-          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onComponentFilter(e.target.value)}
-          sx={FILTER_SELECT_SX}
-        >
-          <option value="all">{changeOrdersConsoleCopy.filters.allComponents}</option>
-          {componentSlugs.map((slug) => (
-            <option key={slug} value={slug}>
-              {slug}
-            </option>
-          ))}
-        </Box>
-      </Stack>
-
-      <Stack direction="row" alignItems="center" sx={{ gap: '6px' }}>
-        <FieldLabel htmlFor={updateTypeId}>{changeOrdersConsoleCopy.filters.updateType}</FieldLabel>
-        <Box
-          component="select"
-          id={updateTypeId}
-          value={updateTypeFilter}
-          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onUpdateTypeFilter(e.target.value)}
-          sx={FILTER_SELECT_SX}
-        >
-          <option value="all">{changeOrdersConsoleCopy.filters.allUpdateTypes}</option>
-          {updateTypes.map((updateType) => (
-            <option key={updateType} value={updateType}>
-              {updateType}
-            </option>
-          ))}
-        </Box>
-      </Stack>
-
-      {/*
-        Each end bounds the other, so the browser's picker offers no range
-        that runs backwards.
-      */}
-      <Stack direction="row" alignItems="center" sx={{ gap: '6px' }}>
-        <FieldLabel htmlFor={createdFromId}>{changeOrdersConsoleCopy.filters.createdFrom}</FieldLabel>
-        <Box
-          component="input"
-          type="date"
-          id={createdFromId}
-          value={createdFrom}
-          max={createdTo === '' ? undefined : createdTo}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => onCreatedFrom(e.target.value)}
-          sx={SELECT_SX}
-        />
-        <FieldLabel htmlFor={createdToId}>{changeOrdersConsoleCopy.filters.createdTo}</FieldLabel>
-        <Box
-          component="input"
-          type="date"
-          id={createdToId}
-          value={createdTo}
-          min={createdFrom === '' ? undefined : createdFrom}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => onCreatedTo(e.target.value)}
-          sx={SELECT_SX}
-        />
-      </Stack>
-
-      <Box
-        component="button"
-        type="button"
-        onClick={onClear}
-        disabled={clearDisabled}
-        sx={controlSx('quiet', !clearDisabled)}
-      >
+      <ConsoleSelectFilter
+        label={changeOrdersConsoleCopy.filters.space}
+        value={spaceFilter}
+        onChange={onSpaceFilter}
+        allLabel={changeOrdersConsoleCopy.filters.allSpaces}
+        options={spaceSlugs}
+      />
+      <ConsoleSelectFilter
+        label={changeOrdersConsoleCopy.filters.component}
+        value={componentFilter}
+        onChange={onComponentFilter}
+        allLabel={changeOrdersConsoleCopy.filters.allComponents}
+        options={componentSlugs}
+      />
+      <ConsoleSelectFilter
+        label={changeOrdersConsoleCopy.filters.updateType}
+        value={updateTypeFilter}
+        onChange={onUpdateTypeFilter}
+        allLabel={changeOrdersConsoleCopy.filters.allUpdateTypes}
+        options={updateTypes}
+      />
+      <ConsoleDateRange
+        fromLabel={changeOrdersConsoleCopy.filters.createdFrom}
+        toLabel={changeOrdersConsoleCopy.filters.createdTo}
+        from={createdFrom}
+        onFrom={onCreatedFrom}
+        to={createdTo}
+        onTo={onCreatedTo}
+      />
+      <ConsoleClearButton onClick={onClear} disabled={clearDisabled}>
         {changeOrdersConsoleCopy.filters.clear}
-      </Box>
-    </Stack>
+      </ConsoleClearButton>
+    </ConsoleFilterBar>
   );
 }
 
@@ -1457,40 +1086,7 @@ const COLUMNS = [
 ] as const;
 
 function ColumnHead() {
-  return (
-    <Box
-      role="row"
-      sx={{
-        ...GRID,
-        height: 33,
-        borderBottom: `1px solid ${T.line}`,
-        background: T.surfaceSunk,
-      }}
-    >
-      {COLUMNS.map((column) => (
-        <Typography
-          key={column.key}
-          component="span"
-          sx={{
-            fontSize: 11.5,
-            lineHeight: T.lh,
-            fontWeight: 700,
-            // The reference sets `.06em` here to open up capitals. Without the
-            // capitals that tracking reads loose, so it comes down with them.
-            letterSpacing: '.02em',
-            textTransform: 'none',
-            color: T.ink3,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            ...column.sx,
-          }}
-        >
-          {column.label}
-        </Typography>
-      ))}
-    </Box>
-  );
+  return <ConsoleColumnHead columns={COLUMNS} grid={GRID} />;
 }
 
 /**
@@ -1670,44 +1266,25 @@ export function ChangeOrdersConsoleView({
       data-testid="change-orders-console"
       sx={{ fontFamily: T.sans, color: T.ink, minWidth: 0 }}
     >
-      <Stack
-        direction="row"
-        alignItems="flex-end"
-        justifyContent="space-between"
-        sx={{ gap: '14px' }}
-      >
-        <Stack direction="row" alignItems="baseline" sx={{ gap: '10px', minWidth: 0 }}>
-          {/*
-            The console IS the page at altitude 0, so it owns its own `h1` —
-            `anchor-presence` asserts `heading1::ChangeOrders` on this route. Taking
-            the title from a prop or from the mounting page would put the
-            contract's most basic anchor behind a cross-file agreement that
-            breaks silently: mount it somewhere that forgets, and the check
-            fails with nothing on screen to explain why.
-          */}
-          <Typography
-            component="h1"
-            id={headingId}
-            sx={{ fontSize: 21, lineHeight: T.lh, fontWeight: 650, letterSpacing: '-.02em', color: T.ink }}
-          >
-            {changeOrdersConsoleCopy.pageTitle}
-          </Typography>
-          <Typography
-            component="span"
-            sx={{ fontFamily: T.mono, fontSize: 12.5, lineHeight: T.lh, color: T.ink3 }}
-          >
-            {matched.length}
-          </Typography>
-          {/*
+      {/*
+        The console IS the page at altitude 0, so it owns its own `h1` —
+        `anchor-presence` asserts `heading1::ChangeOrders` on this route.
+      */}
+      <ConsoleTitleRow
+        title={changeOrdersConsoleCopy.pageTitle}
+        headingId={headingId}
+        count={matched.length}
+        freshness={freshness}
+        refreshing={isFetching}
+        onRefresh={refreshNow}
+        note={
+          /*
             ⚠️ A SHORT LIST MUST SAY SO. Records the server sent that could not
-            be built into a row are dropped — they have no id to open or no slug
-            to name — and a drop that says nothing turns "we could not read
-            this" into "this does not exist". The count above would then be a
-            confident claim about a fleet it had never fully seen.
-
-            Rendered only when non-zero, so the normal case carries no text.
-          */}
-          {unreadable.orders + unreadable.spaces > 0 && (
+            be built into a row are dropped, and a drop that says nothing turns
+            "we could not read this" into "this does not exist". Rendered only
+            when non-zero, so the normal case carries no text.
+          */
+          unreadable.orders + unreadable.spaces > 0 ? (
             <Typography
               component="span"
               role="status"
@@ -1716,28 +1293,9 @@ export function ChangeOrdersConsoleView({
             >
               {`${unreadable.orders + unreadable.spaces} not readable, not shown`}
             </Typography>
-          )}
-        </Stack>
-
-        <Stack direction="row" alignItems="center" sx={{ gap: '10px' }}>
-          {freshness !== '' && (
-            <Typography component="span" sx={{ fontSize: 11.5, lineHeight: T.lh, color: T.ink3 }}>
-              {freshness}
-            </Typography>
-          )}
-          <Box
-            component="button"
-            type="button"
-            onClick={refreshNow}
-            disabled={isFetching}
-            sx={{ ...controlSx('quiet', !isFetching), gap: '6px' }}
-          >
-            {/* Decorative: the button's own text is its accessible name already. */}
-            <RefreshIcon aria-hidden="true" sx={{ fontSize: 15 }} />
-            Refresh
-          </Box>
-        </Stack>
-      </Stack>
+          ) : null
+        }
+      />
 
       {/*
         The one-sentence explanation, under the title row rather than beside
@@ -1745,11 +1303,7 @@ export function ChangeOrdersConsoleView({
         operator reading this forty times a week should be able to skip a
         short paragraph at a glance, not parse one that runs the page's width.
       */}
-      <Typography
-        sx={{ fontSize: 13.5, lineHeight: T.lh, color: T.ink2, maxWidth: '78ch', margin: '4px 0 16px' }}
-      >
-        {changeOrdersConsoleCopy.pageIntro}
-      </Typography>
+      <ConsoleIntro>{changeOrdersConsoleCopy.pageIntro}</ConsoleIntro>
 
       {/*
         `selection` is the State filter's one value, the same one the State
@@ -1820,50 +1374,29 @@ export function ChangeOrdersConsoleView({
         </Box>
       )}
 
-      <Box
-        component="section"
-        role="region"
-        aria-label={changeOrdersConsoleCopy.pageTitle}
-        sx={{
-          background: T.surface,
-          border: `1px solid ${T.line}`,
-          // Square at the top: the Legend directly above supplies that edge
-          // (its own border omits the bottom line for the same reason), so the
-          // three panels read as one continuous card rather than three stacked
-          // ones.
-          borderRadius: `0 0 ${R_SURFACE} ${R_SURFACE}`,
-          boxShadow: T.shadow,
-          minWidth: 0,
-        }}
-      >
+      {/* Square at the top: the Legend directly above supplies that edge, so the panels read as one card. */}
+      <ConsoleList label={changeOrdersConsoleCopy.pageTitle}>
         <ColumnHead />
 
         {isLoading ? (
-          <Typography
-            data-testid="change-orders-loading"
-            sx={{ fontSize: 12.5, lineHeight: T.lh, color: T.ink3, padding: '46px 20px 50px', textAlign: 'center' }}
-          >
-            Loading…
-          </Typography>
+          <ConsoleLoading testId="change-orders-loading" />
         ) : matched.length === 0 ? (
-          <Stack alignItems="center" sx={{ gap: '8px', padding: '46px 20px 50px', textAlign: 'center' }}>
-            <Typography sx={{ fontSize: 15, lineHeight: T.lh, fontWeight: 650, color: T.ink }}>
-              {/*
-                Two distinct empty claims, not one message doing both jobs.
-                "Nothing exists" (`rows.length === 0`) and "your filters
-                matched nothing" (a fixable, reader-caused state — Clear
-                undoes it) are different facts, and telling the reader to
-                Clear filters when no filter is responsible sends them
-                looking for a control that changes nothing.
-              */}
-              {rows.length === 0 ? changeOrdersConsoleCopy.empty.none : changeOrdersConsoleCopy.empty.filtered}
-            </Typography>
-            {emptyBecauseFiltered ? (
-              <Box component="button" type="button" onClick={clearFilters} sx={controlSx('quiet', true)}>
-                {changeOrdersConsoleCopy.filters.clear}
-              </Box>
-            ) : null}
-          </Stack>
+          /*
+            Two distinct empty claims: "nothing exists" and "your filters matched
+            nothing", which Clear undoes. Telling the reader to Clear filters when
+            no filter is responsible sends them looking for a control that
+            changes nothing.
+          */
+          <ConsoleEmpty
+            message={rows.length === 0 ? changeOrdersConsoleCopy.empty.none : changeOrdersConsoleCopy.empty.filtered}
+            action={
+              emptyBecauseFiltered ? (
+                <ConsoleClearButton onClick={clearFilters} disabled={false}>
+                  {changeOrdersConsoleCopy.filters.clear}
+                </ConsoleClearButton>
+              ) : null
+            }
+          />
         ) : (
           <>
             {matched.map((row) => (
@@ -1884,37 +1417,14 @@ export function ChangeOrdersConsoleView({
               folds in here rather than getting a second, separately-styled
               bar underneath it.
             */}
-            <Stack
-              direction="row"
-              alignItems="center"
-              justifyContent="space-between"
-              sx={{
-                gap: '10px',
-                padding: '10px 14px',
-                borderTop: `1px solid ${T.line}`,
-                background: T.surfaceSunk,
-                borderRadius: `0 0 ${R_SURFACE} ${R_SURFACE}`,
-                fontSize: 12.5,
-                lineHeight: T.lh,
-                color: T.ink3,
-              }}
-            >
-              <Stack direction="row" alignItems="center" sx={{ gap: '10px' }}>
-                <Typography
-                  component="span"
-                  data-testid="change-orders-count"
-                  sx={{ fontSize: 12.5, lineHeight: T.lh, color: T.ink3 }}
-                >
-                  {`${matched.length} ${matched.length === 1 ? 'ChangeOrder' : 'ChangeOrders'}`}
-                </Typography>
-              </Stack>
-              <Typography component="span" sx={{ fontSize: 12.5, lineHeight: T.lh, color: T.ink3 }}>
-                Select a row to open its promotion rail.
-              </Typography>
-            </Stack>
+            <ConsoleFooter
+              countTestId="change-orders-count"
+              count={`${matched.length} ${matched.length === 1 ? 'ChangeOrder' : 'ChangeOrders'}`}
+              hint="Select a row to open its promotion rail."
+            />
           </>
         )}
-      </Box>
+      </ConsoleList>
 
       {onAnnounce === undefined && (
         <LiveRegion message={announcement} data-testid="change-orders-announce" />

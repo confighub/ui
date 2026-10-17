@@ -13,10 +13,11 @@ import {
   useGetFanOutSourceRevisionsQuery,
 } from './changeOrderImageDiffApi';
 import {
-  EMPTY_FIELD_CHANGES,
+  IMAGE_CHANGES_LOADING,
+  IMAGE_CHANGES_UNAVAILABLE,
   imageChangesFromUnitDiffs,
   narrowUnitDiffsToPaths,
-  type ChangeOrderImageChanges,
+  type ImageChanges,
 } from './imageChange';
 
 export interface UseFanOutImageChangesArgs {
@@ -29,20 +30,6 @@ export interface UseFanOutImageChangesArgs {
   /** True to make no request: the row is off screen. */
   skip?: boolean;
 }
-
-const LOADING: ChangeOrderImageChanges = Object.freeze({
-  status: 'loading',
-  images: [],
-  fieldChanges: EMPTY_FIELD_CHANGES,
-  unitCount: 0,
-}) as ChangeOrderImageChanges;
-
-const UNAVAILABLE: ChangeOrderImageChanges = Object.freeze({
-  status: 'unavailable',
-  images: [],
-  fieldChanges: EMPTY_FIELD_CHANGES,
-  unitCount: 0,
-}) as ChangeOrderImageChanges;
 
 /**
  * The image and version changes of a fan-out ChangeOrder (TransformPaths, Upsert, Insert), for a list row.
@@ -64,7 +51,7 @@ export function useFanOutImageChanges({
   inScopeSpaceIds,
   updateType,
   skip = false,
-}: UseFanOutImageChangesArgs): ChangeOrderImageChanges {
+}: UseFanOutImageChangesArgs): ImageChanges {
   const inScope = useMemo(() => [...(inScopeSpaceIds ?? [])].sort(), [inScopeSpaceIds]);
   const revisionWhere = useMemo(() => fanOutRevisionWhere(startTagId, endTagId, inScope), [startTagId, endTagId, inScope]);
   const named = changeOrderId !== undefined && changeOrderId !== '' && revisionWhere !== undefined;
@@ -88,13 +75,13 @@ export function useFanOutImageChanges({
   const linkList = links.currentData;
 
   return useMemo(() => {
-    if (!named && !skip) return UNAVAILABLE;
-    if (failed) return UNAVAILABLE;
-    if (revisions.currentData === undefined) return LOADING;
+    if (!named && !skip) return IMAGE_CHANGES_UNAVAILABLE;
+    if (failed) return IMAGE_CHANGES_UNAVAILABLE;
+    if (revisions.currentData === undefined) return IMAGE_CHANGES_LOADING;
     // No Unit marked outside the scope: the Tags carry no source to read, which is not "nothing changed".
-    if (unitIds.length === 0) return UNAVAILABLE;
-    if (diffs === undefined) return LOADING;
-    if (linkWhere !== undefined && linkList === undefined) return LOADING;
+    if (unitIds.length === 0) return IMAGE_CHANGES_UNAVAILABLE;
+    if (diffs === undefined) return IMAGE_CHANGES_LOADING;
+    if (linkWhere !== undefined && linkList === undefined) return IMAGE_CHANGES_LOADING;
 
     const linksByUnitId = new Map<string, LinkRead[]>();
     for (const entry of linkList ?? []) {

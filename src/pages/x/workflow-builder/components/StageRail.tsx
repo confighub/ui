@@ -17,7 +17,7 @@ import Tooltip from '@mui/material/Tooltip';
 
 import { COMPLETE_LABEL } from '../vocabulary';
 import { CheckIcon, FlagIcon, GateIcon, OpenIcon, WarnIcon } from '../icons';
-import { isKnownGate, plural } from '../model';
+import { governsChangeSets, isKnownGate, plural } from '../model';
 import { definitionFaults } from '../model';
 import type { Preview } from '../preview';
 import { Mono } from './Msg';
@@ -187,18 +187,22 @@ export function StageRail({ api, lit, preview }: StageRailProps) {
   const wf = api.workflow;
   const sel = api.selection;
 
-  if (!wf.stages.length) {
+  if (governsChangeSets(wf)) {
     return (
       <div className='cardbody'>
         <div className='blank'>
-          <div className='t'>This workflow has no Stages</div>
+          <div className='t'>No Stages: this workflow governs ChangeSets</div>
           <p className='d'>
-            A ChangeOrder created from it would have nowhere to go. Add the first Stage: it is the
-            one the change starts in, and it has no entry gates, because nothing precedes it.
+            {`A ChangeSet governed by it closes only when every prerequisite of ${COMPLETE_LABEL} holds in every Space it was opened in. A ChangeOrder cannot use it, since it has no Stage to promote into. Add a Stage to make it a rollout workflow instead.`}
           </p>
-          <button className='btn primary' type='button' data-act='addstage' onClick={api.addStage}>
-            Add the first Stage
-          </button>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+            <button className='btn primary' type='button' data-act='selfinal' onClick={api.selectFinal}>
+              {`Edit ${COMPLETE_LABEL}`}
+            </button>
+            <button className='btn' type='button' data-act='addstage' onClick={api.addStage}>
+              Add the first Stage
+            </button>
+          </div>
         </div>
       </div>
     );

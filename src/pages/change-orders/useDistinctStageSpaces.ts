@@ -90,7 +90,7 @@ export function useDistinctStageSpaces(orders: ConsoleChangeOrder[]): DistinctSt
     const wheres = new Set<string>();
     for (const order of orders) {
       if (order.governing.state !== 'governed') continue;
-      for (const stage of order.governing.workflow.Stages) {
+      for (const stage of order.governing.workflow.Stages ?? []) {
         if (!stageSelectsWholeScope(stage)) wheres.add(stageWhereSpace(stage));
       }
     }

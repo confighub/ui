@@ -1411,7 +1411,7 @@ export function buildConsoleRow(
   // so the Spaces this ChangeOrder is headed for are applied here rather than
   // to the query.
   const stageSpacesByStageName: Record<string, ExtendedSpaceRead[]> = {};
-  for (const stage of workflow.Stages) {
+  for (const stage of workflow.Stages ?? []) {
     stageSpacesByStageName[stage.Name] = changeOrderStageMembers(
       stage,
       stageSpacesByClause[stageWhereSpace(stage)],

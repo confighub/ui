@@ -1,6 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { useCallback, useMemo, useState } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 
 import { useComponentSlugs } from '@/hooks/useComponentSlugs';
 import type { ExtendedSpaceRead } from '@confighub/rtk-query';
@@ -24,6 +25,7 @@ import { type SelectedApp } from './appTypes';
 import { buildOverviewData, type ComponentKpiRow } from './componentOverview';
 import { useOutstandingChangeOrderBaseSpaceIds } from './change-order/useOutstandingChangeOrdersBulk';
 import { useOpenChangeSets } from './useOpenChangeSets';
+import { changeSetPath } from '../../change-sets/changeSetAddress';
 
 // ============================================================================
 // TYPES
@@ -817,7 +819,7 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
                         </Box>
                       </TableCell>
 
-                      {/* Open-ChangeSet count, the ChangeSets named on hover. */}
+                      {/* Open-ChangeSet count, the ChangeSets named on hover, each a link to its page. */}
                       <TableCell
                         align='center'
                         sx={{
@@ -830,7 +832,31 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
                         }}
                       >
                         {row.openChangeSets.length > 0 ? (
-                          <Tooltip title={row.openChangeSets.join(', ')} placement='top' arrow>
+                          <Tooltip
+                            placement='top'
+                            arrow
+                            title={
+                              <Box component='ul' sx={{ m: 0, p: 0, listStyle: 'none' }} data-testid='open-changeset-links'>
+                                {row.openChangeSets.map((cs) => (
+                                  <li key={cs.label}>
+                                    {cs.spaceSlug ? (
+                                      <Box
+                                        component={RouterLink}
+                                        to={changeSetPath(cs.spaceSlug, cs.slug)}
+                                        // The row opens the component; a link in its hover opens the ChangeSet.
+                                        onClick={(event: React.MouseEvent) => event.stopPropagation()}
+                                        sx={{ color: 'inherit' }}
+                                      >
+                                        {cs.label}
+                                      </Box>
+                                    ) : (
+                                      cs.label
+                                    )}
+                                  </li>
+                                ))}
+                              </Box>
+                            }
+                          >
                             <Typography
                               data-testid='open-changeset-count'
                               sx={{

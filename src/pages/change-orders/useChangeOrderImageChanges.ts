@@ -4,11 +4,7 @@
 import { useMemo } from 'react';
 
 import { useGetChangeOrderSourceDiffQuery } from './changeOrderImageDiffApi';
-import {
-  EMPTY_FIELD_CHANGES,
-  imageChangesFromUnitDiffs,
-  type ChangeOrderImageChanges,
-} from './imageChange';
+import { imageChangesOfRead, type ImageChanges } from './imageChange';
 
 export interface UseChangeOrderImageChangesArgs {
   changeOrderId: string | undefined;
@@ -17,20 +13,6 @@ export interface UseChangeOrderImageChangesArgs {
   /** True to make no request: the row is off screen, or the ChangeOrder has no change of its own to read. */
   skip?: boolean;
 }
-
-const LOADING: ChangeOrderImageChanges = Object.freeze({
-  status: 'loading',
-  images: [],
-  fieldChanges: EMPTY_FIELD_CHANGES,
-  unitCount: 0,
-}) as ChangeOrderImageChanges;
-
-const UNAVAILABLE: ChangeOrderImageChanges = Object.freeze({
-  status: 'unavailable',
-  images: [],
-  fieldChanges: EMPTY_FIELD_CHANGES,
-  unitCount: 0,
-}) as ChangeOrderImageChanges;
 
 /**
  * The image moves and field summary of one ChangeOrder, at its source.
@@ -56,16 +38,12 @@ export function useChangeOrderImageChanges({
   changeOrderId,
   baseSpaceId,
   skip = false,
-}: UseChangeOrderImageChangesArgs): ChangeOrderImageChanges {
+}: UseChangeOrderImageChangesArgs): ImageChanges {
   const ready = changeOrderId !== undefined && baseSpaceId !== undefined && changeOrderId !== '' && baseSpaceId !== '';
   const { currentData, isError } = useGetChangeOrderSourceDiffQuery(
     { baseSpaceId: baseSpaceId ?? '', changeOrderId: changeOrderId ?? '' },
     { skip: skip || !ready },
   );
 
-  return useMemo(() => {
-    if (isError) return UNAVAILABLE;
-    if (currentData === undefined) return LOADING;
-    return imageChangesFromUnitDiffs(currentData);
-  }, [currentData, isError]);
+  return useMemo(() => imageChangesOfRead(currentData, isError), [currentData, isError]);
 }

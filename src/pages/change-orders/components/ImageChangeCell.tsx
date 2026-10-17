@@ -32,10 +32,10 @@ import { NO_VALUE_LABEL } from '../../x/apps/componentValues';
 import { getInlineDiff } from '../../x/apps/inlineDiff';
 import { changeOrderOwnSpaceReached } from '../../x/apps/change-order/changeOrderStages';
 import { changeOrderBorder, changeOrderInk, changeOrderSurface } from '../changeOrdersTokens';
-import { shortDigest, versionPathOf, type ChangeOrderImageChanges, type FieldChangeDetail, type ImageChange } from '../imageChange';
+import { shortDigest, versionPathOf, type ImageChanges, type FieldChangeDetail, type ImageChange } from '../imageChange';
 import { useChangeOrderImageChanges } from '../useChangeOrderImageChanges';
 import { useFanOutImageChanges } from '../useFanOutImageChanges';
-import { BumpPill, ImageMark, ImageTag, RolePill, TagArrow } from './ImageChangeAtoms';
+import { ImageMark, ImageTag, RolePill, TagArrow } from './ImageChangeAtoms';
 
 /** Start the fetch a little before the row scrolls in, so it has usually landed when it does. */
 const NEAR_SCREEN = '200px 0px';
@@ -115,7 +115,7 @@ function FieldChip({ detail }: { detail: FieldChangeDetail }) {
 }
 
 /** Up to `max` chips, then "+N more" for the rest of the true count. */
-function FieldChips({ fields, max }: { fields: ChangeOrderImageChanges['fieldChanges']; max: number }) {
+function FieldChips({ fields, max }: { fields: ImageChanges['fieldChanges']; max: number }) {
   const shown = fields.details.slice(0, max);
   const rest = fields.count - shown.length;
   return (
@@ -243,7 +243,7 @@ function ImageLine({ image, solo }: { image: ImageChange; solo: boolean }) {
       data-testid="image-change-line"
       sx={{
         display: 'grid',
-        gridTemplateColumns: `${NAME_TRACK}px minmax(0, 1fr) auto`,
+        gridTemplateColumns: `${NAME_TRACK}px minmax(0, 1fr)`,
         gap: '10px',
         alignItems: 'center',
         minWidth: 0,
@@ -301,12 +301,11 @@ function ImageLine({ image, solo }: { image: ImageChange; solo: boolean }) {
         </Box>
       </Box>
       <ImageTags image={image} solo={solo} />
-      <BumpPill bump={image.bump} />
     </Box>
   );
 }
 
-function ImageCard({ changes }: { changes: ChangeOrderImageChanges }) {
+function ImageCard({ changes }: { changes: ImageChanges }) {
   const solo = changes.images.length === 1;
   const shown = changes.images.slice(0, MAX_IMAGE_LINES);
   const hiddenImages = changes.images.length - shown.length;
@@ -358,7 +357,7 @@ function ImageCard({ changes }: { changes: ChangeOrderImageChanges }) {
   );
 }
 
-function NoImageChange({ changes }: { changes: ChangeOrderImageChanges }) {
+function NoImageChange({ changes }: { changes: ImageChanges }) {
   const fields = changes.fieldChanges;
   return (
     <Box
@@ -412,6 +411,33 @@ function NoImageChange({ changes }: { changes: ChangeOrderImageChanges }) {
   );
 }
 
+/**
+ * A list row's image change, by the read's status: a placeholder while it loads,
+ * a quiet line when it could not be read (never "No image change"), the field
+ * summary when no image moved, and the image card otherwise.
+ */
+export function ImageChangesView({ changes }: { changes: ImageChanges }) {
+  if (changes.status === 'loading') {
+    return (
+      <Skeleton
+        data-testid="image-change-loading"
+        variant="rounded"
+        height={44}
+        sx={{ borderRadius: '8px', bgcolor: changeOrderSurface.sunk }}
+      />
+    );
+  }
+  if (changes.status === 'unavailable') {
+    return (
+      <Box component="span" data-testid="image-change-unavailable" sx={{ ...QUIET_TEXT, fontSize: 12 }}>
+        Image change unavailable
+      </Box>
+    );
+  }
+  if (changes.status === 'none') return <NoImageChange changes={changes} />;
+  return <ImageCard changes={changes} />;
+}
+
 export interface ImageChangeCellProps {
   changeOrderId: string;
   /** The ChangeOrder's own Space. */
@@ -441,38 +467,18 @@ export const ImageChangeCell = memo(function ImageChangeCell({
   const fan = useFanOutImageChanges({ changeOrderId, startTagId, endTagId, inScopeSpaceIds, updateType, skip: !nearScreen || !fansOut });
   const changes = fansOut ? fan : own;
 
-  let body: React.ReactNode;
-  if (!readable) {
+  const body: React.ReactNode = readable ? (
+    <ImageChangesView changes={changes} />
+  ) : (
     // An Invoke ChangeOrder has changed nothing anywhere until its Invocation runs.
-    body = (
-      <Box
-        component="span"
-        title="An Invoke ChangeOrder changes the Units when each stage is promoted. See the ChangeOrder page for the change."
-        sx={{ ...QUIET_TEXT, fontSize: 12.5 }}
-      >
-        Runs when promoted
-      </Box>
-    );
-  } else if (changes.status === 'loading') {
-    body = (
-      <Skeleton
-        data-testid="image-change-loading"
-        variant="rounded"
-        height={44}
-        sx={{ borderRadius: '8px', bgcolor: changeOrderSurface.sunk }}
-      />
-    );
-  } else if (changes.status === 'unavailable') {
-    body = (
-      <Box component="span" data-testid="image-change-unavailable" sx={{ ...QUIET_TEXT, fontSize: 12 }}>
-        Image change unavailable
-      </Box>
-    );
-  } else if (changes.status === 'none') {
-    body = <NoImageChange changes={changes} />;
-  } else {
-    body = <ImageCard changes={changes} />;
-  }
+    <Box
+      component="span"
+      title="An Invoke ChangeOrder changes the Units when each stage is promoted. See the ChangeOrder page for the change."
+      sx={{ ...QUIET_TEXT, fontSize: 12.5 }}
+    >
+      Runs when promoted
+    </Box>
+  );
 
   return (
     <Box ref={ref} data-testid="change-order-image-change" data-status={readable ? changes.status : 'not-read'} sx={{ minWidth: 0 }}>

@@ -19,6 +19,7 @@ import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import DataObjectIcon from '@mui/icons-material/DataObject';
+import DifferenceIcon from '@mui/icons-material/Difference';
 import ExploreIcon from '@mui/icons-material/Explore';
 import FeedbackIcon from '@mui/icons-material/Feedback';
 import FolderCopyIcon from '@mui/icons-material/FolderCopy';
@@ -313,6 +314,12 @@ const ConfigurationItems: INavItem[] = [
         text: 'Units',
         component: <DataObjectIcon sx={{ fontSize: 18 }} />,
         navigate: `/units`,
+        disable: false,
+      },
+      {
+        text: 'ChangeSets',
+        component: <DifferenceIcon sx={{ fontSize: 18 }} />,
+        navigate: `/change-sets`,
         disable: false,
       },
       {

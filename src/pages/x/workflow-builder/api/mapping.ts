@@ -47,11 +47,12 @@ import { formatRelative } from '@/utility/date-format';
 import { SerializedError } from '@reduxjs/toolkit';
 import type {
   ChangeWorkflow,
+  ChangeWorkflowAttestationPrerequisite,
   ChangeWorkflowRead,
   ChangeWorkflowStage,
 } from '@confighub/rtk-query';
 
-import type { Stage, Workflow } from '../types';
+import type { AttestationPrerequisite, Stage, Workflow } from '../types';
 
 /**
  * What the page does not carry: how to address this workflow, and which revision of it
@@ -95,6 +96,10 @@ function mintStageId(index: number): string {
 
 function mintCustomId(index: number): string {
   return `c${index}`;
+}
+
+function mintAttestationId(index: number): string {
+  return `a${index}`;
 }
 
 /**
@@ -219,7 +224,10 @@ export function fromWire(wire: ChangeWorkflowRead): MappedEntity {
       expression: custom.Expression,
       description: custom.Description ?? '',
     })),
-    attestations: wire.AttestationPrerequisites ?? [],
+    attestations: (wire.AttestationPrerequisites ?? []).map((a, index) => ({
+      ...a,
+      id: mintAttestationId(index),
+    })),
   };
 
   return {
@@ -262,7 +270,28 @@ export function toWire(
       Expression: custom.expression,
       Description: custom.description || undefined,
     })),
-    AttestationPrerequisites: workflow.attestations,
+    AttestationPrerequisites: workflow.attestations.map(toWireAttestation),
+  };
+}
+
+/**
+ * The declaration without its client-side id, and without the fields left at the
+ * server's defaults: a Type of Approval, a Count of 1, nobody named, no flag set. The
+ * server stores each absent field as that default, so sending it would change nothing
+ * but the stored JSON -- and the hash a ChangeOrder compares against.
+ */
+function toWireAttestation(a: AttestationPrerequisite): ChangeWorkflowAttestationPrerequisite {
+  return {
+    Name: a.Name,
+    Type: a.Type?.trim() || undefined,
+    Count: a.Count && a.Count > 0 ? a.Count : undefined,
+    FromUserIDs: a.FromUserIDs?.length ? a.FromUserIDs : undefined,
+    FromGroupIDs: a.FromGroupIDs?.length ? a.FromGroupIDs : undefined,
+    DistinctGroups: a.DistinctGroups || undefined,
+    AllowAuthors: a.AllowAuthors || undefined,
+    MaxAge: a.MaxAge?.trim() || undefined,
+    IgnoreFail: a.IgnoreFail || undefined,
+    Description: a.Description || undefined,
   };
 }
 
@@ -278,6 +307,8 @@ export function applySaved(sent: MappedWorkflow, saved: ChangeWorkflowRead): Map
   const mapped = fromWire(saved);
   const keepStageId = (index: number): string => sent.stages[index]?.id ?? mintStageId(index);
   const keepCustomId = (index: number): string => sent.custom[index]?.id ?? mintCustomId(index);
+  const keepAttestationId = (index: number): string =>
+    sent.attestations[index]?.id ?? mintAttestationId(index);
 
   return {
     identity: mapped.identity,
@@ -287,6 +318,10 @@ export function applySaved(sent: MappedWorkflow, saved: ChangeWorkflowRead): Map
       custom: mapped.workflow.custom.map((custom, index) => ({
         ...custom,
         id: keepCustomId(index),
+      })),
+      attestations: mapped.workflow.attestations.map((a, index) => ({
+        ...a,
+        id: keepAttestationId(index),
       })),
     },
   };

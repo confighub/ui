@@ -124,7 +124,7 @@ export function reviewedGates(
         });
       }
     }
-    const releaseNames = attestationNames(workflow.Stages.find((s) => s.Name === stage.id)?.ReleasePrerequisites);
+    const releaseNames = attestationNames((workflow.Stages ?? []).find((s) => s.Name === stage.id)?.ReleasePrerequisites);
     if (releaseNames.length > 0) {
       gates.push({
         gate: gateRef('release', stage.id),
