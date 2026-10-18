@@ -32,24 +32,42 @@ export interface TargetsTableProps {
   hasNoData?: boolean;
 }
 
+const LABELS_CONFIG: AttributeColumnConfig<TargetRowItem> = {
+  fieldName: 'Labels',
+  columnPrefix: 'Labels.',
+  getAttributes: (row) => row.Labels,
+};
+
+const FACTS_CONFIG: AttributeColumnConfig<TargetRowItem> = {
+  fieldName: 'Facts',
+  columnPrefix: 'Facts.',
+  getAttributes: (row) => row.Facts,
+};
+
 // One column per label, annotation and fact key, rather than one column holding each whole map.
 const ATTRIBUTE_CONFIGS: AttributeColumnConfig<TargetRowItem>[] = [
-  {
-    fieldName: 'Labels',
-    columnPrefix: 'Labels.',
-    getAttributes: (row) => row.Labels,
-  },
+  LABELS_CONFIG,
   {
     fieldName: 'Annotations',
     columnPrefix: 'Annotations.',
     getAttributes: (row) => row.Annotations,
   },
-  {
-    fieldName: 'Facts',
-    columnPrefix: 'Facts.',
-    getAttributes: (row) => row.Facts,
-  },
+  FACTS_CONFIG,
 ];
+
+// The columns `cub target list` shows after a Target's name and Space, in its order: the
+// well-known Target labels and the Kubernetes version of the cluster the Target represents.
+// They are columns even before any Target has the key, as they are in the CLI.
+const STANDARD_TARGET_LABELS = ['Owner', 'Environment', 'Region'];
+const KUBERNETES_VERSION_FACT = 'Cluster.KubernetesVersion';
+
+const STANDARD_COLUMN_FIELDS = new Set([
+  ...STANDARD_TARGET_LABELS.map((label) => `${LABELS_CONFIG.columnPrefix}${label}`),
+  `${FACTS_CONFIG.columnPrefix}${KUBERNETES_VERSION_FACT}`,
+]);
+
+// The columns before the standard ones, as in `cub target list`.
+const IDENTITY_FIELDS = new Set(['Slug', 'TargetID', 'Space', 'SpaceID']);
 
 const GRID_DEFAULTS = {
   sortModel: [{ field: 'Slug', sort: 'asc' as const }],
@@ -58,11 +76,12 @@ const GRID_DEFAULTS = {
     TargetID: false,
     Space: true,
     SpaceID: false,
+    ...Object.fromEntries([...STANDARD_COLUMN_FIELDS].map((field) => [field, true])),
     WhereTrigger: false,
     TriggerFilter: false,
     AppliedTriggerCount: true,
     CreatedAt: false,
-    UpdatedAt: true,
+    UpdatedAt: false,
   } as Record<string, boolean>,
 };
 
@@ -100,12 +119,30 @@ export const TargetsTable = ({
     attributeConfigs: ATTRIBUTE_CONFIGS,
   });
 
+  const standardColumns = useMemo(() => {
+    const total = (fieldName: string, key: string) =>
+      availableAttributeKeys.get(fieldName)?.find((label) => label.key === key)?.total ?? 0;
+    return [
+      ...STANDARD_TARGET_LABELS.map((label) =>
+        createAttributeColumn(LABELS_CONFIG, { key: label, total: total(LABELS_CONFIG.fieldName, label) }),
+      ),
+      {
+        ...createAttributeColumn(FACTS_CONFIG, {
+          key: KUBERNETES_VERSION_FACT,
+          total: total(FACTS_CONFIG.fieldName, KUBERNETES_VERSION_FACT),
+        }),
+        headerName: 'Kubernetes Version',
+        minWidth: 170,
+      },
+    ];
+  }, [availableAttributeKeys, createAttributeColumn]);
+
   const attributeColumns = useMemo(
     () =>
       ATTRIBUTE_CONFIGS.flatMap((attrConfig) =>
-        (availableAttributeKeys.get(attrConfig.fieldName) || []).map((key) =>
-          createAttributeColumn(attrConfig, key),
-        ),
+        (availableAttributeKeys.get(attrConfig.fieldName) || [])
+          .map((key) => createAttributeColumn(attrConfig, key))
+          .filter((column) => !STANDARD_COLUMN_FIELDS.has(column.field)),
       ),
     [availableAttributeKeys, createAttributeColumn],
   );
@@ -113,10 +150,15 @@ export const TargetsTable = ({
   // Create static columns
   const staticColumns = useMemo(() => createTargetStaticColumns(), []);
 
-  // Combine all columns
+  // The standard columns follow the name and Space, as in `cub target list`.
   const baseColumns = useMemo(
-    () => [...staticColumns, ...attributeColumns],
-    [attributeColumns, staticColumns],
+    () => [
+      ...staticColumns.filter((column) => IDENTITY_FIELDS.has(column.field)),
+      ...standardColumns,
+      ...staticColumns.filter((column) => !IDENTITY_FIELDS.has(column.field)),
+      ...attributeColumns,
+    ],
+    [attributeColumns, staticColumns, standardColumns],
   );
 
   const {
