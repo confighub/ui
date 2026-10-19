@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 import { expect, test } from '@playwright/test';
 import {
+  applyPromotionRecord,
   applyServerGates,
   blockingGates,
   buildGatesForStage,
@@ -906,4 +907,56 @@ test('a gate this page evaluated keeps its own verdict', () => {
     stage({}),
   );
   expect(after.find((g) => g.id === 'check/released')).toEqual(before.find((g) => g.id === 'check/released'));
+});
+
+/*
+ * The server refuses a dry run of a completed ChangeOrder, so the record of its promotions is all
+ * that answers a check only the server makes: a stage it promoted every Space of, unforced, held it.
+ */
+const promotedIntoStaging = { UserID: 'u1', PromotedAt: '2026-10-19T00:00:00Z', Stage: 'staging', SpaceIDs: ['s1'] };
+
+test('a stage promoted into every Space of, unforced, held the checks only the server makes', () => {
+  const gates = applyPromotionRecord(validatedGates(['d1', 'd2']), stage({}), {
+    promotions: [promotedIntoStaging],
+    overrides: [],
+  });
+  const validated = gates.find((g) => g.id === 'validated');
+  expect(validated?.evaluated).toBe(true);
+  expect(validated?.ok).toBe(true);
+  expect(validated?.reason).toBe(changeOrderCopy.gateReasons.satisfiedWhenPromoted('dev', 'staging'));
+});
+
+test('a forced promotion, or one that left a Space out, says nothing of the checks', () => {
+  const forced = applyPromotionRecord(validatedGates(['d1', 'd2']), stage({}), {
+    promotions: [promotedIntoStaging],
+    overrides: [{ UserID: 'u1', OverriddenAt: '2026-10-19T00:00:00Z', Stage: 'staging', SpaceIDs: ['s1'] }],
+  });
+  expect(forced.find((g) => g.id === 'validated')?.evaluated).toBe(false);
+
+  const partial = applyPromotionRecord(validatedGates(['d1', 'd2']), stage({ spaceIds: ['s1', 's2'] }), {
+    promotions: [promotedIntoStaging],
+    overrides: undefined,
+  });
+  expect(partial.find((g) => g.id === 'validated')?.evaluated).toBe(false);
+
+  const otherStage = applyPromotionRecord(validatedGates(['d1', 'd2']), stage({}), {
+    promotions: [{ ...promotedIntoStaging, Stage: 'prod' }],
+    overrides: undefined,
+  });
+  expect(otherStage.find((g) => g.id === 'validated')?.evaluated).toBe(false);
+});
+
+test('a live verdict outranks the record of the promotion', () => {
+  const message = "unable to promote to stage 'staging', Variant 'dev-2' has ValidationErrors";
+  const live = applyServerGates(
+    validatedGates(['d1', 'd2']),
+    [
+      { Prerequisite: 'Promoted', SpaceID: 'd1', Satisfied: true },
+      { Prerequisite: 'Validated', SpaceID: 'd1', Satisfied: false, Message: message },
+    ],
+    stage({}),
+  );
+  const gates = applyPromotionRecord(live, stage({}), { promotions: [promotedIntoStaging], overrides: [] });
+  expect(gates.find((g) => g.id === 'validated')?.ok).toBe(false);
+  expect(gates.find((g) => g.id === 'validated')?.reason).toBe(message);
 });

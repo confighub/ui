@@ -419,6 +419,9 @@ export const changeOrderCopy = {
     /** A check the server made and found satisfied in every Space it asked about. */
     satisfiedOnServer: (previousStage: string) =>
       `Satisfied in every Space of '${previousStage}'.`,
+    /** A check the server held when it promoted the change into the stage, and is no longer asked about. */
+    satisfiedWhenPromoted: (previousStage: string, stage: string) =>
+      `Satisfied in every Space of '${previousStage}' when the change was promoted to '${stage}'.`,
   },
 
   /**

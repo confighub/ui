@@ -96,6 +96,7 @@ import { useChangeOrderDetail, type ChangeOrderSpace } from './useChangeOrderDet
 import { useChangeOrderImageChanges } from './useChangeOrderImageChanges';
 import { useChangeOrderChangeSets } from './useChangeOrderChangeSets';
 import { ChangeOrderChangeSets } from './components/ChangeOrderChangeSets';
+import { OrganizationRow } from '@/components/organization-switcher/OrganizationRow';
 import { FullDiffDisclosure, ImageChangeSummary } from './components/ImageChangeHero';
 import { onlyChangesHint } from './imageChangeCopy';
 import { imageChangesForSource } from './imageChange';
@@ -1631,6 +1632,8 @@ export default function ChangeOrdersPage() {
         data-testid="review-toast"
         ContentProps={{ sx: { fontFamily: changeOrderFontSans, fontSize: changeOrderType.size.body } }}
       />
+
+      <OrganizationRow />
 
       {/*
         Altitude 0. The console renders its own `h1` — it IS the page when no

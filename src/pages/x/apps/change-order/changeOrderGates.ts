@@ -73,6 +73,8 @@
  */
 
 import type {
+  ChangeOrderPromotion,
+  ChangeOrderPromotionOverride,
   ChangeWorkflowAttestationPrerequisite,
   ChangeWorkflowPrerequisite,
   PromoteGateResult,
@@ -752,6 +754,46 @@ export function applyServerGates(
       reason: changeOrderCopy.gateReasons.satisfiedOnServer(previousStageDisplayName(stage) ?? ''),
     };
   });
+}
+
+/** What a ChangeOrder records of its promotions: the ones that ran, and the ones forced past gates. */
+export interface ChangeOrderPromotionRecord {
+  promotions: readonly ChangeOrderPromotion[] | undefined;
+  overrides: readonly ChangeOrderPromotionOverride[] | undefined;
+}
+
+/**
+ * A stage's gates, with the ones still not evaluated answered from the record of the
+ * promotions into it.
+ *
+ * The server evaluates every gate of a stage before it promotes into it, and refuses the
+ * promotion when one does not hold unless it is forced. So a stage every Space of which a
+ * promotion took the change into, with no forced promotion recorded, had every gate held when
+ * it was promoted. This is the only answer a completed ChangeOrder has for an Attestation
+ * requirement, a custom check or `Validated`: the server refuses a dry run of one
+ * (`useServerStageGates`), so without it they read as not evaluated forever.
+ *
+ * Only a gate still not evaluated takes this answer. A live verdict, of this page or of the
+ * server, is the more current one: an Attestation revoked after the promotion fails there.
+ */
+export function applyPromotionRecord(
+  gates: ChangeOrderGate[],
+  stage: Pick<ChangeOrderStage, 'id' | 'spaceIds' | 'previousStageId' | 'isFirst'>,
+  record: ChangeOrderPromotionRecord,
+): ChangeOrderGate[] {
+  if (stage.spaceIds.length === 0) return gates;
+  if (!gates.some((gate) => !gate.evaluated && gate.prerequisite !== undefined)) return gates;
+  if ((record.overrides ?? []).some((override) => override.Stage === stage.id)) return gates;
+  const promoted = new Set(
+    (record.promotions ?? [])
+      .filter((promotion) => promotion.Stage === stage.id)
+      .flatMap((promotion) => promotion.SpaceIDs ?? []),
+  );
+  if (!stage.spaceIds.every((spaceId) => promoted.has(spaceId))) return gates;
+  const reason = changeOrderCopy.gateReasons.satisfiedWhenPromoted(previousStageDisplayName(stage) ?? '', stage.id);
+  return gates.map((gate) =>
+    gate.evaluated || gate.prerequisite === undefined ? gate : { ...gate, ok: true, evaluated: true, reason },
+  );
 }
 
 /**

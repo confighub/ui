@@ -34,6 +34,7 @@ import {
   viewsEqual,
 } from './types';
 import { getCellValue } from './utils';
+import { OrganizationRow } from '@/components/organization-switcher/OrganizationRow';
 
 type SidebarTab = 'edit' | 'groups';
 
@@ -176,6 +177,7 @@ export default function ResourceExplorerPage() {
         sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider' }}
       >
         <Box>
+          <OrganizationRow sx={{ marginBottom: 0.5 }} />
           <Typography variant='h6' fontWeight={600}>
             Resource Explorer
           </Typography>

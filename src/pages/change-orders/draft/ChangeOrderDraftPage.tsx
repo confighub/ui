@@ -11,6 +11,7 @@ import Snackbar from '@mui/material/Snackbar';
 
 import { TOP_NAV_HEIGHT } from '@/utility/constants';
 
+import { OrganizationRow } from '@/components/organization-switcher/OrganizationRow';
 import { SummaryCard } from '../components/SummaryFacts';
 import { changeOrderFontSans, changeOrderInk, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
 import { DRAFT_END_ID } from './ChangeCardRibbon';
@@ -212,6 +213,7 @@ export default function ChangeOrderDraftPage() {
         color: changeOrderInk.default,
       }}
     >
+      <OrganizationRow />
       <Box sx={{ marginBottom: '12px' }}>
         <Box
           component={RouterLink}

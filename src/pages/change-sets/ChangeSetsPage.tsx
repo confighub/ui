@@ -11,6 +11,7 @@ import { useParams } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
 import Snackbar from '@mui/material/Snackbar';
+import { OrganizationRow } from '@/components/organization-switcher/OrganizationRow';
 
 import { changeOrderFontSans, changeOrderInk, changeOrderStatus, changeOrderSurface, changeOrderType } from '../change-orders/changeOrdersTokens';
 import { AllChangeSetsLink, ChangeSetDetailView } from './ChangeSetDetailView';
@@ -62,6 +63,7 @@ export default function ChangeSetsPage() {
         fontSize: changeOrderType.size.body,
       }}
     >
+      <OrganizationRow />
       {space === undefined || space === '' ? <ChangeSetList /> : <ChangeSetPage space={space} slug={slug} onNotice={setNotice} />}
       <Snackbar
         open={notice !== null}

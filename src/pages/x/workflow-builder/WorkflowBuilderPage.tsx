@@ -31,6 +31,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import { OrganizationRow } from '@/components/organization-switcher/OrganizationRow';
+
 import './workflowBuilder.css';
 
 import { BuilderSkeleton } from './components/BuilderSkeleton';
@@ -116,7 +118,7 @@ export default function WorkflowBuilderPage() {
      waiting that never ends. Absent stays absent. */
   const openId = changeWorkflowId || null;
   const setOpenId = useCallback(
-    (id: string | null) => navigate(id ? `/x/workflow-builder/${id}` : '/x/workflow-builder'),
+    (id: string | null) => navigate(id ? `/change-workflows/${id}` : '/change-workflows'),
     [navigate],
   );
   const detail = useChangeWorkflowDetail(openId ?? undefined);
@@ -389,6 +391,8 @@ export default function WorkflowBuilderPage() {
 
   return (
     <div className='wfb' ref={rootRef} onKeyDown={onKeyDown}>
+      {/* Same width and side gutter as `.shell`, so the picker lines up with the content below it. */}
+      <OrganizationRow sx={{ maxWidth: 1560, margin: '0 auto', padding: '12px 20px 0' }} />
       {showingList ? (
         <WorkflowsConsole
           api={api}

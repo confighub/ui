@@ -36,6 +36,9 @@ const DesignSystemPage = lazy(() => import('./pages/design-system/DesignSystemPa
 const WorkflowBuilderPage = lazy(
   () => import('./pages/x/workflow-builder/WorkflowBuilderPage'),
 );
+const WorkflowBuilderOldRouteRedirect = lazy(
+  () => import('./pages/x/workflow-builder/OldRouteRedirect'),
+);
 
 const routes = [
   {
@@ -262,7 +265,7 @@ const routes = [
         // Authoring a ChangeWorkflow. The bare path lists them; the id names one.
         // An id belongs in the path because it says which workflow the page is
         // about, where a query string would say how to look at some other subject.
-        path: '/x/workflow-builder',
+        path: '/change-workflows',
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <WorkflowBuilderPage />
@@ -270,10 +273,19 @@ const routes = [
         ),
       },
       {
-        path: '/x/workflow-builder/:changeWorkflowId',
+        path: '/change-workflows/:changeWorkflowId',
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <WorkflowBuilderPage />
+          </Suspense>
+        ),
+      },
+      {
+        // The page's earlier address. Links to it are still in bookmarks and history.
+        path: '/x/workflow-builder/:changeWorkflowId?',
+        element: (
+          <Suspense fallback={<Loader isLoading={true} />}>
+            <WorkflowBuilderOldRouteRedirect />
           </Suspense>
         ),
       },

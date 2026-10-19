@@ -737,8 +737,11 @@ const InitiativeEditor = ({ editorId }: { editorId: string }) => {
 
   if (!isCreateMode && !initiative) {
     return (
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-        <Typography color='text.secondary'>Initiative not found.</Typography>
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
+        <Header breadCrumbs={[{ name: 'Initiatives', isLink: true, link: '/x/initiatives' }, { name: 'Not found' }]} />
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+          <Typography color='text.secondary'>Initiative not found.</Typography>
+        </Box>
       </Box>
     );
   }

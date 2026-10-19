@@ -103,7 +103,7 @@ export function changeWorkflowHref(
 ): string | null {
   if (changeWorkflowId === undefined) return null;
   if (!names.byId.has(changeWorkflowId) && !names.isLoading && !names.failed) return null;
-  return `/x/workflow-builder/${encodeURIComponent(changeWorkflowId)}`;
+  return `/change-workflows/${encodeURIComponent(changeWorkflowId)}`;
 }
 
 export const changeWorkflowNameCopy = {

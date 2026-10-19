@@ -71,7 +71,12 @@ import type { RunningRelease } from '../x/apps/liveStatus';
 import { resolveChangeOrderAddress, type ChangeOrderAddress, type ChangeOrderRef } from './changeOrderAddress';
 import { usePromoteFinalQuery } from './reviews/reviewServerApi';
 import { promoteFinalOf, type PromoteFinalAnswer } from './reviews/stageReviewInputs';
-import { applyServerGates, buildGatesForStage, onlyTheServerEvaluates } from '../x/apps/change-order/changeOrderGates';
+import {
+  applyPromotionRecord,
+  applyServerGates,
+  buildGatesForStage,
+  onlyTheServerEvaluates,
+} from '../x/apps/change-order/changeOrderGates';
 import {
   SERVER_GATES_POLL_INTERVAL_MS,
   useServerStageGateReads,
@@ -702,11 +707,12 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
             invokes,
           );
 
+    const promotionRecord = { promotions: order.Promotions, overrides: order.PromotionOverrides };
     const gatesByStageId: Record<string, ChangeOrderGate[]> = {};
     for (const stage of sequence.stages) {
       const previousStage = previousStageOf(sequence, stage);
       const previousStageSpaces = previousStageGateSpaces(previousStage?.spaceIds, allSpaceById);
-      gatesByStageId[stage.id] = applyServerGates(
+      const checkedGates = applyServerGates(
         buildGatesForStage({
           stage,
           previousStageSpaces,
@@ -720,6 +726,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
         serverGates[stage.id],
         stage,
       );
+      gatesByStageId[stage.id] = applyPromotionRecord(checkedGates, stage, promotionRecord);
     }
 
     const stageStates = sequence.stages.map((stage) =>
@@ -757,6 +764,8 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
         stage: order.Stage,
         state: order.State,
         restoreTagId: order.RestoreTagID,
+        promotions: order.Promotions,
+        promotionOverrides: order.PromotionOverrides,
       },
       allSpaces,
       stageSpacesByClause,

@@ -159,7 +159,7 @@ const TopNavButton = memo(({ item }: { item: INavItem }) => {
 TopNavButton.displayName = 'TopNavButton';
 
 /**
- * Dropdown button ("Explorers", "Tools") — opens an MUI Menu listing sub-items.
+ * Dropdown button ("Changes", "Explorers") — opens an MUI Menu listing sub-items.
  * Highlights when the current route matches any child route.
  */
 const TopNavMenuButton = memo(({ item }: { item: INavItem }) => {
@@ -294,28 +294,47 @@ const ConfigurationItems: INavItem[] = [
     navigate: `/target-overview`,
     disable: false,
   },
-  // Sits between Targets and ChangeSets, per the approved design.
-  ...(SHOW_CHANGE_ORDERS_NAV
-    ? [
-        {
-          text: 'ChangeOrders',
-          component: <RocketLaunchIcon sx={{ color: 'white' }} />,
-          navigate: `/change-orders`,
-          disable: false,
-        },
-      ]
-    : []),
-  {
-    text: 'ChangeSets',
-    component: <DifferenceIcon sx={{ color: 'white' }} />,
-    navigate: `/change-sets`,
-    disable: false,
-  },
   {
     text: 'Releases',
     component: <CalendarMonthIcon sx={{ color: 'white' }} />,
     navigate: `/releases`,
     disable: false,
+  },
+  {
+    text: 'Changes',
+    component: <WorkspacesIcon sx={{ color: 'white' }} />,
+    disable: false,
+    subItems: [
+      ...(SHOW_CHANGE_ORDERS_NAV
+        ? [
+            {
+              text: 'ChangeOrders',
+              component: <RocketLaunchIcon sx={{ fontSize: 18 }} />,
+              navigate: `/change-orders`,
+              disable: false,
+            },
+          ]
+        : []),
+      {
+        text: 'ChangeSets',
+        component: <DifferenceIcon sx={{ fontSize: 18 }} />,
+        navigate: `/change-sets`,
+        disable: false,
+      },
+      {
+        // Authoring a ChangeWorkflow. Runs on local fixtures, not the API yet.
+        text: 'ChangeWorkflows',
+        component: <SchemaIcon sx={{ fontSize: 18 }} />,
+        navigate: `/change-workflows`,
+        disable: false,
+      },
+      {
+        text: 'Initiatives',
+        component: <PublishedWithChangesIcon sx={{ fontSize: 18 }} />,
+        navigate: `/x/initiatives`,
+        disable: false,
+      },
+    ],
   },
   {
     text: 'Explorers',
@@ -350,26 +369,6 @@ const ConfigurationItems: INavItem[] = [
         text: 'Targets',
         component: <Storage sx={{ fontSize: 18 }} />,
         navigate: `/targets`,
-        disable: false,
-      },
-    ],
-  },
-  {
-    text: 'Tools',
-    component: <WorkspacesIcon sx={{ color: 'white' }} />,
-    disable: false,
-    subItems: [
-      {
-        // Authoring a ChangeWorkflow. Runs on local fixtures, not the API yet.
-        text: 'Workflow Builder',
-        component: <SchemaIcon sx={{ fontSize: 18 }} />,
-        navigate: `/x/workflow-builder`,
-        disable: false,
-      },
-      {
-        text: 'Initiatives',
-        component: <PublishedWithChangesIcon sx={{ fontSize: 18 }} />,
-        navigate: `/x/initiatives`,
         disable: false,
       },
     ],

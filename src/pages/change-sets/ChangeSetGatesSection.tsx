@@ -127,7 +127,7 @@ export function ChangeSetGatesSection({
         Closing it is gated by ChangeWorkflow{' '}
         <Box
           component={RouterLink}
-          to={`/x/workflow-builder/${workflowId ?? ''}`}
+          to={`/change-workflows/${workflowId ?? ''}`}
           data-testid="change-set-gates-workflow"
           sx={{ fontFamily: changeOrderFontMono, color: changeOrderStatus.accent }}
         >

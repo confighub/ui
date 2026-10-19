@@ -173,15 +173,18 @@ export const AppsComponentPage = memo(() => {
   if (!isSpacesLoaded) {
     if (isSpacesError) {
       return (
-        <LoadingContainer>
-          <QueryErrorState
-            error={spacesError}
-            onRetry={retrySpaces}
-            context='components'
-            endpoint='GET /space'
-            failedQuery={failedSpacesQuery}
-          />
-        </LoadingContainer>
+        <Container>
+          <Header breadCrumbs={[{ name: 'Components' }]} />
+          <LoadingContainer>
+            <QueryErrorState
+              error={spacesError}
+              onRetry={retrySpaces}
+              context='components'
+              endpoint='GET /space'
+              failedQuery={failedSpacesQuery}
+            />
+          </LoadingContainer>
+        </Container>
       );
     }
     // Content-shaped placeholder for the split panel the page is about to

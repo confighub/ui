@@ -244,7 +244,7 @@ export function WorkflowsConsole({
   return (
     <div className='shell'>
       <div className='conhead'>
-        <h1 className='conh1'>Change workflows</h1>
+        <h1 className='conh1'>Change Workflows</h1>
         <span className='concount'>{isLoading || failed ? '' : rows.length}</span>
         <div className='conright'>
           {/* Not a fault: nothing is wrong with these workflows and there is nothing

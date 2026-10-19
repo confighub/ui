@@ -35,14 +35,20 @@
  *     which is how unrelated ChangeOrders used to end up gating against each other.
  */
 
-import type { ChangeOrderRelease, ComponentRead, ExtendedSpaceRead } from '@confighub/rtk-query';
+import type {
+  ChangeOrderPromotion,
+  ChangeOrderPromotionOverride,
+  ChangeOrderRelease,
+  ComponentRead,
+  ExtendedSpaceRead,
+} from '@confighub/rtk-query';
 
 import { ROUTE_COMPONENTS } from '../appTypes';
 import type { RunningRelease } from '../liveStatus';
 import { changeOrderStageMembers, stageWhereSpace, type ChangeOrderWorkflow } from './changeOrderWorkflow';
 import { changeOrderCopy } from './changeOrderCopy';
 import { effectiveUpdateType } from './changeOrdersConsoleFilters';
-import { applyServerGates, buildGatesForStage, gatesOpen } from './changeOrderGates';
+import { applyPromotionRecord, applyServerGates, buildGatesForStage, gatesOpen } from './changeOrderGates';
 import type { ServerGatesByStage } from './useServerStageGates';
 import type { ChangeOrderGateSpaceInput } from './changeOrderGates';
 import { reportedHealthOf } from './changeOrderReportedHealth';
@@ -292,6 +298,13 @@ export interface ConsoleChangeOrder {
    * `startTagId` it names a fan-out ChangeOrder's source Units and what changed in them.
    */
   endTagId?: string;
+  /**
+   * `ChangeOrder.Promotions` and `ChangeOrder.PromotionOverrides`: what says the server held a
+   * stage's gates when it promoted into it (`applyPromotionRecord`). The list of ChangeOrders
+   * does not read them.
+   */
+  promotions?: readonly ChangeOrderPromotion[];
+  promotionOverrides?: readonly ChangeOrderPromotionOverride[];
 }
 
 /**
@@ -1449,7 +1462,7 @@ export function buildConsoleRow(
       gateSpaceInput(id, bySpaceId.get(id)),
     );
 
-    const gates = applyServerGates(
+    const checkedGates = applyServerGates(
       buildGatesForStage({
         stage,
         previousStageSpaces,
@@ -1467,6 +1480,10 @@ export function buildConsoleRow(
       serverGatesByStage?.[stage.id],
       stage,
     );
+    const gates = applyPromotionRecord(checkedGates, stage, {
+      promotions: order.promotions,
+      overrides: order.promotionOverrides,
+    });
 
     return deriveStageState({ stage, gates, progress, inFlightSpaceIds: EMPTY_SET });
   });

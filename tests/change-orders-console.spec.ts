@@ -56,21 +56,25 @@ async function assertOurConsole(page: Page) {
 }
 
 test.describe('ChangeOrders console', () => {
-  test('offers ChangeOrders in the top nav, and it navigates', async ({ page }) => {
+  test('offers ChangeOrders in the top nav Changes menu, and it navigates', async ({ page }) => {
     await page.goto('/components');
 
-    const nav = page.getByRole('banner');
-    const entry = nav.getByRole('button', { name: 'ChangeOrders', exact: true });
+    await page.getByRole('banner').getByRole('button', { name: 'Changes', exact: true }).click();
+    const entry = page.getByRole('menuitem', { name: 'ChangeOrders', exact: true });
     await expect(entry).toBeVisible();
-
-    // Sits between Components and Releases, per the design's ordering.
-    await expect(nav.getByRole('button', { name: 'Components' })).toBeVisible();
-    await expect(nav.getByRole('button', { name: 'Releases', exact: true })).toBeVisible();
 
     // The entry has to actually go somewhere — a nav item that renders but does
     // not navigate is the failure mode worth testing for.
     await entry.click();
     await expect(page).toHaveURL(/\/change-orders$/);
+  });
+
+  test('shows the current organization above the console', async ({ page }) => {
+    await assertOurConsole(page);
+    // The page does not use the shared Header, so it places the picker itself.
+    await expect(page.getByTestId('organization-row').getByTestId('organization-switcher')).not.toBeEmpty({
+      timeout: 20_000,
+    });
   });
 });
 
