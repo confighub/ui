@@ -3,6 +3,7 @@
 import type { ComponentRead, ExtendedSpaceRead } from '@confighub/rtk-query';
 
 import { componentOwner } from './componentOwner';
+import { liveStatusText, releaseTone, type RunningRelease, TONE_SEVERITY } from './liveStatus';
 import type { OpenChangeSet } from './useOpenChangeSets';
 
 // ============================================================================
@@ -35,12 +36,25 @@ export interface ComponentKpiRow {
    * Empty when the caller passes no `openChangeSets` at all.
    */
   openChangeSets: OverviewChangeSet[];
+  /**
+   * The component's Spaces whose running Release is reported out of sync,
+   * degraded or failed, worst first. Empty when the caller passes no
+   * `runningReleaseBySpaceId` at all.
+   */
+  liveProblems: OverviewLiveProblem[];
 }
 
 export interface OverviewChangeSet {
   label: string;
   slug: string;
   spaceSlug?: string;
+}
+
+/** A Space whose running Release has a sync or health problem, and that status in its reporter's words. */
+export interface OverviewLiveProblem {
+  spaceSlug: string;
+  tone: 'attention' | 'danger';
+  text: string;
 }
 
 export interface OrgKpiSummary {
@@ -52,6 +66,8 @@ export interface OrgKpiSummary {
   outstandingChangeOrders: number;
   /** Count of components (rows) with a ChangeSet open on one of their units. */
   openChangeSetComponents: number;
+  /** Count of Spaces whose running Release has a sync or health problem. */
+  liveProblems: number;
 }
 
 export interface OverviewData {
@@ -90,6 +106,12 @@ export interface OverviewData {
  * ChangeSet is open on a unit, so a component has one when any of its Spaces
  * holds such a unit.
  *
+ * `runningReleaseBySpaceId` comes from `useRunningReleases`: a Space's live
+ * status is that of the Release it is running, as on the Releases page and the
+ * flow graph's cards. A problem is a tone of `attention` (out of sync) or
+ * `danger` (degraded, missing or failed); a Release progressing or not yet
+ * reported on is not one.
+ *
  * `owner` is read with `componentOwner`, from the Component and every one of
  * its Spaces in `spaces`.
  */
@@ -98,6 +120,7 @@ export function buildOverviewData(
   componentById: ReadonlyMap<string, ComponentRead>,
   outstandingChangeOrderBaseSpaceIds?: ReadonlySet<string>,
   openChangeSets?: ReadonlyMap<string, OpenChangeSet>,
+  runningReleaseBySpaceId?: ReadonlyMap<string, RunningRelease>,
 ): OverviewData {
   // 1. Group component spaces by Component
   const componentGroups = new Map<string, { component: ComponentRead; spaces: ExtendedSpaceRead[] }>();
@@ -123,6 +146,7 @@ export function buildOverviewData(
     let upgrades = 0;
 
     let hasOutstandingChangeOrder = false;
+    const liveProblems: OverviewLiveProblem[] = [];
 
     for (const space of compSpaces) {
       totalSpaces++;
@@ -138,7 +162,16 @@ export function buildOverviewData(
       ) {
         hasOutstandingChangeOrder = true;
       }
+
+      const liveStatus = spaceId ? runningReleaseBySpaceId?.get(spaceId)?.liveStatus : undefined;
+      const tone = releaseTone(liveStatus);
+      if (spaceId && (tone === 'attention' || tone === 'danger')) {
+        liveProblems.push({ spaceSlug: space.Space?.Slug ?? spaceId, tone, text: liveStatusText(liveStatus) });
+      }
     }
+    liveProblems.sort(
+      (a, b) => TONE_SEVERITY[b.tone] - TONE_SEVERITY[a.tone] || a.spaceSlug.localeCompare(b.spaceSlug),
+    );
 
     const spaceIds = new Set(compSpaces.flatMap((s) => (s.Space?.SpaceID ? [s.Space.SpaceID] : [])));
     const spaceSlugs = new Set(compSpaces.flatMap((s) => (s.Space?.Slug ? [s.Space.Slug] : [])));
@@ -162,6 +195,7 @@ export function buildOverviewData(
       upgrades,
       hasOutstandingChangeOrder,
       openChangeSets: componentChangeSets,
+      liveProblems,
     });
   }
 
@@ -173,6 +207,7 @@ export function buildOverviewData(
     upgrades: rows.reduce((s, r) => s + r.upgrades, 0),
     outstandingChangeOrders: rows.reduce((s, r) => s + (r.hasOutstandingChangeOrder ? 1 : 0), 0),
     openChangeSetComponents: rows.reduce((s, r) => s + (r.openChangeSets.length > 0 ? 1 : 0), 0),
+    liveProblems: rows.reduce((s, r) => s + r.liveProblems.length, 0),
   };
 
   return { rows, org };

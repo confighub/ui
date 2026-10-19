@@ -27,6 +27,7 @@ import {
   confighubApi,
   type ListAllReleasesApiArg,
   type ListAllReleasesApiResponse,
+  type ListAllRevisionsApiResponse,
   type ListAllUnitsApiArg,
   type ListAllUnitsApiResponse,
   type ListUsersApiResponse,
@@ -55,6 +56,14 @@ export interface ReleasesSinceArg {
   since: string;
 }
 
+export interface RecentRevisionsArg {
+  spaceIds: string[];
+  /** The Revision `Source`s to read. */
+  sources: string[];
+  /** How many of the newest Revisions to return, across every Space. */
+  limit: number;
+}
+
 export interface UnitIdsArg {
   unitIds: string[];
 }
@@ -80,7 +89,7 @@ const RELEASES_SINCE_FIELDS: Pick<ListAllReleasesApiArg, 'select'> = {
   select: 'ReleaseID,SpaceID,ReleaseNum,CreatedAt,Published,LiveStatus',
 };
 /** Every field, and every entity a Release references, for a table of Releases and their details. */
-const RELEASE_DETAILS_INCLUDE: Pick<ListAllReleasesApiArg, 'include'> = {
+export const RELEASE_DETAILS_INCLUDE: Pick<ListAllReleasesApiArg, 'include'> = {
   include: 'SpaceID,TagID,ChangeOrderID,TargetID,UserID',
 };
 
@@ -307,6 +316,44 @@ const chunkedQueriesApi = confighubApi.injectEndpoints({
         }),
       providesTags: ['Release'],
     }),
+    // The newest Revisions of the Spaces, of the given Sources, by every User and by none:
+    // an activity feed. Each chunk returns its own newest `limit`, so the newest `limit` of
+    // all of them are among the chunks' rows. distinct_on=Off, since the default keeps one
+    // Revision per Unit, needs the explicit limit.
+    listRecentRevisionsChunked: build.query<ListAllRevisionsApiResponse, RecentRevisionsArg>({
+      queryFn: async (arg, _api, _extra, baseQuery) => {
+        const sources = idSet(arg.sources)
+          .map((source) => `'${source}'`)
+          .join(', ');
+        const result = await fetchChunks<ListAllRevisionsApiResponse[number]>(
+          'SpaceID',
+          idSet(arg.spaceIds),
+          (where) => ({
+            url: `/revision`,
+            params: {
+              where: `${where} AND Source IN (${sources})`,
+              include: 'UserID,UnitID',
+              limit: arg.limit,
+              order_by: 'DESC:CreatedAt',
+              distinct_on: 'Off',
+            },
+          }),
+          baseQuery,
+        );
+        if ('error' in result) return result;
+        // Parsed, since fractional seconds vary in length and so do not compare as text.
+        const time = (row: ListAllRevisionsApiResponse[number]) => Date.parse(row.Revision?.CreatedAt ?? '') || 0;
+        const newest = [...result.data].sort((a, b) => time(b) - time(a)).slice(0, arg.limit);
+        return { data: newest };
+      },
+      serializeQueryArgs: ({ endpointName, endpointDefinition, queryArgs }) =>
+        defaultSerializeQueryArgs({
+          endpointName,
+          endpointDefinition,
+          queryArgs: { spaceIds: idSet(queryArgs.spaceIds), sources: idSet(queryArgs.sources), limit: queryArgs.limit },
+        }),
+      providesTags: ['Revision'],
+    }),
     listUsersByIdChunked: build.query<ListUsersApiResponse, UserIdsArg>({
       queryFn: (arg, _api, _extra, baseQuery) =>
         fetchChunks<ListUsersApiResponse[number]>(
@@ -412,6 +459,7 @@ export const {
   useListReleasesSinceChunkedQuery,
   useListReleaseDetailsSinceChunkedQuery,
   useListReleasesByIdChunkedQuery,
+  useListRecentRevisionsChunkedQuery,
   useListUsersByIdChunkedQuery,
   useSearchUnitDataChunkedQuery,
   useSearchRevisionDataChunkedQuery,

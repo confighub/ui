@@ -24,7 +24,7 @@ import { alpha, useTheme } from '@mui/material/styles';
 import dayjs from 'dayjs';
 
 import { LIVE_TONE_COLOR } from '../x/apps/componentTheme';
-import { liveStatusText, type VitalTone } from '../x/apps/liveStatus';
+import { LIVE_TONE_LEGEND, liveStatusText } from '../x/apps/liveStatus';
 import {
   buildReleaseHeatmap,
   type HeatmapCell,
@@ -46,14 +46,6 @@ const CELL_HEIGHT = 18;
 /** How many rows either side of a selected Component stay in view. */
 const CONTEXT_ROWS = 2;
 
-/** Legend order, worst last, with what each tone means for the Releases in a cell. */
-const TONE_LEGEND: { tone: VitalTone; label: string }[] = [
-  { tone: 'ok', label: 'Synced and healthy' },
-  { tone: 'neutral', label: 'Not reported' },
-  { tone: 'progress', label: 'Progressing' },
-  { tone: 'attention', label: 'Out of sync' },
-  { tone: 'danger', label: 'Degraded or failed' },
-];
 
 // ============================================================================
 // HELPERS
@@ -156,7 +148,7 @@ const HeatmapLegend = ({ maxCount }: { maxCount: number }) => {
     <Box
       sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 1.5, rowGap: 0.5, pt: 1.5, pl: `${LABEL_WIDTH}px` }}
     >
-      {TONE_LEGEND.map(({ tone, label }) => (
+      {LIVE_TONE_LEGEND.map(({ tone, label }) => (
         <Box key={tone} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           {swatch(LIVE_TONE_COLOR[tone])}
           <Typography variant='caption' color='text.secondary'>

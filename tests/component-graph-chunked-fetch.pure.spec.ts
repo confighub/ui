@@ -309,6 +309,52 @@ test.describe('listPublishedReleasesChunked (the Releases the Spaces run)', () =
   });
 });
 
+test.describe('listRecentRevisionsChunked (the Components activity feed)', () => {
+  const SOURCES = ['UpdateUnit', 'PatchUnit', 'MergeExternal', 'CloneUnit', 'RestoreRevision'];
+
+  test('400 Spaces: split into requests under the limits, each asking for the newest of its own', async () => {
+    const { run } = await newStore();
+    const ids = uuids(400, 9000);
+    const result = await run<unknown[]>('listRecentRevisionsChunked', { spaceIds: ids, sources: SOURCES, limit: 20 });
+    expect(result.error).toBeUndefined();
+    expect(sent.length).toBeGreaterThan(1);
+    expectUnderLimits(sent);
+    expectEachIdOnce(sent, ids);
+    for (const s of sent) {
+      expect(s.url.pathname).toBe('/api/revision');
+      expect(s.where).toMatch(/\) AND Source IN \('CloneUnit', 'MergeExternal', 'PatchUnit', 'RestoreRevision', 'UpdateUnit'\)$/);
+      expect(s.url.searchParams.get('include')).toBe('UserID,UnitID');
+      expect(s.url.searchParams.get('limit')).toBe('20');
+      expect(s.url.searchParams.get('order_by')).toBe('DESC:CreatedAt');
+      expect(s.url.searchParams.get('distinct_on')).toBe('Off');
+    }
+  });
+
+  test('the newest of all chunks, by time, whatever chunk they came from', async () => {
+    const { run } = await newStore();
+    const ids = uuids(400, 20000);
+    // Each chunk answers with three Revisions of its first Space; the second chunk's are the newest.
+    // Fractional seconds vary in length, as the server writes them.
+    respond = (s) => {
+      const chunk = sent.indexOf(s);
+      const day = chunk === 1 ? '2026-10-19' : '2026-10-18';
+      return {
+        status: 200,
+        rows: [`${day}T10:00:00.5Z`, `${day}T09:00:00.123456Z`, `${day}T08:00:00Z`].map((createdAt, i) => ({
+          Revision: { RevisionID: `${chunk}-${i}`, SpaceID: s.ids[0], CreatedAt: createdAt },
+        })),
+      };
+    };
+    const result = await run<{ Revision: { RevisionID: string } }[]>('listRecentRevisionsChunked', {
+      spaceIds: ids,
+      sources: SOURCES,
+      limit: 4,
+    });
+    expect(sent.length).toBeGreaterThan(1);
+    expect(result.data!.map((row) => row.Revision.RevisionID)).toEqual(['1-0', '1-1', '1-2', '0-0']);
+  });
+});
+
 test.describe('a skipped read', () => {
   // A hook with `skip: true` (for example useUnitDataMap before any Unit is
   // known) makes RTK run the endpoint's serializeQueryArgs on skipToken. A
@@ -320,6 +366,7 @@ test.describe('a skipped read', () => {
     'searchUnitMutationSourcesChunked',
     'searchRevisionMutationSourcesChunked',
     'listPublishedReleasesChunked',
+    'listRecentRevisionsChunked',
   ]) {
     test(`${endpoint}: selecting skipToken does not throw and sends nothing`, async () => {
       const { store, endpoints } = await newStore();

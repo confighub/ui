@@ -22,9 +22,10 @@ import { alpha, useTheme } from '@mui/material/styles';
 
 import { ComponentActivityFeed } from './ComponentActivityFeed';
 import { type SelectedApp } from './appTypes';
-import { buildOverviewData, type ComponentKpiRow } from './componentOverview';
+import { buildOverviewData, type ComponentKpiRow, type OrgKpiSummary } from './componentOverview';
 import { useOutstandingChangeOrderBaseSpaceIds } from './change-order/useOutstandingChangeOrdersBulk';
 import { useOpenChangeSets } from './useOpenChangeSets';
+import { useRunningReleases } from './useRunningReleases';
 import { changeSetPath } from '../../change-sets/changeSetAddress';
 
 // ============================================================================
@@ -39,30 +40,21 @@ interface ComponentOverviewMatrixProps {
 type FilterKey =
   | 'unapplied'
   | 'gatesPending'
+  | 'liveProblems'
   | 'upgrades'
   | 'outstandingChangeOrder'
   | 'openChangeSet';
 
-type SortKey =
-  | 'health'
-  | 'componentName'
-  | 'unapplied'
-  | 'gatesPending'
-  | 'upgrades'
-  | 'outstandingChangeOrder'
-  | 'openChangeSet';
-
-type ColKey =
-  | 'unapplied'
-  | 'gatesPending'
-  | 'upgrades';
+type SortKey = 'health' | 'componentName' | FilterKey;
 
 interface ColDef {
-  key: ColKey;
-  sortKey: SortKey | null;
+  key: FilterKey;
+  /** Two words, one to a line, so the column stays narrow. */
   label: string;
   subLabel: string;
   sevColor: 'error.main' | 'warning.main' | 'info.main' | 'success.main';
+  /** The column's figure in the org roll-up. */
+  orgField: keyof OrgKpiSummary;
 }
 
 interface HeatStyle {
@@ -79,15 +71,29 @@ const MONO_FONT = '"JetBrains Mono", ui-monospace, monospace';
 
 type NumericKpiKey = 'unapplied' | 'gatesPending' | 'upgrades';
 
+/** Width of each KPI column, which leaves the rest of the row to the Component column. */
+const KPI_COL_WIDTH = 112;
+
+/**
+ * How often the running Releases are re-read: a reporter writes a Release's live
+ * status at its own pace, and nothing in this application is told when.
+ */
+const RUNNING_RELEASE_POLL_MS = 30_000;
+
+/** The KPI columns, left to right. */
 const COL_DEFS: ColDef[] = [
-  { key: 'gatesPending', sortKey: 'gatesPending', label: 'Blocking Gates',     subLabel: 'blocked',   sevColor: 'error.main'   },
-  { key: 'unapplied',    sortKey: 'unapplied',    label: 'Unreleased Changes', subLabel: 'pending',   sevColor: 'warning.main' },
-  { key: 'upgrades',     sortKey: 'upgrades',     label: 'Upgrades Available', subLabel: 'available', sevColor: 'info.main'    },
+  { key: 'gatesPending',           label: 'Blocking Gates',           subLabel: 'blocked',       sevColor: 'error.main',   orgField: 'gatesPending'            },
+  { key: 'unapplied',              label: 'Unreleased Changes',       subLabel: 'pending',       sevColor: 'warning.main', orgField: 'unapplied'               },
+  { key: 'liveProblems',           label: 'Release Problems',         subLabel: 'sync / health', sevColor: 'error.main',   orgField: 'liveProblems'            },
+  { key: 'upgrades',               label: 'Upgrades Available',       subLabel: 'available',     sevColor: 'info.main',    orgField: 'upgrades'                },
+  { key: 'outstandingChangeOrder', label: 'Outstanding ChangeOrders', subLabel: 'has one',       sevColor: 'info.main',    orgField: 'outstandingChangeOrders' },
+  { key: 'openChangeSet',          label: 'Open ChangeSets',          subLabel: 'open',          sevColor: 'info.main',    orgField: 'openChangeSetComponents' },
 ];
 
 const FILTER_LABELS: Record<FilterKey, string> = {
   unapplied:          'Unreleased Changes',
   gatesPending:       'Blocking Gates',
+  liveProblems:       'Release Problems',
   upgrades:           'Upgrades Available',
   outstandingChangeOrder: 'Outstanding ChangeOrders',
   openChangeSet:      'Open ChangeSets',
@@ -107,6 +113,7 @@ function getKpiValue(row: ComponentKpiRow, key: NumericKpiKey): number {
 /** The number a row sorts by for a KPI: its count, or 1/0 for the ChangeOrder flag. */
 function getSortValue(row: ComponentKpiRow, key: SortKey): number {
   if (key === 'openChangeSet') return row.openChangeSets.length;
+  if (key === 'liveProblems') return row.liveProblems.length;
   const field = KPI_SORT_FIELDS[key];
   return field ? Number(row[field]) : 0;
 }
@@ -121,6 +128,7 @@ function getSortValue(row: ComponentKpiRow, key: SortKey): number {
 function isKpiFlagged(row: ComponentKpiRow, key: FilterKey): boolean {
   if (key === 'outstandingChangeOrder') return row.hasOutstandingChangeOrder;
   if (key === 'openChangeSet') return row.openChangeSets.length > 0;
+  if (key === 'liveProblems') return row.liveProblems.length > 0;
   return getKpiValue(row, key) > 0;
 }
 
@@ -129,14 +137,16 @@ function isKpiFlagged(row: ComponentKpiRow, key: FilterKey): boolean {
 // ============================================================================
 
 function getHealthRank(row: ComponentKpiRow): { rank: number; cls: 'err' | 'warn' | 'info' | 'ok' } {
-  if (row.gatesPending > 0) return { rank: 3, cls: 'err' };
-  if (row.unapplied > 0) return { rank: 2, cls: 'warn' };
+  // liveProblems is worst first, so its first entry says whether any is failing.
+  const liveTone = row.liveProblems[0]?.tone;
+  if (row.gatesPending > 0 || liveTone === 'danger') return { rank: 3, cls: 'err' };
+  if (row.unapplied > 0 || liveTone === 'attention') return { rank: 2, cls: 'warn' };
   if (row.upgrades > 0) return { rank: 1, cls: 'info' };
   return { rank: 0, cls: 'ok' };
 }
 
 function getHeatSx(
-  colKey: ColKey,
+  colKey: NumericKpiKey,
   value: number,
   totalSpaces: number,
   palette: {
@@ -318,15 +328,38 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
 
   const outstandingChangeOrderBaseSpaceIds = useOutstandingChangeOrderBaseSpaceIds();
   const openChangeSets = useOpenChangeSets();
+  const releaseSpaces = useMemo(
+    () =>
+      spaces.flatMap((s) =>
+        s.Space?.SpaceID ? [{ spaceId: s.Space.SpaceID, releaseTargetId: s.Space.ReleaseTargetID }] : [],
+      ),
+    [spaces],
+  );
+  const { bySpaceId: runningReleaseBySpaceId } = useRunningReleases(releaseSpaces, {
+    pollIntervalMs: RUNNING_RELEASE_POLL_MS,
+  });
   const { componentById } = useComponentSlugs();
   const { rows, org } = useMemo(
-    () => buildOverviewData(spaces, componentById, outstandingChangeOrderBaseSpaceIds, openChangeSets),
-    [spaces, componentById, outstandingChangeOrderBaseSpaceIds, openChangeSets],
+    () =>
+      buildOverviewData(
+        spaces,
+        componentById,
+        outstandingChangeOrderBaseSpaceIds,
+        openChangeSets,
+        runningReleaseBySpaceId,
+      ),
+    [spaces, componentById, outstandingChangeOrderBaseSpaceIds, openChangeSets, runningReleaseBySpaceId],
   );
 
 
   // Estate summary derived values
   const unitsNeedAttention = org.gatesPending + org.unapplied;
+  // Red when any running Release is failing, amber when they are only out of sync.
+  const releaseProblemColor = rows.some((r) => r.liveProblems[0]?.tone === 'danger')
+    ? 'error.main'
+    : org.liveProblems > 0
+    ? 'warning.main'
+    : 'success.main';
   const healthyComponents = useMemo(
     () => rows.filter((r) => getHealthRank(r).rank === 0).length,
     [rows],
@@ -338,8 +371,8 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
         const ra = getHealthRank(a);
         const rb = getHealthRank(b);
         if (ra.rank !== rb.rank) return rb.rank - ra.rank;
-        const aAttn = a.gatesPending + a.unapplied;
-        const bAttn = b.gatesPending + b.unapplied;
+        const aAttn = a.gatesPending + a.unapplied + a.liveProblems.length;
+        const bAttn = b.gatesPending + b.unapplied + b.liveProblems.length;
         return aAttn !== bAttn ? bAttn - aAttn : a.componentName.localeCompare(b.componentName);
       }
       if (sortBy === 'componentName') {
@@ -378,9 +411,6 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
     },
     [activeFilter],
   );
-
-  const isColFocus = (colKey: ColKey): boolean =>
-    activeFilter !== null && (colKey as string) === (activeFilter as string);
 
   const filterCount = useMemo(() => {
     if (!activeFilter) return 0;
@@ -439,6 +469,22 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
             </Box>
             <Box sx={{ width: '1px', height: 30, bgcolor: 'divider' }} />
             <Box>
+              <Typography
+                data-testid='estate-release-problems'
+                sx={{
+                  fontFamily: MONO_FONT,
+                  fontSize: 22, fontWeight: 600, lineHeight: 1, letterSpacing: '-0.02em',
+                  color: releaseProblemColor,
+                }}
+              >
+                {org.liveProblems}
+              </Typography>
+              <Typography sx={{ fontSize: 11, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
+                Spaces with release problems
+              </Typography>
+            </Box>
+            <Box sx={{ width: '1px', height: 30, bgcolor: 'divider' }} />
+            <Box>
               <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '4px', lineHeight: 1 }}>
                 <Typography sx={{ fontFamily: MONO_FONT, fontSize: 22, fontWeight: 600, letterSpacing: '-0.02em', color: 'text.secondary' }}>
                   {healthyComponents}
@@ -456,7 +502,7 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
 
         {/* ── KPI tiles ── */}
         <SectionLabel title='Status' hint='Click a tile to scope the matrix below' />
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', mb: '10px' }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', mb: '10px' }}>
           <KpiTile
             label='Blocking Gates'
             value={org.gatesPending}
@@ -474,6 +520,15 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
             severity='warning'
             isActive={activeFilter === 'unapplied'}
             onClick={() => handleFilterToggle('unapplied')}
+          />
+          <KpiTile
+            label='Release Problems'
+            value={org.liveProblems}
+            unit='spaces'
+            description='Latest Release out of sync, degraded or failed'
+            severity='error'
+            isActive={activeFilter === 'liveProblems'}
+            onClick={() => handleFilterToggle('liveProblems')}
           />
           <KpiTile
             label='Upgrades Available'
@@ -577,7 +632,8 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
                       key={col.key}
                       align='center'
                       sx={{
-                        bgcolor: isColFocus(col.key) ? alpha(theme.palette.warning.main, 0.05) : 'background.default',
+                        width: KPI_COL_WIDTH,
+                        bgcolor: activeFilter === col.key ? alpha(theme.palette.warning.main, 0.05) : 'background.default',
                         borderBottom: `1px solid ${theme.palette.divider}`,
                         p: 0,
                         position: 'sticky',
@@ -586,116 +642,40 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
                       }}
                     >
                       <Box
-                        component={col.sortKey ? 'button' : 'div'}
-                        onClick={col.sortKey ? () => handleSort(col.sortKey!) : undefined}
+                        component='button'
+                        onClick={() => handleSort(col.key)}
                         sx={{
-                          width: '100%', border: 0, background: 'transparent',
-                          cursor: col.sortKey ? 'pointer' : 'default',
-                          p: '11px 10px', fontFamily: 'inherit', color: 'text.secondary',
+                          width: '100%', border: 0, background: 'transparent', cursor: 'pointer',
+                          p: '11px 8px', fontFamily: 'inherit', color: 'text.secondary',
                           fontWeight: 600, fontSize: 11, lineHeight: 1.2,
                           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px',
-                          '&:hover': col.sortKey ? { color: 'text.primary', bgcolor: alpha(theme.palette.action.hover, 0.06) } : {},
+                          '&:hover': { color: 'text.primary', bgcolor: alpha(theme.palette.action.hover, 0.06) },
                         }}
                       >
-                        {/* Top line: dot + label + sort arrow */}
+                        {/* Top: dot + label, a word to a line + sort arrow */}
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                           <Box component='span' sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: col.sevColor, flexShrink: 0 }} />
-                          <Typography component='span' sx={{ fontWeight: sortBy === col.sortKey ? 700 : 600, fontSize: 11, color: sortBy === col.sortKey ? 'text.primary' : 'inherit' }}>
-                            {col.label}
+                          <Typography
+                            component='span'
+                            sx={{
+                              fontWeight: sortBy === col.key ? 700 : 600, fontSize: 11, lineHeight: 1.2,
+                              color: sortBy === col.key ? 'text.primary' : 'inherit',
+                              whiteSpace: 'pre-line',
+                            }}
+                          >
+                            {col.label.replace(' ', '\n')}
                           </Typography>
-                          {col.sortKey && (
-                            <Typography component='span' sx={{ fontSize: 9, color: sortBy === col.sortKey ? 'error.main' : 'text.disabled' }}>
-                              {sortArrow(col.sortKey)}
-                            </Typography>
-                          )}
+                          <Typography component='span' sx={{ fontSize: 9, color: sortBy === col.key ? 'error.main' : 'text.disabled' }}>
+                            {sortArrow(col.key)}
+                          </Typography>
                         </Box>
                         {/* Sub-label */}
-                        <Typography component='span' sx={{ fontSize: 9.5, fontWeight: 500, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        <Typography component='span' sx={{ fontSize: 9.5, fontWeight: 500, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
                           {col.subLabel}
                         </Typography>
                       </Box>
                     </TableCell>
                   ))}
-
-                  {/* Outstanding-ChangeOrder column header — a boolean per-row
-                      dot, not one more heat-mapped numeric column, so it
-                      lives outside COL_DEFS; still wired into the same
-                      sort/filter state for consistency with the others. */}
-                  <TableCell
-                    align='center'
-                    sx={{
-                      bgcolor: activeFilter === 'outstandingChangeOrder' ? alpha(theme.palette.warning.main, 0.05) : 'background.default',
-                      borderBottom: `1px solid ${theme.palette.divider}`,
-                      p: 0,
-                      position: 'sticky',
-                      top: 0,
-                      zIndex: 3,
-                    }}
-                  >
-                    <Box
-                      component='button'
-                      onClick={() => handleSort('outstandingChangeOrder')}
-                      sx={{
-                        width: '100%', border: 0, background: 'transparent', cursor: 'pointer',
-                        p: '11px 10px', fontFamily: 'inherit', color: 'text.secondary',
-                        fontWeight: 600, fontSize: 11, lineHeight: 1.2,
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px',
-                        '&:hover': { color: 'text.primary', bgcolor: alpha(theme.palette.action.hover, 0.06) },
-                      }}
-                    >
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <Box component='span' sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'info.main', flexShrink: 0 }} />
-                        <Typography component='span' sx={{ fontWeight: sortBy === 'outstandingChangeOrder' ? 700 : 600, fontSize: 11, color: sortBy === 'outstandingChangeOrder' ? 'text.primary' : 'inherit' }}>
-                          Outstanding ChangeOrders
-                        </Typography>
-                        <Typography component='span' sx={{ fontSize: 9, color: sortBy === 'outstandingChangeOrder' ? 'error.main' : 'text.disabled' }}>
-                          {sortArrow('outstandingChangeOrder')}
-                        </Typography>
-                      </Box>
-                      <Typography component='span' sx={{ fontSize: 9.5, fontWeight: 500, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        has one
-                      </Typography>
-                    </Box>
-                  </TableCell>
-
-                  {/* Open-ChangeSet column header: the number of ChangeSets
-                      open on the component's units, named in the cell's tooltip. */}
-                  <TableCell
-                    align='center'
-                    sx={{
-                      bgcolor: activeFilter === 'openChangeSet' ? alpha(theme.palette.warning.main, 0.05) : 'background.default',
-                      borderBottom: `1px solid ${theme.palette.divider}`,
-                      p: 0,
-                      position: 'sticky',
-                      top: 0,
-                      zIndex: 3,
-                    }}
-                  >
-                    <Box
-                      component='button'
-                      onClick={() => handleSort('openChangeSet')}
-                      sx={{
-                        width: '100%', border: 0, background: 'transparent', cursor: 'pointer',
-                        p: '11px 10px', fontFamily: 'inherit', color: 'text.secondary',
-                        fontWeight: 600, fontSize: 11, lineHeight: 1.2,
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px',
-                        '&:hover': { color: 'text.primary', bgcolor: alpha(theme.palette.action.hover, 0.06) },
-                      }}
-                    >
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <Box component='span' sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'info.main', flexShrink: 0 }} />
-                        <Typography component='span' sx={{ fontWeight: sortBy === 'openChangeSet' ? 700 : 600, fontSize: 11, color: sortBy === 'openChangeSet' ? 'text.primary' : 'inherit' }}>
-                          Open ChangeSets
-                        </Typography>
-                        <Typography component='span' sx={{ fontSize: 9, color: sortBy === 'openChangeSet' ? 'error.main' : 'text.disabled' }}>
-                          {sortArrow('openChangeSet')}
-                        </Typography>
-                      </Box>
-                      <Typography component='span' sx={{ fontSize: 9.5, fontWeight: 500, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        open
-                      </Typography>
-                    </Box>
-                  </TableCell>
                 </TableRow>
               </TableHead>
 
@@ -760,117 +740,168 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
 
                       {/* KPI data cells */}
                       {COL_DEFS.map((col) => {
-                        const colFocus = isColFocus(col.key);
-
-                        const value = getKpiValue(row, col.key);
-                        const heatStyle = getHeatSx(col.key, value, row.totalSpaces, theme.palette);
-
-                        return (
-                          <TableCell
-                            key={col.key}
-                            align='center'
-                            sx={{
-                              p: 0, height: 50,
-                              bgcolor: colFocus
-                                ? alpha(theme.palette.warning.main, 0.05)
-                                : heatStyle.bgcolor ?? 'transparent',
-                              borderBottom: `1px solid ${theme.palette.divider}`,
-                              transition: 'background 0.12s ease',
-                            }}
-                          >
-                            <Typography
-                              sx={{
-                                fontFamily: MONO_FONT,
-                                fontSize: value === 0 ? 13 : 15,
-                                fontWeight: value === 0 ? 400 : (heatStyle.fontWeight ?? 550),
-                                color: value === 0 ? 'text.disabled' : (heatStyle.color ?? 'text.secondary'),
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%',
-                              }}
-                            >
-                              {value === 0 ? '·' : value}
-                            </Typography>
-                          </TableCell>
-                        );
-                      })}
-
-                      {/* Outstanding-ChangeOrder dot — same visual language as
-                          the AppComponentView toggle's notifier dot. */}
-                      <TableCell
-                        align='center'
-                        sx={{
+                        const focusBg = activeFilter === col.key ? alpha(theme.palette.warning.main, 0.05) : undefined;
+                        const cellSx = {
                           p: 0, height: 50,
-                          bgcolor: activeFilter === 'outstandingChangeOrder' ? alpha(theme.palette.warning.main, 0.05) : 'transparent',
                           borderBottom: `1px solid ${theme.palette.divider}`,
                           transition: 'background 0.12s ease',
-                        }}
-                      >
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                          {row.hasOutstandingChangeOrder ? (
-                            <Box
-                              data-testid='outstanding-change-order-dot'
-                              sx={{
-                                width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                                bgcolor: theme.palette.warning.dark,
-                              }}
-                            />
-                          ) : (
-                            <Typography sx={{ fontFamily: MONO_FONT, fontSize: 13, color: 'text.disabled' }}>·</Typography>
-                          )}
-                        </Box>
-                      </TableCell>
-
-                      {/* Open-ChangeSet count, the ChangeSets named on hover, each a link to its page. */}
-                      <TableCell
-                        align='center'
-                        sx={{
-                          p: 0, height: 50,
-                          bgcolor: activeFilter === 'openChangeSet'
-                            ? alpha(theme.palette.warning.main, 0.05)
-                            : row.openChangeSets.length > 0 ? alpha(theme.palette.info.main, 0.08) : 'transparent',
-                          borderBottom: `1px solid ${theme.palette.divider}`,
-                          transition: 'background 0.12s ease',
-                        }}
-                      >
-                        {row.openChangeSets.length > 0 ? (
-                          <Tooltip
-                            placement='top'
-                            arrow
-                            title={
-                              <Box component='ul' sx={{ m: 0, p: 0, listStyle: 'none' }} data-testid='open-changeset-links'>
-                                {row.openChangeSets.map((cs) => (
-                                  <li key={cs.label}>
-                                    {cs.spaceSlug ? (
-                                      <Box
-                                        component={RouterLink}
-                                        to={changeSetPath(cs.spaceSlug, cs.slug)}
-                                        // The row opens the component; a link in its hover opens the ChangeSet.
-                                        onClick={(event: React.MouseEvent) => event.stopPropagation()}
-                                        sx={{ color: 'inherit' }}
-                                      >
-                                        {cs.label}
-                                      </Box>
-                                    ) : (
-                                      cs.label
-                                    )}
-                                  </li>
-                                ))}
-                              </Box>
-                            }
-                          >
-                            <Typography
-                              data-testid='open-changeset-count'
-                              sx={{
-                                fontFamily: MONO_FONT, fontSize: 15, fontWeight: 600, color: 'info.main',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%',
-                              }}
-                            >
-                              {row.openChangeSets.length}
-                            </Typography>
-                          </Tooltip>
-                        ) : (
+                        };
+                        const emptyMark = (
                           <Typography sx={{ fontFamily: MONO_FONT, fontSize: 13, color: 'text.disabled', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>·</Typography>
-                        )}
-                      </TableCell>
+                        );
+
+                        switch (col.key) {
+                          // Outstanding-ChangeOrder dot — same visual language as
+                          // the AppComponentView toggle's notifier dot.
+                          case 'outstandingChangeOrder':
+                            return (
+                              <TableCell key={col.key} align='center' sx={{ ...cellSx, bgcolor: focusBg ?? 'transparent' }}>
+                                {row.hasOutstandingChangeOrder ? (
+                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                                    <Box
+                                      data-testid='outstanding-change-order-dot'
+                                      sx={{
+                                        width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                                        bgcolor: theme.palette.warning.dark,
+                                      }}
+                                    />
+                                  </Box>
+                                ) : (
+                                  emptyMark
+                                )}
+                              </TableCell>
+                            );
+
+                          // Open-ChangeSet count, the ChangeSets named on hover, each a link to its page.
+                          case 'openChangeSet':
+                            return (
+                              <TableCell
+                                key={col.key}
+                                align='center'
+                                sx={{
+                                  ...cellSx,
+                                  bgcolor: focusBg ?? (row.openChangeSets.length > 0 ? alpha(theme.palette.info.main, 0.08) : 'transparent'),
+                                }}
+                              >
+                                {row.openChangeSets.length > 0 ? (
+                                  <Tooltip
+                                    placement='top'
+                                    arrow
+                                    title={
+                                      <Box component='ul' sx={{ m: 0, p: 0, listStyle: 'none' }} data-testid='open-changeset-links'>
+                                        {row.openChangeSets.map((cs) => (
+                                          <li key={cs.label}>
+                                            {cs.spaceSlug ? (
+                                              <Box
+                                                component={RouterLink}
+                                                to={changeSetPath(cs.spaceSlug, cs.slug)}
+                                                // The row opens the component; a link in its hover opens the ChangeSet.
+                                                onClick={(event: React.MouseEvent) => event.stopPropagation()}
+                                                sx={{ color: 'inherit' }}
+                                              >
+                                                {cs.label}
+                                              </Box>
+                                            ) : (
+                                              cs.label
+                                            )}
+                                          </li>
+                                        ))}
+                                      </Box>
+                                    }
+                                  >
+                                    <Typography
+                                      data-testid='open-changeset-count'
+                                      sx={{
+                                        fontFamily: MONO_FONT, fontSize: 15, fontWeight: 600, color: 'info.main',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%',
+                                      }}
+                                    >
+                                      {row.openChangeSets.length}
+                                    </Typography>
+                                  </Tooltip>
+                                ) : (
+                                  emptyMark
+                                )}
+                              </TableCell>
+                            );
+
+                          // The Spaces whose running Release is out of sync, degraded or
+                          // failed, coloured by the worst of them and named on hover.
+                          case 'liveProblems': {
+                            const problems = row.liveProblems;
+                            const color = problems[0]?.tone === 'danger' ? theme.palette.error.main : theme.palette.warning.main;
+                            return (
+                              <TableCell
+                                key={col.key}
+                                align='center'
+                                sx={{ ...cellSx, bgcolor: focusBg ?? (problems.length > 0 ? alpha(color, 0.08) : 'transparent') }}
+                              >
+                                {problems.length > 0 ? (
+                                  <Tooltip
+                                    placement='top'
+                                    arrow
+                                    title={
+                                      <Box data-testid='release-problem-list'>
+                                        <Box component='ul' sx={{ m: 0, p: 0, listStyle: 'none' }}>
+                                          {problems.map((problem) => (
+                                            <li key={problem.spaceSlug}>
+                                              {problem.spaceSlug}: {problem.text}
+                                            </li>
+                                          ))}
+                                        </Box>
+                                        <Box
+                                          component={RouterLink}
+                                          to={`/releases?component=${encodeURIComponent(row.componentName)}`}
+                                          onClick={(event: React.MouseEvent) => event.stopPropagation()}
+                                          sx={{ display: 'inline-block', mt: 0.5, color: 'inherit' }}
+                                        >
+                                          Open in Releases
+                                        </Box>
+                                      </Box>
+                                    }
+                                  >
+                                    <Typography
+                                      data-testid='release-problem-count'
+                                      sx={{
+                                        fontFamily: MONO_FONT, fontSize: 15, fontWeight: 600, color,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%',
+                                      }}
+                                    >
+                                      {problems.length}
+                                    </Typography>
+                                  </Tooltip>
+                                ) : (
+                                  emptyMark
+                                )}
+                              </TableCell>
+                            );
+                          }
+
+                          default: {
+                            const value = getKpiValue(row, col.key);
+                            const heatStyle = getHeatSx(col.key, value, row.totalSpaces, theme.palette);
+                            return (
+                              <TableCell
+                                key={col.key}
+                                align='center'
+                                sx={{ ...cellSx, bgcolor: focusBg ?? heatStyle.bgcolor ?? 'transparent' }}
+                              >
+                                <Typography
+                                  sx={{
+                                    fontFamily: MONO_FONT,
+                                    fontSize: value === 0 ? 13 : 15,
+                                    fontWeight: value === 0 ? 400 : (heatStyle.fontWeight ?? 550),
+                                    color: value === 0 ? 'text.disabled' : (heatStyle.color ?? 'text.secondary'),
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%',
+                                  }}
+                                >
+                                  {value === 0 ? '·' : value}
+                                </Typography>
+                              </TableCell>
+                            );
+                          }
+                        }
+                      })}
                     </TableRow>
                   );
                 })}
@@ -890,53 +921,21 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
                   >
                     Org roll-up
                   </TableCell>
-                  {COL_DEFS.map((col) => {
-                    const colFocus = isColFocus(col.key);
-                    const orgVal =
-                        col.key === 'unapplied'    ? org.unapplied
-                      : col.key === 'gatesPending' ? org.gatesPending
-                      : col.key === 'upgrades'     ? org.upgrades
-                      : null;
-                    return (
-                      <TableCell
-                        key={col.key}
-                        align='center'
-                        sx={{
-                          borderTop: `2px solid ${theme.palette.divider}`,
-                          height: 42,
-                          bgcolor: colFocus ? alpha(theme.palette.warning.main, 0.05) : 'background.default',
-                          fontFamily: MONO_FONT,
-                          fontSize: 13, fontWeight: 600, color: 'text.secondary',
-                        }}
-                      >
-                        {orgVal}
-                      </TableCell>
-                    );
-                  })}
-                  <TableCell
-                    align='center'
-                    sx={{
-                      borderTop: `2px solid ${theme.palette.divider}`,
-                      height: 42,
-                      bgcolor: activeFilter === 'outstandingChangeOrder' ? alpha(theme.palette.warning.main, 0.05) : 'background.default',
-                      fontFamily: MONO_FONT,
-                      fontSize: 13, fontWeight: 600, color: 'text.secondary',
-                    }}
-                  >
-                    {org.outstandingChangeOrders}
-                  </TableCell>
-                  <TableCell
-                    align='center'
-                    sx={{
-                      borderTop: `2px solid ${theme.palette.divider}`,
-                      height: 42,
-                      bgcolor: activeFilter === 'openChangeSet' ? alpha(theme.palette.warning.main, 0.05) : 'background.default',
-                      fontFamily: MONO_FONT,
-                      fontSize: 13, fontWeight: 600, color: 'text.secondary',
-                    }}
-                  >
-                    {org.openChangeSetComponents}
-                  </TableCell>
+                  {COL_DEFS.map((col) => (
+                    <TableCell
+                      key={col.key}
+                      align='center'
+                      sx={{
+                        borderTop: `2px solid ${theme.palette.divider}`,
+                        height: 42,
+                        bgcolor: activeFilter === col.key ? alpha(theme.palette.warning.main, 0.05) : 'background.default',
+                        fontFamily: MONO_FONT,
+                        fontSize: 13, fontWeight: 600, color: 'text.secondary',
+                      }}
+                    >
+                      {org[col.orgField]}
+                    </TableCell>
+                  ))}
                 </TableRow>
               </TableFooter>
 

@@ -21,6 +21,7 @@ const AppsComponentPage = lazy(() => import('./pages/x/apps/AppsComponentPage'))
 const ChangeOrdersPage = lazy(() => import('./pages/change-orders/ChangeOrdersPage'));
 const ChangeOrderDraftPage = lazy(() => import('./pages/change-orders/draft/ChangeOrderDraftPage'));
 const ReleasesPage = lazy(() => import('./pages/releases/ReleasesPage'));
+const TargetOverviewPage = lazy(() => import('./pages/target-overview/TargetOverviewPage'));
 const ChangeOrdersOldRouteRedirect = lazy(() => import('./pages/change-orders/OldRouteRedirect'));
 const ChangeSetsPage = lazy(() => import('./pages/change-sets/ChangeSetsPage'));
 const ViewExplorerPage = lazy(() => import('./pages/x/view-explorer/ViewExplorerPage'));
@@ -181,6 +182,15 @@ const routes = [
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <ChangeOrdersOldRouteRedirect />
+          </Suspense>
+        ),
+      },
+      {
+        // Not under /targets, the Target list, so the top bar marks only one of them as the current page.
+        path: '/target-overview',
+        element: (
+          <Suspense fallback={<Loader isLoading={true} />}>
+            <TargetOverviewPage />
           </Suspense>
         ),
       },

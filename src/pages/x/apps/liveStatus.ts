@@ -175,6 +175,15 @@ export const TONE_SEVERITY: Record<VitalTone, number> = {
   danger: 4,
 };
 
+/** Legend order, worst last, with what each tone means for a Release. */
+export const LIVE_TONE_LEGEND: readonly { tone: VitalTone; label: string }[] = [
+  { tone: 'ok', label: 'Synced and healthy' },
+  { tone: 'neutral', label: 'Not reported' },
+  { tone: 'progress', label: 'Progressing' },
+  { tone: 'attention', label: 'Out of sync' },
+  { tone: 'danger', label: 'Degraded or failed' },
+];
+
 /** The more severe of two tones. */
 export function worseTone(a: VitalTone, b: VitalTone): VitalTone {
   return TONE_SEVERITY[b] > TONE_SEVERITY[a] ? b : a;

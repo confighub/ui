@@ -15,8 +15,14 @@ import { useTheme } from '@mui/material/styles';
 // CONSTANTS
 // ============================================================================
 
-/** Component / Blocking Gates / Unreleased Changes / Upgrades Available. */
-const COLUMN_COUNT = 4;
+/**
+ * Component, then the KPI columns: Blocking Gates, Unreleased Changes, Release
+ * Problems, Upgrades Available, Outstanding ChangeOrders, Open ChangeSets.
+ */
+const COLUMN_COUNT = 7;
+const KPI_TILE_COUNT = 6;
+/** Matches `KPI_COL_WIDTH` in ComponentOverviewMatrix.tsx. */
+const KPI_COL_WIDTH = 112;
 const BODY_ROW_COUNT = 6;
 
 // ============================================================================
@@ -51,7 +57,7 @@ const KpiTileSkeleton = () => (
   </Box>
 );
 
-/** Mirrors the estate-summary widget: two mono number blocks + uppercase caption. */
+/** Mirrors the estate-summary widget: three mono number blocks, each with an uppercase caption. */
 const EstateSummarySkeleton = () => (
   <Box
     sx={{
@@ -69,6 +75,11 @@ const EstateSummarySkeleton = () => (
     <Box>
       <Skeleton variant='rounded' width={30} height={22} sx={{ borderRadius: '4px' }} />
       <Skeleton variant='text' width={128} height={11} sx={{ mt: '2px' }} />
+    </Box>
+    <Box sx={{ width: '1px', height: 30, bgcolor: 'divider' }} />
+    <Box>
+      <Skeleton variant='rounded' width={30} height={22} sx={{ borderRadius: '4px' }} />
+      <Skeleton variant='text' width={200} height={11} sx={{ mt: '2px' }} />
     </Box>
     <Box sx={{ width: '1px', height: 30, bgcolor: 'divider' }} />
     <Box>
@@ -121,10 +132,10 @@ export const ComponentOverviewMatrixSkeleton = () => {
 
         {/* ── KPI tiles ── */}
         <SectionLabelSkeleton />
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', mb: '10px' }}>
-          <KpiTileSkeleton />
-          <KpiTileSkeleton />
-          <KpiTileSkeleton />
+        <Box sx={{ display: 'grid', gridTemplateColumns: `repeat(${KPI_TILE_COUNT}, 1fr)`, gap: '12px', mb: '10px' }}>
+          {Array.from({ length: KPI_TILE_COUNT }, (_, i) => (
+            <KpiTileSkeleton key={i} />
+          ))}
         </Box>
 
         {/* ── Filter bar ── */}
@@ -151,9 +162,10 @@ export const ComponentOverviewMatrixSkeleton = () => {
                       key={i}
                       align={i === 0 ? 'left' : 'center'}
                       sx={{
+                        width: i === 0 ? undefined : KPI_COL_WIDTH,
                         bgcolor: 'background.default',
                         borderBottom: `1px solid ${theme.palette.divider}`,
-                        p: i === 0 ? '11px 10px 11px 18px' : '11px 10px',
+                        p: i === 0 ? '11px 10px 11px 18px' : '11px 8px',
                         position: 'sticky',
                         top: 0,
                         zIndex: 3,
@@ -167,7 +179,7 @@ export const ComponentOverviewMatrixSkeleton = () => {
                           gap: '5px',
                         }}
                       >
-                        <Skeleton variant='text' width={i === 0 ? 84 : 118} height={11} />
+                        <Skeleton variant='text' width={i === 0 ? 84 : 64} height={i === 0 ? 11 : 26} />
                         {i > 0 && <Skeleton variant='text' width={54} height={9.5} />}
                       </Box>
                     </TableCell>

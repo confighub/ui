@@ -9,7 +9,6 @@ import {
   type ExtendedRevisionRead,
   type ExtendedSpaceRead,
   type RevisionRead,
-  useListAllRevisionsQuery,
   useListExtendedRevisionsQuery,
   useListSpacesQuery,
 } from '@confighub/rtk-query';
@@ -27,6 +26,7 @@ import Typography from '@mui/material/Typography';
 import { alpha, keyframes, useTheme, type Theme } from '@mui/material/styles';
 
 import { formatShortTimestamp } from '@/components/invoker/utils/date-format.utils';
+import { useListRecentRevisionsChunkedQuery } from '@/hooks/chunkedQueriesApi';
 import { spaceComponentSlug, useComponentSlugs } from '@/hooks/useComponentSlugs';
 import { useInViewport } from '@/hooks/useInViewport';
 
@@ -62,6 +62,9 @@ const REVISION_SOURCE_LABELS: Record<string, string> = {
   CloneUnit: 'cloned unit set',
   RestoreRevision: 'restored a previous revision',
 };
+
+/** The Revision Sources the feed reads. */
+const FEED_REVISION_SOURCES = Object.keys(REVISION_SOURCE_LABELS);
 
 /** Matches any UUID in a string (case-insensitive). */
 const UUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
@@ -629,37 +632,18 @@ export const ComponentActivityFeed = ({ spaces }: ComponentActivityFeedProps) =>
   const componentSpaceIds = useMemo(() => Array.from(spaceIdToComponent.keys()), [spaceIdToComponent]);
 
   // ── Revision query ──────────────────────────────────────────────────────────
-  // include: 'UserID,UnitID' fetches extended.User and extended.Unit alongside each revision.
-  const revisionsWhere = useMemo(() => {
-    if (componentSpaceIds.length === 0) return undefined;
-    const spaceIds = componentSpaceIds.map((id) => `'${id}'`).join(', ');
-    const sources = Object.keys(REVISION_SOURCE_LABELS).map((s) => `'${s}'`).join(', ');
-    return `SpaceID IN (${spaceIds}) AND Source IN (${sources})`;
-  }, [componentSpaceIds]);
-
-  // Server returns the most-recent MAX_FEED_ENTRIES matching revisions pre-sorted
-  // (orderBy: DESC:CreatedAt) and pre-filtered — this is the feed's only source, so
-  // no further client-side sort/cap is required before the tab filter runs below.
-  //
-  // distinct_on: 'Off' is what makes this an activity stream. The endpoint's default
-  // returns at most one row per *unit*, which spends the whole limit on one busy
-  // space; any coarser key spends it worse still. A feed wants neither — it wants
-  // the most recent rows, full stop, and to label them by space (a display choice,
-  // made from SpaceID below). 'Unit' remains the endpoint's default for every other
-  // caller. distinct_on=Off requires an explicit limit, which the `limit` here satisfies.
+  // The newest MAX_FEED_ENTRIES Revisions of these Sources across the Spaces, with
+  // extended.User and extended.Unit. The Space ids are split over several requests,
+  // since one `SpaceID IN (...)` over an org's few hundred Spaces is longer than the
+  // server accepts. Every Revision is read, not one per Unit, so one busy Unit
+  // cannot take the whole feed.
   const {
     data: revisionsData = [],
     isLoading: revisionsLoading,
     isError: revisionsError,
-  } = useListAllRevisionsQuery(
-    {
-      where: revisionsWhere,
-      include: 'UserID,UnitID',
-      limit: MAX_FEED_ENTRIES,
-      orderBy: 'DESC:CreatedAt',
-      distinctOn: 'Off',
-    },
-    { skip: !revisionsWhere },
+  } = useListRecentRevisionsChunkedQuery(
+    { spaceIds: componentSpaceIds, sources: FEED_REVISION_SOURCES, limit: MAX_FEED_ENTRIES },
+    { skip: componentSpaceIds.length === 0 },
   );
 
   // ── Build revision feed entries ─────────────────────────────────────────────
@@ -725,7 +709,7 @@ export const ComponentActivityFeed = ({ spaces }: ComponentActivityFeedProps) =>
   // still require the round trip below.
   //
   // NOTE: there is no `include`-based fix for this — the revisions endpoint's
-  // `include` param (see revisionsWhere query above) only expands *structured*
+  // `include` param (see the revision query above) only expands *structured*
   // relations the API tracks as real columns (ChangeSetID, SpaceID, UnitID,
   // UserID, ...). The space UUID here is embedded free-text inside
   // Revision.Description (e.g. "Cloned from <uuid>/unit-slug") — the API has

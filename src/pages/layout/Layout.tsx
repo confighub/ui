@@ -288,7 +288,13 @@ const ConfigurationItems: INavItem[] = [
     navigate: `/components`,
     disable: false,
   },
-  // Sits between Components and ChangeSets, per the approved design.
+  {
+    text: 'Targets',
+    component: <Storage sx={{ color: 'white' }} />,
+    navigate: `/target-overview`,
+    disable: false,
+  },
+  // Sits between Targets and ChangeSets, per the approved design.
   ...(SHOW_CHANGE_ORDERS_NAV
     ? [
         {
