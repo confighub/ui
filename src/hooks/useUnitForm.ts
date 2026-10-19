@@ -3,15 +3,18 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
-import {
-  IAddLabelInput,
-  PropertyType,
-} from '@/components/forms/add-label-modal/AddLabelModal';
+import type { MapRow } from '@/components/map-field-editor/map-rows';
 import { TargetRead, Unit } from '@confighub/rtk-query';
 import { useListAllTargetsQuery } from '@confighub/rtk-query';
 import { SelectChangeEvent } from '@mui/material/Select';
 
-type UnitFormData = Unit;
+// The form edits the Unit's maps as rows, so an entry can be changed in place.
+export type UnitFormData = Omit<Unit, 'Labels' | 'Annotations' | 'DeleteGates' | 'DestroyGates'> & {
+  Labels: MapRow[];
+  Annotations: MapRow[];
+  DeleteGates: MapRow[];
+  DestroyGates: MapRow[];
+};
 
 interface UseUnitFormProps {
   defaultValues?: Partial<UnitFormData>;
@@ -26,8 +29,10 @@ export const useUnitForm = ({
 }: UseUnitFormProps = {}) => {
   const baseDefaults = {
     Slug: '',
-    Labels: {},
-    Annotations: {},
+    Labels: [],
+    Annotations: [],
+    DeleteGates: [],
+    DestroyGates: [],
     SpaceID: '',
     TargetID: '',
     ToolchainType: 'Kubernetes/YAML',
@@ -47,8 +52,6 @@ export const useUnitForm = ({
   };
   const [selectedSpaceID, setSelectedSpaceID] = useState<string>(finalDefaults.SpaceID ?? '');
   const [selectedToolchainType, setSelectedToolchainType] = useState<string>(finalDefaults.ToolchainType);
-  const [labelModalIsOpen, setLabelModalIsOpen] = useState(false);
-  const [isAddAnnotationsModalOpen, setIsAddAnnotationsModalOpen] = useState(false);
 
   const [unitData, setUnitData] = useState<UnitFormData>(finalDefaults as UnitFormData);
 
@@ -66,19 +69,6 @@ export const useUnitForm = ({
       }),
     }
   );
-
-  const onLabelAdded = (label: IAddLabelInput, type: PropertyType = 'Labels') => {
-    // @ts-expect-error TODO:
-    form.setValue(type, { ...form.watch(type), [label.key]: label.value });
-  };
-
-  const onLabelDeleted = (label: IAddLabelInput, type: PropertyType = 'Labels') => {
-    const labels = form.watch(type);
-    if (labels) {
-      delete labels[label.key];
-      form.setValue(type, labels);
-    }
-  };
 
   const onSpaceSelected = (event: SelectChangeEvent<string>) => {
     const {
@@ -106,14 +96,8 @@ export const useUnitForm = ({
     targets,
     selectedSpaceID,
     selectedToolchainType,
-    labelModalIsOpen,
-    setLabelModalIsOpen,
-    isAddAnnotationsModalOpen,
-    setIsAddAnnotationsModalOpen,
     unitData,
     setUnitData,
-    onLabelAdded,
-    onLabelDeleted,
     onSpaceSelected,
     onToolchainTypeSelected,
     resetForm,

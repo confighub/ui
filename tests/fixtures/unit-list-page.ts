@@ -64,8 +64,15 @@ export class UnitListPage extends EntityGridFixture {
   async goToUnitDetailPageByRowClick(name: string) {
     const row = await this.getRowByName(name);
 
-    // Click the unit name link within the row
+    // A Unit's name opens its settings drawer, which links to the Unit's page.
     await row.getByRole('link', { name }).click();
+    await this.openUnitPageFromDrawer();
+  }
+
+  /** Follows the settings drawer's link to the Unit's page. */
+  async openUnitPageFromDrawer() {
+    await this.page.getByTestId('unit-settings-drawer').getByTestId('open-full-details-link').click();
+    await this.page.waitForURL(/\/units\/[^/?]+\/[^/?]+/);
   }
 
   /**
@@ -194,19 +201,12 @@ export class UnitListPage extends EntityGridFixture {
     await this.page.getByRole('combobox', { name: 'Toolchain Type' }).click();
     await this.page.getByRole('option', { name: selectedToolchainType }).click();
 
-    // Add labels if provided
+    // Add labels if provided: each is a row of Key and Value fields
     if (labels) {
-      for (const [key, value] of Object.entries(labels)) {
-        const addButton = this.page.getByRole('button', { name: 'Add' }).first();
-        await addButton.focus();
-        await addButton.click();
-        await addButton.click();
-        // Key/Value fields appear after adding a label row (fill auto-waits)
-        await this.page.getByRole('textbox', { name: 'Key' }).fill(key);
-        await this.page.getByRole('textbox', { name: 'Value' }).fill(value);
-        await this.page.getByRole('button', { name: 'Add' }).click();
-        // Wait for the label row to commit (Key field resets to empty)
-        await expect(this.page.getByRole('textbox', { name: 'Key' })).toHaveValue('');
+      for (const [index, [key, value]] of Object.entries(labels).entries()) {
+        await this.page.getByTestId('add-unit-labels-add').click();
+        await this.page.getByTestId(`add-unit-labels-key-${index}`).fill(key);
+        await this.page.getByTestId(`add-unit-labels-value-${index}`).fill(value);
       }
     }
 
@@ -630,8 +630,9 @@ export class UnitListPage extends EntityGridFixture {
     // Get the row (will automatically search if not visible)
     const row = await this.getRowByName(name);
 
-    // Click the link within the row
+    // A Unit's name opens its settings drawer, which links to the Unit's page.
     await row.getByRole('link', { name: name }).click();
+    await this.openUnitPageFromDrawer();
 
     await this.page.waitForTimeout(3000);
   }

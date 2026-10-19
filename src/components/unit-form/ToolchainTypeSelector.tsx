@@ -4,7 +4,7 @@ import { Control, FieldErrors } from 'react-hook-form';
 import { Controller } from 'react-hook-form';
 
 import { DEFAULT_TOOLCHAIN_TYPES } from '@/components/query-builder';
-import { Unit } from '@confighub/rtk-query';
+import type { UnitFormData } from '@/hooks/useUnitForm';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
@@ -13,8 +13,8 @@ import Select from '@mui/material/Select';
 import Typography from '@mui/material/Typography';
 
 interface ToolchainSelectorProps {
-  control: Control<Unit>;
-  errors: FieldErrors<Unit>;
+  control: Control<UnitFormData>;
+  errors: FieldErrors<UnitFormData>;
   selectedToolchainType: string;
   onToolchainTypeSelected: (event: SelectChangeEvent<string>) => void;
 }

@@ -295,6 +295,12 @@ export interface ChangeOrderResourceConflict {
   path?: string;
   /** What the reason alone cannot say — the only content a `ReplayFailed` carries. */
   details?: string;
+  /** The value the target holds at `path` and keeps, as the server wrote it (YAML, final newline dropped). */
+  targetValue?: string;
+  /** The value the change would have written at `path`, when the server said. */
+  sourceValue?: string;
+  /** The target's value at `path` is protected: kept on merge. */
+  targetProtected?: boolean;
   /**
    * False ONLY for the reasons that report the change landing and say what the
    * variant lost. Everything else blocks, including a reason we do not

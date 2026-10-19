@@ -15,7 +15,7 @@ import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
-import { CHANGE_ORDER_IMAGE_SUBJECT, kindsOf, unitsInText, type ImageChangeSubject } from '../imageChangeCopy';
+import { BUMP_LABEL, CHANGE_ORDER_IMAGE_SUBJECT, kindsOf, unitsInText, type ImageChangeSubject } from '../imageChangeCopy';
 import { shortDigest, versionPathOf, type ImageChanges, type ImageChange } from '../imageChange';
 import { ImageMark, ImageTag, RolePill, TagArrow } from './ImageChangeAtoms';
 import { BUMP_TONE } from '../imageChangeTone';
@@ -134,16 +134,52 @@ function TagPane({ image, side }: { image: ImageChange; side: 'from' | 'to' }) {
   );
 }
 
+/**
+ * What a hero row's right-hand column says. `units`: how many Units hold the image, and the
+ * stages on every row. `bump`: the kind of move as a pill, and the stages once, on the first
+ * row (a draft, which has no Units of its own yet to count).
+ */
+export type HeroMeta = 'units' | 'bump';
+
+/** The kind of move the new image tag is, in its bump's tone. */
+function BumpPill({ image }: { image: ImageChange }) {
+  const tone = BUMP_TONE[image.bump];
+  return (
+    <Box
+      component="span"
+      data-testid="image-hero-bump"
+      sx={{
+        display: 'inline-block',
+        fontSize: 12,
+        fontWeight: changeOrderType.weight.semibold,
+        lineHeight: 1.5,
+        padding: '2px 10px',
+        borderRadius: `${changeOrderShape.radius.pill}px`,
+        border: `1px solid ${tone.line}`,
+        background: tone.soft,
+        color: tone.ink,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {BUMP_LABEL[image.bump]}
+    </Box>
+  );
+}
+
 function HeroRow({
   image,
   stageNames,
   first,
   subject,
+  meta,
+  inset,
 }: {
   image: ImageChange;
   stageNames: readonly string[];
   first: boolean;
   subject: ImageChangeSubject;
+  meta: HeroMeta;
+  inset: number | undefined;
 }) {
   const workload = workloadLabel(image);
   const isVersion = image.kind === 'version';
@@ -157,7 +193,7 @@ function HeroRow({
         gridTemplateColumns: 'minmax(220px, 1fr) minmax(320px, 1.5fr) minmax(170px, .8fr)',
         gap: '24px',
         alignItems: 'center',
-        padding: '16px 18px',
+        padding: inset === undefined ? '16px 18px' : `16px 18px 16px ${inset}px`,
         borderTop: first ? 'none' : `1px solid ${changeOrderBorder.default}`,
       }}
     >
@@ -260,20 +296,21 @@ function HeroRow({
 
       <Box sx={{ display: 'grid', gap: '6px', justifyItems: 'start' }}>
         {/*
-          The count is of Units where the change was made: for a ChangeOrder, its
-          own Space. It is not a count of Units in the stages, so the stages are a
+          The count is of the resources where the change was made: for a ChangeOrder,
+          its own Space. It is not a count of resources in the stages, so the stages are a
           separate line that says only the order the change promotes through.
         */}
-        {isVersion ? null : (
+        {meta === 'bump' && !isVersion ? <BumpPill image={image} /> : null}
+        {isVersion || meta === 'bump' ? null : (
           <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted }}>
             In{' '}
             <Box component="b" sx={{ color: changeOrderInk.default, fontWeight: changeOrderType.weight.semibold }}>
-              {image.unitCount} {image.unitCount === 1 ? 'Unit' : 'Units'}
+              {image.unitCount} {image.unitCount === 1 ? 'resource' : 'resources'}
             </Box>
             {subject.unitsWhere === '' ? null : ` ${subject.unitsWhere}`}
           </Box>
         )}
-        {stageNames.length > 0 ? (
+        {stageNames.length > 0 && (meta === 'units' || first) ? (
           <Box sx={{ fontSize: changeOrderType.size.small, lineHeight: changeOrderType.lineHeight.body, color: changeOrderInk.subtle }}>
             Promotes through {stageNames.join(' → ')}
           </Box>
@@ -312,11 +349,15 @@ function ImageChangeHero({
   fieldChangeCount,
   stageNames,
   subject,
+  meta,
+  inset,
 }: {
   images: readonly ImageChange[];
   fieldChangeCount: number;
   stageNames: readonly string[];
   subject: ImageChangeSubject;
+  meta: HeroMeta;
+  inset: number | undefined;
 }) {
   const n = images.length;
   const kinds = kindsOf(images);
@@ -331,12 +372,17 @@ function ImageChangeHero({
           alignItems: 'baseline',
           justifyContent: 'space-between',
           gap: '12px',
-          padding: '10px 16px',
+          padding: inset === undefined ? '10px 16px' : `10px 16px 10px ${inset}px`,
           background: changeOrderSurface.sunk,
           borderBottom: `1px solid ${changeOrderBorder.default}`,
         }}
       >
-        <Box component="h3" sx={{ margin: 0, fontSize: changeOrderType.size.lead, lineHeight: changeOrderType.lineHeight.heading, fontWeight: changeOrderType.weight.strong }}>
+        {/* An h2: the hero heads its own section of the summary. Named "Image changes, 4 image changes", not the two parts run together. */}
+        <Box
+          component="h2"
+          aria-label={n > 1 ? `${title}, ${count}` : undefined}
+          sx={{ margin: 0, fontSize: changeOrderType.size.lead, lineHeight: changeOrderType.lineHeight.heading, fontWeight: changeOrderType.weight.strong }}
+        >
           {title}
           {n > 1 ? (
             <Box component="span" sx={{ color: changeOrderInk.subtle, fontWeight: changeOrderType.weight.regular, marginLeft: '4px' }}>
@@ -351,7 +397,7 @@ function ImageChangeHero({
         </Box>
       </Box>
       {images.map((image, i) => (
-        <HeroRow key={image.key} image={image} stageNames={stageNames} first={i === 0} subject={subject} />
+        <HeroRow key={image.key} image={image} stageNames={stageNames} first={i === 0} subject={subject} meta={meta} inset={inset} />
       ))}
     </Panel>
   );
@@ -393,11 +439,20 @@ export function ImageChangeSummary({
   changes,
   stageNames,
   subject = CHANGE_ORDER_IMAGE_SUBJECT,
+  meta = 'units',
+  inset,
 }: {
   changes: ImageChanges;
   /** The stages the change promotes through, in order; none for a change that is not promoted. */
   stageNames: readonly string[];
   subject?: ImageChangeSubject;
+  /** What each row's right-hand column says. */
+  meta?: HeroMeta;
+  /**
+   * The left padding of the header band and the rows, for a caller that lets the hero bleed
+   * over its card's padding so that the text still lines up with the card's content edge.
+   */
+  inset?: number;
 }) {
   switch (changes.status) {
     case 'some':
@@ -407,6 +462,8 @@ export function ImageChangeSummary({
           fieldChangeCount={changes.fieldChanges.count}
           stageNames={stageNames}
           subject={subject}
+          meta={meta}
+          inset={inset}
         />
       );
     case 'none':
@@ -430,8 +487,8 @@ export function ImageChangeSummary({
 }
 
 /**
- * "Full diff · N changes in M Units", around the per-Unit diffs. The body is a
- * render function so a shut disclosure mounts no tree.
+ * "Full diff · N changes in M resources", around the per-resource diffs. The
+ * body is a render function so a shut disclosure mounts no tree.
  */
 export function FullDiffDisclosure({
   changeCount,
@@ -444,6 +501,7 @@ export function FullDiffDisclosure({
   idPrefix = CHANGE_ORDER_IMAGE_SUBJECT.idPrefix,
 }: {
   changeCount: number;
+  /** The Units that carry a change, said as resources. */
   unitCount: number;
   /** The change is images and nothing else, so the hero above already says all of it. */
   imagesOnly: boolean;
@@ -456,7 +514,7 @@ export function FullDiffDisclosure({
   idPrefix?: string;
 }) {
   const bodyId = `${idPrefix}-full-diff`;
-  const count = `${changeCount} ${changeCount === 1 ? 'change' : 'changes'} in ${unitCount} ${unitCount === 1 ? 'Unit' : 'Units'}`;
+  const count = `${changeCount} ${changeCount === 1 ? 'change' : 'changes'} in ${unitCount} ${unitCount === 1 ? 'resource' : 'resources'}`;
   return (
     <Box
       data-testid={`${idPrefix}-full-diff`}

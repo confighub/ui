@@ -7,7 +7,7 @@ import { CopyToClipboard } from '@/components/copy-to-clipboard/CopyToClipboard'
 import { DEFAULT_TOOLCHAIN_TYPES } from '@/components/query-builder';
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { FunctionParametersField } from '@/components/function-parameters-field/FunctionParametersField';
-import { SimpleGateCard } from '@/components/simple-gate-card/SimpleGateCard';
+import { MapFieldSection } from '@/components/map-field-editor/MapFieldSection';
 import {
   SimpleFunctionPicker,
   type SimpleFunctionOption,
@@ -24,7 +24,6 @@ import {
   useListFunctionsQuery,
 } from '@confighub/rtk-query';
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
-import Add from '@mui/icons-material/Add';
 import ArrowBack from '@mui/icons-material/ArrowBack';
 import CheckCircle from '@mui/icons-material/CheckCircle';
 import ExpandLess from '@mui/icons-material/ExpandLess';
@@ -33,7 +32,6 @@ import Lock from '@mui/icons-material/Lock';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Chip from '@mui/material/Chip';
 import Drawer from '@mui/material/Drawer';
 import FormControl from '@mui/material/FormControl';
 import FormHelperText from '@mui/material/FormHelperText';
@@ -412,161 +410,6 @@ const StatusAndFunctionCard = ({
 };
 
 /**
- * LabelsAndAnnotationsCard
- *
- * Handles labels and annotations management.
- */
-const LabelsAndAnnotationsCard = ({
-  addLabel,
-  addAnnotation,
-  removeLabel,
-  removeAnnotation,
-  newLabelKey,
-  newLabelValue,
-  newAnnotationKey,
-  newAnnotationValue,
-  setNewLabelKey,
-  setNewLabelValue,
-  setNewAnnotationKey,
-  setNewAnnotationValue,
-  labels,
-  annotations,
-}: {
-  addLabel: () => void;
-  addAnnotation: () => void;
-  removeLabel: (id: string) => void;
-  removeAnnotation: (id: string) => void;
-  newLabelKey: string;
-  newLabelValue: string;
-  newAnnotationKey: string;
-  newAnnotationValue: string;
-  setNewLabelKey: React.Dispatch<React.SetStateAction<string>>;
-  setNewLabelValue: React.Dispatch<React.SetStateAction<string>>;
-  setNewAnnotationKey: React.Dispatch<React.SetStateAction<string>>;
-  setNewAnnotationValue: React.Dispatch<React.SetStateAction<string>>;
-  labels: Array<{ id: string; key: string; value: string }>;
-  annotations: Array<{ id: string; key: string; value: string }>;
-}) => {
-  return (
-    <SectionCard title='Labels & Annotations'>
-      {/* Labels Section */}
-      <Typography variant='subtitle1' sx={{ fontWeight: 500, mb: 2 }}>
-        Labels
-      </Typography>
-
-      {/* Display existing labels */}
-      {labels.length > 0 && (
-        <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-          {labels.map((label) => (
-            <Chip
-              key={label.id}
-              label={`${label.key}: ${label.value}`}
-              onDelete={() => removeLabel(label.id)}
-              color='primary'
-              variant='outlined'
-            />
-          ))}
-        </Box>
-      )}
-
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid size={{ xs: 5 }}>
-          <TextField
-            label='Label Key'
-            fullWidth
-            size='small'
-            value={newLabelKey}
-            onChange={(e) => setNewLabelKey(e.target.value)}
-            placeholder='environment'
-            onKeyPress={(e) => e.key === 'Enter' && addLabel()}
-          />
-        </Grid>
-        <Grid size={{ xs: 5 }}>
-          <TextField
-            label='Label Value'
-            fullWidth
-            size='small'
-            value={newLabelValue}
-            onChange={(e) => setNewLabelValue(e.target.value)}
-            placeholder='production'
-            onKeyPress={(e) => e.key === 'Enter' && addLabel()}
-          />
-        </Grid>
-        <Grid size={{ xs: 2 }}>
-          <Button
-            variant='outlined'
-            fullWidth
-            startIcon={<Add />}
-            onClick={addLabel}
-            disabled={!newLabelKey.trim() || !newLabelValue.trim()}
-            sx={{ minWidth: 'auto', borderRadius: '8px' }}
-          >
-            Add
-          </Button>
-        </Grid>
-      </Grid>
-
-      {/* Annotations Section */}
-      <Typography variant='subtitle1' sx={{ fontWeight: 500, mb: 2 }}>
-        Annotations
-      </Typography>
-
-      {/* Display existing annotations */}
-      {annotations.length > 0 && (
-        <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-          {annotations.map((annotation) => (
-            <Chip
-              key={annotation.id}
-              label={`${annotation.key}: ${annotation.value}`}
-              onDelete={() => removeAnnotation(annotation.id)}
-              color='secondary'
-              variant='outlined'
-            />
-          ))}
-        </Box>
-      )}
-
-      <Grid container spacing={2}>
-        <Grid size={{ xs: 5 }}>
-          <TextField
-            label='Annotation Key'
-            fullWidth
-            size='small'
-            value={newAnnotationKey}
-            onChange={(e) => setNewAnnotationKey(e.target.value)}
-            placeholder='config.hash'
-            onKeyPress={(e) => e.key === 'Enter' && addAnnotation()}
-          />
-        </Grid>
-        <Grid size={{ xs: 5 }}>
-          <TextField
-            label='Annotation Value'
-            fullWidth
-            size='small'
-            value={newAnnotationValue}
-            onChange={(e) => setNewAnnotationValue(e.target.value)}
-            placeholder='abc123'
-            onKeyPress={(e) => e.key === 'Enter' && addAnnotation()}
-          />
-        </Grid>
-        <Grid size={{ xs: 2 }}>
-          <Button
-            variant='outlined'
-            fullWidth
-            startIcon={<Add />}
-            onClick={addAnnotation}
-            disabled={!newAnnotationKey.trim() || !newAnnotationValue.trim()}
-            sx={{ minWidth: 'auto', borderRadius: '8px' }}
-          >
-            Add
-          </Button>
-        </Grid>
-      </Grid>
-    </SectionCard>
-  );
-};
-
-/**
  * AddTriggerDrawer
  *
  * Main component for adding triggers with a drawer interface.
@@ -602,7 +445,7 @@ export const AddTriggerDrawer = ({
     Slug: '',
     Labels: [],
     Annotations: [],
-    DeleteGates: {},
+    DeleteGates: [],
     EventType: 'Mutation',
     FunctionName: '',
     ToolchainType: 'Kubernetes/YAML',
@@ -625,22 +468,6 @@ export const AddTriggerDrawer = ({
     handleFunctionSelect,
     updateArgumentValue,
     submitTrigger,
-    addLabel,
-    addAnnotation,
-    removeLabel,
-    removeAnnotation,
-    labels,
-    annotations,
-    newLabelKey,
-    newLabelValue,
-    newAnnotationKey,
-    newAnnotationValue,
-    newDeleteGateKey,
-    setNewLabelKey,
-    setNewLabelValue,
-    setNewAnnotationKey,
-    setNewAnnotationValue,
-    setNewDeleteGateKey,
     selectedFunction,
     isSuccess,
     error,
@@ -813,31 +640,37 @@ export const AddTriggerDrawer = ({
               workers={workers}
               updateArgumentValue={updateArgumentValue}
             />
-            <LabelsAndAnnotationsCard
-              addLabel={addLabel}
-              addAnnotation={addAnnotation}
-              removeLabel={removeLabel}
-              removeAnnotation={removeAnnotation}
-              labels={labels}
-              annotations={annotations}
-              newLabelKey={newLabelKey}
-              newLabelValue={newLabelValue}
-              newAnnotationKey={newAnnotationKey}
-              newAnnotationValue={newAnnotationValue}
-              setNewLabelKey={setNewLabelKey}
-              setNewLabelValue={setNewLabelValue}
-              setNewAnnotationKey={setNewAnnotationKey}
-              setNewAnnotationValue={setNewAnnotationValue}
+            <MapFieldSection
+              control={control}
+              name='Labels'
+              title='Labels'
+              itemLabel='label'
+              validation='label'
+              keyPlaceholder='Environment'
+              valuePlaceholder='production'
+              testId='trigger-labels'
             />
-            <SimpleGateCard<IAddTriggerFormInput>
-              watch={watch}
-              setValue={setValue}
-              gateFieldName='DeleteGates'
-              gateType='Delete'
+            <MapFieldSection
+              control={control}
+              name='Annotations'
+              title='Annotations'
+              itemLabel='annotation'
+              validation='annotation'
+              multilineValues
+              keyPlaceholder='config.hash'
+              valuePlaceholder='abc123'
+              testId='trigger-annotations'
+            />
+            <MapFieldSection
+              control={control}
+              name='DeleteGates'
               title='Delete Gates'
               description='Delete gates prevent accidental deletion of this trigger. Remove all gates before deletion.'
-              newGateKey={newDeleteGateKey}
-              setNewGateKey={setNewDeleteGateKey}
+              itemLabel='delete gate'
+              validation='label'
+              keysOnly
+              keyPlaceholder='e.g., manual-review, backup-verified'
+              testId='trigger-delete-gates'
             />
           </Stack>
         </Box>

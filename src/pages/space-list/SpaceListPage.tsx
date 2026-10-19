@@ -10,8 +10,10 @@ import { Header } from '@/components/header/Header';
 import { extractLabelOptions, useQueryBuilder } from '@/components/query-builder';
 import { Main } from '@/components/styled';
 import { useBulkApiErrorMessage } from '@/hooks/useBulkApiErrorMessages';
+import { useEditDrawerUrl } from '@/hooks/useEditDrawerUrl';
 import { AddSpacePage } from '@/pages/add-space/AddSpacePage';
 import { EmptySpaceList } from '@/pages/space-list/components/empty-space-list/EmptySpaceList';
+import { SpaceSettingsDrawer } from '@/pages/space-list/components/space-settings-drawer/SpaceSettingsDrawer';
 import { SpacesTable } from '@/pages/space-list/components/spaces-table/SpacesTable';
 import { useListSpacesQuery } from '@confighub/rtk-query';
 import { useBulkDeleteSpacesMutation } from '@confighub/rtk-query';
@@ -32,6 +34,7 @@ export const SpaceListPage = () => {
   const [serverErrors, setServerErrors] = useState<Array<string>>([]);
   const [isDeleteSpacesModalOpen, setIsDeleteSpacesModalOpen] = useState(false);
   const [selectedSpaces, setSelectedSpaces] = useState<Array<string>>([]);
+  const { editEntityId, closeEditDrawer } = useEditDrawerUrl();
 
   // Fetch all spaces first (without filter) to get label options
   const { data: allSpaces = [], isFetching: isFetchingAll, refetch: refetchAll } = useListSpacesQuery({ summary: true, include: SPACE_LIST_INCLUDE }, { refetchOnFocus: true });
@@ -168,6 +171,7 @@ export const SpaceListPage = () => {
           hasNoData={allSpaces.length === 0}
         />
         <AddSpacePage open={isAddSpacePageOpen} onClose={() => setIsAddSpacePageOpen(false)} />
+        <SpaceSettingsDrawer spaceId={editEntityId} onClose={closeEditDrawer} />
         <ConfirmationModal
           isOpen={isDeleteSpacesModalOpen}
           onClose={() => setIsDeleteSpacesModalOpen(false)}

@@ -9,38 +9,6 @@ export const ACTION_STATUSES = {
   FAILED: 'Failed',
 } as const;
 
-export const LABEL_TYPES = [
-  { key: 'Environment', value: 'Production' },
-  { key: 'Environment', value: 'Development' },
-  { key: 'YourCategory', value: 'YourValue' },
-
-  // { key: 'compute', value: 'serverless' },
-  // { key: 'compute', value: 'container' },
-  // { key: 'compute', value: 'vm' },
-
-  // { key: 'deployment', value: 'region' },
-  // { key: 'deployment', value: 'zone' },
-  // { key: 'deployment', value: 'cluster' },
-  // { key: 'deployment', value: 'namespace' },
-
-  // { key: 'monitoring', value: 'logging' },
-  // { key: 'monitoring', value: 'monitoring' },
-  // { key: 'monitoring', value: 'alerting' },
-  // { key: 'monitoring', value: 'sla' },
-
-  // { key: 'security', value: 'compliance' },
-  // { key: 'security', value: 'policy' },
-
-  // { key: 'storage', value: 'database' },
-  // { key: 'storage', value: 'cache' },
-  // { key: 'storage', value: 'object-storage' },
-
-  // { key: 'traffic and networking', value: 'egress' },
-  // { key: 'traffic and networking', value: 'ingress' },
-  // { key: 'traffic and networking', value: 'service-type' },
-  // { key: 'traffic and networking', value: 'protocol' },
-];
-
 export const ANNOTATION_TYPES = [
   { key: 'Description', value: 'Your Description' },
   { key: 'Note', value: 'Your Note' },

@@ -6,7 +6,7 @@
  * out of the component file so the component file exports only components.
  */
 
-import type { ImageChange } from './imageChange';
+import type { BumpKind, ImageChange } from './imageChange';
 
 /** What a set of image changes belongs to, as the hero and the full diff name it. */
 export interface ImageChangeSubject {
@@ -25,9 +25,9 @@ export const CHANGE_ORDER_IMAGE_SUBJECT: ImageChangeSubject = {
   idPrefix: 'change-order',
 };
 
-/** `In 3 Units at the source`, or `In 3 Units`. */
+/** `In 3 resources at the source`, or `In 3 resources`. */
 export function unitsInText(unitCount: number, subject: ImageChangeSubject): string {
-  const units = `${unitCount} ${unitCount === 1 ? 'Unit' : 'Units'}`;
+  const units = `${unitCount} ${unitCount === 1 ? 'resource' : 'resources'}`;
   return subject.unitsWhere === '' ? `In ${units}` : `In ${units} ${subject.unitsWhere}`;
 }
 
@@ -44,3 +44,14 @@ export function onlyChangesHint(images: readonly ImageChange[]): string {
   if (kinds === 'both') return 'Only images and versions change, as shown above.';
   return kinds === 'versions' ? 'Only versions change, as shown above.' : 'Only images change, as shown above.';
 }
+
+/** The hero's bump pill: what kind of move the new image tag is. */
+export const BUMP_LABEL: Record<BumpKind, string> = {
+  major: 'Major bump',
+  minor: 'Minor bump',
+  patch: 'Patch bump',
+  downgrade: 'Downgrade',
+  build: 'New build',
+  digest: 'New digest',
+  registry: 'New registry',
+};

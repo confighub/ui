@@ -53,8 +53,8 @@ export const SpacesTable = ({ spaces = [], onRowSelected, filterElement, noRowsO
       { field: 'Component', sort: 'asc' as const },
     ],
     columnVisibility: {
-      Component: true,
       Slug: true,
+      Component: true,
       SpaceID: false,
       'Labels.Environment': true,
       // The summary counts other than these are offered in the column picker
@@ -116,10 +116,10 @@ export const SpacesTable = ({ spaces = [], onRowSelected, filterElement, noRowsO
   // Create static columns
   const staticColumns = useMemo(() => createSpaceTableColumns(), []);
 
-  // Combine all columns - insert label columns after Component and Slug
+  // Combine all columns - insert label columns after Slug and Component
   const baseColumns = useMemo(() => {
-    const [componentCol, slugCol, ...restCols] = staticColumns;
-    return [componentCol, slugCol, ...labelColumns, ...restCols];
+    const [slugCol, componentCol, ...restCols] = staticColumns;
+    return [slugCol, componentCol, ...labelColumns, ...restCols];
   }, [labelColumns, staticColumns]);
 
   const {

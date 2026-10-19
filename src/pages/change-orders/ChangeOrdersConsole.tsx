@@ -105,6 +105,9 @@ import { PromoteDialog } from './components/PromoteDialog';
 import { ChangeOrderExceptions } from './components/ChangeOrderExceptions';
 import { buildCompleteConsoleStage } from './changeOrderCompleteStep';
 import { ImageChangeCell } from './components/ImageChangeCell';
+import { draftCopy } from './draft/draftCopy';
+import { DRAFT_UPDATE_TYPES, draftHref } from './draft/draftDecisions';
+import { NewChangeOrderButton } from './draft/NewChangeOrderButton';
 import { useChangeOrderConsole, type ChangeOrderConsoleData } from './useChangeOrderConsole';
 import {
   consoleTokens as T,
@@ -359,7 +362,13 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
    * in this list and withhold it on the detail page one click away.
    */
   const intents = changeOrderIntents(row);
-  const offersEnd = intents.rollBack || intents.abort;
+  const offersEnd = (intents.rollBack || intents.abort) && onEndRequest !== undefined;
+  // Re-aim: a new ChangeOrder drafted from this one. Only for a ChangeOrder that propagated over
+  // Links, which is what a draft of base changes re-aims.
+  const reAimHref =
+    row.spaceSlug !== undefined && (DRAFT_UPDATE_TYPES as readonly string[]).includes(row.updateType)
+      ? draftHref({ space: row.spaceSlug, from: row.slug })
+      : undefined;
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const closeMenu = useCallback(() => setMenuAnchor(null), []);
   const requestEnd = useCallback(
@@ -687,12 +696,15 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
           `InitiativeKanbanCard.tsx`), and it is the shape the ChangeOrders list
           carried before this console replaced it.
 
-          Withheld entirely when the row offers neither intent: a menu that
+          Re-aim leads the menu: it drafts a new ChangeOrder from this one and
+          writes nothing until that draft's Create.
+
+          Withheld entirely when the row offers nothing: a menu that
           opens onto nothing is not an affordance, it is a dead end with a
           hover state. The cell keeps its track either way, so rows stay
           aligned with the head.
         */}
-        {offersEnd && onEndRequest !== undefined ? (
+        {offersEnd || reAimHref !== undefined ? (
           <>
             <IconButton
               size="small"
@@ -721,7 +733,18 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
                 carries no danger colour — the difference has to be legible
                 before the dialog opens, not only inside it.
               */}
-              {intents.rollBack ? (
+              {reAimHref === undefined ? null : (
+                <MenuItem
+                  component={RouterLink}
+                  to={reAimHref}
+                  data-testid="change-order-row-reaim"
+                  sx={{ textTransform: 'none' }}
+                  onClick={closeMenu}
+                >
+                  {draftCopy.page.template.reAim}
+                </MenuItem>
+              )}
+              {offersEnd && intents.rollBack ? (
                 <MenuItem
                   data-testid="change-order-row-rollback"
                   sx={{ color: T.bad, textTransform: 'none' }}
@@ -730,7 +753,7 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
                   {changeOrderCopy.endChangeOrder.rollBackLabel}
                 </MenuItem>
               ) : null}
-              {intents.abort ? (
+              {offersEnd && intents.abort ? (
                 <MenuItem
                   data-testid="change-order-row-abort"
                   sx={{ textTransform: 'none' }}
@@ -1270,32 +1293,41 @@ export function ChangeOrdersConsoleView({
         The console IS the page at altitude 0, so it owns its own `h1` —
         `anchor-presence` asserts `heading1::ChangeOrders` on this route.
       */}
-      <ConsoleTitleRow
-        title={changeOrdersConsoleCopy.pageTitle}
-        headingId={headingId}
-        count={matched.length}
-        freshness={freshness}
-        refreshing={isFetching}
-        onRefresh={refreshNow}
-        note={
-          /*
-            ⚠️ A SHORT LIST MUST SAY SO. Records the server sent that could not
-            be built into a row are dropped, and a drop that says nothing turns
-            "we could not read this" into "this does not exist". Rendered only
-            when non-zero, so the normal case carries no text.
-          */
-          unreadable.orders + unreadable.spaces > 0 ? (
-            <Typography
-              component="span"
-              role="status"
-              data-testid="change-orders-unreadable"
-              sx={{ fontSize: 11.5, lineHeight: T.lh, color: T.wait }}
-            >
-              {`${unreadable.orders + unreadable.spaces} not readable, not shown`}
-            </Typography>
-          ) : null
-        }
-      />
+      {/* "New ChangeOrder" sits after Refresh, on the title row's own baseline. */}
+      <Stack direction="row" alignItems="flex-end" sx={{ gap: '10px' }}>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <ConsoleTitleRow
+            title={changeOrdersConsoleCopy.pageTitle}
+            headingId={headingId}
+            count={matched.length}
+            freshness={freshness}
+            refreshing={isFetching}
+            onRefresh={refreshNow}
+            note={
+              /*
+                ⚠️ A SHORT LIST MUST SAY SO. Records the server sent that could not
+                be built into a row are dropped, and a drop that says nothing turns
+                "we could not read this" into "this does not exist". Rendered only
+                when non-zero, so the normal case carries no text.
+              */
+              unreadable.orders + unreadable.spaces > 0 ? (
+                <Typography
+                  component="span"
+                  role="status"
+                  data-testid="change-orders-unreadable"
+                  sx={{ fontSize: 11.5, lineHeight: T.lh, color: T.wait }}
+                >
+                  {`${unreadable.orders + unreadable.spaces} not readable, not shown`}
+                </Typography>
+              ) : null
+            }
+          />
+        </Box>
+        <NewChangeOrderButton
+          spaceSlug={spaceFilter === 'all' ? undefined : spaceFilter}
+          componentSlug={componentFilter === 'all' ? undefined : componentFilter}
+        />
+      </Stack>
 
       {/*
         The one-sentence explanation, under the title row rather than beside

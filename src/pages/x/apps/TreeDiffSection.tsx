@@ -4,11 +4,14 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 
 import Box from '@mui/material/Box';
 import Tooltip from '@mui/material/Tooltip';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 
 import { highlightText } from '@/components/entity-data-grid/utils/highlightText';
+import { INFO_PEEK_TOOLTIP_SX, InfoPeekCard } from '@/components/info-peek/InfoPeek';
 
+import { changeOrderCopy } from './change-order/changeOrderCopy';
 import { componentTheme } from './componentTheme';
-import type { DiffTreeNode } from './diffTree';
+import type { DiffTreeNode, KeptValue } from './diffTree';
 import { buildContextTree, buildDiffTree, injectKeyContext, measureTruncation, VALUE_PLACEHOLDER } from './diffTree';
 import { SECTION_LABEL_COLORS, VAL_COMPONENTS } from './diffConstants';
 import { getInlineDiffPair, type InlineDiffPair, type InlineDiffSegment } from './inlineDiff';
@@ -199,6 +202,81 @@ function hasChangedDescendant(node: DiffTreeNode): boolean {
   return (node.children ?? []).some(hasChangedDescendant);
 }
 
+/** A kept value's text, quietly: it is neither the old value nor the new one. */
+const KEPT_VALUE_SX = {
+  overflow: 'hidden',
+  minWidth: 0,
+  whiteSpace: 'nowrap',
+  textOverflow: 'ellipsis',
+  color: componentTheme.fgMuted,
+  padding: '3px 6px',
+} as const;
+
+/**
+ * A value the change would have written and the target kept: the same value on
+ * both sides, and a padlock marker saying why. The marker is focusable, so the
+ * full path and what the change would have written reach a keyboard too.
+ */
+const KeptLeafRow = memo(({ node, kept, depth, striped }: { node: DiffTreeNode; kept: KeptValue; depth: number; striped: boolean }) => {
+  const tone = kept.tone ?? componentTheme.attention;
+  const lines = [changeOrderCopy.keptValue.summary(kept.value, kept.incoming), kept.path];
+  return (
+    <ReviewRow $striped={striped} $plain data-kept="true" sx={{ alignItems: 'center', minHeight: 28, padding: '3px 0' }}>
+      <PropertyCell
+        className={KEY_CELL_CLASS}
+        sx={{ display: 'flex', alignItems: 'center', gap: 0, paddingLeft: `${16 + depth * INDENT_PX}px`, fontSize: 12, fontFamily: componentTheme.fontMono }}
+      >
+        <Box component="span" sx={{ width: 10, flexShrink: 0 }} />
+        <PathValue style={{ color: componentTheme.fgMuted, fontWeight: 600, minWidth: 0, overflowWrap: 'break-word' }}>{node.key}</PathValue>
+      </PropertyCell>
+      <BeforeCell sx={{ fontSize: 12, fontFamily: componentTheme.fontMono }}>
+        <Box sx={KEPT_VALUE_SX}>
+          <SrOnly>{changeOrderCopy.keptValue.srBefore}</SrOnly>
+          {kept.value}
+        </Box>
+      </BeforeCell>
+      <AfterCell sx={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 12, fontFamily: componentTheme.fontMono }}>
+        <Box sx={KEPT_VALUE_SX}>
+          <SrOnly>{changeOrderCopy.keptValue.srAfter}</SrOnly>
+          {kept.value}
+        </Box>
+        <Tooltip
+          placement="bottom-end"
+          enterDelay={120}
+          leaveDelay={0}
+          describeChild
+          slotProps={{ tooltip: { sx: INFO_PEEK_TOOLTIP_SX } }}
+          title={<InfoPeekCard color={tone} spec={{ eyebrow: kept.label, lines }} />}
+        >
+          <Box
+            component="span"
+            tabIndex={0}
+            data-testid="tree-diff-kept-marker"
+            sx={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '3px',
+              flexShrink: 0,
+              fontFamily: componentTheme.fontSans,
+              fontSize: 11,
+              fontWeight: 500,
+              color: tone,
+              whiteSpace: 'nowrap',
+              cursor: 'help',
+              borderRadius: '3px',
+              '&:focus-visible': { outline: `2px solid ${tone}`, outlineOffset: '2px' },
+            }}
+          >
+            <LockOutlinedIcon aria-hidden="true" sx={{ fontSize: 13 }} />
+            {kept.label}
+          </Box>
+        </Tooltip>
+      </AfterCell>
+    </ReviewRow>
+  );
+});
+KeptLeafRow.displayName = 'KeptLeafRow';
+
 /** Recursively renders a diff tree node with 3-column layout. */
 const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = '', variantOverrides, rowIndex = 0, columnStyle, allPaths, changedPaths, changedDiffs, viewOnly = false, domHooks }: { node: DiffTreeNode; depth: number; variant: 'upgrade' | 'apply' | 'gated' | 'variation' | 'data'; filterText?: string; pathPrefix?: string; variantOverrides?: Map<string, ('upgrade' | 'apply' | 'gated' | 'variation')[]>; rowIndex?: number; columnStyle: CSSProperties; allPaths?: { path: string; value: string }[]; changedPaths?: Set<string>; changedDiffs?: Map<string, { oldValue: string; newValue: string }>; viewOnly?: boolean; domHooks?: TreeDiffDomHooks }): ReactNode => {
   const [expanded, setExpanded] = useState(() => hasChangedDescendant(node));
@@ -281,6 +359,8 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
   // --- Leaf rendering ---
 
   if (isLeaf && node.diff) {
+    if (node.kept) return <KeptLeafRow node={node} kept={node.kept} depth={depth} striped={striped} />;
+
     // Context leaf: dimmed, single value in after column
     if (node.context) {
       return (

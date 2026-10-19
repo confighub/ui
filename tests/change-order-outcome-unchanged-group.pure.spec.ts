@@ -20,8 +20,10 @@
 import { expect, test } from '@playwright/test';
 
 import {
+  cardRepresentativeSpaceId,
   cardRepresentativeUnits,
   cardSpaceLabel,
+  keptValueOf,
 } from '../src/pages/change-orders/changeOrderCard';
 import { partitionSourceUnitsByChange } from '../src/pages/change-orders/useChangeOrderConsoleChanges';
 import type { ChangeOrderChangeGroup } from '../src/pages/x/apps/change-order/changeOrderTypes';
@@ -196,5 +198,51 @@ test.describe('the name a card\'s rows give its Space', () => {
     expect(cardSpaceLabel('space-unlabelled', SPACES, DISPLAY_NAMES)).toBe(
       'staging-rds-checkout',
     );
+  });
+});
+
+test.describe('the variant a card shows', () => {
+  const GROUP = { spaceIds: ['space-a', 'space-b', 'space-c'], representativeSpaceId: 'space-b' };
+
+  test('is the group\'s own representative when the caller chose none', () => {
+    expect(cardRepresentativeSpaceId(GROUP, undefined)).toBe('space-b');
+  });
+
+  test('is the caller\'s choice when it is a member of the group', () => {
+    expect(cardRepresentativeSpaceId(GROUP, 'space-c')).toBe('space-c');
+  });
+
+  test('ignores a choice outside the group, which the card does not stand for', () => {
+    expect(cardRepresentativeSpaceId(GROUP, 'space-elsewhere')).toBe('space-b');
+  });
+});
+
+test.describe('a refusal that is a kept value', () => {
+  const base = {
+    resourceName: 'payments/payments-api',
+    path: 'spec.template.spec.containers.?name=api;@0.resources.limits.memory',
+    targetValue: '1Gi',
+    sourceValue: '768Mi',
+    blocks: true,
+  };
+
+  test('a protected path is a row: kept on merge, with the value kept and the value refused', () => {
+    expect(keptValueOf({ ...base, reason: 'ProtectedPath', targetProtected: true })).toMatchObject({
+      resourceName: 'payments/payments-api',
+      path: base.path,
+      value: '1Gi',
+      incoming: '768Mi',
+      label: 'kept on merge',
+    });
+  });
+
+  test('a subtracted mutation is a row: a local override', () => {
+    expect(keptValueOf({ ...base, reason: 'Subtracted', sourceValue: '' })).toMatchObject({ label: 'local override', incoming: undefined });
+  });
+
+  test('any other refusal, or one with no path or value, stays a sentence', () => {
+    expect(keptValueOf({ ...base, reason: 'UnresolvedPath' })).toBeUndefined();
+    expect(keptValueOf({ ...base, reason: 'ProtectedPath', path: '' })).toBeUndefined();
+    expect(keptValueOf({ ...base, reason: 'ProtectedPath', targetValue: undefined })).toBeUndefined();
   });
 });

@@ -31,6 +31,16 @@ const compareByComponent = (
  */
 export const createSpaceTableColumns = (): GridColDef<SpaceRow>[] => {
   const columns = buildColumns<SpaceRow>({
+    Slug: {
+      type: 'link',
+      headerName: 'Name',
+      // Opens the Space's settings drawer, which links to the Space's page.
+      linkTo: (row) => `?edit=${row.SpaceID}`,
+      getText: (row) => row.Slug,
+      minWidth: 280,
+      flex: 2,
+    },
+
     Component: {
       type: 'custom',
       headerName: 'Component',
@@ -44,15 +54,6 @@ export const createSpaceTableColumns = (): GridColDef<SpaceRow>[] => {
         ) : null,
       minWidth: 160,
       flex: 1.5,
-    },
-
-    Slug: {
-      type: 'link',
-      headerName: 'Name',
-      linkTo: (row) => `/spaces/${row.SpaceID}`,
-      getText: (row) => row.Slug,
-      minWidth: 280,
-      flex: 2,
     },
 
     SpaceID: {

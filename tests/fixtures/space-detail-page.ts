@@ -74,8 +74,17 @@ export class SpaceDetailPage {
     await this.confirmationButton.click();
   }
 
+  async goToSettingsTab() {
+    await this.page.getByRole('tab', { name: 'Settings' }).click();
+    await this.page.getByTestId('space-settings-form').waitFor({ state: 'visible' });
+  }
+
   async editSpace(name: string) {
-    await this.page.getByRole('textbox', { name: 'Name', exact: true }).fill(name);
+    await this.goToSettingsTab();
+    await this.page
+      .getByTestId('space-settings-form')
+      .getByRole('textbox', { name: 'Name', exact: true })
+      .fill(name);
 
     // Click save and wait for the space update API call to complete
     await Promise.all([

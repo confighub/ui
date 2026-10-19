@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import type { UseFormReset, UseFormSetValue, UseFormWatch } from 'react-hook-form';
 
+import { type MapRow, mapToRows, rowsToGates, rowsToMap } from '@/components/map-field-editor/map-rows';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import {
   TriggerRead,
@@ -17,9 +18,9 @@ import { ENTITY_TYPES } from '@/utility/analytics-constants';
 export interface IAddTriggerFormInput {
   BridgeWorkerID?: string;
   Slug: string;
-  Labels?: Array<{ key: string; value: string; id: string }>;
-  Annotations?: Array<{ key: string; value: string; id: string }>;
-  DeleteGates?: Record<string, boolean>;
+  Labels?: MapRow[];
+  Annotations?: MapRow[];
+  DeleteGates?: MapRow[];
   EventType: 'Mutation' | 'PostClone';
   FunctionName: string;
   ToolchainType: 'Kubernetes/YAML';
@@ -88,7 +89,7 @@ export const useAddTrigger = (
   const data = existingTrigger ? updateData : createData;
   const error = existingTrigger ? updateError : createError;
 
-  const { setValue, watch, reset } = formApi;
+  const { setValue, reset } = formApi;
 
   // Initialize form with existing trigger data when in edit mode
   useEffect(() => {
@@ -102,19 +103,9 @@ export const useAddTrigger = (
         ToolchainType: (existingTrigger.ToolchainType as 'Kubernetes/YAML') || 'Kubernetes/YAML',
         Disabled: existingTrigger.Disabled || false,
         Warn: existingTrigger.Warn || false,
-        Labels:
-          Object.entries(existingTrigger.Labels || {}).map(([key, value]) => ({
-            id: `${key}-${value}-${Date.now()}`,
-            key,
-            value,
-          })) || [],
-        Annotations:
-          Object.entries(existingTrigger.Annotations || {}).map(([key, value]) => ({
-            id: `${key}-${value}-${Date.now()}`,
-            key,
-            value,
-          })) || [],
-        DeleteGates: existingTrigger.DeleteGates || {},
+        Labels: mapToRows(existingTrigger.Labels),
+        Annotations: mapToRows(existingTrigger.Annotations),
+        DeleteGates: mapToRows(existingTrigger.DeleteGates),
       };
 
       reset(initialForm);
@@ -140,59 +131,6 @@ export const useAddTrigger = (
       }
     }
   }, [existingTrigger, reset, setValue]);
-
-  // Custom hook for handling labels, annotations, and delete gates key-value pairs
-  const [newLabelKey, setNewLabelKey] = useState('');
-  const [newLabelValue, setNewLabelValue] = useState('');
-  const [newAnnotationKey, setNewAnnotationKey] = useState('');
-  const [newAnnotationValue, setNewAnnotationValue] = useState('');
-  const [newDeleteGateKey, setNewDeleteGateKey] = useState('');
-
-  const labels = watch('Labels') || [];
-  const annotations = watch('Annotations') || [];
-
-  const addLabel = () => {
-    if (!newLabelKey.trim() || !newLabelValue.trim()) return;
-
-    const newLabel = {
-      id: `${Date.now()}-${Math.random()}`,
-      key: newLabelKey.trim(),
-      value: newLabelValue.trim(),
-    };
-
-    setValue('Labels', [...labels, newLabel]);
-    setNewLabelKey('');
-    setNewLabelValue('');
-  };
-
-  const addAnnotation = () => {
-    if (!newAnnotationKey.trim() || !newAnnotationValue.trim()) return;
-
-    const newAnnotation = {
-      id: `${Date.now()}-${Math.random()}`,
-      key: newAnnotationKey.trim(),
-      value: newAnnotationValue.trim(),
-    };
-
-    setValue('Annotations', [...annotations, newAnnotation]);
-    setNewAnnotationKey('');
-    setNewAnnotationValue('');
-  };
-
-  const removeLabel = (id: string) => {
-    setValue(
-      'Labels',
-      labels.filter((label) => label.id !== id),
-    );
-  };
-
-  const removeAnnotation = (id: string) => {
-    setValue(
-      'Annotations',
-      annotations.filter((annotation) => annotation.id !== id),
-    );
-  };
-
 
   // Handles function selection from the autocomplete
   const handleFunctionSelect = (functionData: FunctionSignature) => {
@@ -225,21 +163,9 @@ export const useAddTrigger = (
       FunctionName: data.FunctionName,
       Disabled: data.Disabled || false,
       Warn: data.Warn || false,
-      Labels: data?.Labels?.reduce(
-        (acc, label) => {
-          acc[label.key] = label.value;
-          return acc;
-        },
-        {} as Record<string, string>,
-      ),
-      Annotations: data?.Annotations?.reduce(
-        (acc, annotation) => {
-          acc[annotation.key] = annotation.value;
-          return acc;
-        },
-        {} as Record<string, string>,
-      ),
-      DeleteGates: data.DeleteGates || {},
+      Labels: rowsToMap(data.Labels),
+      Annotations: rowsToMap(data.Annotations),
+      DeleteGates: rowsToGates(data.DeleteGates),
       SpaceID: spaceId,
       Arguments: args,
       Event: data.EventType,
@@ -293,24 +219,6 @@ export const useAddTrigger = (
 
     // Form submission
     submitTrigger,
-
-    // Key-value handlers for labels, annotations, and delete gates
-    addLabel,
-    addAnnotation,
-    removeAnnotation,
-    removeLabel,
-    labels,
-    annotations,
-    newLabelKey,
-    newLabelValue,
-    newAnnotationKey,
-    newAnnotationValue,
-    newDeleteGateKey,
-    setNewLabelKey,
-    setNewLabelValue,
-    setNewAnnotationKey,
-    setNewAnnotationValue,
-    setNewDeleteGateKey,
 
     // result
     isSuccess,

@@ -78,12 +78,14 @@ const createIntelligentGroupRenderer = <T,>(
  * @param allowedLabelColumns - When provided, only label keys in this list are surfaced as
  *   columns via `availableLabelKeys`. Pass an empty array to suppress all auto-added label
  *   columns. Leave undefined to preserve the default (auto-add every label key found on rows).
+ * @param slugLinkTo - Where a unit's name links. Defaults to the unit's page.
  * @returns Object with state and handlers for label column management
  */
 export const useLabelColumnManager = (
   rows: Array<UnitRowItem>,
   openLinksInNewTab = false,
   allowedLabelColumns?: string[],
+  slugLinkTo?: (row: UnitRowItem) => string,
 ) => {
   /**
    * Extract and count unique label keys from all rows
@@ -350,7 +352,11 @@ export const useLabelColumnManager = (
             >
               <span style={{ minWidth: 0 }}>
                 <NavLink
-                  to={`/units/${params.row?.SpaceID}/${params.row.id}`}
+                  to={
+                    slugLinkTo
+                      ? slugLinkTo(params.row)
+                      : `/units/${params.row?.SpaceID}/${params.row.id}`
+                  }
                   target={openLinksInNewTab ? '_blank' : undefined}
                   rel={openLinksInNewTab ? 'noopener noreferrer' : undefined}
                 >

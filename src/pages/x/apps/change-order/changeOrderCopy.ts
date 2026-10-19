@@ -156,6 +156,26 @@ export const changeOrderCopy = {
    */
   laneGateTally: (satisfied: number, total: number) => `${satisfied}/${total}`,
   /**
+   * The gates into a stage of a ChangeOrder that does not exist yet, which no
+   * one can have evaluated. Counted without a satisfied figure: "0/3" would
+   * read as three checks made and none passed.
+   */
+  laneGatesNotEvaluated: (total: number) => `${total} ${total === 1 ? 'gate' : 'gates'}, not evaluated`,
+  /**
+   * A value a merge left as it was, drawn as a row of the resource's diff. `label`
+   * follows the server's reason: a protected path is kept on merge, a subtracted
+   * mutation leaves a local override in place.
+   */
+  keptValue: {
+    keptOnMerge: 'kept on merge',
+    localOverride: 'local override',
+    /** The peek's first line. */
+    summary: (value: string, incoming: string | undefined) =>
+      incoming === undefined ? `Kept at ${value}.` : `The change writes ${incoming}; kept at ${value}.`,
+    srBefore: 'Before: ',
+    srAfter: 'After: ',
+  },
+  /**
    * A stage with no previous stage has no gate to hold it, which
    * `validateStageEntryGates` treats as "no prerequisite". Said in
    * words with no padlock: there is no lock to draw open or closed, and drawing

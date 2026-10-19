@@ -9,6 +9,7 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 
 import { componentTheme } from '@/pages/x/apps/componentTheme';
+import type { KeptValue } from '@/pages/x/apps/diffTree';
 import { TreeDiffSection, type TreeDiffDomHooks } from '@/pages/x/apps/TreeDiffSection';
 import { useColumnResize } from '@/pages/x/apps/useColumnResize';
 
@@ -30,13 +31,15 @@ interface ResourceDiffSectionProps {
   onDividerMouseDown: (columnIndex: 0 | 1, e: React.MouseEvent) => void;
   isDragging: boolean;
   hideContext: boolean;
+  /** Values this resource kept, drawn as rows among its changes. */
+  kept: readonly KeptValue[];
 }
 
-const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDividerMouseDown, isDragging, hideContext }: ResourceDiffSectionProps) => {
+const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDividerMouseDown, isDragging, hideContext, kept }: ResourceDiffSectionProps) => {
   const tree = useMemo(() => {
     const changes = resource.Changes ?? [];
-    return buildConfigDiffTree(hideContext ? changes.filter((change) => change.ChangeType !== 'None') : changes);
-  }, [resource.Changes, hideContext]);
+    return buildConfigDiffTree(hideContext ? changes.filter((change) => change.ChangeType !== 'None') : changes, kept);
+  }, [resource.Changes, hideContext, kept]);
   const entry = useMemo(() => ({ unitId: resourceKey, fieldDiffs: NO_FIELD_DIFFS }), [resourceKey]);
 
   const added = resource.ChangeType === 'Add';
@@ -121,7 +124,14 @@ export interface ConfigDiffViewProps {
   columns?: ConfigDiffColumns;
   /** Leave out the unchanged paths a diff read with `include=Context` holds, and draw the changes only. */
   hideContext?: boolean;
+  /**
+   * Values the change would have written and the target kept, each drawn as a row in
+   * its resource's tree. A value naming no resource goes to the only resource there is.
+   */
+  kept?: readonly KeptValue[];
 }
+
+const NO_KEPT: readonly KeptValue[] = [];
 
 /**
  * A `ConfigDiff`, resource by resource: each resource's changed paths as a tree with
@@ -131,14 +141,28 @@ export interface ConfigDiffViewProps {
  * renames -- so an element inserted into a list is one added row, and the elements
  * after it are not reported as changed.
  */
-export const ConfigDiffView = ({ diff, columns, hideContext = false }: ConfigDiffViewProps) => {
+export const ConfigDiffView = ({ diff, columns, hideContext = false, kept = NO_KEPT }: ConfigDiffViewProps) => {
   // One set of column widths for every resource, so their columns line up.
   const ownColumns = useColumnResize();
   const { columnStyle, onDividerMouseDown, isDragging } = columns ?? ownColumns;
+  const resources = useMemo(() => diff.Resources ?? [], [diff.Resources]);
+  const keptByResource = useMemo(
+    () =>
+      resources.map((resource) =>
+        kept.length === 0
+          ? NO_KEPT
+          : kept.filter((value) =>
+              value.resourceName === undefined
+                ? resources.length === 1
+                : value.resourceName === resource.Resource?.ResourceName,
+            ),
+      ),
+    [resources, kept],
+  );
 
   return (
     <Box data-testid='config-diff'>
-      {(diff.Resources ?? []).map((resource, i) => (
+      {resources.map((resource, i) => (
         <ResourceDiffSection
           key={i}
           resource={resource}
@@ -147,6 +171,7 @@ export const ConfigDiffView = ({ diff, columns, hideContext = false }: ConfigDif
           onDividerMouseDown={onDividerMouseDown}
           isDragging={isDragging}
           hideContext={hideContext}
+          kept={keptByResource[i]}
         />
       ))}
     </Box>

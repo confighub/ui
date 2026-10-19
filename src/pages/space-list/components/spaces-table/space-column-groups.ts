@@ -10,7 +10,7 @@ import { SPACE_SUMMARY_COUNTS } from '@/utility/space-summary-counts';
 export const SPACE_COLUMN_GROUPS: ColumnGroup[] = [
   {
     header: 'Core Identity',
-    columns: ['Component', 'Slug', 'SpaceID'],
+    columns: ['Slug', 'Component', 'SpaceID'],
   },
   {
     header: 'Units',

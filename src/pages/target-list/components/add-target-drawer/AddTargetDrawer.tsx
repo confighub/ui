@@ -9,7 +9,7 @@
  *
  * Features:
  * - Add new targets or edit existing ones
- * - Labels, annotations and facts management
+ * - Labels, annotations, facts and delete gates, edited as rows of key/value fields
  * - Space selection
  * - Selecting the Triggers invoked on the Units attached to the target, and showing which are
  * - Granting a worker access to the target, so it can pull the target's releases
@@ -21,7 +21,8 @@ import { CopyToClipboard } from '@/components/copy-to-clipboard/CopyToClipboard'
 import { EntityRefSelect } from '@/components/entity-ref-select/EntityRefSelect';
 import { useFilterRefOptions } from '@/components/entity-ref-select/useEntityRefOptions';
 import { ErrorList } from '@/components/error-list/ErrorList';
-import { SimpleGateCard } from '@/components/simple-gate-card/SimpleGateCard';
+import { MapFieldSection } from '@/components/map-field-editor/MapFieldSection';
+import { type MapRow, mapToRows, rowsToGates, rowsToMap } from '@/components/map-field-editor/map-rows';
 import { FixedSubmitContainer, SectionCard } from '@/components/styled';
 import { TriggerSelectionBar } from '@/components/trigger-selection/TriggerSelectionBar';
 import { useTriggerSelection } from '@/components/trigger-selection/useTriggerSelection';
@@ -45,12 +46,10 @@ import {
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
 import { ENTITY_TYPES } from '@/utility/analytics-constants';
 import { setWorkerTargetAccess, workerHasTargetAccess } from '@/utility/bridge-worker-utils';
-import Add from '@mui/icons-material/Add';
 import ArrowBack from '@mui/icons-material/ArrowBack';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
-import Chip from '@mui/material/Chip';
 import Drawer from '@mui/material/Drawer';
 import FormControl from '@mui/material/FormControl';
 import FormHelperText from '@mui/material/FormHelperText';
@@ -62,6 +61,14 @@ import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+
+// The form edits the target's maps as rows, so an entry can be changed in place.
+type TargetFormValues = Omit<Target, 'Labels' | 'Annotations' | 'DeleteGates' | 'Facts'> & {
+  Labels: MapRow[];
+  Annotations: MapRow[];
+  DeleteGates: MapRow[];
+  Facts: MapRow[];
+};
 
 export interface AddTargetDrawerProps {
   isOpen: boolean;
@@ -86,8 +93,8 @@ const BasicInfoCard = ({
   setAccessWorkerIds,
   workerLabel,
 }: {
-  control: Control<Target>;
-  errors: FieldErrors<Target>;
+  control: Control<TargetFormValues>;
+  errors: FieldErrors<TargetFormValues>;
   spaces: SpaceRead[];
   workers: BridgeWorkerRead[];
   isEditMode: boolean;
@@ -211,250 +218,8 @@ const BasicInfoCard = ({
   );
 };
 
-/**
- * LabelsAndAnnotationsCard
- *
- * Handles labels and annotations management.
- */
-const LabelsAndAnnotationsCard = ({
-  newLabelKey,
-  newLabelValue,
-  newAnnotationKey,
-  newAnnotationValue,
-  setNewLabelKey,
-  setNewLabelValue,
-  setNewAnnotationKey,
-  setNewAnnotationValue,
-  addLabel,
-  addAnnotation,
-  removeLabel,
-  removeAnnotation,
-  labels,
-  annotations,
-}: {
-  newLabelKey: string;
-  newLabelValue: string;
-  newAnnotationKey: string;
-  newAnnotationValue: string;
-  setNewLabelKey: (value: string) => void;
-  setNewLabelValue: (value: string) => void;
-  setNewAnnotationKey: (value: string) => void;
-  setNewAnnotationValue: (value: string) => void;
-  addLabel: () => void;
-  addAnnotation: () => void;
-  removeLabel: (id: string) => void;
-  removeAnnotation: (id: string) => void;
-  labels: Array<{ id: string; key: string; value: string }>;
-  annotations: Array<{ id: string; key: string; value: string }>;
-}) => {
-  return (
-    <SectionCard title='Labels & Annotations'>
-      {/* Labels Section */}
-      <Typography variant='subtitle1' sx={{ fontWeight: 500, mb: 2 }}>
-        Labels
-      </Typography>
-
-      {/* Display existing labels */}
-      {labels.length > 0 && (
-        <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-          {labels.map((label) => (
-            <Chip
-              key={label.id}
-              label={`${label.key}: ${label.value}`}
-              onDelete={() => removeLabel(label.id)}
-              color='primary'
-              variant='outlined'
-            />
-          ))}
-        </Box>
-      )}
-
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid size={{ xs: 5 }}>
-          <TextField
-            label='Label Key'
-            fullWidth
-            size='small'
-            value={newLabelKey}
-            onChange={(e) => setNewLabelKey(e.target.value)}
-            placeholder='environment'
-            onKeyPress={(e) => e.key === 'Enter' && addLabel()}
-          />
-        </Grid>
-        <Grid size={{ xs: 5 }}>
-          <TextField
-            label='Label Value'
-            fullWidth
-            size='small'
-            value={newLabelValue}
-            onChange={(e) => setNewLabelValue(e.target.value)}
-            placeholder='production'
-            onKeyPress={(e) => e.key === 'Enter' && addLabel()}
-          />
-        </Grid>
-        <Grid size={{ xs: 2 }}>
-          <Button
-            variant='outlined'
-            fullWidth
-            startIcon={<Add />}
-            onClick={addLabel}
-            disabled={!newLabelKey.trim() || !newLabelValue.trim()}
-            sx={{ minWidth: 'auto', borderRadius: '8px' }}
-          >
-            Add
-          </Button>
-        </Grid>
-      </Grid>
-
-      {/* Annotations Section */}
-      <Typography variant='subtitle1' sx={{ fontWeight: 500, mb: 2 }}>
-        Annotations
-      </Typography>
-
-      {/* Display existing annotations */}
-      {annotations.length > 0 && (
-        <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-          {annotations.map((annotation) => (
-            <Chip
-              key={annotation.id}
-              label={`${annotation.key}: ${annotation.value}`}
-              onDelete={() => removeAnnotation(annotation.id)}
-              color='secondary'
-              variant='outlined'
-            />
-          ))}
-        </Box>
-      )}
-
-      <Grid container spacing={2}>
-        <Grid size={{ xs: 5 }}>
-          <TextField
-            label='Annotation Key'
-            fullWidth
-            size='small'
-            value={newAnnotationKey}
-            onChange={(e) => setNewAnnotationKey(e.target.value)}
-            placeholder='config.hash'
-            onKeyPress={(e) => e.key === 'Enter' && addAnnotation()}
-          />
-        </Grid>
-        <Grid size={{ xs: 5 }}>
-          <TextField
-            label='Annotation Value'
-            fullWidth
-            size='small'
-            value={newAnnotationValue}
-            onChange={(e) => setNewAnnotationValue(e.target.value)}
-            placeholder='abc123'
-            onKeyPress={(e) => e.key === 'Enter' && addAnnotation()}
-          />
-        </Grid>
-        <Grid size={{ xs: 2 }}>
-          <Button
-            variant='outlined'
-            fullWidth
-            startIcon={<Add />}
-            onClick={addAnnotation}
-            disabled={!newAnnotationKey.trim() || !newAnnotationValue.trim()}
-            sx={{ minWidth: 'auto', borderRadius: '8px' }}
-          >
-            Add
-          </Button>
-        </Grid>
-      </Grid>
-    </SectionCard>
-  );
-};
-
 // How long the Where Trigger has to stay unchanged before the Triggers it selects are listed.
 const WHERE_TRIGGER_PREVIEW_DELAY_MS = 400;
-
-/**
- * FactsCard
- *
- * Facts are properties of the infrastructure the target represents. Fact collection rewrites the
- * ones it collects; any others are the user's own.
- */
-const FactsCard = ({
-  facts,
-  onChange,
-}: {
-  facts: Record<string, string>;
-  onChange: (facts: Record<string, string>) => void;
-}) => {
-  const [newKey, setNewKey] = useState('');
-  const [newValue, setNewValue] = useState('');
-
-  const addFact = () => {
-    if (!newKey.trim()) return;
-    onChange({ ...facts, [newKey.trim()]: newValue.trim() });
-    setNewKey('');
-    setNewValue('');
-  };
-
-  const removeFact = (key: string) => {
-    const rest = { ...facts };
-    delete rest[key];
-    onChange(rest);
-  };
-
-  return (
-    <SectionCard title='Facts'>
-      <Typography variant='body2' color='text.secondary' sx={{ mb: 2 }}>
-        Properties of the infrastructure this target represents, available to functions and in
-        where expressions. Fact collection rewrites the facts it collects.
-      </Typography>
-      {Object.keys(facts).length > 0 && (
-        <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-          {Object.entries(facts).map(([key, value]) => (
-            <Chip
-              key={key}
-              label={`${key}: ${value}`}
-              onDelete={() => removeFact(key)}
-              variant='outlined'
-            />
-          ))}
-        </Box>
-      )}
-      <Grid container spacing={2}>
-        <Grid size={{ xs: 5 }}>
-          <TextField
-            label='Fact Key'
-            fullWidth
-            size='small'
-            value={newKey}
-            onChange={(e) => setNewKey(e.target.value)}
-            placeholder='region'
-            onKeyDown={(e) => e.key === 'Enter' && addFact()}
-          />
-        </Grid>
-        <Grid size={{ xs: 5 }}>
-          <TextField
-            label='Fact Value'
-            fullWidth
-            size='small'
-            value={newValue}
-            onChange={(e) => setNewValue(e.target.value)}
-            placeholder='us-west-2'
-            onKeyDown={(e) => e.key === 'Enter' && addFact()}
-          />
-        </Grid>
-        <Grid size={{ xs: 2 }}>
-          <Button
-            variant='outlined'
-            fullWidth
-            startIcon={<Add />}
-            onClick={addFact}
-            disabled={!newKey.trim()}
-            sx={{ minWidth: 'auto', borderRadius: '8px' }}
-          >
-            Add
-          </Button>
-        </Grid>
-      </Grid>
-    </SectionCard>
-  );
-};
 
 /**
  * TriggersCard
@@ -468,7 +233,7 @@ const TriggersCard = ({
   triggerFilterId,
   existingTarget,
 }: {
-  control: Control<Target>;
+  control: Control<TargetFormValues>;
   whereTrigger: string;
   triggerFilterId: string;
   existingTarget?: TargetRead;
@@ -588,22 +353,22 @@ const TriggersCard = ({
 };
 
 // The fields the form edits besides the slug and metadata maps; an empty one is cleared.
-const selectionFields = (data: Target): Partial<Target> => ({
+const selectionFields = (data: TargetFormValues): Partial<Target> => ({
   DisplayName: data.DisplayName || undefined,
-  Facts: data.Facts,
+  Facts: rowsToMap(data.Facts),
   WhereTrigger: (data.WhereTrigger || '').trim(),
   TriggerFilterID: data.TriggerFilterID || undefined,
 });
 
 // The form's values for a target, or for a new one.
-const targetFormValues = (target: TargetRead | undefined): Target => ({
+const targetFormValues = (target: TargetRead | undefined): TargetFormValues => ({
   Slug: target?.Slug || '',
   DisplayName: target?.DisplayName || '',
   SpaceID: target?.SpaceID || '',
-  Labels: target?.Labels || {},
-  Annotations: target?.Annotations || {},
-  DeleteGates: target?.DeleteGates || {},
-  Facts: target?.Facts || {},
+  Labels: mapToRows(target?.Labels),
+  Annotations: mapToRows(target?.Annotations),
+  DeleteGates: mapToRows(target?.DeleteGates),
+  Facts: mapToRows(target?.Facts),
   WhereTrigger: target?.WhereTrigger || '',
   TriggerFilterID: target?.TriggerFilterID || '',
 });
@@ -622,15 +387,6 @@ export const AddTargetDrawer = ({
 }: AddTargetDrawerProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState('');
-  const [newLabelKey, setNewLabelKey] = useState('');
-  const [newLabelValue, setNewLabelValue] = useState('');
-  const [newAnnotationKey, setNewAnnotationKey] = useState('');
-  const [newAnnotationValue, setNewAnnotationValue] = useState('');
-  const [labels, setLabels] = useState<Array<{ id: string; key: string; value: string }>>([]);
-  const [annotations, setAnnotations] = useState<
-    Array<{ id: string; key: string; value: string }>
-  >([]);
-  const [newDeleteGateKey, setNewDeleteGateKey] = useState('');
   const [accessWorkerIds, setAccessWorkerIds] = useState<string[]>([]);
 
   const isEditMode = !!existingTarget;
@@ -644,10 +400,9 @@ export const AddTargetDrawer = ({
     control,
     handleSubmit,
     formState: { errors },
-    setValue,
     watch,
     reset,
-  } = useForm<Target>({
+  } = useForm<TargetFormValues>({
     defaultValues: targetFormValues(existingTarget),
   });
 
@@ -691,33 +446,8 @@ export const AddTargetDrawer = ({
     useUpdateTargetMutation();
   const { trackEntityCreated } = useAnalytics();
 
-  // Initialize form and labels/annotations from existing target
   useEffect(() => {
-    if (existingTarget) {
-      // Reset form with existing target values
-      reset(targetFormValues(existingTarget));
-
-      // Initialize labels and annotations lists
-      const labelsList = Object.entries(existingTarget.Labels || {}).map(([key, value]) => ({
-        id: `${key}-${value}-${Date.now()}`,
-        key,
-        value,
-      }));
-      const annotationsList = Object.entries(existingTarget.Annotations || {}).map(
-        ([key, value]) => ({
-          id: `${key}-${value}-${Date.now()}`,
-          key,
-          value,
-        }),
-      );
-      setLabels(labelsList);
-      setAnnotations(annotationsList);
-    } else {
-      // Reset to empty state for add mode
-      reset(targetFormValues(undefined));
-      setLabels([]);
-      setAnnotations([]);
-    }
+    reset(targetFormValues(existingTarget));
   }, [existingTarget, reset]);
 
   useApiErrorMessage(createError, isCreateSuccess, setServerError, {
@@ -743,92 +473,13 @@ export const AddTargetDrawer = ({
     },
   });
 
-  const addLabel = () => {
-    if (newLabelKey.trim() && newLabelValue.trim()) {
-      const newLabel = {
-        id: `${newLabelKey}-${newLabelValue}-${Date.now()}`,
-        key: newLabelKey.trim(),
-        value: newLabelValue.trim(),
-      };
-      setLabels([...labels, newLabel]);
-
-      // Update form value
-      const updatedLabels = {
-        ...watch('Labels'),
-        [newLabelKey.trim()]: newLabelValue.trim(),
-      };
-      setValue('Labels', updatedLabels);
-
-      setNewLabelKey('');
-      setNewLabelValue('');
-    }
-  };
-
-  const addAnnotation = () => {
-    if (newAnnotationKey.trim() && newAnnotationValue.trim()) {
-      const newAnnotation = {
-        id: `${newAnnotationKey}-${newAnnotationValue}-${Date.now()}`,
-        key: newAnnotationKey.trim(),
-        value: newAnnotationValue.trim(),
-      };
-      setAnnotations([...annotations, newAnnotation]);
-
-      // Update form value
-      const updatedAnnotations = {
-        ...watch('Annotations'),
-        [newAnnotationKey.trim()]: newAnnotationValue.trim(),
-      };
-      setValue('Annotations', updatedAnnotations);
-
-      setNewAnnotationKey('');
-      setNewAnnotationValue('');
-    }
-  };
-
-  const removeLabel = (id: string) => {
-    const updatedLabels = labels.filter((label) => label.id !== id);
-    setLabels(updatedLabels);
-
-    // Update form value
-    const labelsObject = updatedLabels.reduce(
-      (acc, label) => {
-        acc[label.key] = label.value;
-        return acc;
-      },
-      {} as Record<string, string>,
-    );
-    setValue('Labels', labelsObject);
-  };
-
-  const removeAnnotation = (id: string) => {
-    const updatedAnnotations = annotations.filter((annotation) => annotation.id !== id);
-    setAnnotations(updatedAnnotations);
-
-    // Update form value
-    const annotationsObject = updatedAnnotations.reduce(
-      (acc, annotation) => {
-        acc[annotation.key] = annotation.value;
-        return acc;
-      },
-      {} as Record<string, string>,
-    );
-    setValue('Annotations', annotationsObject);
-  };
-
   const handleClose = () => {
     reset();
-    setLabels([]);
-    setAnnotations([]);
-    setNewLabelKey('');
-    setNewLabelValue('');
-    setNewAnnotationKey('');
-    setNewAnnotationValue('');
-    setNewDeleteGateKey('');
     setServerError('');
     onClose();
   };
 
-  const onSubmit = async (data: Target) => {
+  const onSubmit = async (data: TargetFormValues) => {
     setIsSubmitting(true);
 
     try {
@@ -841,9 +492,9 @@ export const AddTargetDrawer = ({
             ...existingTarget,
             ...selectionFields(data),
             Slug: data.Slug,
-            Labels: data.Labels,
-            Annotations: data.Annotations,
-            DeleteGates: data.DeleteGates,
+            Labels: rowsToMap(data.Labels),
+            Annotations: rowsToMap(data.Annotations),
+            DeleteGates: rowsToGates(data.DeleteGates),
             Permissions: setWorkerTargetAccess(
               existingTarget.Permissions,
               bridgeWorkers,
@@ -864,9 +515,9 @@ export const AddTargetDrawer = ({
             Slug: data.Slug,
             SpaceID: data.SpaceID,
             OrganizationID: space.OrganizationID || '',
-            Labels: data.Labels,
-            Annotations: data.Annotations,
-            DeleteGates: data.DeleteGates,
+            Labels: rowsToMap(data.Labels),
+            Annotations: rowsToMap(data.Annotations),
+            DeleteGates: rowsToGates(data.DeleteGates),
             Permissions: setWorkerTargetAccess(undefined, bridgeWorkers, accessWorkerIds),
           },
         };
@@ -946,21 +597,26 @@ export const AddTargetDrawer = ({
               setAccessWorkerIds={setAccessWorkerIds}
               workerLabel={workerLabel}
             />
-            <LabelsAndAnnotationsCard
-              newLabelKey={newLabelKey}
-              newLabelValue={newLabelValue}
-              newAnnotationKey={newAnnotationKey}
-              newAnnotationValue={newAnnotationValue}
-              setNewLabelKey={setNewLabelKey}
-              setNewLabelValue={setNewLabelValue}
-              setNewAnnotationKey={setNewAnnotationKey}
-              setNewAnnotationValue={setNewAnnotationValue}
-              addLabel={addLabel}
-              addAnnotation={addAnnotation}
-              removeLabel={removeLabel}
-              removeAnnotation={removeAnnotation}
-              labels={labels}
-              annotations={annotations}
+            <MapFieldSection
+              control={control}
+              name='Labels'
+              title='Labels'
+              itemLabel='label'
+              validation='label'
+              keyPlaceholder='Environment'
+              valuePlaceholder='production'
+              testId='target-labels'
+            />
+            <MapFieldSection
+              control={control}
+              name='Annotations'
+              title='Annotations'
+              itemLabel='annotation'
+              validation='annotation'
+              multilineValues
+              keyPlaceholder='config.hash'
+              valuePlaceholder='abc123'
+              testId='target-annotations'
             />
             <TriggersCard
               control={control}
@@ -968,19 +624,26 @@ export const AddTargetDrawer = ({
               triggerFilterId={watch('TriggerFilterID') || ''}
               existingTarget={existingTarget}
             />
-            <FactsCard
-              facts={watch('Facts') || {}}
-              onChange={(facts) => setValue('Facts', facts)}
+            <MapFieldSection
+              control={control}
+              name='Facts'
+              title='Facts'
+              description='Properties of the infrastructure this target represents, available to functions and in where expressions. Fact collection rewrites the facts it collects.'
+              itemLabel='fact'
+              keyPlaceholder='region'
+              valuePlaceholder='us-west-2'
+              testId='target-facts'
             />
-            <SimpleGateCard
-              watch={watch}
-              setValue={setValue}
-              gateFieldName='DeleteGates'
-              gateType='Delete'
+            <MapFieldSection
+              control={control}
+              name='DeleteGates'
               title='Delete Gates'
               description='Delete gates prevent accidental deletion of this target. Remove all gates before deletion.'
-              newGateKey={newDeleteGateKey}
-              setNewGateKey={setNewDeleteGateKey}
+              itemLabel='delete gate'
+              validation='label'
+              keysOnly
+              keyPlaceholder='e.g., manual-review, backup-verified'
+              testId='target-delete-gates'
             />
           </Stack>
         </Box>

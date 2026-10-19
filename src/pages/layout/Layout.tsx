@@ -288,7 +288,7 @@ const ConfigurationItems: INavItem[] = [
     navigate: `/components`,
     disable: false,
   },
-  // Sits between Components and Releases, per the approved design.
+  // Sits between Components and ChangeSets, per the approved design.
   ...(SHOW_CHANGE_ORDERS_NAV
     ? [
         {
@@ -299,6 +299,12 @@ const ConfigurationItems: INavItem[] = [
         },
       ]
     : []),
+  {
+    text: 'ChangeSets',
+    component: <DifferenceIcon sx={{ color: 'white' }} />,
+    navigate: `/change-sets`,
+    disable: false,
+  },
   {
     text: 'Releases',
     component: <CalendarMonthIcon sx={{ color: 'white' }} />,
@@ -311,15 +317,21 @@ const ConfigurationItems: INavItem[] = [
     disable: false,
     subItems: [
       {
-        text: 'Units',
-        component: <DataObjectIcon sx={{ fontSize: 18 }} />,
-        navigate: `/units`,
+        text: 'Views',
+        component: <SearchIcon sx={{ fontSize: 18 }} />,
+        navigate: `/x/view-explorer`,
         disable: false,
       },
       {
-        text: 'ChangeSets',
-        component: <DifferenceIcon sx={{ fontSize: 18 }} />,
-        navigate: `/change-sets`,
+        text: 'Resources',
+        component: <ViewListIcon sx={{ fontSize: 18 }} />,
+        navigate: `/x/resource-explorer`,
+        disable: false,
+      },
+      {
+        text: 'Units',
+        component: <DataObjectIcon sx={{ fontSize: 18 }} />,
+        navigate: `/units`,
         disable: false,
       },
       {
@@ -332,18 +344,6 @@ const ConfigurationItems: INavItem[] = [
         text: 'Targets',
         component: <Storage sx={{ fontSize: 18 }} />,
         navigate: `/targets`,
-        disable: false,
-      },
-      {
-        text: 'Views',
-        component: <SearchIcon sx={{ fontSize: 18 }} />,
-        navigate: `/x/view-explorer`,
-        disable: false,
-      },
-      {
-        text: 'Resources',
-        component: <ViewListIcon sx={{ fontSize: 18 }} />,
-        navigate: `/x/resource-explorer`,
         disable: false,
       },
     ],

@@ -14,8 +14,11 @@
  */
 
 import { LABEL_VARIANT } from '../x/apps/componentData';
+import type { KeptValue } from '../x/apps/diffTree';
+import { changeOrderCopy } from '../x/apps/change-order/changeOrderCopy';
 import type { ChangeOrderChangeGroup, ChangeOrderResourceConflict } from '../x/apps/change-order/changeOrderTypes';
-import type { ChangeOrderOutcomeKind } from './changeOrderOutcome';
+import type { ChangeOrderOutcomeGroup, ChangeOrderOutcomeKind } from './changeOrderOutcome';
+import { changeOrderStatus } from './changeOrdersTokens';
 
 /** A single outcome card's identity within the page. */
 export function outcomeGroupKey(stageId: string, kind: ChangeOrderOutcomeKind): string {
@@ -26,6 +29,21 @@ export function outcomeGroupKey(stageId: string, kind: ChangeOrderOutcomeKind): 
 export interface CardSpaceLabelSource {
   spaceId: string;
   labels?: Record<string, string>;
+}
+
+/**
+ * The variant whose resources a card shows: the caller's choice when it names
+ * a member of the group, else the group's own representative. A choice outside
+ * the group is ignored rather than honoured, since the card would then show a
+ * variant it does not stand for.
+ */
+export function cardRepresentativeSpaceId(
+  group: Pick<ChangeOrderOutcomeGroup, 'spaceIds' | 'representativeSpaceId'>,
+  chosenSpaceId: string | undefined,
+): string {
+  return chosenSpaceId !== undefined && group.spaceIds.includes(chosenSpaceId)
+    ? chosenSpaceId
+    : group.representativeSpaceId;
 }
 
 /**
@@ -93,4 +111,31 @@ export function rowRefusals(
   group: Pick<ChangeOrderChangeGroup, 'conflicts'> | undefined,
 ): readonly ChangeOrderResourceConflict[] {
   return (group?.conflicts ?? []).filter((conflict) => conflict.blocks);
+}
+
+/** What each kind of kept value is called on its row. */
+const KEPT_LABELS: Readonly<Record<string, string>> = {
+  ProtectedPath: changeOrderCopy.keptValue.keptOnMerge,
+  Subtracted: changeOrderCopy.keptValue.localOverride,
+};
+
+/**
+ * A refusal that is a value the target kept, as a row for the resource's diff: a
+ * path kept on merge, or a local override the merge did not take over. `undefined`
+ * for every other refusal (and for one the server gave no path or value for), which
+ * stays a sentence: it says what stopped the change, not what a field holds.
+ */
+export function keptValueOf(conflict: ChangeOrderResourceConflict): KeptValue | undefined {
+  const label = KEPT_LABELS[conflict.reason];
+  if (label === undefined || conflict.path === undefined || conflict.path === '' || conflict.targetValue === undefined) {
+    return undefined;
+  }
+  return {
+    resourceName: conflict.resourceName,
+    path: conflict.path,
+    value: conflict.targetValue,
+    incoming: conflict.sourceValue === '' ? undefined : conflict.sourceValue,
+    label,
+    tone: changeOrderStatus.warn,
+  };
 }

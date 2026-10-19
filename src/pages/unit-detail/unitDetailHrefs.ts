@@ -22,6 +22,7 @@ export const UNIT_DETAIL_TAB = {
   links: 3,
   mutations: 4,
   resources: 5,
+  settings: 6,
 } as const;
 
 const LINK_UPDATE_TYPE_PARAM = 'linkUpdateType';

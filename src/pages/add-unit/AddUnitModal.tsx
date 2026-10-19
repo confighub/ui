@@ -1,11 +1,11 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 
 import { CodeEditor } from '@/components/code-editor/CodeEditor';
-import { SimpleGateCard } from '@/components/simple-gate-card/SimpleGateCard';
-import { SimpleLabelCard } from '@/components/simple-label-card/SimpleLabelCard';
+import { MapFieldSection } from '@/components/map-field-editor/MapFieldSection';
+import { rowsToGates, rowsToMap } from '@/components/map-field-editor/map-rows';
 import { SectionCard } from '@/components/styled';
 import { ServerErrorBox } from '@/components/styled';
 import { FullScreenDialog } from '@/components/styled';
@@ -52,24 +52,8 @@ export const AddUnitModal = ({
   refresh,
 }: IUnitMutationModalProps) => {
   const [configDataState, setConfigDataState] = useState<string>('');
-  const [newDeleteGateKey, setNewDeleteGateKey] = useState('');
-  const [newDestroyGateKey, setNewDestroyGateKey] = useState('');
   const [activeStep, setActiveStep] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const [inputErrors, setInputErrors] = useState<Set<string>>(new Set());
-
-  const makeInputErrorHandler = useCallback(
-    (key: string) => (hasError: boolean) => {
-      setInputErrors((prev) => {
-        const next = new Set(prev);
-        if (hasError) next.add(key);
-        else next.delete(key);
-        return next;
-      });
-    },
-    [],
-  );
-
   const {
     form,
     targets,
@@ -81,10 +65,6 @@ export const AddUnitModal = ({
     onToolchainTypeSelected,
     resetForm,
   } = useUnitForm({
-    defaultValues: {
-      DeleteGates: {},
-      DestroyGates: {},
-    },
     mode: 'onChange',
   });
 
@@ -143,8 +123,6 @@ export const AddUnitModal = ({
         resetForm();
         resetConfigValue();
         setActiveStep(0);
-        setNewDeleteGateKey('');
-        setNewDestroyGateKey('');
         setErrorMessage('');
       }
     };
@@ -153,43 +131,30 @@ export const AddUnitModal = ({
   }, [isSuccess, createdUnit, trackEntityCreated, unitData.ToolchainType]);
 
   watchConfigValue('configData');
-  watch('Labels');
   watch('SpaceID');
-  watch('DeleteGates');
-  watch('DestroyGates');
 
   const handleClose = () => {
     resetForm();
     resetConfigValue();
     setActiveStep(0);
-    setNewDeleteGateKey('');
-    setNewDestroyGateKey('');
     onClose();
     setErrorMessage('');
   };
 
   const onUnitAdded = async () => {
-    const currentDeleteGates = watch('DeleteGates') || {};
-    const currentDestroyGates = watch('DestroyGates') || {};
+    const currentDeleteGates = rowsToGates(watch('DeleteGates'));
+    const currentDestroyGates = rowsToGates(watch('DestroyGates'));
 
     const input: CreateUnitApiArg = {
       spaceId: unitData.SpaceID || '',
       unit: {
         Slug: unitData.Slug,
-        Labels: {
-          ...unitData.Labels,
-        },
-        Annotations: {
-          ...unitData.Annotations,
-        },
+        Labels: rowsToMap(unitData.Labels),
+        Annotations: rowsToMap(unitData.Annotations),
         ToolchainType: unitData.ToolchainType,
-        ...(unitData.TargetID ? { TargetId: unitData.TargetID } : {}),
-        ...(currentDeleteGates && Object.keys(currentDeleteGates).length > 0
-          ? { DeleteGates: currentDeleteGates }
-          : {}),
-        ...(currentDestroyGates && Object.keys(currentDestroyGates).length > 0
-          ? { DestroyGates: currentDestroyGates }
-          : {}),
+        ...(unitData.TargetID ? { TargetID: unitData.TargetID } : {}),
+        ...(Object.keys(currentDeleteGates).length > 0 ? { DeleteGates: currentDeleteGates } : {}),
+        ...(Object.keys(currentDestroyGates).length > 0 ? { DestroyGates: currentDestroyGates } : {}),
       },
     };
 
@@ -416,29 +381,32 @@ export const AddUnitModal = ({
                 </Grid>
 
                 <Grid size={{ xs: 12 }}>
-                  <SimpleLabelCard
-                    watch={watch}
-                    setValue={setValue}
-                    fieldName='Labels'
-                    type='Labels'
+                  <MapFieldSection
+                    control={control}
+                    name='Labels'
                     title='Labels'
                     description='Labels are key-value pairs that help organize and identify units.'
-                    onErrorChange={makeInputErrorHandler('Labels')}
+                    itemLabel='label'
+                    validation='label'
+                    keyPlaceholder='Environment'
+                    valuePlaceholder='production'
+                    testId='add-unit-labels'
                   />
                 </Grid>
                 <Grid size={{ xs: 12 }}>
-                  <SimpleLabelCard
-                    watch={watch}
-                    setValue={setValue}
-                    fieldName='Annotations'
-                    type='Annotations'
+                  <MapFieldSection
+                    control={control}
+                    name='Annotations'
                     title='Annotations'
                     description='Annotations store additional metadata and information about the unit.'
-                    onErrorChange={makeInputErrorHandler('Annotations')}
+                    itemLabel='annotation'
+                    validation='annotation'
+                    multilineValues
+                    testId='add-unit-annotations'
                   />
                 </Grid>
                 <Grid size={{ xs: 12 }}>
-                  <Button disabled={disable || !isValid || inputErrors.size > 0} variant='contained' type='submit' fullWidth>
+                  <Button disabled={disable || !isValid} variant='contained' type='submit' fullWidth>
                     Next
                   </Button>
                 </Grid>
@@ -499,27 +467,29 @@ export const AddUnitModal = ({
             >
               <Grid container spacing={2}>
                 <Grid size={{ xs: 12 }}>
-                  <SimpleGateCard
-                    watch={watch}
-                    setValue={setValue}
-                    gateFieldName='DeleteGates'
-                    gateType='Delete'
+                  <MapFieldSection
+                    control={control}
+                    name='DeleteGates'
                     title='Delete Gates'
                     description='Delete gates prevent units from being deleted until the gates are removed.'
-                    newGateKey={newDeleteGateKey}
-                    setNewGateKey={setNewDeleteGateKey}
+                    itemLabel='delete gate'
+                    validation='label'
+                    keysOnly
+                    keyPlaceholder='e.g., manual-review, backup-verified'
+                    testId='add-unit-delete-gates'
                   />
                 </Grid>
                 <Grid size={{ xs: 12 }}>
-                  <SimpleGateCard
-                    watch={watch}
-                    setValue={setValue}
-                    gateFieldName='DestroyGates'
-                    gateType='Destroy'
+                  <MapFieldSection
+                    control={control}
+                    name='DestroyGates'
                     title='Destroy Gates'
                     description='Destroy gates prevent units from being destroyed until the gates are removed.'
-                    newGateKey={newDestroyGateKey}
-                    setNewGateKey={setNewDestroyGateKey}
+                    itemLabel='destroy gate'
+                    validation='label'
+                    keysOnly
+                    keyPlaceholder='e.g., production-protection'
+                    testId='add-unit-destroy-gates'
                   />
                 </Grid>
                 <Grid size={{ xs: 6 }}>

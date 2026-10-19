@@ -35,7 +35,7 @@
  *     whether it goes through it.
  */
 
-import type { ConfigDiff, PathChange, PromoteResult, ResourceInfo } from '@confighub/rtk-query';
+import type { ConfigDiff, MutationConflict, PathChange, PromoteResult, ResourceInfo } from '@confighub/rtk-query';
 
 import { PLACEHOLDER_RESOURCE_TYPE, segmentLabel } from '../../../../components/config-diff/configDiffTree';
 import { parseUnitDataStructured, resourceIdentitiesOf } from '../configParser';
@@ -101,6 +101,25 @@ export function conflictBlocks(reason: string | undefined): boolean {
   return reason === undefined || !APPLIED_CONFLICT_REASONS.has(reason);
 }
 
+/** A mutation value as the server writes it, a YAML document, without its final newline. */
+function scalarText(value: string | undefined): string | undefined {
+  return value === undefined ? undefined : value.replace(/\n+$/, '');
+}
+
+/** One of the server's merge conflicts, in the shape the stage tree reads. */
+export function resourceConflictOf(conflict: MutationConflict): ChangeOrderResourceConflict {
+  return {
+    reason: conflict.Reason ?? '',
+    resourceName: conflict.Resource?.ResourceName,
+    path: conflict.Path,
+    details: conflict.Details,
+    targetValue: scalarText(conflict.Target?.Value),
+    sourceValue: scalarText(conflict.Source?.Value),
+    targetProtected: conflict.Target?.Protected === true,
+    blocks: conflictBlocks(conflict.Reason),
+  };
+}
+
 /** What a promote dry run says it would do to each Unit, in the shape the stage tree reads. */
 export interface PromotionPreview {
   /** The configuration each Unit the promotion writes would hold. */
@@ -159,13 +178,7 @@ export function readPromotionPreview(result: PromoteResult | undefined): Promoti
       const unitId = unit.UnitID;
       // A clone the dry run would make has no id yet, and no current Unit to stand beside.
       if (unitId === undefined) continue;
-      const conflicts = (unit.Conflicts ?? []).map((conflict) => ({
-        reason: conflict.Reason ?? '',
-        resourceName: conflict.Resource?.ResourceName,
-        path: conflict.Path,
-        details: conflict.Details,
-        blocks: conflictBlocks(conflict.Reason),
-      }));
+      const conflicts = (unit.Conflicts ?? []).map(resourceConflictOf);
       if (conflicts.length > 0) preview.conflictsByUnitId.set(unitId, conflicts);
       if (unit.Error !== undefined) {
         preview.undeterminedUnitIds.add(unitId);

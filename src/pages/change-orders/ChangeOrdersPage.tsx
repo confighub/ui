@@ -30,47 +30,26 @@ import { Link as RouterLink, useLocation, useNavigate, useParams } from 'react-r
 
 import Box from '@mui/material/Box';
 import Tooltip from '@mui/material/Tooltip';
-import type { BoxProps } from '@mui/material/Box';
-import type { SvgIconComponent } from '@mui/icons-material';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
-import AutorenewIcon from '@mui/icons-material/Autorenew';
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 import FolderCopyOutlinedIcon from '@mui/icons-material/FolderCopyOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import SchemaOutlinedIcon from '@mui/icons-material/SchemaOutlined';
 import SyncAltOutlinedIcon from '@mui/icons-material/SyncAltOutlined';
 import UpdateOutlinedIcon from '@mui/icons-material/UpdateOutlined';
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
-import BlockIcon from '@mui/icons-material/Block';
-import CheckIcon from '@mui/icons-material/Check';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
-import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
-import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
-import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
-import RemoveIcon from '@mui/icons-material/Remove';
-import RestoreIcon from '@mui/icons-material/Restore';
-import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 
 import { INFO_PEEK_TOOLTIP_SX } from '@/components/info-peek/InfoPeek';
 import { ChangeOrderGateList } from '../x/apps/change-order/ChangeOrderGateList';
-import { gateStateFor, gatesOpen, partitionBlockingGates, tallyGates } from '../x/apps/change-order/changeOrderGates';
+import { gateStateFor, partitionBlockingGates, tallyGates } from '../x/apps/change-order/changeOrderGates';
 import { gatesBlockPromotion } from '../x/apps/change-order/changeOrderFooterModel';
-import { changeOrderCopy, skippedUnitReasonText, stageDisplayName } from '../x/apps/change-order/changeOrderCopy';
+import { changeOrderCopy, stageDisplayName } from '../x/apps/change-order/changeOrderCopy';
 import { changeOrdersConsoleCopy } from '../x/apps/change-order/changeOrdersConsoleCopy';
 import { changeOrderOwnSpaceReached, promotionTargets } from '../x/apps/change-order/changeOrderStages';
 import { componentSpaceDeepLink } from '../x/apps/change-order/changeOrdersConsoleModel';
 import { unitLinksHref } from '../unit-detail/unitDetailHrefs';
 import type { ConsoleState } from '../x/apps/change-order/changeOrdersConsoleModel';
-import type {
-  ChangeOrderGate,
-  ChangeOrderGateTally,
-  ChangeOrderSequenceProblem,
-  ChangeOrderStage,
-  ChangeOrderStageState,
-} from '../x/apps/change-order/changeOrderTypes';
+import type { ChangeOrderGate, ChangeOrderStage } from '../x/apps/change-order/changeOrderTypes';
 import { TreeDiffSection } from '../x/apps/TreeDiffSection';
-import { ConfigDiffView } from '@/components/config-diff/ConfigDiffView';
 import { ROUTE_COMPONENTS } from '../x/apps/appTypes';
 import { componentTheme } from '../x/apps/componentTheme';
 import type { MergedUnit } from '../x/apps/componentTypes';
@@ -95,21 +74,14 @@ import {
   type CompleteStepTone,
 } from './changeOrderCompleteStep';
 import { buildChangeOrderOutcome, carriedResourceKeysOf, partitionShortfall } from './changeOrderOutcome';
-import type { ChangeOrderOutcomeKind } from './changeOrderOutcome';
-import {
-  cardRepresentativeUnits,
-  cardSpaceLabel,
-  outcomeGroupKey, rowRefusals } from './changeOrderCard';
+import { cardRepresentativeUnits, cardSpaceLabel, rowRefusals } from './changeOrderCard';
 import { partitionSourceUnitsByChange, useChangeOrderConsoleChanges } from './useChangeOrderConsoleChanges';
-import type { SourceUnitPartition } from './useChangeOrderConsoleChanges';
 import {
   changeOrderBorder,
   changeOrderCardTokens,
   changeOrderInk,
   changeOrderFontMono,
   changeOrderFontSans,
-  changeOrderKindLine,
-  changeOrderSelectedRing,
   changeOrderShape,
   changeOrderStatus,
   changeOrderSurface,
@@ -128,7 +100,6 @@ import { FullDiffDisclosure, ImageChangeSummary } from './components/ImageChange
 import { onlyChangesHint } from './imageChangeCopy';
 import { imageChangesForSource } from './imageChange';
 import Snackbar from '@mui/material/Snackbar';
-import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined';
 import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
 import { ReviewBand, type ReviewBandAction } from './reviews/ReviewBand';
 import { ReviewChip, ReviewEntryStatus, ReviewGateActions, ReviewGateBlockedLine, ReviewGateSpaces } from './reviews/reviewParts';
@@ -141,72 +112,22 @@ import type {
   PromoteReadiness,
   ReviewChoice,
   ReviewGateRef,
-  StageReviewRail,
   StageReviewSummary,
   SubmitReviewOutcome,
 } from './reviews/changeOrderReviewTypes';
 import { useChangeOrderReviews, useGateReviews } from './reviews/useStageReviews';
 import { useChangeOrderHistory } from './useChangeOrderHistory';
 import { changeWorkflowHref, changeWorkflowLabel, useChangeWorkflowNames } from './useChangeWorkflowNames';
-
-/**
- * A sequence problem, said plainly.
- *
- * `changeOrderStages.ts` degrades to "not in the sequence" and REPORTS rather than
- * guessing, on the stated grounds that a ChangeOrder view which quietly invents an
- * order is worse than one admitting it cannot find one. Carrying that answer to
- * the screen is the whole point; rounding it off here would undo it.
- */
-function describeSequenceProblem(problem: ChangeOrderSequenceProblem): string {
-  switch (problem.kind) {
-    case 'no-workflow':
-      return 'This ChangeOrder has no governing ChangeWorkflow, so no sequence could be built.';
-    case 'stage-selects-nothing':
-      return `Stage "${problem.stageName}" selects no Space.`;
-  }
-}
-
-/**
- * Outcome tones and wording.
- *
- * `unknown` is deliberately NOT a failure tone and not a reassuring one — it is
- * its own thing, because "we could not establish this" is neither good news nor
- * bad. Rendering it as either would assert something the data does not support.
- *
- * `adds` MEANS BOTH HALVES OF WHAT IT SAYS — the change brings this resource,
- * and this variant does not hold it — WHENEVER THE AUTHORED CHANGE IS KNOWN.
- * `kindForSpace` then weighs only the rows that change carries, so a variant is
- * never grouped here for holding different resources the promote never mentions.
- * Until the base has been read there is no authored change to weigh against and
- * no row is excluded, so the label falls back to its second half alone. That is
- * the noisier reading, never the quieter one.
- *
- * `hint` is the plain-language half of each label, rendered under it. A label is
- * a name for an outcome and cannot also explain itself; "Adds resources" tells a
- * reader which group this is, and "do not hold it yet" tells them what it means
- * for the variants inside.
- */
-const OUTCOME_META: Record<ChangeOrderOutcomeKind, { tone: string; label: string; hint: string }> = {
-  same: { tone: changeOrderStatus.success, label: 'Same change', hint: 'take the change identically' },
-  differs: { tone: changeOrderStatus.warn, label: 'Differs', hint: 'take a different change' },
-  adds: { tone: changeOrderInk.muted, label: 'Adds resources', hint: 'do not hold it yet' },
-  unknown: { tone: changeOrderInk.subtle, label: 'Could not establish', hint: 'not determinable this round' },
-};
-
-/**
- * The group-card badge's own soft fill, one step separate from
- * `OUTCOME_META.tone`. `same`/`differs` get the reference's real soft tint
- * (`--ok-soft`/`--wait-soft`) because `OUTCOME_META.tone` already agrees with
- * the reference there. `adds`/`unknown` stay neutral (`changeOrderSurface.inset`)
- * rather than the reference's literal blue/red — see the comment at the
- * badge's call site for why.
- */
-const OUTCOME_BADGE: Record<ChangeOrderOutcomeKind, { bg: string; fg: string }> = {
-  same: { bg: changeOrderStatus.successGround, fg: changeOrderStatus.success },
-  differs: { bg: changeOrderStatus.warnSoft, fg: changeOrderStatus.warn },
-  adds: { bg: changeOrderSurface.inset, fg: changeOrderInk.muted },
-  unknown: { bg: changeOrderSurface.inset, fg: changeOrderInk.subtle },
-};
+import { GateDisclosure } from './components/GateDisclosure';
+import { OutcomeBreakdown } from './components/OutcomeBar';
+import { outcomeSegments } from './components/outcomeMeta';
+import { OutcomeGroupCards, type OutcomeCardContext } from './components/OutcomeGroupCards';
+import { OutcomeUnknownNote } from './components/OutcomeUnknownNote';
+import { OutcomeUnitDiff } from './components/OutcomeUnitDiff';
+import { PassedOver } from './components/PassedOver';
+import { SequenceProblems } from './components/SequenceProblems';
+import { ChangeOrderStageRail } from './components/ChangeOrderStageRail';
+import { completeRailDot, railDot } from './components/railDots';
 
 /**
  * The header status chip's own tone, per `ConsoleState`.
@@ -233,18 +154,6 @@ const CONSOLE_STATE_TONE: Record<ConsoleState, string> = {
   'no-workflow': changeOrderStatus.warn,
   'no-stages': changeOrderStatus.warn,
   unknown: changeOrderInk.subtle,
-};
-
-/**
- * The partition an outcome card falls back to when its key is not in
- * `repUnitsByGroupKey` — a card with nothing to list, which renders the "no
- * resources yet" line rather than an empty split. A module constant so the
- * fallback is one object rather than a fresh literal per card per render.
- */
-const EMPTY_UNIT_PARTITION: SourceUnitPartition<MergedUnit> = {
-  changedUnits: [],
-  blockedUnits: [],
-  unchangedUnits: [],
 };
 
 /** The `--root` target for `check.mjs`. One stable selector, per U1. */
@@ -521,788 +430,6 @@ function ScopeSpaces({ spaces, stages }: { spaces: ChangeOrderSpace[]; stages: C
 }
 
 /**
- * A list of unit rows behind one disclosure — the page's only implementation of
- * that control, mounted by "Passed over", by "At the source"'s unchanged group,
- * and by each outcome card's unchanged group.
- *
- * One component because all three answer the same kind of question: real,
- * checkable, and not what the reader opened this screen for. The
- * `aria-controls`/`id` pairing in particular only stays correct while it has a
- * single home — three hand-maintained copies of it drift the first time any one
- * of them is adjusted.
- *
- * `bodyId` is the caller's to supply because uniqueness is the caller's
- * problem: two of these render once per page and can be named literally, while
- * an outcome card's renders once per card and must derive its id from the card
- */
-function CollapsibleUnitGroup({
-  regionLabel,
-  label,
-  count,
-  bodyId,
-  expanded,
-  onToggle,
-  sx,
-  children,
-}: {
-  /** Accessible name for the region — the visible label alone does not say whose resources these are. */
-  regionLabel: string;
-  label: string;
-  /** The count exactly as this header states it: `(3)` in one place, `3 resources` in another. */
-  count: React.ReactNode;
-  /** `id` of the body, which the header's `aria-controls` points at. Must be unique on the page. */
-  bodyId: string;
-  expanded: boolean;
-  onToggle: () => void;
-  sx?: BoxProps['sx'];
-  children: React.ReactNode;
-}) {
-  return (
-    <Box component="section" role="region" aria-label={regionLabel} sx={sx}>
-      <Box
-        component="button"
-        type="button"
-        aria-expanded={expanded}
-        aria-controls={bodyId}
-        onClick={onToggle}
-        sx={{
-          all: 'unset',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          width: '100%',
-          boxSizing: 'border-box',
-          padding: '8px 12px',
-          borderRadius: `${changeOrderShape.radius.md}px`,
-          border: `1px solid ${changeOrderBorder.default}`,
-          background: changeOrderSurface.sunk,
-        }}
-      >
-        <Box
-          sx={{
-            fontSize: changeOrderType.size.small,
-            fontWeight: changeOrderType.weight.semibold,
-            color: changeOrderInk.default,
-          }}
-        >
-          {label}
-        </Box>
-        <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.muted }}>{count}</Box>
-        <Box
-          sx={{
-            marginLeft: 'auto',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            fontSize: changeOrderType.size.small,
-            fontWeight: changeOrderType.weight.semibold,
-            color: changeOrderInk.muted,
-          }}
-        >
-          {expanded ? 'Hide' : 'Show'}
-          <ExpandMoreIcon
-            aria-hidden="true"
-            sx={{
-              fontSize: 18,
-              transform: expanded ? 'rotate(180deg)' : 'none',
-              transition: 'transform .15s ease',
-            }}
-          />
-        </Box>
-      </Box>
-      {expanded ? (
-        <Box
-          id={bodyId}
-          sx={{
-            border: `1px solid ${changeOrderBorder.default}`,
-            borderRadius: `${changeOrderShape.radius.md}px`,
-            marginTop: '6px',
-            padding: '6px 12px',
-          }}
-        >
-          {children}
-        </Box>
-      ) : null}
-    </Box>
-  );
-}
-
-/**
- * Whether a stage is held on review: it is the next stage, it has not taken
- * the change, and its review requirements are waiting (`held`) or rejected
- * (`blocked`). `null` for a stage with no reviews, or one not held by them.
- */
-function reviewHoldTone(
-  state: ChangeOrderStageState,
-  isNext: boolean,
-  review: StageReviewRail | undefined,
-): 'held' | 'blocked' | null {
-  if (review === undefined || state.verdict === 'source') return null;
-  // An entry review holds the next stage; a release review holds a promoted stage's release.
-  if (review.gateKind === 'release' ? state.verdict !== 'promoted' : !isNext) return null;
-  if (review.state === 'rejected') return 'blocked';
-  if (review.state === 'pending' || review.state === 'partial') return 'held';
-  return null;
-}
-
-/**
- * The rail node's leading dot, keyed off `ChangeOrderStageVerdict` the same way
- * the reference keys its own node off `stage.state` (`ICON.check`/`spin`/
- * `play`/`warn`/`lock` at line ~4224 of the mockup). `source`, `promoted` and
- * `released` all read as the reference's "done" — none of them is a stage
- * still to happen. `waiting` splits in two: the one stage the sequence would
- * promote next reads as "next" (a ready action), every later `waiting` stage
- * reads as the reference's untouched default (a future stage, locked).
- *
- * `passed` is the console row's own count (`stagePathProgress`): a stage the
- * ChangeOrder has passed is drawn done, so the rail, its pips and "N of M" agree.
- */
-function railDot(state: ChangeOrderStageState, isNext: boolean, passed: boolean, review?: StageReviewRail) {
-  const done = { Icon: CheckIcon, bg: changeOrderStatus.successGround, border: changeOrderStatus.successLine, color: changeOrderStatus.success };
-  if (passed && state.verdict !== 'restored' && state.verdict !== 'restore-released') return done;
-  // Held on review: the next stage waits on approvals (person) or a rejection blocks it (ban).
-  const reviewTone = reviewHoldTone(state, isNext, review);
-  if (reviewTone === 'blocked') {
-    return { Icon: BlockIcon, bg: changeOrderStatus.dangerSoft, border: changeOrderStatus.dangerLine, color: changeOrderStatus.danger };
-  }
-  if (reviewTone === 'held') {
-    return { Icon: PersonOutlineOutlinedIcon, bg: changeOrderStatus.warnSoft, border: changeOrderStatus.warnLine, color: changeOrderStatus.warn };
-  }
-  // The stage selects no Space, so there is no workload of its own to report
-  // on: it is drawn neutral rather than in the danger tone of a failed gate.
-  // What it does to the stage after it — the server refuses to promote past a
-  // stage that selects no Space — is said on that stage's gate.
-  if (state.verdict !== 'source' && state.spaceCount === 0) {
-    return { Icon: RemoveIcon, bg: changeOrderSurface.sunk, border: changeOrderBorder.strong, color: changeOrderInk.subtle };
-  }
-  switch (state.verdict) {
-    case 'source':
-    case 'promoted':
-    case 'released':
-      return done;
-    case 'in-progress':
-      return { Icon: AutorenewIcon, bg: changeOrderStatus.accentSoft, border: changeOrderStatus.accentLine, color: changeOrderStatus.accent };
-    case 'gated':
-      return { Icon: WarningAmberOutlinedIcon, bg: changeOrderStatus.dangerSoft, border: changeOrderKindLine.unknown, color: changeOrderStatus.danger };
-    case 'waiting':
-      return isNext
-        ? { Icon: PlayCircleOutlineIcon, bg: changeOrderStatus.accentSoft, border: changeOrderStatus.accentLine, color: changeOrderStatus.accent }
-        : { Icon: LockOutlinedIcon, bg: changeOrderSurface.sunk, border: changeOrderBorder.strong, color: changeOrderInk.subtle };
-    case 'unknown':
-      return { Icon: LockOutlinedIcon, bg: changeOrderSurface.sunk, border: changeOrderBorder.strong, color: changeOrderInk.subtle };
-    // Reverted, not a live problem — same neutral treatment as 'unknown'
-    // rather than the danger tone 'gated' gets, so a reader does not mistake
-    // an undone stage for one still failing a check.
-    case 'restored':
-    case 'restore-released':
-      return { Icon: RestoreIcon, bg: changeOrderSurface.sunk, border: changeOrderBorder.strong, color: changeOrderInk.subtle };
-  }
-}
-
-/**
- * The Complete node's leading dot, keyed off `completeStepTone` rather than a
- * stage verdict — the step has none, because it is not a stage.
- *
- * Same icons `railDot` draws (check / warning / lock / restore), so the
- * trailing node reads as one more node on the same rail rather than a second
- * vocabulary at the end of it.
- *
- * A complete ChangeOrder reads `done` whether or not its last stage's health was
- * checked. The rail's ticks report ARRIVAL, not health — every stage node to
- * the left draws a plain green tick off promote/release counts — and the
- * node's label ("Complete, unverified") says when health went unchecked.
- *
- * `blocked` takes the accent rather than the danger tone — something is
- * outstanding, which is a thing to do, not a thing that failed.
- *
- * ⚠️ `restored` NEEDS `abandoned` TO DRAW AT ALL, AND THE TONE ALONE CANNOT
- * SUPPLY IT. Two different ChangeOrders reach that tone (`completeStepTone` rung
- * 4) and only one of them was ever undone; `isCompleteStepAbandoned` is the
- * one place that tells them apart. An undo glyph on a ChangeOrder that was
- * abandoned in place claims a restore that never happened — the promotions it
- * had already made are still standing. The TREATMENT stays identical either
- * way, deliberately: both readings are terminal and unactionable, and an
- * abandoned ChangeOrder is not an error, so the neutral ground/border/ink is the
- * honest one for both and only the glyph moves.
- */
-function completeRailDot(tone: CompleteStepTone, abandoned: boolean) {
-  switch (tone) {
-    case 'done':
-      return { Icon: CheckIcon, bg: changeOrderStatus.successGround, border: changeOrderStatus.successLine, color: changeOrderStatus.success };
-    case 'degraded':
-      return { Icon: WarningAmberOutlinedIcon, bg: changeOrderStatus.dangerSoft, border: changeOrderKindLine.unknown, color: changeOrderStatus.danger };
-    case 'blocked':
-      return { Icon: WarningAmberOutlinedIcon, bg: changeOrderStatus.accentSoft, border: changeOrderStatus.accentLine, color: changeOrderStatus.accent };
-    case 'restored':
-      return {
-        Icon: abandoned ? BlockIcon : RestoreIcon,
-        bg: changeOrderSurface.sunk,
-        border: changeOrderBorder.strong,
-        color: changeOrderInk.subtle,
-      };
-    case 'gated':
-      return { Icon: LockOutlinedIcon, bg: changeOrderSurface.sunk, border: changeOrderBorder.strong, color: changeOrderInk.subtle };
-  }
-}
-
-/**
- * The connector between two adjacent rail nodes — the mockup's `.link`
- * (~line 4160): a small badge naming whether the gate INTO the right-hand
- * stage is passed, open or closed, plus the same satisfied/total tally
- * `changeOrderCopy.laneGateTally` already renders in the flow-graph lane, reused
- * rather than re-derived so the two surfaces cannot disagree about one count.
- *
- * Three states, matching the mockup's own vocabulary exactly (it has no
- * fourth): PASSED — this stage has already been entered, so whatever it took
- * to get here is history now (`promoted`/`released`/`source`). OPEN — this is
- * the one stage the sequence would promote into next; drawn as open
- * regardless of whether every one of its gates is actually satisfied yet,
- * matching the reference, because this is an at-a-glance overview and the
- * real breakdown is one click away in `ChangeOrderGateList`. CLOSED — everything
- * else, including `gated`: the reference has no separate red connector state,
- * and the node's own dot (`railDot`) still carries that distinction on the
- * stage it sits before, so nothing is lost by folding it into "closed" here.
- *
- * `aria-hidden`: a sighted-reader overview only. The tally is decorative
- * relative to the accessible tree — `ChangeOrderGateList` is the surface that
- * states a gate's outcome as a fact, once its stage is selected, and duplicating
- * that here would risk the two texts drifting apart, the exact failure this
- * file's own header on `railDot` names for the node dots.
- *
- * ⚠️ `data-testid` NAMES IT, DELIBERATELY. Nothing about this element's own
- * purpose needs one — MUI's own hashed class carries no meaning either way —
- * but `scripts/detail-compare.mjs`'s selector for this exact chrome element
- * matches on a class or testid CONTAINING "link"/"connector", the same
- * class-name-as-anchor shape `console-compare.mjs` had before tonight. Named
- * to satisfy a real query rather than to satisfy the harness's current
- * (imperfect) one.
- */
-function StageLink({
-  state,
-  isNext,
-  stagePassed = false,
-  review,
-}: {
-  state: ChangeOrderStageState;
-  isNext: boolean;
-  /** Whether the ChangeOrder has passed the stage on the right, by the console row's count. */
-  stagePassed?: boolean;
-  /** The review state of the stage on the right, when it has reviews. */
-  review?: StageReviewRail;
-}) {
-  const passed =
-    stagePassed || state.verdict === 'promoted' || state.verdict === 'released' || state.verdict === 'source';
-  const open = !passed && isNext;
-  const hold = passed ? null : reviewHoldTone(state, isNext, review);
-  let tone: { bg: string; border: string; color: string; Icon: SvgIconComponent } = passed
-    ? { bg: changeOrderStatus.successGround, border: changeOrderStatus.successLine, color: changeOrderStatus.success, Icon: LockOpenOutlinedIcon }
-    : open
-      ? { bg: changeOrderStatus.accentSoft, border: changeOrderStatus.accentLine, color: changeOrderStatus.accent, Icon: ArrowForwardIcon }
-      : { bg: changeOrderSurface.sunk, border: changeOrderBorder.strong, color: changeOrderInk.subtle, Icon: LockOutlinedIcon };
-  let tally = changeOrderCopy.laneGateTally(state.gateTally.satisfied, state.gateTally.total);
-  if (hold === 'held') {
-    tone = { bg: changeOrderStatus.warnSoft, border: changeOrderStatus.warnLine, color: changeOrderStatus.warn, Icon: PersonOutlineOutlinedIcon };
-  } else if (hold === 'blocked') {
-    tone = { bg: changeOrderStatus.dangerSoft, border: changeOrderStatus.dangerLine, color: changeOrderStatus.danger, Icon: BlockIcon };
-    tally = reviewCopy.rail.fail;
-  }
-  return (
-    <Box
-      aria-hidden="true"
-      data-testid="stage-rail-link"
-      data-review-hold={hold ?? undefined}
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '4px',
-        width: 44,
-        flex: '0 0 auto',
-      }}
-    >
-      <Box
-        sx={{
-          width: 22,
-          height: 22,
-          borderRadius: '999px',
-          display: 'grid',
-          placeItems: 'center',
-          background: tone.bg,
-          border: `1px solid ${tone.border}`,
-          color: tone.color,
-        }}
-      >
-        <tone.Icon sx={{ fontSize: 12 }} />
-      </Box>
-      <Box
-        sx={{
-          fontFamily: changeOrderFontMono,
-          fontSize: changeOrderType.size.micro,
-          fontWeight: hold === null ? 600 : 700,
-          color: tone.color,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {tally}
-      </Box>
-    </Box>
-  );
-}
-
-/** One step of the rail: the link into a node, and the node. They wrap together. */
-const RAIL_STEP_SX = { display: 'flex', gap: '10px', alignItems: 'stretch', flex: '0 0 auto' } as const;
-
-/** The Complete node's sign-off line: "Sign-off 1/2" while waiting, "Rejected" when a rejection blocks it. */
-function SignOffLine({ review, notOpen }: { review: StageReviewRail; notOpen: boolean }) {
-  let color: string = changeOrderStatus.warn;
-  let Icon: SvgIconComponent = PersonOutlineOutlinedIcon;
-  let text: React.ReactNode = (
-    <>
-      {reviewCopy.rail.signOff}{' '}
-      {/* No server rows for the viewer: no count (#5788). */}
-      {/* Before Final opens it is "not open yet", not a permission problem. */}
-      {!review.evaluated ? (notOpen ? reviewCopy.rail.finalNotOpen : reviewCopy.rail.notEvaluated) : (
-        <Box component="span" sx={{ fontFamily: changeOrderFontMono, fontWeight: changeOrderType.weight.bold }}>
-          {review.passes}/{review.required}
-        </Box>
-      )}
-    </>
-  );
-  if (review.state === 'rejected') {
-    color = changeOrderStatus.danger;
-    Icon = BlockIcon;
-    text = reviewCopy.rail.rejectedBy(review.rejecterFirstName ?? 'a reviewer');
-  } else if (review.state === 'satisfied') {
-    color = changeOrderStatus.success;
-    Icon = CheckIcon;
-  }
-  return (
-    <Box
-      data-testid="stage-rail-signoff"
-      data-review-state={review.state}
-      sx={{
-        marginTop: '8px',
-        paddingTop: '8px',
-        borderTop: `1px dashed ${changeOrderBorder.default}`,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        fontSize: changeOrderType.size.small,
-        color,
-      }}
-    >
-      <Icon aria-hidden="true" sx={{ fontSize: 12, flex: '0 0 auto' }} />
-      <span>{text}</span>
-    </Box>
-  );
-}
-
-/**
- * The review line at the foot of a rail node: "Review 1/2 on security-review"
- * while held, "Rejected by Tom" when blocked, "Reviewed 2/2" when satisfied,
- * and "Review required, 2 requirements" on a later stage.
- */
-function StageReviewLine({
-  review,
-  hold,
-  isNext,
-}: {
-  review: StageReviewRail;
-  hold: 'held' | 'blocked' | null;
-  isNext: boolean;
-}) {
-  let Icon: SvgIconComponent = PersonOutlineOutlinedIcon;
-  let color: string = changeOrderInk.muted;
-  let text: React.ReactNode = reviewCopy.rail.required(review.requirementCount);
-  const fig = (value: string) => (
-    <Box component="span" sx={{ fontFamily: changeOrderFontMono, fontWeight: changeOrderType.weight.bold }}>
-      {value}
-    </Box>
-  );
-  if (hold === 'held') {
-    color = changeOrderStatus.warn;
-    text = (
-      <>
-        {/* No server rows for the viewer: no count (#5788). */}
-        {review.gateKind === 'release' ? reviewCopy.rail.releaseReview : reviewCopy.rail.review}{' '}
-        {review.evaluated ? fig(`${review.passes}/${review.required}`) : null}
-        {review.primaryName !== undefined ? reviewCopy.rail.reviewOn(review.primaryName) : ''}
-      </>
-    );
-  } else if (hold === 'blocked') {
-    Icon = BlockIcon;
-    color = changeOrderStatus.danger;
-    text = reviewCopy.rail.rejectedBy(review.rejecterFirstName ?? 'a reviewer');
-  } else if (isNext && review.state === 'satisfied') {
-    Icon = CheckIcon;
-    color = changeOrderStatus.success;
-    text = (
-      <>
-        {reviewCopy.rail.reviewed}{' '}
-        {review.evaluated ? fig(`${review.passes}/${review.required}`) : null}
-      </>
-    );
-  }
-  return (
-    <Box
-      data-testid="stage-rail-review"
-      sx={{
-        marginTop: '8px',
-        paddingTop: '8px',
-        borderTop: `1px dashed ${changeOrderBorder.default}`,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        fontSize: changeOrderType.size.small,
-        color,
-      }}
-    >
-      <Icon aria-hidden="true" sx={{ fontSize: 12, flex: '0 0 auto' }} />
-      <span>{text}</span>
-    </Box>
-  );
-}
-
-/**
- * The stage rail.
- *
- * ⚠️ DRAWS NO SPACE-TO-SPACE EDGES. That is a ruling, not an omission, and it
- * is recorded here because there is nowhere else it survives: the
- * left-to-right order of the nodes already states the promotion order, so an
- * arrow from every Space of stage N to every Space of stage N+1 restates it
- * once per pair — on a fan-out stage, a thicket of lines carrying no
- * information the order did not already carry. Anyone adding such edges is
- * re-opening a settled call, not filling a gap.
- *
- * The reference DOES draw something between its nodes: a small `.link`
- * connector between each pair (`StageLink`, above), naming the gate's own
- * requirements and whether it is locked, open or passed. A gate connector is
- * not a Space-to-Space edge, so it is not the thicket the ruling refuses — and
- * it reuses the same gate tally the lane head renders rather than inventing a
- * second count of the same thing.
- *
- * Each node is a real `<button>` with `aria-pressed`, not a styled div —
- * `aria-pressed` and not `aria-expanded`, because selecting a stage rescopes the
- * screen rather than disclosing anything.
- */
-function StageRail({
-  stageStates,
-  stagesDone,
-  selectedStageId,
-  nextStageId,
-  spaceSlug,
-  slug,
-  completeTone,
-  completeAbandoned,
-  completeLabel,
-  completeSelected,
-  finalGates,
-  sourceSummary,
-  reviewRail = {},
-  completeReview,
-  completeNotOpen,
-}: {
-  stageStates: ChangeOrderStageState[];
-  /** The steps the ChangeOrder has passed: stage `i` is passed when `i < stagesDone`. */
-  stagesDone: number;
-  selectedStageId: string | undefined;
-  nextStageId: string | null;
-  spaceSlug: string | undefined;
-  slug: string;
-  /**
-   * How the trailing Complete step reads, or `null` when there is no console
-   * row to read it from — an ungoverned ChangeOrder has no `Final` to draw.
-   */
-  completeTone: CompleteStepTone | null;
-  /**
-   * Whether the `restored` tone means "abandoned where it stood" rather than
-   * "taken back out" — the one thing the tone cannot say for itself.
-   */
-  completeAbandoned: boolean;
-  completeLabel: string;
-  completeSelected: boolean;
-  /** `Final.Prerequisites` over the last stage's own Spaces — the step's checklist. */
-  finalGates: ChangeOrderGate[];
-  /**
-   * What the source node names, where it is not the base the rest of the page is about:
-   * the Spaces a fan-out ChangeOrder's change was made in, or the Invocation an Invoke
-   * ChangeOrder runs. Empty otherwise.
-   */
-  sourceSummary: string;
-  /** The review state of every stage with reviews (`useChangeOrderReviews`). */
-  reviewRail?: Readonly<Record<string, StageReviewRail>>;
-  /** The Final sign-off's review state, for the Complete node. */
-  completeReview?: StageReviewRail;
-  /** The Final sign-off has no rows because Final is not open yet (PromoteResult.Complete false). */
-  completeNotOpen?: boolean;
-}) {
-  const finalTally = tallyGates(finalGates);
-  return (
-    <Box sx={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'stretch' }}>
-      {stageStates.map((state, i) => {
-        /*
-         * Selection is EXCLUSIVE across the whole rail, Complete included. The
-         * page falls back to the next stage when the URL names no real stage,
-         * which is right for a bare `/change-orders/:space/:slug` and wrong the moment
-         * Complete is the thing selected: two ringed nodes say two things are
-         * selected when one is.
-         */
-        const selected = !completeSelected && state.stageId === selectedStageId;
-        const isSource = state.verdict === 'source';
-        /*
-         * A stage's gates hold back only a change that has not entered it yet.
-         * Once every Space of the stage has taken the change — promoted,
-         * released, or since restored — its gates are holding nothing, whatever
-         * they read now.
-         */
-        const entered =
-          state.verdict === 'promoted' ||
-          state.verdict === 'released' ||
-          state.verdict === 'restored' ||
-          state.verdict === 'restore-released';
-        const held =
-          !isSource && !entered && state.spaceCount > 0 && state.gates.length > 0 && !state.gatesOpen;
-        const isNext = state.stageId === nextStageId;
-        const rail = reviewRail[state.stageId];
-        // A release review is for a promoted stage; an entry review only for a stage still ahead.
-        let review: StageReviewRail | undefined;
-        if (rail?.gateKind === 'release') review = state.verdict === 'promoted' ? rail : undefined;
-        else review = isSource || entered || i < stagesDone ? undefined : rail;
-        const dot = railDot(state, isNext, i < stagesDone, review);
-        const hold = reviewHoldTone(state, isNext, review);
-        let stageLabel = state.label;
-        if (hold === 'held') stageLabel = review?.gateKind === 'release' ? reviewCopy.rail.releaseHeld : reviewCopy.rail.held;
-        else if (hold === 'blocked') stageLabel = reviewCopy.rail.rejected;
-        else if (isNext && review?.state === 'satisfied') stageLabel = reviewCopy.rail.ready;
-        return (
-          /* The link and the node it leads into wrap as one step, so a link is
-             never left at the end of a row with its node on the next. */
-          <Box data-testid="stage-rail-step" sx={RAIL_STEP_SX} key={state.stageId}>
-            {/* One `StageLink` per pair, never before the first node — the
-                source has no gate of its own to describe. */}
-            {i > 0 && (
-              <StageLink state={state} isNext={isNext} stagePassed={i < stagesDone} review={review} />
-            )}
-            <Box
-              component={RouterLink}
-              to={changeOrderPath(spaceSlug, slug, state.stageId)}
-              aria-pressed={selected}
-              role="button"
-              sx={{
-                textDecoration: 'none',
-                /*
-                  An anchor with no explicit colour computes the user agent's
-                  default link blue — a value in no palette, contract or product.
-                  Inheriting is not enough: the element itself carries the
-                  computed colour even when every child overrides it.
-                */
-                color: changeOrderInk.default,
-                fontSize: changeOrderType.size.body,
-                minWidth: 150,
-                textAlign: 'left',
-                /*
-                  ONE BORDER WIDTH, PLUS A RING. The contract has no 2px border,
-                  and a selected state that thickens its own edge shifts its
-                  content by a pixel. The inset ring is the contract's own
-                  selection shape (`geometry.shadow`), so selecting a stage
-                  changes colour and nothing else.
-                */
-                border: `${changeOrderShape.borderWidth}px solid ${
-                  selected ? changeOrderStatus.accent : changeOrderBorder.default
-                }`,
-                boxShadow: selected ? changeOrderSelectedRing : 'none',
-                borderRadius: `${changeOrderShape.radius.lg}px`,
-                padding: '10px 12px',
-                background: changeOrderSurface.page,
-                display: 'block',
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Box
-                  aria-hidden="true"
-                  sx={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: '999px',
-                    flex: '0 0 auto',
-                    display: 'grid',
-                    placeItems: 'center',
-                    background: dot.bg,
-                    border: `1px solid ${dot.border}`,
-                    color: dot.color,
-                  }}
-                >
-                  <dot.Icon sx={{ fontSize: 14 }} />
-                </Box>
-                <Box sx={{ fontSize: changeOrderType.size.prose, fontWeight: 600, color: changeOrderInk.default }}>
-                  {stageDisplayName(state.stageId, state.verdict === 'source')}
-                </Box>
-              </Box>
-              {isSource && sourceSummary !== '' ? (
-                <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.default }}>
-                  {sourceSummary}
-                </Box>
-              ) : null}
-              {/* `label` and `progress` are composed by the shared derivation, so
-                  the rail and every other surface say the same thing about a
-                  stage rather than each phrasing it. */}
-              <Box
-                sx={{
-                  fontSize: changeOrderType.size.small,
-                  color: hold === null ? changeOrderInk.muted : dot.color,
-                  fontWeight: hold === null ? undefined : changeOrderType.weight.strong,
-                }}
-              >
-                {stageLabel}
-              </Box>
-              <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.subtle }}>
-                {state.progress}
-                {/*
-                  A closed padlock means HELD, never FAILED. `tallyGates` cannot
-                  tell a gate that was evaluated and failed from one never
-                  evaluated, so any negative framing here would assert an
-                  assessment the data cannot support.
-                */}
-                {held && hold === null ? ' · held' : ''}
-              </Box>
-              {review !== undefined ? <StageReviewLine review={review} hold={hold} isNext={isNext} /> : null}
-            </Box>
-          </Box>
-        );
-      })}
-
-      {/*
-        THE TRAILING NODE: the ChangeWorkflow's `Final` completion checklist.
-
-        Not a ChangeOrder stage, and drawn as its own node precisely because it is
-        not one. Every node to its left is entered by satisfying gates over the
-        stage BEFORE it; this one asks the LAST stage about ITSELF — "has the
-        whole ChangeOrder landed". With no node of its own, an unsatisfied `Final`
-        had nowhere to be seen: the rail ended on a stage that had taken the
-        change, and the checklist still holding the ChangeOrder open was off-screen.
-
-        Nothing follows it, so it offers no Promote and no Release — see
-        `CompleteStepDetail`.
-
-        The connector in front of it is therefore never `isNext`: `StageLink`
-        draws that state as the one gate the sequence would promote INTO next,
-        and nothing is ever entered here. `completeLinkState` supplies the rest
-        — passed once the change has reached this step, closed while a stage is
-        still ahead or the ChangeOrder was taken back out — never an inviting arrow
-        in front of a ChangeOrder nobody can promote.
-      */}
-      {completeTone !== null ? (
-        <Box data-testid="stage-rail-step" sx={RAIL_STEP_SX}>
-          <StageLink state={completeLinkState(completeTone, finalGates, finalTally)} isNext={false} />
-          <Box
-            component={RouterLink}
-            to={changeOrderPath(spaceSlug, slug, COMPLETE_STAGE_ID)}
-            aria-pressed={completeSelected}
-            role="button"
-            data-testid="stage-rail-complete"
-            sx={{
-              textDecoration: 'none',
-              color: changeOrderInk.default,
-              fontSize: changeOrderType.size.body,
-              minWidth: 150,
-              textAlign: 'left',
-              border: `${changeOrderShape.borderWidth}px solid ${
-                completeSelected ? changeOrderStatus.accent : changeOrderBorder.default
-              }`,
-              boxShadow: completeSelected ? changeOrderSelectedRing : 'none',
-              borderRadius: `${changeOrderShape.radius.lg}px`,
-              padding: '10px 12px',
-              background: changeOrderSurface.page,
-              display: 'block',
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {(() => {
-                const dot = completeRailDot(completeTone, completeAbandoned);
-                return (
-                  <Box
-                    aria-hidden="true"
-                    sx={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: '999px',
-                      flex: '0 0 auto',
-                      display: 'grid',
-                      placeItems: 'center',
-                      background: dot.bg,
-                      border: `1px solid ${dot.border}`,
-                      color: dot.color,
-                    }}
-                  >
-                    <dot.Icon sx={{ fontSize: 14 }} />
-                  </Box>
-                );
-              })()}
-              <Box sx={{ fontSize: changeOrderType.size.prose, fontWeight: 600, color: changeOrderInk.default }}>
-                {COMPLETE_STEP_LABEL}
-              </Box>
-            </Box>
-            <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.muted }}>{completeLabel}</Box>
-            <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.subtle }}>
-              {changeOrderCopy.laneGateTally(finalTally.satisfied, finalTally.total)}
-            </Box>
-            {completeReview !== undefined ? <SignOffLine review={completeReview} notOpen={completeNotOpen === true} /> : null}
-          </Box>
-        </Box>
-      ) : null}
-    </Box>
-  );
-}
-
-/**
- * The connector into the Complete step, expressed in the one shape `StageLink`
- * reads.
- *
- * `StageLink` describes the gate INTO the node on its right, and for this node
- * that gate is `Final` — so it carries `Final`'s own gates and tally rather
- * than the last stage's entry gates, which are a different check over a
- * different set of Spaces.
- *
- * ⚠️ THE VERDICT HERE MEANS ARRIVED, NOT VERIFIED. Every other connector on the
- * rail is handed the state of the node to its RIGHT, so a green open padlock
- * says only "the change reached the node past me" — a stage that landed and
- * then went degraded still carries `released` and still draws green, and the
- * gate tally beside it is text that never touches the colour. This connector
- * sits in the same row and must answer the same question, so `released` is
- * carried for every tone that implies the change got here (`gated` is the only
- * tone with a stage still ahead, and `restored` is terminal without ever having
- * landed) and `unknown` for those two. Whether `Final` was actually satisfied is
- * the stronger, separate claim, and the step's own dot is where it is made
- * (`completeRailDot`). Nothing reads this object but `StageLink`.
- */
-function completeLinkState(
-  tone: CompleteStepTone,
-  gates: ChangeOrderGate[],
-  tally: ChangeOrderGateTally,
-): ChangeOrderStageState {
-  return {
-    stageId: COMPLETE_STAGE_ID,
-    verdict: tone === 'gated' || tone === 'restored' ? 'unknown' : 'released',
-    label: '',
-    progress: '',
-    promotedCount: 0,
-    restoredCount: 0,
-    inFlightCount: 0,
-    spaceCount: 0,
-    gates,
-    gateTally: tally,
-    /*
-      Required by `ChangeOrderStageState` and read by nothing on this path, so it is
-      taken from the checklist it carries rather than inferred from the tone — a
-      field nobody reads is the easiest place for a false claim to survive.
-    */
-    gatesOpen: gatesOpen(gates),
-  };
-}
-
-/**
  * The Complete step's own panel: what the ChangeWorkflow's `Final` checklist
  * says, and nothing else.
  *
@@ -1484,6 +611,11 @@ export default function ChangeOrdersPage() {
 
   /** The URL names the Complete step — the same `:stage` segment a real stage uses. */
   const completeSelected = stageParam === COMPLETE_STAGE_ID;
+  /** A rail node's address: the URL is the whole selection state. */
+  const hrefForStage = useCallback(
+    (stageId: string) => changeOrderPath(detail.baseSpaceSlug, detail.slug, stageId),
+    [detail.baseSpaceSlug, detail.slug],
+  );
   const sourceSummary = useMemo(() => {
     if (detail.invocationSource !== undefined) return detail.invocationSource.slug ?? '';
     return (detail.fanOutSource?.spaceIds ?? [])
@@ -2280,38 +1412,82 @@ export default function ChangeOrdersPage() {
    */
   const comparableGroups = useMemo(() => outcome.groups.filter((g) => g.kind !== 'unknown'), [outcome]);
   const unknownGroup = outcome.groups.find((g) => g.kind === 'unknown');
+  const comparableSegments = useMemo(() => outcomeSegments(comparableGroups), [comparableGroups]);
+  const unknownVariants = useMemo(
+    () => (unknownGroup?.spaceIds ?? []).map((spaceId, i) => ({ spaceId, label: unknownGroup?.labels[i] ?? '' })),
+    [unknownGroup],
+  );
   /**
-   * Each outcome card's representative units, split so the resources the
-   * promote rewrites are read first and the ones already holding the value sit
-   * behind one switch below them — the same rule, and the same helper, the "At
-   * the source" list uses.
-   *
-   * Computed for every card at once because a hook cannot run inside the card
-   * loop's `map`. Keyed by the card's own `groupKey` for the same reason its
-   * disclosure state is: several cards render together.
+   * An unknown variant's chip opens that variant on the Components graph,
+   * not this ChangeOrder at it: the reader asked to look at that Space. Plain
+   * when there is no Component to build the link from.
    */
-  const repUnitsByGroupKey = useMemo(() => {
-    const stageId = selectedStage?.stageId ?? '';
-    const byGroupKey = new Map<string, SourceUnitPartition<MergedUnit>>();
-    for (const group of comparableGroups) {
-      const repUnits = cardRepresentativeUnits(
-        changes.units,
-        group.representativeSpaceId,
-        detail.skippedUnits,
+  const unknownVariantHref = useCallback(
+    (spaceId: string) => componentSpaceDeepLink(detail.componentName, spaceId),
+    [detail.componentName],
+  );
+  /**
+   * One resource row of an outcome card, rendered identically above the
+   * blocked block and inside it: the density comes from the card being shut,
+   * not from telling the reader less about any one resource.
+   */
+  const renderRepUnit = useCallback(
+    (unit: MergedUnit, card: OutcomeCardContext) => {
+      const g = changes.groupsByUnitId.get(unit.unitId);
+      /*
+       * The card's Space by its `Variant` label, the name it has inside its
+       * Component; the slug underneath reads as plumbing.
+       */
+      const repVariantLabel = cardSpaceLabel(card.representativeSpaceId, detail.scopedSpaces, changes.spaceNameBySpaceId);
+      const fieldDiffs = g?.fieldDiffs ?? [];
+      return (
+        <Box key={unit.unitId}>
+          <ChangeOrderUnitHeader
+            unitId={unit.unitId}
+            spaceId={unit.spaceId}
+            slug={unit.slug}
+            resourceKind={g?.resourceKind}
+            spaceName={repVariantLabel}
+            written={changes.writtenUnitIds.has(unit.unitId)}
+            undetermined={changes.undeterminedUnitIds.has(unit.unitId)}
+            unchanged={fieldDiffs.length === 0}
+            spaceHref={componentSpaceDeepLink(detail.componentName, unit.spaceId) ?? undefined}
+            // A promotion reaches a stage's resource over the Links from it.
+            linksHref={unitLinksHrefFor(unit, 'from')}
+          />
+          {/*
+            The server's diff, resource by resource, through `ConfigDiffView`, with
+            what the variant keeps drawn as rows in it. Can genuinely be empty: a
+            `same` group's members already hold the value being promoted. That is
+            its own honest answer, said instead of a blank tree.
+          */}
+          <OutcomeUnitDiff
+            unitId={unit.unitId}
+            group={g}
+            columns={diffColumns}
+            fallbackColumnStyle={stableDiffColumnStyle}
+            keyPrefix={`change-order-group-${card.groupKey}`}
+            empty={
+              <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, padding: '4px 12px 10px' }}>
+                No fields differ here.
+              </Box>
+            }
+          />
+        </Box>
       );
-      byGroupKey.set(
-        outcomeGroupKey(stageId, group.kind),
-        partitionSourceUnitsByChange(repUnits, changes.groupsByUnitId),
-      );
-    }
-    return byGroupKey;
-  }, [
-    comparableGroups,
-    selectedStage?.stageId,
-    changes.units,
-    changes.groupsByUnitId,
-    detail.skippedUnits,
-  ]);
+    },
+    [
+      changes.groupsByUnitId,
+      changes.spaceNameBySpaceId,
+      changes.writtenUnitIds,
+      changes.undeterminedUnitIds,
+      detail.componentName,
+      detail.scopedSpaces,
+      unitLinksHrefFor,
+      stableDiffColumnStyle,
+      diffColumns,
+    ],
+  );
 
   return (
     <Box
@@ -3006,85 +2182,15 @@ export default function ChangeOrdersPage() {
                   />
                 </>
               ) : null}
-              {/*
-                ⚠️ THIS IS NOT THE REFERENCE'S "N variants are not in scope"
-                CALLOUT, and building it as though it were would be the fake
-                mapping the reviewer explicitly warned against. The two are
-                different data: `skippedUnits` below names UNITS the change
-                itself declined to touch inside the Spaces it DOES cover
-                (`ChangeOrder.SkippedUnits`, real, wired, rendered as "Passed
-                over"). The reference's callout names whole SPACES excluded
-                from `InScopeSpaceIDs` entirely, each with a categorised
-                reason ("created after scope", "unreachable" — mockup ~line
-                4142). `InScopeSpaceIDs` is a positive list on the wire; there
-                is no field anywhere in the OpenAPI surface naming a Space
-                that was considered and excluded, let alone why. The excluded
-                SET is derivable client-side (every Space of the component
-                minus this list) but the REASON is not, and the reference's
-                whole callout is built around the reason. Rendering the set
-                without it would be guessing at "unreachable" vs. "created
-                after scope" — exactly the invented-data failure this page's
-                own header promises never to do. Left unbuilt; reported as a
-                real gap rather than approximated.
-              */}
-              {Object.keys(detail.skippedUnits).length > 0 ? (() => {
-                const skippedEntries = Object.entries(detail.skippedUnits);
-                return (
-                  <CollapsibleUnitGroup
-                    regionLabel="Resources this change passed over"
-                    label="Passed over"
-                    count={<>{skippedEntries.length} {skippedEntries.length === 1 ? 'resource' : 'resources'}</>}
-                    bodyId="passed-over-list"
-                    expanded={skippedExpanded}
-                    onToggle={() => setSkippedExpanded((prev) => !prev)}
-                    sx={{ marginTop: '14px' }}
-                  >
-                    {/*
-                      NOT AN ERROR, AND NOT WORDED AS ONE. A ChangeOrder over
-                      one changed Unit passes over every other Unit in its
-                      Space — that is the ordinary case, not a failure. The
-                      tone here is neutral for that reason. The server gives
-                      the reason as a code, worded by skippedUnitReasonText.
-                    */}
-                    <Box component="dl" sx={{ margin: 0, fontSize: changeOrderType.size.body }}>
-                      {skippedEntries.map(([unitId, reason]) => {
-                        const skippedSpaceId = changes.spaceIdByUnitId.get(unitId);
-                        const skippedName = changes.slugByUnitId.get(unitId) ?? unitId;
-                        return (
-                          <Box key={unitId} sx={{ display: 'flex', gap: '8px', padding: '2px 0' }}>
-                            <Box
-                              component="dt"
-                              sx={{ margin: 0, color: changeOrderInk.default, fontFamily: 'monospace' }}
-                            >
-                              {/*
-                                The slug, never the unit id. An id is an
-                                internal identity — unique, correct and
-                                meaningless to a reader. It falls back to the
-                                id only when the unit is outside the scope
-                                this screen fetched, where showing something
-                                beats showing nothing. Linked to
-                                `/units/:spaceId/:id` — same destination
-                                every other unit row on this page links to
-                                — only when a Space id was actually
-                                resolved for it; a unit outside scope has
-                                no page to send a reader to.
-                              */}
-                              {skippedSpaceId !== undefined ? (
-                                <FactLink href={`/units/${skippedSpaceId}/${unitId}`}>{skippedName}</FactLink>
-                              ) : (
-                                skippedName
-                              )}
-                            </Box>
-                            <Box component="dd" sx={{ margin: 0, color: changeOrderInk.muted }}>
-                              {skippedUnitReasonText(reason)}
-                            </Box>
-                          </Box>
-                        );
-                      })}
-                    </Box>
-                  </CollapsibleUnitGroup>
-                );
-              })() : null}
+              <PassedOver
+                skippedUnits={detail.skippedUnits}
+                spaceIdByUnitId={changes.spaceIdByUnitId}
+                slugByUnitId={changes.slugByUnitId}
+                fallbackLabel="a resource outside this view"
+                expanded={skippedExpanded}
+                onToggle={() => setSkippedExpanded((prev) => !prev)}
+                sx={{ marginTop: '14px' }}
+              />
 
               {detail.abortedReason !== '' ? (
                 <Box sx={{ fontSize: changeOrderType.size.prose, color: changeOrderInk.muted }}>
@@ -3131,13 +2237,12 @@ export default function ChangeOrdersPage() {
                   : changeOrderCopy.emptyNoStages.title}
               </Box>
             ) : (
-              <StageRail
+              <ChangeOrderStageRail
                 stageStates={detail.stageStates}
                 stagesDone={detail.stagesDone}
                 selectedStageId={selectedStage?.stageId}
                 nextStageId={detail.nextStageId}
-                spaceSlug={detail.baseSpaceSlug}
-                slug={detail.slug}
+                hrefForStage={hrefForStage}
                 completeTone={completeTone}
                 completeAbandoned={completeAbandoned}
                 completeLabel={completeLabel}
@@ -3151,13 +2256,7 @@ export default function ChangeOrdersPage() {
                 }
               />
             )}
-            {detail.sequence.problems.length > 0 ? (
-              <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.muted, marginTop: '10px' }}>
-                {detail.sequence.problems.map((p, i) => (
-                  <Box key={i}>{describeSequenceProblem(p)}</Box>
-                ))}
-              </Box>
-            ) : null}
+            <SequenceProblems problems={detail.sequence.problems} />
           </Box>
 
           {selectedStage ? (
@@ -3264,111 +2363,41 @@ export default function ChangeOrdersPage() {
                  * touched the toggle themselves, in either direction.
                  */
                 const expanded = gateOverride[selectedStage.stageId] ?? gateState !== 'open';
-                const GateStateIcon = gateState === 'open' ? LockOpenOutlinedIcon : LockOutlinedIcon;
-                const gateStateTone =
-                  gateState === 'open'
-                    ? changeOrderStatus.success
-                    : gateState === 'unknown'
-                      ? changeOrderInk.muted
-                      : changeOrderStatus.warn;
                 return (
-                  <>
-                    <Box
-                      component="button"
-                      type="button"
-                      aria-expanded={expanded}
-                      aria-controls={`gate-list-${selectedStage.stageId}`}
-                      onClick={() =>
-                        setGateOverride((prev) => ({ ...prev, [selectedStage.stageId]: !expanded }))
-                      }
-                      sx={{
-                        all: 'unset',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        width: '100%',
-                        boxSizing: 'border-box',
-                        padding: '8px 12px',
-                        borderRadius: `${changeOrderShape.radius.md}px`,
-                        border: `1px solid ${changeOrderBorder.default}`,
-                        background: changeOrderSurface.sunk,
-                        marginBottom: expanded ? '8px' : 0,
-                      }}
-                    >
-                      <GateStateIcon
-                        aria-hidden="true"
-                        sx={{ fontSize: 16, color: gateStateTone, flex: '0 0 auto' }}
-                      />
-                      <Box
-                        sx={{
-                          fontSize: changeOrderType.size.small,
-                          fontWeight: changeOrderType.weight.semibold,
-                          color: changeOrderInk.default,
-                        }}
-                      >
-                        Gates
-                      </Box>
-                      <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.muted }}>
+                  <GateDisclosure
+                    state={gateState}
+                    summary={
+                      <>
                         {tally.satisfied} of {tally.total} satisfied
-                      </Box>
-                      <Box
-                        sx={{
-                          marginLeft: 'auto',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          fontSize: changeOrderType.size.small,
-                          fontWeight: changeOrderType.weight.semibold,
-                          color: changeOrderInk.muted,
-                        }}
-                      >
-                        {expanded ? 'Hide' : 'Show'}
-                        <ExpandMoreIcon
-                          aria-hidden="true"
-                          sx={{
-                            fontSize: 18,
-                            transform: expanded ? 'rotate(180deg)' : 'none',
-                            transition: 'transform .15s ease',
-                          }}
-                        />
-                      </Box>
-                    </Box>
-                    {expanded ? (
-                      <Box
-                        id={`gate-list-${selectedStage.stageId}`}
-                        sx={{
-                          border: `1px solid ${changeOrderBorder.default}`,
-                          borderRadius: `${changeOrderShape.radius.md}px`,
-                          overflow: 'hidden',
-                          marginBottom: '4px',
-                        }}
-                      >
-                        {/*
-                          The rows are this stage's own entry gates, so their review
-                          progress is its own entry gate's, whichever card reviews it.
-                        */}
-                        <ChangeOrderGateList
-                          stageId={selectedStage.stageId}
-                          gates={ownEntrySummary !== undefined ? reviewGatesForList(gates, ownEntrySummary) : gates}
-                          isSource={selectedStage.verdict === 'source'}
-                          extras={
-                            ownEntrySummary === undefined
-                              ? undefined
-                              : ownEntryReviewedOn === undefined
-                                ? reviewGateExtras(gates, ownEntrySummary, () => goToReview('panel', undefined))
-                                : reviewGateExtras(
-                                    gates,
-                                    ownEntrySummary,
-                                    ownEntryFormOn === undefined ? undefined : () => goToReview('review', ownEntryFormOn),
-                                    reviewCopy.stage.reviewIn(reviewSubject(ownEntrySummary).name),
-                                    reviewSubject(ownEntrySummary).name,
-                                  )
-                          }
-                        />
-                      </Box>
-                    ) : null}
-                  </>
+                      </>
+                    }
+                    bodyId={`gate-list-${selectedStage.stageId}`}
+                    expanded={expanded}
+                    onToggle={() => setGateOverride((prev) => ({ ...prev, [selectedStage.stageId]: !expanded }))}
+                  >
+                    {/*
+                      The rows are this stage's own entry gates, so their review
+                      progress is its own entry gate's, whichever card reviews it.
+                    */}
+                    <ChangeOrderGateList
+                      stageId={selectedStage.stageId}
+                      gates={ownEntrySummary !== undefined ? reviewGatesForList(gates, ownEntrySummary) : gates}
+                      isSource={selectedStage.verdict === 'source'}
+                      extras={
+                        ownEntrySummary === undefined
+                          ? undefined
+                          : ownEntryReviewedOn === undefined
+                            ? reviewGateExtras(gates, ownEntrySummary, () => goToReview('panel', undefined))
+                            : reviewGateExtras(
+                                gates,
+                                ownEntrySummary,
+                                ownEntryFormOn === undefined ? undefined : () => goToReview('review', ownEntryFormOn),
+                                reviewCopy.stage.reviewIn(reviewSubject(ownEntrySummary).name),
+                                reviewSubject(ownEntrySummary).name,
+                              )
+                      }
+                    />
+                  </GateDisclosure>
                 );
               })() : null}
               {reviewedStageSelected
@@ -3538,91 +2567,8 @@ export default function ChangeOrdersPage() {
                 >
                   {invocationSourceSelected ? changeOrderCopy.invocationSource.selectedHeading : 'What this promotion writes'}
                 </Box>
-                {/*
-                  Reported, never folded into `same` — but as a plain note,
-                  not a bar segment or a card: "we could not look" is not one
-                  of the ways a promotion can come out, so it does not belong
-                  in the partition that draws how it did.
-
-                  `changeOrderInk.subtle`, not a warning tone — same call `OUTCOME_META`
-                  already makes for this kind ("deliberately NOT a failure
-                  tone and not a reassuring one — it is its own thing").
-                  Boxed and icon-led rather than bare text so it still reads
-                  as a real, considered part of the page rather than an
-                  afterthought bolted above the bar — the same sunk-card
-                  treatment "Gates" and "Passed over" use elsewhere on this
-                  screen, so the vocabulary for "here's a note, not a metric"
-                  stays consistent across the page.
-                */}
                 {unknownGroup !== undefined ? (
-                  <Box
-                    data-testid="outcome-unknown-note"
-                    sx={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '6px',
-                      padding: '8px 12px',
-                      marginBottom: '10px',
-                      borderRadius: `${changeOrderShape.radius.md}px`,
-                      border: `1px solid ${changeOrderBorder.default}`,
-                      background: changeOrderSurface.sunk,
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <HelpOutlineIcon aria-hidden="true" sx={{ fontSize: 16, color: changeOrderInk.subtle, flex: '0 0 auto' }} />
-                      <Box component="span" sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.subtle }}>
-                        <b style={{ color: changeOrderInk.muted }}>{unknownGroup.spaceIds.length}</b>{' '}
-                        {unknownGroup.spaceIds.length === 1 ? 'variant' : 'variants'} could not be
-                        established this round.
-                      </Box>
-                    </Box>
-                    {/*
-                      Named, not just counted — a reader who wants to go look
-                      into why needs to know WHICH variants, not only how many.
-                      Same chip primitive the group cards' own "Members" row
-                      uses, so this reads as the same kind of fact everywhere
-                      on the page it appears — and clickable, into the exact
-                      variant on the Components graph (`componentSpaceDeepLink`)
-                      rather than back into this ChangeOrder: the reader asked to
-                      look at THIS Space, not to resume the ChangeOrder at it.
-                      Falls back to a plain, unlinked chip when
-                      there is no `appName` to build one from, same guard
-                      `componentDeepLink` above uses.
-                    */}
-                    <Box sx={{ display: 'flex', gap: '5px', flexWrap: 'wrap', paddingLeft: '24px' }}>
-                      {unknownGroup.labels.map((label, i) => {
-                        const spaceId = unknownGroup.spaceIds[i];
-                        const href = componentSpaceDeepLink(detail.componentName, spaceId);
-                        return (
-                          <Box
-                            key={spaceId}
-                            component={href !== null ? 'a' : 'span'}
-                            href={href ?? undefined}
-                            target={href !== null ? '_blank' : undefined}
-                            rel={href !== null ? 'noopener noreferrer' : undefined}
-                            data-testid="outcome-unknown-chip"
-                            sx={{
-                              height: 22,
-                              padding: '0 8px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              borderRadius: `${changeOrderShape.radius.pill}px`,
-                              border: `1px solid ${changeOrderBorder.strong}`,
-                              background: changeOrderSurface.card,
-                              fontFamily: changeOrderFontMono,
-                              fontSize: changeOrderType.size.small,
-                              color: changeOrderInk.muted,
-                              whiteSpace: 'nowrap',
-                              textDecoration: href !== null ? 'underline' : 'none',
-                              textDecorationColor: changeOrderBorder.strong,
-                            }}
-                          >
-                            {label}
-                          </Box>
-                        );
-                      })}
-                    </Box>
-                  </Box>
+                  <OutcomeUnknownNote variants={unknownVariants} hrefFor={unknownVariantHref} />
                 ) : null}
                 {invocationSourceSelected ? null : comparableGroups.length < 2 ? (
                   /*
@@ -3647,43 +2593,7 @@ export default function ChangeOrdersPage() {
                     </Box>
                   ) : null
                 ) : (
-                  <Box
-                    role="group"
-                    aria-label={`Outcome across ${outcome.variantCount} variants`}
-                    sx={{ marginBottom: '14px' }}
-                  >
-                    <Box sx={{ display: 'flex', height: 10, borderRadius: `${changeOrderShape.radius.sm}px`, overflow: 'hidden', gap: '2px' }}>
-                      {comparableGroups.map((group) => (
-                        <Box
-                          key={group.kind}
-                          sx={{
-                            flexGrow: group.spaceIds.length,
-                            flexBasis: 0,
-                            background: OUTCOME_META[group.kind].tone,
-                          }}
-                        />
-                      ))}
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginTop: '8px' }}>
-                      {comparableGroups.map((group) => (
-                        <Box key={group.kind} sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted }}>
-                          <Box
-                            component="span"
-                            aria-hidden="true"
-                            sx={{
-                              display: 'inline-block',
-                              width: 8,
-                              height: 8,
-                              borderRadius: `${changeOrderShape.radius.xs}px`,
-                              background: OUTCOME_META[group.kind].tone,
-                              marginRight: '6px',
-                            }}
-                          />
-                          <b style={{ color: changeOrderInk.default }}>{group.spaceIds.length}</b>{' '}
-                          {OUTCOME_META[group.kind].label}
-                        </Box>
-                      ))}
-                    </Box>
+                  <OutcomeBreakdown segments={comparableSegments} variantCount={outcome.variantCount}>
                     {/*
                       A partial stage's counts are a FLOOR, not the stage's
                       total. Presenting one Space's contents as the whole stage
@@ -3722,7 +2632,7 @@ export default function ChangeOrdersPage() {
                         a defect in the grouping, not a state of the ChangeOrder.
                       </Box>
                     ) : null}
-                  </Box>
+                  </OutcomeBreakdown>
                 )}
                 {invocationSourceSelected && detail.invocationSource !== undefined ? (
                   <InvocationSourceDetails source={detail.invocationSource} />
@@ -3758,305 +2668,16 @@ export default function ChangeOrdersPage() {
                    * Keying on the starting point would report a difference in
                    * where they were, not in what the promote does to them.
                    */
-                  comparableGroups.map((group) => {
-                    const members = group.spaceIds.length;
-                    const groupKey = outcomeGroupKey(selectedStage.stageId, group.kind);
-                    /*
-                     * The card's units, already split into the ones this
-                     * promote rewrites and the ones that already hold the
-                     * value — see `repUnitsByGroupKey`, which does the
-                     * skipped-unit filtering and the split together.
-                     */
-                    const { changedUnits: changedRepUnits, blockedUnits: blockedRepUnits } =
-                      repUnitsByGroupKey.get(groupKey) ?? EMPTY_UNIT_PARTITION;
-                    /*
-                     * THE REPRESENTATIVE VARIANT'S CHANGED PATHS — what this
-                     * card LISTS, not what its whole group holds.
-                     *
-                     * The rows below the chip are the representative's, so a
-                     * group-wide total would count rows the reader cannot see.
-                     * And for `differs`, whose members differ from each other by
-                     * definition, no single group-wide figure is true of all of
-                     * them.
-                     *
-                     * Unchanged resources carry no changed path, so summing the
-                     * changed ones is the whole of it.
-                     */
-                    const repFieldCount = changedRepUnits.reduce(
-                      (total, unit) =>
-                        total + (changes.groupsByUnitId.get(unit.unitId)?.fieldDiffs.length ?? 0),
-                      0,
-                    );
-                    /*
-                     * What the rows call this card's Space. The `Variant` label
-                     * is the Space's name inside its Component ("base",
-                     * "nonprod", "prod"); the slug underneath it reads as
-                     * plumbing. Resolved once here rather than per row —
-                     * every row on a card shows the same Space, and the card's
-                     * disclosure names itself by this too so a screen reader
-                     * hears the card under the same name the rows show.
-                     */
-                    const repVariantLabel = cardSpaceLabel(
-                      group.representativeSpaceId,
-                      detail.scopedSpaces,
-                      changes.spaceNameBySpaceId,
-                    );
-                    const groupOpen = groupsExpanded;
-                    const badge = OUTCOME_BADGE[group.kind];
-                    /**
-                     * One unit row, rendered identically whether it sits above
-                     * the disclosure or inside it: the density comes from the
-                     * group being shut, not from telling the reader less about
-                     * any one unit.
-                     */
-                    const renderRepUnit = (unit: MergedUnit) => {
-                      const g = changes.groupsByUnitId.get(unit.unitId);
-                      const fieldDiffs = g?.fieldDiffs ?? [];
-                      return (
-                        <Box key={unit.unitId}>
-                          <ChangeOrderUnitHeader
-                            unitId={unit.unitId}
-                            spaceId={unit.spaceId}
-                            slug={unit.slug}
-                            resourceKind={g?.resourceKind}
-                            spaceName={repVariantLabel}
-                            written={changes.writtenUnitIds.has(unit.unitId)}
-                            undetermined={changes.undeterminedUnitIds.has(unit.unitId)}
-                            unchanged={fieldDiffs.length === 0}
-                            spaceHref={componentSpaceDeepLink(detail.componentName, unit.spaceId) ?? undefined}
-                            // A promotion reaches a stage's resource over the Links from it.
-                            linksHref={unitLinksHrefFor(unit, 'from')}
-                          />
-                          <ChangeOrderRefusals conflicts={rowRefusals(g)} />
-                          {/*
-                            The server's diff, resource by resource,
-                            through `ConfigDiffView` — the Revision
-                            compare drawer's view — so each document of
-                            a Unit is diffed on its own and array
-                            elements are matched by merge key. It is the
-                            whole of what the promotion writes: nothing
-                            here filters it.
-
-                            Can genuinely be empty here — a `same`
-                            group's members already hold the value
-                            being promoted, so their `fieldDiffs`
-                            legitimately has nothing in it. That is
-                            not "Passed over"'s to say (this unit
-                            was not skipped, `repUnitsByGroupKey`
-                            filtered those out) — it is its own
-                            honest answer, said below instead of a
-                            blank tree.
-                          */}
-                          {fieldDiffs.length === 0 ? (
-                            <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, padding: '4px 12px 10px' }}>
-                              No fields differ here.
-                            </Box>
-                          ) : g?.diff !== undefined ? (
-                            <ConfigDiffView diff={g.diff} columns={diffColumns} hideContext />
-                          ) : (
-                            <TreeDiffSection
-                              entry={{ unitId: unit.unitId, fieldDiffs }}
-                              allPaths={g?.allPaths}
-                              keyPrefix={`change-order-group-${groupKey}`}
-                              label=""
-                              hideLabel
-                              variant="data"
-                              columnStyle={stableDiffColumnStyle}
-                              onDividerMouseDown={onDiffDividerMouseDown}
-                              isDragging={isDiffDragging}
-                            />
-                          )}
-                        </Box>
-                      );
-                    };
-                    return (
-                      <Box
-                        key={group.kind}
-                        role="group"
-                        aria-label={`${repFieldCount} changed ${repFieldCount === 1 ? 'field' : 'fields'}, ${OUTCOME_META[group.kind].label}, ${members} ${members === 1 ? 'variant' : 'variants'}`}
-                        sx={{
-                          /*
-                            `.panel`, kind-tinted: the reference borders a
-                            group card in its own outcome colour
-                            (`.panel.k-differs` etc), so a divergent or
-                            unknown group reads as such from its edge alone,
-                            before the label is read.
-                          */
-                          border: `1px solid ${changeOrderKindLine[group.kind]}`,
-                          borderRadius: `${changeOrderCardTokens.radius}px`,
-                          background: changeOrderSurface.card,
-                          marginBottom: '14px',
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <Box
-                          component="button"
-                          type="button"
-                          aria-expanded={groupOpen}
-                          aria-controls={`group-body-${groupKey}`}
-                          onClick={() => setGroupsExpanded((prev) => !prev)}
-                          sx={{
-                            all: 'unset',
-                            boxSizing: 'border-box',
-                            width: '100%',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            flexWrap: 'wrap',
-                            padding: '10px 12px',
-                            background: changeOrderSurface.sunk,
-                            borderBottom: groupOpen ? `1px solid ${changeOrderBorder.default}` : 'none',
-                            '&:hover': { background: changeOrderSurface.inset },
-                          }}
-                        >
-                          {/*
-                            The badge, `.grp-n` in the reference: a count at card
-                            scale, in the kind's own tint, doing the job the small
-                            dot plus a restated "N variants" sentence used to do
-                            together. `OUTCOME_BADGE` reuses `OUTCOME_META`'s own
-                            tones rather than the reference's literal per-kind
-                            colours — `adds`/`unknown` stay neutral grey here for
-                            the same reason `OUTCOME_META.tone` does above: this
-                            page has already ruled that "could not establish" is
-                            not a failure tone, and a bold colour block would
-                            assert exactly the verdict that ruling refuses to make.
-                          */}
-                          {/*
-                            THE NUMERAL CARRIES ITS OWN UNIT. A bare figure takes
-                            its meaning from the words beside it, and beside
-                            "Adds resources" a bare "0" reads as "no resources
-                            added" — which is false, and the reverse of what the
-                            card is reporting. The caption is what stops the
-                            reader having to infer.
-                          */}
-                          <Box
-                            aria-hidden="true"
-                            sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}
-                          >
-                            <Box
-                              data-testid="outcome-group-badge"
-                              sx={{
-                                minWidth: 40,
-                                padding: '4px 9px',
-                                borderRadius: `${changeOrderShape.radius.lg}px`,
-                                background: badge.bg,
-                                color: badge.fg,
-                                fontFamily: changeOrderFontMono,
-                                fontVariantNumeric: 'tabular-nums',
-                                fontSize: changeOrderType.size.cardFigure,
-                                fontWeight: changeOrderType.weight.strong,
-                                letterSpacing: '-.02em',
-                                lineHeight: 1,
-                                textAlign: 'center',
-                              }}
-                            >
-                              {repFieldCount}
-                            </Box>
-                            <Box
-                              data-testid="outcome-group-badge-unit"
-                              sx={{
-                                fontSize: changeOrderType.size.micro,
-                                lineHeight: 1,
-                                color: changeOrderInk.muted,
-                                letterSpacing: '.02em',
-                              }}
-                            >
-                              {repFieldCount === 1 ? 'field' : 'fields'}
-                            </Box>
-                          </Box>
-                          {/*
-                            Label and hint stack, so the hint reads as the
-                            label's own explanation rather than as a second
-                            heading beside it. `minWidth: 0` lets the pair shrink
-                            instead of forcing the row wider than the card, and
-                            `flex: 1 1 auto` keeps "Open" at the far edge until
-                            the row genuinely runs out of width and wraps.
-                          */}
-                          <Box sx={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: '1 1 auto', textAlign: 'left' }}>
-                            <Box
-                              component="h4"
-                              sx={{
-                                fontSize: changeOrderType.size.prose,
-                                lineHeight: changeOrderType.lineHeight.heading,
-                                fontWeight: changeOrderType.weight.semibold,
-                                margin: 0,
-                              }}
-                            >
-                              {OUTCOME_META[group.kind].label}
-                            </Box>
-                            <Box
-                              sx={{
-                                fontSize: changeOrderType.size.small,
-                                lineHeight: changeOrderType.lineHeight.body,
-                                fontWeight: changeOrderType.weight.regular,
-                                color: changeOrderInk.muted,
-                              }}
-                            >
-                              {OUTCOME_META[group.kind].hint}
-                            </Box>
-                          </Box>
-                          <Box
-                            sx={{
-                              marginLeft: 'auto',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              fontSize: changeOrderType.size.small,
-                              fontWeight: changeOrderType.weight.semibold,
-                              color: changeOrderInk.muted,
-                            }}
-                          >
-                            {groupOpen ? 'Hide' : 'Open'}
-                            <ExpandMoreIcon
-                              aria-hidden="true"
-                              sx={{
-                                fontSize: 18,
-                                transform: groupOpen ? 'rotate(180deg)' : 'none',
-                                transition: 'transform .15s ease',
-                              }}
-                            />
-                          </Box>
-                        </Box>
-                        {groupOpen ? (
-                          <Box id={`group-body-${groupKey}`}>
-                            {changedRepUnits.length + blockedRepUnits.length === 0 ? (
-                              <Box sx={{ padding: '4px 0' }}>
-                                <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, padding: '4px 12px 10px' }}>
-                                  {changeOrderCopy.noResourcesYet}
-                                </Box>
-                              </Box>
-                            ) : (
-                              <>
-                                {changedRepUnits.length > 0 ? (
-                                  <Box sx={{ padding: '4px 0' }}>
-                                    {changedRepUnits.map(renderRepUnit)}
-                                  </Box>
-                                ) : null}
-                                {/*
-                                  The resources this promote leaves alone are not
-                                  listed. The card reports what the change does,
-                                  and a resource it does not touch is not that.
-                                  What follows is the exception: a resource the
-                                  change DID try to alter and could not. It has
-                                  no changed paths either, so the two are
-                                  indistinguishable in the diff and could not be
-                                  more different to a reader — which is why it
-                                  sits apart rather than among the rows.
-                                */}
-                                <Box sx={{ padding: '0 12px' }}>
-                                  <ChangeOrderBlockedResources
-                                    units={blockedRepUnits}
-                                    renderUnit={renderRepUnit}
-                                  />
-                                </Box>
-                              </>
-                            )}
-                          </Box>
-                        ) : null}
-                      </Box>
-                    );
-                  })
+                  <OutcomeGroupCards
+                    stageId={selectedStage.stageId}
+                    groups={comparableGroups}
+                    units={changes.units}
+                    groupsByUnitId={changes.groupsByUnitId}
+                    skippedUnits={detail.skippedUnits}
+                    expanded={groupsExpanded}
+                    onToggle={() => setGroupsExpanded((prev) => !prev)}
+                    renderUnit={renderRepUnit}
+                  />
                 )}
               </Box>
               </Box>

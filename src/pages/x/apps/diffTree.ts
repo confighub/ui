@@ -64,6 +64,31 @@ export interface DiffTreeNode {
    * row (composer targeting, menu actions, React keys) rather than composing a path.
    */
   document?: DocumentIdentity;
+  /**
+   * Set on a leaf whose value the change would have written and the target kept:
+   * its `diff` holds the kept value on both sides, and the row says why it stayed.
+   */
+  kept?: KeptValue;
+}
+
+/**
+ * A value a merge left as it was, and why: a path kept on merge (protected), or
+ * a local override the merge did not take over. Drawn as a row of the resource's
+ * diff, so it reads beside the paths that did change.
+ */
+export interface KeptValue {
+  /** The resource it belongs to, as a diff's `Resource.ResourceName` names it. Absent: the only resource. */
+  resourceName?: string;
+  /** The server's path, `?key=value;@n` segments included. Shown whole on demand. */
+  path: string;
+  /** The value the target keeps. */
+  value: string;
+  /** What the change would have written there, when the server said. */
+  incoming?: string;
+  /** Why it stayed, in a few words: "kept on merge", "local override". */
+  label: string;
+  /** The ink for the marker. Defaults to the theme's attention tone. */
+  tone?: string;
 }
 
 /** The targeting identity + write scope of one source document's wrapper node. */

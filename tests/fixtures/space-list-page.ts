@@ -45,6 +45,7 @@ export class SpaceListPage extends EntityGridFixture {
   }
 
   async goToSpaceDetailPageByName(displayName: string) {
+    // A Space's name opens its settings drawer, which links to the Space's page.
     // Use a more flexible selector to handle HighlightedCell wrapping
     // First try exact match
     const exactLink = this.page.getByRole('link', { name: displayName });
@@ -57,6 +58,8 @@ export class SpaceListPage extends EntityGridFixture {
       const link = this.page.locator('a').filter({ hasText: displayName }).first();
       await link.click();
     }
+
+    await this.page.getByTestId('space-settings-drawer').getByTestId('open-full-details-link').click();
 
     // Wait for navigation to the space detail page (/spaces/:id)
     await this.page.waitForURL(/\/spaces\/[^/]+/);

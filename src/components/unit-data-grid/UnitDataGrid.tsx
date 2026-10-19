@@ -75,6 +75,8 @@ export interface UnitDataGridProps {
   initialColumnVisibility?: Record<string, boolean>;
   /** When true, unit name links open in a new browser tab */
   openLinksInNewTab?: boolean;
+  /** Where a unit's name links. Defaults to the unit's page. */
+  slugLinkTo?: (row: UnitRowItem) => string;
   /** Optional Kyverno policy check results — adds a "Result" column when provided.
    *  Pass `null` to reserve the column space before results load (avoids layout jump).
    *  Pass `undefined` (or omit) to hide the column entirely. */
@@ -108,6 +110,7 @@ export const UnitDataGrid = ({
   noRowsOverlay,
   initialColumnVisibility,
   openLinksInNewTab = false,
+  slugLinkTo,
   checkResults,
   hideCheckboxes = false,
   defaultSort,
@@ -177,7 +180,7 @@ export const UnitDataGrid = ({
     createLabelColumn,
     createValueColumn,
     createColumnsWithGrouping,
-  } = useLabelColumnManager(rows, openLinksInNewTab, allowedLabelColumns);
+  } = useLabelColumnManager(rows, openLinksInNewTab, allowedLabelColumns, slugLinkTo);
 
   // Whether the Result column should be shown (present when prop is explicitly passed, even as null)
   const showResultColumn = checkResults !== undefined;
@@ -310,7 +313,7 @@ export const UnitDataGrid = ({
     }
 
     return aggregatedColumns;
-  }, [availableLabelKeys, availableValueKeys, createLabelColumn, createValueColumn, rows, testResultColumn]);
+  }, [availableLabelKeys, availableValueKeys, createLabelColumn, createValueColumn, rows, testResultColumn, slugLinkTo]);
 
   // Track which dynamic columns have been initialized in this mount cycle (resets on unmount)
   const [initializedDynamicColumns, setInitializedDynamicColumns] = useState<Set<string>>(

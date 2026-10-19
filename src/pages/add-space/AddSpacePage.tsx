@@ -3,16 +3,12 @@
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 
-import {
-  AddLabelModal,
-  IAddLabelInput,
-  PropertyType,
-} from '@/components/forms/add-label-modal/AddLabelModal';
-import { LabelsAccordion } from '@/components/labels/LabelsAccordion';
+import { MapFieldSection } from '@/components/map-field-editor/MapFieldSection';
+import { type MapRow, rowsToMap } from '@/components/map-field-editor/map-rows';
 import { ServerErrorBox } from '@/components/styled';
 import { FullScreenDialog } from '@/components/styled';
 import { useAnalytics } from '@/hooks/useAnalytics';
-import { Space, useCreateSpaceMutation } from '@confighub/rtk-query';
+import { useCreateSpaceMutation } from '@confighub/rtk-query';
 import { ENTITY_TYPES } from '@/utility/analytics-constants';
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
 import CloseIcon from '@mui/icons-material/Close';
@@ -31,27 +27,29 @@ const Container = styled('form')`
   margin-top: 10px;
 `;
 
+interface AddSpaceFormData {
+  Slug: string;
+  Labels: MapRow[];
+  Annotations: MapRow[];
+}
+
 export const AddSpacePage = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
   const {
     control,
     handleSubmit,
     formState: { errors },
-    watch,
-    setValue,
     reset,
-  } = useForm<Space>({
+  } = useForm<AddSpaceFormData>({
     defaultValues: {
       Slug: '',
-      Labels: {},
-      Annotations: {},
+      Labels: [],
+      Annotations: [],
     },
   });
 
   const [createSpace, { isLoading, isSuccess, error, data }] = useCreateSpaceMutation();
   const { trackEntityCreated } = useAnalytics();
   const [serverError, setServerError] = useState<string>('');
-  const [isAddLabelModalOpen, setIsAddLabelModalOpen] = useState(false);
-  const [isAddAnnotationModalOpen, setIsAddAnnotationModalOpen] = useState(false);
 
   useEffect(() => {
     if (isSuccess && data) {
@@ -68,55 +66,17 @@ export const AddSpacePage = ({ open, onClose }: { open: boolean; onClose: () => 
     }
   }, [isSuccess, reset, error, data, trackEntityCreated]);
 
-  const onLabelAdded = (label: IAddLabelInput, type = 'Labels' as PropertyType) => {
-    // @ts-expect-error TODO:
-    setValue(type, { ...watch(type), [label.key]: label.value });
-  };
-
-  const onLabelDeleted = (label: IAddLabelInput, type = 'Labels' as PropertyType) => {
-    // @ts-expect-error TODO:
-    const labels = watch(type);
-    if (labels) {
-      // @ts-expect-error TODO:
-      delete labels[label.key];
-      // @ts-expect-error TODO:
-      setValue(type, labels);
-    }
-  };
-
-  const onAnnotationAdded = (
-    annotation: IAddLabelInput,
-    type = 'annotations' as PropertyType,
-  ) => {
-    // @ts-expect-error TODO:
-    setValue(type, { ...watch(type), [annotation.key]: annotation.value });
-  };
-
-  const onAnnotationDeleted = (
-    annotation: IAddLabelInput,
-    type = 'annotations' as PropertyType,
-  ) => {
-    // @ts-expect-error TODO:
-    const annotations = watch(type);
-    if (annotations) {
-      // @ts-expect-error TODO:
-      delete annotations[annotation.key];
-      // @ts-expect-error TODO:
-      setValue(type, annotations);
-    }
-  };
-
   const handleClose = () => {
     reset();
     onClose();
   };
 
-  const onSubmit = (data: Space) => {
+  const onSubmit = (data: AddSpaceFormData) => {
     const body = {
       space: {
         Slug: data.Slug,
-        Labels: { ...data.Labels },
-        Annotations: { ...data.Annotations },
+        Labels: rowsToMap(data.Labels),
+        Annotations: rowsToMap(data.Annotations),
       },
     };
 
@@ -187,18 +147,24 @@ export const AddSpacePage = ({ open, onClose }: { open: boolean; onClose: () => 
               />
             </Grid>
             <Grid size={{ xs: 12 }}>
-              <LabelsAccordion
-                onLabelAddClicked={() => setIsAddLabelModalOpen(true)}
-                onLabelDeleted={onLabelDeleted}
-                labels={watch('Labels') || {}}
+              <MapFieldSection
+                control={control}
+                name='Labels'
+                title='Labels'
+                itemLabel='label'
+                validation='label'
+                keyPlaceholder='Environment'
+                valuePlaceholder='production'
+                testId='add-space-labels'
               />
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <LabelsAccordion
-                onLabelAddClicked={() => setIsAddAnnotationModalOpen(true)}
-                onLabelDeleted={onAnnotationDeleted}
-                type='Annotations'
-                labels={watch('Annotations') || {}}
+              <MapFieldSection
+                control={control}
+                name='Annotations'
+                title='Annotations'
+                itemLabel='annotation'
+                validation='annotation'
+                multilineValues
+                testId='add-space-annotations'
               />
             </Grid>
             <Grid size={{ xs: 12 }}>
@@ -213,17 +179,6 @@ export const AddSpacePage = ({ open, onClose }: { open: boolean; onClose: () => 
             </Grid>
           </Grid>
         </Container>
-        <AddLabelModal
-          isAddModalOpen={isAddLabelModalOpen}
-          onAddModalClosed={() => setIsAddLabelModalOpen(false)}
-          onLabelAdded={onLabelAdded}
-        />
-        <AddLabelModal
-          isAddModalOpen={isAddAnnotationModalOpen}
-          onAddModalClosed={() => setIsAddAnnotationModalOpen(false)}
-          onLabelAdded={onAnnotationAdded}
-          type='Annotations'
-        />
       </DialogContent>
     </FullScreenDialog>
   );

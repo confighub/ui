@@ -39,6 +39,8 @@ import { ModalType } from './rules';
 import { ConfigTab } from './tabs/ConfigTab';
 import { MutationsTab } from './tabs/MutationsTab';
 import { ResourcesTab } from './tabs/ResourcesTab';
+import { UnitSettingsForm } from './components/unit-settings/UnitSettingsForm';
+import { UNIT_DETAIL_TAB } from './unitDetailHrefs';
 import { useRevisionDataMap } from '@/hooks/useUnitData';
 
 const Container = styled('div')`
@@ -431,6 +433,7 @@ export const UnitDetailPage = () => {
                 `Links (${links?.length || 0})`,
                 `Mutations (${currentUnit?.HeadMutationNum || 0})`,
                 'Resources',
+                'Settings',
               ]}
               onTabSelected={onTabSelected}
               defaultValue={selectedTab}
@@ -493,6 +496,15 @@ export const UnitDetailPage = () => {
           onTabSelected={onTabSelected}
         />
         <ResourcesTab key={currentUnit.UnitID} unit={currentUnit} selectedTab={selectedTab} />
+        <Section $display={selectedTab === UNIT_DETAIL_TAB.settings} $direction={Direction.FadeIn}>
+          {currentUnitExtended?.Unit && (
+            <UnitSettingsForm
+              extendedUnit={polledUnit ?? currentUnitExtended}
+              upstreamUnit={upstreamUnit}
+              onUnitUpdated={() => setRefresh(!refresh)}
+            />
+          )}
+        </Section>
         <UnitDetailModalComposer {...composerModalProps} />
         <DiffDrawer
           isDiffDrawerOpen={showDiffOnUpgradeDrawer}

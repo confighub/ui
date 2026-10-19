@@ -106,7 +106,7 @@ test.describe('ChangeSet page', () => {
     const hero = summary.getByTestId('change-set-image-hero-row');
     await expect(hero).toHaveCount(1, { timeout: 30000 });
     await expect(hero).toContainText('web');
-    await expect(hero).toContainText('In 1 Unit');
+    await expect(hero).toContainText('In 1 resource');
     await expect(hero).not.toContainText('at the source');
     const fullDiff = summary.getByTestId('change-set-full-diff');
     await expect(fullDiff).toContainText('Full diff');

@@ -219,6 +219,9 @@ interface SectionCardProps {
   children: React.ReactNode;
   badge?: string | number;
   action?: React.ReactNode;
+  /** Lets the header fold the card's contents away. The card starts expanded. */
+  collapsible?: boolean;
+  testId?: string;
 }
 
 export const SectionCard: React.FC<SectionCardProps> = ({
@@ -226,9 +229,14 @@ export const SectionCard: React.FC<SectionCardProps> = ({
   children,
   badge,
   action,
+  collapsible = false,
+  testId,
 }) => {
+  const [expanded, setExpanded] = useState(true);
+
   return (
     <Box
+      data-testid={testId}
       sx={{
         backgroundColor: 'background.paper',
         border: '1px solid',
@@ -242,31 +250,47 @@ export const SectionCard: React.FC<SectionCardProps> = ({
         sx={{
           px: 2,
           py: 1,
-          borderBottom: '1px solid',
+          borderBottom: expanded ? '1px solid' : 'none',
           borderColor: 'divider',
           backgroundColor: 'grey.50',
         }}
       >
         <Stack direction='row' width='100%' alignItems='center' justifyContent='space-between'>
-          <Typography variant='caption' fontWeight={600} color='text.secondary'>
-            {title.toUpperCase()}
-            {badge !== undefined && (
-              <Chip
-                label={badge}
+          <Stack direction='row' alignItems='center'>
+            {collapsible && (
+              <IconButton
                 size='small'
-                sx={{
-                  ml: 1,
-                  height: '16px',
-                  fontSize: '0.65rem',
-                  backgroundColor: 'grey.300',
-                }}
-              />
+                aria-label={`${expanded ? 'Collapse' : 'Expand'} ${title}`}
+                aria-expanded={expanded}
+                onClick={() => setExpanded(!expanded)}
+                sx={{ ml: -1, mr: 0.5, p: 0.25 }}
+              >
+                <ChevronRightIcon
+                  fontSize='small'
+                  sx={{ transition: 'transform 0.15s', transform: expanded ? 'rotate(90deg)' : 'none' }}
+                />
+              </IconButton>
             )}
-          </Typography>
+            <Typography variant='caption' fontWeight={600} color='text.secondary'>
+              {title.toUpperCase()}
+              {badge !== undefined && (
+                <Chip
+                  label={badge}
+                  size='small'
+                  sx={{
+                    ml: 1,
+                    height: '16px',
+                    fontSize: '0.65rem',
+                    backgroundColor: 'grey.300',
+                  }}
+                />
+              )}
+            </Typography>
+          </Stack>
           {action}
         </Stack>
       </Box>
-      <Box sx={{ p: 2 }}>{children}</Box>
+      {expanded && <Box sx={{ p: 2 }}>{children}</Box>}
     </Box>
   );
 };

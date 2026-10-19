@@ -19,6 +19,7 @@ const FunctionBrowserPage = lazy(() => import('./pages/function-browser/Function
 const ChangeReviewPage = lazy(() => import('./pages/change-review/ChangeReviewPage'));
 const AppsComponentPage = lazy(() => import('./pages/x/apps/AppsComponentPage'));
 const ChangeOrdersPage = lazy(() => import('./pages/change-orders/ChangeOrdersPage'));
+const ChangeOrderDraftPage = lazy(() => import('./pages/change-orders/draft/ChangeOrderDraftPage'));
 const ReleasesPage = lazy(() => import('./pages/releases/ReleasesPage'));
 const ChangeOrdersOldRouteRedirect = lazy(() => import('./pages/change-orders/OldRouteRedirect'));
 const ChangeSetsPage = lazy(() => import('./pages/change-sets/ChangeSetsPage'));
@@ -145,6 +146,15 @@ const routes = [
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <AppsComponentPage />
+          </Suspense>
+        ),
+      },
+      {
+        // A static segment, so it ranks above the optional ones below: the draft of a new ChangeOrder.
+        path: '/change-orders/new',
+        element: (
+          <Suspense fallback={<Loader isLoading={true} />}>
+            <ChangeOrderDraftPage />
           </Suspense>
         ),
       },

@@ -160,6 +160,30 @@ The font is **Manrope** (`--font-sans`). Never hardcode a font family — use `t
 
 Input height: 34px. Focused border becomes rust. Error border becomes red.
 
+### Map Fields (Labels, Annotations, Facts, Gates)
+
+An entity's map fields are edited with `MapFieldSection`
+(`src/components/map-field-editor/`): a collapsible section card, expanded by default, with the
+entry count and one row of Key and Value fields per entry, a remove button on each row and
+**Add …** below. Gates set `keysOnly`. Values wrap instead of being cut off.
+
+```tsx
+const { control } = useForm<{ Labels: MapRow[] }>({
+  defaultValues: { Labels: mapToRows(entity.Labels) },
+});
+<MapFieldSection control={control} name='Labels' title='Labels'
+  itemLabel='label' validation='label' testId='space-labels' />
+// on submit: Labels: rowsToMap(data.Labels), DeleteGates: rowsToGates(data.DeleteGates)
+```
+
+The rows are form state, so an entry is changed in place and a typed row is saved with the form;
+a row with a value and no key, a duplicate key, or (with `validation`) a key or value the server
+would refuse stops Save. A blank row is dropped.
+
+A list page edits one of its entities in a `SettingsDrawer` (`src/components/settings-drawer/`)
+that holds the same settings form as the entity page's Settings tab, with a
+`FullDetailsLink` to that page beside Save. The entity's name in the list opens the drawer.
+
 ### Chips / Status Badges
 
 Use the MUI `color` prop — it maps to the semantic palette automatically:
@@ -421,3 +445,4 @@ Theme adds a 3px colored left border and semantic background tint. Use `standard
 | Hardcoded `boxShadow` strings | Use `tokens.shMd` (in ThemeProvider) or `elevation` prop |
 | Custom `borderRadius` numbers | Use `theme.shape.borderRadius` (rSm) or `tokens.rMd` |
 | Nested ternaries in JSX | Early return `null` for conditional rendering |
+| Chips for editable Labels, Annotations, Facts or gates | `MapFieldSection` rows |

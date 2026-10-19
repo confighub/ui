@@ -20,6 +20,9 @@ import {
   buildConfigDiffTree,
   ORDER_LEAF_KEY,
   segmentLabel,
+  serverPathContainer,
+  serverPathField,
+  serverPathLabels,
   resourceDiffLabel,
   summarizeConfigDiff,
 } from '../src/components/config-diff/configDiffTree';
@@ -271,5 +274,51 @@ test.describe('config diff tree', () => {
     expect(resourceDiffLabel({ ResourceType: 'apps/v1/Deployment', ResourceName: 'app/web' })).toBe('apps/v1/Deployment app/web');
     expect(resourceDiffLabel({ ResourceType: 'NoSchema', ResourceName: 'NoName' })).toBe('');
     expect(resourceDiffLabel({ ResourceType: 'NoSchema', ResourceName: 'policy' })).toBe('policy');
+  });
+});
+
+test.describe('values a merge kept', () => {
+  test('a server path reads as the labels the diff gives its segments', () => {
+    expect(serverPathLabels('spec.template.spec.containers.?name=api;@0.resources.limits.memory')).toEqual([
+      'spec', 'template', 'spec', 'containers', '?name=api', 'resources', 'limits', 'memory',
+    ]);
+    // A merge key's value can hold a dot; it runs to the position, and its dots are escaped as the diff's are.
+    expect(serverPathLabels('items.?name=my.app;@2.value')).toEqual(['items', '?name=my~1app', 'value']);
+    expect(serverPathLabels('data.RETRY_LIMIT')).toEqual(['data', 'RETRY_LIMIT']);
+  });
+
+  test('a kept value is a leaf beside the changes under the same folders', () => {
+    const kept = {
+      path: `${CONTAINER_PATH.replace('?name=web', '?name=web;@0')}.resources.limits.memory`,
+      value: '1Gi',
+      incoming: '768Mi',
+      label: 'kept on merge',
+    };
+    const leaves = leafPaths(buildConfigDiffTree(ENV_CHANGES.slice(0, 1), [kept]));
+    expect(leaves.map((leaf) => leaf.path)).toEqual([
+      `${CONTAINER_PATH}.image`,
+      `${CONTAINER_PATH}.resources.limits.memory`,
+    ]);
+    const memory = leaves[1].node;
+    expect(memory.kept).toEqual(kept);
+    expect(memory.diff).toEqual({ oldValue: '1Gi', newValue: '1Gi' });
+  });
+
+  test('no kept values builds the same tree as before', () => {
+    expect(buildConfigDiffTree(ENV_CHANGES, [])).toEqual(buildConfigDiffTree(ENV_CHANGES));
+  });
+});
+
+test.describe('reading a server path', () => {
+  test('its last field, past any merge-keyed element', () => {
+    expect(serverPathField('spec.template.spec.containers.?name=api;@0.resources.limits.memory')).toBe('memory');
+    expect(serverPathField('spec.env.?name=FOO;@3')).toBe('env');
+    expect(serverPathField('data.RETRY_LIMIT')).toBe('RETRY_LIMIT');
+  });
+
+  test('the container it runs through, by name, dots and all', () => {
+    expect(serverPathContainer('spec.template.spec.initContainers.?name=migrate;@0.image')).toBe('migrate');
+    expect(serverPathContainer('spec.template.spec.containers.?name=my.app;@1.image')).toBe('my.app');
+    expect(serverPathContainer('data.RETRY_LIMIT')).toBeUndefined();
   });
 });

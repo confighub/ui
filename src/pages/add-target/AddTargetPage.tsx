@@ -4,14 +4,14 @@ import { useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 
 import { ErrorBox } from '@/components/error-box/ErrorBox';
+import { MapFieldSection } from '@/components/map-field-editor/MapFieldSection';
+import { type MapRow, rowsToMap } from '@/components/map-field-editor/map-rows';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
-import { useKeyValueHandlers } from '@/hooks/useKeyValueHandlers';
 import {
   BridgeWorkerRead,
   CreateTargetApiArg,
   SpaceRead,
-  Target,
   TargetRead,
   useCreateTargetMutation,
   useListBridgeWorkersQuery,
@@ -38,14 +38,21 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
 
-import { AddLabelModal } from '../../components/forms/add-label-modal/AddLabelModal';
-import { LabelsAccordion } from '../../components/labels/LabelsAccordion';
 import { FullScreenDialog } from '../../components/styled';
 
 const Container = styled('form')`
   width: 70%;
   margin-top: 10px;
 `;
+
+interface AddTargetFormData {
+  Slug: string;
+  SpaceID: string;
+  Labels: MapRow[];
+  Annotations: MapRow[];
+}
+
+const emptyForm: AddTargetFormData = { Slug: '', SpaceID: '', Labels: [], Annotations: [] };
 
 export interface IAddTargetPageProps {
   open: boolean;
@@ -54,8 +61,6 @@ export interface IAddTargetPageProps {
 }
 
 export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPageProps) => {
-  const [isAddLabelModalOpen, setIsAddLabelModalOpen] = useState(false);
-  const [isAddAnnotationsModalOpen, setIsAddAnnotationsModalOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   const [createTarget, { isSuccess, error, data: createResponse }] = useCreateTargetMutation();
@@ -81,18 +86,10 @@ export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPagePr
     handleSubmit,
     formState: { errors },
     watch,
-    setValue,
     reset,
-  } = useForm<Target>({
-    defaultValues: {
-      Slug: '',
-      SpaceID: '',
-      Labels: {},
-      Annotations: {},
-    },
+  } = useForm<AddTargetFormData>({
+    defaultValues: emptyForm,
   });
-
-  const { labelHandlers, annotationHandlers } = useKeyValueHandlers(setValue, watch);
 
   const watchedSpaceId = watch('SpaceID');
   const [accessWorkerId, setAccessWorkerId] = useState('');
@@ -117,14 +114,14 @@ export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPagePr
     [bridgeWorkers, accessWorkerId],
   );
 
-  const onSubmit = async (data: Target) => {
+  const onSubmit = async (data: AddTargetFormData) => {
     const space = spaces?.find((space) => space.SpaceID === data.SpaceID) || ({} as SpaceRead);
 
     const input = {
       spaceId: data.SpaceID,
       target: {
-        Labels: data.Labels,
-        Annotations: data.Annotations,
+        Labels: rowsToMap(data.Labels),
+        Annotations: rowsToMap(data.Annotations),
         Slug: data.Slug,
         SpaceID: data.SpaceID,
         OrganizationID: space.OrganizationID || '',
@@ -136,12 +133,7 @@ export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPagePr
   };
 
   const handleClose = () => {
-    reset({
-      Slug: '',
-      SpaceID: '',
-      Labels: {},
-      Annotations: {},
-    });
+    reset(emptyForm);
     setAccessWorkerId('');
     setErrorMessage('');
     onClose();
@@ -253,20 +245,24 @@ export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPagePr
               </FormControl>
             </Grid>
             <Grid size={{ xs: 12 }}>
-              <LabelsAccordion
-                onLabelAddClicked={() => setIsAddLabelModalOpen(true)}
-                onLabelDeleted={labelHandlers.onDeleted}
-                labels={watch('Labels') || {}}
-                variant='outlined'
+              <MapFieldSection
+                control={control}
+                name='Labels'
+                title='Labels'
+                itemLabel='label'
+                validation='label'
+                keyPlaceholder='Environment'
+                valuePlaceholder='production'
+                testId='add-target-labels'
               />
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <LabelsAccordion
-                onLabelAddClicked={() => setIsAddAnnotationsModalOpen(true)}
-                onLabelDeleted={annotationHandlers.onDeleted}
-                labels={watch('Annotations') || {}}
-                type='Annotations'
-                variant={'outlined'}
+              <MapFieldSection
+                control={control}
+                name='Annotations'
+                title='Annotations'
+                itemLabel='annotation'
+                validation='annotation'
+                multilineValues
+                testId='add-target-annotations'
               />
             </Grid>
             <Grid size={{ xs: 12 }}>
@@ -276,16 +272,6 @@ export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPagePr
             </Grid>
           </Grid>
         </Container>
-        <AddLabelModal
-          isAddModalOpen={isAddLabelModalOpen}
-          onAddModalClosed={() => setIsAddLabelModalOpen(false)}
-          onLabelAdded={labelHandlers.onAdded}
-        />
-        <AddLabelModal
-          isAddModalOpen={isAddAnnotationsModalOpen}
-          onAddModalClosed={() => setIsAddAnnotationsModalOpen(false)}
-          onLabelAdded={annotationHandlers.onAdded}
-        />
       </DialogContent>
     </FullScreenDialog>
   );

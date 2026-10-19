@@ -53,6 +53,10 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 
 import { AddUnitModal } from '../add-unit/AddUnitModal';
 import { SpaceDashboard } from './components/space-dashboard/SpaceDashboard';
+import {
+  SPACE_SETTINGS_INCLUDE,
+  SpaceSettingsForm,
+} from './components/space-settings/SpaceSettingsForm';
 import { TriggersTable } from './components/triggers-table/TriggersTable';
 import { useModalStates } from './hooks/useModalStates';
 
@@ -71,17 +75,15 @@ export interface ISpaceSettingsUpdateInput {
 }
 
 // Constants
-const TABS = ['Overview', 'Triggers'];
+const TABS = ['Overview', 'Triggers', 'Settings'];
 const DEFAULT_TAB = '0';
 const TRIGGERS_TAB = 1;
+const SETTINGS_TAB = 2;
 
 // The Triggers tab lists either the Triggers that reside in the Space or those that apply to its
 // Units, which the Space selects from any Space.
 const TRIGGER_VIEW_PARAM = 'triggers';
 type TriggerView = 'space' | 'applied';
-
-// The entities the settings panel names, and the summary counts the Overview shows.
-const SPACE_INCLUDE = 'ComponentID,ReleaseTargetID,TriggerFilterID,TriggerIDs,AttributeFilterID';
 
 const andWhere = (base: string, extra: string) => (extra ? `${base} AND ${extra}` : base);
 
@@ -126,7 +128,7 @@ export const SpaceDetailPage = () => {
   const { data, isLoading: isSpaceLoading, refetch: refetchSpace } = useGetSpaceQuery({
     spaceId: id,
     summary: true,
-    include: SPACE_INCLUDE,
+    include: SPACE_SETTINGS_INCLUDE,
   });
   const space = data?.Space;
 
@@ -403,10 +405,20 @@ export const SpaceDetailPage = () => {
             <SpaceDashboard
               extendedSpace={data}
               isLoading={isSpaceLoading}
-              setServerError={formatError}
-              onSpaceUpdated={() => refetchSpace()}
               onShowAppliedTriggers={() => setTriggerView('applied')}
             />
+          )}
+        </Section>
+        <Section $display={selectedTab === SETTINGS_TAB} $direction={Direction.FadeIn}>
+          {data?.Space && (
+            <Box sx={{ p: 2 }}>
+              <SpaceSettingsForm
+                extendedSpace={data}
+                setServerError={formatError}
+                onSpaceUpdated={() => refetchSpace()}
+                onShowAppliedTriggers={() => setTriggerView('applied')}
+              />
+            </Box>
           )}
         </Section>
         <Section $display={isTriggersTab} $direction={Direction.FadeIn}>

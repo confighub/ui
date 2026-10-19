@@ -34,9 +34,11 @@ import { useAnalytics } from '@/hooks/useAnalytics';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
 import { useAppDispatch } from '@/hooks/useApp';
 import { useBulkApiErrorMessage } from '@/hooks/useBulkApiErrorMessages';
+import { useEditDrawerUrl } from '@/hooks/useEditDrawerUrl';
 import { usePolling } from '@/hooks/usePolling';
 import { ENTITY_TYPES } from '@/utility/analytics-constants';
 import { AddTargetDrawer } from '@/pages/target-list/components/add-target-drawer/AddTargetDrawer';
+import { UnitSettingsDrawer } from '@/pages/unit-list/components/unit-settings-drawer/UnitSettingsDrawer';
 import {
   type ExtendedViewRead,
   ExtendedUnitRead,
@@ -152,6 +154,8 @@ export const UnitListPage = () => {
   };
   const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(hasUrlFilters);
   const [isTargetDrawerOpen, setIsTargetDrawerOpen] = useState(false);
+  // A Unit's name opens its settings drawer, which links to the Unit's page.
+  const { editEntityId, closeEditDrawer, getEditUrl } = useEditDrawerUrl();
   const [existingTarget, setExistingTarget] = useState<TargetRead | null>(null);
 
   // ============================================================================
@@ -1019,6 +1023,7 @@ export const UnitListPage = () => {
         filterElement={QueryBuilderElement}
         customToolbarActions={viewSwitcher}
         noRowsOverlay={undefined}
+        slugLinkTo={(row) => getEditUrl(row.id)}
         onRowItemEdit={(id) => {
           const target = displayedUnits.find((unit) => unit?.Unit?.TargetID === id)?.Target;
           if (target) {
@@ -1036,6 +1041,7 @@ export const UnitListPage = () => {
       QueryBuilderElement,
       viewSwitcher,
       getTargetByIdAsync,
+      getEditUrl,
     ],
   );
 
@@ -1237,6 +1243,8 @@ export const UnitListPage = () => {
             }}
             existingTarget={existingTarget ?? undefined}
           />
+
+          <UnitSettingsDrawer unitId={editEntityId} onClose={closeEditDrawer} />
         </Main>
       </Container>
     </>
