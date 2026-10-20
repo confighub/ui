@@ -29,6 +29,7 @@ import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import ClearIcon from '@mui/icons-material/Clear';
 import CodeIcon from '@mui/icons-material/Code';
 import SearchIcon from '@mui/icons-material/Search';
+import ViewAgendaOutlinedIcon from '@mui/icons-material/ViewAgendaOutlined';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
@@ -43,6 +44,13 @@ import { componentTheme } from './componentTheme';
  */
 export type PaneFilterMode = 'incoming' | 'all' | 'changeset';
 
+/**
+ * How the pane shows each unit's configuration: the field treeview, the
+ * Overview of each resource (the resource explorer's friendly view), or the
+ * source as written.
+ */
+export type PaneViewMode = 'diff' | 'overview' | 'source';
+
 export interface ComponentToolbarProps {
   /** Distinguishes this mount's testids (`${testIdPrefix}-filter-all`, etc.) so auto and ChangeOrder mode never collide. */
   testIdPrefix: string;
@@ -50,11 +58,16 @@ export interface ComponentToolbarProps {
   filterText: string;
   onFilterTextChange: (text: string) => void;
 
-  viewMode: 'diff' | 'source';
-  onViewModeChange: (mode: 'diff' | 'source') => void;
+  viewMode: PaneViewMode;
+  onViewModeChange: (mode: PaneViewMode) => void;
   /** False hides the search box entirely. The caller then has no filter text to supply — pass `''`. */
   showSearch?: boolean;
-  /** False hides the Tree/Source buttons, fixing the caller to whatever `viewMode` it passes. */
+  /**
+   * Disables the search box, showing this as its placeholder, for a view the
+   * search cannot narrow. The caller supplies `''` as the filter text.
+   */
+  searchDisabledReason?: string;
+  /** False hides the view buttons, fixing the caller to whatever `viewMode` it passes. */
   showViewToggle?: boolean;
 
   filterMode: PaneFilterMode;
@@ -109,6 +122,7 @@ export function ComponentToolbar({
   viewMode,
   onViewModeChange,
   showSearch = true,
+  searchDisabledReason,
   showViewToggle = true,
   filterMode,
   onFilterModeChange,
@@ -130,7 +144,8 @@ export function ComponentToolbar({
   totalLiveL,
   hasProtectionData = false,
 }: ComponentToolbarProps) {
-  const showScopeRow = onScopeFilterChange !== undefined && filterMode === 'all';
+  // Scope narrows the treeview's rows; the other views have none to narrow.
+  const showScopeRow = onScopeFilterChange !== undefined && filterMode === 'all' && viewMode === 'diff';
 
   return (
     <>
@@ -152,7 +167,8 @@ export function ComponentToolbar({
         {showSearch && (
         <TextField
           size='small'
-          placeholder='Search...'
+          placeholder={searchDisabledReason ?? 'Search...'}
+          disabled={searchDisabledReason !== undefined}
           value={filterText}
           onChange={(e) => onFilterTextChange(e.target.value)}
           data-testid={`${testIdPrefix}-search`}
@@ -178,9 +194,10 @@ export function ComponentToolbar({
         {showViewToggle && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px', ml: 0.5, flexShrink: 0 }}>
           {([
-            { mode: 'diff', label: 'Tree view', Icon: AccountTreeOutlinedIcon },
-            { mode: 'source', label: 'Source view', Icon: CodeIcon },
-          ] as const).map(({ mode, label, Icon }) => {
+            { mode: 'diff', label: 'Tree view', testId: 'tree', Icon: AccountTreeOutlinedIcon },
+            { mode: 'source', label: 'Source view', testId: 'source', Icon: CodeIcon },
+            { mode: 'overview', label: 'Overview', testId: 'overview', Icon: ViewAgendaOutlinedIcon },
+          ] as const).map(({ mode, label, testId, Icon }) => {
             const active = viewMode === mode;
             return (
               <Tooltip key={mode} title={label} placement='top'>
@@ -189,7 +206,7 @@ export function ComponentToolbar({
                   aria-label={label}
                   aria-pressed={active}
                   onClick={() => onViewModeChange(mode)}
-                  data-testid={`${testIdPrefix}-view-${mode === 'diff' ? 'tree' : 'source'}`}
+                  data-testid={`${testIdPrefix}-view-${testId}`}
                   sx={{
                     width: 26,
                     height: 26,

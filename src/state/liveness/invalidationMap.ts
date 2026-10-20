@@ -61,6 +61,7 @@ const SPACE_CONTENTS: TagType[] = [
   'Attribute',
   'Revision',
   'Link',
+  'Resource',
 ];
 
 /**
@@ -68,9 +69,10 @@ const SPACE_CONTENTS: TagType[] = [
  *
  * Every one of these produces a Revision, and a patch that runs functions
  * records Mutations against it. `change_set_id` on the write associates the new
- * revision with a ChangeSet, so an open change-set view is stale too.
+ * revision with a ChangeSet, so an open change-set view is stale too. The
+ * server re-extracts the Unit's Resources from its config in the same write.
  */
-const UNIT_WRITE: TagType[] = ['Revision', 'Mutation', 'ChangeSet'];
+const UNIT_WRITE: TagType[] = ['Revision', 'Mutation', 'ChangeSet', 'Resource'];
 
 /**
  * Acting on a Unit against its Target — apply, destroy, refresh, cancel.
@@ -99,9 +101,10 @@ const UNIT_DELETE: TagType[] = [...UNIT_WRITE, 'Link', 'UnitEvent', 'UnitAction'
 
 /**
  * A Link establishes a Unit's upstream, which changes what those Units report
- * (`UpstreamUnitID`, `UpstreamRevisionNum`) and can clone a Revision.
+ * (`UpstreamUnitID`, `UpstreamRevisionNum`) and can clone a Revision, and
+ * with it the Unit's Resources.
  */
-const LINK_WRITE: TagType[] = ['Unit', 'Revision'];
+const LINK_WRITE: TagType[] = ['Unit', 'Revision', 'Resource'];
 
 /**
  * Targets are referenced by Units (`Unit.TargetID`) and served by BridgeWorkers.
@@ -124,7 +127,7 @@ const RELEASE_WRITE: TagType[] = ['Revision', 'Tag', 'Unit'];
  * tag is `Function` — the entity the endpoint is filed under — which is the one
  * thing an invocation does not change.
  */
-const FUNCTION_INVOKE: TagType[] = ['Unit', 'Revision', 'Mutation', 'UnitEvent'];
+const FUNCTION_INVOKE: TagType[] = ['Unit', 'Revision', 'Mutation', 'UnitEvent', 'Resource'];
 
 /**
  * The `Extended*` list endpoints expand related entities inline, and the

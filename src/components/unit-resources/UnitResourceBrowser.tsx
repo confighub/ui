@@ -5,7 +5,6 @@ import { Suspense, lazy, useMemo, useState } from 'react';
 import { isKubernetesToolchain } from '@/components/code-editor/language';
 import { ResourceOverview } from '@/components/resource-overview/ResourceOverview';
 import { UnitResourceRow, useUnitResources } from '@/hooks/useUnitResources';
-import { resourceDisplayName } from '@/utility/resource-type-functions';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -18,6 +17,8 @@ import TextField from '@mui/material/TextField';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
+
+import { compareResources, resourceKind, resourceLabel } from './resourceRows';
 
 // Monaco is the heaviest dependency of the pages that show this; it is fetched the first time
 // something shows the YAML.
@@ -282,26 +283,5 @@ function ResourceListItem({
         }}
       />
     </ListItemButton>
-  );
-}
-
-/** The resource's name, with its index when other resources of the Unit share the name. */
-function resourceLabel(row: UnitResourceRow): string {
-  const name = resourceDisplayName(row.ResourceName, row.ToolchainType);
-  return row.ResourceIndex > 0 ? `${name} [${row.ResourceIndex}]` : name;
-}
-
-/** The last segment of a ResourceType: the kind of a Kubernetes resource. */
-function resourceKind(resourceType: string): string {
-  return resourceType.split('/').pop() || resourceType;
-}
-
-/** By kind, as kubectl groups its output, then by name. */
-function compareResources(a: UnitResourceRow, b: UnitResourceRow): number {
-  return (
-    resourceKind(a.ResourceType).localeCompare(resourceKind(b.ResourceType)) ||
-    a.ResourceType.localeCompare(b.ResourceType) ||
-    a.ResourceName.localeCompare(b.ResourceName) ||
-    a.ResourceIndex - b.ResourceIndex
   );
 }

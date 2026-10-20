@@ -13,6 +13,7 @@ import {
   useTransition,
 } from 'react';
 
+import { isKubernetesToolchain } from '@/components/code-editor/language';
 import { highlightText } from '@/components/entity-data-grid/utils/highlightText';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
@@ -80,6 +81,7 @@ import { componentTheme } from './componentTheme';
 import { isMultiComponent } from './flow-graph/componentFrames';
 import { DECLARED_BAR_ID, ReleasesPane } from './ReleasesPane';
 import { NameInput, PaneButton } from './releasePaneStyles';
+import { useResourceCounts } from './useResourceCounts';
 import { useUnreleasedChanges } from './useUnreleasedChanges';
 import { RELEASE_FRESH_SETTLE_MS, useFreshSignal } from './useFreshSignal';
 import { UnitDetailsPane } from './UnitDetailsPane';
@@ -93,7 +95,7 @@ import type {
 } from './componentTypes';
 import type { ReleaseActions } from './useReleaseActions';
 import type { ChangeSetEntry } from './useChangeSetEntries';
-import type { PaneFilterMode } from './ComponentToolbar';
+import type { PaneFilterMode, PaneViewMode } from './ComponentToolbar';
 import { changeSetLabel, isChangeSetOpenHere } from './changeSets';
 import { ChangeSetCloseBar, ChangeSetWaitNotice } from './ChangeSetPaneNotices';
 
@@ -105,6 +107,12 @@ import { ChangeSetCloseBar, ChangeSetWaitNotice } from './ChangeSetPaneNotices';
 // modules need the `.then` adapter since React.lazy expects a default export.
 const ComponentSourceSection = lazy(() =>
   import('./ComponentSourceSection').then((m) => ({ default: m.ComponentSourceSection })),
+);
+// Lazy-loaded for the same reason: the friendly views of every resource kind,
+// and the YAML parser they read with, are only needed once the pane is switched
+// to Overview.
+const ComponentOverviewSection = lazy(() =>
+  import('./ComponentOverviewSection').then((m) => ({ default: m.ComponentOverviewSection })),
 );
 
 // ============================================================================
@@ -229,6 +237,16 @@ const ReleaseNameFields = styled(Box)({
 // ============================================================================
 // HELPERS
 // ============================================================================
+
+/**
+ * The line under a deployment's name in the deployment selectors: how many
+ * units it has and, once they have been counted, how many resources they hold.
+ */
+const deploymentSummary = (unitCount: number, resourceCount: number | undefined): string => {
+  const units = `${unitCount} ${unitCount === 1 ? 'unit' : 'units'}`;
+  if (resourceCount === undefined) return units;
+  return `${units} · ${resourceCount} ${resourceCount === 1 ? 'resource' : 'resources'}`;
+};
 
 /** The pane state that decides whether a unit's values section is rendered. */
 interface UnitExpansionState {
@@ -691,7 +709,7 @@ export const ComponentSidePane = memo(
     // itself runs as a low-priority transition (see handleRenderAnyway).
     const [materializingUnitId, setMaterializingUnitId] = useState<string | null>(null);
     const [isMaterializing, startMaterializing] = useTransition();
-    const [viewMode, setViewMode] = useState<'diff' | 'source'>('diff');
+    const [viewMode, setViewMode] = useState<PaneViewMode>('diff');
     // ── Per-unit Source-view override ────────────────────────────────────────
     // Oversized units the user opened in Source view FROM their placeholder
     // card. Separate state from `viewMode` on purpose, and `viewMode` is never
@@ -799,6 +817,13 @@ export const ComponentSidePane = memo(
       [selectedDeployment, compareExtraIds],
     );
 
+    const deploymentIds = useMemo(() => deployments.map((d) => d.deploymentId), [deployments]);
+    // Only the deployment selectors show these, and they show only on the
+    // Configuration tab, for a node with somewhere to compare it to.
+    const resourceCounts = useResourceCounts(deploymentIds, {
+      skip: activeTab !== 'config' || deployments.length < 2,
+    });
+
     const compareOptions = useMemo<DeploymentOption[]>(
       () =>
         deployments.map((deployment) => {
@@ -818,14 +843,14 @@ export const ComponentSidePane = memo(
             componentName: multiComponent ? deployment.componentName : undefined,
             isCurrent: !!deployment.releaseTargetId && deployment.unappliedCount === 0,
             isDeclared: deployment.unappliedCount > 0,
-            meta: `${deployment.unitCount} ${deployment.unitCount === 1 ? 'unit' : 'units'}`,
+            meta: deploymentSummary(deployment.unitCount, resourceCounts ? (resourceCounts.get(deployment.deploymentId) ?? 0) : undefined),
             // A deployment whose units have not arrived cannot be counted yet,
             // and must not report zero — zero reads as "identical".
             state: units === undefined ? 'pending' : 'ready',
             changedFields: units === undefined ? undefined : deployment.upgradeableCount,
           };
         }),
-      [deployments, unitsByDeployment, multiComponent],
+      [deployments, unitsByDeployment, multiComponent, resourceCounts],
     );
 
     /**
@@ -2244,7 +2269,13 @@ export const ComponentSidePane = memo(
           filterText={filterText}
           onFilterTextChange={setFilterText}
           viewMode={viewMode}
-          onViewModeChange={setViewMode}
+          onViewModeChange={(mode) => {
+            // Overview cannot be searched, so a search left in the box would
+            // narrow the units with nothing on screen saying why.
+            if (mode === 'overview') setFilterText('');
+            setViewMode(mode);
+          }}
+          searchDisabledReason={viewMode === 'overview' ? 'Search is not available in Overview' : undefined}
           filterMode={filterMode}
           onFilterModeChange={(next) => { setFilterModeWithStaging(next); setScopeFilter(null); }}
           totalUpgradableFields={totalUpgradableFields}
@@ -2435,7 +2466,7 @@ export const ComponentSidePane = memo(
                 // tag unchanged units with the dim class in diff view. The
                 // upgrade-preview dim (.pane-upgrade-preview .unit-unchanged)
                 // therefore never affects the source view.
-                className={viewMode !== 'source' && !isUpgradeChanged ? 'unit-unchanged' : undefined}
+                className={viewMode === 'diff' && !isUpgradeChanged ? 'unit-unchanged' : undefined}
               >
                 <UnitHeaderRow
                   onClick={() => {
@@ -2651,7 +2682,25 @@ export const ComponentSidePane = memo(
                         carries its own "back to tree view" strip so the action
                         is never a one-way door — the pane toggle still says
                         Tree, and without a way back that reads as a bug. */}
-                    {!upgradeLoading && (viewMode === 'source' || isSourceOverridden) && (
+                    {/* Overview: the friendly view of each resource. It is of
+                        Kubernetes resources, so other configuration is shown
+                        as written, as the Unit's Resources tab does. */}
+                    {!upgradeLoading && viewMode === 'overview' && isKubernetesToolchain(unit.toolchainType) && (
+                      <Suspense
+                        fallback={
+                          <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+                            <CircularProgress size={16} />
+                          </Box>
+                        }
+                      >
+                        <ComponentOverviewSection
+                          spaceId={unit.spaceId}
+                          unitId={unit.unitId}
+                          data={unit.data}
+                        />
+                      </Suspense>
+                    )}
+                    {!upgradeLoading && (viewMode === 'source' || isSourceOverridden || (viewMode === 'overview' && !isKubernetesToolchain(unit.toolchainType))) && (
                       <>
                         {isSourceOverridden && (
                           <UnitSourceOverrideBar

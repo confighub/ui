@@ -236,7 +236,7 @@ function Slot({ option, index, open, many, onToggle }: SlotProps): ReactElement 
         </Box>
       </Box>
       {option && nameDetail(option) ? <Box component="span" sx={NAME_SX}>{nameDetail(option)}</Box> : null}
-      <Box component="span" sx={META_SX}>{option?.meta ?? '—'}</Box>
+      <Box component="span" data-testid={`compare-selector-meta-${letter.toLowerCase()}`} sx={META_SX}>{option?.meta ?? '—'}</Box>
     </Box>
   );
 }
