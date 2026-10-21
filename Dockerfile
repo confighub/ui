@@ -12,6 +12,7 @@ FROM scratch AS js
 FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
 WORKDIR /app/ui
 COPY --from=js / /app/public/js/
+RUN apk --update --no-cache add ca-certificates
 RUN if [ -f ../public/js/package.json ]; then \
       cd ../public/js && npm ci --no-audit --no-fund && npm run build; \
     fi

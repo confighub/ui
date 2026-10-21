@@ -221,6 +221,9 @@ export function useChangeOrderConsole(): ChangeOrderConsoleData {
         // assuming the change covers the whole base Space.
         startTagId: order.StartTagID,
         endTagId: order.EndTagID,
+        userId: order.UserID,
+        // A User asked for more than one stage is still one reviewer.
+        reviewerUserIds: [...new Set((order.ReviewRequests ?? []).map((request) => request.UserID))],
       };
       return [consoleOrder];
     });

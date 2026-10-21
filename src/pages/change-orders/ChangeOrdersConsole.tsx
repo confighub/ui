@@ -100,7 +100,10 @@ import { promoteAnnouncement, useChangeOrderActions } from '../x/apps/change-ord
 import { changeWorkflowLabel, useChangeWorkflowNames } from './useChangeWorkflowNames';
 import { changeOrdersConsoleCopy } from '../x/apps/change-order/changeOrdersConsoleCopy';
 import { changeOrderCopy, stageDisplayName } from '../x/apps/change-order/changeOrderCopy';
+import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
 import { LiveRegion } from '@/components/live-region/LiveRegion';
+import { useListUsersByIdChunkedQuery } from '@/hooks/chunkedQueriesApi';
+import { reviewPersonOf } from '../change-sets/changeSetReviewModel';
 import { PromoteDialog } from './components/PromoteDialog';
 import { ChangeOrderExceptions } from './components/ChangeOrderExceptions';
 import { buildCompleteConsoleStage } from './changeOrderCompleteStep';
@@ -145,10 +148,11 @@ import {
 /**
  * The row grid, shared by the column head and every row so the two cannot drift
  * apart. This is the reference's own template (`7-typographic.html`, `.grid`)
- * with one track added: the Image change, second, which the reference does not
- * have. It is the widest track, because most ChangeOrders only move an image tag
- * and that move is what a reader scans the list for; the Component it replaced
- * now sits in the name cell's sub-line. The reference's own tracks are members of the contract's closed
+ * with two tracks added, which the reference does not have: the Image change,
+ * second, and Created by, after the Blocker. The Image change is the widest
+ * track, because most ChangeOrders only move an image tag and that move is what
+ * a reader scans the list for; the Component it replaced now sits in the name
+ * cell's sub-line. The reference's own tracks are members of the contract's closed
  * `grid-columns-vocabulary`, so they are not values to round off.
  *
  * ⚠️ NO BARE `auto` OR CONTENT-SIZED TRACK. Each row is its OWN grid — they
@@ -166,14 +170,14 @@ const GRID = {
   padding: '0 14px',
   display: 'grid',
   alignItems: 'center',
-  gridTemplateColumns: 'minmax(160px, 1fr) minmax(400px, 2.8fr) 164px minmax(120px, .9fr) 44px 112px',
+  gridTemplateColumns: 'minmax(160px, 1fr) minmax(400px, 2.2fr) 164px minmax(120px, .9fr) minmax(110px, .7fr) 44px 112px',
   // Below 1400 the page is tight, and near 1280 it also carries the Functions rail. The Blocker gives up width first; the image tags never do.
   '@media (max-width: 1400px)': {
-    gridTemplateColumns: 'minmax(140px, .9fr) minmax(440px, 3fr) 156px minmax(120px, .7fr) 40px 112px',
+    gridTemplateColumns: 'minmax(140px, .9fr) minmax(400px, 2.6fr) 156px minmax(110px, .7fr) minmax(100px, .6fr) 40px 112px',
   },
   // Below 1275 the image change no longer fits beside the other cells; it takes the row's second line.
   '@media (max-width: 1275px)': {
-    gridTemplateColumns: 'minmax(170px, 1fr) 180px minmax(180px, 2fr) 112px',
+    gridTemplateColumns: 'minmax(170px, 1fr) 180px minmax(180px, 2fr) minmax(110px, .8fr) 112px',
   },
   '@media (max-width: 860px)': {
     gridTemplateColumns: 'minmax(150px, 1.4fr) 170px minmax(160px, 1.3fr)',
@@ -183,6 +187,7 @@ const GRID = {
 /** Hidden at the same widths the grid stops reserving a track for them. */
 const HIDE_AGE = { '@media (max-width: 1275px)': { display: 'none' } } as const;
 const HIDE_ACTION = { '@media (max-width: 860px)': { display: 'none' } } as const;
+const HIDE_CREATOR = HIDE_ACTION;
 const HIDE_IMAGE_HEAD = HIDE_AGE;
 /** Below 1275 the image change is the row's second line, across every column. */
 const IMAGE_CHANGE_CELL = {
@@ -332,6 +337,8 @@ export interface ChangeOrdersConsoleProps {
 const ConsoleRowLine = memo(function ConsoleRowLine({
   row,
   workflowLabel,
+  userNames,
+  viewerUserId,
   now,
   onOpenChangeOrder,
   onPromoteChangeOrder,
@@ -343,6 +350,9 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
    * from the live entity: the copy a ChangeOrder carries has no name of its own.
    */
   workflowLabel: string;
+  /** User id -> name, for the creator and the requested reviewers. */
+  userNames: ReadonlyMap<string, string>;
+  viewerUserId: string | undefined;
   now: number;
   onOpenChangeOrder?: (row: ConsoleRow) => void;
   onPromoteChangeOrder?: (row: ConsoleRow) => void;
@@ -401,6 +411,8 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
 
   // The next stage is never the source row, so it is always a real one and is named by the workflow's own word for it.
   const stageKey = row.nextStageId === null ? '' : stageDisplayName(row.nextStageId, false);
+  const creator = row.userId ? reviewPersonOf(row.userId, userNames, viewerUserId).name : undefined;
+  const reviewers = (row.reviewerUserIds ?? []).map((userId) => reviewPersonOf(userId, userNames, viewerUserId));
 
   return (
     <Box
@@ -649,6 +661,25 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
             {truncateWords(row.blocker, 64)}
           </Typography>
         </Stack>
+      </Stack>
+
+      <Stack sx={{ ...HIDE_CREATOR, minWidth: 0, gap: '1px' }}>
+        <Typography
+          data-testid="change-order-creator"
+          title={creator}
+          sx={{ fontSize: 12.5, lineHeight: T.lh, color: T.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+        >
+          {creator === undefined ? '—' : truncateWords(creator, 32)}
+        </Typography>
+        {reviewers.length > 0 ? (
+          <Typography
+            data-testid="change-order-reviewers"
+            title={reviewers.map((reviewer) => reviewer.name).join(', ')}
+            sx={{ fontSize: 11.5, lineHeight: T.lh, color: T.ink3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+          >
+            Requested: {reviewers.map((reviewer) => `${reviewer.name}${reviewer.isYou ? ' (you)' : ''}`).join(', ')}
+          </Typography>
+        ) : null}
       </Stack>
 
       <Typography
@@ -1104,6 +1135,7 @@ const COLUMNS = [
   { key: 'image', label: changeOrdersConsoleCopy.columns.imageChange, sx: HIDE_IMAGE_HEAD },
   { key: 'stages', label: changeOrdersConsoleCopy.columns.stages, sx: {} },
   { key: 'blocker', label: changeOrdersConsoleCopy.columns.blocker, sx: {} },
+  { key: 'creator', label: changeOrdersConsoleCopy.columns.createdBy, sx: HIDE_CREATOR },
   { key: 'age', label: changeOrdersConsoleCopy.columns.age, sx: { ...HIDE_AGE, textAlign: 'right' } },
   { key: 'action', label: 'Next action', sx: { ...HIDE_ACTION, textAlign: 'right' } },
 ] as const;
@@ -1149,6 +1181,26 @@ export function ChangeOrdersConsoleView({
   const { rows, spaceSlugs, componentSlugs, updateTypes, stateCounts, groupCounts, isLoading, isFetching, error, lastLoadedAt, refetch, unreadable } = data;
   // One org-wide list, shared with every other console reading the same names.
   const workflowNames = useChangeWorkflowNames();
+
+  const { userInfo } = useUserInfo();
+  const viewerUserId = userInfo?.UserID;
+  const userIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const row of rows) {
+      if (row.userId) ids.add(row.userId);
+      for (const userId of row.reviewerUserIds ?? []) ids.add(userId);
+    }
+    return [...ids].sort();
+  }, [rows]);
+  const users = useListUsersByIdChunkedQuery({ userIds }, { skip: userIds.length === 0 });
+  const userNames = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const entry of users.data ?? []) {
+      const name = entry.User?.DisplayName || entry.User?.Username;
+      if (entry.User?.UserID && name) names.set(entry.User.UserID, name);
+    }
+    return names;
+  }, [users.data]);
 
   /*
    * The filter bar's controls. `'all'` is the Space and Component selects'
@@ -1248,9 +1300,10 @@ export function ChangeOrdersConsoleView({
       if (updateTypeFilter !== 'all' && row.updateType !== updateTypeFilter) return false;
       if (!createdWithin(row.createdAt, createdFrom, createdTo)) return false;
       if (needle === '') return true;
-      return `${row.slug} ${row.spaceSlug ?? ''} ${row.appName ?? ''}`.toLowerCase().includes(needle);
+      const creator = row.userId ? (userNames.get(row.userId) ?? '') : '';
+      return `${row.slug} ${row.spaceSlug ?? ''} ${row.appName ?? ''} ${creator}`.toLowerCase().includes(needle);
     });
-  }, [rows, search, selectedStates, spaceFilter, componentFilter, updateTypeFilter, createdFrom, createdTo]);
+  }, [rows, search, selectedStates, spaceFilter, componentFilter, updateTypeFilter, createdFrom, createdTo, userNames]);
 
   const headingId = 'change-orders-console-heading';
   const freshness = freshnessFrom(lastLoadedAt, now);
@@ -1436,6 +1489,8 @@ export function ChangeOrdersConsoleView({
                 key={row.changeOrderId}
                 row={row}
                 workflowLabel={changeWorkflowLabel(row.changeWorkflowId, workflowNames)}
+                userNames={userNames}
+                viewerUserId={viewerUserId}
                 now={now}
                 onOpenChangeOrder={onOpenChangeOrder}
                 onPromoteChangeOrder={onPromoteChangeOrder}

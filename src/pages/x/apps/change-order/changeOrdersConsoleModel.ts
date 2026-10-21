@@ -298,6 +298,10 @@ export interface ConsoleChangeOrder {
    * `startTagId` it names a fan-out ChangeOrder's source Units and what changed in them.
    */
   endTagId?: string;
+  /** `ChangeOrder.UserID`: who created it. */
+  userId?: string;
+  /** The Users asked to review it (`ChangeOrder.ReviewRequests`), each once, in the order first asked. */
+  reviewerUserIds?: string[];
   /**
    * `ChangeOrder.Promotions` and `ChangeOrder.PromotionOverrides`: what says the server held a
    * stage's gates when it promoted into it (`applyPromotionRecord`). The list of ChangeOrders
@@ -432,6 +436,10 @@ export interface ConsoleRow {
   endTagId?: string;
   /** The Spaces the change is headed for, passed through: a fan-out row's source Units are the marked ones outside them. */
   inScopeSpaceIds?: string[];
+  /** `ChangeOrder.UserID`, passed through: who created it. */
+  userId?: string;
+  /** The Users asked to review it, passed through. */
+  reviewerUserIds?: string[];
 }
 
 /**
@@ -1372,6 +1380,8 @@ function stagelessRow(
     startTagId: order.startTagId,
     endTagId: order.endTagId,
     inScopeSpaceIds: order.inScopeSpaceIds,
+    userId: order.userId,
+    reviewerUserIds: order.reviewerUserIds,
   };
 }
 
@@ -1624,6 +1634,8 @@ export function buildConsoleRow(
     startTagId: order.startTagId,
     endTagId: order.endTagId,
     inScopeSpaceIds: order.inScopeSpaceIds,
+    userId: order.userId,
+    reviewerUserIds: order.reviewerUserIds,
   };
 }
 

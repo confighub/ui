@@ -104,6 +104,7 @@ export const changeOrdersConsoleCopy = {
     imageChange: 'Image change',
     stages: 'Stages',
     blocker: 'Blocker',
+    createdBy: 'Created by',
     age: 'Age',
     state: 'State',
   },
