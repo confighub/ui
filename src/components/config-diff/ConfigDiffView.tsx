@@ -14,6 +14,7 @@ import { TreeDiffSection, type TreeDiffDomHooks } from '@/pages/x/apps/TreeDiffS
 import { useColumnResize } from '@/pages/x/apps/useColumnResize';
 
 import { buildConfigDiffTree, resourceDiffLabel } from './configDiffTree';
+import { DiffRowCommentsContext, type DiffComments } from './diffComments';
 
 /** `TreeDiffSection` reads its rows from the tree it is handed, not from field diffs. */
 const NO_FIELD_DIFFS: { path: string; oldValue: string; newValue: string }[] = [];
@@ -33,9 +34,10 @@ interface ResourceDiffSectionProps {
   hideContext: boolean;
   /** Values this resource kept, drawn as rows among its changes. */
   kept: readonly KeptValue[];
+  comments?: DiffComments;
 }
 
-const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDividerMouseDown, isDragging, hideContext, kept }: ResourceDiffSectionProps) => {
+const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDividerMouseDown, isDragging, hideContext, kept, comments }: ResourceDiffSectionProps) => {
   const tree = useMemo(() => {
     const changes = resource.Changes ?? [];
     return buildConfigDiffTree(hideContext ? changes.filter((change) => change.ChangeType !== 'None') : changes, kept);
@@ -49,8 +51,10 @@ const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDivide
       ? resource.PreviousResource.ResourceName
       : undefined;
   const label = resourceDiffLabel(resource.Resource);
+  const rowComments = useMemo(() => comments?.forResource(resource.Resource), [comments, resource.Resource]);
 
   return (
+    <DiffRowCommentsContext.Provider value={rowComments}>
     <Box data-testid='config-diff-resource' sx={{ mb: 2 }}>
       {/* A resource that names nothing, changed in place, has nothing to head it. */}
       {(label || added || deleted || renamedFrom) && <Stack
@@ -69,7 +73,9 @@ const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDivide
         {renamedFrom && (
           <Typography sx={{ fontSize: 12, color: componentTheme.fgMuted }}>renamed from {renamedFrom}</Typography>
         )}
+        {rowComments === undefined ? null : <Box sx={{ ml: 'auto !important' }}>{rowComments.renderAdd('')}</Box>}
       </Stack>}
+      {rowComments === undefined ? null : rowComments.renderBelow('')}
 
       {added || deleted ? (
         // A resource added or deleted whole has no path changes: the document is the change.
@@ -105,6 +111,7 @@ const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDivide
         />
       )}
     </Box>
+    </DiffRowCommentsContext.Provider>
   );
 });
 
@@ -129,6 +136,8 @@ export interface ConfigDiffViewProps {
    * its resource's tree. A value naming no resource goes to the only resource there is.
    */
   kept?: readonly KeptValue[];
+  /** Review comments on the rows, from a page that reviews this diff. */
+  comments?: DiffComments;
 }
 
 const NO_KEPT: readonly KeptValue[] = [];
@@ -141,7 +150,7 @@ const NO_KEPT: readonly KeptValue[] = [];
  * renames -- so an element inserted into a list is one added row, and the elements
  * after it are not reported as changed.
  */
-export const ConfigDiffView = ({ diff, columns, hideContext = false, kept = NO_KEPT }: ConfigDiffViewProps) => {
+export const ConfigDiffView = ({ diff, columns, hideContext = false, kept = NO_KEPT, comments }: ConfigDiffViewProps) => {
   // One set of column widths for every resource, so their columns line up.
   const ownColumns = useColumnResize();
   const { columnStyle, onDividerMouseDown, isDragging } = columns ?? ownColumns;
@@ -172,6 +181,7 @@ export const ConfigDiffView = ({ diff, columns, hideContext = false, kept = NO_K
           isDragging={isDragging}
           hideContext={hideContext}
           kept={keptByResource[i]}
+          comments={comments}
         />
       ))}
     </Box>

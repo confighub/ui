@@ -69,6 +69,13 @@ export interface DiffTreeNode {
    * its `diff` holds the kept value on both sides, and the row says why it stayed.
    */
   kept?: KeptValue;
+  /**
+   * The server's path of the change a leaf of a `ConfigDiff` tree is, in configuration path
+   * syntax (`PathChange.DisplayPath`, merge-keyed elements by key, so it holds still when a list
+   * is reordered): what a review comment on the row is anchored to. The row's own key is a label,
+   * which can be a collapsed folder chain or a reorder's `(order)`, and is no anchor.
+   */
+  anchorPath?: string;
 }
 
 /**

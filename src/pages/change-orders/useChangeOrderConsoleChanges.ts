@@ -91,6 +91,12 @@ export interface ChangeOrderConsoleChanges {
    */
   sourceGroupsByUnitId: ReadonlyMap<string, ChangeOrderChangeGroup>;
   /**
+   * The Revision each Unit's diff on the page is read at, for the review comments made on it:
+   * a source Unit's at the end of the change (the ChangeOrder's end Tag), and any other Unit's
+   * head, which is what the promotion's dry run runs on. A Unit with neither is absent.
+   */
+  reviewRevisionNumByUnitId: ReadonlyMap<string, number>;
+  /**
    * For a fan-out ChangeOrder only: whether `sourceGroupsByUnitId` can be read yet. `loading`
    * while its source Units or their diffs are on their way, `failed` when either could not
    * be read. `undefined` for every other kind of ChangeOrder.
@@ -712,7 +718,21 @@ export function useChangeOrderConsoleChanges(args: {
       ? 'resolved'
       : invocationChangesStatus;
 
-  return useMemo(() => {
+  const reviewRevisionNumByUnitId = useMemo(() => {
+    const index = new Map<string, number>();
+    for (const unit of units) {
+      const unitId = unit.Unit?.UnitID;
+      const head = unit.Unit?.HeadRevisionNum;
+      if (unitId !== undefined && head !== undefined && head > 0) index.set(unitId, head);
+    }
+    for (const unitDiff of [...(baseDiffs ?? []), ...(fanOutDiffs ?? [])]) {
+      if (unitDiff.UnitID !== undefined && unitDiff.ToRevisionNum !== undefined && unitDiff.ToRevisionNum > 0)
+        index.set(unitDiff.UnitID, unitDiff.ToRevisionNum);
+    }
+    return index;
+  }, [units, baseDiffs, fanOutDiffs]);
+
+  const changes = useMemo(() => {
     /*
      * A fan-out ChangeOrder's source row is the Spaces its Links take from, outside the
      * scope this hook reads Units in, so the stage pipeline has nothing to show there. What
@@ -837,4 +857,5 @@ export function useChangeOrderConsoleChanges(args: {
     fanOutSourceStatus,
     invocationSourceStatus,
   ]);
+  return useMemo(() => ({ ...changes, reviewRevisionNumByUnitId }), [changes, reviewRevisionNumByUnitId]);
 }

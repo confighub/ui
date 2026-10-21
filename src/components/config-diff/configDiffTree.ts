@@ -165,6 +165,8 @@ export function buildConfigDiffTree(changes: PathChange[], kept: readonly KeptVa
     const oldValue = change.ChangeType === 'Add' ? VALUE_PLACEHOLDER : (change.FromValue ?? '');
     const newValue = change.ChangeType === 'Delete' ? VALUE_PLACEHOLDER : (change.ToValue ?? '');
     const leaf: DiffTreeNode = { key: leafKey, type: 'leaf', diff: { oldValue, newValue } };
+    // A comment's change shares its node's path with the value's: only the value's row is an anchor.
+    if (change.DisplayPath && !change.Comment) leaf.anchorPath = change.DisplayPath;
     if (oldValue.includes('\n') || newValue.includes('\n')) leaf.preformatted = true;
     if (change.ChangeType === 'Reorder') leaf.wholeValues = true;
     current.node.children!.push(leaf);

@@ -4,6 +4,7 @@
 import { useMemo, type CSSProperties, type ReactNode } from 'react';
 
 import { ConfigDiffView, type ConfigDiffColumns } from '@/components/config-diff/ConfigDiffView';
+import type { DiffComments } from '@/components/config-diff/diffComments';
 import type { KeptValue } from '../../x/apps/diffTree';
 import { TreeDiffSection } from '../../x/apps/TreeDiffSection';
 import type { ChangeOrderChangeGroup } from '../../x/apps/change-order/changeOrderTypes';
@@ -22,6 +23,8 @@ export interface OutcomeUnitDiffProps {
   keyPrefix: string;
   /** What shows in place of the diff when no field changes. Nothing by default. */
   empty?: ReactNode;
+  /** Review comments on the diff's rows. */
+  comments?: DiffComments;
 }
 
 const NO_KEPT: readonly KeptValue[] = [];
@@ -36,7 +39,7 @@ const NO_KEPT: readonly KeptValue[] = [];
  * field changes, or only the field-diff fallback), it is said as a sentence too, so
  * it is never lost.
  */
-export function OutcomeUnitDiff({ unitId, group, columns, fallbackColumnStyle, keyPrefix, empty = null }: OutcomeUnitDiffProps) {
+export function OutcomeUnitDiff({ unitId, group, columns, fallbackColumnStyle, keyPrefix, empty = null, comments }: OutcomeUnitDiffProps) {
   const fieldDiffs = group?.fieldDiffs ?? [];
   const serverDiff = fieldDiffs.length > 0 ? group?.diff : undefined;
   const refusals = useMemo(() => rowRefusals(group), [group]);
@@ -62,7 +65,7 @@ export function OutcomeUnitDiff({ unitId, group, columns, fallbackColumnStyle, k
       {fieldDiffs.length === 0 ? (
         empty
       ) : serverDiff !== undefined ? (
-        <ConfigDiffView diff={serverDiff} columns={columns} hideContext kept={kept} />
+        <ConfigDiffView diff={serverDiff} columns={columns} hideContext kept={kept} comments={comments} />
       ) : (
         <TreeDiffSection
           entry={{ unitId, fieldDiffs }}

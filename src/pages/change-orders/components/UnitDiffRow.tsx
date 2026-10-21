@@ -7,6 +7,7 @@ import Box from '@mui/material/Box';
 import type { ConfigDiff } from '@confighub/rtk-query';
 
 import { ConfigDiffView, type ConfigDiffColumns } from '@/components/config-diff/ConfigDiffView';
+import type { DiffComments } from '@/components/config-diff/diffComments';
 import { ChangeOrderUnitHeader, type ChangeOrderUnitHeaderProps } from '../../x/apps/change-order/ChangeOrderUnitHeader';
 import { changeOrderInk, changeOrderType } from '../changeOrdersTokens';
 
@@ -22,6 +23,8 @@ export interface UnitDiffRowProps
   notes?: ReactNode;
   /** The change, drawn some other way, for a Unit with no server diff. */
   fallback?: ReactNode;
+  /** Review comments on the diff's rows. */
+  comments?: DiffComments;
 }
 
 /**
@@ -44,6 +47,7 @@ export function UnitDiffRow({
   diff,
   columns,
   notes,
+  comments,
   fallback,
 }: UnitDiffRowProps) {
   return (
@@ -66,7 +70,7 @@ export function UnitDiffRow({
           No fields differ here.
         </Box>
       ) : diff !== undefined ? (
-        <ConfigDiffView diff={diff} columns={columns} hideContext />
+        <ConfigDiffView diff={diff} columns={columns} hideContext comments={comments} />
       ) : (
         fallback
       )}

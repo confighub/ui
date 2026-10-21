@@ -108,6 +108,10 @@ import type { ChangeOrderGateExtra } from '../x/apps/change-order/ChangeOrderGat
 import { recordedToastText, reviewCopy, reviewFeeds, reviewSubject } from './reviews/reviewCopy';
 import { reviewCardStageId, reviewFormStageId, stageChangeLanded } from './reviews/stageReviewInputs';
 import { REVIEW_PANEL_ID, ReviewPanel } from './reviews/ReviewPanel';
+import { ReviewCommentsProvider } from './review-comments/ReviewCommentsProvider';
+import { useReviewDiffComments } from './review-comments/useReviewDiffComments';
+import { ReviewConversation } from './review-comments/ReviewConversation';
+import { useChangeOrderReviewComments } from './review-comments/useChangeOrderReviewComments';
 import { withReviewApprovers } from './reviews/changeOrderReviews';
 import type {
   PromoteReadiness,
@@ -1034,6 +1038,28 @@ export default function ChangeOrdersPage() {
    * `partitionSourceUnitsByChange` decides that default, so it is testable
    * without the page.
    */
+  /*
+   * Review comments on the diffs: every comment names this ChangeOrder, and each is anchored to
+   * the Revision its Unit's diff is read at (the end of the change at the source, the head a
+   * stage's dry run runs on).
+   */
+  const reviewComments = useChangeOrderReviewComments(detail.found ? detail.changeOrderId : undefined);
+  const diffCommentsFor = useReviewDiffComments(detail.found);
+  const reviewVariantNameOf = useCallback(
+    (unitId: string) => {
+      const spaceId = changes.spaceIdByUnitId.get(unitId);
+      return spaceId === undefined ? undefined : changes.spaceNameBySpaceId.get(spaceId);
+    },
+    [changes.spaceIdByUnitId, changes.spaceNameBySpaceId],
+  );
+  // The Units an outcome card's one row stands for, by the row they are on: their comments show there too.
+  const rowKeyByUnitId = changes.matrix?.rowKeyByUnitId;
+  const unitIdsByRowKey = useMemo(() => {
+    const index = new Map<string, string[]>();
+    for (const [unitId, key] of rowKeyByUnitId ?? []) index.set(key, [...(index.get(key) ?? []), unitId]);
+    return index;
+  }, [rowKeyByUnitId]);
+
   /**
    * One "At the source" row, rendered identically whether it sits in the
    * changed list or inside the collapsed group: the density comes from the
@@ -1066,6 +1092,7 @@ export default function ChangeOrdersPage() {
           changed={fieldDiffs.length > 0}
           diff={group?.diff}
           columns={diffColumns}
+          comments={diffCommentsFor({ unitId: unit.unitId, spaceId: unit.spaceId })}
           notes={
             <>
               {linkedPaths !== undefined && fieldDiffs.length > 0 ? (
@@ -1106,6 +1133,7 @@ export default function ChangeOrdersPage() {
       onDiffDividerMouseDown,
       isDiffDragging,
       diffColumns,
+      diffCommentsFor,
     ],
   );
   /**
@@ -1441,6 +1469,14 @@ export default function ChangeOrdersPage() {
        */
       const repVariantLabel = cardSpaceLabel(card.representativeSpaceId, detail.scopedSpaces, changes.spaceNameBySpaceId);
       const fieldDiffs = g?.fieldDiffs ?? [];
+      const rowKey = rowKeyByUnitId?.get(unit.unitId);
+      const memberUnitIds =
+        rowKey === undefined
+          ? undefined
+          : (unitIdsByRowKey.get(rowKey) ?? []).filter((unitId) => {
+              const spaceId = changes.spaceIdByUnitId.get(unitId);
+              return spaceId !== undefined && card.group.spaceIds.includes(spaceId);
+            });
       return (
         <Box key={unit.unitId}>
           <ChangeOrderUnitHeader
@@ -1468,6 +1504,7 @@ export default function ChangeOrdersPage() {
             columns={diffColumns}
             fallbackColumnStyle={stableDiffColumnStyle}
             keyPrefix={`change-order-group-${card.groupKey}`}
+            comments={diffCommentsFor({ unitId: unit.unitId, spaceId: unit.spaceId, memberUnitIds })}
             empty={
               <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, padding: '4px 12px 10px' }}>
                 No fields differ here.
@@ -1487,10 +1524,15 @@ export default function ChangeOrdersPage() {
       unitLinksHrefFor,
       stableDiffColumnStyle,
       diffColumns,
+      diffCommentsFor,
+      rowKeyByUnitId,
+      unitIdsByRowKey,
+      changes.spaceIdByUnitId,
     ],
   );
 
   return (
+    <ReviewCommentsProvider reviews={reviewComments} revisionNumByUnitId={changes.reviewRevisionNumByUnitId} variantNameOf={reviewVariantNameOf}>
     <Box
       id={CHANGE_ORDERS_ROOT_ID}
       sx={{
@@ -2753,10 +2795,13 @@ export default function ChangeOrdersPage() {
             />
           ) : null}
 
+          <ReviewConversation slugOf={(unitId) => changes.slugByUnitId.get(unitId)} revealDiffs={() => setGroupsExpanded(true)} />
+
           {/* Last: the record of what happened, below what the selected step does now. */}
           <ChangeOrderHistory history={history} />
         </>
       ) : null}
     </Box>
+    </ReviewCommentsProvider>
   );
 }

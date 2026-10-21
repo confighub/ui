@@ -1,11 +1,12 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import Box from '@mui/material/Box';
 import Tooltip from '@mui/material/Tooltip';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 
+import { DiffRowCommentsContext } from '@/components/config-diff/diffComments';
 import { highlightText } from '@/components/entity-data-grid/utils/highlightText';
 import { INFO_PEEK_TOOLTIP_SX, InfoPeekCard } from '@/components/info-peek/InfoPeek';
 
@@ -282,6 +283,9 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
   const [expanded, setExpanded] = useState(() => hasChangedDescendant(node));
   const toggle = useCallback(() => setExpanded((prev) => !prev), []);
   const fullPath = pathPrefix ? `${pathPrefix}.${node.key}` : node.key;
+  // A page reviewing this diff puts a comment button on a changed row, and the row's threads under it.
+  const comments = useContext(DiffRowCommentsContext);
+  const commentPath = comments === undefined || node.context || node.kept ? undefined : node.anchorPath;
   const striped = rowIndex % 2 === 1;
 
   // Wrap detection state (used for leaf nodes only, but hooks must be unconditional)
@@ -409,18 +413,30 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
     const overrides = variantOverrides?.get(fullPath);
     const variants = overrides && overrides.length > 0 ? overrides : [variant === 'data' ? 'upgrade' as const : variant];
 
-    return (
+    const row = (
       <ReviewRow
         ref={rowRef}
         $striped={striped}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        sx={{ alignItems: autoWrap || preformatted ? 'flex-start' : 'center' }}
+        data-comment-path={commentPath}
+        sx={{
+          alignItems: autoWrap || preformatted ? 'flex-start' : 'center',
+          ...(commentPath === undefined
+            ? {}
+            : { '& .diff-row-comment-add': { opacity: 0 }, '&:hover .diff-row-comment-add, & .diff-row-comment-add:focus-within': { opacity: 1 } }),
+        }}
       >
         <PropertyCell
           className={KEY_CELL_CLASS}
           sx={{ display: 'flex', alignItems: 'center', gap: 0, paddingLeft: `${16 + depth * INDENT_PX}px`, fontSize: 12, fontFamily: componentTheme.fontMono, color: componentTheme.fgMuted }}
         >
+          {commentPath === undefined || comments === undefined ? null : (
+            // In the key cell's gutter: the key cell paints over the row's other cells.
+            <Box className="diff-row-comment-add" sx={{ position: 'absolute', left: 2, top: 2, zIndex: 1, transition: 'opacity .12s' }}>
+              {comments.renderAdd(commentPath)}
+            </Box>
+          )}
           <Box component="span" sx={{ width: 10, flexShrink: 0 }} />
           <PathValue style={{ color: componentTheme.fgDefault, fontWeight: 600, minWidth: 0, overflowWrap: 'break-word' }}>{filterText ? highlightText(node.key, filterText) : node.key}</PathValue>
         </PropertyCell>
@@ -448,6 +464,13 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
           })}
         </AfterCell>
       </ReviewRow>
+    );
+    if (commentPath === undefined || comments === undefined) return row;
+    return (
+      <>
+        {row}
+        {comments.renderBelow(commentPath)}
+      </>
     );
   }
 
