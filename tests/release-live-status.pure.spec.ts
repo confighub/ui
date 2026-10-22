@@ -11,7 +11,7 @@ import { expect, test } from '@playwright/test';
 import type { ExtendedReleaseRead, ExtendedSpaceRead, ExtendedUnitRead } from '@confighub/rtk-query';
 
 import { buildComponentData } from '../src/pages/x/apps/componentData';
-import { formatDigest, type LiveStatus, runningReleases } from '../src/pages/x/apps/liveStatus';
+import { formatDigest, type LiveStatus, liveStatusText, runningReleases } from '../src/pages/x/apps/liveStatus';
 import { buildGatesForStage, liveStatusFailure } from '../src/pages/x/apps/change-order/changeOrderGates';
 import { deriveProgress } from '../src/pages/x/apps/change-order/changeOrderState';
 import type { ChangeOrderProgress, ChangeOrderStage } from '../src/pages/x/apps/change-order/changeOrderTypes';
@@ -222,11 +222,22 @@ test('a deployment carries the status of the Release it runs, and a Base carries
   const dep = deployments.find((d) => d.deploymentId === 'dep');
   expect(dep?.liveStatus).toEqual(GREEN);
   expect(dep?.runningRelease).toEqual({ releaseNum: 3, manifestDigest: 'sha256:abc' });
-  expect(dep?.liveStatusProvider).toBe('argocd');
 
   const base = deployments.find((d) => d.deploymentId === 'base');
   expect(base?.type).toBe('Base');
   expect(base?.liveStatus).toBeUndefined();
   expect(base?.runningRelease).toBeUndefined();
-  expect(base?.liveStatusProvider).toBe('unknown');
+});
+
+test('live status reads in normalized words whatever tool reported it', () => {
+  const flux: LiveStatus = {
+    ...GREEN,
+    Reporter: 'k8sbot',
+    ReporterSync: 'ReconciliationSucceeded',
+    ReporterHealth: 'Succeeded',
+  };
+  expect(liveStatusText(GREEN)).toBe('Synced · Healthy');
+  expect(liveStatusText(flux)).toBe('Synced · Healthy');
+  expect(liveStatusText({ ...flux, Health: 'Degraded' })).toBe('Synced · Degraded');
+  expect(liveStatusText(null)).toBe('Not reported');
 });

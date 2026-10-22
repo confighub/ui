@@ -52,7 +52,6 @@ function node(m: Member, parent: string | null): ComponentDeployment {
     unappliedCount: 0,
     unitCount: 1,
     liveStatus: { Sync: 'Synced', Health: 'Healthy' },
-    liveStatusProvider: 'argocd',
     labels: m.labels ?? {},
     ...(m.k8s !== undefined && { targetFacts: { 'Cluster.KubernetesVersion': m.k8s } }),
     configSignals: QUIET,
@@ -71,7 +70,6 @@ function base(id: string, parent: string | null): ComponentDeployment {
     upgradeableCount: 0,
     unappliedCount: 0,
     unitCount: 1,
-    liveStatusProvider: 'unknown',
     labels: {},
     configSignals: QUIET,
   };

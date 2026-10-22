@@ -82,7 +82,6 @@ function node(m: Member, parent: string | null): ComponentDeployment {
     unappliedCount: 0,
     unitCount: 1,
     liveStatus: { Sync: 'Synced', Health: 'Healthy' },
-    liveStatusProvider: 'argocd',
     labels: m.labels ?? {},
     ...(m.provider !== undefined && { targetFacts: { 'Cloud.Provider': m.provider } }),
     ...(m.age !== undefined && { releaseAge: m.age }),
@@ -103,7 +102,6 @@ function base(id: string, parent: string | null): ComponentDeployment {
     upgradeableCount: 0,
     unappliedCount: 0,
     unitCount: 1,
-    liveStatusProvider: 'unknown',
     labels: {},
     configSignals: QUIET,
   };

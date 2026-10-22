@@ -55,7 +55,6 @@ function node(
     upgradeableCount: 0,
     unappliedCount: 0,
     unitCount: 1,
-    liveStatusProvider: type === 'Deployment' ? 'argocd' : 'unknown',
     labels: {},
     configSignals: QUIET,
   };

@@ -81,7 +81,7 @@ export function runningReleases(
 // DeploymentFlowNode.tsx) and the folded graph's conditions.
 //
 // Only the TONE reaches the card face; the state words surface in each vital's
-// peek, in the reporting system's dialect (`liveStatusLabel`).
+// peek.
 
 export type VitalTone = 'ok' | 'neutral' | 'progress' | 'attention' | 'danger';
 
@@ -224,136 +224,19 @@ export function reporterDetailLines(
 }
 
 // ============================================================================
-// DELIVERY SYSTEM — which system produced the live status, and its vocabulary
+// WORDS — what a live status chip says
 // ============================================================================
 //
-// The authoritative answer to "who observed this" is the status's own
-// `Reporter`, which is required on every status precisely so a reader can tell
-// reporters apart. argobot writes `"argobot"`.
-//
-// Anything unidentified is `'unknown'` — an EXPLICIT neutral state, never a
-// silent blank.
-//
-// The point of knowing the system is vocabulary: each system has its own words
-// for the same two axes, and paraphrasing them into a house dialect makes the
-// card disagree with the console the user opens next. TONE (which states read
-// as good/bad — see `SYNC_PRESENTATION` / `HEALTH_PRESENTATION` above) is
-// deliberately NOT provider-dependent: only the label vocabulary varies.
+// Chips show the normalized words (Synced / OutOfSync; Healthy / Progressing /
+// Degraded / …) whatever tool reported the status: every reporter maps its own
+// states onto them, so a word means the same thing on every deployment. The
+// reporter's own words are shown in the detail lines (`reporterDetailLines`),
+// and its name (`Reporter`) only as "via …".
 
-/** Delivery system identity used for the brand mark and the status vocabulary. */
-export type LiveStatusProvider = 'argocd' | 'flux' | 'unknown';
-
-/**
- * Map a live status `Reporter` (the reporting client's own name, e.g.
- * `argobot`) to a delivery system. Matched case-insensitively on substring so
- * reporter names that embed the system — `argobot`, `argocd-reporter`,
- * `flux-watcher` — all land correctly without a new case per reporter.
- *
- * Known imprecision, accepted deliberately: a bare substring match on `'argo'`
- * would also fire on an unrelated reporter named e.g. `cargo-sync`. Reporters
- * are clients ConfigHub's users run, not free text from the cluster, so a
- * collision needs someone to name a reporter that way — an acceptable trade
- * against an exact-match allowlist that breaks the moment a reporter is
- * renamed.
- *
- * THIS IS THE ONE PLACE reporter names are interpreted: extend it here when a
- * new reporter appears, and every mark, tooltip and vocabulary follows.
- */
-export function providerFromReporter(reporter: string | null | undefined): LiveStatusProvider {
-  if (!reporter) return 'unknown';
-  const s = reporter.toLowerCase();
-  if (s.includes('argo')) return 'argocd';
-  if (s.includes('flux')) return 'flux';
-  return 'unknown';
-}
-
-/**
- * Which delivery system a node should attribute its live status to: the one
- * the status's own `Reporter` names. With no live status, no reporter, or an
- * unrecognized one, it is `'unknown'` — an unrecognized reporter is a reason to
- * say nothing.
- */
-export function resolveLiveStatusProvider(status: LiveStatus | null | undefined): LiveStatusProvider {
-  return providerFromReporter(status?.Reporter);
-}
-
-/** Human name of the reporting system, for tooltips and peek copy. */
-export const LIVE_STATUS_PROVIDER_NAME: Record<LiveStatusProvider, string> = {
-  argocd: 'ArgoCD',
-  flux: 'Flux',
-  unknown: 'the delivery system',
-};
-
-/**
- * Flux's own words for each normalized axis state. ArgoCD needs no map: the
- * normalized words are Argo's vocabulary, so `liveStatusLabel` uses them
- * verbatim for `'argocd'`.
- *
- * Flux collapses "synced" and "healthy" into one `Ready` condition, so both
- * axes share the same four words (Ready / Reconciling / Stalled / Suspended).
- * States with no Flux equivalent are deliberately absent rather than forced
- * into the nearest word — `liveStatusLabel` falls back to the normalized state
- * so an unmappable value is never silently renamed into something Flux never
- * said.
- *
- * A Flux-backed Space with no reporter has no live status at all, and the card
- * shows the neutral "not reported yet" state, never a Ready it has no evidence
- * for.
- */
-const FLUX_SYNC_LABEL: Record<string, string> = {
-  Synced: 'Ready',
-  OutOfSync: 'Stalled',
-  Progressing: 'Reconciling',
-  Unknown: 'Unknown',
-};
-
-const FLUX_HEALTH_LABEL: Record<string, string> = {
-  Healthy: 'Ready',
-  Progressing: 'Reconciling',
-  Degraded: 'Stalled',
-  Suspended: 'Suspended',
-  Unknown: 'Unknown',
-};
-
-/**
- * The word shown on a live status chip, in the reporting system's own dialect.
- *
- * - `'argocd'` → Argo's words (Synced / OutOfSync / Unknown;
- *   Healthy / Progressing / Degraded / Suspended / Missing / Unknown).
- * - `'flux'` → Flux's words (Ready / Reconciling / Stalled / Suspended),
- *   falling back to the normalized state for anything Flux has no word for.
- * - `'unknown'` → generic wording: "Live" / "Synced" when the axis is fine,
- *   the normalized state otherwise. Without a named system there is no dialect
- *   to borrow, so nothing is claimed.
- */
-export function liveStatusLabel(
-  provider: LiveStatusProvider,
-  axis: 'sync' | 'health',
-  presentation: VitalPresentation,
-): string {
-  switch (provider) {
-    case 'argocd':
-      return presentation.state;
-    case 'flux': {
-      const map = axis === 'sync' ? FLUX_SYNC_LABEL : FLUX_HEALTH_LABEL;
-      return map[presentation.state] ?? presentation.state;
-    }
-    default:
-      if (presentation.tone === 'ok') return axis === 'health' ? 'Live' : 'Synced';
-      return presentation.state;
-  }
-}
-
-/** A Release's live status in its reporter's words, "Synced · Healthy", or "Not reported". */
+/** A Release's live status in normalized words, "Synced · Healthy", or "Not reported". */
 export function liveStatusText(status: LiveStatus | null | undefined): string {
   if (!status) return 'Not reported';
-  const provider = resolveLiveStatusProvider(status);
-  const sync = deriveSyncPresentation(status);
-  const health = deriveHealthPresentation(status);
-  const words = [
-    sync && liveStatusLabel(provider, 'sync', sync),
-    health && liveStatusLabel(provider, 'health', health),
-  ].filter(Boolean);
+  const words = [deriveSyncPresentation(status)?.state, deriveHealthPresentation(status)?.state].filter(Boolean);
   return words.length > 0 ? words.join(' · ') : 'Not reported';
 }
 

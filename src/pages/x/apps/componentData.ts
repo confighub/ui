@@ -3,7 +3,7 @@
 import type { ExtendedSpaceRead, ExtendedUnitRead } from '@confighub/rtk-query';
 
 import type { ComponentDeployment, ConfigSignals, DeploymentTarget, Stage } from './componentTypes';
-import { resolveLiveStatusProvider, type RunningRelease } from './liveStatus';
+import { type RunningRelease } from './liveStatus';
 
 // ============================================================================
 // LABEL CONSTANTS
@@ -334,9 +334,6 @@ export function buildComponentData(
             manifestDigest: runningRelease.manifestDigest,
           },
         }),
-        // Same reasoning as `liveStatus` above: a Base deploys nothing, so no
-        // delivery system reports on it and it must not carry a brand mark.
-        liveStatusProvider: isBase ? 'unknown' : resolveLiveStatusProvider(liveStatus),
         staleUpstreamChangedAt: staleChangedAtBySpace.get(sid),
         staleRevisionsBehind: staleBehindBySpace.get(sid),
         labels: { ...(s.Space?.Labels ?? {}) },

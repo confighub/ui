@@ -452,6 +452,9 @@ export const EntityDataGrid = <T extends GridValidRowModel>({
           paddingBottom: '12px',
           overflowX: 'auto !important',
           overflowY: 'auto !important',
+          // A trackpad swipe would otherwise pull the rows past the last column (macOS
+          // rubber-banding), or go back in history at the first.
+          overscrollBehaviorX: 'none',
           '::-webkit-scrollbar': {
             WebkitAppearance: 'none !important',
             width: '12px !important',

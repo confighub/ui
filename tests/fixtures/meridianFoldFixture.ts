@@ -1123,7 +1123,6 @@ function base(
     upgradeableCount: 0,
     unappliedCount: 0,
     unitCount: units,
-    liveStatusProvider: 'unknown',
     labels: parentId === null ? {} : { Environment: name, Stage: name },
     configSignals: { staleUnits: 0, unreleasedUnits: 0, gatedUnits: 0 },
   };
@@ -1143,7 +1142,6 @@ function deployment(row: Row): ComponentDeployment {
     unappliedCount: unreleased + gated,
     unitCount: units,
     liveStatus: { Reporter: 'argobot', Sync: sync, Health: health },
-    liveStatusProvider: 'argocd',
     labels: {
       Region: region,
       ...(department ? { Department: department } : {}),

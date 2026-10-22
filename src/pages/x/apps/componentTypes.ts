@@ -1,7 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
-import type { LiveStatus, LiveStatusProvider, RunningRelease } from './liveStatus';
+import type { LiveStatus, RunningRelease } from './liveStatus';
 import type { DeploymentChangeSet, WaitingChangeSet } from './changeSets';
 
 // ============================================================================
@@ -78,13 +78,6 @@ export interface ComponentDeployment {
    * Present whenever the Space runs a Release, reported on or not.
    */
   runningRelease?: Pick<RunningRelease, 'releaseNum' | 'manifestDigest'>;
-  /**
-   * Which delivery system this node attributes its live status to, driving the
-   * brand mark and the status vocabulary. Resolved from the status's own
-   * `Reporter` (who actually reported); `'unknown'` when there is none — see
-   * `resolveLiveStatusProvider` in liveStatus.ts.
-   */
-  liveStatusProvider: LiveStatusProvider;
   /**
    * Staleness timing for the "Stale" chip, aggregated across this Space's stale
    * units (a unit is stale when its merged upstream revision is behind the

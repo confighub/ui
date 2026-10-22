@@ -18,9 +18,7 @@ import {
   deriveHealthPresentation,
   deriveSyncPresentation,
   formatDigest,
-  liveStatusLabel,
   reporterDetailLines,
-  resolveLiveStatusProvider,
   type LiveStatus,
   type VitalTone,
 } from '../x/apps/liveStatus';
@@ -66,11 +64,10 @@ function formatTime(value: string | undefined): Date | null {
   return value && !isGoZeroTime(value) ? new Date(value) : null;
 }
 
-/** One axis of a Release's live status in its reporter's words, or nothing when it was not reported. */
+/** One axis of a Release's live status in normalized words, or nothing when it was not reported. */
 function liveAxisLabel(status: LiveStatus | undefined, axis: 'sync' | 'health'): string {
   const presentation = axis === 'sync' ? deriveSyncPresentation(status) : deriveHealthPresentation(status);
-  if (!presentation) return '';
-  return liveStatusLabel(resolveLiveStatusProvider(status), axis, presentation);
+  return presentation?.state ?? '';
 }
 
 function LiveAxisCell({ status, axis }: { status: LiveStatus | undefined; axis: 'sync' | 'health' }) {
@@ -82,7 +79,7 @@ function LiveAxisCell({ status, axis }: { status: LiveStatus | undefined; axis: 
       <Tooltip title={detail}>
         <Chip
           size='small'
-          label={liveStatusLabel(resolveLiveStatusProvider(status), axis, presentation)}
+          label={presentation.state}
           color={TONE_CHIP_COLOR[presentation.tone]}
           data-testid={`release-${axis}`}
         />

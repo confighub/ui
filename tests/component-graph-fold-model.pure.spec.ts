@@ -66,7 +66,6 @@ function syntheticComponent(
     upgradeableCount: 0,
     unappliedCount: 0,
     unitCount: 1,
-    liveStatusProvider: 'unknown',
     labels: {},
     configSignals: QUIET_SIGNALS,
   };
@@ -85,7 +84,6 @@ function syntheticComponent(
         unappliedCount: 0,
         unitCount: 1,
         liveStatus: { Sync: 'Synced', Health: m.health ?? 'Healthy' },
-        liveStatusProvider: 'argocd',
         labels: m.labels ?? {},
         configSignals: QUIET_SIGNALS,
       }),

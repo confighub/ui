@@ -19,16 +19,11 @@ import {
   deriveHealthPresentation,
   deriveSyncPresentation,
   formatDigest,
-  LIVE_STATUS_PROVIDER_NAME,
   type LiveStatus,
-  type LiveStatusProvider,
-  liveStatusLabel,
-  TONE_SEVERITY,
   reporterDetailLines,
   type VitalPresentation,
   type VitalTone,
 } from '../liveStatus';
-import { LiveStatusProviderMark } from './LiveStatusProviderMark';
 import type { ConditionKind, WaveCondition } from './fold/deploymentCondition';
 import { MARK_LABEL, markStyle } from './fold/markStyle';
 import { INFO_PEEK_TOOLTIP_SX, InfoPeekCard, type InfoPeekSpec } from '@/components/info-peek/InfoPeek';
@@ -904,19 +899,12 @@ const RecoveredMark = ({ until }: { until: number }) => {
 // LIVE STATE CHIP
 // ============================================================================
 
-/** Build the peek card content for one live status axis. `eyebrowAxis` is the
- *  word shown before the state in the peek's eyebrow — normally the same as
- *  the real `axis` ("sync · OutOfSync" for ArgoCD, "sync · Stalled" for
- *  Flux), but the Flux MERGED chip (see `deriveFluxVital` below) passes
- *  `'status'` instead, since a single collapsed chip calling itself "sync" or
- *  "health" would misstate what it represents. */
+/** Build the peek card content for one live status axis. */
 const buildLiveStatePeek = (
   axis: 'sync' | 'health',
-  eyebrowAxis: string,
   status: LiveStatus | undefined,
   release: ComponentDeployment['runningRelease'],
   presentation: VitalPresentation,
-  label: string,
 ): PeekSpec => {
   const lines: string[] = [presentation.desc, ...reporterDetailLines(status, axis)];
   // The status is about one Release, so the peek says which. `formatDigest`
@@ -929,7 +917,7 @@ const buildLiveStatePeek = (
   if (status?.Message) lines.push(status.Message);
   if (status?.ObservedAt) lines.push(`observed ${formatRelative(status.ObservedAt)}`);
   if (status?.Reporter) lines.push(`via ${status.Reporter}`);
-  return { tab: 'config', eyebrow: `${eyebrowAxis} · ${label}`, lines, action: 'Open to inspect' };
+  return { tab: 'config', eyebrow: `${axis} · ${presentation.state}`, lines, action: 'Open to inspect' };
 };
 
 /**
@@ -937,82 +925,38 @@ const buildLiveStatePeek = (
  * the axis isn't reported at all — there's genuinely nothing to show — but
  * ALWAYS renders otherwise, including when fine.
  *
- * The word it carries is the reporting system's own (Synced/Healthy for
- * ArgoCD, Ready/Reconciling for Flux) so the card agrees with the console the
- * user opens next; only when no system is identified does it fall back to the
- * generic "Live"/"Synced" house wording. See `liveStatusLabel` in
- * liveStatus.ts — the TONE (which states read as good/bad) is unaffected by
- * the provider, deliberately.
+ * The word it carries is the normalized state, whatever tool reported it; the
+ * reporter's own word is in the peek. See the WORDS section of liveStatus.ts.
  */
 const LiveStateChip = ({
   axis,
-  eyebrowAxis,
   status,
   release,
   presentation,
-  provider,
   deploymentId,
   onOpenTab,
 }: {
-  /** Which internal axis this reading came from — selects the correct Flux
-   *  vocabulary map (FLUX_SYNC_LABEL vs FLUX_HEALTH_LABEL) in `liveStatusLabel`. */
   axis: 'sync' | 'health';
-  /** Word shown in the peek eyebrow; defaults to `axis`. See `buildLiveStatePeek`. */
-  eyebrowAxis?: string;
   status: LiveStatus | undefined;
   /** The Release `status` is about. */
   release: ComponentDeployment['runningRelease'];
   presentation: VitalPresentation | null;
-  provider: LiveStatusProvider;
   deploymentId: string;
   onOpenTab?: (deploymentId: string, tab: ChipTab) => void;
 }) => {
   if (!presentation) return null;
-  const label = liveStatusLabel(provider, axis, presentation);
-  const spec = buildLiveStatePeek(axis, eyebrowAxis ?? axis, status, release, presentation, label);
+  const spec = buildLiveStatePeek(axis, status, release, presentation);
   const color = LIVE_TONE_COLOR[presentation.tone];
   return (
     <StatusChipWithPeek
       tone={presentation.tone}
       shape={presentation.state === 'Progressing' ? 'hatch' : 'solid'}
       leading={<LiveDot $color={color} />}
-      label={label}
+      label={presentation.state}
       spec={spec}
       onGo={onOpenTab ? (tab) => onOpenTab(deploymentId, tab) : undefined}
     />
   );
-};
-
-// ── Flux: one condition, one chip ──
-//
-// Flux collapses "is it synced" and "is it healthy" into a single `Ready`
-// condition (see FLUX_SYNC_LABEL / FLUX_HEALTH_LABEL in liveStatus.ts) — ArgoCD
-// is the only system that genuinely reports two independent facts. Rendering
-// `syncVital` and `healthVital` as two separate chips for a Flux node produced
-// two adjacent tags that either read the same word twice ("● Ready ● Ready")
-// or, worse, disagreed in COLOR for what is definitionally one fact ("●
-// Stalled" amber next to "● Stalled" red) — reading as a rendering bug rather
-// than two real signals. `deriveFluxVital` picks the single more-severe axis
-// to represent as the one chip Flux itself would show.
-
-/**
- * Collapse a Flux node's independently-derived sync/health vitals to the ONE
- * fact Flux itself reports. Picks whichever axis is more severe (danger >
- * attention > progress > neutral > ok); ties prefer health, since Flux's
- * `Ready` condition is fundamentally a health/reconciliation signal. Returns
- * `null` when neither axis is reported at all — callers should already be on
- * the `showUnreported` path in that case, not this one.
- */
-const deriveFluxVital = (
-  healthVital: VitalPresentation | null,
-  syncVital: VitalPresentation | null,
-): { axis: 'health' | 'sync'; presentation: VitalPresentation } | null => {
-  if (!healthVital && !syncVital) return null;
-  if (!syncVital) return { axis: 'health', presentation: healthVital! };
-  if (!healthVital) return { axis: 'sync', presentation: syncVital! };
-  return TONE_SEVERITY[syncVital.tone] > TONE_SEVERITY[healthVital.tone]
-    ? { axis: 'sync', presentation: syncVital }
-    : { axis: 'health', presentation: healthVital };
 };
 
 /**
@@ -1272,13 +1216,8 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
   const syncVital = deriveSyncPresentation(deployment.liveStatus);
   const healthVital = deriveHealthPresentation(deployment.liveStatus);
 
-  // Which delivery system this reading came from — drives the leading brand
-  // mark and the vocabulary the chips speak.
-  const liveProvider = deployment.liveStatusProvider;
   // A node that actually deploys somewhere (has a Target) but carries no
-  // live status reading says so explicitly, REGARDLESS of whether the
-  // delivery system was identifiable: with no live status yet, there is no
-  // `Reporter` to name a system, so the provider is always `'unknown'`.
+  // live status reading says so explicitly.
   // A Base (no Target) is correctly excluded: nothing is deployed from it, so
   // there is nothing that could have reported.
   const hasTargets = deployment.targets.length > 0;
@@ -1287,9 +1226,7 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
     tab: 'config',
     eyebrow: 'live status · not reported',
     lines: [
-      liveProvider === 'unknown'
-        ? 'No live status has been reported for this deployment yet'
-        : `${LIVE_STATUS_PROVIDER_NAME[liveProvider]} has not reported on this deployment yet`,
+      'No live status has been reported for this deployment yet',
       // A status describes one Release, so a newly published Release starts
       // out unreported even where the one before it was healthy.
       deployment.runningRelease
@@ -1300,11 +1237,6 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
     ],
     action: 'Open to inspect',
   };
-
-  // Flux reports one condition, not two — see `deriveFluxVital`'s docstring.
-  // `null` whenever the provider isn't Flux (the two-chip path below applies)
-  // or Flux has no reading at all yet (the `showUnreported` path applies).
-  const fluxVital = liveProvider === 'flux' ? deriveFluxVital(healthVital, syncVital) : null;
 
   // Staleness detail for the "Stale" chip. The face shows only the magnitude
   // ("N behind") — a relative time is noise at a glance and precise only when
@@ -1492,23 +1424,19 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
   // quiet card still says "Live" once, so it does not read as unreported.
   const liveExceptionChips: React.ReactNode[] = [];
   if (density === 'compact') {
-    const vitals: { axis: 'health' | 'sync'; presentation: VitalPresentation; eyebrowAxis?: string }[] = fluxVital
-      ? [{ ...fluxVital, eyebrowAxis: 'status' }]
-      : [
-          ...(healthVital ? [{ axis: 'health' as const, presentation: healthVital }] : []),
-          ...(syncVital ? [{ axis: 'sync' as const, presentation: syncVital }] : []),
-        ];
+    const vitals: { axis: 'health' | 'sync'; presentation: VitalPresentation }[] = [
+      ...(healthVital ? [{ axis: 'health' as const, presentation: healthVital }] : []),
+      ...(syncVital ? [{ axis: 'sync' as const, presentation: syncVital }] : []),
+    ];
     for (const vital of vitals) {
       if (vital.presentation.tone === 'ok') continue;
       liveExceptionChips.push(
         <LiveStateChip
           key={vital.axis}
           axis={vital.axis}
-          eyebrowAxis={vital.eyebrowAxis}
           status={deployment.liveStatus}
           release={deployment.runningRelease}
           presentation={vital.presentation}
-          provider={liveProvider}
           deploymentId={deployment.deploymentId}
           onOpenTab={onOpenTab}
         />,
@@ -1689,16 +1617,10 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
         <NodeBody>
           {/* Live status — always visible, including when fine. The first
               thing read on every card: is the cluster healthy and is it synced
-              to what was released, in the reporting system's own words, led by
-              that system's mark so the reading is attributed rather than
-              presented as ConfigHub's own. Each tag independently renders
-              nothing only when that axis has no reporter at all. Flux renders
-              ONE chip (its single collapsed condition), ArgoCD renders TWO
-              (its genuinely independent sync/health facts) — see
-              `deriveFluxVital`. */}
+              to what was released. Each tag independently renders nothing
+              only when that axis has no reporter at all. */}
           {(healthVital || syncVital || showUnreported) && (
             <LiveStateRow>
-              <LiveStatusProviderMark provider={liveProvider} />
               {showUnreported ? (
                 <StatusChipWithPeek
                   tone="neutral"
@@ -1707,17 +1629,6 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
                   spec={unreportedSpec}
                   onGo={openTab}
                 />
-              ) : fluxVital ? (
-                <LiveStateChip
-                  axis={fluxVital.axis}
-                  eyebrowAxis="status"
-                  status={deployment.liveStatus}
-                  release={deployment.runningRelease}
-                  presentation={fluxVital.presentation}
-                  provider={liveProvider}
-                  deploymentId={deployment.deploymentId}
-                  onOpenTab={onOpenTab}
-                />
               ) : (
                 <>
                   <LiveStateChip
@@ -1725,7 +1636,6 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
                     status={deployment.liveStatus}
                     release={deployment.runningRelease}
                     presentation={healthVital}
-                    provider={liveProvider}
                     deploymentId={deployment.deploymentId}
                     onOpenTab={onOpenTab}
                   />
@@ -1734,7 +1644,6 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
                     status={deployment.liveStatus}
                     release={deployment.runningRelease}
                     presentation={syncVital}
-                    provider={liveProvider}
                     deploymentId={deployment.deploymentId}
                     onOpenTab={onOpenTab}
                   />

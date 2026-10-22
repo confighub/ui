@@ -102,11 +102,12 @@ const createAttentionChip = (
 const defaultRenderRegularCell = (value: string): JSX.Element => (
   <CenteredTableCell>
     <Tooltip title={value} arrow>
-      <span>
+      {/* A flex item is as wide as its text unless allowed to shrink, which the ellipsis needs */}
+      <Box component='span' sx={{ minWidth: 0 }}>
         <Ellipses variant='body1'>
           <HighlightedCell value={value} />
         </Ellipses>
-      </span>
+      </Box>
     </Tooltip>
   </CenteredTableCell>
 );
