@@ -1,8 +1,11 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
+import type { Page } from '@playwright/test';
+
 import { ApiHelper } from './fixtures/api-helper';
 import { expect, hubApi, test } from './fixtures/test';
 import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
+import { openExplorer } from './fixtures/view-explorer-seed';
 
 /**
  * The View Explorer drawer shows resources as the resource explorer's Overview or as YAML: for a
@@ -31,6 +34,9 @@ spec:
   ports:
     - port: 80
 `;
+
+// The row panel sits beside the table, so the page's own tabs stay in the accessibility tree too.
+const drawer = (page: Page) => page.getByTestId('vx-row-panel');
 
 test.describe('view explorer unit resources', () => {
   test.use({ storageState: 'authentication.json' });
@@ -82,13 +88,13 @@ test.describe('view explorer unit resources', () => {
   });
 
   test('a Unit row shows its resources as an Overview or as YAML', async ({ page }) => {
-    await page.goto(`/x/view-explorer?view=${viewId}`);
+    await openExplorer(page, `/x/view-explorer?view=${viewId}`);
     await page.getByText('multi', { exact: true }).first().click();
-    await page.getByRole('tab', { name: 'Resources' }).click();
+    await drawer(page).getByRole('tab', { name: 'Resources' }).click();
 
     const tab = page.getByTestId('unit-resources');
-    const items = tab.getByRole('list', { name: 'Resources' }).getByRole('button');
-    await expect(items).toHaveCount(2, { timeout: 15000 });
+    // One bar names the resource on show and steps through the others.
+    await expect(tab.getByTestId('vx-resource-position')).toHaveText('1 of 2', { timeout: 15000 });
 
     // The first resource, Deployment by kind, as an Overview.
     await expect(tab.getByTestId('unit-resource-name')).toHaveText('web');
@@ -99,30 +105,41 @@ test.describe('view explorer unit resources', () => {
       timeout: 15000,
     });
 
-    await items.nth(1).click();
+    await tab.getByTestId('vx-resource-next').click();
+    await expect(tab.getByTestId('vx-resource-position')).toHaveText('2 of 2');
     await expect(page.locator('div.monaco-editor')).toContainText('kind: Service', {
       timeout: 15000,
     });
   });
 
   test('a Resource row shows the resource as an Overview or as YAML', async ({ page }) => {
-    await page.goto(`/x/view-explorer?view=${resourceViewId}`);
-    await page.getByText('apps/v1/Deployment', { exact: true }).first().click();
+    await openExplorer(page, `/x/view-explorer?view=${resourceViewId}`);
+    // The resource's name opens the drawer; its type is a value to filter on.
+    await page
+      .getByTestId('vx-row')
+      .filter({ hasText: 'apps/v1/Deployment' })
+      .first()
+      .locator('[data-column="ResourceName"]')
+      .click();
+    // A Kubernetes resource without a namespace is named without a leading slash.
+    await expect(
+      page.getByTestId('vx-row').filter({ hasText: 'apps/v1/Deployment' }).first().locator('[data-column="ResourceName"]'),
+    ).toHaveText('web');
 
-    await expect(page.getByRole('tab', { name: 'Overview' })).toHaveAttribute(
+    await expect(drawer(page).getByRole('tab', { name: 'Overview' })).toHaveAttribute(
       'aria-selected',
       'true',
       { timeout: 15000 },
     );
     await expect(page.getByText('nginx:1.25').first()).toBeVisible({ timeout: 15000 });
 
-    await page.getByRole('tab', { name: 'YAML' }).click();
+    await drawer(page).getByRole('tab', { name: 'YAML' }).click();
     await expect(page.locator('div.monaco-editor')).toContainText('kind: Deployment', {
       timeout: 15000,
     });
 
     // Its columns are the row and the resource, so there is no Details tab.
-    await expect(page.getByRole('tab', { name: 'Details' })).toHaveCount(0);
+    await expect(drawer(page).getByRole('tab', { name: 'Details' })).toHaveCount(0);
 
     // Where the resource lives, with its Unit linked to the Unit's Resources tab, opened on it,
     // as is the drawer's own link to the resource's detail page.
@@ -133,9 +150,10 @@ test.describe('view explorer unit resources', () => {
       unitResourcesHref,
     );
     await expect(context).toContainText('Kubernetes/YAML');
+    // The drawer's link also remembers the explorer tab, for the page's way back.
     await expect(page.getByRole('link', { name: 'Open full detail page' })).toHaveAttribute(
       'href',
-      unitResourcesHref,
+      /^\/units\/[0-9a-f-]{36}\/[0-9a-f-]{36}\?tab=5&resource=[0-9a-f-]{36}&explorer=view%3D[0-9a-f-]{36}/,
     );
   });
 });

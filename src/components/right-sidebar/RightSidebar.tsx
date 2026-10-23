@@ -20,7 +20,7 @@ import {
   useCreateTriggerMutation,
   useDeleteInvocationMutation,
   useGetSpaceQuery,
-  useInvokeFunctionsMutation,
+  useInvokeFunctionsOnOrgMutation,
   useLazySearchUnitDataQuery,
   useListAllUnitsQuery,
   useListAllInvocationsQuery,
@@ -379,6 +379,10 @@ export const InvokerSidebar = ({
   }, [effectiveUnits]);
 
   const spaceId = effectiveUnits?.[0]?.spaceId;
+  // Invocations go to the organization, so selected Units in every Space are reached. When
+  // they all share a Space, its executor runs the functions, so the Attributes it registers
+  // apply as they do on that Space's own pages.
+  const executorSpaceId = effectiveUnits.every((unit) => unit.spaceId === spaceId) ? spaceId : undefined;
 
   // Get functions
   const { data: functionsData } = useListOrgFunctionsQuery({});
@@ -417,7 +421,7 @@ export const InvokerSidebar = ({
   );
 
   // Mutations
-  const [invokeFunctionMutation] = useInvokeFunctionsMutation();
+  const [invokeFunctionMutation] = useInvokeFunctionsOnOrgMutation();
   const [createInvocationMutation] = useCreateInvocationMutation();
   const [triggerSearchUnitData] = useLazySearchUnitDataQuery();
 
@@ -644,7 +648,7 @@ export const InvokerSidebar = ({
             ),
           );
           result = await invokeFunctionMutation({
-            spaceId: spaceId,
+            executorSpace: executorSpaceId,
             where: whereClause || undefined,
             dryRun: dryRun ? 'true' : undefined,
             functionInvocationsRequest: {
@@ -657,6 +661,7 @@ export const InvokerSidebar = ({
         } else if (initiativeId) {
           const { responses } = await invokeInChangeSet({
             spaceId,
+            executorSpaceId,
             initiativeId,
             unitIds: selectedUnitIds,
             toolchainType: enrichedContext.primaryToolchainType || '',
@@ -666,7 +671,7 @@ export const InvokerSidebar = ({
           result = responses;
         } else {
           result = await invokeFunctionMutation({
-            spaceId: spaceId,
+            executorSpace: executorSpaceId,
             where: whereClause || undefined,
             dryRun: dryRun ? 'true' : undefined,
             functionInvocationsRequest: {
@@ -754,7 +759,7 @@ export const InvokerSidebar = ({
         setIsInvoking(false);
       }
     },
-    [spaceId, enrichedContext, invokeFunctionMutation, initiativeId, invokeInChangeSet, addInvocation, triggerSearchUnitData]
+    [spaceId, executorSpaceId, enrichedContext, invokeFunctionMutation, initiativeId, invokeInChangeSet, addInvocation, triggerSearchUnitData]
   );
 
   // Handle save invocation or trigger
@@ -906,7 +911,7 @@ export const InvokerSidebar = ({
         }));
 
         await invokeFunctionMutation({
-          spaceId: unitSpaceId,
+          executorSpace: unitSpaceId,
           where: `UnitID='${unitId}'`,
           functionInvocationsRequest: {
             ChangeDescription: changeDescription,

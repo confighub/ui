@@ -9,10 +9,10 @@ import {
   FunctionArgument,
   FunctionInvocationsResponse,
   FunctionParameter,
-  InvokeFunctionsApiArg,
+  InvokeFunctionsOnOrgApiArg,
   useCreateInvocationMutation,
   useCreateTriggerMutation,
-  useInvokeFunctionsMutation,
+  useInvokeFunctionsOnOrgMutation,
   useListAllChangeSetsQuery,
   useListSpacesQuery,
 } from '@confighub/rtk-query';
@@ -88,7 +88,7 @@ export const InvokeUnitFunctionsModal = ({
     }
   }, [func, invocationToEdit, isOpen, reset]);
 
-  const [invokeFunctionMutation] = useInvokeFunctionsMutation();
+  const [invokeFunctionMutation] = useInvokeFunctionsOnOrgMutation();
   const [createTriggerMutation] = useCreateTriggerMutation();
   const [createInvocationMutation] = useCreateInvocationMutation();
   const { trackEntityCreated } = useAnalytics();
@@ -262,8 +262,8 @@ export const InvokeUnitFunctionsModal = ({
   const onInvokeFunction = async (data: Record<string, string>) => {
     const results = await Promise.all(
       unitsToEdit.map(async (unit) => {
-        const input: InvokeFunctionsApiArg = {
-          spaceId: unit?.SpaceID || '',
+        const input: InvokeFunctionsOnOrgApiArg = {
+          executorSpace: unit?.SpaceID || undefined,
           where: `UnitID='${unit.UnitID}'`,
           dryRun: isDryRun ? 'true' : undefined,
           ...(selectedChangeSet ? { changeSetId: selectedChangeSet } : {}),

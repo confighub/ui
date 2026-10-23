@@ -98,8 +98,4 @@ export const resourceAdapter: EntityAdapter = {
     if (!r.SpaceID || !r.UnitID) return undefined;
     return unitResourceHref(r.SpaceID, r.UnitID, r.ResourceID);
   },
-  navigateToRow() {
-    // Intentional no-op: ViewExplorerPage opens the drawer on row click
-    // before delegating to navigateToRow. Resources never need to navigate.
-  },
 };

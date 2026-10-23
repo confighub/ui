@@ -71,13 +71,4 @@ export const spaceAdapter: EntityAdapter = {
     if (!spaceId) return undefined;
     return `/spaces/${spaceId}`;
   },
-  navigateToRow(row, event, navigate, extraState) {
-    const href = spaceAdapter.getRowHref(row);
-    if (!href) return;
-    if (event.metaKey || event.ctrlKey) {
-      window.open(href, '_blank');
-    } else {
-      navigate(href, { state: extraState ?? {} });
-    }
-  },
 };

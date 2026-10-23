@@ -1,8 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
-import { NavigateFunction } from 'react-router-dom';
-
 import { Column } from '@confighub/rtk-query';
 
 import { GroupNavRow } from '../cell-value';
@@ -14,8 +12,7 @@ import { GroupNavRow } from '../cell-value';
  * `confighub.com/view-target = Resource`, then rendered as one row per
  * resource extracted from the matching units via the `get-resources`
  * function. From the user's perspective Resource is an equal first-class
- * choice; the indirection lives entirely in this file's neighbours
- * (useTransparentFilter, entityTypeOfView, useViewData).
+ * choice.
  */
 export type ViewEntityType = 'Unit' | 'Space' | 'Resource';
 
@@ -66,11 +63,4 @@ export interface EntityAdapter {
   getRowId(row: GroupNavRow): string | undefined;
   /** Detail-page URL for the row, used by handleRowClick. */
   getRowHref(row: GroupNavRow): string | undefined;
-  /** Default row click — opens detail in new tab on cmd/ctrl-click. */
-  navigateToRow(
-    row: GroupNavRow,
-    event: React.MouseEvent,
-    navigate: NavigateFunction,
-    extraState?: Record<string, unknown>,
-  ): void;
 }

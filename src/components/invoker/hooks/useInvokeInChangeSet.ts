@@ -8,7 +8,7 @@ import {
   confighubApi,
   type FunctionInvocation,
   type FunctionInvocationsResponse,
-  useInvokeFunctionsMutation,
+  useInvokeFunctionsOnOrgMutation,
 } from '@confighub/rtk-query';
 import {
   invocationAborted,
@@ -22,7 +22,10 @@ import {
 } from './useInitiativeChangeSetLifecycle';
 
 export interface InvokeInChangeSetArgs {
+  // The Space the ChangeSet is created in.
   spaceId: string;
+  // The Space whose executor runs the function, when the Units share one.
+  executorSpaceId?: string;
   initiativeId: string;
   unitIds: string[];
   toolchainType: string;
@@ -40,13 +43,13 @@ const unitIdsWhere = (unitIds: string[]): string =>
 
 export const useInvokeInChangeSet = () => {
   const { openChangeSet, closeChangeSet } = useInitiativeChangeSetLifecycle();
-  const [invokeFunctions] = useInvokeFunctionsMutation();
+  const [invokeFunctions] = useInvokeFunctionsOnOrgMutation();
   const dispatch = useAppDispatch();
   const [isInvoking, setIsInvoking] = useState(false);
 
   const invoke = useCallback(
     async (args: InvokeInChangeSetArgs): Promise<InvokeInChangeSetResult> => {
-      const { spaceId, initiativeId, unitIds, toolchainType, functionInvocation, dryRun } = args;
+      const { spaceId, executorSpaceId, initiativeId, unitIds, toolchainType, functionInvocation, dryRun } = args;
       setIsInvoking(true);
       dispatch(invocationStarted({ initiativeId }));
       let changeSetId: string | undefined;
@@ -68,7 +71,7 @@ export const useInvokeInChangeSet = () => {
         changeSetId = opened.changeSetId;
 
         const responses = await invokeFunctions({
-          spaceId,
+          executorSpace: executorSpaceId,
           where: unitIdsWhere(unitIds),
           dryRun: dryRun ? 'true' : undefined,
           changeSetId,

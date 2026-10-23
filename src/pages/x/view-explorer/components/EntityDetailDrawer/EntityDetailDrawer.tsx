@@ -30,9 +30,54 @@ import { resourceDisplayName } from '@/utility/resource-type-functions';
 
 import { EntityAdapter } from '../../adapters';
 import { isResourceViewRow, ResourceViewRow } from '../../adapters/resource-row';
-import { decodeRawData } from '../../hooks/useResourceViewRows';
+import { decodeRawData } from '../../queries/useResourceViewRows';
 import { getGroupByColumns } from '../../types';
 import { ResourcesTab } from './ResourcesTab';
+import type { ResourceView } from '@/components/unit-resources/UnitResourceBrowser';
+import { useUnitResources } from '@/hooks/useUnitResources';
+
+/** One line of the Details tab, given by a caller that has no saved View to read columns from. */
+export interface DetailLine {
+  label: string;
+  value: string;
+  /** Show the value in the code font (ids, paths). */
+  mono?: boolean;
+}
+
+interface EntityDetailPanelProps {
+  row: GroupNavRow;
+  view: ExtendedViewRead | null;
+  adapter: EntityAdapter;
+  onClose: () => void;
+  details?: readonly DetailLine[];
+  /** The row's page link, when the caller adds to it; else the adapter's. */
+  rowHref?: string;
+}
+
+/**
+ * The drawer's content as a plain panel, for a page that lays it out itself
+ * (beside a table, say) instead of sliding it over the page.
+ */
+export function EntityDetailPanel({
+  row,
+  view,
+  adapter,
+  onClose,
+  details,
+  rowHref,
+}: EntityDetailPanelProps) {
+  return (
+    <DrawerBody
+      key={adapter.getRowId(row) ?? 'unknown'}
+      row={row}
+      view={view}
+      adapter={adapter}
+      onClose={onClose}
+      details={details}
+      rowHref={rowHref}
+    />
+  );
+}
 
 interface EntityDetailDrawerProps {
   row: GroupNavRow | null;
@@ -91,11 +136,15 @@ function DrawerBody({
   view,
   adapter,
   onClose,
+  details,
+  rowHref,
 }: {
   row: GroupNavRow;
-  view: ExtendedViewRead;
+  view: ExtendedViewRead | null;
   adapter: EntityAdapter;
   onClose: () => void;
+  details?: readonly DetailLine[];
+  rowHref?: string;
 }) {
   const isResource = isResourceViewRow(row);
   // Resource rows open straight on the resource itself, as an Overview, since
@@ -103,7 +152,7 @@ function DrawerBody({
   // Details tab, as their columns are the row itself and the resource. Unit +
   // Space rows show metadata first.
   const [activeTab, setActiveTab] = useState<ActiveTab>(isResource ? 'overview' : 'details');
-  const href = adapter.getRowHref(row);
+  const href = rowHref ?? adapter.getRowHref(row);
   const resourceBody = useResourceBody(isResource ? (row as ResourceViewRow) : null);
   // The friendly views are of Kubernetes resources; other configuration is
   // shown as written. Until the toolchain is known, the Overview is offered.
@@ -123,6 +172,24 @@ function DrawerBody({
 
   const supportsResources = adapter.supportsResources;
   const { spaceID, unitID } = useMemo(() => extractUnitIDs(row), [row]);
+  // The Unit's resources: their names for the tab's count, and their bodies from the first
+  // time the tab is opened (kept after that, so going back to Details and returning does not
+  // fetch them again). The selection and the view are kept while this row is open; this body
+  // is keyed by row, so a new row starts over.
+  const [bodiesWanted, setBodiesWanted] = useState(false);
+  const unitResources = useUnitResources({
+    spaceID,
+    unitID,
+    withBody: bodiesWanted,
+    skip: !supportsResources,
+  });
+  const [resourceId, setResourceId] = useState('');
+  const [resourceView, setResourceView] = useState<ResourceView>('overview');
+  // No count while loading, or when the list could not be read (it is not zero then).
+  const resourceCount =
+    unitResources.error || (unitResources.isLoading && unitResources.rows.length === 0)
+      ? null
+      : unitResources.rows.length;
 
   return (
     <>
@@ -137,12 +204,12 @@ function DrawerBody({
             {title}
           </Typography>
           <Typography
-            variant='caption'
+            variant='body2'
             color='text.secondary'
             noWrap
             component='div'
-            // Kinds are case-sensitive; the caption variant would capitalize them.
-            sx={isResource ? { textTransform: 'none', fontFamily: 'monospace' } : undefined}
+            // Kinds are case-sensitive and read as code.
+            sx={isResource ? { fontFamily: 'var(--font-mono)' } : undefined}
           >
             {isResource ? subtitle || 'Resource' : adapter.entityType}
             {!isResource && subtitle && subtitle !== title ? ` · ${subtitle}` : ''}
@@ -182,7 +249,10 @@ function DrawerBody({
 
       <Tabs
         value={shownTab}
-        onChange={(_, v: ActiveTab) => setActiveTab(v)}
+        onChange={(_, v: ActiveTab) => {
+          if (v === 'resources') setBodiesWanted(true);
+          setActiveTab(v);
+        }}
         sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 36 }}
       >
         {isResource && hasOverview && (
@@ -208,17 +278,31 @@ function DrawerBody({
         )}
         {supportsResources && (
           <Tab
-            label='Resources'
+            label={resourceCount === null ? 'Resources' : `Resources (${resourceCount})`}
             value='resources'
             sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.78rem' }}
           />
         )}
       </Tabs>
 
-      <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-        {shownTab === 'details' && <DetailsTab row={row} view={view} adapter={adapter} />}
+      {/* The Resources tab scrolls inside its own detail area, under its bar. */}
+      <Box
+        sx={{ flex: 1, minHeight: 0, overflow: shownTab === 'resources' ? 'hidden' : 'auto' }}
+      >
+        {shownTab === 'details' && (
+          <DetailsTab row={row} view={view} details={details} href={href} />
+        )}
         {shownTab === 'resources' && supportsResources && (
-          <ResourcesTab spaceID={spaceID} unitID={unitID} />
+          <ResourcesTab
+            rows={unitResources.rows}
+            isLoading={unitResources.isLoading}
+            error={unitResources.error}
+            selectedId={resourceId}
+            onSelect={setResourceId}
+            view={resourceView}
+            onViewChange={setResourceView}
+            unitName={title}
+          />
         )}
         {(shownTab === 'overview' || shownTab === 'yaml') && isResource && (
           <ResourceContent
@@ -294,9 +378,7 @@ function ResourceContent({
     return (
       <Box sx={{ p: 2 }}>
         <Typography variant='body2' color='text.disabled'>
-          {isError
-            ? 'Failed to load this resource.'
-            : 'No body available for this resource.'}
+          {isError ? 'Failed to load this resource.' : 'No body available for this resource.'}
         </Typography>
       </Box>
     );
@@ -327,63 +409,71 @@ function ResourceContent({
 function DetailsTab({
   row,
   view,
-  adapter,
+  details,
+  href,
 }: {
   row: GroupNavRow;
-  view: ExtendedViewRead;
-  adapter: EntityAdapter;
+  view: ExtendedViewRead | null;
+  details?: readonly DetailLine[];
+  href?: string;
 }) {
   // Include grouped columns here too — they're hidden from the grid but still
   // relevant when inspecting a single row.
-  const columns: Column[] = useMemo(() => view.View?.Columns ?? [], [view.View?.Columns]);
-  const groupByColumns = getGroupByColumns(view.View);
+  const columns: Column[] = useMemo(() => view?.View?.Columns ?? [], [view?.View?.Columns]);
+  const groupByColumns = getGroupByColumns(view?.View);
   const groupBySet = new Set(groupByColumns);
 
   // Sort: grouped columns first (since they're "where this entity lives"),
   // then the rest in their declared order.
-  const ordered = [
-    ...columns.filter((c) => groupBySet.has(c.Name)),
-    ...columns.filter((c) => !groupBySet.has(c.Name)),
-  ];
+  const ordered: readonly DetailLine[] =
+    details ??
+    [
+      ...columns.filter((c) => groupBySet.has(c.Name)),
+      ...columns.filter((c) => !groupBySet.has(c.Name)),
+    ].map((c) => ({
+      label: c.Name,
+      value: getCellValue(row, c.Name),
+      mono: true,
+    }));
 
   return (
     <Box sx={{ p: 2 }}>
       <Stack spacing={1.25}>
-        {ordered.map((col) => {
-          const value = getCellValue(row, col.Name);
-          return (
-            <Box key={col.Name}>
-              <Typography
-                variant='caption'
-                color='text.secondary'
-                sx={{
-                  display: 'block',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  fontSize: '0.68rem',
-                }}
-              >
-                {col.Name}
-              </Typography>
-              <Typography
-                variant='body2'
-                sx={{
-                  fontFamily: 'monospace',
-                  fontSize: '0.82rem',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}
-              >
-                {value || <Box component='span' sx={{ color: 'text.disabled' }}>—</Box>}
-              </Typography>
-            </Box>
-          );
-        })}
+        {ordered.map(({ label, value, mono }) => (
+          <Box
+            key={label}
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: '140px minmax(0, 1fr)',
+              columnGap: 2,
+              alignItems: 'baseline',
+            }}
+          >
+            <Typography variant='body2' color='text.secondary'>
+              {label}
+            </Typography>
+            <Typography
+              variant='body1'
+              sx={{
+                fontFamily: mono ? 'var(--font-mono)' : undefined,
+                fontSize: mono ? '0.82rem' : undefined,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {value || (
+                <Box component='span' sx={{ color: 'text.disabled' }}>
+                  —
+                </Box>
+              )}
+            </Typography>
+          </Box>
+        ))}
       </Stack>
-      {adapter.getRowHref(row) && (
+      {href && (
         <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
           <Link
-            href={adapter.getRowHref(row)}
+            href={href}
             target='_blank'
             rel='noopener noreferrer'
             underline='hover'

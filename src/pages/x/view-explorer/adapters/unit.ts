@@ -3,7 +3,6 @@
 
 import { Column, ExtendedUnitRead } from '@confighub/rtk-query';
 
-import { GroupNavRow } from '../cell-value';
 import { EntityAdapter } from './types';
 
 const UNIT_FILTER_FIELDS = [
@@ -73,14 +72,5 @@ export const unitAdapter: EntityAdapter = {
     const unitId = eu.Unit?.UnitID;
     if (!spaceId || !unitId) return undefined;
     return `/units/${spaceId}/${unitId}`;
-  },
-  navigateToRow(row: GroupNavRow, event, navigate, extraState) {
-    const href = unitAdapter.getRowHref(row);
-    if (!href) return;
-    if (event.metaKey || event.ctrlKey) {
-      window.open(href, '_blank');
-    } else {
-      navigate(href, { state: extraState ?? {} });
-    }
   },
 };

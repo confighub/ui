@@ -11,7 +11,7 @@ import {
   FunctionInvocationsRequest,
   FunctionInvocationsResponse,
   ListFunctionsApiResponse,
-  useInvokeFunctionsMutation,
+  useInvokeFunctionsOnOrgMutation,
   useLazyGetSpaceQuery,
   useLazyListAllTargetsQuery,
   useLazyListAllTriggersQuery,
@@ -59,7 +59,7 @@ export const ActionSidebar = ({
   isFetchingUnit = false,
   lastPollTimestamp, // Used passively to trigger re-renders - changes every ~5s when polling occurs
 }: IActionSideBarProps) => {
-  const [invokeFunctions] = useInvokeFunctionsMutation();
+  const [invokeFunctions] = useInvokeFunctionsOnOrgMutation();
   const [listTriggers] = useLazyListTriggersQuery();
   const [listAllTriggers] = useLazyListAllTriggersQuery();
   const [getSpace] = useLazyGetSpaceQuery();
@@ -115,7 +115,7 @@ export const ActionSidebar = ({
         };
 
         const result = await invokeFunctions({
-          spaceId: unit.Unit.SpaceID,
+          executorSpace: unit.Unit.SpaceID,
           where: `UnitID = '` + unit?.Unit?.UnitID + `'`,
           functionInvocationsRequest: request,
         });

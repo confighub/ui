@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { confighubApi, useInvokeFunctionsMutation } from '@confighub/rtk-query';
+import { confighubApi, useInvokeFunctionsOnOrgMutation } from '@confighub/rtk-query';
 import { useUnitDataMap } from '@/hooks/useUnitData';
 import { useAppDispatch } from '@/hooks/useApp';
 import { getApiErrorMessage } from '@/utility/error-functions';
@@ -141,7 +141,7 @@ export function useSetAttributesMutation({
   applyFieldPatch,
   recordFieldError,
 }: UseSetAttributesMutationArgs): UseSetAttributesMutationResult {
-  const [invokeFunctions] = useInvokeFunctionsMutation();
+  const [invokeFunctions] = useInvokeFunctionsOnOrgMutation();
   const dispatch = useAppDispatch();
 
   // The configuration is not on the Unit. Every Unit this hook may edit is fetched in one
@@ -299,7 +299,7 @@ export function useSetAttributesMutation({
 
       try {
         await invokeFunctions({
-          spaceId,
+          executorSpace: spaceId,
           where: `UnitID='${unitId}'`,
           changeSetId: openChangeSetIdOf(unitById, unitId),
           functionInvocationsRequest: {
@@ -374,7 +374,7 @@ export function useSetAttributesMutation({
 
         try {
           await invokeFunctions({
-            spaceId,
+            executorSpace: spaceId,
             where: `UnitID='${unitId}'`,
             changeSetId: openChangeSetIdOf(unitById, unitId),
             functionInvocationsRequest: {
@@ -412,7 +412,7 @@ export function useSetAttributesMutation({
           setOverlay(unitId, path, null);
           try {
             await invokeFunctions({
-              spaceId,
+              executorSpace: spaceId,
               where: `UnitID='${unitId}'`,
               changeSetId: openChangeSetIdOf(unitById, unitId),
               functionInvocationsRequest: {

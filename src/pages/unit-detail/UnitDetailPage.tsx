@@ -69,6 +69,9 @@ export const UnitDetailPage = () => {
   const { id = '', spaceID = '' } = useParams();
   const [searchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
+  // Opened from a View Explorer tab in a new browser tab: the explorer's own
+  // query (`view=…&t=…&d=…`), read once so a later tab change here keeps it.
+  const [explorerReturn] = useState(() => searchParams.get('explorer'));
   const [selectedTab, setSelectedTab] = useState(parseInt(tabParam || '0'));
   // A link within the page, such as to another Unit's Config tab, keeps this page mounted.
   useEffect(() => {
@@ -329,13 +332,13 @@ export const UnitDetailPage = () => {
     <Container>
       <Header
         breadCrumbs={[
-          ...(explorerState?.fromViewExplorer
+          ...(explorerState?.fromViewExplorer || explorerReturn !== null
             ? [
                 {
-                  name: 'View Explorer',
+                  name: 'View explorer',
                   isLink: true,
-                  link: '/x/view-explorer',
-                  state: { restoreViewId: explorerState.viewId },
+                  link: explorerReturn ? `/x/view-explorer?${explorerReturn}` : '/x/view-explorer',
+                  state: { restoreViewId: explorerState?.viewId },
                 },
               ]
             : []),

@@ -9,7 +9,7 @@
 import { expect, test } from '@playwright/test';
 
 import { spaceAdapter } from '../src/pages/x/view-explorer/adapters/space';
-import { spaceQueryFields } from '../src/pages/x/view-explorer/space-query';
+import { spaceQueryFields } from '../src/pages/x/view-explorer/queries/space-query';
 
 test.describe('View Explorer Space views: Component column (pure)', () => {
   for (const column of ['Component', 'Component.Slug']) {

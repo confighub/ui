@@ -11,13 +11,13 @@ import {
   FunctionInvocationsRequest,
   FunctionInvocationsResponse,
   FunctionSignature,
-  InvokeFunctionsApiArg,
   Unit,
   UnitRead,
   UpdateUnitApiArg,
   useBulkPatchUnitsMutation,
   useDeleteUnitMutation,
   useInvokeFunctionsMutation,
+  useInvokeFunctionsOnOrgMutation,
   useLazyGetUnitQuery,
   useUpdateUnitMutation,
 } from '@confighub/rtk-query';
@@ -107,8 +107,14 @@ export const useUnitActions = ({
   const [functionInvocationError, setFunctionInvocationError] = useState<string>('');
 
   // API Mutations
-  const [invokeFunctions, { error: invokeError, isSuccess: isInvokeSuccess }] =
+  // Only the Space endpoint invokes on a Revision, so a Revision goes through its Unit's
+  // Space. A Unit goes through the organization's endpoint, which selects by where alone.
+  const [invokeFunctions, { error: invokeRevisionError, isSuccess: isInvokeRevisionSuccess }] =
     useInvokeFunctionsMutation();
+  const [invokeFunctionsOnOrg, { error: invokeUnitError, isSuccess: isInvokeUnitSuccess }] =
+    useInvokeFunctionsOnOrgMutation();
+  const invokeError = invokeUnitError ?? invokeRevisionError;
+  const isInvokeSuccess = isInvokeUnitSuccess || isInvokeRevisionSuccess;
   const [deleteUnit, { error: deleteError, isSuccess: isDeleteSuccess }] =
     useDeleteUnitMutation();
   const [updateUnit, { error: updateError, isSuccess: isUpdateSuccess }] =
@@ -229,23 +235,23 @@ export const useUnitActions = ({
       ],
     };
 
-    // If revisionId exists the input param should contain unitId and revisionId
-    const input: InvokeFunctionsApiArg = {
-      spaceId: spaceId,
+    const common = {
       functionInvocationsRequest: inputReq,
       ...(dryRun && { dryRun }), // Add dryRun parameter if present
       ...(changeSetId && { changeSetId }), // Add changeSetId parameter if present
-      ...(revisionId
-        ? {
-            unitId: currentUnit?.UnitID || unitId,
-            revisionId,
-          }
-        : {
-            where: `UnitID='${currentUnit?.UnitID || unitId}'`,
-          }),
     };
-
-    const response = await invokeFunctions(input);
+    const response = revisionId
+      ? await invokeFunctions({
+          ...common,
+          spaceId,
+          unitId: currentUnit?.UnitID || unitId,
+          revisionId,
+        })
+      : await invokeFunctionsOnOrg({
+          ...common,
+          executorSpace: spaceId,
+          where: `UnitID='${currentUnit?.UnitID || unitId}'`,
+        });
 
     // Pass the function to handleFunctionInvocation so it can update selectedFunction after success
     handleFunctionInvocation([response.data] as FunctionInvocationsResponse[], undefined, undefined, functionToInvoke || undefined);

@@ -6,7 +6,7 @@ import {
   confighubApi,
   useBulkCreateSpacesMutation,
   useBulkCreateUnitsMutation,
-  useInvokeFunctionsMutation,
+  useInvokeFunctionsOnOrgMutation,
   type BulkCreateSpacesApiResponse,
   type BulkCreateUnitsApiResponse,
 } from '@confighub/rtk-query';
@@ -204,7 +204,7 @@ function deriveOverallPhase(statuses: PerSpaceStatus[]): OverallPhase {
 export function useCreateVariantMutation(): UseCreateVariantMutationResult {
   const [bulkCreateSpaces] = useBulkCreateSpacesMutation();
   const [bulkCreateUnits] = useBulkCreateUnitsMutation();
-  const [invokeFunctions] = useInvokeFunctionsMutation();
+  const [invokeFunctions] = useInvokeFunctionsOnOrgMutation();
   const dispatch = useAppDispatch();
 
   // ── State ─────────────────────────────────────────────────────────────────
@@ -230,7 +230,7 @@ export function useCreateVariantMutation(): UseCreateVariantMutationResult {
     async (spaceId: string, namespace: string): Promise<'done' | 'failed'> => {
       try {
         await invokeFunctions({
-          spaceId,
+          executorSpace: spaceId,
           where: `SpaceID='${spaceId}'`,
           functionInvocationsRequest: {
             FunctionInvocations: [
