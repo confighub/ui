@@ -2,79 +2,35 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * ReleaseDiffPanel — the diff surface of the Releases pane (v7
- * "height-encoded").
+ * ReleaseDiffPanel — the diff surface of the Releases pane.
  *
- * Purely presentational: it receives already-resolved per-unit diffs and draws
- * them. It fetches nothing, owns no app state, and never mutates anything —
- * the Releases tab is a read-only surface.
+ * Purely presentational: it receives each unit's server diff (`useReleaseDiff`) and draws
+ * it. It fetches nothing, owns no app state, and never mutates anything — the Releases tab
+ * is a read-only surface.
  *
  * === The reuse seam ===
- * The rows themselves are NOT drawn here. Every unit renders exactly one
- * `TreeDiffSection` — the same shared three-column path | before | after tree
- * the revision-compare drawer, the activity feed and the invoker result card
- * use. This module owns only the chrome around it: the loading / unavailable /
- * empty three-way split, and the per-unit header (kind, unit-details link, the
- * never-released badge and the `{n}F` changed-field count).
+ * The rows themselves are NOT drawn here. Every unit renders one `ConfigDiffView`, the
+ * resource-by-resource diff the revision-compare drawer, the ChangeOrder pages and the
+ * invoker result card use, so a path two resources of a unit share is drawn in each of them.
+ * This module owns only the chrome around it: the loading / unavailable / empty three-way
+ * split, the per-unit header (kind, unit-details link, the "added in" badge and the `{n}F`
+ * change count), and the container images, hoisted out of each resource's tree to the top
+ * of it as `ImageChangeRows`.
  *
- * The drawer's own chrome — the `Drawer` itself, the revision-picker rail, the
- * change-count pill, the Fields/Source toggle — is deliberately NOT brought
- * across. In this pane the lane above IS the picker; a second one would
- * contradict it.
- *
- * === How the tree is built ===
- * This pane always renders `showAllContext: false` — the mode the activity feed
- * and the invoker card already use. `TreeDiffSection` then builds its tree from the
- * CHANGED paths alone (`buildDiffTree`), collapses the single-child folder
- * chains above them, and injects only the identifying sibling of an array
- * element (`injectKeyContext`). A unit with one changed field under
- * `rules.1.verbs.0` is therefore TWO rows — the collapsed folder
- * `rules.1.verbs` and the leaf `0` — not the whole document. `allPaths` is
- * still handed over, so each dotted segment of a folder row keeps its
- * "show N more" click target: per-branch disclosure survives, wholesale
- * context does not.
- *
- * The shared component's opt-in mode — every path rendered, unchanged ones
- * dimmed — is reachable from the revision-compare drawer, which passes
- * `showAllContext` unconditionally. This pane no longer offers it.
- *
- * === The old ∪ changed union, and why it is load-bearing ===
- * `buildContextTree` walks `allPaths` and nothing else: a changed path missing
- * from that list is silently dropped. This pane's `result.allPaths` is the OLD
- * side of the comparison (see `useUnreleasedChanges`), whereas the three
- * pre-existing `TreeDiffSection` callers all pass the AFTER side. Handing the
- * old side straight to the shared component's all-context mode would erase
- * every ADDED field, and for
- * a `neverReleased` unit (whose old side is empty) would render nothing at all.
- *
- * `toTreeDiffInput` fixes that with a union rather than a fetch: a path in the
- * new side but not the old side is BY DEFINITION a changed path — the diff
- * builder emits `oldValue: '-'` for it — so `old ∪ changed ≡ old ∪ new`. The
- * union is complete. Its one cosmetic cost: an appended new-only path sorts to
- * the end of its folder rather than into document order. No duplicate folder
- * appears (`buildContextTree` dedupes folder names by key), only the ordering
- * inside a folder shifts.
- *
- * === Width ===
- * The shared tree is three percentage-width columns, so it degrades rather than
- * breaks as the side pane narrows. At the 650px default the columns are
- * comfortable; dragged down to ~380px the rows auto-wrap and stay legible but
- * cramped, and long dotted folder labels can spill past the first divider
- * (`PropertyCell` is right-aligned and `overflow: visible`). That artefact is
- * accepted: fixing it means editing `PropertyCell`, which has seven importers.
- * Two escape hatches already exist — the draggable dividers, and
- * `stableColumnStyle` below, which this panel fully controls.
+ * The diff is read with `include=Context`, which is what names an image's container and
+ * finds the containers beside it that did not move. The tree leaves the context out.
  */
 import { memo, useMemo, type CSSProperties } from 'react';
 import type { ReactElement } from 'react';
 
+import type { ConfigDiff, ResourceDiff } from '@confighub/rtk-query';
 import Box from '@mui/material/Box';
 import Skeleton from '@mui/material/Skeleton';
 
-import type { FieldDiff } from './componentTypes';
-import { countLogicalChanges } from './entryBuilders';
+import { ConfigDiffView } from '@/components/config-diff/ConfigDiffView';
+
 import { ImageChangeRows } from './ImageChangeRows';
-import { buildImageRows, parseImagePath, type ImageRowModel } from './imageRef';
+import { imageRowsOfResource, type ImageRowModel } from './imageRef';
 import {
   EmptyBlock,
   EmptyValue,
@@ -89,9 +45,9 @@ import {
   UnitNameLink,
   VisuallyHidden,
 } from './releasePaneStyles';
-import { TreeDiffSection, type TreeDiffDomHooks } from './TreeDiffSection';
+import type { TreeDiffDomHooks } from './TreeDiffSection';
 import { useColumnResize } from './useColumnResize';
-import type { UnreleasedUnitDiffResult } from './useUnreleasedChanges';
+import type { ReleaseUnitDiff } from './useReleaseDiff';
 
 // ============================================================================
 // PUBLIC TYPES
@@ -107,12 +63,7 @@ export interface ReleaseDiffUnitView {
    * no page to open. Such a header renders as plain text, never a dead link.
    */
   spaceId?: string;
-  /**
-   * Resource kind for the `Kind | name` header line, when the unit resolves to
-   * exactly one identifiable document. Falls back to the literal `Unit`.
-   */
-  kind?: string;
-  result: UnreleasedUnitDiffResult;
+  result: ReleaseUnitDiff;
 }
 
 export interface ReleaseDiffPanelProps {
@@ -126,11 +77,11 @@ export interface ReleaseDiffPanelProps {
    */
   fromLabel: string;
   toLabel: string;
-  /** Already filtered to units with >= 1 changed field, in stable order. */
+  /** Already filtered to units with >= 1 change, in stable order. */
   units: ReleaseDiffUnitView[];
   isLoading: boolean;
   /**
-   * The comparison can never resolve (a revision fetch failed). Distinct from
+   * The comparison can never resolve (a diff read failed). Distinct from
    * empty: "nothing changed" is a claim about the data, and it must not be made
    * on behalf of data that never arrived.
    */
@@ -143,89 +94,42 @@ export interface ReleaseDiffPanelProps {
 // ADAPTER
 // ============================================================================
 
-
-/** One unit's resolved inputs for `TreeDiffSection`, plus the panel's verdict on them. */
+/** One unit's diff split for drawing: each resource's image rows, and its tree without them. */
 interface ReleaseUnitTree {
   unit: ReleaseDiffUnitView;
-  entry: { unitId: string; fieldDiffs: FieldDiff[] };
-  allPaths: { path: string; value: string }[];
-  /** Container images, hoisted out of the tree to the head of the unit. */
-  imageRows: ImageRowModel[];
-  /** Logical (array-collapsed) changed-field count for the `{n}F` header. */
-  changedFields: number;
+  /** The unit's diff, each resource holding only the changes its tree draws. */
+  diff: ConfigDiff;
+  /** Index-aligned with `diff.Resources`. */
+  imageRows: ImageRowModel[][];
+  /** The kind of the unit's one changed resource, for the header. Absent for several. */
+  kind: string | undefined;
 }
 
-/**
- * Union this unit's OLD-side paths with its changed paths.
- *
- * `buildContextTree` walks `allPaths` and nothing else, so a changed path
- * missing from that list is silently dropped — and this pane's
- * `result.allPaths` is the OLD side (see the module header), meaning the side
- * with the LOWER ReleaseNum: `ReleasesPane` orients the pair before it ever
- * reaches `getPairDiff`, so "old" here is the older release even when the user
- * clicked the newer one first. A path in the new
- * side but not the old side is BY DEFINITION a changed path (the diff builder
- * emits `oldValue: '-'` for it), so `old ∪ changed ≡ old ∪ new`: the union is
- * complete. It is built unconditionally, not just for the opt-in mode, because
- * the default mode also reads `allPaths` — for `injectKeyContext` and for the
- * per-segment "show N more" counts, both of which want the new side too.
- *
- * Module-private on purpose: this file's only exports are the component and its
- * types, which is what keeps Fast Refresh working for the pane.
- */
-function unionPaths(unit: ReleaseDiffUnitView): { path: string; value: string }[] {
-  const { fieldDiffs, allPaths: oldPaths } = unit.result;
-  const seen = new Set(oldPaths.map((e) => e.path));
-  const extras = fieldDiffs
-    .filter((d) => !seen.has(d.path))
-    .map((d) => ({ path: d.path, value: d.newValue }));
-  // Preserve the array REFERENCE when nothing is appended: `buildPaths` is
-  // content-addressed and memoised, and `TreeDiffSection` memoises its tree on
-  // `allPaths` identity.
-  return extras.length === 0 ? oldPaths : [...oldPaths, ...extras];
+function kindOf(resources: readonly ResourceDiff[]): string | undefined {
+  if (resources.length !== 1) return undefined;
+  const type = resources[0].Resource?.ResourceType;
+  return type ? type.slice(type.lastIndexOf('/') + 1) || undefined : undefined;
 }
 
-
-/**
- * Drop the container-image paths a caller renders itself.
- *
- * Preserves the array REFERENCE when nothing matches, for the same reason
- * {@link unionPaths} does: `TreeDiffSection` memoises its tree on `allPaths`
- * identity, and most units have no images at all.
- */
-function withoutImagePaths<T extends { path: string }>(entries: T[]): T[] {
-  const kept = entries.filter((e) => parseImagePath(e.path) === null);
-  return kept.length === entries.length ? entries : kept;
-}
-
-/** Resolve every unit's tree inputs in one pass. */
-function buildUnitTrees(units: ReleaseDiffUnitView[]): ReleaseUnitTree[] {
-  return units.map((unit) => {
-    const allPaths = unionPaths(unit);
-    return {
-      unit,
-      // Images render as their own rows, so the tree is handed everything else.
-      // That also removes the folder chains which existed only to reach an
-      // image — a path segment spent on nothing the user asked to see.
-      entry: { unitId: unit.unitId, fieldDiffs: withoutImagePaths(unit.result.fieldDiffs) },
-      allPaths,
-      imageRows: buildImageRows(unit.result.fieldDiffs, allPaths),
-      // Counted from the UNMODIFIED change list, upstream of the split above, so
-      // neither half can move the number. An image bump is a change and counts;
-      // an unchanged container comes from `allPaths` and never enters this list.
-      changedFields: countLogicalChanges(unit.result.fieldDiffs.map((d) => d.path)),
-    };
+function buildUnitTree(unit: ReleaseDiffUnitView): ReleaseUnitTree {
+  const resources = unit.result.diff.Resources ?? [];
+  const imageRows: ImageRowModel[][] = [];
+  const split = resources.map((resource) => {
+    const { rows, others } = imageRowsOfResource(resource);
+    imageRows.push(rows);
+    return { ...resource, Changes: others };
   });
+  return { unit, diff: { Resources: split }, imageRows, kind: kindOf(resources) };
 }
 
 /**
- * Module-level and frozen: `TreeDiffSection` is memoised, and a fresh object
- * literal per render would defeat that for every unit on the panel.
+ * Module-level and frozen: the diff view is memoised, and a fresh object literal per render
+ * would defeat that for every unit on the panel.
  */
 const RELEASE_DIFF_DOM_HOOKS: TreeDiffDomHooks = Object.freeze({
   testIdPrefix: 'release-diff',
-  // Colour alone must not carry old-vs-new. The shared tree paints red/green;
-  // these words make the same distinction available to a screen reader.
+  // Colour alone must not carry old-vs-new. The rows paint red/green; these words make
+  // the same distinction available to a screen reader.
   srValuePrefix: Object.freeze({ old: 'removed: ', new: 'added: ' }),
 });
 
@@ -236,29 +140,13 @@ const RELEASE_DIFF_DOM_HOOKS: TreeDiffDomHooks = Object.freeze({
 interface UnitDiffProps {
   tree: ReleaseUnitTree;
   toLabel: string;
-  /**
-   * Carries the identity of the CURRENT comparison AND of the current
-   * rendering mode. `TreeDiffSection` seeds each folder's expansion once per
-   * mount and never lifts it, and its root React key is built from `keyPrefix`
-   * + unitId + the root node key. Without the comparison in the prefix,
-   * re-pointing the pane at another release would reuse the same instances and
-   * carry the previous comparison's expansion into the new one.
-   */
-  keyPrefix: string;
   columnStyle: CSSProperties;
   onDividerMouseDown: (columnIndex: 0 | 1, e: React.MouseEvent) => void;
   isDragging: boolean;
 }
 
-function UnitDiff({
-  tree,
-  toLabel,
-  keyPrefix,
-  columnStyle,
-  onDividerMouseDown,
-  isDragging,
-}: UnitDiffProps): ReactElement {
-  const { unit, changedFields } = tree;
+function UnitDiff({ tree, toLabel, columnStyle, onDividerMouseDown, isDragging }: UnitDiffProps): ReactElement {
+  const { unit, diff, imageRows, kind } = tree;
 
   // Both halves of `/units/:spaceID/:id` must be present for the route to
   // resolve; a unit deleted since the release it appears in has no page left to
@@ -266,14 +154,15 @@ function UnitDiff({
   const detailsHref =
     unit.unitId && unit.spaceId ? `/units/${unit.spaceId}/${unit.unitId}` : undefined;
 
+  const columns = useMemo(
+    () => ({ columnStyle, onDividerMouseDown, isDragging }),
+    [columnStyle, onDividerMouseDown, isDragging],
+  );
+
   return (
     <UnitBlock data-testid={`release-diff-unit-${unit.unitId}`}>
-      {/* `UnitHead` is a plain Box and no ancestor of it carries a click
-          handler — the only clickable rows in this panel are the folder rows
-          INSIDE the tree below. So the link needs no propagation guard: there
-          is nothing above it for a click to reach. */}
       <UnitHead>
-        <UnitKind>{unit.kind ?? 'Unit'}</UnitKind>
+        <UnitKind>{kind ?? 'Unit'}</UnitKind>
         {detailsHref ? (
           <UnitNameLink
             href={detailsHref}
@@ -292,27 +181,23 @@ function UnitDiff({
         ) : (
           <UnitName>{unit.slug}</UnitName>
         )}
-        {unit.result.neverReleased && (
+        {unit.result.added && (
           <UnitBadge data-testid='unreleased-unit-badge'>{`added in ${toLabel}`}</UnitBadge>
         )}
-        <UnitCount>{`${changedFields}F`}</UnitCount>
+        <UnitCount>{`${unit.result.changes}F`}</UnitCount>
       </UnitHead>
-      <ImageChangeRows
-        rows={tree.imageRows}
-        testIdPrefix={RELEASE_DIFF_DOM_HOOKS.testIdPrefix}
-        srValuePrefix={RELEASE_DIFF_DOM_HOOKS.srValuePrefix}
-      />
-      <TreeDiffSection
-        entry={tree.entry}
-        allPaths={tree.allPaths}
-        keyPrefix={keyPrefix}
-        label=''
-        hideLabel
-        variant='data'
+      <ConfigDiffView
+        diff={diff}
+        columns={columns}
+        hideContext
         domHooks={RELEASE_DIFF_DOM_HOOKS}
-        columnStyle={columnStyle}
-        onDividerMouseDown={onDividerMouseDown}
-        isDragging={isDragging}
+        resourcePrelude={(_resource, i) => (
+          <ImageChangeRows
+            rows={imageRows[i] ?? []}
+            testIdPrefix={RELEASE_DIFF_DOM_HOOKS.testIdPrefix}
+            srValuePrefix={RELEASE_DIFF_DOM_HOOKS.srValuePrefix}
+          />
+        )}
       />
     </UnitBlock>
   );
@@ -322,7 +207,6 @@ function UnitDiff({
 // PANEL
 // ============================================================================
 
-
 function ReleaseDiffPanelImpl({
   fromLabel,
   toLabel,
@@ -331,46 +215,28 @@ function ReleaseDiffPanelImpl({
   unavailable = false,
   emptySubtitle,
 }: ReleaseDiffPanelProps): ReactElement {
-  // ONE column model for the whole panel, exactly as ComponentActivityFeed and
-  // FunctionDetailScreen do it: the columns stay aligned down the page, and
+  // ONE column model for the whole panel: the columns stay aligned down the page, and
   // dragging any one divider rebalances every unit at once.
   const { columnStyle, onDividerMouseDown, isDragging } = useColumnResize();
   const col1 = (columnStyle as Record<string, string>)['--col1-width'];
   const col2 = (columnStyle as Record<string, string>)['--col2-width'];
   // `useColumnResize` rebuilds `columnStyle` as a fresh object literal on every
-  // render, which would defeat `TreeDiffSection`'s memo for every unit.
+  // render, which would defeat the diff view's memo for every unit.
   const stableColumnStyle = useMemo(
     () => ({ '--col1-width': col1, '--col2-width': col2 }) as CSSProperties,
     [col1, col2],
   );
 
-  // Panel-level, because it is one question about the whole comparison. Seeded
-  // from (and mirrored back into) the module's session memory so clicking a
-  // different bar — which changes this panel's PROPS, never its identity —
-  // cannot reset it, and neither can a trip through the Configuration tab.
-  const trees = useMemo(() => buildUnitTrees(units), [units]);
+  const trees = useMemo(() => units.map(buildUnitTree), [units]);
 
-  // See `UnitDiffProps.keyPrefix`: this remounts the forest whenever the
-  // selection or the rendering mode changes, which is what re-seeds folder
-  // expansion correctly.
-  //
-  // `fromLabel`/`toLabel` arrive ALREADY NORMALISED by ReleasesPane (older →
-  // newer), so this string is the comparison's IDENTITY and not a record of
-  // how the user got there: clicking rel-5 then rel-15 and clicking rel-15
-  // then rel-5 both produce `release-changed-Net diff-rel-5-rel-15`. Same
-  // comparison, same key, no pointless remount and no second seeding of the
-  // same folders.
+  // `fromLabel`/`toLabel` arrive ALREADY NORMALISED by ReleasesPane (older → newer), so this
+  // string is the comparison's IDENTITY and not a record of how the user got there: moving
+  // to another comparison remounts the rows, and the same one clicked in the other order
+  // does not.
   const keyPrefix = `release-${fromLabel}-${toLabel}`;
-
-  // The switch governs unit trees, so it appears only when there are unit
-  // trees. Offering it over a skeleton, an "Unavailable" or a "0 differences"
-  // would be offering a control with nothing to act on.
 
   return (
     <Box>
-      {/* The header renders in every state, including empty and loading — it
-          is the answer to "what am I looking at", which is exactly the
-          question an empty panel raises. */}
       {isLoading ? (
         // Never a "0 differences" while the answer is still unknown.
         <Box
@@ -395,10 +261,9 @@ function ReleaseDiffPanelImpl({
       ) : (
         trees.map((tree) => (
           <UnitDiff
-            key={tree.unit.unitId}
+            key={`${keyPrefix}-${tree.unit.unitId}`}
             tree={tree}
             toLabel={toLabel}
-            keyPrefix={keyPrefix}
             columnStyle={stableColumnStyle}
             onDividerMouseDown={onDividerMouseDown}
             isDragging={isDragging}

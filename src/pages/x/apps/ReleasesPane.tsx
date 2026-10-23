@@ -25,17 +25,18 @@
  * restating it. What a reader loses with the lane is magnitude at a glance
  * across the whole history; the counts survive per release inside the picker.
  *
- * === The three diff sources, and only three ===
- *   nothing selected / declared bar → the HEAD-scoped `useUnreleasedChanges`
+ * === The two diff sources ===
+ *   nothing selected / declared bar → the HEAD-scoped `useReleaseDiff`
  *       instance owned by `ComponentSidePane` and passed in (already fetched;
  *       it is the same instance that feeds the footer's count chip, which is
  *       what keeps "cannot publish while reading history" trustworthy).
- *   one release, or a release-to-release span → `magnitudes.getPairDiff`,
- *       served from the lane's own cache. NO fetch.
- *   a span whose upper end is the declared bar → one local
- *       `useUnreleasedChanges` in its DEFAULT mode, given the lower endpoint's
- *       ReleaseID: "diff head against an arbitrary release" is exactly what
- *       that mode already does. One request, no change to that hook.
+ *   one release, a release-to-release span, or a span up to the declared bar
+ *       → this pane's own `useReleaseDiff`, from the older endpoint (the
+ *       release's predecessor, for one release) to the newer one. One request
+ *       per comparison, whatever the number of units.
+ * The per-release counts in the selectors come from `useReleaseMagnitudes`,
+ * which reads the same diffs, so a release's count is the count of what the
+ * panel draws when it is selected.
  *
  * === Orientation: one normalisation, three consumers ===
  * A comparison ALWAYS runs older → newer. The lane hands back its two bar ids
@@ -71,15 +72,12 @@ import Box from '@mui/material/Box';
 
 import { CompareCollapsible } from './compare/CompareCollapsible';
 import { componentTheme } from './componentTheme';
-import { groupFieldEntriesByDocument } from './diffTree';
-import { buildGroupedPaths, countLogicalChanges } from './entryBuilders';
 import { ReleaseDiffPanel, type ReleaseDiffUnitView } from './ReleaseDiffPanel';
 import { ReleaseSelectors, type ReleaseOption } from './ReleaseSelectors';
 import { LaneEmpty, Notes, Read, Sub, Top } from './releasePaneStyles';
 import { getReleaseName, getReleaseNotes, type ReleaseActions } from './useReleaseActions';
+import { RELEASE_DIFF_HEAD, useReleaseDiff, type ReleaseDiff } from './useReleaseDiff';
 import { useReleaseMagnitudes, type ReleaseUnitRef } from './useReleaseMagnitudes';
-import { isHeavyUnitData } from './unitSizeGuard';
-import { useUnreleasedChanges, type UnreleasedUnitDiffResult } from './useUnreleasedChanges';
 import type { ExtendedReleaseRead } from '@confighub/rtk-query';
 
 // ============================================================================
@@ -93,10 +91,6 @@ const DECLARED_LABEL = 'decl';
 
 /** Where the Releases tab remembers that its two release selectors are folded away. */
 const RELEASES_COMPARE_COLLAPSED_KEY = 'confighub.componentPane.releases.compareCollapsed';
-
-/** Stable empty array: feeding `useUnreleasedChanges` a fresh `[]` would re-run its memos, and a non-empty list is what makes it fetch. */
-const EMPTY_RELEASE_UNITS: ReleaseUnitRef[] = [];
-const EMPTY_RESULTS: Map<string, UnreleasedUnitDiffResult> = new Map();
 
 type SelectionMode = 'none' | 'single' | 'declared' | 'span';
 
@@ -141,15 +135,12 @@ const NO_COMPARISON: ReleaseComparison = {
 export interface ReleasesPaneProps {
   /** Bundled release state + handlers for the selected Space, from useReleaseActions. */
   release: ReleaseActions;
-  /** The selected deployment's Space ID. */
-  spaceId: string;
   /** Display name of the release Target, when resolvable. */
   targetName: string | undefined;
   /** Units in the Space's release-target set, at HEAD. */
   releaseUnits: ReleaseUnitRef[];
   /** Head-scoped unreleased diff — the SAME instance that feeds the footer chip. */
-  unreleasedResultsByUnit: Map<string, UnreleasedUnitDiffResult>;
-  unreleasedAllResolved: boolean;
+  unreleased: ReleaseDiff;
   /** Deep link from a release stamp in the DAG, identified by ReleaseNum. */
   highlightRelease: { num: number; nonce: number } | null;
   /**
@@ -233,51 +224,15 @@ function formatReleaseStamp(date: Date): string {
   return date.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-/**
- * Resource kind for the diff panel's `Kind | name` header, when the unit
- * resolves to exactly one identifiable document. Oversized units are never
- * parsed just to label them — they fall back to the literal "Unit".
- */
-function resourceKindOf(data: string | undefined): string | undefined {
-  if (!data || isHeavyUnitData(data)) return undefined;
-  const entries = buildGroupedPaths(data);
-  if (entries.length === 0) return undefined;
-  const groups = groupFieldEntriesByDocument(entries);
-  if (groups.length !== 1) return undefined;
-  const type = groups[0].resource?.ResourceType;
-  if (!type) return undefined;
-  const kind = type.slice(type.lastIndexOf('/') + 1);
-  return kind || undefined;
-}
-
-/** Total logical changes + how many units carry at least one, over a resolved diff map. */
-function summarise(
-  units: ReleaseUnitRef[],
-  resultsByUnit: Map<string, UnreleasedUnitDiffResult>,
-): { fields: number; units: number } {
-  let fields = 0;
-  let changedUnits = 0;
-  for (const u of units) {
-    const r = resultsByUnit.get(u.unitId);
-    if (!r) continue;
-    const n = countLogicalChanges(r.fieldDiffs.map((d) => d.path));
-    if (n > 0) changedUnits += 1;
-    fields += n;
-  }
-  return { fields, units: changedUnits };
-}
-
 // ============================================================================
 // COMPONENT
 // ============================================================================
 
 export function ReleasesPane({
   release,
-  spaceId,
   targetName,
   releaseUnits,
-  unreleasedResultsByUnit,
-  unreleasedAllResolved,
+  unreleased,
   highlightRelease,
   onHighlightConsumed,
   selection,
@@ -300,7 +255,6 @@ export function ReleasesPane({
   const magnitudes = useReleaseMagnitudes({
     releases,
     units: releaseUnits,
-    spaceId,
     enabled: hasUnits,
   });
 
@@ -308,15 +262,7 @@ export function ReleasesPane({
   // With nothing in scope no diff source ever reports `allResolved`, so the
   // count has to be answered here: an empty unit set has zero changed fields,
   // and leaving it undefined would strand the bar on "counting…" for ever.
-  const declaredTotals = useMemo(
-    () =>
-      !hasUnits
-        ? { fields: 0, units: 0 }
-        : unreleasedAllResolved
-          ? summarise(releaseUnits, unreleasedResultsByUnit)
-          : undefined,
-    [hasUnits, unreleasedAllResolved, releaseUnits, unreleasedResultsByUnit],
-  );
+  const declaredFields = !hasUnits ? 0 : unreleased.allResolved ? unreleased.totalChanges : undefined;
 
   // ── Bars, OLDEST FIRST (the lane's own order); `releases` is newest-first ──
   const bars = useMemo((): ReleaseBar[] => {
@@ -338,13 +284,7 @@ export function ReleasesPane({
         state: m?.state ?? 'pending',
         variant: 'release',
         isCurrent: id === currentReleaseId,
-        // A fetch that failed and a unit too big to parse both understate the
-        // bar, but blaming size for a network error is simply untrue.
-        tooltipSuffix: m?.failed
-          ? 'some units could not be loaded'
-          : m?.partial
-            ? 'excludes oversized units'
-            : undefined,
+        tooltipSuffix: m?.failed ? 'some units could not be loaded' : undefined,
       });
     }
     out.push({
@@ -353,13 +293,13 @@ export function ReleasesPane({
       // that has not been released yet.
       releaseNum: Number.POSITIVE_INFINITY,
       label: DECLARED_LABEL,
-      changedFields: declaredTotals?.fields,
-      state: declaredTotals ? 'resolved' : 'pending',
+      changedFields: declaredFields,
+      state: declaredFields !== undefined ? 'resolved' : 'pending',
       variant: 'declared',
       isCurrent: false,
     });
     return out;
-  }, [releases, magnitudes.byReleaseId, currentReleaseId, declaredTotals]);
+  }, [releases, magnitudes.byReleaseId, currentReleaseId, declaredFields]);
 
   // ── Selector options: the same per-release facts the bars carried, newest
   // first, plus the fields only the release itself holds. Anything the data
@@ -403,8 +343,8 @@ export function ReleasesPane({
   // Every direction-bearing surface derives from THIS value and nothing else:
   //   * the readout subject (`rel-5 → rel-15`, never reversed),
   //   * the lane's `spanStartId` / `spanEndId` marker props,
-  //   * the diff panel's `fromLabel`/`toLabel` and the `getPairDiff` /
-  //     `useUnreleasedChanges` endpoint ids beneath them.
+  //   * the diff panel's `fromLabel`/`toLabel` and the `useReleaseDiff`
+  //     endpoint ids beneath them.
   // Three independent min/max derivations is exactly how a readout and a set
   // of markers drift apart, so there is one, here.
   //
@@ -504,21 +444,6 @@ export function ReleasesPane({
     onSelectionChange([id]);
   }, [highlightRelease, releases, onSelectionChange, onHighlightConsumed]);
 
-  // ── Diff source 3: a span whose NEWER endpoint is the declared bar ──
-  // `useUnreleasedChanges`' DEFAULT mode is "old = the revisions bundled into
-  // <release>, new = head", which is exactly an older-release→declared span.
-  // Both endpoints come from the normalised comparison, so selecting the
-  // declared bar FIRST and the release second still puts the release on the
-  // old side and the declared state on the new side. Fed the stable empty list
-  // in every other mode, so it fetches nothing.
-  const spanToDeclared = mode === 'span' && bars[newIndex]?.id === DECLARED_BAR_ID;
-  const spanLowerReleaseId = spanToDeclared ? bars[oldIndex]?.id : undefined;
-  const spanDiff = useUnreleasedChanges(
-    spanToDeclared ? releaseUnits : EMPTY_RELEASE_UNITS,
-    spanLowerReleaseId,
-    spaceId,
-  );
-
   // ── Resolve the ACTIVE comparison ──
   const releaseAt = useCallback(
     (index: number): ExtendedReleaseRead | undefined => {
@@ -529,16 +454,29 @@ export function ReleasesPane({
     [bars, releases],
   );
 
-  const pairDiff = magnitudes.getPairDiff;
+  // Every comparison but the unreleased one is read here, from its older endpoint to its
+  // newer one. Both come from the normalised comparison, so selecting the declared bar FIRST
+  // and a release second still puts the release on the old side. A single release runs from
+  // its predecessor, or from nothing for the oldest, whose every resource is then an addition.
+  const ownComparison = mode === 'single' || mode === 'span';
+  const comparisonTo = !ownComparison
+    ? undefined
+    : bars[newIndex]?.id === DECLARED_BAR_ID
+      ? RELEASE_DIFF_HEAD
+      : releaseAt(newIndex)?.Release?.ReleaseID;
+  const comparisonFrom = ownComparison ? releaseAt(oldIndex)?.Release?.ReleaseID : undefined;
+  const releaseUnitIds = useMemo(() => releaseUnits.map((u) => u.unitId), [releaseUnits]);
+  const comparisonDiff = useReleaseDiff(releaseUnitIds, comparisonFrom, comparisonTo, { context: true });
+
   const active = useMemo(() => {
     // Nothing in scope ⇒ nothing to wait for. Every branch below resolves
     // immediately to "0 differences", and the readout carries the reason.
     const noUnitsSubtitle = 'No units are targeted at this release yet';
     if (mode === 'none' || mode === 'declared') {
       return {
-        resultsByUnit: unreleasedResultsByUnit,
-        isLoading: hasUnits && !unreleasedAllResolved,
-        unavailable: false,
+        resultsByUnit: unreleased.resultsByUnit,
+        isLoading: hasUnits && !unreleased.allResolved && !unreleased.unavailable,
+        unavailable: unreleased.unavailable,
         fromLabel: currentReleaseLabel,
         toLabel: DECLARED_LABEL,
         emptySubtitle: hasUnits ? 'Identical declared values' : noUnitsSubtitle,
@@ -549,16 +487,12 @@ export function ReleasesPane({
       // "its predecessor" land on the right sides of the diff.
       const after = releaseAt(newIndex);
       const before = releaseAt(oldIndex);
-      const afterId = after?.Release?.ReleaseID;
-      const diff = afterId && hasUnits
-        ? pairDiff(before?.Release?.ReleaseID, afterId)
-        : undefined;
       return {
-        resultsByUnit: diff?.resultsByUnit ?? EMPTY_RESULTS,
-        isLoading: hasUnits && (diff?.isLoading ?? true),
-        // A pair whose revision blobs could not be fetched reports nothing —
-        // which must not be rendered as the claim "nothing changed".
-        unavailable: diff?.unavailable ?? false,
+        resultsByUnit: comparisonDiff.resultsByUnit,
+        isLoading: hasUnits && !comparisonDiff.allResolved && !comparisonDiff.unavailable,
+        // A comparison whose diff could not be read reports nothing — which
+        // must not be rendered as the claim "nothing changed".
+        unavailable: comparisonDiff.unavailable,
         // Fix vs the mockup: the OLDEST release has no predecessor, so every
         // field it bundled reads as an addition rather than as "0 differences".
         fromLabel: before ? labelOf(before) : 'nothing',
@@ -566,61 +500,30 @@ export function ReleasesPane({
         emptySubtitle: hasUnits ? 'No fields changed in this release' : noUnitsSubtitle,
       };
     }
-    if (spanToDeclared) {
-      return {
-        resultsByUnit: spanDiff.resultsByUnit,
-        isLoading: hasUnits && !spanDiff.allResolved,
-        unavailable: false,
-          fromLabel: bars[oldIndex]?.label ?? '—',
-        toLabel: DECLARED_LABEL,
-        emptySubtitle: hasUnits ? 'Endpoints are identical' : noUnitsSubtitle,
-      };
-    }
     // Older endpoint on the old side, newer endpoint on the new side — always,
     // because both come from the normalised comparison rather than from the
     // order the two bars were clicked in.
-    const oldRelease = releaseAt(oldIndex);
-    const newRelease = releaseAt(newIndex);
-    const newId = newRelease?.Release?.ReleaseID;
-    const diff = newId && hasUnits ? pairDiff(oldRelease?.Release?.ReleaseID, newId) : undefined;
     return {
-      resultsByUnit: diff?.resultsByUnit ?? EMPTY_RESULTS,
-      isLoading: hasUnits && (diff?.isLoading ?? true),
-      unavailable: diff?.unavailable ?? false,
-      fromLabel: labelOf(oldRelease),
-      toLabel: labelOf(newRelease),
+      resultsByUnit: comparisonDiff.resultsByUnit,
+      isLoading: hasUnits && !comparisonDiff.allResolved && !comparisonDiff.unavailable,
+      unavailable: comparisonDiff.unavailable,
+      fromLabel: bars[oldIndex]?.label ?? '—',
+      toLabel: bars[newIndex]?.label ?? '—',
       emptySubtitle: hasUnits ? 'Endpoints are identical' : noUnitsSubtitle,
     };
-  }, [
-    mode,
-    oldIndex,
-    newIndex,
-    bars,
-    hasUnits,
-    spanToDeclared,
-    spanDiff.resultsByUnit,
-    spanDiff.allResolved,
-    unreleasedResultsByUnit,
-    unreleasedAllResolved,
-    currentReleaseLabel,
-    releaseAt,
-    pairDiff,
-  ]);
+  }, [mode, oldIndex, newIndex, bars, hasUnits, comparisonDiff, unreleased, currentReleaseLabel, releaseAt]);
 
   const diffUnits = useMemo((): ReleaseDiffUnitView[] => {
     const out: ReleaseDiffUnitView[] = [];
     for (const u of releaseUnits) {
       const result = active.resultsByUnit.get(u.unitId);
-      if (!result || result.fieldDiffs.length === 0) continue;
+      if (!result || result.changes === 0) continue;
       out.push({
         unitId: u.unitId,
         slug: u.slug,
-        // Carries the unit-details link in the diff header. Read off the unit
-        // ref rather than the pane's `spaceId` prop: the two agree today (the
-        // target set is scoped to the selected deployment) but the ref is the
-        // unit's own Space, which is what the route actually needs.
+        // Carries the unit-details link in the diff header: the unit's own
+        // Space, which is what the route needs.
         spaceId: u.spaceId,
-        kind: resourceKindOf(result.oldData ?? u.data),
         result,
       });
     }
@@ -659,8 +562,7 @@ export function ReleasesPane({
     return shown < total ? { shown, total } : undefined;
   }, [mode, active.isLoading, active.unavailable, active.resultsByUnit, readoutRelease, releaseUnits]);
 
-  const hasUnavailableBar = bars.some((b) => b.state === 'unavailable');
-  const showTruncationNote = magnitudes.truncated || hasUnavailableBar;
+  const showTruncationNote = magnitudes.truncated;
 
   return (
     <Box data-testid='releases-pane'>

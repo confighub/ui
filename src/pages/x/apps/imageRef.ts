@@ -9,6 +9,9 @@
  * be exercised directly.
  */
 
+import type { PathChange, PathSegment, ResourceDiff } from '@confighub/rtk-query';
+import { parse as parseYaml } from 'yaml';
+
 import { isRemovalSentinel } from './componentValues';
 
 /**
@@ -329,4 +332,70 @@ export function buildImageRows(
 
   rows.sort((a, b) => a.listOrder - b.listOrder || a.index - b.index);
   return rows.map((r) => r.row);
+}
+
+/** A server diff path in the DOT-INDEX form above: each element by its index on the side it is on. */
+function dotPathOfSegments(segments: readonly PathSegment[] | null | undefined): string {
+  return (segments ?? []).map((s) => s.Field ?? String(s.ToIndex >= 0 ? s.ToIndex : s.FromIndex)).join('.');
+}
+
+/** `spec.template.spec.containers.0`: the path of a container element itself. */
+const CONTAINER_ELEMENT_PATH = new RegExp(`(?:^|\\.)(${CONTAINER_ARRAYS.join('|')})\\.(\\d+)$`);
+
+/** The `name` and `image` of a container block, as an unchanged container's context entry holds it. */
+function containerFieldsOf(block: string | undefined): { name?: string; image?: string } {
+  if (!block) return {};
+  try {
+    const parsed: unknown = parseYaml(block);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const { name, image } = parsed as Record<string, unknown>;
+    return { name: typeof name === 'string' ? name : undefined, image: typeof image === 'string' ? image : undefined };
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * One resource of a server diff as {@link buildImageRows} reads a flattened one: its container
+ * images as rows, and the changes left for its tree to draw, which are all the others.
+ *
+ * The rows come from the changes and from the context a read with `include=Context` returns,
+ * the unchanged siblings of each change: a changed image's container is named by its `name`
+ * beside it, and a container of the same list that did not change is one context entry
+ * holding its block, read here for its name and image. A container added or deleted whole is
+ * one change holding its block, and stays in the tree.
+ */
+export function imageRowsOfResource(resource: ResourceDiff): { rows: ImageRowModel[]; others: PathChange[] } {
+  const fieldDiffs: { path: string; oldValue: string; newValue: string }[] = [];
+  const allPaths: { path: string; value: string }[] = [];
+  const others: PathChange[] = [];
+  for (const change of resource.Changes ?? []) {
+    const path = dotPathOfSegments(change.Segments);
+    if (change.ChangeType === 'None') {
+      others.push(change);
+      if (change.ToDataType === 'YAML' && CONTAINER_ELEMENT_PATH.test(path)) {
+        const { name, image } = containerFieldsOf(change.ToValue);
+        if (name !== undefined) allPaths.push({ path: `${path}.name`, value: name });
+        if (image !== undefined) allPaths.push({ path: `${path}.image`, value: image });
+      } else if (change.ToValue !== undefined) {
+        allPaths.push({ path, value: change.ToValue });
+      }
+      continue;
+    }
+    const scalar = !change.Comment && (change.ChangeType === 'Add' || change.ChangeType === 'Delete' || change.ChangeType === 'Update');
+    const entry = {
+      path,
+      oldValue: change.ChangeType === 'Add' ? '-' : (change.FromValue ?? ''),
+      newValue: change.ChangeType === 'Delete' ? '-' : (change.ToValue ?? ''),
+    };
+    if (scalar && parseImagePath(path)) {
+      // The row stands for the change.
+      fieldDiffs.push(entry);
+      continue;
+    }
+    // A renamed container is called by its new name.
+    if (scalar && path.endsWith('.name')) fieldDiffs.push(entry);
+    others.push(change);
+  }
+  return { rows: buildImageRows(fieldDiffs, allPaths), others };
 }

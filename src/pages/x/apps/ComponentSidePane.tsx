@@ -82,7 +82,8 @@ import { isMultiComponent } from './flow-graph/componentFrames';
 import { DECLARED_BAR_ID, ReleasesPane } from './ReleasesPane';
 import { NameInput, PaneButton } from './releasePaneStyles';
 import { useResourceCounts } from './useResourceCounts';
-import { useUnreleasedChanges } from './useUnreleasedChanges';
+import { RELEASE_DIFF_HEAD, useReleaseDiff } from './useReleaseDiff';
+import type { ReleaseUnitRef } from './useReleaseMagnitudes';
 import { RELEASE_FRESH_SETTLE_MS, useFreshSignal } from './useFreshSignal';
 import { UnitDetailsPane } from './UnitDetailsPane';
 import type { UnitMetaPatch } from './unit-details/types';
@@ -121,8 +122,8 @@ const ComponentOverviewSection = lazy(() =>
 
 const MIN_SIZE = 250;
 const MAX_PERCENT = 1;
-/** Stable empty-array reference (task #69) — avoids feeding useUnreleasedChanges a fresh `[]` literal every render while the Releases tab isn't active, which would otherwise needlessly re-run its internal memos. */
-const EMPTY_RELEASE_UNITS: { unitId: string; slug: string; spaceId: string; data?: string }[] = [];
+/** Stable empty-array reference: the unreleased diff reads nothing while the Releases tab isn't active. */
+const EMPTY_UNIT_IDS: string[] = [];
 /** Stable empty-Set reference so `expansionState` doesn't churn while no search is active. */
 const EMPTY_STRING_SET: Set<string> = new Set();
 /** Stable identity, so an untouched selection with no releases yet does not
@@ -1067,42 +1068,42 @@ export const ComponentSidePane = memo(
 
     // Units belonging to the selected Space's Release target set — the SAME
     // filter release_core.go applies when bundling a publish (TargetID ==
-    // Space.ReleaseTargetID). Feeds the "Unreleased changes" section (task
-    // #60), which diffs each of these units' head Data against its last-
-    // released revision. Deliberately independent of `mergedUnits` above:
-    // that structure carries Upgrade/Apply/Variation entries that don't
-    // apply here, and this only needs {unitId, slug, spaceId, data}.
+    // Space.ReleaseTargetID). Feeds the Releases tab, whose server diffs
+    // compare these units' Revisions. Deliberately independent of
+    // `mergedUnits` above: that structure carries Upgrade/Apply/Variation
+    // entries that don't apply here, and this only needs {unitId, slug, spaceId}.
     const releaseUnits = useMemo(() => {
       if (!selectedDeployment?.releaseTargetId) return [];
       const targetId = selectedDeployment.releaseTargetId;
-      const list: { unitId: string; slug: string; spaceId: string; data?: string }[] = [];
+      const list: ReleaseUnitRef[] = [];
       for (const [did, deploymentUnits] of unitsByDeployment) {
         if (!selectedDeploymentIds.has(did)) continue;
         for (const u of deploymentUnits) {
           if (u.targetId === targetId) {
-            list.push({ unitId: u.unitId, slug: u.slug, spaceId: u.spaceId, data: u.data });
+            list.push({ unitId: u.unitId, slug: u.slug, spaceId: u.spaceId });
           }
         }
       }
       return list;
     }, [selectedDeployment, unitsByDeployment, selectedDeploymentIds]);
 
-    // Shared "changed since the last release" resolution (task #69) —
-    // HEAD-SCOPED, feeds the footer Release button's count chip
-    // unconditionally (never the `baseline` argument — see the second
-    // instance below) and, in the default state, the diff viewport. Only fed
+    // Shared "changed since the last release" diff — HEAD-SCOPED, feeds the
+    // footer Release button's count chip unconditionally and, in the default
+    // state, the diff viewport, which is why it is read with context. Only fed
     // real units while the Releases tab is actually active — on the
     // Configuration tab the Release button doesn't even render (task #52),
-    // so there's nothing to keep this warm for.
-    const {
-      resultsByUnit: unreleasedResultsByUnit,
-      allResolved: unreleasedAllResolved,
-      totalChangedFields: totalUnreleasedFields,
-    } = useUnreleasedChanges(
-      activeTab === 'releases' ? releaseUnits : EMPTY_RELEASE_UNITS,
-      release?.latestRelease?.Release?.ReleaseID,
-      selectedDeployment?.deploymentId ?? '',
+    // so there's nothing to keep this warm for. With no release yet, it diffs
+    // from nothing.
+    const releaseUnitIds = useMemo(
+      () => (activeTab === 'releases' ? releaseUnits.map((u) => u.unitId) : EMPTY_UNIT_IDS),
+      [activeTab, releaseUnits],
     );
+    const unreleased = useReleaseDiff(releaseUnitIds, release?.latestRelease?.Release?.ReleaseID, RELEASE_DIFF_HEAD, {
+      context: true,
+    });
+    // Read, or failed to read: either way the default selection below has its answer.
+    const unreleasedSettled = unreleased.allResolved || unreleased.unavailable;
+    const totalUnreleasedFields = unreleased.totalChanges;
 
     // Single pass so the visible list and "why it matched" stay in sync by
     // construction — a unit only auto-opens for search (see `isUnitExpandedInPane`)
@@ -1251,12 +1252,11 @@ export const ComponentSidePane = memo(
     const isHeavyPaintPending = deferredHeavyPaintKey !== heavyPaintKey;
 
     // The historical / span comparisons the Releases tab can show are owned
-    // by `ReleasesPane` now: the lane resolves them from its own progressive
-    // cache (`useReleaseMagnitudes`), and only a span whose upper end is the
-    // declared state costs a request. The head-scoped instance above stays
-    // separate and unconditional, which is what makes the footer's "cannot
-    // publish while reading history" guard trustworthy — the footer reads
-    // `totalUnreleasedFields`/`unreleasedAllResolved` from that instance and
+    // by `ReleasesPane`, which reads each through its own `useReleaseDiff`.
+    // The head-scoped instance above stays separate and unconditional, which
+    // is what makes the footer's "cannot publish while reading history" guard
+    // trustworthy — the footer reads
+    // `totalUnreleasedFields`/`unreleasedSettled` from that instance and
     // from nothing else.
     // `releases` is newest-first, so [0] is current.
     const currentReleaseId = release?.releases?.[0]?.Release?.ReleaseID;
@@ -1282,9 +1282,9 @@ export const ComponentSidePane = memo(
     // none, and leaves them unable to tell whether they mis-saw it or it moved.
     const effectiveReleaseSelection = useMemo(() => {
       if (releaseSelection) return releaseSelection;
-      if (!currentReleaseId || !unreleasedAllResolved) return EMPTY_RELEASE_SELECTION;
+      if (!currentReleaseId || !unreleasedSettled) return EMPTY_RELEASE_SELECTION;
       return totalUnreleasedFields > 0 ? [DECLARED_BAR_ID] : [currentReleaseId];
-    }, [releaseSelection, currentReleaseId, unreleasedAllResolved, totalUnreleasedFields]);
+    }, [releaseSelection, currentReleaseId, unreleasedSettled, totalUnreleasedFields]);
     // Untouched AND undecided. The pane cannot tell that apart from a reader
     // who cleared both slots, and the two mean opposite things, so it is told.
     //
@@ -1295,7 +1295,7 @@ export const ComponentSidePane = memo(
     // moment it cannot know that. The guard has to cover every condition under
     // which the default is still withheld, or it is not guarding that default.
     const releaseSelectionPending =
-      releaseSelection === null && (!unreleasedAllResolved || !currentReleaseId);
+      releaseSelection === null && (!unreleasedSettled || !currentReleaseId);
     // The footer offers Release whenever UNRELEASED WORK IS PART OF WHAT IS ON
     // SCREEN, and shows nothing at all otherwise. Two cases qualify: a slot
     // holding the working configuration, and nothing selected at all — which
@@ -2222,11 +2222,9 @@ export const ComponentSidePane = memo(
           <PaneContent sx={{ padding: 0, gap: 0 }}>
             <ReleasesPane
               release={release}
-              spaceId={selectedDeployment?.deploymentId ?? ''}
               targetName={selectedDeployment?.releaseTargetName}
               releaseUnits={releaseUnits}
-              unreleasedResultsByUnit={unreleasedResultsByUnit}
-              unreleasedAllResolved={unreleasedAllResolved}
+              unreleased={unreleased}
               highlightRelease={highlightRelease}
               onHighlightConsumed={handleHighlightConsumed}
               selection={effectiveReleaseSelection}
@@ -3133,7 +3131,7 @@ export const ComponentSidePane = memo(
                       so a "0" chip here would misleadingly suggest a partial
                       action, and a chip that pops in in the middle of loading
                       would flicker. */}
-                  {unreleasedAllResolved && totalUnreleasedFields > 0 && (
+                  {unreleasedSettled && totalUnreleasedFields > 0 && (
                     <Chip
                       label={totalUnreleasedFields}
                       size='small'

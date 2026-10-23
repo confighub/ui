@@ -19,7 +19,6 @@ import { FunctionInvocationsResponse, FunctionSignature, Invocation } from '@con
 import { FunctionParameterForm } from '../FunctionParameterForm';
 import { InvokerContextDisplay } from '../InvokerContextDisplay';
 import { PerUnitResultCard } from '../components/PerUnitResultCard';
-import type { UnitDiff } from '../utils/diff-from-revisions';
 import { useColumnResize } from '@/pages/x/apps/useColumnResize';
 import { componentTheme } from '@/pages/x/apps/componentTheme';
 import { InvokerContext, FunctionParameterFormData } from '../types/invoker.types';
@@ -263,7 +262,6 @@ export interface FunctionDetailScreenProps {
     success: boolean;
     message?: string;
     responses?: FunctionInvocationsResponse[];
-    diffs?: UnitDiff[];
     slugByUnitId?: Record<string, string>;
   } | null;
   onRemoveUnit?: (unitId: string) => void;
@@ -317,13 +315,6 @@ export const FunctionDetailScreen = ({
   // Shared diff-column resize state so every per-unit card aligns its tree
   // columns identically.
   const { columnStyle, onDividerMouseDown, isDragging } = useColumnResize();
-
-  // Index diffs by UnitID so each card can look up its own diff in O(1).
-  const diffByUnitId = useMemo(() => {
-    const map = new Map<string, UnitDiff>();
-    invokeResult?.diffs?.forEach((d) => map.set(d.unitId, d));
-    return map;
-  }, [invokeResult?.diffs]);
 
   // Update view mode when results change
   useEffect(() => {
@@ -907,12 +898,10 @@ export const FunctionDetailScreen = ({
                       || context.unitIdToSlugMap?.[response.UnitID]
                       || response.UnitID
                     : `Result ${index + 1}`;
-                  const diff = response.UnitID ? diffByUnitId.get(response.UnitID) : undefined;
                   return (
                     <PerUnitResultCard
                       key={response.UnitID ?? index}
                       response={response}
-                      diff={diff}
                       unitDisplay={unitDisplay}
                       columnStyle={columnStyle}
                       onDividerMouseDown={onDividerMouseDown}

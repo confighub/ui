@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { memo, useMemo, type CSSProperties } from 'react';
+import { memo, useMemo, type CSSProperties, type ReactNode } from 'react';
 
 import type { ConfigDiff, ResourceDiff } from '@confighub/rtk-query';
 import Box from '@mui/material/Box';
@@ -35,9 +35,12 @@ interface ResourceDiffSectionProps {
   /** Values this resource kept, drawn as rows among its changes. */
   kept: readonly KeptValue[];
   comments?: DiffComments;
+  /** Drawn under the resource's heading, above its changes. */
+  prelude?: ReactNode;
+  domHooks: TreeDiffDomHooks;
 }
 
-const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDividerMouseDown, isDragging, hideContext, kept, comments }: ResourceDiffSectionProps) => {
+const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDividerMouseDown, isDragging, hideContext, kept, comments, prelude, domHooks }: ResourceDiffSectionProps) => {
   const tree = useMemo(() => {
     const changes = resource.Changes ?? [];
     return buildConfigDiffTree(hideContext ? changes.filter((change) => change.ChangeType !== 'None') : changes, kept);
@@ -76,6 +79,7 @@ const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDivide
         {rowComments === undefined ? null : <Box sx={{ ml: 'auto !important' }}>{rowComments.renderAdd('')}</Box>}
       </Stack>}
       {rowComments === undefined ? null : rowComments.renderBelow('')}
+      {prelude}
 
       {added || deleted ? (
         // A resource added or deleted whole has no path changes: the document is the change.
@@ -107,7 +111,7 @@ const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDivide
           columnStyle={columnStyle}
           onDividerMouseDown={onDividerMouseDown}
           isDragging={isDragging}
-          domHooks={DOM_HOOKS}
+          domHooks={domHooks}
         />
       )}
     </Box>
@@ -138,6 +142,10 @@ export interface ConfigDiffViewProps {
   kept?: readonly KeptValue[];
   /** Review comments on the rows, from a page that reviews this diff. */
   comments?: DiffComments;
+  /** What a page draws under a resource's heading, above its changes: the release pane's image rows. */
+  resourcePrelude?: (resource: ResourceDiff, index: number) => ReactNode;
+  /** The rows' test ids and screen-reader prefixes, for a page that names its own. */
+  domHooks?: TreeDiffDomHooks;
 }
 
 const NO_KEPT: readonly KeptValue[] = [];
@@ -150,7 +158,7 @@ const NO_KEPT: readonly KeptValue[] = [];
  * renames -- so an element inserted into a list is one added row, and the elements
  * after it are not reported as changed.
  */
-export const ConfigDiffView = ({ diff, columns, hideContext = false, kept = NO_KEPT, comments }: ConfigDiffViewProps) => {
+export const ConfigDiffView = ({ diff, columns, hideContext = false, kept = NO_KEPT, comments, resourcePrelude, domHooks = DOM_HOOKS }: ConfigDiffViewProps) => {
   // One set of column widths for every resource, so their columns line up.
   const ownColumns = useColumnResize();
   const { columnStyle, onDividerMouseDown, isDragging } = columns ?? ownColumns;
@@ -182,6 +190,8 @@ export const ConfigDiffView = ({ diff, columns, hideContext = false, kept = NO_K
           hideContext={hideContext}
           kept={keptByResource[i]}
           comments={comments}
+          prelude={resourcePrelude?.(resource, i)}
+          domHooks={domHooks}
         />
       ))}
     </Box>

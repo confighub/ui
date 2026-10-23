@@ -447,6 +447,55 @@ test.describe('unit list page', () => {
       // Diff renders as a table (field | old | new), not "replicas: 5" text
       await expect(page.locator('#root')).toContainText('1 field changed');
     });
+
+    test('should show the change in each resource that has the changed path', async ({ page }) => {
+      const slug = RandomSlugGenerator.randomSlugName();
+      const unitListPage = new UnitListPage(page);
+
+      // Both IngressRoutes hold the search value at spec.routes.0.match.
+      await unitListPage.createUnitViaAPI({ unitType: 'two-ingress-routes', slug });
+
+      await unitListPage.invokeFunctionByNameWithParameters({
+        name: slug,
+        functionName: 'search-replace',
+        params: [
+          { name: 'Search-value', value: 'old.example.com' },
+          { name: 'Replace-value', value: 'new.example.com' },
+        ],
+        role: 'textbox',
+      });
+
+      await expect(page.locator('#root')).toContainText('2 fields changed');
+      const resources = page.getByTestId('config-diff-resource');
+      await expect(resources).toHaveCount(2);
+      await expect(resources.filter({ hasText: 'default/web' })).toContainText('new.example.com');
+      await expect(resources.filter({ hasText: 'default/api' })).toContainText('new.example.com');
+    });
+
+    test('should show a deleted resource whose paths another resource also has', async ({ page }) => {
+      const slug = RandomSlugGenerator.randomSlugName();
+      const unitListPage = new UnitListPage(page);
+
+      // The IngressRoute left behind has every path the deleted one had, so a diff of the
+      // Unit's paths alone, without the resource each belongs to, finds nothing changed.
+      await unitListPage.createUnitViaAPI({ unitType: 'two-ingress-routes', slug });
+
+      await unitListPage.invokeFunctionByNameWithParameters({
+        name: slug,
+        functionName: 'delete-resource',
+        params: [
+          { name: 'Resource-type', value: 'traefik.io/v1alpha1/IngressRoute' },
+          { name: 'Resource-name', value: 'default/web' },
+        ],
+        role: 'textbox',
+      });
+
+      await expect(page.locator('#root')).toContainText('1 field changed');
+      const resources = page.getByTestId('config-diff-resource');
+      await expect(resources).toHaveCount(1);
+      await expect(resources).toContainText('default/web');
+      await expect(resources).toContainText('deleted');
+    });
   });
 
   test.describe('Table Grouping', () => {

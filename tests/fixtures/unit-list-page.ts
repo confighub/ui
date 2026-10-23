@@ -23,7 +23,8 @@ export type UnitCreateTypes =
   | 'network-ingress'
   | 'namespace'
   | 'crm-app'
-  | 'backend';
+  | 'backend'
+  | 'two-ingress-routes';
 
 export type CreateUnitParams = {
   unitType: UnitCreateTypes;

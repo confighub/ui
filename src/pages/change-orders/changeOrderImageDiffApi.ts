@@ -28,7 +28,7 @@ import {
 } from '@confighub/rtk-query';
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query';
 
-import { fetchAllPages, MAX_PARALLEL_CHUNKS } from '@/hooks/chunkedQueriesApi';
+import { fetchAllPages, inParallel, MAX_PARALLEL_CHUNKS } from '@/hooks/chunkedQueriesApi';
 
 import { SOURCE_REVISION_LIMIT } from '../x/apps/change-order/useFanOutSource';
 
@@ -86,26 +86,8 @@ export interface DraftRevisionsArgs {
 /** At most this many per-Unit diffs are in flight for one read. */
 const MAX_PARALLEL_UNIT_DIFFS = 4;
 
-/** Run `work` over `items`, at most `parallel` at a time, results in item order. */
-async function inParallel<T, R>(
-  items: readonly T[],
-  parallel: number,
-  work: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) {
-      const index = next++;
-      results[index] = await work(items[index]);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(parallel, items.length) }, () => worker()));
-  return results;
-}
-
 /** The server's own error body for a failed per-Unit read, when it sent one. */
-function unitDiffErrorOf(unitId: string, error: FetchBaseQueryError): UnitDiff {
+export function unitDiffErrorOf(unitId: string, error: FetchBaseQueryError): UnitDiff {
   const data = error.data as { Error?: UnitDiff['Error']; message?: string } | undefined;
   const status = typeof error.status === 'number' ? error.status : undefined;
   return {

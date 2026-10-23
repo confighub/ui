@@ -6,7 +6,6 @@ import {
   Invocation,
 } from '@confighub/rtk-query';
 import { AttributeValueItem } from './utils/result-formatters';
-import type { UnitDiff } from './utils/diff-from-revisions';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -59,7 +58,6 @@ export interface InvokerContentProps {
     success: boolean;
     message?: string;
     responses?: FunctionInvocationsResponse[];
-    diffs?: UnitDiff[];
     slugByUnitId?: Record<string, string>;
   } | null;
   onRemoveUnit?: (unitId: string) => void;

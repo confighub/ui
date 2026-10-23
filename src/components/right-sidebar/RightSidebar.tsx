@@ -21,17 +21,11 @@ import {
   useDeleteInvocationMutation,
   useGetSpaceQuery,
   useInvokeFunctionsOnOrgMutation,
-  useLazySearchUnitDataQuery,
   useListAllUnitsQuery,
   useListAllInvocationsQuery,
   useListOrgFunctionsQuery,
   usePatchInvocationMutation,
 } from '@confighub/rtk-query';
-import {
-  buildInvocationDiffs,
-  type InvocationBeforeSnapshot,
-} from '@/components/invoker/utils/diff-from-invocation';
-import type { UnitDiff } from '@/components/invoker/utils/diff-from-revisions';
 import { InvokerContent } from '../invoker/InvokerContent';
 import { useAppDispatch, useAppSelector } from '@/hooks/useApp';
 import {
@@ -199,7 +193,6 @@ export const InvokerSidebar = ({
     success: boolean;
     message?: string;
     responses?: FunctionInvocationsResponse[];
-    diffs?: UnitDiff[];
     /** Slug per UnitID captured at invocation time. Insulates the results
      *  panel from later changes to the selected-units prop, which would
      *  otherwise drop the slug map out from under us. */
@@ -423,7 +416,6 @@ export const InvokerSidebar = ({
   // Mutations
   const [invokeFunctionMutation] = useInvokeFunctionsOnOrgMutation();
   const [createInvocationMutation] = useCreateInvocationMutation();
-  const [triggerSearchUnitData] = useLazySearchUnitDataQuery();
 
   // When the Invoker is running in an initiative's context, each invocation is
   // wrapped in a per-run ChangeSet labeled with that initiative. Otherwise
@@ -615,28 +607,6 @@ export const InvokerSidebar = ({
         const unitIds = selectedUnitIds.map((id: string) => `'${id}'`).join(',');
         const whereClause = `UnitID IN (${unitIds})`;
 
-        // Snapshot pre-invocation configuration so we can diff the response's ConfigData
-        // against it. Fire alongside the mutation to keep latency flat — the
-        // diff render can tolerate the snapshot arriving after the result.
-        // The configuration is not on the Unit, so this reads the bulk data endpoint,
-        // which returns the whole selection in one request.
-        const beforeSnapshotPromise = triggerSearchUnitData({ where: whereClause }, true)
-          .unwrap()
-          .then((rows) => {
-            const map: Record<string, InvocationBeforeSnapshot> = {};
-            for (const row of rows) {
-              const id = row.UnitID;
-              if (!id) continue;
-              map[id] = {
-                spaceId: row.SpaceID ?? spaceId,
-                unitSlug: row.Slug ?? '',
-                data: row.Data,
-              };
-            }
-            return map;
-          })
-          .catch(() => ({} as Record<string, InvocationBeforeSnapshot>));
-
         let result;
         if (parameterizedInvocationId) {
           // Parameterized Invocation: send the declared parameter values,
@@ -651,6 +621,7 @@ export const InvokerSidebar = ({
             executorSpace: executorSpaceId,
             where: whereClause || undefined,
             dryRun: dryRun ? 'true' : undefined,
+            include: 'Diff',
             functionInvocationsRequest: {
               ToolchainType: enrichedContext.primaryToolchainType || '',
               ParameterizedInvocations: [
@@ -674,6 +645,7 @@ export const InvokerSidebar = ({
             executorSpace: executorSpaceId,
             where: whereClause || undefined,
             dryRun: dryRun ? 'true' : undefined,
+            include: 'Diff',
             functionInvocationsRequest: {
               ToolchainType: enrichedContext.primaryToolchainType || '',
               FunctionInvocations: [
@@ -688,23 +660,15 @@ export const InvokerSidebar = ({
 
         const hasErrors = result?.some((r) => !r.Success);
 
-        const beforeByUnitId = await beforeSnapshotPromise;
-        const diffs = buildInvocationDiffs(result, beforeByUnitId);
         const slugByUnitId: Record<string, string> = {};
-        for (const [id, snap] of Object.entries(beforeByUnitId)) {
-          if (snap.unitSlug) slugByUnitId[id] = snap.unitSlug;
-        }
-        // Fall back to the selection's current name for units that somehow
-        // weren't in the snapshot (e.g. snapshot fetch failed).
         for (const u of enrichedContext.selectedUnits) {
-          if (!slugByUnitId[u.id] && u.name) slugByUnitId[u.id] = u.name;
+          if (u.name) slugByUnitId[u.id] = u.name;
         }
 
         const invokeResultObj = {
           success: !hasErrors,
           message: hasErrors ? 'Some invocations failed' : 'All invocations succeeded',
           responses: result,
-          diffs,
           slugByUnitId,
         };
 
@@ -759,7 +723,7 @@ export const InvokerSidebar = ({
         setIsInvoking(false);
       }
     },
-    [spaceId, executorSpaceId, enrichedContext, invokeFunctionMutation, initiativeId, invokeInChangeSet, addInvocation, triggerSearchUnitData]
+    [spaceId, executorSpaceId, enrichedContext, invokeFunctionMutation, initiativeId, invokeInChangeSet, addInvocation]
   );
 
   // Handle save invocation or trigger

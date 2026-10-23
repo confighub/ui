@@ -150,6 +150,24 @@ export async function fetchAllPages<T>(
   return { data: rows };
 }
 
+/** Run `work` over `items`, at most `parallel` at a time, results in item order. */
+export async function inParallel<T, R>(
+  items: readonly T[],
+  parallel: number,
+  work: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await work(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(parallel, items.length) }, () => worker()));
+  return results;
+}
+
 /**
  * One request per chunk, at most MAX_PARALLEL_CHUNKS at a time, rows concatenated in
  * chunk order. When a chunk fails, the result is the error of the first failed chunk:

@@ -74,6 +74,7 @@ export const useInvokeInChangeSet = () => {
           executorSpace: executorSpaceId,
           where: unitIdsWhere(unitIds),
           dryRun: dryRun ? 'true' : undefined,
+          include: 'Diff',
           changeSetId,
           functionInvocationsRequest: {
             ToolchainType: toolchainType,

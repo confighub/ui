@@ -8,7 +8,8 @@ import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import { Link as RouterLink } from 'react-router-dom';
 
-import { TreeDiffSection } from '@/pages/x/apps/TreeDiffSection';
+import { ConfigDiffView } from '@/components/config-diff/ConfigDiffView';
+import { summarizeConfigDiff } from '@/components/config-diff/configDiffTree';
 import { componentTheme } from '@/pages/x/apps/componentTheme';
 import type { FunctionInvocationsResponse } from '@confighub/rtk-query';
 
@@ -21,7 +22,6 @@ import {
   looksLikeJSON,
 } from '../utils/result-formatters';
 import { decodeBase64Value } from '../utils/invocation-history.utils';
-import type { UnitDiff } from '../utils/diff-from-revisions';
 
 type StatusTone = 'success' | 'warning' | 'error' | 'neutral';
 
@@ -35,7 +35,7 @@ interface UnitSummary {
  *  outputs-only > no-op. */
 const summarize = (
   response: FunctionInvocationsResponse,
-  diff: UnitDiff | undefined,
+  diffCount: number,
 ): UnitSummary => {
   if (response.Error || response.Success === false) {
     const msg = response.Error?.Message?.trim();
@@ -46,7 +46,6 @@ const summarize = (
   }
 
   const validationFailed = detectValidationFailure(response);
-  const diffCount = diff?.diffs.length ?? 0;
   const outputCount = response.Outputs ? Object.keys(response.Outputs).length : 0;
 
   if (diffCount > 0) {
@@ -134,8 +133,8 @@ const StatusDot = ({ tone }: StatusDotProps) => (
 );
 
 export interface PerUnitResultCardProps {
+  /** The invocation's result, read with `include=Diff` so it carries what the invocation changed. */
   response: FunctionInvocationsResponse;
-  diff?: UnitDiff;
   /** Human-readable slug; falls back to UnitID when unknown. */
   unitDisplay: string;
   /** Diff-tree column state, shared across cards so the columns align. */
@@ -153,17 +152,18 @@ export interface PerUnitResultCardProps {
 
 export const PerUnitResultCard = ({
   response,
-  diff,
   unitDisplay,
   columnStyle,
   onDividerMouseDown,
   isDragging,
   onSaveAttributes,
 }: PerUnitResultCardProps) => {
-  const summary = summarize(response, diff);
+  const diff = response.Success ? response.Diff : undefined;
+  const diffCount = summarizeConfigDiff(diff).total;
+  const hasDiff = diff !== undefined && diffCount > 0;
+  const summary = summarize(response, diffCount);
   const spaceId = response.SpaceID;
   const unitId = response.UnitID;
-  const hasDiff = diff && diff.diffs.length > 0;
   const hasOutputs = response.Outputs && Object.keys(response.Outputs).length > 0;
 
   return (
@@ -247,18 +247,11 @@ export const PerUnitResultCard = ({
       )}
 
       {/* Diff tree — only when the invocation mutated data */}
-      {hasDiff && (
+      {hasDiff && diff && (
         <Box sx={{ mt: 0.5 }}>
-          <TreeDiffSection
-            entry={{ unitId: diff!.unitId, fieldDiffs: diff!.diffs }}
-            allPaths={diff!.allPaths}
-            keyPrefix={`invoke-${diff!.unitId}`}
-            label="invoke"
-            variant="data"
-            columnStyle={columnStyle}
-            onDividerMouseDown={onDividerMouseDown}
-            isDragging={isDragging}
-            hideLabel
+          <ConfigDiffView
+            diff={diff}
+            columns={{ columnStyle, onDividerMouseDown, isDragging: isDragging ?? false }}
           />
         </Box>
       )}

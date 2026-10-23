@@ -330,7 +330,7 @@ interface ImageChangeRowsProps {
   srValuePrefix?: { old: string; new: string };
 }
 
-/** The image rows for one unit, above its tree. Renders nothing when there are none. */
+/** The image rows for one resource, above its tree. Renders nothing when there are none. */
 export const ImageChangeRows = memo(({ rows, testIdPrefix, srValuePrefix }: ImageChangeRowsProps): ReactNode => {
   if (rows.length === 0) return null;
   return (

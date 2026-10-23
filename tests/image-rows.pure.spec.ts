@@ -1,5 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
+import type { PathChange, PathSegment, ResourceDiff } from '@confighub/rtk-query';
 import { expect, test } from '@playwright/test';
 
 import { isRemovalSentinel } from '../src/pages/x/apps/componentValues';
@@ -8,6 +9,7 @@ import {
   IMAGE_METER_LEVEL,
   buildImageRows,
   classifyImageChange,
+  imageRowsOfResource,
   parseImagePath,
   parseImageRef,
 } from '../src/pages/x/apps/imageRef';
@@ -287,3 +289,79 @@ test.describe('container image row model', () => {
     });
   });
 });
+
+/** Segments of a container element, as the server's diff names one: by its merge key, with its index on both sides. */
+const field = (name: string): PathSegment => ({ Field: name, FromIndex: -1, ToIndex: -1 });
+const containerAt = (name: string, index: number): PathSegment[] => [
+  field('spec'),
+  field('template'),
+  field('spec'),
+  field('containers'),
+  { MergeKeys: [{ Key: 'name', Value: name }], FromIndex: index, ToIndex: index },
+];
+const pathChange = (segments: PathSegment[], change: Omit<PathChange, 'Segments'>): PathChange => ({ Segments: segments, ...change });
+const resourceOf = (changes: PathChange[]): ResourceDiff => ({
+  Resource: { ResourceType: 'apps/v1/Deployment', ResourceName: 'default/web' },
+  ChangeType: 'Update',
+  Changes: changes,
+});
+
+test.describe('container image rows from a server diff', () => {
+  test('a changed image is a row named by its context sibling, and leaves the tree', () => {
+    const replicas = pathChange([field('spec'), field('replicas')], { ChangeType: 'Update', FromValue: '1', ToValue: '2' });
+    const { rows, others } = imageRowsOfResource(
+      resourceOf([
+        replicas,
+        pathChange([...containerAt('api', 0), field('name')], { ChangeType: 'None', ToValue: 'api' }),
+        pathChange([...containerAt('api', 0), field('image')], {
+          ChangeType: 'Update',
+          FromValue: 'ghcr.io/acme/api:v1.0.0',
+          ToValue: 'ghcr.io/acme/api:v1.1.0',
+        }),
+      ]),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      containerName: 'api',
+      from: 'ghcr.io/acme/api:v1.0.0',
+      to: 'ghcr.io/acme/api:v1.1.0',
+      unchanged: false,
+    });
+    // The image's own change is the row; replicas and the context stay for the tree.
+    expect(others.filter((change) => change.ChangeType !== 'None')).toEqual([replicas]);
+  });
+
+  /**
+   * The server returns an unchanged container beside a changed one as one context entry
+   * holding its block, not as its fields, so its name and image are read from the block.
+   */
+  test('an unchanged container beside a moved one is an unchanged row', () => {
+    const { rows } = imageRowsOfResource(
+      resourceOf([
+        pathChange([...containerAt('api', 0), field('name')], { ChangeType: 'None', ToValue: 'api' }),
+        pathChange([...containerAt('api', 0), field('image')], { ChangeType: 'Update', FromValue: 'acme/api:1', ToValue: 'acme/api:2' }),
+        pathChange(containerAt('sidecar', 1), {
+          ChangeType: 'None',
+          ToValue: 'name: sidecar\nimage: "acme/sidecar:3"',
+          ToDataType: 'YAML',
+        }),
+      ]),
+    );
+    expect(rows.map((row) => [row.containerName, row.unchanged, row.to])).toEqual([
+      ['api', false, 'acme/api:2'],
+      ['sidecar', true, 'acme/sidecar:3'],
+    ]);
+  });
+
+  test('a container added whole stays in the tree and makes no row', () => {
+    const added = pathChange(containerAt('cache', 1), {
+      ChangeType: 'Add',
+      ToValue: 'name: cache\nimage: redis:7',
+      ToDataType: 'YAML',
+    });
+    const { rows, others } = imageRowsOfResource(resourceOf([added]));
+    expect(rows).toHaveLength(0);
+    expect(others).toEqual([added]);
+  });
+});
+

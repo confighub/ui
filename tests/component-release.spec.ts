@@ -653,22 +653,19 @@ test.describe('component release — height-encoded lane (v7)', () => {
     await expect(page.getByTestId('release-selector-a').getByTestId('release-current-badge')).toHaveCount(0);
 
     // The SAME unit block, a genuinely different comparison: the whole unit
-    // reads as added, replicas is 1 (rel-1's value, not rel-2's 2), and nothing
-    // was removed because there was no old side to remove it from.
+    // reads as added. rel-1 has no predecessor, so its ConfigMap is one resource
+    // added whole, drawn as the document it bundled — replicas 1, rel-1's value,
+    // not rel-2's 2 — and there are no old-side cells at all, because there was
+    // no old side to remove anything from.
     await expect(unitBlock.getByTestId('unreleased-unit-badge')).toHaveText(
       `added in rel-${rel1Num}`,
       { timeout: 10000 },
     );
-    const rel1Added = newVals.filter({ hasText: /^added: 1$/ });
-    await expect(rel1Added).toHaveCount(1);
-    await expect(rel1Added).toBeVisible();
-    await expect(newVals.filter({ hasText: /^added: 2$/ })).toHaveCount(0);
-    // "Nothing was removed" is now asserted over EVERY old-side cell rather than
-    // over the single string `removed: 1`. rel-1 has no predecessor, so the diff
-    // builder gives each of its fields the absent-sentinel old value `-`; the
-    // assertion is that NO old-side cell carries anything else. That rules out
-    // every real removal, not just the one the previous line named.
-    await expect(oldVals.filter({ hasNotText: /^removed: -$/ })).toHaveCount(0);
+    const addedDocument = unitBlock.getByTestId('config-diff-resource-document');
+    await expect(addedDocument).toHaveCount(1);
+    await expect(addedDocument).toContainText('replicas: "1"');
+    await expect(addedDocument).not.toContainText('replicas: "2"');
+    await expect(oldVals).toHaveCount(0);
 
     // The per-unit header names the unit. It renders as an anchor whose
     // accessible text ends with a visually-hidden " (opens unit details in a new
@@ -905,6 +902,106 @@ test.describe('component release — container image rows', () => {
     await expect(page.getByTestId('release-diff-image-row')).toHaveCount(4);
     for (const name of ['api', 'sidecar', 'otel', 'envoy']) {
       await expect(imageRow(page, name)).toHaveCount(1);
+    }
+  });
+});
+
+// ============================================================================
+// Resources that share a path
+//
+// A Unit can hold several resources whose fields have the same paths. A change
+// to that path in each of them is a change in each of them: the diff is drawn
+// resource by resource, and counted that way.
+// ============================================================================
+
+const SHARED_PATH_APP_LABEL = `e2e-shared-${RandomSlugGenerator.randomSlugName()}`;
+
+test.describe('component release — resources that share a path', () => {
+  test.use({ storageState: 'authentication.json' });
+  test.describe.configure({ mode: 'serial' });
+
+  const sharedSlug = `e2e-shared-${RandomSlugGenerator.randomSlugName()}`;
+  let sharedSpaceId: string;
+  let sharedUnitId: string;
+
+  /** Two ConfigMaps of one Unit, both holding `data.replicas`. */
+  const twoConfigMaps = (n: number) =>
+    ['first', 'second']
+      .map((name) =>
+        ['apiVersion: v1', 'kind: ConfigMap', 'metadata:', `  name: ${name}`, 'data:', `  replicas: "${n}"`].join('\n'),
+      )
+      .join('\n---\n');
+
+  test.beforeAll(async ({ browser }) => {
+    const context = await newAuthorizedContext(browser);
+    const page = await context.newPage();
+    await page.goto('/');
+    await page.waitForResponse((r) => r.url().includes('/api/space') && r.request().method() === 'GET' && r.ok());
+    const api = new ApiHelper(page);
+
+    const space = await api.createSpace({
+      space: { Slug: sharedSlug, ComponentID: (await api.createComponent(SHARED_PATH_APP_LABEL)).ComponentID, Labels: { Owner: 'E2E' } },
+    });
+    sharedSpaceId = (space as { SpaceID: string }).SpaceID;
+    const target = await api.createTarget({ spaceId: sharedSpaceId, slug: `${sharedSlug}-oci` });
+    const targetId = (target as { TargetID: string }).TargetID;
+    await api.updateSpace({ spaceId: sharedSpaceId, space: { ReleaseTargetID: targetId } });
+
+    const unitResp = await hubApi.post(`/api/space/${sharedSpaceId}/unit`, {
+      params: { allow_exists: 'true' },
+      data: { Slug: 'shared-config', ToolchainType: 'Kubernetes/YAML', TargetID: targetId },
+    });
+    if (!unitResp.ok()) throw new Error(`unit: ${unitResp.status()} ${await unitResp.text()}`);
+    sharedUnitId = ((await unitResp.json()) as { Unit: { UnitID: string } }).Unit.UnitID;
+
+    async function setData(n: number): Promise<void> {
+      await api.uploadUnitData({ spaceId: sharedSpaceId, unitId: sharedUnitId, body: twoConfigMaps(n) });
+      for (let i = 0; i < 100; i++) {
+        const resp = await hubApi.get(`/api/space/${sharedSpaceId}/unit/${sharedUnitId}`);
+        if (resp.ok() && !(await resp.text()).includes('awaiting/triggers')) return;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+
+    // Released with replicas 1 in both, then 2 in both, not released.
+    await setData(1);
+    await api.publishRelease({ spaceId: sharedSpaceId });
+    await setData(2);
+
+    await context.close();
+  });
+
+  test.afterAll(async ({ browser }) => {
+    const context = await newAuthorizedContext(browser);
+    const page = await context.newPage();
+    await page.goto('/');
+    await page.waitForResponse((r) => r.url().includes('/api/space') && r.request().method() === 'GET' && r.ok());
+    try {
+      await new ApiHelper(page).deleteSpace(sharedSpaceId, true);
+    } catch {
+      /* ignore */
+    }
+    await context.close();
+  });
+
+  test('the unreleased change shows in each resource, and counts in each', async ({ page }) => {
+    await navigateAndSelectApp(page, SHARED_PATH_APP_LABEL);
+    const node = page.locator('.react-flow__node').filter({ hasText: sharedSlug });
+    await expect(node).toBeVisible({ timeout: 10000 });
+    await node.click();
+    await page.getByTestId('component-pane-tab-releases').click();
+
+    // The pane opens on the unreleased work, which is two changes, one per ConfigMap.
+    await expect(page.getByTestId('release-notes')).toHaveAttribute('data-mode', 'declared', { timeout: 10000 });
+    await expect(page.getByTestId('component-release-changes-chip')).toHaveText('2', { timeout: 10000 });
+
+    const unitBlock = page.getByTestId(`release-diff-unit-${sharedUnitId}`);
+    const resources = unitBlock.getByTestId('config-diff-resource');
+    await expect(resources).toHaveCount(2);
+    for (const name of ['first', 'second']) {
+      const resource = resources.filter({ hasText: `/${name}` });
+      await expect(resource.getByTestId('release-diff-old-value')).toHaveText(['removed: 1']);
+      await expect(resource.getByTestId('release-diff-new-value')).toHaveText(['added: 2']);
     }
   });
 });
