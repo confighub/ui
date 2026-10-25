@@ -415,7 +415,7 @@ Theme adds a 3px colored left border and semantic background tint. Use `standard
 ### Top AppBar
 - Background: rust (`#ba3d03`)
 - Height: 48px
-- Contains: logo, nav links, feedback/discord/docs links, user avatar
+- Contains: logo, nav links, discord/docs links, user avatar
 - The user avatar lives **only here** — do not add account controls to page headers
 
 ### Content Area

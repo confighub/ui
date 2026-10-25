@@ -34,8 +34,3 @@ export interface EntityBulkCreatedProperties {
   // Additional non-sensitive metadata
   [key: string]: string | number | boolean | undefined;
 }
-
-export interface FeedbackSurveySubmittedProperties {
-  allow_contact: boolean;
-  feedback_length: number;
-}

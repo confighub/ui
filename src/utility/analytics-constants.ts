@@ -10,7 +10,6 @@ export const ANALYTICS_EVENTS = {
   // Entity creation events
   ENTITY_CREATED: 'entity_created',
   ENTITY_BULK_CREATED: 'entity_bulk_created',
-  FEEDBACK_SURVEY_SUBMITTED: 'feedback_survey_submitted',
 } as const;
 
 /**

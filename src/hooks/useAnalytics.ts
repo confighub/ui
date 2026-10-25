@@ -7,7 +7,6 @@ import { ANALYTICS_EVENTS } from '../utility/analytics-constants';
 import type {
   EntityCreatedProperties,
   EntityBulkCreatedProperties,
-  FeedbackSurveySubmittedProperties,
 } from '../types/analytics';
 
 /**
@@ -48,18 +47,8 @@ export function useAnalytics() {
     [posthog, isTrackingEnabled]
   );
 
-  const trackFeedbackSurveySubmitted = useCallback(
-    (properties: FeedbackSurveySubmittedProperties) => {
-      if (isTrackingEnabled) {
-        posthog.capture(ANALYTICS_EVENTS.FEEDBACK_SURVEY_SUBMITTED, properties);
-      }
-    },
-    [posthog, isTrackingEnabled]
-  );
-
   return {
     trackEntityCreated,
     trackEntityBulkCreated,
-    trackFeedbackSurveySubmitted,
   };
 }

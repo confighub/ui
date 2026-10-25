@@ -22,6 +22,8 @@ const ChangeOrdersPage = lazy(() => import('./pages/change-orders/ChangeOrdersPa
 const ChangeOrderDraftPage = lazy(() => import('./pages/change-orders/draft/ChangeOrderDraftPage'));
 const ReleasesPage = lazy(() => import('./pages/releases/ReleasesPage'));
 const TargetOverviewPage = lazy(() => import('./pages/target-overview/TargetOverviewPage'));
+const ServiceAccountsPage = lazy(() => import('./pages/service-accounts/ServiceAccountsPage'));
+const ChannelsPage = lazy(() => import('./pages/channels/ChannelsPage'));
 const ChangeOrdersOldRouteRedirect = lazy(() => import('./pages/change-orders/OldRouteRedirect'));
 const ChangeSetsPage = lazy(() => import('./pages/change-sets/ChangeSetsPage'));
 const ViewExplorerPage = lazy(() => import('./pages/x/view-explorer/ViewExplorerPage'));
@@ -194,6 +196,23 @@ const routes = [
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <TargetOverviewPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/service-accounts/:slug?',
+        element: (
+          <Suspense fallback={<Loader isLoading={true} />}>
+            <ServiceAccountsPage />
+          </Suspense>
+        ),
+      },
+      {
+        // A Channel belongs to a Space, so its address names both.
+        path: '/channels/:space?/:slug?',
+        element: (
+          <Suspense fallback={<Loader isLoading={true} />}>
+            <ChannelsPage />
           </Suspense>
         ),
       },

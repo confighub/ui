@@ -43,6 +43,7 @@ export function ConsoleTitleRow({
   freshness,
   refreshing,
   onRefresh,
+  actions,
 }: {
   title: string;
   headingId: string;
@@ -52,6 +53,8 @@ export function ConsoleTitleRow({
   freshness: string;
   refreshing: boolean;
   onRefresh: () => void;
+  /** After Refresh, such as the console's create button. */
+  actions?: ReactNode;
 }) {
   return (
     <Stack direction="row" alignItems="flex-end" justifyContent="space-between" sx={{ gap: '14px' }}>
@@ -86,6 +89,7 @@ export function ConsoleTitleRow({
           <RefreshIcon aria-hidden="true" sx={{ fontSize: 15 }} />
           Refresh
         </Box>
+        {actions}
       </Stack>
     </Stack>
   );

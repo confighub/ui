@@ -3,7 +3,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 
-import { FeedbackSurveyDialog } from '@/components/feedback-survey/FeedbackSurveyDialog';
 import { ConfigHubIcon } from '@/components/icons/ConfigHubIcon';
 import { DiscordIcon } from '@/components/icons/DiscordIcon';
 import { fadeIn } from '@/components/styled';
@@ -16,12 +15,13 @@ import { selectTourId, selectTourStatus } from '@/state/slices/tourSlice';
 import { TOP_NAV_HEIGHT } from '@/utility/constants';
 import { UserSection } from '@/components/user-section/UserSection';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import DataObjectIcon from '@mui/icons-material/DataObject';
 import DifferenceIcon from '@mui/icons-material/Difference';
 import ExploreIcon from '@mui/icons-material/Explore';
-import FeedbackIcon from '@mui/icons-material/Feedback';
 import FolderCopyIcon from '@mui/icons-material/FolderCopy';
 import LocalLibraryIcon from '@mui/icons-material/LocalLibrary';
 import PublishedWithChangesIcon from '@mui/icons-material/PublishedWithChanges';
@@ -371,17 +371,23 @@ const ConfigurationItems: INavItem[] = [
         navigate: `/targets`,
         disable: false,
       },
+      {
+        text: 'Channels',
+        component: <ForumOutlinedIcon sx={{ fontSize: 18 }} />,
+        navigate: `/channels`,
+        disable: false,
+      },
+      {
+        text: 'Service accounts',
+        component: <SmartToyOutlinedIcon sx={{ fontSize: 18 }} />,
+        navigate: `/service-accounts`,
+        disable: false,
+      },
     ],
   },
 ];
 
-const SupportItems = (onFeedbackClick: () => void): INavItem[] => [
-  {
-    text: 'Feedback',
-    component: <FeedbackIcon sx={{ color: 'white' }} />,
-    disable: false,
-    onClick: onFeedbackClick,
-  },
+const supportItems: INavItem[] = [
   {
     text: 'Discord',
     component: <DiscordIcon color='white' />,
@@ -433,8 +439,6 @@ export const Layout = memo(() => {
     Boolean(gettingStartedAnchor) &&
     !(activeTourId && (tourStatus === 'running' || tourStatus === 'finished'));
 
-  const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
-
   // Invoker sidebar — no left nav offset needed in the top-nav layout
   const invoker = useInvokerSidebar(0);
 
@@ -479,19 +483,9 @@ export const Layout = memo(() => {
     dispatch(setSelectedUnits({ units: [] }));
   }, [dispatch]);
 
-  // Memoize support items to prevent recreation on every render
-  const supportItems = useMemo(
-    () => SupportItems(() => setIsFeedbackDialogOpen(true)),
-    [setIsFeedbackDialogOpen],
-  );
-
   const handleCloseAlert = useCallback(() => {
     dispatch(closeAlert());
   }, [dispatch]);
-
-  const handleCloseFeedback = useCallback(() => {
-    setIsFeedbackDialogOpen(false);
-  }, [setIsFeedbackDialogOpen]);
 
   return (
     <Container>
@@ -636,9 +630,6 @@ export const Layout = memo(() => {
           onResizeStart={invoker.handleResizeStart}
         />
       </ContentRow>
-
-      {/* Feedback Dialog */}
-      <FeedbackSurveyDialog open={isFeedbackDialogOpen} onClose={handleCloseFeedback} />
 
       {/* Global Alert Snackbar */}
       <Snackbar
