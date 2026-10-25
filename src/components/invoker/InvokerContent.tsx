@@ -217,7 +217,7 @@ export const InvokerContent = ({
         enforced: options.enforced,
         labels: options.labels,
         annotations: options.annotations,
-        bridgeWorkerId: options.bridgeWorkerId,
+        channelId: options.channelId,
       };
 
     const result = await onSave(saveOptions, data);

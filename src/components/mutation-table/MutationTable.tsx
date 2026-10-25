@@ -44,7 +44,7 @@ const MUTATION_COLUMN_GROUPS: ColumnGroup[] = [
   },
   {
     header: 'Function',
-    columns: ['functionName', 'arguments', 'whereResource', 'invocation', 'BridgeWorkerID'],
+    columns: ['functionName', 'arguments', 'whereResource', 'invocation', 'ChannelID'],
   },
   {
     header: 'Cause',
@@ -74,7 +74,7 @@ const MUTATION_COLUMN_VISIBILITY: Record<string, boolean> = {
   arguments: true,
   whereResource: false,
   invocation: false,
-  BridgeWorkerID: false,
+  ChannelID: false,
   trigger: true,
   link: true,
   providedPath: true,
@@ -326,11 +326,11 @@ export const MutationsTable = ({ unitExtended, onTabSelected }: IMutationsTableP
       renderCell: renderText,
     },
     {
-      field: 'BridgeWorkerID',
-      headerName: 'Bridge Worker ID',
+      field: 'ChannelID',
+      headerName: 'Channel ID',
       minWidth: 160,
       flex: 1,
-      valueGetter: (_, row) => row.Mutation?.BridgeWorkerID ?? '',
+      valueGetter: (_, row) => row.Mutation?.ChannelID ?? '',
       renderCell: renderUuid,
     },
     {

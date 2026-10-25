@@ -35,8 +35,6 @@ export interface Initiative {
   triggerId?: string;
   /** Kyverno policy YAML used by the compliance check trigger */
   kyvernoPolicy?: string;
-  /** Bridge worker ID for the compliance check trigger */
-  triggerBridgeWorkerId?: string;
   /** Initiative status — manually controlled by the user */
   status: InitiativeStatus;
   /** ISO date string — set when the initiative is moved to completed */

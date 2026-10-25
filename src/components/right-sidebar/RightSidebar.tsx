@@ -760,7 +760,7 @@ export const InvokerSidebar = ({
                 ...(options.enforced !== undefined && { Enforced: options.enforced }),
                 ...(options.labels && { Labels: options.labels }),
                 ...(options.annotations && { Annotations: options.annotations }),
-                ...(options.bridgeWorkerId && { BridgeWorkerID: options.bridgeWorkerId }),
+                ...(options.channelId && { ChannelID: options.channelId }),
               },
             }).unwrap();
 
@@ -786,7 +786,7 @@ export const InvokerSidebar = ({
                 ],
                 ...(options.labels && { Labels: options.labels }),
                 ...(options.annotations && { Annotations: options.annotations }),
-                ...(options.bridgeWorkerId && { BridgeWorkerID: options.bridgeWorkerId }),
+                ...(options.channelId && { ChannelID: options.channelId }),
               },
             }).unwrap();
 

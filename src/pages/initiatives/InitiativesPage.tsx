@@ -705,7 +705,7 @@ const InitiativeEditor = ({ editorId }: { editorId: string }) => {
     (a) => a.ParameterName === 'policy',
   )?.Value?.toString();
 
-  const triggerBridgeWorkerId = triggerData?.Trigger?.BridgeWorkerID ?? undefined;
+  const triggerChannelId = triggerData?.Trigger?.ChannelID ?? undefined;
   const triggerWarn = triggerData?.Trigger?.Warn;
 
   const [whereClause, setWhereClause] = useState('');
@@ -791,7 +791,7 @@ const InitiativeEditor = ({ editorId }: { editorId: string }) => {
               scopePortalTarget={scopePortalTarget}
               onTestResults={setCheckResults}
               kyvernoPolicy={kyvernoPolicy}
-              triggerBridgeWorkerId={triggerBridgeWorkerId}
+              triggerChannelId={triggerChannelId}
               triggerWarn={triggerWarn}
             />
           </PanelInner>

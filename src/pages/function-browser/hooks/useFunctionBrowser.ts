@@ -1,13 +1,14 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import {
   FunctionSignature,
-  useListAllBridgeWorkersQuery,
-  useListBridgeWorkerFunctionsQuery,
+  useListFunctionsQuery,
   useListOrgFunctionsQuery,
 } from '@confighub/rtk-query';
+
+import { FunctionChannelOption, useFunctionChannels } from '@/hooks/useFunctionChannels';
 
 import {
   FILTER_OPTIONS,
@@ -20,60 +21,39 @@ import {
 } from '../utils/function-browser-utils';
 
 /**
- * Hook for managing worker selection and initialization
+ * Hook for choosing a Channel whose served functions to browse instead of the builtin ones
  */
-export const useWorkerSelection = () => {
-  const [workerId, setWorkerId] = useState('');
-  const [workerSpaceID, setWorkerSpaceId] = useState('');
-
-  const { workers, isLoading: isLoadingWorkers } = useListAllBridgeWorkersQuery(
-    {},
-    {
-      selectFromResult: ({ data, isLoading }) => ({
-        workers: data?.map((worker) => worker.BridgeWorker).filter(Boolean) || [],
-        isLoading,
-      }),
-    },
+export const useChannelSelection = () => {
+  const [channelId, setChannelId] = useState('');
+  const { channels, isLoadingChannels } = useFunctionChannels();
+  const channel: FunctionChannelOption | undefined = channels.find(
+    (option) => option.id === channelId,
   );
 
-  useEffect(() => {
-    // Initialize workerId with the first available worker if not set
-    if (workerId && workers.length > 0) {
-      setWorkerSpaceId(
-        workers?.find((worker) => worker?.BridgeWorkerID === workerId)?.SpaceID || '',
-      );
-    }
-  }, [workerId]);
-
   return {
-    workerId,
-    workers,
-    workerSpaceID,
-    isLoadingWorkers,
-    setWorkerId,
+    channelId,
+    channels,
+    channelSpaceId: channel?.spaceId ?? '',
+    isLoadingChannels,
+    setChannelId,
   };
 };
 
 /**
- * Hook for managing function data and processing
+ * Hook for managing function data and processing: the builtin functions, or what the selected
+ * Channel serves
  */
-export const useFunctionBrowserData = (spaceId: string, workerId: string) => {
+export const useFunctionBrowserData = (channelSpaceId: string, channelId: string) => {
   const { data: functions = {}, isLoading: isLoadingFunctions } = useListOrgFunctionsQuery({});
 
-  const { data: workerFunctions = [] } = useListBridgeWorkerFunctionsQuery(
-    {
-      spaceId,
-      bridgeWorkerId: workerId,
-    },
-    {
-      skip: !workerId, // Skip query if no workerId selected
-    },
+  const { data: channelFunctions = {} } = useListFunctionsQuery(
+    { spaceId: channelSpaceId, entity: 'channel', id: channelId },
+    { skip: !channelId || !channelSpaceId },
   );
 
   const processedFunctions = useMemo(
-    // @ts-expect-error TODO: Same shape
-    () => processFunctions(workerId ? workerFunctions : functions),
-    [functions, workerFunctions, workerId], // Add workerId to dependencies
+    () => processFunctions(channelId ? channelFunctions : functions),
+    [functions, channelFunctions, channelId],
   );
 
   return {
@@ -143,17 +123,18 @@ export const useFunctionInteractions = () => {
 export const useFunctionBrowser = () => {
   const [selectedView, setSelectedView] = useState<string>(VIEW_OPTIONS.Grid);
 
-  const workerHook = useWorkerSelection();
-  const functionHook = useFunctionBrowserData(workerHook.workerSpaceID, workerHook.workerId); // Pass workerId
+  const channelHook = useChannelSelection();
+  const functionHook = useFunctionBrowserData(channelHook.channelSpaceId, channelHook.channelId);
   const filterHook = useFiltersAndSearch(functionHook.processedFunctions);
 
   const interactionHook = useFunctionInteractions();
 
-  const isLoading = functionHook.isLoadingFunctions || workerHook.isLoadingWorkers;
+  const isLoading =
+    functionHook.isLoadingFunctions || channelHook.isLoadingChannels;
 
   return {
-    // Worker management
-    ...workerHook,
+    // Channel management
+    ...channelHook,
 
     // Function data
     ...functionHook,

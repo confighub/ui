@@ -87,5 +87,5 @@ export interface SaveInvocationOptions {
   enforced?: boolean;
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
-  bridgeWorkerId?: string;
+  channelId?: string;
 }

@@ -32,7 +32,7 @@ export const TRIGGER_COLUMN_GROUPS: ColumnGroup[] = [
   },
   {
     header: 'Infrastructure',
-    columns: ['BridgeWorkerSlug', 'BridgeWorkerID'],
+    columns: ['ChannelSlug', 'ChannelID'],
   },
   {
     header: 'Status',
@@ -65,8 +65,8 @@ export interface TriggerRowItem {
   ToolchainType: string;
   Event: string;
   Arguments: string;
-  BridgeWorkerSlug: string;
-  BridgeWorkerID: string;
+  ChannelSlug: string;
+  ChannelID: string;
   Validating: boolean;
   Disabled: boolean;
   Warn: boolean;
@@ -145,16 +145,16 @@ export const createTriggerStaticColumns = () =>
       flex: 1,
     },
 
-    BridgeWorkerSlug: {
+    ChannelSlug: {
       type: 'string',
-      headerName: 'Bridge Worker',
+      headerName: 'Channel',
       minWidth: 120,
       flex: 1,
     },
 
-    BridgeWorkerID: {
+    ChannelID: {
       type: 'uuid',
-      headerName: 'Worker ID',
+      headerName: 'Channel ID',
       minWidth: 300,
       flex: 1.5,
     },

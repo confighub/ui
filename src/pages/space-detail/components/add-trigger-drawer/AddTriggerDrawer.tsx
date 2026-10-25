@@ -16,11 +16,14 @@ import { FixedSubmitContainer, SectionCard } from '@/components/styled';
 import { IAddTriggerFormInput, useAddTrigger } from '@/hooks/useAddTrigger';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
 import {
-  BridgeWorkerRead,
+  FunctionChannelOption,
+  functionListArgs,
+  useFunctionChannels,
+} from '@/hooks/useFunctionChannels';
+import {
   FunctionSignature,
   ListFunctionsApiResponse,
   TriggerRead,
-  useListBridgeWorkersQuery,
   useListFunctionsQuery,
 } from '@confighub/rtk-query';
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
@@ -54,7 +57,6 @@ export interface AddTriggerFormData {
   toolchainType: string;
   eventType: string;
   functionName: string;
-  bridgeWorkerId: string;
   disabled: boolean;
   warn: boolean;
   arguments: Array<{
@@ -178,7 +180,8 @@ const StatusAndFunctionCard = ({
   control,
   errors,
   functions,
-  workers,
+  channels,
+  runsOnWorker,
   selectedFunction,
   selectedFunctionOption,
   handleFunctionSelect,
@@ -189,7 +192,9 @@ const StatusAndFunctionCard = ({
   selectedFunction: FunctionSignature;
   selectedFunctionOption: SimpleFunctionOption | null;
   functions: ListFunctionsApiResponse | undefined;
-  workers: Array<BridgeWorkerRead>;
+  channels: FunctionChannelOption[];
+  /** Whether the Trigger being edited still runs on a worker */
+  runsOnWorker: boolean;
   handleFunctionSelect: (functionData: FunctionSignature) => void;
   updateArgumentValue: (paramName: string, value: string) => void;
 }) => {
@@ -285,29 +290,35 @@ const StatusAndFunctionCard = ({
           />
         </Grid>
 
-        {/* Bridge Worker */}
+        {/* Channel */}
         <Grid size={{ xs: 6 }}>
           <Typography variant='subtitle2' sx={{ fontWeight: 600, mb: 1 }}>
-            Bridge Worker
+            Channel
           </Typography>
           <Controller
-            name='BridgeWorkerID'
+            name='ChannelID'
             control={control}
             render={({ field }) => (
               <FormControl fullWidth size='small'>
-                <InputLabel>Bridge Worker (Optional)</InputLabel>
+                <InputLabel>Channel (Optional)</InputLabel>
                 <Select
                   {...field}
-                  label='Bridge Worker (Optional)'
-                  input={<OutlinedInput label='Bridge Worker (Optional)' />}
+                  value={field.value ?? ''}
+                  label='Channel (Optional)'
+                  input={<OutlinedInput label='Channel (Optional)' />}
                 >
                   <MenuItem value=''>None</MenuItem>
-                  {workers.map((worker) => (
-                    <MenuItem key={worker.BridgeWorkerID} value={worker.BridgeWorkerID}>
-                      {worker.DisplayName}
+                  {channels.map((channel) => (
+                    <MenuItem key={channel.id} value={channel.id}>
+                      {channel.label}
                     </MenuItem>
                   ))}
                 </Select>
+                <FormHelperText>
+                  {runsOnWorker && !field.value
+                    ? 'This Trigger runs on a worker. Choose a Channel to move it.'
+                    : 'A Trigger on a Channel holds changes until the Channel\'s client runs it.'}
+                </FormHelperText>
               </FormControl>
             )}
           />
@@ -426,22 +437,10 @@ export const AddTriggerDrawer = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isEditMode = !!existingTrigger;
 
-  const { workers = [] } = useListBridgeWorkersQuery(
-    { spaceId },
-    {
-      selectFromResult: ({ data }) => ({
-        workers: data?.map((worker) => worker.BridgeWorker || ({} as BridgeWorkerRead)) || [],
-      }),
-    },
-  );
-
-  const { data: functions = {} } = useListFunctionsQuery({
-    spaceId,
-    entity: '',
-  });
+  const { channels } = useFunctionChannels();
 
   const defaultValues: IAddTriggerFormInput = {
-    BridgeWorkerID: '',
+    ChannelID: '',
     Slug: '',
     Labels: [],
     Annotations: [],
@@ -478,6 +477,16 @@ export const AddTriggerDrawer = ({
   } = useAddTrigger(orgID, spaceId, existingTrigger, { setValue, watch, reset });
 
   const watchedToolchainType = watch('ToolchainType');
+  const watchedChannelId = watch('ChannelID');
+  // A Trigger not yet moved off its worker lists the worker's functions until a Channel is chosen.
+  const legacyWorkerId = existingTrigger?.BridgeWorkerID ?? undefined;
+
+  // The function picker offers what the chosen executor serves, which the server checks the
+  // Trigger's function against when it is stored.
+  const { data: functions = {} } = useListFunctionsQuery({
+    spaceId,
+    ...functionListArgs(watchedChannelId, watchedChannelId ? undefined : legacyWorkerId),
+  });
 
   /**
    * Filtered subset of functions for the current toolchain, restricted to
@@ -637,7 +646,8 @@ export const AddTriggerDrawer = ({
               handleFunctionSelect={handleFunctionSelect}
               selectedFunction={selectedFunction}
               selectedFunctionOption={selectedFunctionOption}
-              workers={workers}
+              channels={channels}
+              runsOnWorker={!!legacyWorkerId}
               updateArgumentValue={updateArgumentValue}
             />
             <MapFieldSection

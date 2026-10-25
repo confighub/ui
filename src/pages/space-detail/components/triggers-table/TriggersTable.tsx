@@ -57,8 +57,8 @@ const GRID_DEFAULTS = {
     Selection: false,
     FunctionName: true,
     ToolchainType: true,
-    BridgeWorkerSlug: true,
-    BridgeWorkerID: false,
+    ChannelSlug: true,
+    ChannelID: false,
     Arguments: true,
     Event: true,
     Validating: true,
@@ -93,7 +93,7 @@ export const TriggersTable = ({
     isLoading,
     error: queryError,
   } = useListAllTriggersQuery(
-    { where, include: 'SpaceID,BridgeWorkerID' },
+    { where, include: 'SpaceID,ChannelID' },
     { skip, refetchOnMountOrArgChange: true, refetchOnFocus: true },
   );
 
@@ -135,8 +135,8 @@ export const TriggersTable = ({
         ToolchainType: trigger?.Trigger?.ToolchainType || 'Unknown Type',
         Event: String(trigger?.Trigger?.Event || 'N/A'),
         Arguments: args,
-        BridgeWorkerSlug: trigger?.BridgeWorker?.Slug || '',
-        BridgeWorkerID: trigger?.BridgeWorker?.BridgeWorkerID || '',
+        ChannelSlug: trigger?.Channel?.Slug || '',
+        ChannelID: trigger?.Trigger?.ChannelID || '',
         Validating: trigger?.Trigger?.Validating || false,
         Disabled: trigger?.Trigger?.Disabled || false,
         Warn: trigger?.Trigger?.Warn || false,

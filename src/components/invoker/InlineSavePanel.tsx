@@ -27,7 +27,8 @@ import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SaveIcon from '@mui/icons-material/Save';
-import { useListSpacesQuery, useListAllBridgeWorkersQuery, Invocation, Trigger } from '@confighub/rtk-query';
+import { useFunctionChannels } from '@/hooks/useFunctionChannels';
+import { useListSpacesQuery, Invocation, Trigger } from '@confighub/rtk-query';
 
 const NAME_VALIDATION_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 
@@ -64,7 +65,7 @@ export interface SaveInvocationOptions {
   // Common fields
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
-  bridgeWorkerId?: string;
+  channelId?: string;
   // Auto-detected update IDs
   existingInvocationId?: string;
   existingTriggerId?: string;
@@ -100,7 +101,7 @@ export const InlineSavePanel = ({
   // Common optional fields
   const [labels, setLabels] = useState<Array<{ key: string; value: string }>>([]);
   const [annotations, setAnnotations] = useState<Array<{ key: string; value: string }>>([]);
-  const [bridgeWorkerId, setBridgeWorkerId] = useState('');
+  const [channelId, setChannelId] = useState('');
 
   // UI state
   const [error, setError] = useState('');
@@ -112,9 +113,7 @@ export const InlineSavePanel = ({
   const { data: spacesData } = useListSpacesQuery({});
   const spaces = spacesData?.map((item) => item.Space).filter(Boolean) || [];
 
-  // Fetch bridge workers
-  const { data: bridgeWorkersData } = useListAllBridgeWorkersQuery({});
-  const bridgeWorkers = bridgeWorkersData?.map((item) => item.BridgeWorker).filter(Boolean) || [];
+  const { channels } = useFunctionChannels();
 
   // Check if name matches the loaded invocation's name (for update detection)
   const trimmedName = name.trim();
@@ -148,7 +147,7 @@ export const InlineSavePanel = ({
       setEnforced(false);
       setLabels([]);
       setAnnotations([]);
-      setBridgeWorkerId('');
+      setChannelId('');
       setError('');
       setActiveTab(defaultSaveType === 'trigger' ? 1 : 0);
     }
@@ -181,7 +180,7 @@ export const InlineSavePanel = ({
     if (loadedInvocation.Annotations) {
       setAnnotations(Object.entries(loadedInvocation.Annotations).map(([key, value]) => ({ key, value })));
     }
-    if (loadedInvocation.BridgeWorkerID) setBridgeWorkerId(loadedInvocation.BridgeWorkerID);
+    if (loadedInvocation.ChannelID) setChannelId(loadedInvocation.ChannelID);
   }, [loadedInvocation]);
 
   // A page's request applies over the panel's current state, including a loaded Invocation's
@@ -262,7 +261,7 @@ export const InlineSavePanel = ({
         }),
         ...(Object.keys(labelsObj).length > 0 && { labels: labelsObj }),
         ...(Object.keys(annotationsObj).length > 0 && { annotations: annotationsObj }),
-        ...(bridgeWorkerId.trim() && { bridgeWorkerId: bridgeWorkerId.trim() }),
+        ...(channelId && { channelId }),
         // Pass existing ID if detected for auto-update (use correct ID based on type)
         ...(willUpdate && loadedInvocation && saveType === 'invocation' && { existingInvocationId: loadedInvocation.InvocationID }),
         ...(willUpdate && loadedInvocation && saveType === 'trigger' && { existingTriggerId: (loadedInvocation as Trigger).TriggerID }),
@@ -293,7 +292,7 @@ export const InlineSavePanel = ({
     setEnforced(false);
     setLabels([]);
     setAnnotations([]);
-    setBridgeWorkerId('');
+    setChannelId('');
     setError('');
     setActiveTab(defaultSaveType === 'trigger' ? 1 : 0);
   };
@@ -560,19 +559,19 @@ export const InlineSavePanel = ({
                 ))}
               </Box>
 
-              {/* Bridge Worker */}
+              {/* Channel */}
               <Autocomplete
                 size="small"
-                options={bridgeWorkers}
-                getOptionLabel={(option) => option?.Slug || ''}
-                value={bridgeWorkers.find((bw) => bw?.BridgeWorkerID === bridgeWorkerId) || null}
-                onChange={(_, newValue) => setBridgeWorkerId(newValue?.BridgeWorkerID || '')}
+                options={channels}
+                getOptionLabel={(option) => option.label}
+                value={channels.find((channel) => channel.id === channelId) || null}
+                onChange={(_, newValue) => setChannelId(newValue?.id || '')}
                 disabled={isSaving}
                 renderInput={(params) => (
                   <TextField
                     {...params}
-                    label="Bridge Worker"
-                    helperText="Specify a bridge worker to execute this function"
+                    label="Channel"
+                    helperText="Specify a channel whose client executes this function"
                   />
                 )}
               />

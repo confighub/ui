@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { HoverCard } from '@/components/styled';
+import { functionListArgs } from '@/hooks/useFunctionChannels';
 import {
   ExtendedTriggerRead,
   FunctionSignature,
@@ -80,29 +81,28 @@ export const ValidationGateCard = ({
   // Which of the Trigger's results is this gate's: a numbered gate names its function's position.
   const resultIndex = (parseGateName(gateName).functionIndex ?? 1) - 1;
 
-  // A Trigger's function is hosted on the worker referenced by the Trigger's own
-  // BridgeWorkerID, which is independent of the Unit's Target worker. Fetch that worker's
-  // functions to resolve the signature (e.g. Description). Skipped for builtin triggers,
-  // which have no BridgeWorkerID and are covered by the passed-in `selectedFunction`.
-  const bridgeWorkerID = trigger?.Trigger?.BridgeWorkerID;
+  // A Trigger's function runs on the Channel the Trigger itself names, which is independent of
+  // the Unit's Target. Fetch what that Channel serves to resolve the signature (e.g.
+  // Description). Skipped for builtin triggers, which name none and are covered by the
+  // passed-in `selectedFunction`.
+  const channelID = trigger?.Trigger?.ChannelID;
   const toolchainType = trigger?.Trigger?.ToolchainType;
   const functionName = trigger?.Trigger?.FunctionName;
-  const { data: workerFunctions } = useListFunctionsQuery(
+  const { data: channelFunctions } = useListFunctionsQuery(
     {
       spaceId: spaceId || '',
-      entity: 'worker',
-      id: bridgeWorkerID || '',
+      ...functionListArgs(channelID ?? undefined),
     },
     {
-      skip: isIDInvalid(spaceId) || isIDInvalid(bridgeWorkerID),
+      skip: isIDInvalid(spaceId) || isIDInvalid(channelID),
     },
   );
   // The function name is carried directly on the Trigger; the signature (for Description)
-  // comes from the builtin catalog or, for custom functions, the Trigger's worker.
+  // comes from the builtin catalog or, for custom functions, the Trigger's Channel.
   const resolvedFunction =
     selectedFunction ||
     (toolchainType && functionName
-      ? workerFunctions?.[toolchainType]?.[functionName]
+      ? channelFunctions?.[toolchainType]?.[functionName]
       : undefined);
 
   // Determine validation state for visual indicators

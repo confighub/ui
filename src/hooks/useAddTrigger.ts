@@ -16,7 +16,7 @@ import { ENTITY_TYPES } from '@/utility/analytics-constants';
 
 // Form input interface - defines the structure of our form data
 export interface IAddTriggerFormInput {
-  BridgeWorkerID?: string;
+  ChannelID?: string;
   Slug: string;
   Labels?: MapRow[];
   Annotations?: MapRow[];
@@ -98,7 +98,7 @@ export const useAddTrigger = (
       const initialForm: IAddTriggerFormInput = {
         Slug: existingTrigger.Slug || '',
         EventType: (existingTrigger.Event as 'Mutation' | 'PostClone') || 'Mutation',
-        BridgeWorkerID: existingTrigger.BridgeWorkerID || '',
+        ChannelID: existingTrigger.ChannelID || '',
         FunctionName: existingTrigger.FunctionName || '',
         ToolchainType: (existingTrigger.ToolchainType as 'Kubernetes/YAML') || 'Kubernetes/YAML',
         Disabled: existingTrigger.Disabled || false,
@@ -159,7 +159,10 @@ export const useAddTrigger = (
 
     const triggerData: TriggerRead = {
       Slug: data.Slug,
-      BridgeWorkerID: data.BridgeWorkerID ? data.BridgeWorkerID : undefined,
+      ChannelID: data.ChannelID ? data.ChannelID : undefined,
+      // A Trigger still on a worker keeps it until a Channel is chosen, which replaces it:
+      // the update sends the whole Trigger, and a Trigger names one or the other.
+      ...(data.ChannelID && { BridgeWorkerID: undefined }),
       FunctionName: data.FunctionName,
       Disabled: data.Disabled || false,
       Warn: data.Warn || false,

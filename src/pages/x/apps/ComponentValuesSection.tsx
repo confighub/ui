@@ -2665,12 +2665,15 @@ export const ComponentValuesSection = memo(({
     return map;
   }, [documentScopes]);
   // Expand a bare path into its per-document stage keys (the bare path itself when the
-  // unit is single-document or the path has no known document home).
+  // unit is single-document). A path no document has yet, such as one only upstream
+  // has, takes the last document's key: `selectGroupedEntries` draws it there, and its
+  // row reads its staged state by that document's key.
   const stageKeysForPath = useCallback((path: string): string[] => {
     const scopes = scopesByPath.get(path);
-    if (!scopes || scopes.length === 0) return [path];
-    return scopes.map((s) => docStageKey(s, path));
-  }, [scopesByPath]);
+    if (scopes && scopes.length > 0) return scopes.map((s) => docStageKey(s, path));
+    const lastScope = documentScopes[documentScopes.length - 1];
+    return lastScope ? [docStageKey(lastScope, path)] : [path];
+  }, [scopesByPath, documentScopes]);
 
   const downstreamPaths = useMemo(() => {
     if (activeEntry?.allPaths?.length) return activeEntry.allPaths;

@@ -265,3 +265,155 @@ test.describe('component staging keeps the Upgradable narrowed view', () => {
     await expect(page.getByText('k7-staged-in-treeview').first()).toBeVisible({ timeout: 5000 });
   });
 });
+
+// A path only upstream has belongs to no document of the downstream Unit, so the tree
+// draws it in the last one. With more than one document, its row reads its staged
+// state by that document's stage key, which the auto-stage has to use too: otherwise
+// the row starts unstaged and shows the downstream's "no value" in place of the
+// incoming one.
+test.describe('component staging in a multi-document Unit', () => {
+  test.use({ storageState: 'authentication.json' });
+
+  const appLabel = `e2e-stage-multidoc-${RandomSlugGenerator.randomSlugName()}`;
+  const devSlug = `e2e-dev-${RandomSlugGenerator.randomSlugName()}`;
+  const prodSlug = `e2e-prod-${RandomSlugGenerator.randomSlugName()}`;
+  const prodTargetSlug = `${prodSlug}-tgt`;
+
+  // Two ConfigMaps with no data key in common. Upstream rev2 adds data.added to the
+  // second and changes its data.k1.
+  const buildMultiDocYaml = (rev2: boolean): string =>
+    [
+      'apiVersion: v1',
+      'kind: ConfigMap',
+      'metadata:',
+      '  name: first',
+      'data:',
+      '  k0: "first-base"',
+      '---',
+      'apiVersion: v1',
+      'kind: ConfigMap',
+      'metadata:',
+      '  name: second',
+      'data:',
+      `  k1: "${rev2 ? 'second-CHANGED' : 'second-base'}"`,
+      ...(rev2 ? ['  added: "added-upstream"'] : []),
+    ].join('\n');
+
+  let devSpaceId: string;
+  let prodSpaceId: string;
+  let prodUnitId: string;
+
+  test.beforeAll(async ({ browser }) => {
+    const context = await newAuthorizedContext(browser);
+    const page = await context.newPage();
+    await page.goto('/');
+    await page.waitForResponse(
+      (r) => r.url().includes('/api/space') && r.request().method() === 'GET' && r.ok(),
+    );
+    const api = new ApiHelper(page);
+
+    const createSpaceWithTarget = async (slug: string, role: 'Dev' | 'Prod'): Promise<{ spaceId: string; targetId: string }> => {
+      const space = await api.createSpace({
+        space: {
+          Slug: slug,
+          ComponentID: (await api.createComponent(appLabel)).ComponentID,
+          Labels: { Owner: 'E2E', Environment: role.toLowerCase(), TargetRole: role, TargetRegion: 'US' },
+        },
+      });
+      const spaceId = (space as { SpaceID: string }).SpaceID;
+      const targetResp = await hubApi.post(`/api/space/${spaceId}/target`, {
+        params: { allow_exists: 'true' },
+        data: { Slug: `${slug}-tgt`, Labels: { TargetRole: role, TargetRegion: 'US' } },
+      });
+      if (!targetResp.ok()) throw new Error(`${role} target: ${targetResp.status()} ${await targetResp.text()}`);
+      return { spaceId, targetId: ((await targetResp.json()) as { TargetID: string }).TargetID };
+    };
+    const dev = await createSpaceWithTarget(devSlug, 'Dev');
+    const prod = await createSpaceWithTarget(prodSlug, 'Prod');
+    devSpaceId = dev.spaceId;
+    prodSpaceId = prod.spaceId;
+
+    const devUnitResp = await hubApi.post(`/api/space/${devSpaceId}/unit`, {
+      params: { allow_exists: 'true' },
+      data: { Slug: 'multidoc-config', ToolchainType: 'Kubernetes/YAML', TargetID: dev.targetId },
+    });
+    if (!devUnitResp.ok()) throw new Error(`dev unit: ${devUnitResp.status()} ${await devUnitResp.text()}`);
+    const devUnitId = ((await devUnitResp.json()) as { Unit: { UnitID: string } }).Unit.UnitID;
+    await api.uploadUnitData({ spaceId: devSpaceId, unitId: devUnitId, body: buildMultiDocYaml(false) });
+
+    const prodUnitResp = await hubApi.post(`/api/space/${prodSpaceId}/unit`, {
+      params: { allow_exists: 'true', upstream_space_id: devSpaceId, upstream_unit_id: devUnitId },
+      data: { Slug: 'multidoc-config', ToolchainType: 'Kubernetes/YAML', TargetID: prod.targetId },
+    });
+    if (!prodUnitResp.ok()) throw new Error(`prod unit: ${prodUnitResp.status()} ${await prodUnitResp.text()}`);
+    prodUnitId = ((await prodUnitResp.json()) as { Unit: { UnitID: string } }).Unit.UnitID;
+
+    await api.uploadUnitData({ spaceId: devSpaceId, unitId: devUnitId, body: buildMultiDocYaml(true) });
+
+    for (const [spaceId, unitId] of [
+      [devSpaceId, devUnitId],
+      [prodSpaceId, prodUnitId],
+    ]) {
+      for (let i = 0; i < 100; i++) {
+        const resp = await hubApi.get(`/api/space/${spaceId}/unit/${unitId}`);
+        if (resp.ok() && !(await resp.text()).includes('awaiting/triggers')) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+
+    await context.close();
+  });
+
+  test.afterAll(async ({ browser }) => {
+    const context = await newAuthorizedContext(browser);
+    const page = await context.newPage();
+    await page.goto('/');
+    await page.waitForResponse(
+      (r) => r.url().includes('/api/space') && r.request().method() === 'GET' && r.ok(),
+    );
+    const api = new ApiHelper(page);
+    try { await api.deleteSpace(prodSpaceId, true); } catch { /* ignore */ }
+    try { await api.deleteSpace(devSpaceId, true); } catch { /* ignore */ }
+    await context.close();
+  });
+
+  async function openProdPane(page: Page): Promise<void> {
+    await navigateAndSelectApp(page, appLabel);
+    const prodNode = page.locator('.react-flow__node').filter({ hasText: prodTargetSlug });
+    await expect(prodNode).toBeVisible({ timeout: 10000 });
+    await prodNode.click();
+    await expect(page.getByTestId('component-upgrade-button')).toBeVisible({ timeout: 10000 });
+  }
+
+  test('a path only upstream has starts staged, showing its incoming value', async ({ page }) => {
+    await openProdPane(page);
+
+    const addedRow = page.getByTestId('component-leaf-row').filter({ hasText: 'added' });
+    await expect(addedRow).toHaveCount(1, { timeout: 15000 });
+    await expect(addedRow.getByTestId('component-upgrade-pill')).toHaveAttribute('data-staged', 'true', { timeout: 5000 });
+    await expect(addedRow).toContainText('added-upstream');
+    await expect(page.getByTestId('component-upgrade-button')).toContainText('2');
+  });
+
+  test('upgrading only the added path writes it into the document it was added to', async ({ page }) => {
+    await openProdPane(page);
+
+    const addedRow = page.getByTestId('component-leaf-row').filter({ hasText: 'added' });
+    await expect(addedRow.getByTestId('component-upgrade-pill')).toHaveAttribute('data-staged', 'true', { timeout: 15000 });
+    // Unstaging the other change makes this a partial upgrade, which writes the staged
+    // values into the Unit's data rather than running the server's upgrade.
+    const changedRow = page.getByTestId('component-leaf-row').filter({ hasText: 'second-CHANGED' });
+    await changedRow.getByTestId('component-upgrade-pill').locator('input[type="checkbox"]').uncheck();
+    await expect(page.getByTestId('component-upgrade-button')).toContainText('1');
+    await page.getByTestId('component-upgrade-button').click();
+
+    await expect(async () => {
+      const resp = await hubApi.get(`/api/space/${prodSpaceId}/unit/${prodUnitId}/data`);
+      const documents = (await resp.text()).split(/^---$/m);
+      expect(documents).toHaveLength(2);
+      expect(documents[0]).not.toContain('added');
+      expect(documents[1]).toContain('added: added-upstream');
+      expect(documents[1]).toContain('second-base');
+    }).toPass({ timeout: 20000 });
+  });
+});

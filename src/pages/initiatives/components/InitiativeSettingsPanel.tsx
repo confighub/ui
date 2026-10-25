@@ -27,6 +27,7 @@ import {
   usePatchTriggerMutation,
   usePatchViewMutation,
 } from '@confighub/rtk-query';
+import { useFunctionChannels } from '@/hooks/useFunctionChannels';
 import { Resource, convertToResourceList } from '@/utility/schema-functions';
 import { ANNOTATION_VALUE_MAX_LENGTH } from '@confighub/api';
 import { cleanString } from '@/utility/string-functions';
@@ -63,7 +64,7 @@ interface InitiativeFormValues {
   priority: InitiativePriority;
   deadline: string;
   kyvernoPolicy: string;
-  triggerBridgeWorkerId: string;
+  triggerChannelId: string;
   /** true = trigger runs with Warn=false (blocking ValidationErrors); false = Warn=true (non-blocking ValidationWarnings) */
   enforced: boolean;
 }
@@ -79,8 +80,8 @@ interface InitiativeSettingsPanelProps {
   onTestResults?: (results: UnitCheckResult[] | null) => void;
   /** Kyverno policy YAML fetched from the initiative's Trigger (edit mode only) */
   kyvernoPolicy?: string;
-  /** Bridge worker ID fetched from the initiative's Trigger (edit mode only) */
-  triggerBridgeWorkerId?: string;
+  /** Channel ID fetched from the initiative's Trigger (edit mode only) */
+  triggerChannelId?: string;
   /** Warn flag fetched from the initiative's Trigger (edit mode only).
    *  true → failures produce non-blocking ValidationWarnings; false → blocking ValidationErrors. */
   triggerWarn?: boolean;
@@ -212,7 +213,7 @@ export const InitiativeSettingsPanel = ({
   initiative,
   onTestResults,
   kyvernoPolicy: kyvernoPolicyProp,
-  triggerBridgeWorkerId: triggerBridgeWorkerIdProp,
+  triggerChannelId: triggerChannelIdProp,
   triggerWarn: triggerWarnProp,
 }: InitiativeSettingsPanelProps) => {
   const isEditMode = Boolean(initiative);
@@ -252,7 +253,7 @@ export const InitiativeSettingsPanel = ({
       priority: initiative?.priority ?? 'MEDIUM',
       deadline: initiative?.deadline ?? '',
       kyvernoPolicy: kyvernoPolicyProp ?? '',
-      triggerBridgeWorkerId: triggerBridgeWorkerIdProp ?? '',
+      triggerChannelId: triggerChannelIdProp ?? '',
       // New initiatives default to non-enforced (Warn=true). Edit mode overrides
       // this via the useEffect below once the trigger query resolves.
       enforced: triggerWarnProp === undefined ? false : !triggerWarnProp,
@@ -299,34 +300,32 @@ export const InitiativeSettingsPanel = ({
     [bridgeWorkersData],
   );
 
+  const { channels, isLoadingChannels } = useFunctionChannels();
+
   // Sync form with trigger data that arrives asynchronously after initial mount.
   // useForm's defaultValues are only evaluated once, so we need setValue for async props.
   useEffect(() => {
     if (kyvernoPolicyProp) {
       setValue('kyvernoPolicy', kyvernoPolicyProp);
     }
-    if (triggerBridgeWorkerIdProp) {
-      setValue('triggerBridgeWorkerId', triggerBridgeWorkerIdProp);
+    if (triggerChannelIdProp) {
+      setValue('triggerChannelId', triggerChannelIdProp);
     }
     if (triggerWarnProp !== undefined) {
       setValue('enforced', !triggerWarnProp);
     }
-  }, [kyvernoPolicyProp, triggerBridgeWorkerIdProp, triggerWarnProp, setValue]);
+  }, [kyvernoPolicyProp, triggerChannelIdProp, triggerWarnProp, setValue]);
 
-  // Auto-select a worker that has vet-kyverno (create mode only)
-  const hasAutoSelectedWorker = useRef(false);
+  // Auto-select a Channel that serves vet-kyverno (create mode only)
+  const hasAutoSelectedChannel = useRef(false);
   useEffect(() => {
-    if (isEditMode || hasAutoSelectedWorker.current || !bridgeWorkersData) return;
-    const match = bridgeWorkersData.find((w) => {
-      const funcs = w.BridgeWorker?.ProvidedInfo?.FunctionWorkerInfo?.SupportedFunctions;
-      if (!funcs) return false;
-      return Object.values(funcs).some((byName) => 'vet-kyverno' in byName);
-    });
-    if (match?.BridgeWorker?.BridgeWorkerID) {
-      setValue('triggerBridgeWorkerId', match.BridgeWorker.BridgeWorkerID);
-      hasAutoSelectedWorker.current = true;
+    if (isEditMode || hasAutoSelectedChannel.current || isLoadingChannels) return;
+    const match = channels.find((channel) => channel.functionNames.includes('vet-kyverno'));
+    if (match) {
+      setValue('triggerChannelId', match.id);
+      hasAutoSelectedChannel.current = true;
     }
-  }, [isEditMode, bridgeWorkersData, setValue]);
+  }, [isEditMode, channels, isLoadingChannels, setValue]);
 
   const { data: allUnitsRaw = [] } = useListAllUnitsQuery({});
   const labelOptions = useMemo(
@@ -431,11 +430,11 @@ export const InitiativeSettingsPanel = ({
 
   // ── Test handler ────────────────────────────────────────────────────────
   const kyvernoPolicyValue = watch('kyvernoPolicy');
-  const triggerBridgeWorkerIdValue = watch('triggerBridgeWorkerId');
-  const canTest = Boolean(kyvernoPolicyValue && triggerBridgeWorkerIdValue);
+  const triggerChannelIdValue = watch('triggerChannelId');
+  const canTest = Boolean(kyvernoPolicyValue && triggerChannelIdValue);
 
   const handleTestPolicy = useCallback(async () => {
-    if (!kyvernoPolicyValue || !triggerBridgeWorkerIdValue) return;
+    if (!kyvernoPolicyValue || !triggerChannelIdValue) return;
     setTestError(null);
     // Don't clear existing results preemptively — keep the previous Pass/Fail/N/A
     // cells visible until the new run returns so re-runs don't flash the column
@@ -447,7 +446,7 @@ export const InitiativeSettingsPanel = ({
         resourceType: resourceTypeClause || undefined,
         dryRun: 'true',
         functionInvocationsRequest: {
-          BridgeWorkerID: triggerBridgeWorkerIdValue,
+          ChannelID: triggerChannelIdValue,
           FunctionInvocations: [{ FunctionName: 'vet-kyverno', Arguments: [{ ParameterName: 'policy', Value: kyvernoPolicyValue }] }],
         },
       }).unwrap();
@@ -455,7 +454,7 @@ export const InitiativeSettingsPanel = ({
     } catch (err) {
       setTestError(getApiErrorMessage(err as Parameters<typeof getApiErrorMessage>[0], 'Failed to run compliance check.'));
     }
-  }, [kyvernoPolicyValue, triggerBridgeWorkerIdValue, whereClause, whereDataClause, resourceTypeClause, invokeTest, onTestResults]);
+  }, [kyvernoPolicyValue, triggerChannelIdValue, whereClause, whereDataClause, resourceTypeClause, invokeTest, onTestResults]);
 
   // ── Save handler ──────────────────────────────────────────────────────────
   const onSubmit = async (values: InitiativeFormValues) => {
@@ -502,7 +501,9 @@ export const InitiativeSettingsPanel = ({
             // @ts-expect-error RTK Query PATCH requires JSON string body
             body: JSON.stringify({
               FunctionName: 'vet-kyverno',
-              BridgeWorkerID: values.triggerBridgeWorkerId || null,
+              ChannelID: values.triggerChannelId || null,
+              // A check still on a worker keeps it until a Channel is chosen, which replaces it.
+              ...(values.triggerChannelId && { BridgeWorkerID: null }),
               Arguments: values.kyvernoPolicy
                 ? [{ ParameterName: 'policy', Value: values.kyvernoPolicy }]
                 : undefined,
@@ -570,7 +571,7 @@ export const InitiativeSettingsPanel = ({
               Event: 'Mutation',
               ToolchainType: 'Kubernetes/YAML',
               FunctionName: 'vet-kyverno',
-              BridgeWorkerID: values.triggerBridgeWorkerId || undefined,
+              ChannelID: values.triggerChannelId || undefined,
               Arguments: [{ ParameterName: 'policy', Value: values.kyvernoPolicy }],
               Disabled: false,
               Warn: !values.enforced,
@@ -746,27 +747,27 @@ export const InitiativeSettingsPanel = ({
             run on demand from the dashboard.
           </Typography>
 
-          {/* Bridge worker */}
+          {/* Channel */}
           <FormControl fullWidth size='small' sx={{ mb: 2 }}>
-            <InputLabel>Bridge worker</InputLabel>
+            <InputLabel>Channel</InputLabel>
             <Controller
-              name='triggerBridgeWorkerId'
+              name='triggerChannelId'
               control={control}
               render={({ field }) => (
-                <Select {...field} label='Bridge worker'>
+                <Select {...field} label='Channel'>
                   <MenuItem value=''>
-                    <em>None (built-in)</em>
+                    <em>None</em>
                   </MenuItem>
-                  {queryBuilderBridgeWorkers.map((w) => (
-                    <MenuItem key={w.id} value={w.id}>
-                      {w.name}
+                  {channels.map((channel) => (
+                    <MenuItem key={channel.id} value={channel.id}>
+                      {channel.label}
                     </MenuItem>
                   ))}
                 </Select>
               )}
             />
             <FormHelperText>
-              Select a worker with the <code>vet-kyverno</code> function registered
+              Select a channel whose client serves the <code>vet-kyverno</code> function
             </FormHelperText>
           </FormControl>
 

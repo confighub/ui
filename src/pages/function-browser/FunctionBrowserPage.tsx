@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 import { QueryBox } from '@/components/query-box/QueryBox';
 import { Main } from '@/components/styled';
-import { WorkerSelector } from '@/components/worker-selector/WorkerSelector';
+import { ChannelSelector } from '@/components/channel-selector/ChannelSelector';
 import { styled } from '@mui/material';
 import Box from '@mui/material/Box';
 import Grid from '@mui/material/Grid2';
@@ -39,13 +39,13 @@ export const FunctionBrowserPage = () => {
     selectedToolchain,
     selectedFilter,
     selectedFunction,
-    workers,
-    workerId,
+    channels,
+    channelId,
+    setChannelId,
     handleViewDetails,
     setSelectedView,
     setSearchQuery,
     searchQuery,
-    setWorkerId,
     setSelectedFilter,
     setSelectedToolchain,
   } = useFunctionBrowser();
@@ -70,12 +70,10 @@ export const FunctionBrowserPage = () => {
               value={selectedToolchain}
               onChange={(type: ToolchainFilterType) => setSelectedToolchain(type)}
             />
-            <WorkerSelector
-              value={workerId}
-              onChange={(workerId: string) => {
-                setWorkerId(workerId);
-              }}
-              workers={workers.filter((w): w is NonNullable<typeof w> => w !== undefined)}
+            <ChannelSelector
+              value={channelId}
+              onChange={(channelId: string) => setChannelId(channelId)}
+              channels={channels}
             />
             <FilterAutocomplete
               selectedFilter={selectedFilter}
