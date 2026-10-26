@@ -35,7 +35,7 @@ import { buildStageMatrix } from '../x/apps/change-order/changeOrderMatrix';
 import type { ChangeOrderStageMatrix } from '../x/apps/change-order/changeOrderMatrix';
 import { buildChangeOrderMergedUnits } from '../x/apps/change-order/changeOrderMergedUnits';
 import { useChangeOrderBaseline } from '../x/apps/change-order/useChangeOrderBaseline';
-import { useChangeOrderChanges, useChangeOrderChangesWithStatus } from '../x/apps/change-order/useChangeOrderChanges';
+import { useChangeOrderChangesWithStatus } from '../x/apps/change-order/useChangeOrderChanges';
 import type { ChangeOrderChangesStatus } from '../x/apps/change-order/changeOrderChanges';
 import type { FanOutSource } from '../x/apps/change-order/useFanOutSource';
 import {
@@ -138,6 +138,20 @@ export interface ChangeOrderConsoleChanges {
   /** The stage's variant matrix, or null when there is nothing to compare. */
   matrix: ChangeOrderStageMatrix | null;
   isLoading: boolean;
+  /**
+   * The selected stage's Spaces its forced dry run did not plan, with the
+   * server's reason code (`UpstreamPromotedFirst`, `UpstreamFailed`, …) or the
+   * Space's Action (`Failed`). What sorts a Space whose change cannot be shown
+   * into "previewed against an earlier variant", which is ordinary, and the
+   * causes a reader has to hear about.
+   */
+  unplannedReasonBySpaceId: ReadonlyMap<string, string>;
+  /**
+   * Whether the selected stage's groups can be read yet: `loading` until the
+   * forced dry run and the written Revisions it needs have arrived. A second
+   * dry run of the stage waits for this, so the two are not planned at once.
+   */
+  stageChangesStatus: ChangeOrderChangesStatus;
 }
 
 export interface SourceUnitPartition<TUnit> {
@@ -494,7 +508,11 @@ export function useChangeOrderConsoleChanges(args: {
     return index;
   }, [currentDataByUnitId, baseSpaceId]);
 
-  const groupsByStageId = useChangeOrderChanges({
+  const {
+    groups: groupsByStageId,
+    status: stageChangesStatus,
+    unplannedReasonBySpaceId,
+  } = useChangeOrderChangesWithStatus({
     changeOrderId,
     stages,
     selectedStageId,
@@ -857,5 +875,8 @@ export function useChangeOrderConsoleChanges(args: {
     fanOutSourceStatus,
     invocationSourceStatus,
   ]);
-  return useMemo(() => ({ ...changes, reviewRevisionNumByUnitId }), [changes, reviewRevisionNumByUnitId]);
+  return useMemo(
+    () => ({ ...changes, reviewRevisionNumByUnitId, unplannedReasonBySpaceId, stageChangesStatus }),
+    [changes, reviewRevisionNumByUnitId, unplannedReasonBySpaceId, stageChangesStatus],
+  );
 }

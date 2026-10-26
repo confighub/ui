@@ -15,6 +15,8 @@ import { type ReactElement } from 'react';
 import Box from '@mui/material/Box';
 
 import { componentTheme } from '../componentTheme';
+import { pluralNoun, useCompareNoun } from './compareVocabulary';
+import { useComparePageLayout } from './compareLayout';
 
 export type CompareFieldFilter = 'differing' | 'all';
 
@@ -53,6 +55,9 @@ const STRIP_SX = {
   background: componentTheme.bgDefault,
   borderBottom: `1px solid ${componentTheme.borderDefault}`,
 } as const;
+
+/** The page layout (`compareLayout.ts`) lines the strip up with the 16px the rest of the surface uses. */
+const PAGE_STRIP_SX = { ...STRIP_SX, padding: '7px 16px' } as const;
 
 const SEGMENTED_SX = {
   display: 'inline-flex',
@@ -99,6 +104,9 @@ export function CompareFilterStrip({
   isLoading = false,
   note,
 }: CompareFilterStripProps): ReactElement {
+  const noun = useCompareNoun();
+  const page = useComparePageLayout();
+  const nouns = pluralNoun(noun);
   // Unverifiable rows are shown by the Differing filter too, so they are not
   // part of what it hid.
   const hidden = isLoading ? 0 : filter === 'differing' ? totalCount - differingCount - unverifiableCount : 0;
@@ -106,7 +114,7 @@ export function CompareFilterStrip({
   const countText = (value: number) => (isLoading ? '—' : String(value));
 
   return (
-    <Box sx={STRIP_SX} data-testid="compare-filter-strip">
+    <Box sx={page ? PAGE_STRIP_SX : STRIP_SX} data-testid="compare-filter-strip">
       <Box sx={SEGMENTED_SX} role="group" aria-label="Which fields to show">
         <Box
           component="button"
@@ -114,7 +122,7 @@ export function CompareFilterStrip({
           data-testid="compare-filter-differing"
           aria-pressed={filter === 'differing'}
           onClick={() => onFilterChange('differing')}
-          title="A field appears when the deployments do not all agree, including when some set it and others do not."
+          title={`A field appears when the ${nouns} do not all agree, including when some set it and others do not.`}
           sx={SEGMENT_SX}
         >
           Differing
@@ -137,7 +145,7 @@ export function CompareFilterStrip({
         <Box
           component="span"
           data-testid="compare-unverifiable-count"
-          title="These fields could not be compared against every deployment, so they are neither agreements nor differences."
+          title={`These fields could not be compared against every ${noun}, so they are neither agreements nor differences.`}
           sx={{
             fontSize: 11,
             fontWeight: 700,

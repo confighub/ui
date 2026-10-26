@@ -3,12 +3,16 @@
 
 import { useEffect, useRef } from 'react';
 
+import { FUNCTIONS_PANEL_SELECTOR } from '@/components/right-sidebar/appPanel';
+
 import { type Shortcut, useExplorerContext } from '../state/context';
 
 /**
  * The page's keyboard: one keydown listener for every shortcut, so two
  * features never both act on one key. Single-letter keys do nothing while the
  * person is typing; modifier shortcuts such as ⌘S still work there.
+ *
+ * Plain keys and Esc pressed in the Functions panel are the panel's (`isFunctionsPanelKey`).
  *
  * Esc closes one layer at a time: the most recently opened layer that
  * registered with `pushEscLayer` closes first. MUI menus and dialogs handle
@@ -24,6 +28,16 @@ export function isTextEntry(target: EventTarget | null): boolean {
   if (tag !== 'INPUT') return false;
   const type = (target as HTMLInputElement).type;
   return !['button', 'checkbox', 'radio', 'submit', 'reset', 'range', 'color', 'file'].includes(type);
+}
+
+/**
+ * True for a plain key or Esc pressed in the app's Functions panel, beside the
+ * page. The panel lists the Units picked here, so Esc in one of its fields must
+ * not clear the selection, and `x` or `c` there must not change the view. A ⌘
+ * shortcut, such as ⌘S, is the page's there too, as everywhere.
+ */
+export function isFunctionsPanelKey(e: KeyboardEvent): boolean {
+  return !isMod(e) && e.target instanceof Element && !!e.target.closest(FUNCTIONS_PANEL_SELECTOR);
 }
 
 /**
@@ -73,7 +87,7 @@ export function usePageShortcuts(bindings: readonly Shortcut[]): void {
   // there is no event prop to hang it on, so it needs an effect.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.isComposing) return;
+      if (e.defaultPrevented || e.isComposing || isFunctionsPanelKey(e)) return;
       // A modal closes itself on Esc; the page's layers wait until it has.
       if (e.key === 'Escape' && escLayers.length > 0 && !isModalOpen()) {
         e.preventDefault();

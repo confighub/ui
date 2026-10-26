@@ -133,3 +133,13 @@ export function groupLevelFor(
       compareFieldValues(field, a, b) || compareGroupValues(a, b),
   };
 }
+
+/** The group levels of a view's group-by fields, outermost first; a field that cannot group is left out. */
+export function groupLevelsFor(
+  entity: EntityKind,
+  groupBy: readonly string[],
+): GroupLevel<EntityRow>[] {
+  return groupBy
+    .map((f) => groupLevelFor(entity, f))
+    .filter((l): l is GroupLevel<EntityRow> => l !== null);
+}

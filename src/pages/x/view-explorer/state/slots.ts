@@ -47,7 +47,11 @@ export interface ExplorerSlots {
   /** Focus the add-lens input now. Returns false when it is not on screen. */
   focusAddLens: () => boolean;
   openCellPopover: (request: CellPopoverRequest) => void;
+  /** Close the cell popover, if one is open. */
+  closeCellPopover: () => void;
   openPeek: (request: PeekRequest) => void;
+  /** Close the peek, if one is open. */
+  closePeek: () => void;
   flyIn: (request: FlyInRequest) => void;
   /** Open the view switcher (⌘P); while none is registered, the "N more" menu stands in. */
   openSwitcher: (anchor?: HTMLElement) => void;
@@ -64,7 +68,9 @@ export type SlotName = keyof ExplorerSlots;
 export const NOOP_SLOTS: ExplorerSlots = {
   focusAddLens: () => false,
   openCellPopover: () => undefined,
+  closeCellPopover: () => undefined,
   openPeek: () => undefined,
+  closePeek: () => undefined,
   flyIn: () => undefined,
   openSwitcher: () => undefined,
   openTextMode: () => undefined,

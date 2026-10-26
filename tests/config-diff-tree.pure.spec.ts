@@ -18,6 +18,7 @@ import type { ConfigDiff, PathChange, PathSegment } from '@confighub/rtk-query';
 
 import {
   buildConfigDiffTree,
+  changesNamingTheirElements,
   ORDER_LEAF_KEY,
   segmentLabel,
   serverPathContainer,
@@ -320,5 +321,55 @@ test.describe('reading a server path', () => {
     expect(serverPathContainer('spec.template.spec.initContainers.?name=migrate;@0.image')).toBe('migrate');
     expect(serverPathContainer('spec.template.spec.containers.?name=my.app;@1.image')).toBe('my.app');
     expect(serverPathContainer('data.RETRY_LIMIT')).toBeUndefined();
+  });
+});
+
+test.describe('naming a list element known only by its index', () => {
+  const indexed = (i: number): PathSegment => ({ FromIndex: i, ToIndex: i });
+  const at = (changeType: PathChange['ChangeType'], segments: PathSegment[], from: string, to: string): PathChange => ({
+    ChangeType: changeType,
+    DisplayPath: segments.map(segmentLabel).join('.'),
+    Segments: segments,
+    FromValue: from,
+    ToValue: to,
+  });
+  const PORT = [field('spec'), field('ports'), indexed(1)];
+
+  test('an element with a change keeps its unchanged name beside the change', () => {
+    const changes = [
+      at('None', [...PORT, field('name')], 'metrics', 'metrics'),
+      at('Update', [...PORT, field('port')], '9090', '9091'),
+      at('None', [...PORT, field('protocol')], 'TCP', 'TCP'),
+    ];
+    const kept = changesNamingTheirElements(changes);
+    expect(kept.map((change) => change.DisplayPath)).toEqual(['spec.ports.1.name', 'spec.ports.1.port']);
+    const rows = leafPaths(buildConfigDiffTree(kept));
+    expect(rows.map((row) => [row.path, row.node.context === true])).toEqual([
+      ['spec.ports.1.name', true],
+      ['spec.ports.1.port', false],
+    ]);
+  });
+
+  test('name wins; otherwise the first key-like field, label included', () => {
+    const withKey = [
+      at('None', [...PORT, field('key')], 'a', 'a'),
+      at('None', [...PORT, field('name')], 'b', 'b'),
+      at('Update', [...PORT, field('value')], '1', '2'),
+    ];
+    expect(changesNamingTheirElements(withKey).map((c) => c.DisplayPath)).toEqual(['spec.ports.1.name', 'spec.ports.1.value']);
+    const withLabel = [at('None', [...PORT, field('label')], 'x', 'x'), at('Update', [...PORT, field('value')], '1', '2')];
+    expect(changesNamingTheirElements(withLabel).map((c) => c.DisplayPath)).toEqual(['spec.ports.1.label', 'spec.ports.1.value']);
+  });
+
+  test('no naming row when the name itself changed, for an untouched element, or for a merge-keyed one', () => {
+    const renamed = [at('Update', [...PORT, field('name')], 'a', 'b'), at('None', [...PORT, field('key')], 'k', 'k')];
+    expect(changesNamingTheirElements(renamed).map((c) => c.DisplayPath)).toEqual(['spec.ports.1.name', 'spec.ports.1.key']);
+    const untouched = [at('None', [...PORT, field('name')], 'a', 'a'), at('Update', [field('spec'), field('replicas')], '3', '4')];
+    expect(changesNamingTheirElements(untouched).map((c) => c.DisplayPath)).toEqual(['spec.replicas']);
+    const merged = [
+      at('None', [...CONTAINER, field('name')], 'web', 'web'),
+      at('Update', [...CONTAINER, field('image')], 'a:1', 'a:2'),
+    ];
+    expect(changesNamingTheirElements(merged).map((c) => c.Segments?.at(-1)?.Field)).toEqual(['image']);
   });
 });

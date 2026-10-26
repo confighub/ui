@@ -28,17 +28,38 @@ interface Props {
   onPeek: (anchor: HTMLElement, node: GroupNode<EntityRow>) => void;
   /** The group's value was clicked; `value` is null for the empty group. */
   onValue: (anchor: HTMLElement, field: string, value: string | null, additive: boolean) => void;
+  /**
+   * A copy pinned over the list while its group scrolls under it. The row in
+   * the list stays the one in the Tab order, so the copy's buttons are not;
+   * their names and test ids say "pinned", so neither matches the row's twice.
+   */
+  pinned?: boolean;
+  /** The width of the table's leading track (the checkboxes), so the header lines up with the rows' first column. */
+  lead?: number;
 }
 
-export const GROUP_INDENT = 20;
+const GROUP_INDENT = 20;
 
 const focusRing = { '&.Mui-focusVisible': { outline: 2, outlineColor: 'primary.main', outlineOffset: 1 } } as const;
 
-export const GroupHeaderRow = memo(function GroupHeaderRow({ entity, node, collapsed, rowIndex, onToggle, onPeek, onValue }: Props) {
+export const GroupHeaderRow = memo(function GroupHeaderRow({
+  entity,
+  node,
+  collapsed,
+  rowIndex,
+  onToggle,
+  onPeek,
+  onValue,
+  pinned = false,
+  lead = 0,
+}: Props) {
   const label = fieldById(entity, node.field)?.label ?? node.field;
   const value = groupValueText(node.value);
   const mix = mixIsRedundant(node.field) ? null : groupMix(entity, node.rows);
   const units = mix?.ofUnits ? ' units' : '';
+  const tabIndex = pinned ? -1 : undefined;
+  const testId = (part: string) => (pinned ? `vx-pinned-group-${part}` : `vx-group-${part}`);
+  const named = (name: string) => (pinned ? `${name} (pinned)` : name);
   const stop = (e: MouseEvent<HTMLElement>, run: (el: HTMLElement) => void) => {
     e.stopPropagation();
     run(e.currentTarget);
@@ -49,7 +70,7 @@ export const GroupHeaderRow = memo(function GroupHeaderRow({ entity, node, colla
       role='row'
       aria-rowindex={rowIndex}
       aria-level={node.depth + 1}
-      data-testid='vx-group-row'
+      data-testid={testId('row')}
       data-group-key={node.key}
       data-collapsed={collapsed}
       onClick={() => onToggle(node.key)}
@@ -69,7 +90,7 @@ export const GroupHeaderRow = memo(function GroupHeaderRow({ entity, node, colla
           alignItems: 'center',
           gap: 1,
           height: '100%',
-          pl: `${12 + node.depth * GROUP_INDENT}px`,
+          pl: `${lead + 12 + node.depth * GROUP_INDENT}px`,
           pr: 1.5,
           whiteSpace: 'nowrap',
           overflow: 'hidden',
@@ -77,8 +98,9 @@ export const GroupHeaderRow = memo(function GroupHeaderRow({ entity, node, colla
       >
         <ButtonBase
           aria-expanded={!collapsed}
-          aria-label={`${collapsed ? 'Show' : 'Hide'} ${label} ${value || 'none'}`}
-          data-testid='vx-group-toggle'
+          aria-label={named(`${collapsed ? 'Show' : 'Hide'} ${label} ${value || 'none'}`)}
+          data-testid={testId('toggle')}
+          tabIndex={tabIndex}
           onClick={(e) => stop(e, () => onToggle(node.key))}
           sx={{ gap: 1, borderRadius: 1, px: 0.25, mx: -0.25, ...focusRing }}
         >
@@ -97,7 +119,9 @@ export const GroupHeaderRow = memo(function GroupHeaderRow({ entity, node, colla
         </ButtonBase>
         <ButtonBase
           data-vx-value={node.field}
-          data-testid='vx-group-value'
+          data-testid={testId('value')}
+          aria-label={pinned ? named(value || 'none') : undefined}
+          tabIndex={tabIndex}
           onClick={(e) => stop(e, (el) => onValue(el, node.field, node.value === EMPTY_GROUP_VALUE ? null : node.value, e.shiftKey))}
           sx={{
             minWidth: 0,
@@ -119,8 +143,9 @@ export const GroupHeaderRow = memo(function GroupHeaderRow({ entity, node, colla
         </ButtonBase>
         <ButtonBase
           onClick={(e) => stop(e, (el) => onPeek(el, node))}
-          aria-label={`Peek at ${node.rows.length} in ${label} ${value || 'none'}`}
-          data-testid='vx-group-count'
+          aria-label={named(`Peek at ${node.rows.length} in ${label} ${value || 'none'}`)}
+          data-testid={testId('count')}
+          tabIndex={tabIndex}
           sx={{
             height: 20,
             minWidth: 22,

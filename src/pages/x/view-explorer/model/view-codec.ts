@@ -395,7 +395,9 @@ export function decodeDraftParam(param: string): ViewDef | null {
     (c.width === undefined ||
       (typeof c.width === 'number' && Number.isFinite(c.width) && c.width > 0));
   if (!Array.isArray(v.columns) || !v.columns.every(isColumn)) return null;
-  if (!isString(v.layout) || !isLayout(v.layout)) return null;
+  if (!isString(v.layout)) return null;
+  // A link made while a layout existed that no longer does (the List) opens as the table.
+  const layout: Layout = isLayout(v.layout) ? v.layout : 'table';
   if (!isObject(v.matrix) || !isString(v.matrix.rows) || !isString(v.matrix.cols)) return null;
   // A bad sort in an edited link is dropped; the rest of the link still opens.
   const matrix = normalizeMatrixAxes({
@@ -419,7 +421,7 @@ export function decodeDraftParam(param: string): ViewDef | null {
     !(isObject(v.extraColumnSources) && Object.values(v.extraColumnSources).every(isObject))
   )
     return null;
-  return { ...(v as unknown as ViewDef), matrix };
+  return { ...(v as unknown as ViewDef), layout, matrix };
 }
 
 /* ------------------------------------------------------------------------ */

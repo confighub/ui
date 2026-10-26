@@ -23,10 +23,12 @@ import { type ReactElement } from 'react';
 import Box from '@mui/material/Box';
 
 import { componentTheme } from '../componentTheme';
+import { ABSENT_BASE_SX, ABSENT_KIND_SX } from './absentPill';
 import type { CompareCell as CompareCellModel, CompareCellKind } from './deploymentCompareModel';
 import { UNANSWERABLE, unanswerableReason, type ColumnUnavailable } from './unanswerable';
-import { EDIT_BLOCK_EXPLANATION, type EditBlockReason } from './compareEditing';
+import { editBlockExplanations, type EditBlockReason } from './compareEditing';
 import { COMPARE_STAGED_TOKENS, type CompareStagedKind } from './rowTypeTokens';
+import { pluralNoun, useCompareNoun, type CompareNoun } from './compareVocabulary';
 
 export type { ColumnUnavailable };
 
@@ -67,23 +69,6 @@ const PILL_BASE_SX = {
   verticalAlign: 'middle',
 } as const;
 
-const ABSENT_BASE_SX = {
-  display: 'inline-block',
-  boxSizing: 'border-box',
-  minHeight: 20,
-  lineHeight: '16px',
-  fontFamily: componentTheme.fontSans,
-  fontStyle: 'italic',
-  fontSize: 10.5,
-  fontWeight: 600,
-  color: componentTheme.fgSubtle,
-  padding: '1px 4px',
-  border: '1px dashed transparent',
-  borderRadius: '4px',
-  whiteSpace: 'nowrap',
-  verticalAlign: 'middle',
-} as const;
-
 const KIND_SX: Partial<Record<CompareCellKind, Record<string, unknown>>> = {
   same: { color: componentTheme.fgMuted },
   differs: {
@@ -91,19 +76,28 @@ const KIND_SX: Partial<Record<CompareCellKind, Record<string, unknown>>> = {
     background: componentTheme.variationMuted,
     borderColor: componentTheme.variationEdge,
   },
-  absent: {
-    color: componentTheme.danger,
-    background: componentTheme.dangerTint,
-    borderColor: componentTheme.dangerEdge,
-  },
+  absent: ABSENT_KIND_SX,
 };
 
-const KIND_WORD: Record<CompareCellKind, string> = {
-  same: 'agrees with every other deployment',
-  differs: 'differs between deployments',
-  absent: 'not set here, where another deployment sets it',
-  unknown: 'this deployment cannot answer yet',
-  'no-document': 'this deployment holds no resource of this kind',
+function kindWords(noun: CompareNoun): Record<CompareCellKind, string> {
+  return {
+    same: `agrees with every other ${noun}`,
+    differs: `differs between ${pluralNoun(noun)}`,
+    absent: `not set here, where another ${noun} sets it`,
+    unknown: `this ${noun} cannot answer yet`,
+    'no-document': `this ${noun} holds no resource of this kind`,
+  };
+}
+
+/** Built once per noun: a grid draws thousands of cells, and each would otherwise build its own. */
+const KIND_WORDS: Record<CompareNoun, Record<CompareCellKind, string>> = {
+  deployment: kindWords('deployment'),
+  Unit: kindWords('Unit'),
+};
+
+const BLOCK_WORDS: Record<CompareNoun, Record<EditBlockReason, string>> = {
+  deployment: editBlockExplanations('deployment'),
+  Unit: editBlockExplanations('Unit'),
 };
 
 /**
@@ -115,7 +109,7 @@ const KIND_WORD: Record<CompareCellKind, string> = {
  * even when it agrees with the others, it takes a dotted underline that marks
  * it as explainable, and the explanation is on the cell itself.
  */
-const EMPTY_STRING_TITLE = 'empty string — this deployment sets the field, to no characters at all';
+const emptyStringTitle = (noun: CompareNoun) => `empty string — this ${noun} sets the field, to no characters at all`;
 
 const EMPTY_STRING_SX = {
   color: componentTheme.fgDefault,
@@ -169,6 +163,8 @@ export function CompareCell({
   blockReason,
   editable,
 }: CompareCellProps): ReactElement {
+  const noun = useCompareNoun();
+  const kindWord = KIND_WORDS[noun];
   if (cell.kind === 'unknown' || cell.kind === 'no-document') {
     // The model stated the reason; the column prop is only a fallback for a
     // hand-built cell, which real data never produces.
@@ -237,7 +233,7 @@ export function CompareCell({
         component="span"
         data-fidelity="value-absent"
         data-cell-kind={cell.kind}
-        title={`${columnLabel}: ${KIND_WORD[cell.kind]}`}
+        title={`${columnLabel}: ${kindWord[cell.kind]}`}
         sx={{ ...ABSENT_BASE_SX, ...(KIND_SX[cell.kind] ?? {}) }}
       >
         not set
@@ -247,13 +243,13 @@ export function CompareCell({
 
   const elided = cell.display !== cell.literal;
   const base = cell.isEmptyString
-    ? `${columnLabel}: ${EMPTY_STRING_TITLE}`
+    ? `${columnLabel}: ${emptyStringTitle(noun)}`
     : elided
-      ? `${columnLabel}: ${cell.literal} — ${KIND_WORD[cell.kind]}`
-      : `${columnLabel}: ${KIND_WORD[cell.kind]}`;
+      ? `${columnLabel}: ${cell.literal} — ${kindWord[cell.kind]}`
+      : `${columnLabel}: ${kindWord[cell.kind]}`;
   // The refusal leads, because it is the answer to the question a pointing user
   // is actually asking.
-  const description = blockReason ? `${EDIT_BLOCK_EXPLANATION[blockReason]} ${base}` : base;
+  const description = blockReason ? `${BLOCK_WORDS[noun][blockReason]} ${base}` : base;
 
   return (
     <Box

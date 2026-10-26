@@ -108,3 +108,32 @@ export const VALUE_TRACK_SX = {
 export function compareContentWidth(n: number): string {
   return `calc(var(${KEY_COLUMN_VAR}, ${KEY_COLUMN_PX}px) + ${n} * var(${VALUE_COLUMN_VAR}, ${VALUE_COLUMN_PX}px))`;
 }
+
+/** The page layout's tracks (`compareLayout.ts`): the field column grows from 280px, values stay between 120 and 220px. */
+export const PAGE_KEY_COLUMN_PX = 280;
+export const PAGE_VALUE_COLUMN_MIN_PX = 120;
+export const PAGE_VALUE_COLUMN_MAX_PX = 220;
+
+export const PAGE_KEY_TRACK_SX = {
+  boxSizing: 'border-box',
+  flex: `1.6 0 ${PAGE_KEY_COLUMN_PX}px`,
+  minWidth: 0,
+  // A cell that spreads a value track first (the head row's corner) must not keep its cap.
+  maxWidth: 'none',
+} as const;
+
+export const PAGE_VALUE_TRACK_SX = {
+  boxSizing: 'border-box',
+  flex: `1 0 ${PAGE_VALUE_COLUMN_MIN_PX}px`,
+  maxWidth: PAGE_VALUE_COLUMN_MAX_PX,
+  minWidth: 0,
+  position: 'relative',
+} as const;
+
+/** The page layout's room after the last column, so its values do not touch the frame. */
+export const PAGE_ROW_END_PX = 16;
+
+/** `compareContentWidth` for the page layout. */
+export function comparePageContentWidth(n: number): string {
+  return `${PAGE_KEY_COLUMN_PX + n * PAGE_VALUE_COLUMN_MIN_PX + PAGE_ROW_END_PX}px`;
+}

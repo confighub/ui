@@ -22,7 +22,8 @@ import { getApiErrorMessage } from '@/utility/error-functions';
 import { componentTheme } from '../componentTheme';
 import { CompareFilterStrip, type CompareFieldFilter } from './CompareFilterStrip';
 import { CompareGrid, FoldChevron } from './CompareGrid';
-import { COMPARE_TRACK_VARS, compareContentWidth } from './compareTracks';
+import { useComparePageLayout } from './compareLayout';
+import { COMPARE_TRACK_VARS, compareContentWidth, comparePageContentWidth } from './compareTracks';
 import { ancestorPathsOf } from './compareTree';
 import { CompareStagedFooter } from './CompareStagedFooter';
 import {
@@ -33,6 +34,7 @@ import {
   type StagedCompareEdit,
 } from './compareEditing';
 import { CompareImageRows } from './CompareImageRows';
+import { pluralNoun, useCompareNoun } from './compareVocabulary';
 import { containerImageOf } from './containerImagePaths';
 import {
   buildCompareResult,
@@ -58,6 +60,12 @@ export interface ComponentCompareSectionProps {
    * which is what it was before editing existed.
    */
   onCommitStaged?: (unitId: string, spaceId: string, payload: { kind: 'patch-data'; data: string }) => Promise<boolean>;
+  /**
+   * Draw each unit under its own foldable header (the default). A page that
+   * compares one unit at a time, and names it elsewhere, turns it off: the
+   * header would only repeat that name and fold the whole surface away.
+   */
+  showUnitHeader?: boolean;
 }
 
 /**
@@ -118,6 +126,14 @@ const DOC_NAME_SX = {
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
+} as const;
+
+/** The page layout's count (`compareLayout.ts`): words, in sans, rather than `2F`. */
+const PAGE_DOC_COUNT_SX = {
+  marginLeft: 'auto',
+  fontSize: 11.5,
+  color: componentTheme.fgSubtle,
+  flex: 'none',
 } as const;
 
 const DOC_COUNT_SX = {
@@ -237,7 +253,10 @@ function ComponentCompareSectionInner({
   units,
   deploymentCount,
   onCommitStaged,
+  showUnitHeader = true,
 }: ComponentCompareSectionProps): ReactElement {
+  const nouns = pluralNoun(useCompareNoun());
+  const page = useComparePageLayout();
   const [filter, setFilter] = useState<CompareFieldFilter>('differing');
   const [stagedEdits, setStagedEdits] = useState<ReadonlyMap<string, StagedCompareEdit>>(
     () => new Map(),
@@ -560,7 +579,7 @@ function ComponentCompareSectionInner({
       >
         {/* One declared content width for every group in the pane: slack for the
             tracks to share below it, the scroll extent above it. */}
-        <Box sx={{ minWidth: compareContentWidth(units[0]?.columns.length ?? 1) }}>
+        <Box sx={{ minWidth: (page ? comparePageContentWidth : compareContentWidth)(units[0]?.columns.length ?? 1) }}>
         {isLoading ? (
           <Box data-testid="compare-loading" aria-busy="true" aria-live="polite" sx={{ padding: '10px 16px' }}>
             <Box component="span" style={SR_ONLY}>
@@ -590,59 +609,61 @@ function ComponentCompareSectionInner({
             </Box>
             <Box sx={{ marginTop: '4px', fontSize: 12, color: componentTheme.fgMuted }}>
               {totalCount === 0
-                ? 'None of these deployments holds configuration to compare.'
+                ? `None of these ${nouns} holds configuration to compare.`
                 : unansweredColumns.length
                   ? // Never claim agreement that covers a deployment nobody read.
                     // "All N fields agree across these 2 deployments" was being
                     // said about a deployment the pane had no configuration for.
                     // `unansweredColumns` here is only ever `empty-unit`, so say
                     // what is true of it: it holds the unit, empty.
-                    `All ${totalCount} fields agree across the deployments that hold them. ${listDeployments(unansweredColumns)} ${
+                    `All ${totalCount} fields agree across the ${nouns} that hold them. ${listDeployments(unansweredColumns)} ${
                       unansweredColumns.length === 1 ? 'has' : 'have'
                     } no configuration here, so ${
                       unansweredColumns.length === 1 ? 'it is' : 'they are'
                     } not covered by that.`
-                  : `All ${totalCount} fields agree across these ${deploymentCount} deployments.`}
+                  : `All ${totalCount} fields agree across these ${deploymentCount} ${nouns}.`}
             </Box>
           </Box>
         ) : (
           unitBlocks.map(({ unitSlug, documentBlocks, differingCount: unitDifferingCount, missingFrom }) => {
-            const open = !collapsedUnits.has(unitSlug);
+            const open = !showUnitHeader || !collapsedUnits.has(unitSlug);
             const contentId = `compare-unit-content-${unitSlug}`;
             return (
               <Box key={unitSlug} data-testid="compare-unit-group" data-unit-slug={unitSlug}>
-                <Box sx={UNIT_HEAD_WRAP_SX}>
-                  <Box
-                    component="button"
-                    type="button"
-                    data-testid="compare-unit-header"
-                    aria-expanded={open}
-                    // Only while expanded — collapsed removes the content
-                    // element from the DOM entirely, so pointing at its id
-                    // then would name an element that does not exist.
-                    aria-controls={open ? contentId : undefined}
-                    onClick={() => toggleUnit(unitSlug)}
-                    sx={UNIT_HEAD_SX}
-                  >
-                    <FoldChevron open={open} />
-                    <Box component="span" title={unitSlug} sx={UNIT_NAME_SX}>
-                      {unitSlug}
-                    </Box>
-                    {missingFrom.length > 0 ? (
-                      <Box
-                        component="span"
-                        data-testid="compare-unit-missing-note"
-                        title={`${listDeployments(missingFrom)} ${missingFrom.length === 1 ? 'does' : 'do'} not hold this unit`}
-                        sx={UNIT_MISSING_NOTE_SX}
-                      >
-                        {`not in ${listDeployments(missingFrom)}`}
+                {showUnitHeader ? (
+                  <Box sx={UNIT_HEAD_WRAP_SX}>
+                    <Box
+                      component="button"
+                      type="button"
+                      data-testid="compare-unit-header"
+                      aria-expanded={open}
+                      // Only while expanded — collapsed removes the content
+                      // element from the DOM entirely, so pointing at its id
+                      // then would name an element that does not exist.
+                      aria-controls={open ? contentId : undefined}
+                      onClick={() => toggleUnit(unitSlug)}
+                      sx={UNIT_HEAD_SX}
+                    >
+                      <FoldChevron open={open} />
+                      <Box component="span" title={unitSlug} sx={UNIT_NAME_SX}>
+                        {unitSlug}
                       </Box>
-                    ) : null}
-                    {/* Stays on screen collapsed or not — it is what tells the
-                        user what a collapsed unit is hiding. */}
-                    <Box component="span" sx={UNIT_COUNT_SX}>{`${unitDifferingCount}F`}</Box>
+                      {missingFrom.length > 0 ? (
+                        <Box
+                          component="span"
+                          data-testid="compare-unit-missing-note"
+                          title={`${listDeployments(missingFrom)} ${missingFrom.length === 1 ? 'does' : 'do'} not hold this unit`}
+                          sx={UNIT_MISSING_NOTE_SX}
+                        >
+                          {`not in ${listDeployments(missingFrom)}`}
+                        </Box>
+                      ) : null}
+                      {/* Stays on screen collapsed or not — it is what tells the
+                          user what a collapsed unit is hiding. */}
+                      <Box component="span" sx={UNIT_COUNT_SX}>{`${unitDifferingCount}F`}</Box>
+                    </Box>
                   </Box>
-                </Box>
+                ) : null}
                 {open ? (
                   <Box id={contentId}>
                     {documentBlocks.map(({ key, unit, group, imageRows, gridRows, forceExpanded }) => (
@@ -659,7 +680,13 @@ function ComponentCompareSectionInner({
                               ? `${group.namespace}/${group.name}`
                               : (group.name ?? unit.slug)}
                           </Box>
-                          <Box component="span" sx={DOC_COUNT_SX}>{`${group.differingCount}F`}</Box>
+                          {page ? (
+                            <Box component="span" sx={PAGE_DOC_COUNT_SX} data-testid="compare-document-count">
+                              {`${group.differingCount} differing`}
+                            </Box>
+                          ) : (
+                            <Box component="span" sx={DOC_COUNT_SX}>{`${group.differingCount}F`}</Box>
+                          )}
                         </Box>
                         </Box>
                         <Box sx={{ width: '100%', background: componentTheme.bgDefault }}>

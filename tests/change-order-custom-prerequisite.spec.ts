@@ -15,8 +15,9 @@
  * of it takes as "nothing is holding this". And a stage nobody can promote: a
  * check the page cannot make is not a refusal, and once the server finds it
  * satisfied the stage is promoted like any other. So what is asserted here is
- * the padlock and the row, then the promotion once the check is satisfied, on
- * a real screen, against a workflow a real server accepted and evaluated.
+ * the failing row and the held box, then the promotion once the check is
+ * satisfied, on a real screen, against a workflow a real server accepted and
+ * evaluated.
  */
 import { type Page } from '@playwright/test';
 import { test, expect, hubApi, newAuthorizedContext } from './fixtures/test';
@@ -77,21 +78,27 @@ test.describe('a stage gating on a declared custom prerequisite', () => {
     page.on('pageerror', (e) => consoleErrors.push(e.message));
 
     await page.goto(`${fx.changeOrderPath}/${GATED_STAGE}`);
-    const promote = page.locator(`[data-promote-stage="${GATED_STAGE}"]`);
-    await expect(promote).toBeVisible({ timeout: 30_000 });
+    const box = page.getByTestId('stage-status');
 
     // `dev` carries no sign-off annotation, so the server finds the check
-    // unsatisfied, and the stage is HELD by that verdict.
+    // unsatisfied, and the stage is HELD by that verdict: the box says which
+    // gate failed and offers no Promote, not even a disabled one.
     await expect(page.getByTestId(`change-order-gate-tag-${gateTestId}`)).toHaveText(
       changeOrderCopy.gateTag.unsatisfied,
       { timeout: 30_000 },
     );
-    await expect(promote).toHaveAttribute('data-promote-gated', 'true');
+    await expect(box).toHaveAttribute('data-stage-state', 'gateFailed');
+    await expect(page.locator('#stage-status-heading')).toContainText(CUSTOM_PREREQUISITE.Name);
+    await expect(page.locator(`[data-promote-stage="${GATED_STAGE}"]`)).toHaveCount(0);
 
     // Named, so a reader can match the row to the line in the workflow, and
     // carrying the author's own description, which the server's message lacks.
+    // The box gives the reason, so the row opens on a click rather than repeating it.
     await expect(page.getByText(`check/${CUSTOM_PREREQUISITE.Name}`).first()).toBeVisible();
-    await expect(page.getByText(CUSTOM_PREREQUISITE.Description).first()).toBeVisible();
+    const gateRow = page.getByTestId(`change-order-gate-${gateTestId}`);
+    const toggle = gateRow.locator('[aria-expanded]').first();
+    if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
+    await expect(gateRow.getByText(CUSTOM_PREREQUISITE.Description).first()).toBeVisible();
     expect(consoleErrors, 'a declared check must not crash the page').toEqual([]);
 
     // The prod Spaces take from `staging`, which this workflow has no stage
@@ -106,18 +113,28 @@ test.describe('a stage gating on a declared custom prerequisite', () => {
     }
 
     await page.goto(`${fx.changeOrderPath}/${GATED_STAGE}`);
-    // Every gate holding, the list collapses to its summary: the mandatory
-    // `check/promoted` and the declared check, both by the server's answer.
-    await expect(page.getByRole('button', { name: /Gates 2 of 2 satisfied/ })).toBeVisible({
-      timeout: 30_000,
-    });
-    await expect(promote).toHaveAttribute('data-promote-gated', 'false');
+    // Every gate holding: the mandatory `check/promoted` and the declared check,
+    // both satisfied by the server's answer, each a row of its own.
+    const gates = page.getByTestId('stage-gates');
+    await expect(page.getByTestId(`change-order-gate-tag-${gateTestId}`)).toHaveText(
+      changeOrderCopy.gateTag.satisfied,
+      { timeout: 30_000 },
+    );
+    await expect(gates.locator(`[data-testid^="change-order-gate-tag-${GATED_STAGE}-"]`)).toHaveText([
+      changeOrderCopy.gateTag.satisfied,
+      changeOrderCopy.gateTag.satisfied,
+    ]);
+    await expect(box).toHaveAttribute('data-stage-state', 'ready');
 
+    // No Space here has a Target (`releasable: false`), so Promote is a plain
+    // button with nothing to choose between.
+    const promote = page.locator(`[data-testid="stage-merge"][data-promote-stage="${GATED_STAGE}"]`);
+    await expect(promote).toBeVisible();
+    await expect(promote).toHaveAttribute('data-promote-gated', 'false');
+    // Nothing is wrong once the dry run is back, so the click promotes: no confirm.
+    await expect(promote).toHaveAttribute('data-one-click', 'true', { timeout: 30_000 });
     await promote.click();
-    const confirm = page.locator('[data-confirm]');
-    await expect(confirm).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText(/A gate holds this stage/)).toHaveCount(0);
-    await confirm.click();
+    await expect(page.locator('[data-confirm]')).toHaveCount(0);
 
     // The announcement is chosen from the server's result, so it says the
     // promotion wrote something rather than that the button was pressed.

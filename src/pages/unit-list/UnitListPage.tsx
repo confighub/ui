@@ -32,7 +32,7 @@ import {
 import { useAdvancedSearchQueryParams } from '@/hooks/useAdvancedSearchQueryParams';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
-import { useAppDispatch } from '@/hooks/useApp';
+import { useAppDispatch, useAppSelector } from '@/hooks/useApp';
 import { useBulkApiErrorMessage } from '@/hooks/useBulkApiErrorMessages';
 import { useEditDrawerUrl } from '@/hooks/useEditDrawerUrl';
 import { usePolling } from '@/hooks/usePolling';
@@ -60,7 +60,10 @@ import {
   useListSpacesQuery,
 } from '@confighub/rtk-query';
 import { setFunctionInvocationResponse } from '@/state/slices/functionInvocation';
-import { setSelectedUnits as setGlobalSelectedUnits } from '@/state/slices/selectedUnits';
+import {
+  selectSelectedUnits,
+  setSelectedUnits as setGlobalSelectedUnits,
+} from '@/state/slices/selectedUnits';
 import { Direction } from '@/types/enums';
 import {
   BaseColumnKeys,
@@ -838,12 +841,30 @@ export const UnitListPage = () => {
 
   // Mirror local selection into the global selectedUnits slice so the
   // Invoker sidebar (and anything else global) can see the current selection.
+  const lastWrittenUnitIdsRef = useRef<string[]>([]);
   useEffect(() => {
     const resolved = units.filter(
       (u) => u.Unit?.UnitID && selectedUnits.includes(u.Unit.UnitID),
     );
+    lastWrittenUnitIdsRef.current = resolved.map((u) => u.Unit?.UnitID ?? '');
     dispatch(setGlobalSelectedUnits({ units: resolved }));
   }, [selectedUnits, units, dispatch]);
+  // The Functions panel writes the slice too, when a Unit is removed there.
+  // Apply its removals to the local selection: otherwise the next write above
+  // (on any change to the Unit list) puts the removed Units back. Only Units
+  // missing from what this page last wrote count, so the page's own writes
+  // change nothing here and the two effects do not feed each other.
+  const globalSelectedUnits = useAppSelector(selectSelectedUnits);
+  useEffect(() => {
+    const inSlice = new Set((globalSelectedUnits ?? []).map((u) => u.Unit?.UnitID));
+    const removed = lastWrittenUnitIdsRef.current.filter((id) => !inSlice.has(id));
+    if (removed.length === 0) return;
+    if (inSlice.size === 0) {
+      setSelectedUnits([]);
+      return;
+    }
+    setSelectedUnits((prev) => prev.filter((id) => !removed.includes(id)));
+  }, [globalSelectedUnits]);
   // Clear global selection on unmount only (separate so the sync above has no
   // cleanup and avoids the [] → resolved flicker on every selection change).
   useEffect(() => {

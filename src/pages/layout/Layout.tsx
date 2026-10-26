@@ -9,8 +9,8 @@ import { fadeIn } from '@/components/styled';
 import { useAppDispatch, useAppSelector } from '@/hooks/useApp';
 import { useInvokerSidebar } from '@/hooks/useInvokerSidebar';
 import { closeAlert, selectAlert } from '@/state/slices/alert';
-import { selectInvokerRequestSeq } from '@/state/slices/invokerRequest';
-import { selectSelectedUnits, setSelectedUnits } from '@/state/slices/selectedUnits';
+import { selectInvokerOpenSeq, selectInvokerRequestSeq } from '@/state/slices/invokerRequest';
+import { removeAllSelectedUnits, selectSelectedUnits, setSelectedUnits } from '@/state/slices/selectedUnits';
 import { selectTourId, selectTourStatus } from '@/state/slices/tourSlice';
 import { TOP_NAV_HEIGHT } from '@/utility/constants';
 import { UserSection } from '@/components/user-section/UserSection';
@@ -448,6 +448,11 @@ export const Layout = memo(() => {
   useEffect(() => {
     if (invokerRequestSeq > 0) openInvoker();
   }, [invokerRequestSeq, openInvoker]);
+  // A page asked for the invoker as it is, e.g. for the Units it has selected.
+  const invokerOpenSeq = useAppSelector(selectInvokerOpenSeq);
+  useEffect(() => {
+    if (invokerOpenSeq > 0) openInvoker();
+  }, [invokerOpenSeq, openInvoker]);
 
   // Feed the global Invoker sidebar the units currently selected anywhere
   // in the app (populated by each page via the selectedUnits slice).
@@ -480,7 +485,7 @@ export const Layout = memo(() => {
   );
 
   const handleInvokerRemoveAllUnits = useCallback(() => {
-    dispatch(setSelectedUnits({ units: [] }));
+    dispatch(removeAllSelectedUnits());
   }, [dispatch]);
 
   const handleCloseAlert = useCallback(() => {

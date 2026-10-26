@@ -18,7 +18,6 @@ import {
   useCreateTriggerMutation,
   useCreateViewMutation,
   useInvokeFunctionsOnOrgMutation,
-  useListAllBridgeWorkersQuery,
   useListAllTargetsQuery,
   useListAllUnitsQuery,
   useListAllViewsQuery,
@@ -290,15 +289,6 @@ export const InitiativeSettingsPanel = ({
     [targetsData],
   );
 
-  const { data: bridgeWorkersData } = useListAllBridgeWorkersQuery({});
-  const queryBuilderBridgeWorkers = useMemo(
-    () =>
-      bridgeWorkersData?.map((w) => ({
-        id: w.BridgeWorker?.BridgeWorkerID ?? '',
-        name: w.BridgeWorker?.DisplayName ?? w.BridgeWorker?.Slug ?? '',
-      })) ?? [],
-    [bridgeWorkersData],
-  );
 
   const { channels, isLoadingChannels } = useFunctionChannels();
 
@@ -392,7 +382,6 @@ export const InitiativeSettingsPanel = ({
     spaces: queryBuilderSpaces,
     targets: queryBuilderTargets,
     toolchainTypes: DEFAULT_TOOLCHAIN_TYPES,
-    bridgeWorkers: queryBuilderBridgeWorkers,
     resourceTypes,
     labelOptions,
     syncToUrl: false,
@@ -502,8 +491,6 @@ export const InitiativeSettingsPanel = ({
             body: JSON.stringify({
               FunctionName: 'vet-kyverno',
               ChannelID: values.triggerChannelId || null,
-              // A check still on a worker keeps it until a Channel is chosen, which replaces it.
-              ...(values.triggerChannelId && { BridgeWorkerID: null }),
               Arguments: values.kyvernoPolicy
                 ? [{ ParameterName: 'policy', Value: values.kyvernoPolicy }]
                 : undefined,

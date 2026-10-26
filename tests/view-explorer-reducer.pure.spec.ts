@@ -176,7 +176,7 @@ test.describe('undo, discard, dirty', () => {
     const s0 = run(
       initialExplorerState(),
       { type: 'newTemp', tabId: 't1' },
-      { type: 'setLayout', layout: 'list' },
+      { type: 'setLayout', layout: 'board' },
     );
     const s1 = run(s0, { type: 'discard' });
     expect(s1.tabs.map((t) => t.id)).toEqual([BUILTIN_TAB_ID]);
@@ -270,7 +270,7 @@ test.describe('tabs', () => {
     );
     const s2 = run(
       s1,
-      { type: 'setLayout', layout: 'list' },
+      { type: 'setLayout', layout: 'board' },
       { type: 'activate', tabId: BUILTIN_TAB_ID },
     );
     expect(s2.tabs.map((t) => t.id)).toEqual([BUILTIN_TAB_ID, 't1']);
@@ -280,7 +280,7 @@ test.describe('tabs', () => {
     const s1 = run(
       initialExplorerState(),
       { type: 'newTemp', tabId: 't1' },
-      { type: 'setLayout', layout: 'list' },
+      { type: 'setLayout', layout: 'board' },
     );
     const s2 = run(s1, {
       type: 'saved',
@@ -362,7 +362,7 @@ test.describe('edits made while a save is in flight', () => {
     const s0 = run(
       initialExplorerState(),
       { type: 'newTemp', tabId: 't1' },
-      { type: 'setLayout', layout: 'list' },
+      { type: 'setLayout', layout: 'board' },
     );
     const sent = active(s0).work;
     const s1 = run(s0, { type: 'setSort', sort: { column: 'Slug', dir: 'ASC' } });
@@ -479,7 +479,7 @@ test.describe('tab ids of forks', () => {
       kind: 'temp',
       name: '',
       baseline: null,
-      work: { ...defaultViewDef('Unit'), layout: 'list' },
+      work: { ...defaultViewDef('Unit'), layout: 'board' },
       history: [],
       pinned: false,
     };
@@ -494,7 +494,7 @@ test.describe('tab ids of forks', () => {
     });
     const ids = s1.tabs.map((t) => t.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(s1.tabs.find((t) => t.id === 'temp-1')?.work.layout).toBe('list');
+    expect(s1.tabs.find((t) => t.id === 'temp-1')?.work.layout).toBe('board');
     expect(active(s1).work.lenses).toHaveLength(1);
     // Another fork is unique too.
     const s2 = run(
@@ -526,12 +526,12 @@ test('undo with a tab id acts on that tab, not the active one', () => {
     { type: 'setLayout', layout: 'board' },
     { type: 'discard' },
     { type: 'openTab', tab: savedTab('b') },
-    { type: 'setLayout', layout: 'list' },
+    { type: 'setLayout', layout: 'matrix' },
   );
   expect(s0.activeId).toBe('b');
   const s1 = run(s0, { type: 'undo', tabId: 'a' });
   expect(s1.tabs.find((t) => t.id === 'a')?.work.layout).toBe('board');
-  expect(s1.tabs.find((t) => t.id === 'b')?.work.layout).toBe('list');
+  expect(s1.tabs.find((t) => t.id === 'b')?.work.layout).toBe('matrix');
   expect(s1.activeId).toBe('b');
   expect(run(s0, { type: 'undo', tabId: 'nope' })).toBe(s0);
 });
@@ -558,7 +558,7 @@ test.describe('fork ids across browser tabs', () => {
       kind: 'temp',
       name: '',
       baseline: null,
-      work: { ...defaultViewDef('Unit'), layout: 'list' },
+      work: { ...defaultViewDef('Unit'), layout: 'board' },
       history: [],
       pinned: false,
     };

@@ -30,7 +30,6 @@ const SPACE_COLUMN_MAPPING: Record<string, ColumnMapping> = {
   TotalUnitCount: {},
   TotalLinkCount: {},
   TotalFilterCount: {},
-  TotalBridgeWorkerCount: {},
   TotalChangeSetCount: {},
   TotalTagCount: {},
   TotalViewCount: {},

@@ -3,6 +3,7 @@
 
 import { createContext, type Dispatch, type MutableRefObject, useContext, useEffect } from 'react';
 
+import { COMPARE_PARAM, encodeCompareParam } from '../model/compare';
 import type { ExplorerAction } from '../model/reducer';
 import { encodeDraftParam, viewDefsEqual } from '../model/view-codec';
 import type { ExplorerState, TabState } from '../model/types';
@@ -121,4 +122,14 @@ export function tabUrlParams(tab: TabState | undefined, versions?: ReadonlyMap<s
     if (filterBase) params[FILTER_BASE_PARAM] = filterBase;
   }
   return params;
+}
+
+/** The URL parameters for what a tab shows: its view (`tabUrlParams`) and the Units it compares. */
+export function tabLinkParams(
+  tab: TabState | undefined,
+  versions: ReadonlyMap<string, string> | undefined,
+  compareIds: readonly string[],
+): Record<string, string> {
+  const params = tabUrlParams(tab, versions);
+  return compareIds.length ? { ...params, [COMPARE_PARAM]: encodeCompareParam(compareIds) } : params;
 }

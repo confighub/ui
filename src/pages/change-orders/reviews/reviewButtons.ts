@@ -4,16 +4,15 @@
 /**
  * Button styles for the review UI.
  *
- * ⚠️ PURPLE IS FOR PROMOTE ONLY. `componentTheme.done` / `doneEmphasis` is the
- * colour of the Promote button, and the one review action that leads to
- * Promote ("Go to promote") uses it too. Every review decision is outlined:
+ * THE THEME'S PRIMARY IS FOR ACTIONS. Promote and Release are the theme's
+ * contained primary, and the review actions that lead to them ("Go to promote",
+ * "Go to release") are drawn the same way. Every review decision is outlined:
  * Approve and "Review now" in neutral ink with the strong border (the page's
  * Abort style), Reject in danger ink with the danger line border (the page's
- * Roll back style). A filled red or purple decision button would weigh a
- * review as heavily as a promotion. User decision on PR #5745.
+ * Roll back style). A filled red or primary decision button would weigh a
+ * review as heavily as a promotion.
  */
 
-import { componentTheme } from '../../x/apps/componentTheme';
 import { changeOrderBorder, changeOrderInk, changeOrderShape, changeOrderStatus, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
 
 const base = {
@@ -24,12 +23,14 @@ const base = {
   whiteSpace: 'nowrap',
 } as const;
 
-/** "Go to promote": it leads to Promote, so it has Promote's purple. */
+/**
+ * "Go to promote" and "Go to release": they lead to Promote and Release, so they
+ * have their colour. Use with `variant="contained" color="primary"`, which gives
+ * the fill and its hover from the theme; this sets only the band's shape.
+ */
 export const reviewPromoteButtonSx = {
   ...base,
-  backgroundColor: componentTheme.done,
-  color: componentTheme.fgOnEmphasis,
-  '&:hover': { backgroundColor: componentTheme.doneEmphasis, boxShadow: 'none' },
+  '&:hover': { boxShadow: 'none' },
 } as const;
 
 /** Reject submit and Reject confirm: outlined, danger ink, danger line border. */

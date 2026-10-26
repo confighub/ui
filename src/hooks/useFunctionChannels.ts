@@ -60,11 +60,10 @@ export const useFunctionChannels = ({ skip = false }: { skip?: boolean } = {}) =
   );
 
 /**
- * The arguments that list the functions an executor serves: a Channel's, a worker's, or the
- * Space's builtin ones when neither is named.
+ * The arguments that list the functions an executor serves: a Channel's, or the Space's builtin
+ * ones when none is named.
  */
-export const functionListArgs = (channelId?: string, workerId?: string) => {
+export const functionListArgs = (channelId?: string) => {
   if (channelId) return { entity: 'channel', id: channelId };
-  if (workerId) return { entity: 'worker', id: workerId };
   return { entity: '' };
 };

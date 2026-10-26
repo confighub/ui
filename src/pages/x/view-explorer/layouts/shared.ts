@@ -10,7 +10,7 @@ import { getAdapter } from '../adapters';
 import type { ResourceViewRow } from '../adapters/resource-row';
 import type { GroupNavRow } from '../cell-value';
 import { fieldById, fieldCatalog, STATUS_LABEL, type EntityRow, type FieldDef } from '../model/fields';
-import { buildGroupTree, EMPTY_GROUP_VALUE, type GroupNode } from '../model/grouping';
+import type { GroupNode } from '../model/grouping';
 import { groupLevelFor } from '../model/sort';
 import type { EntityKind, StatusKind } from '../model/types';
 import { withExplorerReturn } from '../results/explorer-link';
@@ -19,21 +19,10 @@ import type { CellActions } from '../table/cells/TableCellContent';
 import { groupValueText, pathLenses, type GroupStep } from '../table/groups';
 
 /**
- * What the List and Board layouts share with each other and with the table:
- * the group tree, the label keys the rows carry, the field the board's lanes
- * follow, and the actions behind a click (a row opens the drawer, a value its
- * popover, a count a peek).
+ * What the Board layout shares with the table: the label keys the rows carry,
+ * the field the board's lanes follow, and the actions behind a click (a row
+ * opens the drawer, a value its popover, a count a peek).
  */
-
-export function useGroupTree(entity: EntityKind, rows: readonly EntityRow[], groupBy: readonly string[]): GroupNode<EntityRow>[] {
-  const key = groupBy.join('|');
-  return useMemo(() => {
-    const levels = groupBy.map((f) => groupLevelFor(entity, f)).filter((l): l is NonNullable<typeof l> => l !== null);
-    return buildGroupTree(rows, levels);
-    // key stands for groupBy, which is a new array whenever the view changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entity, rows, key]);
-}
 
 /** The label keys the rows carry (the Units' labels, a Space's, a Resource's Unit's), sorted. */
 export function rowLabelKeys(entity: EntityKind, rows: readonly EntityRow[]): string[] {
@@ -97,7 +86,7 @@ export function countOf(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/** The colour of a status, for a lane dot and a list row's dot. Status colours only, never the brand colour. */
+/** The colour of a status, for a lane dot. Status colours only, never the brand colour. */
 export function statusColor(theme: Theme, label: string): string {
   switch (label) {
     case STATUS_LABEL.unreleased:
@@ -118,10 +107,6 @@ export function pathTitle(entity: EntityKind, path: readonly GroupStep[]): strin
 
 export function pathOf(node: GroupNode<EntityRow>, parent: readonly GroupStep[] = []): GroupStep[] {
   return [...parent, { field: node.field, value: node.value }];
-}
-
-export function isEmptyGroup(value: string): boolean {
-  return value === EMPTY_GROUP_VALUE;
 }
 
 /** The keys held during a click or a keypress: ⌘/Ctrl opens a row's own page. */

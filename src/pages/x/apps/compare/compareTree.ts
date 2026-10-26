@@ -29,6 +29,7 @@
  */
 
 import { buildPathTree, type DiffTreeNode } from '../diffTree';
+import type { CompareRow } from './deploymentCompareModel';
 import { splitIdentityPath } from './identityPaths';
 
 /**
@@ -201,4 +202,78 @@ export function elideFolderLabel(label: string, budget: number): string {
   const others = kept.slice(0, -1).reduce((sum, unit) => sum + unit.length + 1, 0);
   const room = budget - fixed - others - 1;
   return [head, '…', ...kept.slice(0, -1), truncateMiddle(last, Math.max(6, room))].join('.');
+}
+
+interface RowNode {
+  row: CompareRow;
+  children: RowNode[];
+}
+
+/**
+ * For the page layout: a folder with a single row under it is drawn as one
+ * row with it, so `template.spec` over `containers[alpha]` over `name` is one
+ * row, `template.spec.containers[alpha].name`. Applied to the rows a filter
+ * left, since a filter is what leaves most folders with one row. A merged
+ * folder keeps the identity path of the deepest folder in it, so folding still
+ * names the same folder; a merged leaf keeps its own.
+ */
+export function mergeSingleChildFolders(rows: readonly CompareRow[]): CompareRow[] {
+  const roots: RowNode[] = [];
+  const stack: RowNode[] = [];
+  for (const row of rows) {
+    const node: RowNode = { row, children: [] };
+    while (stack.length && (stack[stack.length - 1] as RowNode).row.depth >= row.depth) stack.pop();
+    (stack.length ? (stack[stack.length - 1] as RowNode).children : roots).push(node);
+    stack.push(node);
+  }
+  const out: CompareRow[] = [];
+  const emit = (node: RowNode, depth: number, prefix: string): void => {
+    const { row } = node;
+    if (row.type === 'leaf') {
+      out.push({ ...row, depth, leafKey: `${prefix}${row.leafKey}` });
+      return;
+    }
+    const only = node.children.length === 1 ? node.children[0] : undefined;
+    if (only) {
+      emit(only, depth, `${prefix}${row.label}.`);
+      return;
+    }
+    out.push({ ...row, depth, label: `${prefix}${row.label}` });
+    for (const child of node.children) emit(child, depth + 1, '');
+  };
+  for (const root of roots) emit(root, 0, '');
+  return out;
+}
+
+/**
+ * For the page layout: a path that does not fit `budget` characters, cut on
+ * the left at a segment boundary, after a `.` or before a `[` that follows a
+ * `]`, with a leading `…`, so what is left starts with a whole segment and
+ * ends with the field's own name (`…spec.containers[alpha].resources.limits`).
+ * A `.` inside `[...]` is part of an identity, not a boundary. When even the
+ * last segment does not fit, it is returned alone, for the CSS ellipsis.
+ */
+export function cutPathLeft(path: string, budget: number): string {
+  if (path.length <= budget) return path;
+  let depth = 0;
+  for (let i = 0; i < path.length; i += 1) {
+    const char = path[i];
+    if (char === '[') {
+      if (depth === 0 && i > 0 && path[i - 1] === ']' && path.length - i + 1 <= budget) return `…${path.slice(i)}`;
+      depth += 1;
+    } else if (char === ']') {
+      depth -= 1;
+    } else if (char === '.' && depth === 0 && path.length - i <= budget) {
+      return `…${path.slice(i + 1)}`;
+    }
+  }
+  let last = 0;
+  depth = 0;
+  for (let i = 0; i < path.length; i += 1) {
+    const char = path[i];
+    if (char === '[') depth += 1;
+    else if (char === ']') depth -= 1;
+    else if (char === '.' && depth === 0) last = i + 1;
+  }
+  return last > 0 ? `…${path.slice(last)}` : path;
 }

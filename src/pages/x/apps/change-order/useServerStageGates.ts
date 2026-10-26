@@ -57,9 +57,20 @@ export type ServerGateRefusals = Readonly<Record<string, number>>;
 
 const NO_REFUSALS: ServerGateRefusals = {};
 
+
 export interface ServerStageGateReads {
   byStage: ServerGatesByStage;
   refusedByStage: ServerGateRefusals;
+  /**
+   * When a stage's answer, verdict or refusal, last arrived, as epoch ms. The
+   * server stamps no evaluation time on a gate, so this is when the page last
+   * ASKED and was answered, which is what "last checked" can honestly mean.
+   *
+   * A stable function over a ref, not state: the time moves on every poll, and
+   * as state it would re-render and re-derive everything built on the verdicts
+   * when no verdict changed. It is read when something renders anyway.
+   */
+  answeredAt: (stageName: string) => number | undefined;
   /**
    * Asks again now, and resolves once an answer asked for after this call has arrived, so
    * a caller that wrote something the verdicts depend on can read them afresh.
@@ -97,6 +108,17 @@ export function useServerStageGateReads({
     byStage: NO_GATES,
     refusedByStage: NO_REFUSALS,
   });
+  const answeredAtRef = useRef<{ changeOrderId: string | undefined; byStage: Record<string, number> }>({
+    changeOrderId,
+    byStage: {},
+  });
+  const currentOrder = useRef(changeOrderId);
+  currentOrder.current = changeOrderId;
+  const answeredAt = useCallback((stageName: string) => {
+    const times = answeredAtRef.current;
+    // Times for another ChangeOrder say nothing about this one.
+    return times.changeOrderId === currentOrder.current ? times.byStage[stageName] : undefined;
+  }, []);
   const [tick, setTick] = useState(0);
   const poll = useCallback(() => setTick((t) => t + 1), []);
   usePolling(poll, SERVER_GATES_POLL_INTERVAL_MS);
@@ -123,6 +145,7 @@ export function useServerStageGateReads({
     const call = asked.current;
     if (changeOrderId === undefined || stageNames.length === 0) {
       setGates({ changeOrderId, byStage: NO_GATES, refusedByStage: NO_REFUSALS });
+      answeredAtRef.current = { changeOrderId, byStage: {} };
       settle(call);
       return;
     }
@@ -142,10 +165,14 @@ export function useServerStageGateReads({
       if (cancelled) return;
       const byStage: Record<string, readonly PromoteGateResult[]> = {};
       const refusedByStage: Record<string, number> = {};
+      const at = Date.now();
+      const answeredAtByStage: Record<string, number> = {};
       for (const [stageName, answer] of answers) {
         if (typeof answer === 'number') refusedByStage[stageName] = answer;
         else byStage[stageName] = answer;
+        answeredAtByStage[stageName] = at;
       }
+      answeredAtRef.current = { changeOrderId, byStage: answeredAtByStage };
       // The same answer keeps its identity, so a poll that changed nothing
       // does not re-derive everything the ChangeOrder page computes from it.
       setGates((previous) =>
@@ -168,6 +195,6 @@ export function useServerStageGateReads({
   // Verdicts about another ChangeOrder are never shown for this one, even for
   // the moment before this one's arrive.
   return gates.changeOrderId === changeOrderId
-    ? { byStage: gates.byStage, refusedByStage: gates.refusedByStage, refresh }
-    : { byStage: NO_GATES, refusedByStage: NO_REFUSALS, refresh };
+    ? { byStage: gates.byStage, refusedByStage: gates.refusedByStage, answeredAt, refresh }
+    : { byStage: NO_GATES, refusedByStage: NO_REFUSALS, answeredAt, refresh };
 }

@@ -54,7 +54,7 @@ function withLine(text: string, error: WhereError): TextError {
 
 /** The related entities an attribute can reach through, per entity (`Target.DisplayName`). */
 const RELATIONS: Record<EntityKind, readonly string[]> = {
-  Unit: ['Space.', 'Target.', 'UpstreamUnit.', 'UpstreamSpace.', 'ChangeSet.', 'HeadRevision.', 'LastReleasedRevision.', 'BridgeWorker.', 'Organization.'],
+  Unit: ['Space.', 'Target.', 'UpstreamUnit.', 'UpstreamSpace.', 'ChangeSet.', 'HeadRevision.', 'LastReleasedRevision.', 'Organization.'],
   Space: ['Component.', 'Organization.'],
   Resource: ['Unit.', 'Space.', 'Target.', 'Organization.'],
 };

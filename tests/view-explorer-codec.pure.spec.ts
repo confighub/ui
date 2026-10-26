@@ -233,6 +233,17 @@ test.describe('annotations', () => {
     expect(loaded.layout).toBe('table');
   });
 
+  test('a view saved with the retired List layout loads as the table, and is not a draft', () => {
+    const view: ViewRead = { Slug: 'v', GroupBy: 'Space', Annotations: { [LAYOUT_ANNOTATION]: 'list' } };
+    const loaded = viewDefFromSaved(view, { Slug: 'f', From: 'Unit' }, idGen());
+    expect(loaded.def.layout).toBe('table');
+    expect(loaded.def.groupBy).toEqual(['Space']);
+    // Saving it again drops the stale annotation.
+    const saved = viewDefToSave(loaded.def);
+    if (!saved.ok) throw new Error(saved.error);
+    expect(saved.annotations[LAYOUT_ANNOTATION]).toBeNull();
+  });
+
   test('a Where the client cannot split becomes one custom lens, with a warning', () => {
     const loaded = viewDefFromSaved(
       { Slug: 'v' },
@@ -296,6 +307,12 @@ test.describe('URL d= parameter', () => {
       ),
     ).toBeNull();
     expect(decodeDraftParam(btoa('{"entity":"Unit"}'))).toBeNull();
+  });
+
+  test('a link made with the retired List layout opens as the table, the rest as written', () => {
+    const def: ViewDef = { ...defaultViewDef('Unit'), groupBy: ['Space'] };
+    const param = encodeDraftParam({ ...def, layout: 'list' } as unknown as ViewDef);
+    expect(decodeDraftParam(param)).toEqual(def);
   });
 });
 

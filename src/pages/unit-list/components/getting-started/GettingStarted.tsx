@@ -6,7 +6,6 @@ import DataObjectIcon from '@mui/icons-material/DataObject';
 import FolderCopyIcon from '@mui/icons-material/FolderCopy';
 import FunctionsIcon from '@mui/icons-material/Functions';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import Storage from '@mui/icons-material/Storage';
 import Box from '@mui/material/Box';
@@ -176,14 +175,6 @@ export const GettingStarted = ({ onAddButtonClicked }: IGettingStartedProps) => 
       description:
         'Destination clusters or environments where configuration is applied and managed.',
       href: 'https://docs.confighub.com/background/entities/target/',
-    },
-    {
-      icon: <PrecisionManufacturingIcon />,
-      color: theme.palette.warning.main,
-      title: 'Workers',
-      description:
-        'Bridge agents that connect ConfigHub to your clusters and apply configuration changes.',
-      href: 'https://docs.confighub.com/background/entities/worker/',
     },
     {
       icon: <FunctionsIcon />,

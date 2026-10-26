@@ -188,6 +188,61 @@ export function buildConfigDiffTree(changes: PathChange[], kept: readonly KeptVa
 }
 
 /**
+ * Fields that say which element of a list a row belongs to, best first: `name`, then
+ * the usual key-like fields. The same idea as the diff tree's key context, for a
+ * server diff.
+ */
+const IDENTIFYING_FIELDS: readonly string[] = [
+  'name', 'key', 'label', 'id', 'path', 'namespace', 'kind', 'type',
+  'hostname', 'host', 'url', 'address', 'repo', 'repository',
+];
+
+/** An array element the server matched by position, so its label is only an index. */
+function isIndexedElement(segment: PathSegment | undefined): boolean {
+  if (segment === undefined || (segment.MergeKeys?.length ?? 0) > 0) return false;
+  return (segment.ToIndex ?? -1) >= 0 || (segment.FromIndex ?? -1) >= 0;
+}
+
+const parentKeyOf = (segments: readonly PathSegment[]) => segments.slice(0, -1).map(segmentLabel).join('\u0000');
+
+/**
+ * The changes to draw when unchanged paths are hidden: every change, plus, for each
+ * list element known only by its index that has a change directly in it, the one
+ * unchanged sibling that names it (`name`, else a key-like field). An index says
+ * nothing about which element changed; `name: DB_HOST` beside the row does. An
+ * element matched by merge key already carries its key in its label (`?name=web`),
+ * so it gets none.
+ */
+export function changesNamingTheirElements(changes: readonly PathChange[]): PathChange[] {
+  const changedFieldsByParent = new Map<string, Set<string>>();
+  for (const change of changes) {
+    const segments = change.Segments ?? [];
+    if (change.ChangeType === 'None' || segments.length < 2 || !isIndexedElement(segments[segments.length - 2])) continue;
+    const key = parentKeyOf(segments);
+    const fields = changedFieldsByParent.get(key) ?? new Set<string>();
+    fields.add((segments[segments.length - 1].Field ?? '').toLowerCase());
+    changedFieldsByParent.set(key, fields);
+  }
+
+  const best = new Map<string, { rank: number; change: PathChange }>();
+  for (const change of changes) {
+    const segments = change.Segments ?? [];
+    if (change.ChangeType !== 'None' || change.Comment || segments.length < 2) continue;
+    const key = parentKeyOf(segments);
+    const changedHere = changedFieldsByParent.get(key);
+    if (changedHere === undefined) continue;
+    const name = (segments[segments.length - 1].Field ?? '').toLowerCase();
+    const rank = IDENTIFYING_FIELDS.indexOf(name);
+    if (rank < 0 || changedHere.has(name)) continue;
+    const current = best.get(key);
+    if (current === undefined || rank < current.rank) best.set(key, { rank, change });
+  }
+
+  const naming = new Set([...best.values()].map((entry) => entry.change));
+  return changes.filter((change) => change.ChangeType !== 'None' || naming.has(change));
+}
+
+/**
  * The type and name a toolchain gives a resource that does not name itself, such as a
  * JSON document with no `configHub` block. They name nothing, so nothing shows them.
  */

@@ -160,7 +160,7 @@ test.describe('view explorer table', () => {
     await expect(groupRows(page)).toHaveCount(5);
   });
 
-  test('a row opens the drawer below the toolbar, and ⌘-click opens the Unit page', async ({ page, context }) => {
+  test('a row opens the drawer below the toolbar, ⌘-click picks it, and ⌘↵ opens the Unit page', async ({ page, context }) => {
     await openExplorer(page, `/x/view-explorer?view=${viewId}`);
     await nameCell(page, 'alpha').click();
     const drawer = page.getByTestId('vx-row-panel');
@@ -190,9 +190,23 @@ test.describe('view explorer table', () => {
     await expect(drawer).toBeHidden();
     await expect(rows(page).filter({ hasText: 'alpha' })).toBeFocused();
 
+    // In a Units table ⌘-click picks the row, and opens neither the drawer nor a page.
+    const beta = rows(page).filter({ hasText: 'beta' });
+    const popup = context.waitForEvent('page', { timeout: 1500 }).then(
+      () => true,
+      () => false,
+    );
+    await nameCell(page, 'beta').click({ modifiers: ['ControlOrMeta'] });
+    await expect(beta).toHaveAttribute('data-picked', 'true');
+    await expect(drawer).toBeHidden();
+    expect(await popup, 'no page opened for the ⌘-click').toBe(false);
+    await nameCell(page, 'beta').click({ modifiers: ['ControlOrMeta'] });
+    await expect(beta).toHaveAttribute('data-picked', 'false');
+
     const unit = seed.units.find((u) => u.slug === 'beta')!;
     const opened = context.waitForEvent('page');
-    await nameCell(page, 'beta').click({ modifiers: ['ControlOrMeta'] });
+    await beta.focus();
+    await page.keyboard.press('ControlOrMeta+Enter');
     const detail = await opened;
     await expect.poll(() => detail.url()).toContain(unit.id);
     // The Unit page offers the way back to the same explorer tab.
@@ -361,6 +375,9 @@ test.describe('view explorer table', () => {
     const read = await readView(saved.View.SpaceID, saved.View.ViewID);
     const replicas = (read.View.Columns as Array<{ Name: string; ColumnSource?: { DataPath?: { Path?: string } } }>).find((c) => c.Name === 'Replicas');
     expect(replicas?.ColumnSource?.DataPath?.Path).toBe('spec.replicas');
+    // Leave the page first: it may still be reading the views the save touched, and a read of one deleted under it
+    // fails with a 404 that the console check counts.
+    await page.goto('about:blank');
     await cleanUp(copy);
     await cleanUp(source);
   });
@@ -370,7 +387,9 @@ test.describe('view explorer table', () => {
     await expect(rows(page)).toHaveCount(3);
     await expect(page.getByTestId('vx-count')).toContainText('3 of');
 
-    await page.getByTestId('vx-layout-list').click();
+    // The layouts are Table, Board and Matrix; there is no List.
+    await expect(page.getByRole('group', { name: 'Layout' }).getByRole('button')).toHaveText(['Table', 'Board', 'Matrix']);
+    await page.getByTestId('vx-layout-board').click();
     await expect(page.getByTestId('vx-table')).toHaveCount(0);
     await expect(tabNamed(page, name)).toHaveAttribute('data-dirty', 'true');
     await page.getByTestId('vx-layout-table').click();
@@ -435,6 +454,64 @@ test.describe('view explorer table at scale', () => {
     // Only tasks over the budget count: a shared CI runner makes some short ones long.
     return tasks.filter((ms) => ms >= LONG_TASK_BUDGET_MS).map((ms) => Math.round(ms));
   }
+
+  test('inside a long group, its header and its parent stay pinned under the column header', async ({ page }) => {
+    const ariaHidden: string[] = [];
+    page.on('console', (m: ConsoleMessage) => {
+      if (/aria-hidden/i.test(m.text())) ariaHidden.push(m.text());
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const body = JSON.stringify(units(5000));
+    await page.route(/\/api\/unit(\?|$)/, (route: Route) =>
+      route.request().method() === 'GET' ? route.fulfill({ status: 200, contentType: 'application/json', body }) : route.continue(),
+    );
+    await openExplorer(page, '/x/view-explorer', '5000 of 5000');
+    // Target, then Space: some 57 Units in each Space of a Target, far more than fit on screen.
+    for (const field of ['Target', 'Space']) {
+      await page.getByTestId('vx-group-add').click();
+      await page.getByRole('menuitem', { name: field, exact: true }).click();
+    }
+    await expect(page.getByTestId('vx-group-level')).toHaveCount(2);
+    const pinned = page.getByTestId('vx-pinned-group-row');
+    await expect(pinned).toHaveCount(0);
+    const outer = await groupRows(page).nth(0).getAttribute('data-group-key');
+    const inner = await groupRows(page).nth(1).getAttribute('data-group-key');
+    expect(inner?.startsWith(`${outer}/`)).toBe(true);
+
+    // Twenty rows into the first Space.
+    const table = page.getByTestId('vx-table');
+    await table.evaluate((el) => (el.scrollTop = 2 * 36 + 20 * 38));
+    await expect(pinned).toHaveCount(2);
+    await expect(pinned.nth(0)).toHaveAttribute('data-group-key', outer!);
+    await expect(pinned.nth(1)).toHaveAttribute('data-group-key', inner!);
+    const columnHeader = (await table.locator('[role="row"][aria-rowindex="1"]').boundingBox())!;
+    const first = (await pinned.nth(0).boundingBox())!;
+    const second = (await pinned.nth(1).boundingBox())!;
+    expect(Math.abs(first.y - (columnHeader.y + columnHeader.height))).toBeLessThanOrEqual(1);
+    expect(Math.abs(second.y - (first.y + 36))).toBeLessThanOrEqual(1);
+    // What is pinned is what is on top: no row shows through or covers it.
+    const onTop = await page.evaluate(
+      ({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-testid]')?.getAttribute('data-testid'),
+      { x: second.x + second.width - 20, y: second.y + second.height / 2 },
+    );
+    expect(onTop).toBe('vx-pinned-group-row');
+
+    // Moved right by the checkbox track like the rows, the pinned headers start where the Unit names do.
+    const nameLeft = await rows(page)
+      .first()
+      .locator('[data-column="Slug"]')
+      .evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
+    const pinnedChevron = (await pinned.nth(0).getByTestId('vx-pinned-group-toggle').locator('svg').boundingBox())!;
+    expect(Math.abs(pinnedChevron.x - nameLeft)).toBeLessThanOrEqual(2);
+
+    // The copy's buttons are named apart from the row's own.
+    await expect(pinned.nth(1).getByTestId('vx-pinned-group-toggle')).toHaveAccessibleName(/\(pinned\)$/);
+    // Folding from the pinned copy folds the group and brings its own header back into place.
+    await pinned.nth(1).getByTestId('vx-pinned-group-toggle').click();
+    await expect(groupRows(page).and(page.locator(`[data-group-key="${inner}"]`))).toHaveAttribute('data-collapsed', 'true');
+    await expect(pinned).toHaveCount(0);
+    expect(ariaHidden).toEqual([]);
+  });
 
   test('5,000 rows scroll with no long task, flat and grouped', async ({ page }) => {
     // A budget measures the machine as much as the page: under SLOW_MODE's artificial

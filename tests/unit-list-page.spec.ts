@@ -1,7 +1,10 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
+import type { Response } from '@playwright/test';
+
 import { test, expect } from './fixtures/test';
 
+import { ApiHelper } from './fixtures/api-helper';
 import { SpaceListPage } from './fixtures/space-list-page';
 import { TargetListPage } from './fixtures/target-list-page';
 import { UnitListPage } from './fixtures/unit-list-page';
@@ -218,6 +221,93 @@ test.describe('unit list page', () => {
 
     // Clean up: Delete the test unit
     await unitListPage.deleteUnitByName(testUnitName);
+  });
+
+  // The page mirrors its selection into the Functions panel. Removing a Unit in
+  // the panel has to uncheck it on the page too: if it does not, the next poll
+  // that brings a changed Unit list makes the page write its own selection back,
+  // and the removed Unit returns.
+  test('removing a Unit in the Functions panel unchecks it on the page', async ({ page }) => {
+    test.setTimeout(120000);
+    const unitListPage = new UnitListPage(page);
+    const api = new ApiHelper(page);
+    const base = RandomSlugGenerator.randomSlugName();
+    const slugs = [`${base}-one`, `${base}-two`, `${base}-three`];
+    const [kept, removed] = slugs;
+    const created: Array<{ SpaceID?: string; UnitID?: string }> = [];
+
+    for (const slug of slugs) {
+      created.push(
+        await unitListPage.createUnitViaAPI({ unitType: 'basic-deployment', slug }),
+      );
+    }
+    const spaceId = created[0].SpaceID ?? '';
+
+    await unitListPage.searchInGrid(base);
+    const rows = page.getByRole('row').filter({ hasText: base });
+    await expect(rows).toHaveCount(3);
+
+    const isUnitListResponse = (resp: Response) =>
+      new URL(resp.url()).pathname === '/api/unit' && resp.request().method() === 'GET';
+    // A poll keeps the page's Unit list object when nothing changed, so only a
+    // poll that returns a changed list makes the page write its selection again.
+    // Create a Unit without refreshing, wait for the poll that shows it, and then
+    // for the next poll: by the time that one returns, the page's effects for
+    // the first have run.
+    const changeUnitListAndWaitForPolls = async (slug: string, expectedRows: number) => {
+      created.push(
+        await api.createUnit({
+          spaceId,
+          unit: { Slug: slug, ToolchainType: 'Kubernetes/YAML' },
+        }),
+      );
+      await expect(rows).toHaveCount(expectedRows, { timeout: 15000 });
+      await page.waitForResponse(isUnitListResponse, { timeout: 15000 });
+    };
+
+    for (const slug of slugs) {
+      await (await unitListPage.getRowByName(slug)).getByRole('checkbox').check();
+    }
+
+    await unitListPage.openInvokerSidebar();
+    const contextHeader = page.locator('[role="button"]:has-text("Context")');
+    const counter = contextHeader.locator('text=/^\\d+ units?$/');
+    await expect(counter).toHaveText('3 units');
+    // A DOM click: the header's child boxes stop propagation.
+    await contextHeader.evaluate((el) => (el as HTMLElement).click());
+
+    const removeButtons = page.getByRole('button', { name: 'Remove from selection' });
+    await expect(removeButtons).toHaveCount(3);
+    await page
+      .locator('div')
+      .filter({ has: page.getByRole('link', { name: removed, exact: true }) })
+      .filter({ has: removeButtons })
+      .last()
+      .getByRole('button', { name: 'Remove from selection' })
+      .click();
+
+    await expect(counter).toHaveText('2 units');
+    const removedCheckbox = (await unitListPage.getRowByName(removed)).getByRole('checkbox');
+    await expect(removedCheckbox).not.toBeChecked();
+    await expect((await unitListPage.getRowByName(kept)).getByRole('checkbox')).toBeChecked();
+
+    await changeUnitListAndWaitForPolls(`${base}-four`, 4);
+    await expect(counter).toHaveText('2 units');
+    await expect(removedCheckbox).not.toBeChecked();
+
+    // Deselect all, in the panel, clears the page's selection.
+    const checkedRows = rows.getByRole('checkbox', { checked: true });
+    await page.getByLabel('Deselect all units').getByRole('button').click();
+    await expect(counter).toHaveText('0 units');
+    await expect(checkedRows).toHaveCount(0);
+
+    await changeUnitListAndWaitForPolls(`${base}-five`, 5);
+    await expect(counter).toHaveText('0 units');
+    await expect(checkedRows).toHaveCount(0);
+
+    for (const { SpaceID, UnitID } of created) {
+      if (SpaceID && UnitID) await api.deleteUnit(SpaceID, UnitID);
+    }
   });
 
   test.describe('Clone', () => {

@@ -9,10 +9,9 @@ import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
 // ============================================================================
 // Component Release Flow E2E Tests
 //
-// Creates its own release-enabled Space (an OCI-provider Target, backed by a
-// server-hosted worker — no external bridge process required, mirroring
-// test/scripts/test-setup.sh's `cub worker create --is-server-worker` +
-// `cub target create --provider OCI` pattern) via API, then exercises the
+// Creates its own release-enabled Space (an OCI-provider Target, delivered by the
+// server itself, as with `cub target create --provider OCI` in
+// test/scripts/test-setup.sh) via API, then exercises the
 // component view's Release trigger + history UI: publish → history update,
 // and a failed publish surfacing its error.
 // ============================================================================
@@ -336,7 +335,7 @@ test.describe('component release flow', () => {
 // ============================================================================
 // Releases v7 — the height-encoded lane
 //
-// Own release-enabled Space (own worker/target/unit), isolated from the
+// Own release-enabled Space (own target/unit), isolated from the
 // suite above so its release HISTORY is entirely under this file's control:
 // three published releases with a KNOWN field-level diff between each, plus a
 // pending (unpublished) edit, so "what rel-1 introduced", "what rel-2

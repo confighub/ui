@@ -206,7 +206,7 @@ test.describe('view explorer cell actions', () => {
     await openExplorer(page, `/x/view-explorer?view=${viewId}`);
     await valueIn(page, 'alpha', 'Labels.app').click();
     await expect(popover(page)).toBeVisible();
-    await page.keyboard.press('l');
+    await page.keyboard.press('b');
     await expect(popover(page)).toHaveCount(0);
     await page.keyboard.press('t');
     await expect(rows(page)).toHaveCount(3);
@@ -290,7 +290,7 @@ test.describe('view explorer cell actions', () => {
     await expect(header(page, 'Labels.tier')).toHaveAttribute('aria-sort', 'descending');
   });
 
-  test('in List and Board, focus stays in the layout after an action', async ({ page }) => {
+  test('in Board, focus stays in the layout after an action', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openExplorer(page, `/x/view-explorer?view=${viewId}`);
     await expect(rows(page)).toHaveCount(3);
@@ -299,17 +299,6 @@ test.describe('view explorer cell actions', () => {
         (id) => !!document.activeElement?.closest(`[data-testid="${id}"]`),
         testId,
       );
-
-    await page.keyboard.press('l');
-    const listValue = page
-      .getByTestId('vx-list')
-      .locator('[data-vx-value="Labels.tier"]')
-      .first();
-    await listValue.click();
-    await popover(page)
-      .getByRole('menuitem', { name: /Exclude/ })
-      .click();
-    await expect.poll(() => focusIn('vx-list')).toBe(true);
 
     await page.keyboard.press('b');
     const boardValue = page.getByTestId('vx-board').locator('[data-vx-value]').first();

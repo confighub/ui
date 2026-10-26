@@ -47,6 +47,7 @@ import {
 } from '../invoker/types/invoker.types';
 import { extractApiErrorMessage, extractEmbeddedError } from '../invoker/utils/error-handling.utils';
 import { firstInvocationFunction, invocationFunctions } from '@/utility/invocation-functions';
+import { FUNCTIONS_PANEL_MARKER } from './appPanel';
 
 export type ListOrgFunctionsApiResponse = {
   [key: string]: {
@@ -934,7 +935,7 @@ export const InvokerSidebar = ({
   );
 
   return (
-    <SidebarContainer>
+    <SidebarContainer data-testid="invoker-sidebar" {...FUNCTIONS_PANEL_MARKER}>
       {/* Resize Handle - on the left edge of the button bar. Only interactive when open. */}
       {isOpen && (
         <ResizeHandle
@@ -952,6 +953,7 @@ export const InvokerSidebar = ({
             isActive={isOpen}
             onClick={handleFunctionsButtonClick}
             aria-label="Functions"
+            aria-expanded={isOpen}
             data-testid="invoker-functions-button"
           >
             <FunctionsIcon fontSize="small" />

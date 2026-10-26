@@ -20,9 +20,9 @@
  * no role and no name is permanently unmeasurable rather than merely untested.
  * Every section below carries a landmark and a name for that reason.
  *
- * A KNOWN RISK RIDES ON EVERY PROMOTE THIS FILE OFFERS: a promotion gate can
+ * A KNOWN RISK RIDES ON EVERY PROMOTE THIS PAGE OFFERS: a promotion gate can
  * report itself satisfied when a Space has not received the change. Stated in
- * full beside the promote state below, where the affordance is.
+ * full beside the action, in `stage/useStageConfirm.ts`.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -40,29 +40,22 @@ import UpdateOutlinedIcon from '@mui/icons-material/UpdateOutlined';
 
 import { INFO_PEEK_TOOLTIP_SX } from '@/components/info-peek/InfoPeek';
 import { ChangeOrderGateList } from '../x/apps/change-order/ChangeOrderGateList';
-import { gateStateFor, partitionBlockingGates, tallyGates } from '../x/apps/change-order/changeOrderGates';
-import { gatesBlockPromotion } from '../x/apps/change-order/changeOrderFooterModel';
 import { changeOrderCopy, stageDisplayName } from '../x/apps/change-order/changeOrderCopy';
 import { changeOrdersConsoleCopy } from '../x/apps/change-order/changeOrdersConsoleCopy';
-import { changeOrderOwnSpaceReached, promotionTargets } from '../x/apps/change-order/changeOrderStages';
+import { changeOrderOwnSpaceReached } from '../x/apps/change-order/changeOrderStages';
 import { componentSpaceDeepLink } from '../x/apps/change-order/changeOrdersConsoleModel';
 import { unitLinksHref } from '../unit-detail/unitDetailHrefs';
 import type { ConsoleState } from '../x/apps/change-order/changeOrdersConsoleModel';
 import type { ChangeOrderGate, ChangeOrderStage } from '../x/apps/change-order/changeOrderTypes';
 import { TreeDiffSection } from '../x/apps/TreeDiffSection';
 import { ROUTE_COMPONENTS } from '../x/apps/appTypes';
-import { componentTheme } from '../x/apps/componentTheme';
 import type { MergedUnit } from '../x/apps/componentTypes';
-import { ChangeOrderUnitHeader } from '../x/apps/change-order/ChangeOrderUnitHeader';
 import Button from '@mui/material/Button';
 
 import { EndChangeOrderDialog } from '../x/apps/change-order/EndChangeOrderDialog';
 import { hasPromotionPath, changeOrderIntents } from '../x/apps/change-order/changeOrdersConsoleModel';
 import type { ChangeOrderEndIntent } from '../x/apps/change-order/changeOrderRollback';
 import { useEndChangeOrder } from '../x/apps/change-order/useEndChangeOrder';
-import { promoteAnnouncement, useChangeOrderActions } from '../x/apps/change-order/useChangeOrderActions';
-import { PromoteDialog } from './components/PromoteDialog';
-import { InvocationSourceDetails } from './components/InvocationSourceDetails';
 import { ChangeOrderHistory, ChangeOrderLastActivity } from './components/ChangeOrderHistory';
 import { ChangeOrdersConsole } from './ChangeOrdersConsole';
 import {
@@ -73,8 +66,7 @@ import {
   isCompleteStepAbandoned,
   type CompleteStepTone,
 } from './changeOrderCompleteStep';
-import { buildChangeOrderOutcome, carriedResourceKeysOf, partitionShortfall } from './changeOrderOutcome';
-import { cardRepresentativeUnits, cardSpaceLabel, rowRefusals } from './changeOrderCard';
+import { cardRepresentativeUnits, rowRefusals } from './changeOrderCard';
 import { partitionSourceUnitsByChange, useChangeOrderConsoleChanges } from './useChangeOrderConsoleChanges';
 import {
   changeOrderBorder,
@@ -103,11 +95,12 @@ import { imageChangesForSource } from './imageChange';
 import Snackbar from '@mui/material/Snackbar';
 import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
 import { ReviewBand, type ReviewBandAction } from './reviews/ReviewBand';
-import { ReviewChip, ReviewEntryStatus, ReviewGateActions, ReviewGateBlockedLine, ReviewGateSpaces } from './reviews/reviewParts';
+import { ReviewChip, ReviewGateActions, ReviewGateSpaces } from './reviews/reviewParts';
 import type { ChangeOrderGateExtra } from '../x/apps/change-order/ChangeOrderGateList';
 import { recordedToastText, reviewCopy, reviewFeeds, reviewSubject } from './reviews/reviewCopy';
-import { reviewCardStageId, reviewFormStageId, stageChangeLanded } from './reviews/stageReviewInputs';
-import { REVIEW_PANEL_ID, ReviewPanel } from './reviews/ReviewPanel';
+import { AnnounceContext } from './reviews/announceContext';
+import { REVIEW_PANEL_ID } from './reviews/reviewAnchor';
+import { ReviewPanel } from './reviews/ReviewPanel';
 import { ReviewCommentsProvider } from './review-comments/ReviewCommentsProvider';
 import { useReviewDiffComments } from './review-comments/useReviewDiffComments';
 import { ReviewConversation } from './review-comments/ReviewConversation';
@@ -123,16 +116,12 @@ import type {
 import { useChangeOrderReviews, useGateReviews } from './reviews/useStageReviews';
 import { useChangeOrderHistory } from './useChangeOrderHistory';
 import { changeWorkflowHref, changeWorkflowLabel, useChangeWorkflowNames } from './useChangeWorkflowNames';
-import { GateDisclosure } from './components/GateDisclosure';
-import { OutcomeBreakdown } from './components/OutcomeBar';
-import { outcomeSegments } from './components/outcomeMeta';
-import { OutcomeGroupCards, type OutcomeCardContext } from './components/OutcomeGroupCards';
-import { OutcomeUnknownNote } from './components/OutcomeUnknownNote';
-import { OutcomeUnitDiff } from './components/OutcomeUnitDiff';
 import { PassedOver } from './components/PassedOver';
 import { SequenceProblems } from './components/SequenceProblems';
 import { ChangeOrderStageRail } from './components/ChangeOrderStageRail';
 import { completeRailDot, railDot } from './components/railDots';
+import { reviewActionStageId, releaseReviewOf } from './stage/stageReviewModel';
+import { StageSection, type StageSectionHandle } from './stage/StageSection';
 
 /**
  * The header status chip's own tone, per `ConsoleState`.
@@ -593,6 +582,8 @@ export default function ChangeOrdersPage() {
   const addressed = address?.kind !== 'none';
   /** The stage segment, wherever the address form put it. */
   const stageParam = address?.kind === 'found' ? address.stage : undefined;
+  /** The URL names the Complete step — the same `:stage` segment a real stage uses. */
+  const completeSelected = stageParam === COMPLETE_STAGE_ID;
 
   /*
    * A slug-only link that names one ChangeOrder is replaced with its full
@@ -614,8 +605,6 @@ export default function ChangeOrdersPage() {
       ? null
       : `${ROUTE_COMPONENTS}?app=${encodeURIComponent(detail.consoleRow.appName)}`;
 
-  /** The URL names the Complete step — the same `:stage` segment a real stage uses. */
-  const completeSelected = stageParam === COMPLETE_STAGE_ID;
   /** A rail node's address: the URL is the whole selection state. */
   const hrefForStage = useCallback(
     (stageId: string) => changeOrderPath(detail.baseSpaceSlug, detail.slug, stageId),
@@ -649,66 +638,26 @@ export default function ChangeOrdersPage() {
     }
     return detail.stageStates.find((s) => s.stageId === detail.nextStageId);
   }, [detail.stageStates, detail.nextStageId, stageParam]);
-  // An Invoke ChangeOrder's source writes nothing: its panel shows the Invocation that runs
-  // in each stage as it is promoted, and "At the source" what running it changes.
-  const invocationSourceSelected =
-    selectedStage?.verdict === 'source' && detail.invocationSource !== undefined;
-
   /*
-   * REVIEWS: attestation prerequisites on a stage (`reviews/`). The panel is
-   * for the selected stage; the band in the summary card is for the next
-   * stage, which a reader may not have selected. The promote dry run stays
-   * the authority for "satisfied" (`useStageReviews`).
+   * REVIEWS: attestation prerequisites (`reviews/`). The selected stage's card
+   * hosts its own reviews (`StageSection`); the page keeps the Complete step's
+   * Final sign-off and the band in the summary card, which is for the next stage
+   * and may not be the one selected. The promote dry run stays the authority for
+   * "satisfied" (`useStageReviews`).
    */
   const { userInfo } = useUserInfo();
   const coReviews = useChangeOrderReviews(detail, { poll: true });
-  const completeSelectedEarly = stageParam === COMPLETE_STAGE_ID;
-  /**
-   * ONE review panel, on the card of the stage whose change it approves, beside
-   * that change. Once a stage's change has landed in its Spaces, its card reviews
-   * it for every gate that reads those Spaces: its own release gate while it is
-   * to be released, and the next stage's entry gate. Both record the same
-   * Attestations, so they are one review with one form, never two. The first
-   * stage's entry gate reads the ChangeOrder's own Space, which has no card, so it
-   * is reviewed on the first stage. The Complete step has the Final sign-off.
-   * Which card has a gate's form is `reviewFormStageId`, the rule every link to a
-   * review follows too.
-   */
   const stageVerdictOf = useCallback(
     (stageId: string) => detail.stageStates.find((s) => s.stageId === stageId)?.verdict,
     [detail.stageStates],
   );
-  const selectedLanded = stageChangeLanded(selectedStage?.verdict);
-  const sectionGates: ReviewGateRef[] = useMemo(() => {
-    const summaries = Object.values(coReviews.byGateKey);
-    if (completeSelectedEarly) return summaries.filter((g) => g.gate.kind === 'final').map((g) => g.gate);
-    if (selectedStage === undefined) return [];
-    const stageId = selectedStage.stageId;
-    const onCard = summaries.filter((g) => reviewFormStageId(g, stageVerdictOf) === stageId);
-    const ofChange = onCard.filter((g) => g.attestTarget.TargetStage === stageId);
-    if (ofChange.length > 0) {
-      const order = (kind: string) => (kind === 'release' ? 0 : 1);
-      return ofChange.sort((a, b) => order(a.gate.kind) - order(b.gate.kind)).map((g) => g.gate);
-    }
-    return onCard.filter((g) => g.gate.kind === 'entry' && g.attestTarget.TargetStage === undefined).map((g) => g.gate);
-  }, [coReviews.byGateKey, completeSelectedEarly, selectedStage, stageVerdictOf]);
-  const reviews = useGateReviews(detail, sectionGates);
+  /** The Final sign-off, which only the Complete step hosts. */
+  const signOffGates: ReviewGateRef[] = useMemo(
+    () => (completeSelected ? Object.values(coReviews.byGateKey).filter((g) => g.gate.kind === 'final').map((g) => g.gate) : []),
+    [coReviews.byGateKey, completeSelected],
+  );
+  const reviews = useGateReviews(detail, signOffGates);
   const reviewSummary = reviews.summary;
-  /** The selected stage's own entry gate: its gate rows, and its state when it reviews the stage before. */
-  const ownEntrySummary: StageReviewSummary | undefined =
-    selectedStage === undefined ? undefined : coReviews.byGateKey[`entry:${selectedStage.stageId}`];
-  /** Where the own entry gate is reviewed, when that is another stage's card. */
-  const ownEntryReviewedOn =
-    ownEntrySummary === undefined || reviewCardStageId(ownEntrySummary) === selectedStage?.stageId
-      ? undefined
-      : reviewCardStageId(ownEntrySummary);
-  /**
-   * Where the own entry gate's form is now: undefined while the change it reads has not
-   * landed, and then the status says so instead of linking to a card without the form.
-   */
-  const ownEntryFormOn = ownEntryReviewedOn === undefined || ownEntrySummary === undefined ? undefined : reviewFormStageId(ownEntrySummary, stageVerdictOf);
-  /** Before the stage's own change lands, its card says how the review of the stage before stands. */
-  const entryStatusSummary = ownEntryReviewedOn !== undefined && !selectedLanded && !completeSelectedEarly ? ownEntrySummary : undefined;
   /**
    * The band: the first held gate in time order (`bandGate`). With nothing
    * held, the next stage's entry review, so a complete review still shows its
@@ -727,22 +676,7 @@ export default function ChangeOrdersPage() {
   const [toast, setToast] = useState<string | null>(null);
   /** The decision last recorded here, until its toast closes. */
   const [recorded, setRecorded] = useState<{ gateKeys: string[]; subject: string; result: ReviewChoice; refreshed: boolean } | null>(null);
-  // State 'none' = nothing evaluated. The panel still shows a gate with requirements the
-  // server did not evaluate for this viewer: "Not evaluated for you", the decisions, the form.
-  const reviewedStageSelected =
-    reviewSummary !== undefined &&
-    (reviewSummary.state !== 'none' || reviewSummary.requirements.length > 0) &&
-    reviewSummary.gate.kind !== 'final' &&
-    !invocationSourceSelected &&
-    !completeSelectedEarly;
-  const signOffSelected = completeSelectedEarly && reviewSummary !== undefined && reviewSummary.gate.kind === 'final';
-  /** The release dry run refuses on a review requirement (422): the Release button is held, as Promote is on a 409. */
-  const releaseHeldByReview =
-    reviewSummary !== undefined && reviewSummary.requirements.some((r) => r.gate.kind === 'release' && r.evaluated && !r.satisfied);
-  /** The gates a review on this card holds, one summary each, for their blocked lines and chip. */
-  const sectionSummaries = sectionGates.flatMap((gate) => (coReviews.byGateKey[gate.key] === undefined ? [] : [coReviews.byGateKey[gate.key]]));
-  /** This stage's own gates among them (its release, or the first stage's entry): the card's chip follows them. */
-  const ownSectionSummary = sectionSummaries.find((summary) => summary.gate.stageId === selectedStage?.stageId);
+  const signOffSelected = completeSelected && reviewSummary !== undefined && reviewSummary.gate.kind === 'final';
 
   /**
    * The console row, when it has a promotion path. The rail, its pips and the
@@ -788,54 +722,6 @@ export default function ChangeOrdersPage() {
   );
   const completeAbandoned =
     detail.consoleRow !== undefined && isCompleteStepAbandoned(detail.consoleRow);
-  /** The selected stage's name as a reader sees it. Empty when none is selected. */
-  const selectedStageName =
-    selectedStage === undefined
-      ? ''
-      : stageDisplayName(selectedStage.stageId, selectedStage.verdict === 'source');
-
-  const gates = selectedStage?.gates ?? [];
-  /**
-   * The gates of the stage the review's entry gate leads into that are not its
-   * reviews and are not yet satisfied: what still holds that stage when the
-   * reviews are done. With none, completing the review can honestly say the
-   * gate opens (M5); `PromoteReadiness` says the same for the band and the chips.
-   * Undefined when the review counts toward no entry gate.
-   */
-  const sectionEntry = sectionSummaries.find((summary) => summary.gate.kind === 'entry');
-  const sectionEntryStageGates = detail.stageStates.find((s) => s.stageId === sectionEntry?.gate.stageId)?.gates;
-  const otherHoldingGates = useMemo(
-    () =>
-      sectionEntry === undefined
-        ? undefined
-        : (sectionEntryStageGates ?? [])
-            .filter((g) => reviewRequirementOf(g, sectionEntry) === undefined && !(g.evaluated && g.ok))
-            .map((g) => g.name),
-    [sectionEntryStageGates, sectionEntry],
-  );
-  /**
-   * What holds this stage, split by whether anybody checked.
-   *
-   * BOTH HALVES ARE NEEDED TO STATE A CAUSE HONESTLY. `blockingGates` returns
-   * failures and unmade checks mixed in declared order, so the first entry is
-   * whichever happens to come first — and a CEL custom ahead of a failing
-   * `Released` would have this screen quote "not checked" while the real cause
-   * went unmentioned, naming something that was never the reason.
-   */
-  const blocking = partitionBlockingGates(gates);
-  const failedGateCount = blocking.failed.length;
-  /**
-   * Whether this stage may be promoted at all: not when a gate was evaluated
-   * and failed. A gate nobody could evaluate here is left to the server, which
-   * the preview asks.
-   *
-   * The same rule the side pane's footer applies (`gatesBlockPromotion`), so
-   * the two surfaces cannot come to disagree about whether a stage is clear.
-   * The two differ only in what they do with the answer: the footer makes its
-   * buttons inert, and this page refuses the action and says what holds it.
-   */
-  const gatesBlock = gatesBlockPromotion(failedGateCount);
-
   const resolvedSpaceIds = useMemo(
     () => new Set(detail.progress.resolvedSpaceIds ?? []),
     [detail.progress.resolvedSpaceIds],
@@ -863,52 +749,7 @@ export default function ChangeOrdersPage() {
     adoptedEndTagId: detail.adoptedEndTagId,
   });
 
-  /*
-   * ⚠️ THE GATED PROMOTE IS EXERCISED; THE ORDINARY ONE IS NOT.
-   *
-   * The held-stage test in `change-orders-console-promote.spec.ts` drives a held
-   * stage through this page against a live server and asserts that it wrote nothing. Promoting a stage
-   * nothing is holding, and aborting, still reach the real `useChangeOrderActions`
-   * and `useAbortChangeOrder` without ever having been clicked in any environment:
-   * a promote mutates a database shared across many worktrees.
-   *
-   * For those two, "renders and is wired" is the whole claim. A wired
-   * affordance that has never fired is indistinguishable from a working one —
-   * which is the failure this page exists to argue against, and here it sits
-   * under a control that changes production state.
-   *
-   * KNOWN RISK, ACCEPTED DELIBERATELY. A promotion gate can report itself
-   * satisfied when a Space has not received the change: a Unit skipped at
-   * creation carries neither start nor end tag, so promotion passes it over
-   * without error and the propagation walk never holds the Space back on its
-   * account. `State` then reads Resolved and the next stage opens while a Space
-   * never took that part of the change. Inferred from the skip rules and the
-   * propagation derivation — NOT observed, and no execution of it has been
-   * recorded. It needs scope to change after creation, it affects the derived
-   * verdict rather than the write, and it does not touch Abort, which sets
-   * AbortedReason and reads no gate.
-   *
-   * Do not add an affordance that acts on many ChangeOrders at once without
-   * revisiting that first: one person promoting one stage can look at what
-   * happened; a fleet-wide sweep cannot.
-   */
-  const [promoteOpen, setPromoteOpen] = useState(false);
   const [announcement, setAnnouncement] = useState('');
-  /**
-   * The gate bar's own open/closed state, per stage.
-   *
-   * ⚠️ ALWAYS STARTS COLLAPSED, EVEN WHEN HELD. An earlier version of this
-   * comment argued a held stage should open by default, on the reference's
-   * own line "satisfied, it is one line; failing, it is the story and opens
-   * itself" — the reference's actual view B does not do that: every stage's
-   * gate list starts collapsed regardless of state, in the screenshot this
-   * page is built against. Overruled on that measurement rather than the
-   * argument, which is why the argument is kept here rather than deleted:
-   * `undefined` still means "no manual override yet," it just now resolves
-   * to closed instead of to `held`, so a reader who wants the story opens it
-   * themselves rather than having it opened for them.
-   */
-  const [gateOverride, setGateOverride] = useState<Record<string, boolean>>({});
   /** The "Passed over" list's own disclosure — one switch, closed by default: it can list every Unit in the Space and is not what a reader opens this screen to see first. */
   const [skippedExpanded, setSkippedExpanded] = useState(false);
   // Every diff on the page (the source's and every group card's) shares one set of columns.
@@ -1019,8 +860,8 @@ export default function ChangeOrdersPage() {
     return { changes: changeCount, units: unitCount };
   }, [changes.sourceSpaceGroups.length, changes.sourceUnits, changedSourceUnits, changes.sourceGroupsByUnitId]);
   /**
-   * The "Full diff" disclosure, `undefined` meaning "no manual override yet" —
-   * the same idiom as `gateOverride`. Shut by default only when the change is
+   * The "Full diff" disclosure, `undefined` meaning "no manual override yet",
+   * so the default can depend on what is shown. Shut by default only when the change is
    * images and nothing else, which the hero above already says in full; open
    * whenever there is anything the hero does not show, including while it
    * cannot tell (an unreadable diff is never read as "images only").
@@ -1031,13 +872,6 @@ export default function ChangeOrdersPage() {
   );
   const fullDiffOpen = fullDiffOverride ?? fullDiffDefaultOpen;
   const toggleFullDiff = useCallback(() => setFullDiffOverride(!fullDiffOpen), [fullDiffOpen]);
-  /**
-   * The unchanged group's own disclosure, `undefined` meaning "no manual
-   * override yet" — the same idiom as `gateOverride` above, and for the same
-   * reason: the default has to be able to depend on what is being shown.
-   * `partitionSourceUnitsByChange` decides that default, so it is testable
-   * without the page.
-   */
   /*
    * Review comments on the diffs: every comment names this ChangeOrder, and each is anchored to
    * the Revision its Unit's diff is read at (the end of the change at the source, the head a
@@ -1052,7 +886,7 @@ export default function ChangeOrdersPage() {
     },
     [changes.spaceIdByUnitId, changes.spaceNameBySpaceId],
   );
-  // The Units an outcome card's one row stands for, by the row they are on: their comments show there too.
+  // The Units a stage diff's one row stands for, by the row they are on: their comments show there too.
   const rowKeyByUnitId = changes.matrix?.rowKeyByUnitId;
   const unitIdsByRowKey = useMemo(() => {
     const index = new Map<string, string[]>();
@@ -1137,36 +971,6 @@ export default function ChangeOrdersPage() {
     ],
   );
   /**
-   * Every outcome-group card's open/closed state, ONE switch for all of
-   * them — expanding or collapsing any card does the same to every other
-   * card, on this stage and any other. User instruction, given after
-   * watching cards fall out of sync with each other: "if I expand/collapse
-   * that section in one please expand/collapse it in all of them." A
-   * per-card Record used to be the state here, keyed `${stageId}:${kind}`;
-   * that was the deliberate design until this override. Always starts
-   * collapsed, same rule as the gate bar above — a reader opens a card to
-   * read it, not by default.
-   */
-  const [groupsExpanded, setGroupsExpanded] = useState(false);
-  /**
-   * Each outcome card's own "Unchanged" disclosure, `undefined` per card
-   * meaning "no manual override yet" — the same idiom as `gateOverride` and as
-   * the source list's own override, and for the same reason: the default
-   * depends on what the card holds.
-   *
-   * ⚠️ KEYED PER CARD, deliberately unlike `groupsExpanded` above. That switch
-   * is shared across cards on a direct user instruction about opening a CARD;
-   * this one is about one card's tail of already-matching resources, and
-   * sharing it would make opening one card's tail open every other card's too.
-   */
-
-  const actions = useChangeOrderActions({
-    changeOrderId: detail.changeOrderId,
-    baseSpaceId: detail.baseSpaceId,
-    onSettled: detail.refetch,
-  });
-
-  /**
    * THE TWO END CONTROLS, ON THE SAME RULE AS EVERY OTHER SURFACE.
    *
    * `changeOrderIntents` is the rule; this page reads it and adds nothing, so the
@@ -1219,79 +1023,6 @@ export default function ChangeOrdersPage() {
   );
 
   /**
-   * The Spaces this stage's actions WRITE INTO — its membership minus the Space
-   * the promotion passes over (`promotionTargets`).
-   *
-   * Every consumer below is a write or a statement about one: the promote, the
-   * release, the retried upgrade leg, the count the confirmation dialog states,
-   * and whether any of them could publish at all. Stage MEMBERSHIP is a
-   * different question and is read off `detail.sequence` where it is asked.
-   */
-  const stageSpaceIds = useMemo(
-    () =>
-      promotionTargets(
-        detail.sequence.stages.find((st) => st.id === selectedStage?.stageId)?.spaceIds ?? [],
-        detail.skippedSpaceId,
-      ),
-    [detail.sequence.stages, selectedStage?.stageId, detail.skippedSpaceId],
-  );
-  /**
-   * Whether ANY variant of this stage can even publish. A Space with no
-   * `releaseTargetId` can never be released — `changeOrderGates.ts`'s own
-   * `releasedGate` reads this exact field for the same reason on the PREVIOUS
-   * stage's side of a gate check; this is the same fact asked about the stage
-   * being promoted INTO, to decide whether offering "release" here is a real
-   * choice or a button with nothing behind it.
-   */
-  const stageHasTargets = useMemo(
-    () =>
-      stageSpaceIds.some(
-        (id) => detail.scopedSpaces?.some((s) => s.spaceId === id && s.releaseTargetId !== undefined) ?? false,
-      ),
-    [stageSpaceIds, detail.scopedSpaces],
-  );
-
-  const confirmPromote = useCallback(
-    ({ release }: { release: boolean }) => {
-      const stageId = selectedStage?.stageId ?? '';
-      /*
-       * The gate is enforced HERE as well as in the dialog, and deliberately.
-       * The dialog decides what to offer; this decides what may be written. A
-       * promote past a held gate is the failure this whole path exists to
-       * prevent, so it is refused at the point of action rather than only at
-       * the point of asking.
-       */
-      if (gatesBlock) {
-        setAnnouncement(`${stageId} is held by a gate, so it was not promoted.`);
-        return;
-      }
-      setPromoteOpen(false);
-      setAnnouncement(`Promoting to ${stageId}.`);
-      const run = release ? actions.promoteAndRelease : actions.promote;
-      void run(stageSpaceIds, { failedGateCount }).then((r) => {
-        // Branch on the returned result, never on message text: the hook already
-        // inspects every item of a bulk 200/207, which `.unwrap()` does not.
-        // `promoteAnnouncement` owns which of those results says what, so the
-        // wiring is one tested rule rather than a chain of ternaries per screen.
-        setAnnouncement(promoteAnnouncement(stageId, r));
-      });
-    },
-    [actions, selectedStage?.stageId, stageSpaceIds, gatesBlock, failedGateCount],
-  );
-
-  /*
-   * The resources the change CARRIES, read at the base where it was authored.
-   *
-   * Stage-invariant by construction, which is what makes it worth computing
-   * separately: a stage row's own diffs go empty as soon as a variant already
-   * holds the target value, and "the promote writes nothing here" must not be
-   * read as "the promote does not involve this resource".
-   *
-   * Unknown for a fan-out ChangeOrder: its source Units are other resources
-   * than the ones it writes — a registry fact, not the Deployment taking the
-   * image — so they say nothing about which rows of a stage it carries.
-   */
-  /**
    * The band's call to action. Scrolls to the review panel (or the Promote
    * button) and, for "Review now", focuses the Approve choice. The band is for
    * the next stage, so it selects that stage first when another one is open.
@@ -1337,16 +1068,12 @@ export default function ChangeOrdersPage() {
     [selectedStage?.stageId, navigate, detail.baseSpaceSlug, detail.slug],
   );
   /**
-   * The step whose card has the band's review form: the stage whose change it reads
-   * (the stage before, for an entry gate), or Complete for the sign-off. Undefined while
-   * that change has not landed: the band then offers no way to a review.
+   * The step whose card has the band's review form, by the rule every card follows
+   * (`reviewActionStageId`), so "Review now" lands where the form is. Undefined while
+   * the change the review reads has not landed: the band then offers no way to a review.
    */
   const bandFormStep =
-    bandSummary === undefined
-      ? undefined
-      : bandSummary.gate.kind === 'final'
-        ? COMPLETE_STAGE_ID
-        : reviewFormStageId(bandSummary, stageVerdictOf);
+    bandSummary === undefined ? undefined : reviewActionStageId(bandSummary, stageVerdictOf, releaseReviewOf(coReviews.byGateKey));
   /** Promote and Release are on the card of the stage the gate holds, not where it is reviewed. */
   const bandGateStep = bandSummary?.gate.kind === 'final' ? COMPLETE_STAGE_ID : bandSummary?.gate.stageId;
   const onReviewBandAction = useCallback(
@@ -1390,149 +1117,14 @@ export default function ChangeOrdersPage() {
           recorded.refreshed,
         );
 
-  const carriedResourceKeys = useMemo(
-    () =>
-      detail.fanOutSource !== undefined
-        ? null
-        : carriedResourceKeysOf(
-            changes.sourceGroupsByUnitId.values(),
-            changes.sourceCreatedResourceKeys,
-          ),
-    [detail.fanOutSource, changes.sourceGroupsByUnitId, changes.sourceCreatedResourceKeys],
-  );
-  const outcome = useMemo(
-    () => buildChangeOrderOutcome(changes.matrix, carriedResourceKeys),
-    [changes.matrix, carriedResourceKeys],
-  );
-  /*
-   * Resources the grid holds no row for.
-   *
-   * `unresolvedGroupCount` ONLY. `duplicateIdentityCount` counts resources that
-   * shared an identity with a sibling and were given a disambiguated row — they
-   * are in the comparison, on their own row, so summing them in made this
-   * sentence false exactly when it fired.
-   */
-  const omittedResourceCount = changes.matrix?.unresolvedGroupCount ?? 0;
-  /*
-   * Resources the grid could not line up across the variants, as against
-   * resources it lined up and found to differ. A declined comparison rendered
-   * as two separate rows looks exactly like a real difference, and that is the
-   * reading a reader would take without being told.
-   */
-  const undecidedResourceCount = changes.matrix?.mergeDeclinedCount ?? 0;
-  /*
-   * The bar sits above a promote decision, so the one number that must never
-   * drift is checked rather than assumed. Non-zero is a defect in the
-   * partition, and it says so on screen rather than quietly rendering short.
-   * Checked against the FULL `outcome`, unknown included — the invariant is
-   * about every variant being accounted for somewhere, not just the ones the
-   * bar chooses to draw.
-   */
-  const shortfall = partitionShortfall(outcome);
-  /*
-   * `unknown` is not a fourth peer of `same`/`differs`/`adds` — it is not a
-   * comparison result at all, it is the absence of one ("we looked and it
-   * matches" vs "we could not look" — the file header's own distinction).
-   * Giving it a bar segment and a group card presented it as though the
-   * promotion had somehow written a fourth kind of outcome, which is not a
-   * claim the data supports. It is never folded into `same` either, so it
-   * still has to be said — just not as a peer: a plain count, separate from
-   * the comparison the bar and cards below actually draw.
-   */
-  const comparableGroups = useMemo(() => outcome.groups.filter((g) => g.kind !== 'unknown'), [outcome]);
-  const unknownGroup = outcome.groups.find((g) => g.kind === 'unknown');
-  const comparableSegments = useMemo(() => outcomeSegments(comparableGroups), [comparableGroups]);
-  const unknownVariants = useMemo(
-    () => (unknownGroup?.spaceIds ?? []).map((spaceId, i) => ({ spaceId, label: unknownGroup?.labels[i] ?? '' })),
-    [unknownGroup],
-  );
-  /**
-   * An unknown variant's chip opens that variant on the Components graph,
-   * not this ChangeOrder at it: the reader asked to look at that Space. Plain
-   * when there is no Component to build the link from.
-   */
-  const unknownVariantHref = useCallback(
-    (spaceId: string) => componentSpaceDeepLink(detail.componentName, spaceId),
-    [detail.componentName],
-  );
-  /**
-   * One resource row of an outcome card, rendered identically above the
-   * blocked block and inside it: the density comes from the card being shut,
-   * not from telling the reader less about any one resource.
-   */
-  const renderRepUnit = useCallback(
-    (unit: MergedUnit, card: OutcomeCardContext) => {
-      const g = changes.groupsByUnitId.get(unit.unitId);
-      /*
-       * The card's Space by its `Variant` label, the name it has inside its
-       * Component; the slug underneath reads as plumbing.
-       */
-      const repVariantLabel = cardSpaceLabel(card.representativeSpaceId, detail.scopedSpaces, changes.spaceNameBySpaceId);
-      const fieldDiffs = g?.fieldDiffs ?? [];
-      const rowKey = rowKeyByUnitId?.get(unit.unitId);
-      const memberUnitIds =
-        rowKey === undefined
-          ? undefined
-          : (unitIdsByRowKey.get(rowKey) ?? []).filter((unitId) => {
-              const spaceId = changes.spaceIdByUnitId.get(unitId);
-              return spaceId !== undefined && card.group.spaceIds.includes(spaceId);
-            });
-      return (
-        <Box key={unit.unitId}>
-          <ChangeOrderUnitHeader
-            unitId={unit.unitId}
-            spaceId={unit.spaceId}
-            slug={unit.slug}
-            resourceKind={g?.resourceKind}
-            spaceName={repVariantLabel}
-            written={changes.writtenUnitIds.has(unit.unitId)}
-            undetermined={changes.undeterminedUnitIds.has(unit.unitId)}
-            unchanged={fieldDiffs.length === 0}
-            spaceHref={componentSpaceDeepLink(detail.componentName, unit.spaceId) ?? undefined}
-            // A promotion reaches a stage's resource over the Links from it.
-            linksHref={unitLinksHrefFor(unit, 'from')}
-          />
-          {/*
-            The server's diff, resource by resource, through `ConfigDiffView`, with
-            what the variant keeps drawn as rows in it. Can genuinely be empty: a
-            `same` group's members already hold the value being promoted. That is
-            its own honest answer, said instead of a blank tree.
-          */}
-          <OutcomeUnitDiff
-            unitId={unit.unitId}
-            group={g}
-            columns={diffColumns}
-            fallbackColumnStyle={stableDiffColumnStyle}
-            keyPrefix={`change-order-group-${card.groupKey}`}
-            comments={diffCommentsFor({ unitId: unit.unitId, spaceId: unit.spaceId, memberUnitIds })}
-            empty={
-              <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, padding: '4px 12px 10px' }}>
-                No fields differ here.
-              </Box>
-            }
-          />
-        </Box>
-      );
-    },
-    [
-      changes.groupsByUnitId,
-      changes.spaceNameBySpaceId,
-      changes.writtenUnitIds,
-      changes.undeterminedUnitIds,
-      detail.componentName,
-      detail.scopedSpaces,
-      unitLinksHrefFor,
-      stableDiffColumnStyle,
-      diffColumns,
-      diffCommentsFor,
-      rowKeyByUnitId,
-      unitIdsByRowKey,
-      changes.spaceIdByUnitId,
-    ],
-  );
+  /** Opens the stage card's Full diff, for a review comment whose row is inside it. */
+  const stageRef = useRef<StageSectionHandle>(null);
+  const revealStageDiff = useCallback(() => stageRef.current?.revealDiff(), []);
 
   return (
     <ReviewCommentsProvider reviews={reviewComments} revisionNumByUnitId={changes.reviewRevisionNumByUnitId} variantNameOf={reviewVariantNameOf}>
+    {/* Components deep in the page announce through the one live region below. */}
+    <AnnounceContext.Provider value={setAnnouncement}>
     <Box
       id={CHANGE_ORDERS_ROOT_ID}
       sx={{
@@ -1560,6 +1152,8 @@ export default function ChangeOrdersPage() {
          * their own width rules.
          */
         flex: 1,
+        // A flex item may otherwise grow to its widest content and widen every card in it.
+        minWidth: 0,
         /*
           LINE HEIGHT, SET ONCE AT THE ROOT. The contract never uses `normal`,
           and leaving it unset is what put most of this page's type roles
@@ -1617,47 +1211,10 @@ export default function ChangeOrdersPage() {
       </Box>
 
       {/*
-        Both dialogs are mounted at the root and portal to `document.body`, so a
-        fidelity probe scoped to this page's root will not see them unless it is
-        given the portal container as a second selector. That is a measurement
-        obligation, not a reason to render them somewhere they do not belong.
+        The dialog is mounted at the root and portals to `document.body`, so a
+        fidelity probe scoped to this page's root will not see it unless it is
+        given the portal container as a second selector.
       */}
-      <PromoteDialog
-        open={promoteOpen}
-        stageName={selectedStageName}
-        targetCount={stageSpaceIds.length}
-        /*
-          The DRY RUN's own reach, not the diff grid's. A promotion plans on the
-          server, so what it would touch is a question only the server answers;
-          the grid answers a different one (what the change carries) and reading
-          it here would state a coverage nothing checked.
-        */
-        previewedCount={actions.promotePreview.reachedSpaceCount}
-        canRelease={stageHasTargets}
-        /*
-          The SERVER's gates where a dry run reported them, and this page's own
-          reading otherwise — which is the held case, since a stage held by a
-          gate that failed is not previewed at all. The page's reading is the richer one: it names how
-          many checks failed, how many were never made, and the principal cause.
-        */
-        blockedReason={
-          actions.promotePreview.gatesHolding ??
-          (gatesBlock
-            ? changeOrderCopy.blockedBy(
-                blocking.failed.length,
-                blocking.notEvaluated.length,
-                blocking.principal?.reason ?? changeOrderCopy.promoteHeld.generic,
-              )
-            : null)
-        }
-        refusedReason={actions.promotePreview.error}
-        busy={actions.busy}
-        onCancel={() => {
-          setPromoteOpen(false);
-          actions.clearPreview();
-        }}
-        onConfirm={confirmPromote}
-      />
       <EndChangeOrderDialog {...endChangeOrder.dialogProps} />
       {/* The review toast: what a recorded decision did. The live region above says the same. */}
       <Snackbar
@@ -2305,462 +1862,29 @@ export default function ChangeOrdersPage() {
           </Box>
 
           {selectedStage ? (
-            <Box
-              component="section"
-              role="region"
-              aria-label={`Stage ${selectedStageName}`}
-              sx={{
-                /* Same `.detail` card treatment; overflow hidden so the sunk
-                   head band's own corners don't square off past the card's. */
-                marginTop: '20px',
-                background: changeOrderSurface.card,
-                border: `1px solid ${changeOrderBorder.default}`,
-                borderRadius: `${changeOrderCardTokens.radius}px`,
-                boxShadow: changeOrderCardTokens.shadow,
-                // `clip`, not `hidden`: `hidden` makes a scroll container, and
-                // the sticky review panel inside would then never stick.
-                overflow: 'clip',
+            <StageSection
+              ref={stageRef}
+              detail={detail}
+              stage={selectedStage}
+              changes={changes}
+              coReviews={coReviews}
+              history={history}
+              workflow={{ href: workflowHref, label: changeWorkflowLabel(workflowId, workflowNames) }}
+              hrefForStage={hrefForStage}
+              hasComplete={completeStage !== null}
+              diffDeps={{
+                unitLinksHrefFor,
+                diffColumns,
+                fallbackColumnStyle: stableDiffColumnStyle,
+                diffCommentsFor,
+                unitIdsByRowKey,
               }}
-            >
-              <Box
-                sx={{
-                  /* `.detail-head`: the sunk header band every card in the
-                     design uses to separate its title row from its body. */
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  flexWrap: 'wrap',
-                  padding: '14px 20px',
-                  background: changeOrderSurface.sunk,
-                  borderBottom: `1px solid ${changeOrderBorder.default}`,
-                }}
-              >
-                <Box
-                  component="h2"
-                  sx={{
-                    fontSize: changeOrderType.size.heading,
-                    lineHeight: changeOrderType.lineHeight.heading,
-                    fontWeight: changeOrderType.weight.semibold,
-                    fontFamily: changeOrderFontMono,
-                    letterSpacing: '-0.01em',
-                    margin: 0,
-                  }}
-                >
-                  {selectedStageName}
-                </Box>
-                {/*
-                  The chip follows this stage's own review gates: its release, the first
-                  stage's entry over the own Space, or (before its change lands) its entry
-                  gate over the stage before. A review here of the next stage's entry gate
-                  is not this stage's state, so the stage keeps its own label then.
-                */}
-                {reviewedStageSelected && ownSectionSummary !== undefined ? (
-                  <ReviewStageChip summary={ownSectionSummary} readiness={readinessOf(ownSectionSummary)} />
-                ) : entryStatusSummary !== undefined ? (
-                  <ReviewStageChip summary={entryStatusSummary} readiness={readinessOf(entryStatusSummary)} />
-                ) : (
-                  <StateChip label={selectedStage.label} tone={changeOrderInk.muted} />
-                )}
-                {reviewedStageSelected || entryStatusSummary !== undefined ? (
-                  <Box
-                    component="span"
-                    data-testid="review-stage-spaces"
-                    sx={{ marginLeft: 'auto', fontSize: changeOrderType.size.body, color: changeOrderInk.subtle }}
-                  >
-                    {reviewedStageSelected ? reviewCopy.stage.reviewedIn : reviewCopy.stage.evaluatedOver}{' '}
-                    <Box component="span" sx={{ fontFamily: changeOrderFontMono, color: changeOrderInk.muted }}>
-                      {(reviewedStageSelected ? reviewSummary : entryStatusSummary)?.gateSpaces.map((space) => space.spaceSlug).join(', ')}
-                    </Box>
-                  </Box>
-                ) : null}
-              </Box>
-
-              {/*
-                TWO COLUMNS WHEN THE STAGE HAS REVIEWS: the stage content on the
-                left, unchanged, and the review panel on the right, sticky. One
-                column under 1180px, with the panel below and not sticky.
-              */}
-              <Box
-                sx={
-                  reviewedStageSelected
-                    ? {
-                        display: 'grid',
-                        gridTemplateColumns: 'minmax(0,1fr) 384px',
-                        alignItems: 'start',
-                        '@media (max-width: 1179.98px)': { gridTemplateColumns: 'minmax(0,1fr)' },
-                      }
-                    : undefined
-                }
-              >
-              <Box sx={{ padding: '18px 20px 22px', minWidth: 0 }}>
-              {gates.length > 0 ? (() => {
-                // Same shared derivation the connector pill and the per-component
-                // side pane's gates bar use (`changeOrderGates.ts`), so this summary
-                // and those surfaces can never disagree about what holds a stage.
-                // `held` and `unknown` are different claims and draw differently:
-                // one is a refusal somebody issued, the other a check nobody made.
-                const tally = tallyGates(gates);
-                const gateState = gateStateFor(gates);
-                /*
-                 * Open by default whenever the stage is not clear — the gate
-                 * list IS the explanation of why, so a reader should not have to
-                 * click to see it. `gateOverride` still wins once they have
-                 * touched the toggle themselves, in either direction.
-                 */
-                const expanded = gateOverride[selectedStage.stageId] ?? gateState !== 'open';
-                return (
-                  <GateDisclosure
-                    state={gateState}
-                    summary={
-                      <>
-                        {tally.satisfied} of {tally.total} satisfied
-                      </>
-                    }
-                    bodyId={`gate-list-${selectedStage.stageId}`}
-                    expanded={expanded}
-                    onToggle={() => setGateOverride((prev) => ({ ...prev, [selectedStage.stageId]: !expanded }))}
-                  >
-                    {/*
-                      The rows are this stage's own entry gates, so their review
-                      progress is its own entry gate's, whichever card reviews it.
-                    */}
-                    <ChangeOrderGateList
-                      stageId={selectedStage.stageId}
-                      gates={ownEntrySummary !== undefined ? reviewGatesForList(gates, ownEntrySummary) : gates}
-                      isSource={selectedStage.verdict === 'source'}
-                      extras={
-                        ownEntrySummary === undefined
-                          ? undefined
-                          : ownEntryReviewedOn === undefined
-                            ? reviewGateExtras(gates, ownEntrySummary, () => goToReview('panel', undefined))
-                            : reviewGateExtras(
-                                gates,
-                                ownEntrySummary,
-                                ownEntryFormOn === undefined ? undefined : () => goToReview('review', ownEntryFormOn),
-                                reviewCopy.stage.reviewIn(reviewSubject(ownEntrySummary).name),
-                                reviewSubject(ownEntrySummary).name,
-                              )
-                      }
-                    />
-                  </GateDisclosure>
-                );
-              })() : null}
-              {reviewedStageSelected
-                ? sectionSummaries.map((summary) => <ReviewGateBlockedLine key={summary.gate.key} summary={summary} />)
-                : null}
-              {entryStatusSummary !== undefined && ownEntryReviewedOn !== undefined ? (
-                <>
-                  <ReviewGateBlockedLine
-                    summary={entryStatusSummary}
-                    onGoToSubject={ownEntryFormOn === undefined ? undefined : () => goToReview('panel', ownEntryFormOn)}
-                  />
-                  <ReviewEntryStatus
-                    summary={entryStatusSummary}
-                    onGo={ownEntryFormOn === undefined ? undefined : () => goToReview('panel', ownEntryFormOn)}
-                  />
-                </>
-              ) : null}
-
-              <Box sx={{ marginTop: '12px' }}>
-                {/*
-                  Its OWN row, above the buttons — not squeezed into the same
-                  flex row as them. At this card's actual width that row had
-                  three things fighting for space (two buttons plus a
-                  multi-line sentence) and every one of them wrapped, "to"
-                  included, into something unreadable. A row of its own gets
-                  the sentence its full width, and the buttons below get
-                  theirs.
-                */}
-                {actions.lastResult !== null && !actions.lastResult.ok ? (
-                  /*
-                    NAMED, because it is the only place a promotion says what
-                    went wrong. A 207 resolves without throwing and a Space the
-                    promotion passed over carries no error field at all, so this
-                    sentence is the whole of what stands between a reader and a
-                    silent half-promotion — and a test that cannot address it
-                    cannot check that it appeared.
-                  */
-                  <Box
-                    data-testid="change-order-foot-error"
-                    sx={{ fontSize: changeOrderType.size.body, color: changeOrderStatus.danger, marginBottom: '8px' }}
-                  >
-                    {actions.lastResult.message}
-                  </Box>
-                ) : null}
-                <Box sx={{ display: 'flex', gap: `${changeOrderShape.gap.md}px`, flexWrap: 'wrap' }}>
-                {/*
-                  Rendered and disabled rather than hidden where the stage is
-                  the source or already released: the affordance exists in
-                  this design, and hiding it would misreport the screen as one
-                  that never offers the action.
-
-                  `verdict === 'promoted'` gets a DIFFERENT button, not this
-                  one disabled — that verdict means the stage already took the
-                  change but was promoted alone (`actions.promote`, not
-                  `promoteAndRelease`), which is real, unfinished work still
-                  waiting on this screen, not a reason to go inert. Re-running
-                  Promote there would re-clone/re-upgrade what already landed
-                  for no reason; Release is the one action actually left —
-                  ONLY when `stageHasTargets`, though: a stage none of whose
-                  variants can ever publish never has that unfinished work.
-                  `promoted` is its terminal state, same as `released` is for
-                  a stage that can — so it falls through to the disabled
-                  branch below instead of offering a release with nothing
-                  behind it.
-                */}
-                {selectedStage.verdict === 'promoted' && stageHasTargets ? (
-                  <Button
-                    size="small"
-                    variant="contained"
-                    sx={{
-                      backgroundColor: componentTheme.done,
-                      '&:hover': { backgroundColor: componentTheme.doneEmphasis },
-                    }}
-                    /*
-                      Held by a release review the same way Promote is held by
-                      an entry gate: the release dry run refuses (422) on a
-                      review requirement, and the line above says why. When the
-                      UI cannot read the verdict, the button stays enabled.
-                    */
-                    disabled={actions.busy || detail.abortedReason !== '' || releaseHeldByReview}
-                    data-release-held={releaseHeldByReview ? 'true' : 'false'}
-                    onClick={() => {
-                      setAnnouncement(`Releasing ${selectedStageName}.`);
-                      void actions.release(stageSpaceIds).then((r) => {
-                        setAnnouncement(
-                          r.ok ? `Released ${selectedStageName}.` : r.message,
-                        );
-                      });
-                    }}
-                    data-release-stage={selectedStage.stageId}
-                  >
-                    Release to {selectedStageName}
-                  </Button>
-                ) : (
-                  <Button
-                    size="small"
-                    variant="contained"
-                    /*
-                      NOT the MUI default primary. `theme.palette.primary.main`
-                      is ConfigHub's own brand rust — correct for the navbar,
-                      which the overnight scope keeps as-is, and wrong for this
-                      page. The reference's blue accent has since been replaced
-                      by the same purple the Components view uses for its one
-                      primary action (`componentTheme.done`/`doneEmphasis`),
-                      matching `PromoteDialog.tsx`'s own confirm button so the
-                      two surfaces that trigger the same action agree on its
-                      colour.
-                    */
-                    sx={{
-                      backgroundColor: componentTheme.done,
-                      '&:hover': { backgroundColor: componentTheme.doneEmphasis },
-                    }}
-                    disabled={
-                      actions.busy
-                      || detail.abortedReason !== ''
-                      || selectedStage.verdict === 'source'
-                      || selectedStage.verdict === 'released'
-                      // A targetless stage that already took the change has
-                      // nothing left to do — `promoted` is as far as it ever
-                      // goes, same reason `released` disables the button above.
-                      || (selectedStage.verdict === 'promoted' && !stageHasTargets)
-                    }
-                    onClick={() => {
-                      setPromoteOpen(true);
-                      /*
-                        Plan it before confirming it. The dialog states what
-                        this promotion reaches, and the plan it comes back with
-                        is sent with the promotion itself, so what was previewed
-                        is what gets written or nothing is.
-
-                        A stage held by a gate that failed is not previewed: the
-                        gates below are what its dialog reports. One whose gates
-                        were only not evaluated is, and the server's verdict on
-                        them comes back with the preview.
-                      */
-                      void actions.preview(stageSpaceIds, { failedGateCount });
-                    }}
-                    data-promote-stage={selectedStage.stageId}
-                    /*
-                      The gate state is on the control, not in it: the button
-                      still opens the dialog, because a reader clicking it is
-                      owed the reason the stage is held rather than a control
-                      that does nothing. The dialog offers no way to proceed,
-                      and `confirmPromote` refuses regardless.
-                    */
-                    data-promote-gated={gatesBlock ? 'true' : 'false'}
-                  >
-                    Promote to {selectedStageName}
-                  </Button>
-                )}
-                </Box>
-              </Box>
-              <Box
-                component="section"
-                role="region"
-                aria-label={invocationSourceSelected ? changeOrderCopy.invocationSource.selectedHeading : 'What this promotion writes'}
-                sx={{ marginTop: '18px' }}
-              >
-                <Box
-                  component="h3"
-                  sx={{
-                    fontSize: changeOrderType.size.prose,
-                    lineHeight: changeOrderType.lineHeight.heading,
-                    fontWeight: changeOrderType.weight.semibold,
-                    margin: '0 0 10px',
-                  }}
-                >
-                  {invocationSourceSelected ? changeOrderCopy.invocationSource.selectedHeading : 'What this promotion writes'}
-                </Box>
-                {unknownGroup !== undefined ? (
-                  <OutcomeUnknownNote variants={unknownVariants} hrefFor={unknownVariantHref} />
-                ) : null}
-                {invocationSourceSelected ? null : comparableGroups.length < 2 ? (
-                  /*
-                   * NO BAR FOR FEWER THAN TWO COMPARABLE OUTCOMES.
-                   *
-                   * The bar's job is proportion — how a stage came out several
-                   * ways at once. With one comparable group there is no
-                   * proportion to show, and a full-width single segment above
-                   * a card that already says "N variants · Same change" is the
-                   * same claim twice. The card carries it.
-                   *
-                   * `outcome.tooFewToCompare` names a DIFFERENT reason for the
-                   * same absence: genuinely fewer than two variants exist at
-                   * all. Filtering `unknown` out can also leave fewer than two
-                   * comparable groups while several variants really do exist
-                   * — the note above already said so, and "one variant in
-                   * this stage" would be false for those, not just redundant.
-                   */
-                  outcome.tooFewToCompare ? (
-                    <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, marginBottom: '10px' }}>
-                      One variant in this stage, so there is nothing to compare it against.
-                    </Box>
-                  ) : null
-                ) : (
-                  <OutcomeBreakdown segments={comparableSegments} variantCount={outcome.variantCount}>
-                    {/*
-                      A partial stage's counts are a FLOOR, not the stage's
-                      total. Presenting one Space's contents as the whole stage
-                      is the failure `contributingSpaceCount` exists to prevent,
-                      so the qualification is not decoration.
-                    */}
-                    {/*
-                      A resource this grid could not place is a resource nobody
-                      compared, and the outcome above says nothing about it. The
-                      counts existed but reached no reader, which made them a
-                      record of a decision rather than a report of one — so the
-                      grid could drop a resource and still read as a full answer.
-                    */}
-                    {omittedResourceCount > 0 ? (
-                      <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.muted, marginTop: '6px' }}>
-                        {omittedResourceCount === 1
-                          ? '1 resource is not in this comparison, so the outcome above does not cover it.'
-                          : `${omittedResourceCount} resources are not in this comparison, so the outcome above does not cover them.`}
-                      </Box>
-                    ) : null}
-                    {undecidedResourceCount > 0 ? (
-                      <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.muted, marginTop: '6px' }}>
-                        {undecidedResourceCount === 1
-                          ? '1 resource is held under more than one namespace in a Space, so the variants could not be compared for it.'
-                          : `${undecidedResourceCount} resources are held under more than one namespace in a Space, so the variants could not be compared for them.`}
-                      </Box>
-                    ) : null}
-                    {outcome.partial ? (
-                      <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.muted, marginTop: '6px' }}>
-                        Some Spaces of this stage hold no resources yet, so these counts are a floor.
-                      </Box>
-                    ) : null}
-                    {shortfall !== 0 ? (
-                      <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderStatus.danger, marginTop: '6px' }}>
-                        Segments do not account for every variant ({shortfall} unaccounted). This is
-                        a defect in the grouping, not a state of the ChangeOrder.
-                      </Box>
-                    ) : null}
-                  </OutcomeBreakdown>
-                )}
-                {invocationSourceSelected && detail.invocationSource !== undefined ? (
-                  <InvocationSourceDetails source={detail.invocationSource} />
-                ) : changes.isLoading ? (
-                  <Box sx={{ fontSize: changeOrderType.size.prose, color: changeOrderInk.muted }}>
-                    Working out what this promotion writes…
-                  </Box>
-                ) : changes.units.length === 0 ? (
-                  <Box sx={{ fontSize: changeOrderType.size.prose, color: changeOrderInk.muted }}>
-                    {changeOrderCopy.noResourcesYet}
-                  </Box>
-                ) : comparableGroups.length === 0 ? (
-                  // Every variant landed in `unknown` — the note above already
-                  // said so; an empty grid here would say nothing further and
-                  // read as though the stage had no variants at all.
-                  <Box sx={{ fontSize: changeOrderType.size.prose, color: changeOrderInk.muted }}>
-                    Nothing here could be compared this round.
-                  </Box>
-                ) : (
-                  /*
-                   * ONE TREE PER GROUP, NOT PER VARIANT — the whole point of the
-                   * grouping. A stage with 7 Spaces taking one change rendered 7
-                   * byte-identical trees, leaving the reader to find the
-                   * divergence (the signal) by eye among the repetition (the
-                   * noise). Members of a group take the same change by
-                   * construction, so a group renders its representative ONCE and
-                   * says how many variants it stands for.
-                   *
-                   * Sameness comes from `buildStageMatrix`, whose `diffSignature`
-                   * keys on PATH AND NEW VALUE ONLY — the old value is
-                   * deliberately excluded, so two variants arriving at the same
-                   * value from different starting points are correctly ONE group.
-                   * Keying on the starting point would report a difference in
-                   * where they were, not in what the promote does to them.
-                   */
-                  <OutcomeGroupCards
-                    stageId={selectedStage.stageId}
-                    groups={comparableGroups}
-                    units={changes.units}
-                    groupsByUnitId={changes.groupsByUnitId}
-                    skippedUnits={detail.skippedUnits}
-                    expanded={groupsExpanded}
-                    onToggle={() => setGroupsExpanded((prev) => !prev)}
-                    renderUnit={renderRepUnit}
-                  />
-                )}
-              </Box>
-              </Box>
-              {reviewedStageSelected ? (
-                <Box
-                  sx={{
-                    borderLeft: `1px solid ${changeOrderBorder.default}`,
-                    alignSelf: 'stretch',
-                    minWidth: 0,
-                    '@media (max-width: 1179.98px)': {
-                      borderLeft: 0,
-                      borderTop: `1px solid ${changeOrderBorder.default}`,
-                    },
-                  }}
-                >
-                  <Box
-                    sx={{
-                      position: 'sticky',
-                      top: 16,
-                      '@media (max-width: 1179.98px)': { position: 'static' },
-                    }}
-                  >
-                    <ReviewPanel
-                      reviews={reviews}
-                      summary={reviewSummary}
-                      otherGatesHolding={otherHoldingGates}
-                      orderSlug={detail.slug}
-                      viewerName={userInfo?.DisplayName}
-                      now={reviewNow}
-                      approveRef={approveRef}
-                      onRecorded={onReviewRecorded}
-                      onNotice={showNotice}
-                    />
-                  </Box>
-                </Box>
-              ) : null}
-              </Box>
-            </Box>
+              approveRef={approveRef}
+              now={reviewNow}
+              announce={setAnnouncement}
+              onReviewRecorded={onReviewRecorded}
+              onNotice={showNotice}
+            />
           ) : null}
 
           {/*
@@ -2795,13 +1919,14 @@ export default function ChangeOrdersPage() {
             />
           ) : null}
 
-          <ReviewConversation slugOf={(unitId) => changes.slugByUnitId.get(unitId)} revealDiffs={() => setGroupsExpanded(true)} />
+          <ReviewConversation slugOf={(unitId) => changes.slugByUnitId.get(unitId)} revealDiffs={revealStageDiff} />
 
           {/* Last: the record of what happened, below what the selected step does now. */}
           <ChangeOrderHistory history={history} />
         </>
       ) : null}
     </Box>
+    </AnnounceContext.Provider>
     </ReviewCommentsProvider>
   );
 }

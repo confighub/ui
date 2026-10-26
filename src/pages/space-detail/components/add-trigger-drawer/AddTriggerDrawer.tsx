@@ -181,7 +181,6 @@ const StatusAndFunctionCard = ({
   errors,
   functions,
   channels,
-  runsOnWorker,
   selectedFunction,
   selectedFunctionOption,
   handleFunctionSelect,
@@ -193,8 +192,6 @@ const StatusAndFunctionCard = ({
   selectedFunctionOption: SimpleFunctionOption | null;
   functions: ListFunctionsApiResponse | undefined;
   channels: FunctionChannelOption[];
-  /** Whether the Trigger being edited still runs on a worker */
-  runsOnWorker: boolean;
   handleFunctionSelect: (functionData: FunctionSignature) => void;
   updateArgumentValue: (paramName: string, value: string) => void;
 }) => {
@@ -315,9 +312,7 @@ const StatusAndFunctionCard = ({
                   ))}
                 </Select>
                 <FormHelperText>
-                  {runsOnWorker && !field.value
-                    ? 'This Trigger runs on a worker. Choose a Channel to move it.'
-                    : 'A Trigger on a Channel holds changes until the Channel\'s client runs it.'}
+                  A Trigger on a Channel holds changes until the Channel&apos;s client runs it.
                 </FormHelperText>
               </FormControl>
             )}
@@ -478,14 +473,12 @@ export const AddTriggerDrawer = ({
 
   const watchedToolchainType = watch('ToolchainType');
   const watchedChannelId = watch('ChannelID');
-  // A Trigger not yet moved off its worker lists the worker's functions until a Channel is chosen.
-  const legacyWorkerId = existingTrigger?.BridgeWorkerID ?? undefined;
 
   // The function picker offers what the chosen executor serves, which the server checks the
   // Trigger's function against when it is stored.
   const { data: functions = {} } = useListFunctionsQuery({
     spaceId,
-    ...functionListArgs(watchedChannelId, watchedChannelId ? undefined : legacyWorkerId),
+    ...functionListArgs(watchedChannelId),
   });
 
   /**
@@ -647,7 +640,6 @@ export const AddTriggerDrawer = ({
               selectedFunction={selectedFunction}
               selectedFunctionOption={selectedFunctionOption}
               channels={channels}
-              runsOnWorker={!!legacyWorkerId}
               updateArgumentValue={updateArgumentValue}
             />
             <MapFieldSection

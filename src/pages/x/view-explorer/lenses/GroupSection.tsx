@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useMemo, useState } from 'react';
+import { type KeyboardEvent, useMemo, useState } from 'react';
 
 import type { GroupableCategory } from '@/components/group-nav';
 import { FieldPickerDropdown } from '@/components/group-nav/FieldPickerDropdown';
@@ -28,7 +28,10 @@ import { Section } from './parts';
  * The view's group levels, outermost first: each with how many groups it
  * makes in the shown rows, a handle to reorder, and × to stop grouping by it.
  * Under them, a drop zone for a column header dragged from the table; the
- * table's drag handler adds the level when the header lands on the zone.
+ * table's drag handler adds the level when the header lands on the zone. A
+ * click on the zone (or Enter or Space) opens the same picker as "+ Add".
+ * A drag that ends on the zone is not a click on it: the browser sends a click
+ * only where the press began too, and nothing on the zone can be dragged.
  */
 
 function categoriesFor(entity: EntityKind, labelKeys: readonly string[]): GroupableCategory[] {
@@ -185,6 +188,12 @@ export function GroupSection({ entity, groupBy, rows, labelKeys }: GroupSectionP
     : groupBy.length
       ? 'Drop a column header to add a level'
       : 'Drop a column header to group';
+  const onZoneKey = (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    // Space would scroll the column.
+    e.preventDefault();
+    setPickerAnchor(e.currentTarget);
+  };
 
   return (
     <Section
@@ -232,6 +241,11 @@ export function GroupSection({ entity, groupBy, rows, labelKeys }: GroupSectionP
         spacing={0.75}
         data-testid='vx-group-drop'
         data-lit={lit}
+        role='button'
+        tabIndex={0}
+        aria-label={groupBy.length ? 'Add a group level' : 'Group by a field'}
+        onClick={(e) => setPickerAnchor(e.currentTarget)}
+        onKeyDown={onZoneKey}
         sx={{
           height: 32,
           px: 1.125,
@@ -243,7 +257,9 @@ export function GroupSection({ entity, groupBy, rows, labelKeys }: GroupSectionP
           color: lit ? 'primary.main' : 'text.disabled',
           boxShadow: isOver ? '0 0 0 3px var(--rust-ring)' : 'none',
           fontSize: 12,
+          cursor: 'pointer',
           transition: 'background-color .15s, border-color .15s, color .15s',
+          '&:focus-visible': { outline: 2, outlineColor: 'primary.main', outlineOffset: 1 },
         }}
       >
         <LayersOutlinedIcon sx={{ fontSize: 14 }} />

@@ -85,6 +85,21 @@ export interface ChangeOrderUnitHeaderProps {
   linksHref?: string;
 }
 
+/**
+ * A badge that may shrink with an ellipsis rather than push the row past its
+ * card: Space names and resource kinds can be long, and the row is narrow on a
+ * phone. Block-level inside, so the ellipsis applies; at widths where everything
+ * fits it draws exactly as before.
+ */
+const shrinkableBadgeSx = {
+  display: 'inline-block',
+  flexShrink: 1,
+  minWidth: 0,
+  maxWidth: '100%',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+} as const;
+
 export function ChangeOrderUnitHeader({
   unitId,
   spaceId,
@@ -99,7 +114,8 @@ export function ChangeOrderUnitHeader({
   linksHref,
 }: ChangeOrderUnitHeaderProps) {
   return (
-    <UnitHeaderRow sx={{ cursor: 'default' }} data-testid={`change-order-unit-${unitId}`}>
+    // Wraps when narrow, so no badge is pushed past the card it sits in.
+    <UnitHeaderRow sx={{ cursor: 'default', flexWrap: 'wrap', rowGap: '4px', minWidth: 0 }} data-testid={`change-order-unit-${unitId}`}>
       <DataObjectIcon sx={{ fontSize: 15, color: componentTheme.fgMuted, flexShrink: 0 }} />
       <UnitSlug
         href={unitConfigHref(spaceId, unitId)}
@@ -123,13 +139,21 @@ export function ChangeOrderUnitHeader({
           rel="noopener noreferrer"
           onClick={(e: React.MouseEvent) => e.stopPropagation()}
           data-testid={`change-order-unit-space-${unitId}`}
+          title={spaceName}
+          sx={shrinkableBadgeSx}
         >
           {spaceName}
         </TagBadgeLink>
       ) : (
-        <TagBadge data-testid={`change-order-unit-space-${unitId}`}>{spaceName}</TagBadge>
+        <TagBadge data-testid={`change-order-unit-space-${unitId}`} title={spaceName} sx={shrinkableBadgeSx}>
+          {spaceName}
+        </TagBadge>
       )}
-      {resourceKind !== undefined && <TagBadge>{resourceKind}</TagBadge>}
+      {resourceKind !== undefined && (
+        <TagBadge title={resourceKind} sx={shrinkableBadgeSx}>
+          {resourceKind}
+        </TagBadge>
+      )}
       {linksHref !== undefined && (
         <TagBadgeLink
           href={linksHref}
@@ -141,7 +165,7 @@ export function ChangeOrderUnitHeader({
           {changeOrderCopy.linksBadge}
         </TagBadgeLink>
       )}
-      <Box sx={{ display: 'flex', gap: '8px', alignItems: 'center', ml: 'auto' }}>
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', ml: 'auto', minWidth: 0 }}>
         {differsNote !== undefined && (
           <TagBadge
             data-testid={`change-order-unit-differs-${unitId}`}

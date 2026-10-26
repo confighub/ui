@@ -91,6 +91,7 @@ export function PeekHost() {
     [viewKey],
   );
   useRegisterSlot('openPeek', open);
+  useRegisterSlot('closePeek', close);
 
   // Another tab, layout or entity, or a count that is no longer on the page,
   // ends the peek (React's pattern for state that follows other values).

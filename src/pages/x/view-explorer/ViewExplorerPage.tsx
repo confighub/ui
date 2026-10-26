@@ -17,6 +17,7 @@ import { Header } from '@/components/header/Header';
 
 import { SYSTEM_SPACE_SLUG, type SavedView, useViews } from './queries/useViews';
 import { ExplorerDndProvider } from './dnd/ExplorerDndProvider';
+import { compareIdsFor } from './model/compare';
 import { isMod, plainKey, usePageShortcuts } from './keys/usePageShortcuts';
 import { LensColumn } from './lenses/LensColumn';
 import { PeekHost } from './peek/PeekHost';
@@ -67,24 +68,25 @@ function HeaderActions() {
 
 /** The page's own shortcuts. Slices add theirs through `useRegisterShortcut`. */
 function useExplorerShortcuts(): Shortcut[] {
-  const { dispatch } = useExplorerContext();
+  const { dispatch, state } = useExplorerContext();
+  // The view behind compare mode is hidden: a layout key or an undo would change it unseen.
+  const comparing = compareIdsFor(state, state.activeId).length > 0;
   const { newTemp, step } = useTabActions();
   const { save, saveAsNew } = useSaveFlow();
-  return useMemo<Shortcut[]>(
-    () => [
+  return useMemo<Shortcut[]>(() => {
+    const layoutKey = (key: string) => (e: KeyboardEvent) => !comparing && plainKey(key)(e);
+    return [
       { id: 'save', keys: '⌘S', label: 'Save the view', inText: true, matches: (e) => isMod(e) && !e.shiftKey && e.key.toLowerCase() === 's', run: save },
       { id: 'save-as', keys: '⌘⇧S', label: 'Save as a new view', inText: true, matches: (e) => isMod(e) && e.shiftKey && e.key.toLowerCase() === 's', run: saveAsNew },
-      { id: 'undo', keys: '⌘Z', label: 'Undo the last change', matches: (e) => isMod(e) && !e.shiftKey && e.key.toLowerCase() === 'z', run: () => dispatch({ type: 'undo' }) },
+      { id: 'undo', keys: '⌘Z', label: 'Undo the last change', matches: (e) => !comparing && isMod(e) && !e.shiftKey && e.key.toLowerCase() === 'z', run: () => dispatch({ type: 'undo' }) },
       { id: 'new', keys: 'N', label: 'New temporary view', matches: plainKey('n'), run: () => newTemp() },
       { id: 'prev', keys: '[', label: 'Previous tab', matches: plainKey('['), run: () => step(-1) },
       { id: 'next', keys: ']', label: 'Next tab', matches: plainKey(']'), run: () => step(1) },
-      { id: 'layout-table', keys: 'T', label: 'Show as a table', matches: plainKey('t'), run: () => dispatch({ type: 'setLayout', layout: 'table' }) },
-      { id: 'layout-list', keys: 'L', label: 'Show as a list', matches: plainKey('l'), run: () => dispatch({ type: 'setLayout', layout: 'list' }) },
-      { id: 'layout-board', keys: 'B', label: 'Show as a board', matches: plainKey('b'), run: () => dispatch({ type: 'setLayout', layout: 'board' }) },
-      { id: 'layout-matrix', keys: 'M', label: 'Show as a matrix', matches: plainKey('m'), run: () => dispatch({ type: 'setLayout', layout: 'matrix' }) },
-    ],
-    [dispatch, newTemp, step, save, saveAsNew],
-  );
+      { id: 'layout-table', keys: 'T', label: 'Show as a table', matches: layoutKey('t'), run: () => dispatch({ type: 'setLayout', layout: 'table' }) },
+      { id: 'layout-board', keys: 'B', label: 'Show as a board', matches: layoutKey('b'), run: () => dispatch({ type: 'setLayout', layout: 'board' }) },
+      { id: 'layout-matrix', keys: 'M', label: 'Show as a matrix', matches: layoutKey('m'), run: () => dispatch({ type: 'setLayout', layout: 'matrix' }) },
+    ];
+  }, [dispatch, newTemp, step, save, saveAsNew, comparing]);
 }
 
 function ExplorerBody() {

@@ -64,7 +64,6 @@ export const SPACE_SUMMARY_COUNTS: SpaceSummaryCount[] = [
     group: 'Entities',
     getValue: (space) => sumMap(space?.TriggerCountByEventType),
   },
-  { field: 'TotalBridgeWorkerCount', label: 'Workers', group: 'Entities', getValue: count('TotalBridgeWorkerCount') },
   { field: 'TotalReleaseCount', label: 'Releases', group: 'Entities', getValue: count('TotalReleaseCount') },
   { field: 'TotalChangeSetCount', label: 'ChangeSets', group: 'Entities', getValue: count('TotalChangeSetCount') },
   { field: 'TotalChangeOrderCount', label: 'ChangeOrders', group: 'Entities', getValue: count('TotalChangeOrderCount') },

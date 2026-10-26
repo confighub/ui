@@ -8,10 +8,11 @@ import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
 import Snackbar from '@mui/material/Snackbar';
 
+import { COMPARE_PARAM, compareIdsFor } from '../model/compare';
 import { explorerReducer, isDirty } from '../model/reducer';
 import type { ExplorerState } from '../model/types';
 import type { SavedView } from '../queries/useViews';
-import { ExplorerContext, type ExplorerContextValue, type Shortcut, tabUrlParams, type ToastInput } from './context';
+import { ExplorerContext, type ExplorerContextValue, type Shortcut, tabLinkParams, type ToastInput } from './context';
 import { pushEscLayer } from '../keys/usePageShortcuts';
 import { BASE_PARAM, DRAFT_PARAM, FILTER_BASE_PARAM, TEMP_PARAM, VIEW_PARAM } from './initial';
 import { type ExplorerSlots, NOOP_SLOTS } from './slots';
@@ -102,9 +103,11 @@ export function ExplorerProvider({ initialState, initialVersions, views, storage
   }, [storage, persisted, lastStored]);
 
   // The address bar is outside React too: it follows the active tab, so a
-  // reload or a copied link opens the same view (and the same draft).
+  // reload or a copied link opens the same view (and the same draft), comparing the same Units.
+  // One effect owns every parameter: React Router hands each setSearchParams the URL of the
+  // render, so a second effect in the same commit would write over this one.
   const active = state.tabs.find((t) => t.id === state.activeId);
-  const urlKey = JSON.stringify(tabUrlParams(active, versions.current));
+  const urlKey = JSON.stringify(tabLinkParams(active, versions.current, compareIdsFor(state, state.activeId)));
   useEffect(() => {
     const params = JSON.parse(urlKey) as Record<string, string>;
     setSearchParams(
@@ -115,6 +118,7 @@ export function ExplorerProvider({ initialState, initialVersions, views, storage
         next.delete(TEMP_PARAM);
         next.delete(BASE_PARAM);
         next.delete(FILTER_BASE_PARAM);
+        next.delete(COMPARE_PARAM);
         for (const [k, v] of Object.entries(params)) next.set(k, v);
         return next;
       },

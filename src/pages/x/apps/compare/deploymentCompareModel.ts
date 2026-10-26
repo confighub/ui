@@ -71,6 +71,17 @@ export interface CompareColumnInput {
   isProtected?: (positionalPath: string) => boolean;
   /** Why this column cannot answer, when it cannot. See `unanswerable.ts`. */
   unavailable?: ColumnUnavailable;
+  /**
+   * The slot letter this column wears, when the columns are not all the
+   * slots: a page that leaves a slot's column out keeps B on B. Absent, a
+   * column's letter is its position.
+   */
+  letter?: string;
+  /**
+   * The column head as two lines, in the page layout (`compareLayout.ts`): what
+   * the Unit is, then where. Absent, the head is `label` on one line.
+   */
+  heading?: { primary: string; secondary: string };
 }
 
 export type CompareCellKind =

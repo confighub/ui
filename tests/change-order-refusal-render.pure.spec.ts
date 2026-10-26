@@ -52,7 +52,7 @@ test.describe('rendering a refusal', () => {
     );
 
     expect(refusalBlockCount(html)).toBe(1);
-    expect(html).toContain('ProtectedPath');
+    expect(html).toContain('A protected field');
     expect(html).toContain('app/api');
     expect(html).toContain('/spec/replicas');
   });
@@ -64,6 +64,16 @@ test.describe('rendering a refusal', () => {
       createElement(ChangeOrderBlockedResources, { units: [], renderUnit: () => null }),
     );
     expect(html).toBe('');
+  });
+
+  test('a value the target kept is said in plain words, not by its reason code', () => {
+    const html = renderToStaticMarkup(
+      createElement(ChangeOrderRefusals, {
+        conflicts: [{ reason: 'Subtracted', blocks: true, resourceName: 'api', path: 'spec.replicas', targetValue: '6' }],
+      }),
+    );
+    expect(html).toContain('<b>A local override</b> in api keeps spec.replicas at 6.');
+    expect(html).not.toContain('Subtracted');
   });
 
   test('a reason nobody modelled is printed, not swallowed', () => {

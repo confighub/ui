@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: MIT
 import { useState } from 'react';
 
+import CloseIcon from '@mui/icons-material/Close';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import SaveAsOutlinedIcon from '@mui/icons-material/SaveAsOutlined';
+import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
+import UndoOutlinedIcon from '@mui/icons-material/UndoOutlined';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Stack from '@mui/material/Stack';
@@ -11,6 +15,7 @@ import Typography from '@mui/material/Typography';
 import { alpha, keyframes, styled } from '@mui/material/styles';
 
 import { isDirty } from '../model/reducer';
+import { ICON, LABEL, SAVE_COMPACT, iconOnlyBelow } from '../results/compact';
 import { useExplorerContext } from '../state/context';
 import { tabChanges, useActiveTab, useTabActions } from '../state/useExplorer';
 import { ChangesPopover } from './ChangesPopover';
@@ -20,8 +25,13 @@ import { ENTITY_CHANGED_HINT, entityChangedFrom, useSaveFlow } from './useSaveFl
  * The one place Save lives: the right end of the results toolbar, under the
  * tab whose italic name and dot it clears. It shows only when there is
  * something to save, and it does not move when the filter column collapses,
- * floats or switches to text.
+ * floats or switches to text. In a toolbar under 760px (`SAVE_COMPACT`,
+ * `results/compact.ts`) its buttons show icons only, with their names in
+ * tooltips, so the labelled actions never push Save out of sight.
  */
+
+const ICON_SX = { fontSize: 16 } as const;
+const ICON_ONLY = iconOnlyBelow(SAVE_COMPACT, 28);
 
 // A short slide with no fade: the actions are usable from the first frame, and never look disabled while they arrive.
 const slideIn = keyframes`
@@ -38,6 +48,7 @@ const Row = styled(Stack)(({ theme }) => ({
   // The toolbar's actions are a step larger than the theme's small buttons, like the row count beside them.
   '& .MuiButton-root': {
     height: 28,
+    whiteSpace: 'nowrap',
     fontSize: 12.5,
     fontWeight: 700,
     padding: theme.spacing(0, 1.375),
@@ -140,72 +151,98 @@ export function SaveActions() {
     );
   }
 
+  const saveLabel = temporary ? 'Save view…' : 'Save';
   return (
     <Row key={`${tab.id}:${tab.kind}`} data-testid='vx-save-actions'>
-      <Button
-        size='small'
-        variant='text'
-        color='inherit'
-        onClick={(e) => setChangesAnchor(e.currentTarget)}
-        startIcon={
-          <Box sx={{ display: 'inline-flex', px: 0.25 }}>
-            {temporary ? <TempDot /> : <DraftDot />}
-          </Box>
-        }
-        endIcon={temporary ? undefined : <ExpandMoreIcon fontSize='small' />}
-        sx={{
-          color: 'text.secondary',
-          fontWeight: 600,
-          borderRadius: 999,
-          bgcolor: 'action.hover',
-          '&:hover': { bgcolor: 'action.selected' },
-        }}
-      >
-        {label}
-      </Button>
+      <Tooltip title={label} disableInteractive>
+        <Button
+          size='small'
+          variant='text'
+          color='inherit'
+          onClick={(e) => setChangesAnchor(e.currentTarget)}
+          aria-label={label}
+          startIcon={
+            <Box sx={{ display: 'inline-flex', px: 0.25 }}>
+              {temporary ? <TempDot /> : <DraftDot />}
+            </Box>
+          }
+          endIcon={temporary ? undefined : <ExpandMoreIcon fontSize='small' />}
+          sx={[
+            {
+              color: 'text.secondary',
+              fontWeight: 600,
+              borderRadius: 999,
+              bgcolor: 'action.hover',
+              '&:hover': { bgcolor: 'action.selected' },
+            },
+            ICON_ONLY,
+            // The dot stands for the label; the button has no other icon.
+            { [SAVE_COMPACT]: { '& .MuiButton-startIcon': { m: 0 } } },
+          ]}
+        >
+          <span className={LABEL}>{label}</span>
+        </Button>
+      </Tooltip>
       {temporary ? (
-        <Button
-          size='small'
-          variant='text'
-          color='inherit'
-          sx={{ color: 'text.secondary' }}
-          onClick={() => closeTab(tab.id)}
-        >
-          Close
-        </Button>
+        <Tooltip title='Close' disableInteractive>
+          <Button
+            size='small'
+            variant='text'
+            color='inherit'
+            aria-label='Close'
+            sx={[{ color: 'text.secondary' }, ICON_ONLY]}
+            onClick={() => closeTab(tab.id)}
+          >
+            <CloseIcon className={ICON} sx={ICON_SX} />
+            <span className={LABEL}>Close</span>
+          </Button>
+        </Tooltip>
       ) : (
-        <Button
-          size='small'
-          variant='text'
-          color='inherit'
-          sx={{ color: 'text.secondary' }}
-          onClick={discard}
-        >
-          Discard
-        </Button>
+        <Tooltip title='Discard' disableInteractive>
+          <Button
+            size='small'
+            variant='text'
+            color='inherit'
+            aria-label='Discard'
+            sx={[{ color: 'text.secondary' }, ICON_ONLY]}
+            onClick={discard}
+          >
+            <UndoOutlinedIcon className={ICON} sx={ICON_SX} />
+            <span className={LABEL}>Discard</span>
+          </Button>
+        </Tooltip>
       )}
       {!temporary && (
-        <Button
-          size='small'
-          variant='outlined'
-          color='inherit'
-          onClick={saveAsNew}
-          disabled={busy}
-        >
-          Save as new
-        </Button>
+        <Tooltip title='Save as new' disableInteractive>
+          {/* A disabled button gets no pointer events; the span carries the tooltip. */}
+          <span>
+            <Button
+              size='small'
+              variant='outlined'
+              color='inherit'
+              aria-label='Save as new'
+              sx={ICON_ONLY}
+              onClick={saveAsNew}
+              disabled={busy}
+            >
+              <SaveAsOutlinedIcon className={ICON} sx={ICON_SX} />
+              <span className={LABEL}>Save as new</span>
+            </Button>
+          </span>
+        </Tooltip>
       )}
-      {/* A disabled button gets no pointer events; the span carries the tooltip. */}
-      <Tooltip title={entityChanged ? ENTITY_CHANGED_HINT : ''}>
+      <Tooltip title={entityChanged ? ENTITY_CHANGED_HINT : `${saveLabel} · ${modKey}S`} disableInteractive>
         <span data-testid='vx-save-button-wrap'>
           <Button
             size='small'
             variant='contained'
             onClick={save}
+            aria-label={saveLabel}
             disabled={busy || namingTabId === tab.id || entityChanged}
-            sx={{ gap: 0.75 }}
+            sx={[{ gap: 0.75 }, ICON_ONLY]}
           >
-            {temporary ? 'Save view…' : 'Save'}
+            <SaveOutlinedIcon className={ICON} sx={ICON_SX} />
+            <span className={LABEL}>{saveLabel}</span>
             <Kbd aria-hidden>{modKey}S</Kbd>
           </Button>
         </span>

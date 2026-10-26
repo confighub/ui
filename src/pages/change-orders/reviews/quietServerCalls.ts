@@ -43,7 +43,7 @@ const json = (method: string, body: unknown, contentType = 'application/json'): 
   body: JSON.stringify(body),
 });
 
-/** The status and the parsed body of one call. A network failure is status 0. */
+/** The status and the parsed body of one call. A network failure, or a body that could not be read, is status 0. */
 export async function answerOf(send: Send, path: string, init?: RequestInit): Promise<ServerAnswer> {
   let response: Response;
   try {
@@ -51,7 +51,14 @@ export async function answerOf(send: Send, path: string, init?: RequestInit): Pr
   } catch (error) {
     return { status: 0, body: { message: error instanceof Error ? error.message : 'The request failed.' } };
   }
-  const text = await response.text();
+  // The body can fail after the headers arrived: a timeout that aborts mid-body, a reset
+  // connection. That is no answer either, and must not escape as a rejection a caller forgets.
+  let text: string;
+  try {
+    text = await response.text();
+  } catch (error) {
+    return { status: 0, body: { message: error instanceof Error ? error.message : 'The response could not be read.' } };
+  }
   let body: unknown = text;
   try {
     body = text === '' ? undefined : JSON.parse(text);

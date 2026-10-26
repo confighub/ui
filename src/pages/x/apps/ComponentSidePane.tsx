@@ -79,6 +79,8 @@ import { computeTotalAllFields, countLogicalChanges, countUpgradableBadgeFields,
 import { buildDeploymentMap } from './componentData';
 import { componentTheme } from './componentTheme';
 import { isMultiComponent } from './flow-graph/componentFrames';
+import { README_UNIT_SLUG } from './readme';
+import { ReadmePane } from './ReadmePane';
 import { DECLARED_BAR_ID, ReleasesPane } from './ReleasesPane';
 import { NameInput, PaneButton } from './releasePaneStyles';
 import { useResourceCounts } from './useResourceCounts';
@@ -137,18 +139,20 @@ const EMPTY_COMPARE_IDS: readonly string[] = [];
 const CONFIG_COMPARE_COLLAPSED_KEY = 'confighub.componentPane.config.compareCollapsed';
 
 // ============================================================================
-// STYLED COMPONENTS — pane content tabs (Configuration / Releases)
+// STYLED COMPONENTS — pane content tabs (Configuration / Releases / Readme)
 // ============================================================================
 
 /**
- * Only rendered when the selected deployment is release-enabled (a Space
- * with exactly one deploy verb has nothing to switch between — its pane
- * looks byte-identical to before this feature). Dense, componentTheme-
+ * Only rendered when the selected deployment is release-enabled or has a
+ * README.md Unit (a Space with neither has nothing to switch between — its
+ * pane looks byte-identical to before this feature). Dense, componentTheme-
  * styled MUI Tabs — no existing Tabs usage in ui/src shares componentTheme
  * (ComponentActivityFeed/MutationDrawer/etc. use the default MUI palette),
  * so this is styled from scratch to match the pane's own rust-accent,
  * Manrope, dense idiom rather than inheriting a mismatched look.
  */
+type PaneContentTab = 'config' | 'releases' | 'readme';
+
 const PaneTabs = styled(Tabs)({
   minHeight: 34,
   borderBottom: `1px solid ${componentTheme.borderDefault}`,
@@ -610,9 +614,10 @@ export const ComponentSidePane = memo(
     // for. Storing the id (rather than a boolean) makes the dismissal reset
     // itself when the selected component changes — no effect, no cleanup.
     const [dormantBannerDismissedFor, setDormantBannerDismissedFor] = useState<string | null>(null);
-    // Which pane-content tab is showing — only meaningful when canRelease
-    // (single-verb Spaces never render the tab bar, so this stays 'config').
-    const [activeTab, setActiveTab] = useState<'config' | 'releases'>('config');
+    // Which pane-content tab is showing — only meaningful when the tab bar
+    // renders (a Space with neither a release target nor a README never
+    // renders it, so this stays 'config').
+    const [activeTab, setActiveTab] = useState<PaneContentTab>('config');
     // A release-stamp peek's deep-link to one specific release, forwarded to
     // ReleasesPane, which selects that release's bar and scroll-pulses it.
     // The nonce (borrowed from tabFocus) lets re-clicking the same release
@@ -793,6 +798,14 @@ export const ComponentSidePane = memo(
     const multiComponent = useMemo(() => isMultiComponent(deployments), [deployments]);
     const headerComponent = multiComponent ? selectedDeployment?.componentName : undefined;
     const canRelease = !!selectedDeployment?.releaseTargetId;
+    // The Space's README.md Unit, which the Readme tab renders.
+    const readmeUnit = useMemo(
+      () =>
+        selectedDeployment
+          ? unitsByDeployment.get(selectedDeployment.deploymentId)?.find((u) => u.slug === README_UNIT_SLUG)
+          : undefined,
+      [selectedDeployment, unitsByDeployment],
+    );
     // also true for a same-Space upstream, which parentDeploymentId excludes
     const canUpgrade = selectedDeployment?.parentDeploymentId != null || !!hasUpgradableUnits;
 
@@ -940,13 +953,14 @@ export const ComponentSidePane = memo(
     // render a tab bar showing something else selected.
     useEffect(() => {
       if (activeTab === 'releases' && !(canRelease && release)) setActiveTab('config');
+      if (activeTab === 'readme' && !readmeUnit) setActiveTab('config');
       // Only the current node's own capabilities matter here — a node SWITCH
       // is what can invalidate the current tab, not activeTab itself
       // changing (that would fight a legitimate user click into a tab that
       // is about to be gated true a moment later, e.g. release data still
       // loading).
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedDeployment?.deploymentId, canRelease, release]);
+    }, [selectedDeployment?.deploymentId, canRelease, release, readmeUnit]);
 
     // "Just published" signal for the Releases tab's fresh-tint dot. It lives
     // HERE, not inside the Releases pane, because that pane unmounts while
@@ -2141,25 +2155,28 @@ export const ComponentSidePane = memo(
             rank whatever is used inside this band, never anything outside it. */}
         <Box sx={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', isolation: 'isolate' }}>
         {/* Only a Space with something besides plain config to switch between
-            renders a tab bar — release capability.
+            renders a tab bar — release capability, or a README.md Unit.
             A plain Space's pane stays byte-identical to before this feature. */}
-        {canRelease && release && (
+        {((canRelease && release) || readmeUnit) && (
           <PaneTabs
             value={activeTab}
-            onChange={(_, v: 'config' | 'releases') => setActiveTab(v)}
+            onChange={(_, v: PaneContentTab) => setActiveTab(v)}
             aria-label='Side pane content'
           >
             <PaneTab label='Configuration' value='config' data-testid='component-pane-tab-config' />
-            <PaneTab
-              value='releases'
-              data-testid='component-pane-tab-releases'
-              label={
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  Releases
-                  {isReleaseFresh && <TabFreshDot data-testid='component-releases-tab-fresh-dot' />}
-                </Box>
-              }
-            />
+            {canRelease && release && (
+              <PaneTab
+                value='releases'
+                data-testid='component-pane-tab-releases'
+                label={
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    Releases
+                    {isReleaseFresh && <TabFreshDot data-testid='component-releases-tab-fresh-dot' />}
+                  </Box>
+                }
+              />
+            )}
+            {readmeUnit && <PaneTab label='Readme' value='readme' data-testid='component-pane-tab-readme' />}
           </PaneTabs>
         )}
 
@@ -2231,6 +2248,12 @@ export const ComponentSidePane = memo(
               selectionPending={releaseSelectionPending}
               onSelectionChange={setReleaseSelection}
             />
+          </PaneContent>
+        )}
+
+        {activeTab === 'readme' && readmeUnit && (
+          <PaneContent sx={{ padding: 0, gap: 0 }}>
+            <ReadmePane data={readmeUnit.data ?? ''} loading={!!isUnitDataFetching} />
           </PaneContent>
         )}
 
@@ -2848,7 +2871,7 @@ export const ComponentSidePane = memo(
               this very button, totalStagedProtection > 0 and the normal bar's
               Section-6 "scope changes" state takes back over, which is where
               the actual commit happens — this button only stages). */}
-          {scopeFilter === 'kept-on-merge' && totalStagedProtection === 0 && totalKeptOnMergeN > 0 && activeTab !== 'releases' && (
+          {scopeFilter === 'kept-on-merge' && totalStagedProtection === 0 && totalKeptOnMergeN > 0 && activeTab === 'config' && (
             <>
               <Typography
                 data-testid='component-kept-on-merge-bar-lead'

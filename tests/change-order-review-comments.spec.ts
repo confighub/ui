@@ -153,7 +153,7 @@ async function headOf(spaceId: string, unitId: string): Promise<number> {
   return ((await response.json()) as { Unit: { HeadRevisionNum: number } }).Unit.HeadRevisionNum;
 }
 
-/** The row of a path in the diff it is drawn in: `source` is "At the source", `stage` the dev stage's card. */
+/** The row of a path in the diff it is drawn in: `source` is "At the source", `stage` the dev stage's outcome box. */
 const row = (page: Page, path: string, where: 'source' | 'stage') => page.locator(`[data-comment-path="${path}"]`).nth(where === 'source' ? 0 : 1);
 
 async function startThread(page: Page, path: string, where: 'source' | 'stage', text: string) {
@@ -223,7 +223,7 @@ test.describe('ChangeOrder review comments', () => {
 
   test('a comment on what the dev stage writes is anchored to the dev head, and is Outdated once dev moves on', async ({ page }) => {
     await openChangeOrder(page);
-    await page.getByRole('button', { name: 'Open' }).click();
+    await page.getByTestId('stage-outcome-toggle').first().click();
     await startThread(page, 'spec.replicas', 'stage', 'Is 4 right for dev?');
     const stored = (await commentsOf(fx.changeOrderId)).find((c) => c.UnitID === fx.devApiId);
     expect(stored?.RevisionNum).toBe(await headOf(fx.devSpaceId, fx.devApiId));
@@ -232,7 +232,7 @@ test.describe('ChangeOrder review comments', () => {
     // dev changes on its own: the thread was made at a Revision the dry run no longer runs on.
     await new ApiHelper(page).uploadUnitData({ spaceId: fx.devSpaceId, unitId: fx.devApiId, body: deployment(2, 'dev-team') });
     await openChangeOrder(page);
-    await page.getByRole('button', { name: 'Open' }).click();
+    await page.getByTestId('stage-outcome-toggle').first().click();
     await expect(page.getByTestId('review-thread').filter({ hasText: 'Is 4 right for dev?' }).getByTestId('review-thread-outdated')).toBeVisible();
   });
 

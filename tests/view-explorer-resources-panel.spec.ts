@@ -183,8 +183,8 @@ test.describe('view explorer row panel resources', () => {
     await page.getByTestId('vx-resource-next').click();
     await expect(position(page)).toHaveText('3 of 11');
 
-    // Away to Details and back: still the third.
-    await panel(page).getByRole('tab', { name: 'Details' }).click();
+    // Away to Summary and back: still the third.
+    await panel(page).getByRole('tab', { name: 'Summary' }).click();
     await panel(page).getByRole('tab', { name: 'Resources (11)' }).click();
     await expect(position(page)).toHaveText('3 of 11');
     expect(bodyFetches).toHaveLength(1);

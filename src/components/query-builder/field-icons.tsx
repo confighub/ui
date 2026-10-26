@@ -7,11 +7,8 @@ import CategoryOutlined from '@mui/icons-material/CategoryOutlined';
 import ChangeHistoryOutlined from '@mui/icons-material/ChangeHistoryOutlined';
 import CheckBoxOutlined from '@mui/icons-material/CheckBoxOutlined';
 import CodeOutlined from '@mui/icons-material/CodeOutlined';
-import ChatOutlined from '@mui/icons-material/ChatOutlined';
 import DescriptionOutlined from '@mui/icons-material/DescriptionOutlined';
-import DnsOutlined from '@mui/icons-material/DnsOutlined';
 import FactCheckOutlined from '@mui/icons-material/FactCheckOutlined';
-import LanguageOutlined from '@mui/icons-material/LanguageOutlined';
 import FlashOnOutlined from '@mui/icons-material/FlashOnOutlined';
 import FolderOutlined from '@mui/icons-material/FolderOutlined';
 import FunctionsOutlined from '@mui/icons-material/FunctionsOutlined';
@@ -22,13 +19,11 @@ import NumbersOutlined from '@mui/icons-material/NumbersOutlined';
 import PersonOutlineOutlined from '@mui/icons-material/PersonOutlineOutlined';
 import PublicOutlined from '@mui/icons-material/PublicOutlined';
 import SettingsOutlined from '@mui/icons-material/SettingsOutlined';
-import SignalCellularAltOutlined from '@mui/icons-material/SignalCellularAltOutlined';
 import StorageOutlined from '@mui/icons-material/StorageOutlined';
 import TrackChangesOutlined from '@mui/icons-material/TrackChangesOutlined';
 import TrendingUpOutlined from '@mui/icons-material/TrendingUpOutlined';
 import UpdateOutlined from '@mui/icons-material/UpdateOutlined';
 import VerifiedUserOutlined from '@mui/icons-material/VerifiedUserOutlined';
-import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
 import WidgetsOutlined from '@mui/icons-material/WidgetsOutlined';
 
 import type { FilterFieldType } from './types';
@@ -72,12 +67,6 @@ export const FIELD_ICONS: Record<FieldIconKey, React.ReactNode> = {
   unreleasedChanges: <ChangeHistoryOutlined fontSize="small" />,
   validationErrorsCount: <VerifiedUserOutlined fontSize="small" />,
   checkResult: <FactCheckOutlined fontSize="small" />,
-  // BridgeWorker-specific fields
-  condition: <SignalCellularAltOutlined fontSize="small" />,
-  lastSeenAt: <VisibilityOutlined fontSize="small" />,
-  bridgeWorkerId: <DnsOutlined fontSize="small" />,
-  lastMessage: <ChatOutlined fontSize="small" />,
-  ipAddress: <LanguageOutlined fontSize="small" />,
   // Target-specific fields
   targetId: <TrackChangesOutlined fontSize="small" />,
   // Trigger-specific fields

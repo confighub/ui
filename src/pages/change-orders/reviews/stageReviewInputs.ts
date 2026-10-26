@@ -13,7 +13,8 @@
  *   except the one refusal the server reports only as text (completed workflow).
  * - `reviewCoverageOf`, `attestSpaceErrors`: what an `/attest` covers.
  * - `reviewRequestsPatch`: the merge PATCH body for ChangeOrder.ReviewRequests.
- * - `planRevocations`, `runRevocations`: "Change my decision".
+ * - `planRevocations`, `runRevocations`: "Change my decision", and withdrawing
+ *   a decision with no new one.
  */
 
 import type {
@@ -405,27 +406,60 @@ export function reviewUserOf(userId: string, user: Pick<UserRead, 'DisplayName' 
 // ---------------------------------------------------------------------------
 
 /**
+ * A RequestedAt later than `previous`, which is what re-requests a review.
+ *
+ * The server stamps the time itself and only asks whether the one sent is
+ * later than the one it holds, so the browser's clock needs to be later, not
+ * right. A clock running behind the server's would send a time that is not
+ * later and the re-request would silently do nothing, so the time sent is at
+ * least a second past the one recorded.
+ */
+function laterThan(previous: string | undefined, now: number): string {
+  const recorded = previous === undefined ? Number.NaN : Date.parse(previous);
+  return new Date(Number.isNaN(recorded) ? now : Math.max(now, recorded + 1000)).toISOString();
+}
+
+/**
  * The merge PATCH body that changes `ChangeOrder.ReviewRequests`. The list is
  * replaced whole, so every other request is sent back unchanged (with its
  * RequestedAt, so it is not re-requested), with the Version read, so a
  * concurrent change is refused (409) rather than lost.
+ *
+ * `rerequest` asks one person again: their request is sent with a later
+ * RequestedAt, which the server reads as asking again, now; a person not
+ * requested yet is requested.
  */
 export function reviewRequestsPatch(
   current: readonly ChangeOrderReviewRequestRead[],
   version: number,
-  edit: { add?: { stage: string; userIds: string[] }; remove?: { stage: string; userId: string } },
+  edit: {
+    add?: { stage: string; userIds: string[] };
+    remove?: { stage: string; userId: string };
+    rerequest?: { stage: string; userId: string };
+  },
+  now: number = Date.now(),
 ): { ReviewRequests: ChangeOrderReviewRequest[]; Version: number } {
   const same = (request: { Stage?: string; UserID: string }, stage: string, userId: string) =>
     (request.Stage ?? '') === stage && request.UserID === userId;
+  const again = edit.rerequest;
   const kept: ChangeOrderReviewRequest[] = current
     .filter((request) => edit.remove === undefined || !same(request, edit.remove.stage, edit.remove.userId))
-    .map((request) => ({
-      Stage: request.Stage ?? '',
-      UserID: request.UserID,
-      ...(request.RequestedAt ? { RequestedAt: request.RequestedAt } : {}),
-    }));
-  for (const userId of edit.add?.userIds ?? []) {
-    const stage = edit.add?.stage ?? '';
+    .map((request) => {
+      const requestedAt =
+        again !== undefined && same(request, again.stage, again.userId)
+          ? laterThan(request.RequestedAt, now)
+          : request.RequestedAt;
+      return {
+        Stage: request.Stage ?? '',
+        UserID: request.UserID,
+        ...(requestedAt ? { RequestedAt: requestedAt } : {}),
+      };
+    });
+  const wanted = [
+    ...(edit.add?.userIds ?? []).map((userId) => ({ stage: edit.add?.stage ?? '', userId })),
+    ...(again !== undefined ? [again] : []),
+  ];
+  for (const { stage, userId } of wanted) {
     if (!kept.some((request) => same(request, stage, userId))) kept.push({ Stage: stage, UserID: userId });
   }
   return { ReviewRequests: kept, Version: version };
@@ -451,10 +485,25 @@ export interface RevocationPlan {
 }
 
 export const REPLACED_NOTE = 'Replaced by a new decision';
+/** The note of a revocation that takes a decision back with no new one in its place. */
+export const WITHDRAWN_NOTE = 'Withdrawn';
 
 /** The revocation body (S6): the ChangeOrder and the revoked record's Type. */
-export function revocationBody(target: RevocationTarget, changeOrderId: string): AttestationCreateRequest {
-  return { RevokedAttestationID: target.attestationId, ChangeOrderID: changeOrderId, Type: target.type, Note: REPLACED_NOTE };
+export function revocationBody(
+  target: RevocationTarget,
+  changeOrderId: string,
+  note: string = REPLACED_NOTE,
+): AttestationCreateRequest {
+  return { RevokedAttestationID: target.attestationId, ChangeOrderID: changeOrderId, Type: target.type, Note: note };
+}
+
+/**
+ * The viewer's own live rejections in a review, one per Type: what withdrawing
+ * a rejection revokes. A live approval is left alone, since withdrawing is
+ * about the decision that holds the stage.
+ */
+export function ownLiveRejections(summary: Pick<GateReviewSummary, 'viewer'> | undefined): ReviewDecision[] {
+  return Object.values(summary?.viewer.ownByType ?? {}).filter((decision) => decision.live && decision.result === 'Fail');
 }
 
 /**

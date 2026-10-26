@@ -144,7 +144,6 @@ function ClearFilters({ onClear }: { onClear: () => void }) {
 function EmptyState() {
   return (
     <Box
-      role="status"
       data-history-empty
       sx={{
         padding: '34px 20px 38px',
@@ -217,7 +216,7 @@ export function ChangeOrderHistory({ history }: { history: ChangeOrderHistoryDat
   let body: ReactNode;
   if (history.isLoading) {
     body = (
-      <Box role="status" sx={{ padding: '26px 20px', color: changeOrderInk.muted, fontSize: changeOrderType.size.prose }}>
+      <Box sx={{ padding: '26px 20px', color: changeOrderInk.muted, fontSize: changeOrderType.size.prose }}>
         Reading the history of this ChangeOrder…
       </Box>
     );
@@ -226,7 +225,6 @@ export function ChangeOrderHistory({ history }: { history: ChangeOrderHistoryDat
   } else if (filtered.length === 0) {
     body = (
       <Box
-        role="status"
         sx={{ padding: '26px 20px', color: changeOrderInk.muted, fontSize: changeOrderType.size.prose, display: 'flex', gap: '10px', alignItems: 'center' }}
       >
         <FilterAltOffOutlinedIcon aria-hidden sx={{ fontSize: 18, color: changeOrderInk.subtle }} />
@@ -518,7 +516,7 @@ export function ChangeOrderHistory({ history }: { history: ChangeOrderHistoryDat
               </Box>
               {filtering ? (
                 <>
-                  <Box component="span" role="status" sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.muted }}>
+                  <Box component="span" sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.muted }}>
                     {plural(filtered.length, 'entry', 'entries')} match
                   </Box>
                   <ClearFilters onClear={clear} />

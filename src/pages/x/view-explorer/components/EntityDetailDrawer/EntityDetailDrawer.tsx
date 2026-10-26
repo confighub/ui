@@ -1,11 +1,12 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 
 import CloseIcon from '@mui/icons-material/Close';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Drawer from '@mui/material/Drawer';
 import IconButton from '@mui/material/IconButton';
@@ -29,10 +30,16 @@ import { TOP_NAV_HEIGHT } from '@/utility/constants';
 import { resourceDisplayName } from '@/utility/resource-type-functions';
 
 import { EntityAdapter } from '../../adapters';
+import { Kbd } from '../../lenses/parts';
 import { isResourceViewRow, ResourceViewRow } from '../../adapters/resource-row';
 import { decodeRawData } from '../../queries/useResourceViewRows';
 import { getGroupByColumns } from '../../types';
 import { ResourcesTab } from './ResourcesTab';
+import { KeysFooter } from '../../unit-panel/view/KeysFooter';
+import { PanelHeader } from '../../unit-panel/view/PanelHeader';
+import type { UnitPanelModel } from '../../unit-panel/view/types';
+import { UnitSummary } from '../../unit-panel/view/UnitSummary';
+import { UnitPanelDialogs } from '../../unit-panel/view/UnitPanelDialogs';
 import type { ResourceView } from '@/components/unit-resources/UnitResourceBrowser';
 import { useUnitResources } from '@/hooks/useUnitResources';
 
@@ -52,6 +59,21 @@ interface EntityDetailPanelProps {
   details?: readonly DetailLine[];
   /** The row's page link, when the caller adds to it; else the adapter's. */
   rowHref?: string;
+  /**
+   * Compare this Unit with others: the header gets "Compare with…", which
+   * calls this with itself as the anchor of the picker it opens. Only a
+   * caller showing Units passes it.
+   */
+  onCompare?: (anchor: HTMLElement) => void;
+  /** The picker "Compare with…" opens is open. */
+  compareExpanded?: boolean;
+  /**
+   * A Unit's panel: its own header and a Summary tab in place of Details.
+   * Memoize it; the body is memoized on its props.
+   */
+  unit?: UnitPanelModel;
+  /** The caller is moving from row to row: the row's resources are not read until it stops. */
+  holdReads?: boolean;
 }
 
 /**
@@ -65,6 +87,10 @@ export function EntityDetailPanel({
   onClose,
   details,
   rowHref,
+  onCompare,
+  compareExpanded,
+  unit,
+  holdReads,
 }: EntityDetailPanelProps) {
   return (
     <DrawerBody
@@ -75,6 +101,10 @@ export function EntityDetailPanel({
       onClose={onClose}
       details={details}
       rowHref={rowHref}
+      onCompare={onCompare}
+      compareExpanded={compareExpanded}
+      unit={unit}
+      holdReads={holdReads}
     />
   );
 }
@@ -86,7 +116,9 @@ interface EntityDetailDrawerProps {
   onClose: () => void;
 }
 
-type ActiveTab = 'details' | 'resources' | 'overview' | 'yaml';
+type ActiveTab = 'details' | 'summary' | 'resources' | 'overview' | 'yaml';
+
+const TAB_SX = { minHeight: 36, textTransform: 'none', fontSize: '0.78rem' } as const;
 
 /**
  * Right-side detail pane for the View Explorer. Replaces the navigate-away
@@ -131,13 +163,18 @@ export function EntityDetailDrawer({
   );
 }
 
-function DrawerBody({
+// Memoized: a caller may re-render for a context it reads (compare mode's, beside a hidden table) with the same props.
+const DrawerBody = memo(function DrawerBody({
   row,
   view,
   adapter,
   onClose,
   details,
   rowHref,
+  onCompare,
+  compareExpanded,
+  unit,
+  holdReads = false,
 }: {
   row: GroupNavRow;
   view: ExtendedViewRead | null;
@@ -145,13 +182,23 @@ function DrawerBody({
   onClose: () => void;
   details?: readonly DetailLine[];
   rowHref?: string;
+  onCompare?: (anchor: HTMLElement) => void;
+  compareExpanded?: boolean;
+  unit?: UnitPanelModel;
+  holdReads?: boolean;
 }) {
   const isResource = isResourceViewRow(row);
   // Resource rows open straight on the resource itself, as an Overview, since
   // that's the primary thing the user clicked through to see; they have no
-  // Details tab, as their columns are the row itself and the resource. Unit +
-  // Space rows show metadata first.
-  const [activeTab, setActiveTab] = useState<ActiveTab>(isResource ? 'overview' : 'details');
+  // Details tab, as their columns are the row itself and the resource. A Unit
+  // opens on its Summary, whose tab its caller keeps from row to row; a Space
+  // shows its columns.
+  const [ownTab, setOwnTab] = useState<ActiveTab>(isResource ? 'overview' : 'details');
+  const activeTab: ActiveTab = unit ? unit.tab : ownTab;
+  const setActiveTab = (tab: ActiveTab) => {
+    if (unit && (tab === 'summary' || tab === 'resources')) unit.onTabChange(tab);
+    else setOwnTab(tab);
+  };
   const href = rowHref ?? adapter.getRowHref(row);
   const resourceBody = useResourceBody(isResource ? (row as ResourceViewRow) : null);
   // The friendly views are of Kubernetes resources; other configuration is
@@ -180,60 +227,91 @@ function DrawerBody({
   const unitResources = useUnitResources({
     spaceID,
     unitID,
-    withBody: bodiesWanted,
-    skip: !supportsResources,
+    withBody: bodiesWanted || activeTab === 'resources',
+    skip: !supportsResources || holdReads,
   });
   const [resourceId, setResourceId] = useState('');
   const [resourceView, setResourceView] = useState<ResourceView>('overview');
   // No count while loading, or when the list could not be read (it is not zero then).
   const resourceCount =
-    unitResources.error || (unitResources.isLoading && unitResources.rows.length === 0)
+    holdReads || unitResources.error || (unitResources.isLoading && unitResources.rows.length === 0)
       ? null
       : unitResources.rows.length;
 
+  const header = unit ? (
+    <PanelHeader title={title} model={unit} href={href} onClose={onClose} onCompare={onCompare} compareExpanded={compareExpanded} />
+  ) : (
+    <Stack
+      direction='row'
+      alignItems='center'
+      justifyContent='space-between'
+      sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}
+    >
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant='h2' component='div' noWrap data-testid='vx-drawer-title'>
+          {title}
+        </Typography>
+        <Typography
+          variant='body2'
+          color='text.secondary'
+          noWrap
+          component='div'
+          // Kinds are case-sensitive and read as code.
+          sx={isResource ? { fontFamily: 'var(--font-mono)' } : undefined}
+        >
+          {isResource ? subtitle || 'Resource' : adapter.entityType}
+          {!isResource && subtitle && subtitle !== title ? ` · ${subtitle}` : ''}
+        </Typography>
+      </Box>
+      <Stack direction='row' alignItems='center' spacing={0.5}>
+        {onCompare && !isResource && (
+          <Button
+            size='small'
+            color='inherit'
+            aria-haspopup='dialog'
+            aria-expanded={!!compareExpanded}
+            aria-keyshortcuts='c'
+            onClick={(e) => onCompare(e.currentTarget)}
+            data-testid='vx-drawer-compare'
+            sx={{
+              gap: 0.75,
+              px: 1,
+              minWidth: 0,
+              whiteSpace: 'nowrap',
+              fontSize: 12,
+              fontWeight: 500,
+              color: compareExpanded ? 'primary.dark' : 'text.secondary',
+              bgcolor: compareExpanded ? 'primary.light' : undefined,
+              '&:hover': { bgcolor: compareExpanded ? 'primary.light' : 'action.hover', color: compareExpanded ? 'primary.dark' : 'text.primary' },
+            }}
+          >
+            Compare with…
+            <Kbd aria-hidden>c</Kbd>
+          </Button>
+        )}
+        {href && (
+          <IconButton
+            size='small'
+            component={Link}
+            href={href}
+            target='_blank'
+            rel='noopener noreferrer'
+            aria-label='Open full detail page'
+            sx={{ color: 'text.secondary' }}
+          >
+            <OpenInNewIcon fontSize='small' />
+          </IconButton>
+        )}
+        <IconButton size='small' onClick={onClose} aria-label='Close drawer'>
+          <CloseIcon fontSize='small' />
+        </IconButton>
+      </Stack>
+    </Stack>
+  );
+
   return (
     <>
-      <Stack
-        direction='row'
-        alignItems='center'
-        justifyContent='space-between'
-        sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}
-      >
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant='subtitle1' fontWeight={600} noWrap>
-            {title}
-          </Typography>
-          <Typography
-            variant='body2'
-            color='text.secondary'
-            noWrap
-            component='div'
-            // Kinds are case-sensitive and read as code.
-            sx={isResource ? { fontFamily: 'var(--font-mono)' } : undefined}
-          >
-            {isResource ? subtitle || 'Resource' : adapter.entityType}
-            {!isResource && subtitle && subtitle !== title ? ` · ${subtitle}` : ''}
-          </Typography>
-        </Box>
-        <Stack direction='row' alignItems='center' spacing={0.5}>
-          {href && (
-            <IconButton
-              size='small'
-              component={Link}
-              href={href}
-              target='_blank'
-              rel='noopener noreferrer'
-              aria-label='Open full detail page'
-              sx={{ color: 'text.secondary' }}
-            >
-              <OpenInNewIcon fontSize='small' />
-            </IconButton>
-          )}
-          <IconButton size='small' onClick={onClose} aria-label='Close drawer'>
-            <CloseIcon fontSize='small' />
-          </IconButton>
-        </Stack>
-      </Stack>
+      {header}
 
       {isResource && (
         <ResourceContext
@@ -253,34 +331,32 @@ function DrawerBody({
           if (v === 'resources') setBodiesWanted(true);
           setActiveTab(v);
         }}
-        sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 36 }}
+        sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 36, ...(unit && { px: '14px', '& .MuiTabs-flexContainer': { gap: '18px' }, '& .MuiTab-root': { minWidth: 0, px: 0 } }) }}
       >
-        {isResource && hasOverview && (
-          <Tab
-            label='Overview'
-            value='overview'
-            sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.78rem' }}
-          />
-        )}
-        {isResource && (
-          <Tab
-            label='YAML'
-            value='yaml'
-            sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.78rem' }}
-          />
-        )}
-        {!isResource && (
-          <Tab
-            label='Details'
-            value='details'
-            sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.78rem' }}
-          />
-        )}
+        {isResource && hasOverview && <Tab label='Overview' value='overview' sx={TAB_SX} />}
+        {isResource && <Tab label='YAML' value='yaml' sx={TAB_SX} />}
+        {unit && <Tab label='Summary' value='summary' sx={TAB_SX} data-testid='vx-unit-summary-tab' />}
+        {!isResource && !unit && <Tab label='Details' value='details' sx={TAB_SX} />}
         {supportsResources && (
           <Tab
-            label={resourceCount === null ? 'Resources' : `Resources (${resourceCount})`}
+            // The count is muted beside the name; the name read out keeps it in brackets.
+            aria-label={resourceCount === null ? 'Resources' : `Resources (${resourceCount})`}
+            label={
+              unit && resourceCount !== null ? (
+                <span>
+                  Resources
+                  <Box component='span' sx={{ color: 'text.disabled', ml: 0.5, fontWeight: 500 }}>
+                    {resourceCount}
+                  </Box>
+                </span>
+              ) : resourceCount === null ? (
+                'Resources'
+              ) : (
+                `Resources (${resourceCount})`
+              )
+            }
             value='resources'
-            sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.78rem' }}
+            sx={TAB_SX}
           />
         )}
       </Tabs>
@@ -292,10 +368,11 @@ function DrawerBody({
         {shownTab === 'details' && (
           <DetailsTab row={row} view={view} details={details} href={href} />
         )}
+        {shownTab === 'summary' && unit && <UnitSummary model={unit} />}
         {shownTab === 'resources' && supportsResources && (
           <ResourcesTab
             rows={unitResources.rows}
-            isLoading={unitResources.isLoading}
+            isLoading={unitResources.isLoading || holdReads}
             error={unitResources.error}
             selectedId={resourceId}
             onSelect={setResourceId}
@@ -312,9 +389,14 @@ function DrawerBody({
           />
         )}
       </Box>
+      {/* The keys work on every tab; the reminder is the Summary's, so a resource's detail keeps the room. */}
+      {shownTab === 'summary' && unit && (
+        <KeysFooter primary={!!unit.verdict.primary?.id && !!unit.actions[unit.verdict.primary.id]} />
+      )}
+      {unit && <UnitPanelDialogs dialog={unit.dialog} actions={unit.dialogActions} upgrade={unit.upgrade} />}
     </>
   );
-}
+});
 
 interface ResourceBody {
   body: string | undefined;

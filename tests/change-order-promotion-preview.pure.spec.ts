@@ -104,3 +104,34 @@ test('a clone the dry run would make has no Unit to stand beside, and is left ou
   const preview = readPromotionPreview(result([{ Slug: 'cache', Action: 'Clone', ConfigData: 'x: 1\n' }]));
   expect(preview.dataByUnitId.size).toBe(0);
 });
+
+/*
+ * WHY A SPACE WENT UNPLANNED DECIDES WHETHER THE READER IS WARNED. A Space
+ * that takes from another Space of the same promotion is Blocked on every dry
+ * run of a chained ChangeOrder, which is ordinary; one that failed to plan is not.
+ * The reason is carried per Space so the two can be told apart.
+ */
+test('each Space the dry run did not plan carries why', () => {
+  const preview = readPromotionPreview({
+    DryRun: true,
+    Spaces: [
+      { SpaceID: 'chained', Action: 'Blocked', Reason: 'UpstreamPromotedFirst' },
+      { SpaceID: 'behind', Action: 'Blocked', Reason: 'UpstreamFailed' },
+      { SpaceID: 'broken', Action: 'Failed', Error: { Message: 'merge refused' } },
+      { SpaceID: 'fine', Action: 'Promote', Units: [{ UnitID: 'web', Action: 'Mark' }] },
+      { SpaceID: 'level', Action: 'Unchanged' },
+    ],
+  });
+  expect(Object.fromEntries(preview.unplannedReasonBySpaceId)).toEqual({
+    chained: 'UpstreamPromotedFirst',
+    behind: 'UpstreamFailed',
+    broken: 'Failed',
+  });
+  // The same Spaces as `undeterminedSpaceIds`, never more and never fewer.
+  expect([...preview.undeterminedSpaceIds].sort()).toEqual([...preview.unplannedReasonBySpaceId.keys()].sort());
+});
+
+test('a Space blocked with no reason code is named by its action', () => {
+  expect(readPromotionPreview(result(undefined, 'Blocked')).unplannedReasonBySpaceId.get(SPACE)).toBe('Blocked');
+  expect(readPromotionPreview(result(undefined, 'Promote')).unplannedReasonBySpaceId.size).toBe(0);
+});

@@ -9,6 +9,7 @@ import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 
 import { changeOrderCardTokens, changeOrderFontMono, changeOrderInk, changeOrderStatus, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
 import { reviewCommentCopy as copy } from './reviewCommentCopy';
+import { useAnnounce } from '../reviews/announceContext';
 import { useReviewCommentsState } from './reviewCommentsContext';
 import { ReviewThreadView } from './ReviewThreadView';
 import { reviewCommentElementId, reviewThreadElementId, type ReviewThread } from './reviewThreads';
@@ -37,6 +38,7 @@ function anchorCaption(thread: ReviewThread) {
 export function ReviewConversation({ slugOf, revealDiffs }: ReviewConversationProps) {
   const state = useReviewCommentsState();
   const [missing, setMissing] = useState<string | undefined>(undefined);
+  const announce = useAnnounce();
   const linkFollowed = useRef(false);
   const loaded = state?.reviews.status === 'resolved' ? state.reviews.threads : undefined;
 
@@ -79,14 +81,17 @@ export function ReviewConversation({ slugOf, revealDiffs }: ReviewConversationPr
     }
     if (revealDiffs === undefined) {
       setMissing(threadId);
+      announce(copy.notInDiff);
       return;
     }
     // A folded card draws its rows once opened: look again after it has.
     revealDiffs();
     window.setTimeout(() => {
       const revealed = document.getElementById(reviewThreadElementId(threadId));
-      if (revealed === null) setMissing(threadId);
-      else scrollTo(revealed);
+      if (revealed === null) {
+        setMissing(threadId);
+        announce(copy.notInDiff);
+      } else scrollTo(revealed);
     }, 120);
   };
 
@@ -148,7 +153,7 @@ export function ReviewConversation({ slugOf, revealDiffs }: ReviewConversationPr
                         {copy.showInDiff}
                       </Button>
                       {missing === thread.id ? (
-                        <Box component="span" role="status" sx={{ width: '100%', textAlign: 'right', color: changeOrderInk.subtle }}>
+                        <Box component="span" sx={{ width: '100%', textAlign: 'right', color: changeOrderInk.subtle }}>
                           {copy.notInDiff}
                         </Box>
                       ) : null}

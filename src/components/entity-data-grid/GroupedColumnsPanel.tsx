@@ -118,7 +118,7 @@ export const GroupedColumnsPanel = ({
    * Format field names for human-readable display
    * 1. Removes dynamic column prefixes (Labels., Values., etc.)
    * 2. Handles acronyms by preserving grouping (WorkerID -> Worker ID)
-   * 3. Converts camelCase to space-separated words (bridgeWorker -> bridge Worker)
+   * 3. Converts camelCase to space-separated words (upstreamUnit -> upstream Unit)
    */
   const formatFieldName = (field: string): string => {
     // Check all dynamic group prefixes first
@@ -132,7 +132,7 @@ export const GroupedColumnsPanel = ({
     // Handle acronyms by not adding space between consecutive capitals
     return field
       .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2') // Handle acronyms followed by word (e.g., "WorkerID" -> "Worker ID")
-      .replace(/([a-z\d])([A-Z])/g, '$1 $2') // Handle normal camelCase (e.g., "bridgeWorker" -> "bridge Worker")
+      .replace(/([a-z\d])([A-Z])/g, '$1 $2') // Handle normal camelCase (e.g., "upstreamUnit" -> "upstream Unit")
       .trim();
   };
 

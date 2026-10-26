@@ -1,0 +1,7 @@
+{
+  "SpaceID": "{{spaceId}}",
+  "SpaceSlug": "{{slug}}",
+  "Action": "Blocked",
+  "Reason": "UpstreamPromotedFirst",
+  "Message": "takes from a Space this promotion promotes first"
+}

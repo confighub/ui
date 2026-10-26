@@ -29,12 +29,6 @@ export const FIELD_TO_API_MAPPING: Record<string, string> = {
   headRevisionNum: 'HeadRevisionNum',
   lastReleasedRevisionNum: 'LastReleasedRevisionNum',
   lastChangeDescription: 'LastChangeDescription',
-  // BridgeWorker-specific fields
-  condition: 'Condition',
-  lastSeenAt: 'LastSeenAt',
-  bridgeWorkerId: 'BridgeWorkerID',
-  lastMessage: 'LastMessage',
-  ipAddress: 'IPAddress',
   // Target-specific fields
   targetId: 'TargetID',
   // Trigger-specific fields

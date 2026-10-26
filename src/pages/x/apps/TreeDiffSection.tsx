@@ -4,6 +4,7 @@ import { Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, us
 
 import Box from '@mui/material/Box';
 import Tooltip from '@mui/material/Tooltip';
+import type { SystemStyleObject, Theme } from '@mui/system';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 
 import { DiffRowCommentsContext } from '@/components/config-diff/diffComments';
@@ -152,6 +153,34 @@ export interface TreeDiffDomHooks {
    * before/after distinction is not carried by colour alone.
    */
   srValuePrefix?: { old: string; new: string };
+  /**
+   * How a row's key reads, when the tree's keys are in a path syntax a reader
+   * should not have to decode. Rows are still built and addressed by `node.key`.
+   */
+  formatKey?: (key: string) => string;
+  /**
+   * One leaf to mark, found by identity in the tree the caller passed: its row
+   * takes `id`, `data-highlighted="true"` and `sx`, and the folders above it open.
+   */
+  highlight?: TreeDiffHighlight;
+}
+
+/** The leaf a caller marks, and how. */
+export interface TreeDiffHighlight {
+  node: DiffTreeNode;
+  id: string;
+  sx: SystemStyleObject<Theme>;
+}
+
+function holdsNode(folder: DiffTreeNode, target: DiffTreeNode): boolean {
+  return (folder.children ?? []).some((child) => child === target || holdsNode(child, target));
+}
+
+/** The attributes and styles of a marked row; nothing at all for any other row. */
+function markOf(node: DiffTreeNode, domHooks: TreeDiffDomHooks | undefined): { attrs: Record<string, string>; sx: SystemStyleObject<Theme> } | undefined {
+  const highlight = domHooks?.highlight;
+  if (highlight === undefined || highlight.node !== node) return undefined;
+  return { attrs: { id: highlight.id, 'data-highlighted': 'true' }, sx: highlight.sx };
 }
 
 interface TreeDiffSectionProps {
@@ -218,17 +247,18 @@ const KEPT_VALUE_SX = {
  * both sides, and a padlock marker saying why. The marker is focusable, so the
  * full path and what the change would have written reach a keyboard too.
  */
-const KeptLeafRow = memo(({ node, kept, depth, striped }: { node: DiffTreeNode; kept: KeptValue; depth: number; striped: boolean }) => {
+const KeptLeafRow = memo(({ node, kept, depth, striped, domHooks }: { node: DiffTreeNode; kept: KeptValue; depth: number; striped: boolean; domHooks?: TreeDiffDomHooks }) => {
   const tone = kept.tone ?? componentTheme.attention;
   const lines = [changeOrderCopy.keptValue.summary(kept.value, kept.incoming), kept.path];
+  const mark = markOf(node, domHooks);
   return (
-    <ReviewRow $striped={striped} $plain data-kept="true" sx={{ alignItems: 'center', minHeight: 28, padding: '3px 0' }}>
+    <ReviewRow $striped={striped} $plain data-kept="true" {...mark?.attrs} sx={{ alignItems: 'center', minHeight: 28, padding: '3px 0', ...mark?.sx }}>
       <PropertyCell
         className={KEY_CELL_CLASS}
         sx={{ display: 'flex', alignItems: 'center', gap: 0, paddingLeft: `${16 + depth * INDENT_PX}px`, fontSize: 12, fontFamily: componentTheme.fontMono }}
       >
         <Box component="span" sx={{ width: 10, flexShrink: 0 }} />
-        <PathValue style={{ color: componentTheme.fgMuted, fontWeight: 600, minWidth: 0, overflowWrap: 'break-word' }}>{node.key}</PathValue>
+        <PathValue style={{ color: componentTheme.fgMuted, fontWeight: 600, minWidth: 0, overflowWrap: 'break-word' }}>{domHooks?.formatKey?.(node.key) ?? node.key}</PathValue>
       </PropertyCell>
       <BeforeCell sx={{ fontSize: 12, fontFamily: componentTheme.fontMono }}>
         <Box sx={KEPT_VALUE_SX}>
@@ -282,6 +312,15 @@ KeptLeafRow.displayName = 'KeptLeafRow';
 const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = '', variantOverrides, rowIndex = 0, columnStyle, allPaths, changedPaths, changedDiffs, viewOnly = false, domHooks }: { node: DiffTreeNode; depth: number; variant: 'upgrade' | 'apply' | 'gated' | 'variation' | 'data'; filterText?: string; pathPrefix?: string; variantOverrides?: Map<string, ('upgrade' | 'apply' | 'gated' | 'variation')[]>; rowIndex?: number; columnStyle: CSSProperties; allPaths?: { path: string; value: string }[]; changedPaths?: Set<string>; changedDiffs?: Map<string, { oldValue: string; newValue: string }>; viewOnly?: boolean; domHooks?: TreeDiffDomHooks }): ReactNode => {
   const [expanded, setExpanded] = useState(() => hasChangedDescendant(node));
   const toggle = useCallback(() => setExpanded((prev) => !prev), []);
+  // A newly marked leaf is shown: a folder closed by hand opens again when it holds it.
+  const highlightNode = domHooks?.highlight?.node;
+  const [openedFor, setOpenedFor] = useState(highlightNode);
+  if (openedFor !== highlightNode) {
+    setOpenedFor(highlightNode);
+    if (highlightNode !== undefined && node.type === 'folder' && !expanded && holdsNode(node, highlightNode)) setExpanded(true);
+  }
+  const mark = markOf(node, domHooks);
+  const keyText = domHooks?.formatKey?.(node.key) ?? node.key;
   const fullPath = pathPrefix ? `${pathPrefix}.${node.key}` : node.key;
   // A page reviewing this diff puts a comment button on a changed row, and the row's threads under it.
   const comments = useContext(DiffRowCommentsContext);
@@ -363,18 +402,18 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
   // --- Leaf rendering ---
 
   if (isLeaf && node.diff) {
-    if (node.kept) return <KeptLeafRow node={node} kept={node.kept} depth={depth} striped={striped} />;
+    if (node.kept) return <KeptLeafRow node={node} kept={node.kept} depth={depth} striped={striped} domHooks={domHooks} />;
 
     // Context leaf: dimmed, single value in after column
     if (node.context) {
       return (
-        <ReviewRow $striped={striped} $plain sx={{ alignItems: 'center', minHeight: 22, py: '1px', opacity: 0.45 }}>
+        <ReviewRow $striped={striped} $plain {...mark?.attrs} sx={{ alignItems: 'center', minHeight: 22, py: '1px', opacity: 0.45, ...mark?.sx }}>
           <PropertyCell
             className={KEY_CELL_CLASS}
             sx={{ display: 'flex', alignItems: 'center', gap: 0, paddingLeft: `${16 + depth * INDENT_PX}px`, fontSize: 12, fontFamily: componentTheme.fontMono, color: componentTheme.fgSubtle }}
           >
             <Box component="span" sx={{ width: 10, flexShrink: 0 }} />
-            <PathValue style={{ color: componentTheme.fgSubtle, minWidth: 0, overflowWrap: 'break-word' }}>{node.key}</PathValue>
+            <PathValue style={{ color: componentTheme.fgSubtle, minWidth: 0, overflowWrap: 'break-word' }}>{keyText}</PathValue>
           </PropertyCell>
           <BeforeCell />
           <AfterCell sx={{ fontSize: 12, fontFamily: componentTheme.fontMono }}>
@@ -391,14 +430,14 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
 
     if (viewOnly) {
       return (
-        <ReviewRow $striped={striped} $plain sx={{ alignItems: 'center' }}>
+        <ReviewRow $striped={striped} $plain {...mark?.attrs} sx={{ alignItems: 'center', ...mark?.sx }}>
           <PropertyCell
             className={KEY_CELL_CLASS}
             sx={{ display: 'flex', alignItems: 'center', gap: 0, paddingLeft: `${16 + depth * INDENT_PX}px`, fontSize: 12, fontFamily: componentTheme.fontMono }}
           >
             <Box component="span" sx={{ width: 10, flexShrink: 0 }} />
             <PathValue style={{ color: componentTheme.fgDefault, fontWeight: 600, minWidth: 0, overflowWrap: 'break-word' }}>
-              {filterText ? highlightText(node.key, filterText) : node.key}
+              {filterText ? highlightText(keyText, filterText) : keyText}
             </PathValue>
           </PropertyCell>
           <AfterCell sx={{ fontSize: 12, fontFamily: componentTheme.fontMono, color: componentTheme.fgDefault }}>
@@ -420,11 +459,13 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         data-comment-path={commentPath}
+        {...mark?.attrs}
         sx={{
           alignItems: autoWrap || preformatted ? 'flex-start' : 'center',
           ...(commentPath === undefined
             ? {}
             : { '& .diff-row-comment-add': { opacity: 0 }, '&:hover .diff-row-comment-add, & .diff-row-comment-add:focus-within': { opacity: 1 } }),
+          ...mark?.sx,
         }}
       >
         <PropertyCell
@@ -438,7 +479,7 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
             </Box>
           )}
           <Box component="span" sx={{ width: 10, flexShrink: 0 }} />
-          <PathValue style={{ color: componentTheme.fgDefault, fontWeight: 600, minWidth: 0, overflowWrap: 'break-word' }}>{filterText ? highlightText(node.key, filterText) : node.key}</PathValue>
+          <PathValue style={{ color: componentTheme.fgDefault, fontWeight: 600, minWidth: 0, overflowWrap: 'break-word' }}>{filterText ? highlightText(keyText, filterText) : keyText}</PathValue>
         </PropertyCell>
         <BeforeCell sx={{ fontSize: 12, fontFamily: componentTheme.fontMono }}>
           {overrides && overrides.length > 0 ? null : (
@@ -596,7 +637,7 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
                     '&:hover': { color: componentTheme.fgDefault, ...(extraCount > 0 && { '& .seg-chevron': { width: 10, opacity: 0.6 } }) },
                   }}
                 >
-                  {filterText ? highlightText(seg, filterText) : seg}
+                  {filterText ? highlightText(domHooks?.formatKey?.(seg) ?? seg, filterText) : (domHooks?.formatKey?.(seg) ?? seg)}
                   <Box
                     component="span"
                     className="seg-chevron"
@@ -632,7 +673,7 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
               );
             })
           ) : (
-            <PathValue>{filterText ? highlightText(folderLabel, filterText) : folderLabel}</PathValue>
+            <PathValue>{filterText ? highlightText(domHooks?.formatKey?.(folderLabel) ?? folderLabel, filterText) : (domHooks?.formatKey?.(folderLabel) ?? folderLabel)}</PathValue>
           )}
         </PropertyCell>
       </ReviewRow>

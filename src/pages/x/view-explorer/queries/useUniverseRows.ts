@@ -52,6 +52,8 @@ const UNIT_SELECT = [
   'CreatedAt',
   'UpdatedAt',
   'LastChangeDescription',
+  // The names of the gates that fail, for the row panel's verdict and its group counts.
+  'ValidationErrors',
 ].join(',');
 
 const UNIT_INCLUDE_BASE = ['SpaceID', 'TargetID', 'UpstreamUnitID', 'UpstreamSpaceID'];

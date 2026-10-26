@@ -29,6 +29,8 @@ import {
   rowImageChange,
   type ImageRef,
 } from '../imageRef';
+import { ABSENT_PILL_SX } from './absentPill';
+import { useComparePageLayout } from './compareLayout';
 import { containerImageOf } from './containerImagePaths';
 import { UNANSWERABLE, unanswerableReason } from './unanswerable';
 import { rowDiffers, type CompareColumnInput, type CompareLeafRow } from './deploymentCompareModel';
@@ -90,6 +92,8 @@ function sharedRepoPath(literals: readonly string[]): string | null {
 }
 
 function CompareImageRowsInner({ columns, rows }: CompareImageRowsProps): ReactElement | null {
+  // The page layout draws "not set" as the grid's cells do, in their pill.
+  const page = useComparePageLayout();
   const groups = useMemo(() => {
     const found: { key: string; container: string; row: CompareLeafRow }[] = [];
     for (const row of rows) {
@@ -179,7 +183,7 @@ function CompareImageRowsInner({ columns, rows }: CompareImageRowsProps): ReactE
                     component="span"
                     sx={{ ...LETTER_SX, background: componentTheme.fgDefault }}
                   >
-                    {letterFor(index)}
+                    {column?.letter ?? letterFor(index)}
                   </Box>
                   <Box
                     component="span"
@@ -188,7 +192,16 @@ function CompareImageRowsInner({ columns, rows }: CompareImageRowsProps): ReactE
                   >
                     {column?.label ?? letterFor(index)}
                   </Box>
-                  {printed === null ? (
+                  {printed === null && page && cell.kind === 'absent' ? (
+                    <Box
+                      component="span"
+                      data-fidelity="value-absent"
+                      data-cell-kind={cell.kind}
+                      sx={ABSENT_PILL_SX}
+                    >
+                      not set
+                    </Box>
+                  ) : printed === null ? (
                     <Box
                       component="span"
                       data-fidelity="value-absent"

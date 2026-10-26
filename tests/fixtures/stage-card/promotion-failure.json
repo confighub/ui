@@ -1,0 +1,13 @@
+{
+  "Stage": "{{stage}}",
+  "FailedAt": "{{failedAt}}",
+  "UserID": "{{userId}}",
+  "Spaces": [
+    {
+      "SpaceID": "{{spaceId}}",
+      "SpaceSlug": "{{slug}}",
+      "Action": "Promote",
+      "Units": [{ "Slug": "app", "Error": "{{message}}" }]
+    }
+  ]
+}

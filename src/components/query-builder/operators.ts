@@ -229,48 +229,6 @@ export const FIELD_CONFIGS: Record<FilterFieldType, FieldConfig> = {
     valueType: 'labelKeyValue',
     placeholder: 'Select label...',
   },
-  // BridgeWorker-specific fields
-  condition: {
-    type: 'condition',
-    label: 'Condition',
-    operators: MULTI_SELECT_OPERATORS,
-    valueType: 'select',
-    placeholder: 'Select conditions...',
-    options: [
-      { value: 'Ready', label: 'Ready' },
-      { value: 'NotReady', label: 'Not Ready' },
-      { value: 'Unresponsive', label: 'Unresponsive' },
-      { value: 'Disconnected', label: 'Disconnected' },
-    ],
-  },
-  lastSeenAt: {
-    type: 'lastSeenAt',
-    label: 'Last Seen',
-    operators: DATE_OPERATORS,
-    valueType: 'date',
-    placeholder: 'Select date...',
-  },
-  bridgeWorkerId: {
-    type: 'bridgeWorkerId',
-    label: 'Worker ID',
-    operators: SELECT_OPERATORS,
-    valueType: 'text',
-    placeholder: 'Enter worker ID...',
-  },
-  lastMessage: {
-    type: 'lastMessage',
-    label: 'Last Message',
-    operators: STRING_OPERATORS,
-    valueType: 'text',
-    placeholder: 'Search messages...',
-  },
-  ipAddress: {
-    type: 'ipAddress',
-    label: 'IP Address',
-    operators: STRING_OPERATORS,
-    valueType: 'text',
-    placeholder: 'Enter IP address...',
-  },
   // Target-specific fields
   targetId: {
     type: 'targetId',
@@ -396,22 +354,6 @@ export const ENTITY_AVAILABLE_FIELDS: Record<EntityType, FilterFieldType[]> = {
     'where',
     'whereData',
   ],
-  BridgeWorker: [
-    // Common fields
-    'space',
-    'slug',
-    'labels',
-    'createdAt',
-    'updatedAt',
-    // Entity-specific fields
-    'condition',
-    'lastSeenAt',
-    'bridgeWorkerId',
-    'lastMessage',
-    'ipAddress',
-    // Advanced filters
-    'where',
-  ],
   Target: [
     // Common fields
     'space',
@@ -481,13 +423,6 @@ export const FIELD_DESCRIPTIONS: Record<FilterFieldType, string> = {
   unreleasedChanges: 'Filter by whether the unit has unapplied changes (head > live revision)',
   validationErrorsCount: 'Filter by the number of validation errors configured for the unit',
   checkResult: 'Filter by compliance check result (Pass, Fail, or N/A)',
-
-  // BridgeWorker-specific fields
-  condition: 'Filter by bridge worker condition status',
-  lastSeenAt: 'Filter by when the bridge worker was last active',
-  bridgeWorkerId: 'Filter by the unique bridge worker identifier',
-  lastMessage: 'Filter by the last message from the bridge worker',
-  ipAddress: 'Filter by the IP address the bridge worker connected from',
 
   // Target-specific fields
   targetId: 'Filter by the unique target identifier',

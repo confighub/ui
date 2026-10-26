@@ -1,6 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
+import { COMPARE_PARAM, compareLinkNotice, decodeCompareParam } from '../model/compare';
 import { lensSignature } from '../model/lens-compile';
 import { BUILTIN_TAB_ID, initialExplorerState, makeForkPrefix } from '../model/reducer';
 import { decodeDraftParam, viewDefFromSaved, viewDefsEqual } from '../model/view-codec';
@@ -13,7 +14,8 @@ import { filterVersionKey, rememberVersions, type Versions } from './versions';
  * The explorer's first state: the built-in tab, the viewer's pinned views,
  * the views with unsaved changes, the temporary tabs kept in this browser,
  * and whatever the URL names. The URL wins: a shared link to a draft opens
- * that draft even in a browser that has never seen it.
+ * that draft even in a browser that has never seen it, and `compare` opens
+ * the active tab comparing the Units it names.
  */
 
 /** Pinned when the viewer has never chosen: the most recently updated views. */
@@ -171,5 +173,16 @@ export function buildInitialState({ views, storage, params }: InitialInput): Ini
     }
   }
 
-  return { state: { ...state, tabs, activeId }, notice, versions };
+  // The comparison belongs to the tab the link opens; Units the viewer cannot see are dropped once the rows load.
+  let compare: ExplorerState['compare'];
+  const compareParam = params.get(COMPARE_PARAM);
+  if (compareParam !== null) {
+    const decoded = decodeCompareParam(compareParam);
+    const listsUnits = tabs.find((t) => t.id === activeId)?.work.entity === 'Unit';
+    if (listsUnits && decoded.ids.length) compare = { [activeId]: decoded.ids };
+    const said = compareLinkNotice(decoded, listsUnits);
+    if (said) notice = notice ? `${notice} ${said}` : said;
+  }
+
+  return { state: { ...state, tabs, activeId, ...(compare ? { compare } : {}) }, notice, versions };
 }

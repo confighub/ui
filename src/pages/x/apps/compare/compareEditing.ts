@@ -60,11 +60,13 @@ export interface StagedCompareEdit {
  */
 export type EditBlockReason = 'by-position' | 'unanswerable';
 
-export const EDIT_BLOCK_EXPLANATION: Record<EditBlockReason, string> = {
-  'by-position':
-    'This list gives its elements no identity, so they could only be lined up by position. An edit here could write to a different element in another deployment.',
-  unanswerable: 'There is nothing to edit here — this deployment has no value at this path to change.',
-};
+/** Why a cell cannot be edited, in the words of the page: its columns are deployments, or Units. */
+export function editBlockExplanations(noun: 'deployment' | 'Unit'): Record<EditBlockReason, string> {
+  return {
+    'by-position': `This list gives its elements no identity, so they could only be lined up by position. An edit here could write to a different element in another ${noun}.`,
+    unanswerable: `There is nothing to edit here — this ${noun} has no value at this path to change.`,
+  };
+}
 
 /** Identifies a staged edit. One per field per deployment. */
 export function editKey(deploymentId: string, unitSlug: string, identityPath: string): string {

@@ -18,6 +18,7 @@ import { Theme } from '../../../src/components/theme-provider/ThemeProvider';
 import { CompareCollapsible } from '../../../src/pages/x/apps/compare/CompareCollapsible';
 import { CompareColumnDnd } from '../../../src/pages/x/apps/compare/CompareColumnDnd';
 import { ComponentCompareSection } from '../../../src/pages/x/apps/compare/ComponentCompareSection';
+import { CompareVocabulary, UNIT_VOCABULARY } from '../../../src/pages/x/apps/compare/compareVocabulary';
 import { DeploymentSelectors } from '../../../src/pages/x/apps/compare/DeploymentSelectors';
 
 const A = `apiVersion: apps/v1
@@ -299,6 +300,29 @@ createRoot(document.getElementById('root')!).render(
         deploymentCount={2}
       />
     </div>
+    {/* The `rules` and `settled-empty` situations again, as the View explorer
+        mounts them: its columns are Units, and it names the one compared
+        elsewhere, so there is no unit header. */}
+    <CompareVocabulary.Provider value={UNIT_VOCABULARY}>
+      <div data-state="unit-noun" style={{ width: 645, height: 300, display: 'flex', flexDirection: 'column' }}>
+        <ComponentCompareSection
+          units={[
+            {
+              slug: 'checkout',
+              columns: [
+                { deploymentId: 'r0', label: 'prod', data: 'spec:\n  replicas: 3\n' },
+                { deploymentId: 'r1', label: 'dev', data: 'spec:\n  replicas: 9\n  onlyHere: yes\n' },
+              ],
+            },
+          ]}
+          deploymentCount={2}
+          showUnitHeader={false}
+        />
+      </div>
+      <div data-state="unit-noun-empty" style={{ width: 560, height: 260, display: 'flex', flexDirection: 'column' }}>
+        <ComponentCompareSection units={[{ slug: 'checkout', columns: SETTLED_COLS }]} deploymentCount={2} showUnitHeader={false} />
+      </div>
+    </CompareVocabulary.Provider>
     <div data-state="blocked" style={{ width: 645, height: 300, display: 'flex', flexDirection: 'column' }}>
       <ComponentCompareSection
         units={[

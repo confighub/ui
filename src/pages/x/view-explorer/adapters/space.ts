@@ -31,7 +31,6 @@ const ALL_SPACE_COLUMNS = [
   'TotalUnitCount',
   'TotalLinkCount',
   'TotalFilterCount',
-  'TotalBridgeWorkerCount',
   'TotalChangeSetCount',
   'TotalTagCount',
   'TotalViewCount',

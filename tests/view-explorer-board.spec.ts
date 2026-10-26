@@ -10,7 +10,7 @@ import { type ExplorerSeed, readView, seedExplorer, openExplorer, expectOverlays
 import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
 
 /**
- * The View Explorer's List and Board layouts: lanes from the first group
+ * The View Explorer's Board layout: lanes from the first group
  * level (and a picker that writes it), sub-headings from the second, empty
  * lanes on request, cards that open the drawer, and the layout saved with the
  * view. The seed is three Units in a Space of their own: alpha and beta are
@@ -55,7 +55,7 @@ function draftOf(lenses: Lens[], patch: Partial<ViewDef> = {}): ViewDef {
 const draftUrl = (viewId: string, def: ViewDef) => `/x/view-explorer?view=${viewId}&d=${encodeDraftParam(def)}`;
 const uniqueName = (prefix: string) => `${prefix} ${RandomSlugGenerator.randomSlugName()}`;
 
-test.describe('view explorer list and board', () => {
+test.describe('view explorer board', () => {
   // Wide enough for the filter column to start open, so the Group section is on screen.
   test.use({ storageState: 'authentication.json', viewport: { width: 1440, height: 900 } });
 
@@ -99,7 +99,8 @@ test.describe('view explorer list and board', () => {
 
     // Saving keeps the board.
     await page.getByTestId('vx-save-actions').getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByText(/^Saved /)).toBeVisible();
+    // The toast; the Functions panel has a "Saved Functions" heading when the organization has saved invocations.
+    await expect(page.getByText(/^Saved “/)).toBeVisible();
     const saved = await readView(view.spaceId, view.viewId);
     expect(saved.View.Annotations['ui.confighub.io/layout']).toBe('board');
     expect(saved.View.GroupBy).toBe('Labels.app');
@@ -141,26 +142,26 @@ test.describe('view explorer list and board', () => {
     await page.keyboard.press('Escape');
 
     await alpha.click({ position: { x: 8, y: 8 } });
-    await expect(page.getByTestId('vx-row-panel').getByRole('tab', { name: 'Details' })).toBeVisible();
+    await expect(page.getByTestId('vx-row-panel').getByRole('tab', { name: 'Summary' })).toBeVisible();
   });
 
-  test('L shows the list under its groups, and T goes back to the table', async ({ page }) => {
-    const view = await seed.createView({ name: uniqueName('List') });
-    await openExplorer(page, draftUrl(view.viewId, draftOf([spaceLens(seed.spaceSlug)], { groupBy: ['Labels.app'] })));
-    await expect(page.getByTestId('vx-row').first()).toBeVisible();
-    await page.keyboard.press('l');
-    await expect(page.getByTestId('vx-list')).toBeVisible();
-    await expect(page.getByTestId('vx-list-row')).toHaveCount(3);
-    await expect(page.getByTestId('vx-group-row')).toHaveCount(2);
-
-    // A group folds; its rows go, its header stays.
-    await page.getByTestId('vx-group-row').filter({ hasText: 'checkout' }).click();
-    await expect(page.getByTestId('vx-list-row')).toHaveCount(1);
-
-    await page.keyboard.press('t');
-    await expect(page.getByTestId('vx-list')).toHaveCount(0);
+  test('a view saved with the retired List layout, and a link to one, open as the table', async ({ page }) => {
+    const view = await seed.createView({ name: uniqueName('Old list'), annotations: { 'ui.confighub.io/layout': 'list' }, groupBy: 'Labels.app' });
+    await openExplorer(page, `/x/view-explorer?view=${view.viewId}`);
     await expect(page.getByTestId('vx-row')).toHaveCount(3);
+    await expect(page.getByTestId('vx-group-row')).toHaveCount(2);
+    await expect(page.getByTestId('vx-layout-table')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('[data-testid="vx-tab"][data-active]')).not.toHaveAttribute('data-dirty', 'true');
+
+    const link = draftUrl(view.viewId, { ...draftOf([spaceLens(seed.spaceSlug)]), layout: 'list' } as unknown as ViewDef);
+    await openExplorer(page, link);
+    await expect(page.getByTestId('vx-row')).toHaveCount(3);
+    await expect(page.getByTestId('vx-layout-table')).toHaveAttribute('aria-pressed', 'true');
+    // L no longer picks a layout.
+    await page.keyboard.press('l');
+    await expect(page.getByTestId('vx-table')).toBeVisible();
   });
+
   test('a dragged header shows a ghost that follows the pointer and says "Group by" over Group', async ({ page }) => {
     const view = await seed.createView({ name: uniqueName('Ghost') });
     await openExplorer(page, draftUrl(view.viewId, draftOf([spaceLens(seed.spaceSlug)])));
@@ -202,6 +203,69 @@ test.describe('view explorer list and board', () => {
     await page.mouse.up();
     await expect(page.getByTestId('vx-group-level')).toHaveCount(1);
   });
+
+  test('a click on the drop zone, or Enter or Space on it, opens the group picker', async ({ page }) => {
+    const view = await seed.createView({ name: uniqueName('Zone click') });
+    await openExplorer(page, draftUrl(view.viewId, draftOf([spaceLens(seed.spaceSlug)])));
+    await expect(page.getByTestId('vx-row').first()).toBeVisible();
+    const zone = page.getByTestId('vx-group-drop');
+    const picked = page.getByRole('menuitem', { name: 'Toolchain', exact: true });
+
+    await page.getByRole('button', { name: 'Group by a field' }).click();
+    await expect(picked).toBeVisible();
+    await picked.click();
+    await expect(page.getByTestId('vx-group-level')).toHaveCount(1);
+    await expect(picked).toHaveCount(0);
+
+    await expect(zone).toHaveAccessibleName('Add a group level');
+    await zone.focus();
+    await page.keyboard.press('Enter');
+    const space = page.getByRole('menuitem', { name: 'Space', exact: true });
+    await expect(space).toBeVisible();
+    await space.click();
+    await expect(page.getByTestId('vx-group-level')).toHaveCount(2);
+    await expect(space).toHaveCount(0);
+
+    await zone.focus();
+    await page.keyboard.press('Space');
+    await expect(page.getByRole('menuitem', { name: 'Target', exact: true })).toBeVisible();
+  });
+
+  test('a header dropped on the zone adds a level without opening the picker, and no other drag or click opens it', async ({ page }) => {
+    const view = await seed.createView({ name: uniqueName('Zone drop') });
+    await openExplorer(page, draftUrl(view.viewId, draftOf([spaceLens(seed.spaceSlug)])));
+    await expect(page.getByTestId('vx-row').first()).toBeVisible();
+    const picker = page.getByRole('menuitem', { name: 'Toolchain', exact: true });
+    const drag = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      await page.mouse.move(from.x + 10, from.y + 40, { steps: 4 });
+      await page.mouse.move(to.x, to.y, { steps: 16 });
+      await page.mouse.up();
+    };
+    const middle = (b: { x: number; y: number; width: number; height: number }) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+
+    const header = (await page.locator('[data-testid="vx-header"][data-column="Labels.app"]').boundingBox())!;
+    await drag(middle(header), middle((await page.getByTestId('vx-group-drop').boundingBox())!));
+    await expect(page.getByTestId('vx-group-level')).toHaveCount(1);
+    await expect(page.getByTestId('vx-drag-ghost')).toHaveCount(0);
+    await expect(picker).toHaveCount(0);
+
+    // A press on a row released over the zone is no click on the zone.
+    const row = (await page.getByTestId('vx-row').first().boundingBox())!;
+    await drag({ x: row.x + row.width - 30, y: row.y + row.height / 2 }, middle((await page.getByTestId('vx-group-drop').boundingBox())!));
+    await expect(picker).toHaveCount(0);
+
+    // A group level's handle dragged onto the zone, and a click on the level, leave it closed too.
+    const handle = page.getByRole('button', { name: 'Move app' });
+    await drag(middle((await handle.boundingBox())!), middle((await page.getByTestId('vx-group-drop').boundingBox())!));
+    await expect(picker).toHaveCount(0);
+    await page.getByTestId('vx-group-level').first().click();
+    await handle.click();
+    await expect(picker).toHaveCount(0);
+    await expect(page.getByTestId('vx-group-level')).toHaveCount(1);
+  });
+
   test('over the rail at 1280, the ghost stays right of the pointer, inside the content', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     const view = await seed.createView({ name: uniqueName('Rail ghost') });
@@ -275,36 +339,18 @@ test.describe('view explorer list and board', () => {
     await expect(panel).toContainText('alpha');
   });
 
-  test('list rows take focus one at a time; arrows move it, and Enter opens the row', async ({ page }) => {
-    const view = await seed.createView({ name: uniqueName('List keys') });
-    await openExplorer(page, draftUrl(view.viewId, draftOf([spaceLens(seed.spaceSlug)], { layout: 'list', sort: { column: 'Slug', dir: 'ASC' } })));
-    const listRows = page.getByTestId('vx-list-row');
-    await expect(listRows).toHaveCount(3);
-    await expect(page.locator('[data-testid="vx-list-row"][tabindex="0"]')).toHaveCount(1);
-
-    await listRows.first().focus();
-    await page.keyboard.press('ArrowDown');
-    await expect(listRows.nth(1)).toBeFocused();
-    await expect(listRows.nth(1)).toHaveAttribute('tabindex', '0');
-    await page.keyboard.press('End');
-    await expect(listRows.nth(2)).toBeFocused();
-    await page.keyboard.press('Enter');
-    await expect(page.getByTestId('vx-row-panel')).toContainText('gamma');
-  });
-
-  test('folded groups and opened-up lanes stay with their own tab', async ({ page }) => {
-    const annotations = { 'ui.confighub.io/layout': 'list' };
-    const first = await seed.createView({ name: uniqueName('Fold A'), annotations, groupBy: 'Labels.app' });
-    const second = await seed.createView({ name: uniqueName('Fold B'), annotations, groupBy: 'Labels.app' });
+  test('folded groups stay with their own tab', async ({ page }) => {
+    const first = await seed.createView({ name: uniqueName('Fold A'), groupBy: 'Labels.app' });
+    const second = await seed.createView({ name: uniqueName('Fold B'), groupBy: 'Labels.app' });
     await openExplorer(page, `/x/view-explorer?view=${first.viewId}`);
-    await expect(page.getByTestId('vx-list-row')).toHaveCount(3);
+    await expect(page.getByTestId('vx-row')).toHaveCount(3);
     await page.getByTestId('vx-group-row').filter({ hasText: 'checkout' }).click();
-    await expect(page.getByTestId('vx-list-row')).toHaveCount(1);
+    await expect(page.getByTestId('vx-row')).toHaveCount(1);
 
     // A fresh browser pins the newest views, so the second one has a tab already.
     await page.getByTestId('vx-tab').filter({ hasText: second.name }).click();
     await expect(page.locator('[data-testid="vx-tab"][data-active]')).toContainText(second.name);
-    await expect(page.getByTestId('vx-list-row')).toHaveCount(3);
+    await expect(page.getByTestId('vx-row')).toHaveCount(3);
   });
 
   test('opened-up lanes stay with their own tab too', async ({ page }) => {
@@ -320,24 +366,6 @@ test.describe('view explorer list and board', () => {
     await page.getByTestId('vx-tab').filter({ hasText: second.name }).click();
     await expect(page.locator('[data-testid="vx-tab"][data-active]')).toContainText(second.name);
     await expect(lanes(page)).toHaveCount(12);
-  });
-
-  test('a long list keeps one row in the Tab order after the remembered row scrolls away', async ({ page }) => {
-    await manyUnits(page, 300, (i) => ({ app: `app-${i}` }));
-    const view = await seed.createView({ name: uniqueName('Long list') });
-    await openExplorer(page, draftUrl(view.viewId, draftOf([], { layout: 'list' })));
-    const tabbable = page.locator('[data-testid="vx-list-row"][tabindex="0"]');
-    await expect(tabbable).toHaveCount(1);
-    await tabbable.focus();
-    await page.keyboard.press('ArrowDown');
-
-    await page.getByTestId('vx-list').evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
-    await expect(page.locator('[data-testid="vx-list-row"][data-row-id$="000000000299"]')).toBeVisible();
-    await expect(tabbable).toHaveCount(1);
-    await page.getByRole('button', { name: 'Board' }).first().focus();
-    // Tab reaches the list from the toolbar side, at the stand-in row.
-    for (let i = 0; i < 30 && !(await page.evaluate(() => document.activeElement?.getAttribute('data-testid') === 'vx-list-row')); i++) await page.keyboard.press('Tab');
-    await expect(page.locator('[data-testid="vx-list-row"]:focus')).toHaveCount(1);
   });
 
   test('a field with many values: the picker offers only fields with few values, and lanes and sub-headings are capped', async ({ page }) => {

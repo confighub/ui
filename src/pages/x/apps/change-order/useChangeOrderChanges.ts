@@ -107,9 +107,21 @@ const EMPTY_GROUPS: ReadonlyMap<string, ChangeOrderChangeGroup[]> = new Map();
 export interface ChangeOrderChangesResult {
   groups: ReadonlyMap<string, ChangeOrderChangeGroup[]>;
   status: ChangeOrderChangesStatus;
+  /**
+   * The selected stage's Spaces the dry run did not plan, with why
+   * (`StagePromotionPreview.unplannedReasonBySpaceId`). Empty while loading, and
+   * for a Space that has taken the change, which is read from what was written.
+   */
+  unplannedReasonBySpaceId: ReadonlyMap<string, string>;
 }
 
-const LOADING_RESULT: ChangeOrderChangesResult = { groups: EMPTY_GROUPS, status: 'loading' };
+const EMPTY_REASONS: ReadonlyMap<string, string> = new Map();
+
+const LOADING_RESULT: ChangeOrderChangesResult = {
+  groups: EMPTY_GROUPS,
+  status: 'loading',
+  unplannedReasonBySpaceId: EMPTY_REASONS,
+};
 
 /** The diff of a Unit the promotion leaves as it is. */
 const NO_CHANGE: ConfigDiff = { Resources: [] };
@@ -167,8 +179,8 @@ export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs)
    * configuration therefore stays what it is now.
    */
   const [unwrittenUnitIds, setUnwrittenUnitIds] = useState<ReadonlySet<string>>(() => new Set());
-  /** Spaces the dry run could not plan, none of whose Units has an answer. */
-  const [unplannedSpaceIds, setUnplannedSpaceIds] = useState<ReadonlySet<string>>(() => new Set());
+  /** Spaces the dry run could not plan, none of whose Units has an answer, with why. */
+  const [unplannedSpaceIds, setUnplannedSpaceIds] = useState<ReadonlyMap<string, string>>(() => new Map());
   /** What the dry run refused, per resource. Empty until a dry run reports one. */
   const [dryRunConflictsByUnitId, setDryRunConflictsByUnitId] = useState<
     ReadonlyMap<string, readonly ChangeOrderResourceConflict[]>
@@ -275,9 +287,10 @@ export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs)
           return next;
         });
         setUnplannedSpaceIds((prev) => {
-          const next = new Set(prev);
+          const next = new Map(prev);
           for (const spaceId of pendingKey.split(',')) {
-            if (preview.undeterminedSpaceIds.has(spaceId)) next.add(spaceId);
+            const reason = preview.unplannedReasonBySpaceId.get(spaceId);
+            if (preview.undeterminedSpaceIds.has(spaceId)) next.set(spaceId, reason ?? 'Failed');
             else next.delete(spaceId);
           }
           return next;
@@ -532,7 +545,18 @@ export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs)
     const result = new Map<string, ChangeOrderChangeGroup[]>();
     const built = buildChangeOrderChangeGroups(sources);
     result.set(selectedStage.id, built);
-    return { groups: result, status: changeOrderChangesStatus({ pending: false, dryRunFailed, groups: built }) };
+    // Only this stage's pending Spaces: an earlier scope's answer about a Space
+    // that has since taken the change says nothing about what it holds now.
+    const unplannedReasonBySpaceId = new Map<string, string>();
+    for (const spaceId of pendingKey === '' ? [] : pendingKey.split(',')) {
+      const reason = unplannedSpaceIds.get(spaceId);
+      if (reason !== undefined) unplannedReasonBySpaceId.set(spaceId, reason);
+    }
+    return {
+      groups: result,
+      status: changeOrderChangesStatus({ pending: false, dryRunFailed, groups: built }),
+      unplannedReasonBySpaceId,
+    };
   }, [
     skip,
     changeOrderId,

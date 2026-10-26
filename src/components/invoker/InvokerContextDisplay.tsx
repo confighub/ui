@@ -96,6 +96,7 @@ export const InvokerContextDisplay = ({
       <Box
         role="button"
         tabIndex={0}
+        aria-expanded={expanded}
         onClick={() => setExpanded((prev) => !prev)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -274,6 +275,8 @@ export const InvokerContextDisplay = ({
                   return (
                     <Box
                       key={unit.id}
+                      data-testid="invoker-context-unit"
+                      data-unit-id={unit.id}
                       sx={{
                         px: 1.5,
                         py: 0.75,

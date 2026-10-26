@@ -28,6 +28,7 @@ import type {
   ReviewUser,
 } from '../src/pages/change-orders/reviews/changeOrderReviewTypes';
 import {
+  answerOf,
   attestDryRuns,
   changeReviewRequests,
   promoteDryRun,
@@ -37,11 +38,15 @@ import {
   type Send,
 } from '../src/pages/change-orders/reviews/quietServerCalls';
 import {
+  ownLiveRejections,
   promoteFinalOf,
   releaseAnswerOf,
+  REPLACED_NOTE,
+  revocationBody,
   reviewCoverageOf,
   reviewRequestsPatch,
   reviewUserOf,
+  WITHDRAWN_NOTE,
 } from '../src/pages/change-orders/reviews/stageReviewInputs';
 
 const load = <T>(name: string): T =>
@@ -434,6 +439,67 @@ test.describe('review requests', () => {
     expect(reviewRequestsPatch(current, 12, { add: { stage: 'prod', userIds: [BOT] } }).ReviewRequests).toHaveLength(1);
     expect(reviewRequestsPatch(current, 12, { remove: { stage: 'prod', userId: BOT } })).toEqual({ ReviewRequests: [], Version: 12 });
   });
+
+  /*
+   * ASKING AGAIN IS A LATER RequestedAt ON ONE ENTRY. The server keeps a
+   * request's stamp unless the time sent is later than the one it holds, so the
+   * others go back with theirs, and the one asked again goes with a later one
+   * even when the browser's clock is behind the server's.
+   */
+  test('reviewRequestsPatch rerequest sets a later RequestedAt on one entry, and keeps the others', () => {
+    const current: ChangeOrderReviewRequestRead[] = [
+      { Stage: 'prod', UserID: BOT, RequestedAt: '2026-10-14T08:28:16.250Z', RequestedByUserID: E2E },
+      { Stage: 'prod', UserID: E2E, RequestedAt: '2026-10-14T08:20:00Z', RequestedByUserID: BOT },
+      { Stage: 'dev', UserID: BOT, RequestedAt: '2026-10-14T08:00:00Z', RequestedByUserID: E2E },
+    ];
+    const now = Date.parse('2026-10-20T12:00:00Z');
+    expect(reviewRequestsPatch(current, 7, { rerequest: { stage: 'prod', userId: BOT } }, now)).toEqual({
+      ReviewRequests: [
+        { Stage: 'prod', UserID: BOT, RequestedAt: '2026-10-20T12:00:00.000Z' },
+        { Stage: 'prod', UserID: E2E, RequestedAt: '2026-10-14T08:20:00Z' },
+        { Stage: 'dev', UserID: BOT, RequestedAt: '2026-10-14T08:00:00Z' },
+      ],
+      Version: 7,
+    });
+    // A clock behind the recorded time still sends a later one.
+    const behind = Date.parse('2026-10-14T08:00:00Z');
+    const [asked] = reviewRequestsPatch(current, 7, { rerequest: { stage: 'prod', userId: BOT } }, behind).ReviewRequests;
+    expect(Date.parse(asked.RequestedAt ?? '')).toBeGreaterThan(Date.parse('2026-10-14T08:28:16.250Z'));
+  });
+
+  test('reviewRequestsPatch rerequest of someone not requested yet requests them', () => {
+    const current: ChangeOrderReviewRequestRead[] = [{ Stage: 'prod', UserID: BOT, RequestedAt: '2026-10-14T08:28:16Z' }];
+    expect(reviewRequestsPatch(current, 3, { rerequest: { stage: 'prod', userId: E2E } }).ReviewRequests).toEqual([
+      { Stage: 'prod', UserID: BOT, RequestedAt: '2026-10-14T08:28:16Z' },
+      { Stage: 'prod', UserID: E2E },
+    ]);
+  });
+
+  test('a withdrawal revokes only the viewer\'s live rejections, with its own note', () => {
+    const decision = (id: string, result: 'Pass' | 'Fail', live: boolean) => ({
+      id,
+      attestationIds: [id],
+      type: id,
+      person: { userId: E2E, name: 'E2E', initials: 'E', isYou: true },
+      result,
+      note: '',
+      createdAt: '2026-10-14T08:00:00Z',
+      live,
+      expired: false,
+      spaceSlugs: ['v5788-dev'],
+      byRequirement: {},
+      countsToward: [],
+    });
+    const viewer = {
+      eligibility: { kind: 'signedOut' as const },
+      ownByType: { Approval: decision('a', 'Fail', true), Security: decision('b', 'Pass', true), Old: decision('c', 'Fail', false) },
+    };
+    expect(ownLiveRejections({ viewer }).map((d) => d.id)).toEqual(['a']);
+    expect(ownLiveRejections(undefined)).toEqual([]);
+    const target = { attestationId: 'a', spaceId: DEV.spaceId, spaceSlug: DEV.spaceSlug, type: 'Approval' };
+    expect(revocationBody(target, CO, WITHDRAWN_NOTE).Note).toBe(WITHDRAWN_NOTE);
+    expect(revocationBody(target, CO).Note).toBe(REPLACED_NOTE);
+  });
 });
 
 test('coverage: Authored rows from the server; skip codes with their message; per-Space errors', () => {
@@ -554,4 +620,23 @@ test.describe('a 403 never reaches the global /access-denied handler', () => {
     // The release and promote dry runs: no RTK base query at all.
     expect(sources[0]).not.toMatch(/baseQuery\(\{\s*url: [`'"]\/(promote|space\/\$\{spaceId\}\/release)/);
   });
+});
+
+/*
+ * A BODY THAT CANNOT BE READ IS NO ANSWER, NOT A REJECTION. The headers can
+ * arrive and the body fail after them (a timeout that aborts mid-body, a reset
+ * connection); a caller waiting on the answer must still get one.
+ */
+test('answerOf: a failed send and a failed body read are both status 0', async () => {
+  const sendFails: Send = async () => {
+    throw new Error('network down');
+  };
+  expect(await answerOf(sendFails, '/api/promote')).toEqual({ status: 0, body: { message: 'network down' } });
+
+  const bodyFails: Send = async () =>
+    ({ status: 200, text: () => Promise.reject(new Error('The operation was aborted.')) }) as unknown as Response;
+  expect(await answerOf(bodyFails, '/api/promote')).toEqual({ status: 0, body: { message: 'The operation was aborted.' } });
+
+  const fine: Send = async () => new Response(JSON.stringify({ DryRun: true }), { status: 200 });
+  expect(await answerOf(fine, '/api/promote')).toEqual({ status: 200, body: { DryRun: true } });
 });

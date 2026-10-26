@@ -194,7 +194,7 @@ interface EntityWithSlug {
 
 /**
  * Extract slug options from entity data for the slug autocomplete filter.
- * Works with any entity type (Unit, Space, Target, BridgeWorker, Trigger).
+ * Works with any entity type (Unit, Space, Target, Trigger).
  *
  * @param entities - Array of entity objects (e.g., unit.Unit, space.Space)
  * @param spaceName - Optional function to resolve the space name for each entity.

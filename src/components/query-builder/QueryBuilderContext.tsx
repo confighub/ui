@@ -20,8 +20,6 @@ export interface QueryBuilderContextValue {
   targets: Array<{ id: string; name: string }>;
   /** Available toolchain types */
   toolchainTypes: string[];
-  /** Available bridge workers */
-  bridgeWorkers: Array<{ id: string; name: string }>;
   /** Available slugs for the slug autocomplete, with space grouping */
   slugs: Array<{ slug: string; spaceName: string }>;
   /** Available resource types for the resource type filter */

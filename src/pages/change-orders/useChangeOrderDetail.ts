@@ -49,7 +49,7 @@
  */
 
 import { skipToken } from '@reduxjs/toolkit/query';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 
 import { useComponentSlugs } from '@/hooks/useComponentSlugs';
 import { usePolling } from '@/hooks/usePolling';
@@ -269,13 +269,28 @@ export interface ChangeOrderDetail {
   /** Stages the dry run was refused for, by status (403: no permission to promote). */
   serverGateRefusals: ServerGateRefusals;
   /**
+   * When a stage's gates were last checked, as epoch ms: when the page last had
+   * the server's answer for the stage (`serverGatesByStage` /
+   * `serverGateRefusals`), else when the ChangeOrder was last read, which is
+   * when every gate the page evaluates itself was last derived. The time the
+   * page asked, not a time the server evaluated at: the server reports none.
+   * Undefined before either.
+   *
+   * A stable function, read when the caller renders, rather than two values in
+   * this object: both times move on every poll, and as fields they would give
+   * the whole detail a new identity, and re-derive everything built on it,
+   * when nothing else changed.
+   */
+  gateCheckedAt: (stageName: string) => number | undefined;
+  /** When the ChangeOrder was last read (epoch ms), or undefined before any read; a stable getter, so polls keep `detail`'s identity. */
+  readAt: () => number | undefined;
+  /**
    * Asks the server for fresh gate verdicts now, for example after an Attestation is
    * recorded, and resolves once they have arrived.
    */
   refreshServerGates: () => Promise<void>;
 
   isLoading: boolean;
-  isFetching: boolean;
   error: unknown;
   refetch: () => void;
 }
@@ -550,16 +565,20 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
   );
 
   const isLoading = orders.isLoading || spaces.isLoading || stageSpacesLoading;
-  const isFetching = orders.isFetching || spaces.isFetching || one.isFetching;
   const error = orders.error ?? spaces.error ?? one.error ?? releases.error;
 
   const refetchReleases = releases.refetch;
+  // The refetch functions, not the result objects: those change on every fetch, and this
+  // callback is part of `detail`, whose identity must not.
+  const { refetch: refetchOrders } = orders;
+  const { refetch: refetchSpaces } = spaces;
+  const { refetch: refetchOrder } = one;
   const refetch = useCallback(() => {
-    void orders.refetch();
-    void spaces.refetch();
-    if (identity !== undefined) void one.refetch();
+    void refetchOrders();
+    void refetchSpaces();
+    if (identity !== undefined) void refetchOrder();
     refetchReleases();
-  }, [orders, spaces, one, identity, refetchReleases]);
+  }, [refetchOrders, refetchSpaces, refetchOrder, identity, refetchReleases]);
 
   /*
    * The stages whose gates include one only the server evaluates, and that it
@@ -627,6 +646,15 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
   });
   const serverGates = serverGateReads.byStage;
   const serverGateRefusals = serverGateReads.refusedByStage;
+  const serverGatesAnsweredAt = serverGateReads.answeredAt;
+  // The polled single read once it has landed; until then the list read the page started from.
+  const readAtRef = useRef<number | undefined>(undefined);
+  readAtRef.current = one.currentData !== undefined ? one.fulfilledTimeStamp : orders.fulfilledTimeStamp;
+  const readAt = useCallback(() => readAtRef.current, []);
+  const gateCheckedAt = useCallback(
+    (stageName: string) => serverGatesAnsweredAt(stageName) ?? readAtRef.current,
+    [serverGatesAnsweredAt],
+  );
   const refreshStageGates = serverGateReads.refresh;
   const finalProbeStarted = !finalProbe.isUninitialized;
   const refreshServerGates = useCallback(async () => {
@@ -670,9 +698,10 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
         workflow: undefined,
         serverGatesByStage: serverGates,
         serverGateRefusals,
+        gateCheckedAt,
+        readAt,
         refreshServerGates,
         isLoading,
-        isFetching,
         error,
         refetch,
       };
@@ -844,9 +873,10 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
       workflow,
       serverGatesByStage: serverGates,
       serverGateRefusals,
+      gateCheckedAt,
+      readAt,
       refreshServerGates,
       isLoading,
-      isFetching,
       error,
       refetch,
     };
@@ -854,7 +884,10 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
      * Keyed on DATA, not on the RTK result objects. Depending on the whole
      * result re-runs this reduction on every fetch-state transition — including
      * the ones that change nothing — which churns the identity of everything
-     * downstream and defeats the memo chain the diff tree depends on.
+     * downstream and defeats the memo chain the diff tree depends on. For the
+     * same reason nothing that moves on every poll is in here: not whether a
+     * read is in flight, and not when one last landed (`gateCheckedAt` reads
+     * that when asked).
      */
   }, [
     order,
@@ -865,6 +898,8 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
     finalAnswer,
     reviewRequests,
     serverGateRefusals,
+    gateCheckedAt,
+    readAt,
     invokes,
     fansOut,
     fanOutSource,
@@ -880,7 +915,6 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
     refreshServerGates,
     address,
     isLoading,
-    isFetching,
     error,
     refetch,
   ]);

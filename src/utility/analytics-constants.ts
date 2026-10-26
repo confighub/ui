@@ -19,7 +19,6 @@ export const ENTITY_TYPES = {
   SPACE: 'space',
   UNIT: 'unit',
   TARGET: 'target',
-  BRIDGE_WORKER: 'bridge_worker',
   TRIGGER: 'trigger',
   FILTER: 'filter',
   VIEW: 'view',

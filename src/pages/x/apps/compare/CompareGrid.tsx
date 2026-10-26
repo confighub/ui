@@ -23,7 +23,7 @@
  * long strings live.
  */
 
-import { memo, useCallback, useMemo, useState, type ReactElement } from 'react';
+import { memo, useCallback, useMemo, useRef, useState, type ReactElement } from 'react';
 
 import Box from '@mui/material/Box';
 
@@ -31,13 +31,17 @@ import { componentTheme } from '../componentTheme';
 import {
   KEY_COLUMN_PX,
   KEY_TRACK_SX,
+  PAGE_KEY_TRACK_SX,
+  PAGE_ROW_END_PX,
+  PAGE_VALUE_TRACK_SX,
   VALUE_TRACK_SX,
 } from './compareTracks';
+import { useComparePageLayout } from './compareLayout';
 import { CompareCell } from './CompareCell';
 import { useCompareColumnDrag } from './CompareColumnDnd';
 import { CompareValueEditor } from './CompareValueEditor';
 import { editBlockReason, editKey, stagedKind, type StagedCompareEdit } from './compareEditing';
-import { elideFolderLabel } from './compareTree';
+import { cutPathLeft, elideFolderLabel, mergeSingleChildFolders } from './compareTree';
 import { LETTER_SX, letterFor } from './slotLetter';
 import { COMPARE_STAGED_TOKENS } from './rowTypeTokens';
 import { rowDiffers, type CompareColumnInput, type CompareLeafRow, type CompareRow } from './deploymentCompareModel';
@@ -209,6 +213,124 @@ const VALUE_CELL_SX = {
 } as const;
 
 /**
+ * The page layout's cells (`compareLayout.ts`): the same cells on its wider
+ * tracks, a 34px head of two lines, and 16px after the last column so its
+ * values do not touch the frame.
+ */
+const PAGE_HEAD_SX = { ...HEAD_SX, boxSizing: 'border-box', paddingRight: `${PAGE_ROW_END_PX}px` } as const;
+const PAGE_ROW_SX = { ...ROW_SX, paddingRight: `${PAGE_ROW_END_PX}px` } as const;
+const PAGE_HEAD_CELL_SX = { ...HEAD_CELL_SX, ...PAGE_VALUE_TRACK_SX, height: 34, padding: '0 8px' } as const;
+const PAGE_KEY_CELL_SX = { ...KEY_CELL_SX, ...PAGE_KEY_TRACK_SX } as const;
+const PAGE_VALUE_CELL_SX = { ...VALUE_CELL_SX, ...PAGE_VALUE_TRACK_SX } as const;
+const PAGE_HEAD_WHO_SX = {
+  ...HEAD_WHO_SX,
+  fontFamily: componentTheme.fontSans,
+  fontSize: 11.5,
+  fontWeight: 600,
+} as const;
+const PAGE_HEAD_PRIMARY_SX = { ...PAGE_HEAD_WHO_SX, lineHeight: 1.25, color: componentTheme.fgDefault } as const;
+const PAGE_HEAD_SECONDARY_SX = {
+  ...PAGE_HEAD_WHO_SX,
+  fontSize: 11,
+  fontWeight: 400,
+  lineHeight: 1.25,
+  color: componentTheme.fgSubtle,
+} as const;
+
+/** The page layout's indent: smaller steps, so a long path keeps the room. */
+const PAGE_INDENT_BASE_PX = 12;
+const PAGE_INDENT_PX = 8;
+/** JetBrains Mono advances 0.6em per character; the keys are 12.5px. */
+const KEY_ADVANCE_PX = 12.5 * 0.6;
+/** What the "by position" mark beside a key takes, with its margin. */
+const POSITIONAL_MARK_PX = 58;
+
+/**
+ * A text cut on the LEFT, so its end always shows: the text is laid out right
+ * to left for the ellipsis, and the marks around it keep the characters in
+ * their own order.
+ */
+const LEFT_CUT_SX = {
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  direction: 'rtl',
+  textAlign: 'left',
+} as const;
+
+/** Where the last segment starts: after the last dot outside a `[...]` token. */
+function lastSegmentAt(path: string): number {
+  let depth = 0;
+  for (let i = path.length - 1; i >= 0; i -= 1) {
+    const char = path[i];
+    if (char === ']') depth += 1;
+    else if (char === '[') depth -= 1;
+    else if (char === '.' && depth === 0) return i + 1;
+  }
+  return 0;
+}
+
+/**
+ * A path in the page layout, cut on the left at a segment boundary to fit
+ * `budget` characters (`cutPathLeft`), so the field's own name always shows;
+ * the whole path is in its title. Before the key column is measured, the end
+ * is cut by the CSS ellipsis.
+ */
+function CutPath({ path, title, budget, muted }: { path: string; title: string; budget: number | null; muted?: boolean }): ReactElement {
+  const shown = budget === null ? path : cutPathLeft(path, budget);
+  const at = lastSegmentAt(shown);
+  return (
+    <Box component="span" title={title} sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      {at > 0 ? (
+        <Box component="span" sx={{ color: componentTheme.fgMuted }}>
+          {shown.slice(0, at)}
+        </Box>
+      ) : null}
+      <Box component="span" sx={muted ? undefined : { color: componentTheme.fgDefault }}>
+        {shown.slice(at)}
+      </Box>
+    </Box>
+  );
+}
+
+/** How many characters a key fits beside its indent, or null before the column is measured. */
+function keyBudget(keyWidth: number | null, indentPx: number, advancePx: number, reservedPx: number): number | null {
+  if (keyWidth === null) return null;
+  return Math.max(6, Math.floor((keyWidth - indentPx - KEY_PADDING_RIGHT_PX - reservedPx) / advancePx));
+}
+
+/**
+ * Which end of a head line to cut, so what tells the columns apart stays: a
+ * line whose values share a longer start than end (`checkout-prod-us-east`,
+ * `checkout-prod-us-west`) is cut on the left.
+ */
+function cutSide(values: readonly string[]): 'start' | 'end' {
+  const distinct = [...new Set(values)];
+  if (distinct.length < 2) return 'end';
+  const shortest = Math.min(...distinct.map((v) => v.length));
+  let prefix = 0;
+  while (prefix < shortest && distinct.every((v) => v[prefix] === distinct[0][prefix])) prefix += 1;
+  let suffix = 0;
+  while (suffix < shortest && distinct.every((v) => v[v.length - 1 - suffix] === distinct[0][distinct[0].length - 1 - suffix])) suffix += 1;
+  return prefix > suffix ? 'start' : 'end';
+}
+
+function HeadLine({ text, side, sx }: { text: string; side: 'start' | 'end'; sx: object }): ReactElement {
+  return side === 'start' ? (
+    <Box component="span" sx={{ ...sx, ...LEFT_CUT_SX, display: 'block' }}>
+      {'\u200E'}
+      {text}
+      {'\u200E'}
+    </Box>
+  ) : (
+    <Box component="span" sx={{ ...sx, display: 'block' }}>
+      {text}
+    </Box>
+  );
+}
+
+/**
  * The fold chevron every collapse toggle in the compare surface uses —
  * exported so `ComponentCompareSection`'s unit-header toggle draws the exact
  * same glyph, rotation and transition rather than a hand-copied twin that can
@@ -238,6 +360,8 @@ interface CompareColumnHeadProps {
   index: number;
   /** This document group's drag scope, or `undefined` when the grid is mounted without a `CompareColumnDnd` wrapper. */
   scope: string | undefined;
+  /** Which end of each head line to cut, in the page layout. */
+  cuts?: { primary: 'start' | 'end'; secondary: 'start' | 'end' };
 }
 
 /**
@@ -245,21 +369,30 @@ interface CompareColumnHeadProps {
  * drop target when it is present. See `CompareColumnDnd.tsx` for the wrapper
  * this needs to actually swap columns on drop.
  */
-function CompareColumnHead({ column, index, scope }: CompareColumnHeadProps): ReactElement {
+function CompareColumnHead({ column, index, scope, cuts }: CompareColumnHeadProps): ReactElement {
   const { setNodeRef, listeners, attributes } = useCompareColumnDrag(column.deploymentId, scope);
+  const page = useComparePageLayout();
+  const letter = column.letter ?? letterFor(index);
+  const heading = page ? column.heading : undefined;
   return (
     <Box
       ref={setNodeRef}
-      data-testid={`compare-column-${letterFor(index).toLowerCase()}`}
+      data-testid={`compare-column-${letter.toLowerCase()}`}
       data-compare-col={column.deploymentId}
       data-compare-surface="grid"
-      title={column.displayName ? `${column.label} — ${column.displayName}` : column.label}
+      title={
+        heading
+          ? `${heading.primary} · ${heading.secondary}`
+          : column.displayName
+            ? `${column.label} — ${column.displayName}`
+            : column.label
+      }
       {...(scope ? attributes : undefined)}
       {...(scope ? listeners : undefined)}
       role="columnheader"
       aria-roledescription={scope ? 'column; drag to swap' : undefined}
       sx={{
-        ...HEAD_CELL_SX,
+        ...(page ? PAGE_HEAD_CELL_SX : HEAD_CELL_SX),
         ...(scope
           ? {
               cursor: 'grab',
@@ -268,21 +401,63 @@ function CompareColumnHead({ column, index, scope }: CompareColumnHeadProps): Re
           : null),
       }}
     >
-      <Box component="span" sx={LETTER_SX}>{letterFor(index)}</Box>
-      <Box component="span" sx={HEAD_WHO_SX}>{column.label}</Box>
+      <Box component="span" sx={LETTER_SX}>{letter}</Box>
+      {heading ? (
+        <Box component="span" sx={{ minWidth: 0, flex: 1 }}>
+          <HeadLine text={heading.primary} side={cuts?.primary ?? 'end'} sx={PAGE_HEAD_PRIMARY_SX} />
+          <HeadLine text={heading.secondary} side={cuts?.secondary ?? 'end'} sx={PAGE_HEAD_SECONDARY_SX} />
+        </Box>
+      ) : (
+        <Box component="span" sx={page ? PAGE_HEAD_WHO_SX : HEAD_WHO_SX}>{column.label}</Box>
+      )}
     </Box>
   );
 }
 
 function CompareGridInner({
   columns,
-  rows,
+  rows: givenRows,
   stagedEdits,
   unitSlug,
   onStageEdit,
   forceExpanded,
   dndScope,
 }: CompareGridProps): ReactElement {
+  const page = useComparePageLayout();
+  const rows = useMemo(() => (page ? mergeSingleChildFolders(givenRows) : givenRows), [page, givenRows]);
+  const headCellSx = page ? PAGE_HEAD_CELL_SX : HEAD_CELL_SX;
+  const keyTrackSx = page ? PAGE_KEY_TRACK_SX : KEY_TRACK_SX;
+  const keyCellSx = page ? PAGE_KEY_CELL_SX : KEY_CELL_SX;
+  const valueCellSx = page ? PAGE_VALUE_CELL_SX : VALUE_CELL_SX;
+  const rowSx = page ? PAGE_ROW_SX : ROW_SX;
+  const indentBase = page ? PAGE_INDENT_BASE_PX : INDENT_BASE_PX;
+  const indentStep = page ? PAGE_INDENT_PX : INDENT_PX;
+  const headCuts = useMemo(
+    () =>
+      page
+        ? {
+            primary: cutSide(columns.map((c) => c.heading?.primary ?? '')),
+            secondary: cutSide(columns.map((c) => c.heading?.secondary ?? '')),
+          }
+        : undefined,
+    [page, columns],
+  );
+
+  // The page layout's key column grows with the page; its width says how much of a path fits.
+  const [keyWidth, setKeyWidth] = useState<number | null>(null);
+  const keyObserver = useRef<ResizeObserver | null>(null);
+  const measureKeyColumn = useCallback(
+    (el: HTMLElement | null) => {
+      keyObserver.current?.disconnect();
+      keyObserver.current = null;
+      if (!el || !page) return;
+      // Whole pixels: a sub-pixel change during a window drag would re-render every row for nothing.
+      const observer = new ResizeObserver(() => setKeyWidth(Math.round(el.getBoundingClientRect().width)));
+      observer.observe(el);
+      keyObserver.current = observer;
+    },
+    [page],
+  );
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set<string>());
   /** Which cell is open for editing — `identityPath` and column index. */
   const [editing, setEditing] = useState<{ path: string; column: number } | null>(null);
@@ -401,14 +576,15 @@ function CompareGridInner({
 
   return (
     <Box sx={GRID_SX} data-testid="compare-grid">
-      <Box sx={HEAD_SX} role="row">
-        <Box sx={{ ...HEAD_CELL_SX, ...KEY_TRACK_SX, borderLeft: 0, position: 'sticky', left: 0, zIndex: 7 }} />
+      <Box sx={page ? PAGE_HEAD_SX : HEAD_SX} role="row">
+        <Box ref={measureKeyColumn} sx={{ ...headCellSx, ...keyTrackSx, borderLeft: 0, position: 'sticky', left: 0, zIndex: 7 }} />
         {columns.map((column, index) => (
           <CompareColumnHead
             key={column.deploymentId}
             column={column}
             index={index}
             scope={dndScope}
+            cuts={headCuts}
           />
         ))}
       </Box>
@@ -417,7 +593,7 @@ function CompareGridInner({
         if (row.type === 'folder') {
           const open = !collapsed.has(row.identityPath) || (forceExpanded?.has(row.identityPath) ?? false);
           return (
-            <Box key={`folder:${row.identityPath}`} sx={ROW_SX} role="row" data-testid="compare-folder-row">
+            <Box key={`folder:${row.identityPath}`} sx={rowSx} role="row" data-testid="compare-folder-row">
               <Box
                 component="button"
                 type="button"
@@ -428,7 +604,7 @@ function CompareGridInner({
                   // resetting the size and family set below. After them, the
                   // shorthand wins and the label renders at the inherited size.
                   font: 'inherit',
-                  ...KEY_CELL_SX,
+                  ...keyCellSx,
                   // Explicit because this cell alone is a <button>, and a cell
                   // on a shared track may not bring a box of its own — its UA
                   // border-box is the reason this was the only correct column
@@ -440,7 +616,7 @@ function CompareGridInner({
                   boxSizing: 'border-box',
                   paddingTop: 0,
                   paddingBottom: 0,
-                  paddingLeft: `${INDENT_BASE_PX + row.depth * INDENT_PX}px`,
+                  paddingLeft: `${indentBase + row.depth * indentStep}px`,
                   color: componentTheme.fgMuted,
                   fontSize: FOLDER_FONT_PX,
                   border: 0,
@@ -451,13 +627,22 @@ function CompareGridInner({
                 }}
               >
                 <FoldChevron open={open} />
-                <Box
-                  component="span"
-                  title={row.label}
-                  sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: componentTheme.fontMono }}
-                >
-                  {elideFolderLabel(row.label, folderLabelBudget(row.depth))}
-                </Box>
+                {page ? (
+                  <CutPath
+                    path={row.label}
+                    title={row.identityPath}
+                    budget={keyBudget(keyWidth, indentBase + row.depth * indentStep, MONO_ADVANCE_PX, FOLD_CHEVRON_PX)}
+                    muted
+                  />
+                ) : (
+                  <Box
+                    component="span"
+                    title={row.label}
+                    sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: componentTheme.fontMono }}
+                  >
+                    {elideFolderLabel(row.label, folderLabelBudget(row.depth))}
+                  </Box>
+                )}
               </Box>
               {columns.map((column, index) => {
                 const differing = open ? 0 : (subtreeCounts.get(row.identityPath)?.[index] ?? 0);
@@ -466,7 +651,7 @@ function CompareGridInner({
                     key={column.deploymentId}
                     data-compare-col={column.deploymentId}
                     data-compare-surface="grid"
-                    sx={VALUE_CELL_SX}
+                    sx={valueCellSx}
                   >
                     {differing > 0 ? (
                       <Box
@@ -499,7 +684,7 @@ function CompareGridInner({
           <Box
             key={`leaf:${row.folderPath}:${row.identityPath}`}
             sx={{
-              ...ROW_SX,
+              ...rowSx,
               background: rowStaged
                 ? COMPARE_STAGED_TOKENS[stagedKind(rowStaged)].tint
                 : componentTheme.bgSubtle,
@@ -519,17 +704,30 @@ function CompareGridInner({
             <Box
               data-testid="compare-key-cell"
               sx={{
-                ...KEY_CELL_SX,
-                paddingLeft: `${INDENT_BASE_PX + row.depth * INDENT_PX}px`,
+                ...keyCellSx,
+                paddingLeft: `${indentBase + row.depth * indentStep}px`,
               }}
             >
-              <Box
-                component="span"
-                title={row.identityPath}
-                sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
-              >
-                {row.leafKey}
-              </Box>
+              {page ? (
+                <CutPath
+                  path={row.leafKey}
+                  title={row.identityPath}
+                  budget={keyBudget(
+                    keyWidth,
+                    indentBase + row.depth * indentStep,
+                    KEY_ADVANCE_PX,
+                    row.isPositional ? POSITIONAL_MARK_PX : 0,
+                  )}
+                />
+              ) : (
+                <Box
+                  component="span"
+                  title={row.identityPath}
+                  sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
+                  {row.leafKey}
+                </Box>
+              )}
               {row.isPositional ? (
                 <Box
                   component="span"
@@ -561,12 +759,12 @@ function CompareGridInner({
                   data-compare-col={columns[index]?.deploymentId}
                   data-compare-surface="grid"
                   onClick={canEdit ? () => beginEdit(row.identityPath, index) : undefined}
-                  sx={VALUE_CELL_SX}
+                  sx={valueCellSx}
                 >
                   <CompareCell
                     cell={cell}
                     unavailable={columns[index]?.unavailable}
-                    columnLabel={columns[index]?.label ?? letterFor(index)}
+                    columnLabel={columns[index]?.label ?? columns[index]?.letter ?? letterFor(index)}
                     staged={staged ? { kind: stagedKind(staged), after: staged.after } : undefined}
                     blockReason={blockReason}
                     editable={canEdit}
@@ -595,7 +793,7 @@ function CompareGridInner({
                   {isEditing ? (
                     <CompareValueEditor
                       initialValue={staged?.after ?? cell.literal ?? ''}
-                      label={`${columns[index]?.label ?? letterFor(index)} ${row.leafKey}`}
+                      label={`${columns[index]?.label ?? columns[index]?.letter ?? letterFor(index)} ${row.leafKey}`}
                       // The last two columns would push an editor past the pane,
                       // so theirs opens leftward instead.
                       alignEnd={index >= columns.length - 2}

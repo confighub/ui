@@ -130,7 +130,7 @@ interface Cta {
   action: ReviewBandAction;
 }
 
-/** "Go to promote" and "Go to release" lead to the page's purple actions, so they share the purple. */
+/** "Go to promote" and "Go to release" lead to the page's actions, so they share their colour. */
 function leadsToAction(cta: Cta): boolean {
   return cta.action === 'promote' || cta.action === 'release';
 }
@@ -288,7 +288,8 @@ export function ReviewBand({ summary, readiness, now, reviewable = true, onActio
   const t = REVIEW_TONE[tone];
   return (
     <Box
-      role="status"
+      // A named region, not a live one: outcomes are announced by the page's one live region.
+      role="region"
       aria-label={kicker}
       data-testid="review-band"
       data-review-state={summary.state}

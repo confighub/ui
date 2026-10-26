@@ -29,7 +29,6 @@ export type TransitionMapType = { [key in Direction]: Keyframes };
 export enum Domains {
   space = 'space',
   unit = 'unit',
-  bridgeworker = 'bridgeworker',
   target = 'target',
 }
 

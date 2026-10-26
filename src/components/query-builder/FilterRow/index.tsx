@@ -44,7 +44,7 @@ export const FilterRow = ({
   onRemove,
   disabled = false,
   autoFocus = false,
-}: Omit<FilterRowProps, 'entityType' | 'spaces' | 'targets' | 'toolchainTypes' | 'bridgeWorkers' | 'labelOptions' | 'onSelectSavedView' | 'isFirst'>) => {
+}: Omit<FilterRowProps, 'entityType' | 'spaces' | 'targets' | 'toolchainTypes' | 'labelOptions' | 'onSelectSavedView' | 'isFirst'>) => {
   const config = FIELD_CONFIGS[condition.field];
   const chipRef = useRef<HTMLDivElement>(null);
   // Keep a ref to the latest condition to avoid stale closure issues in blur handler

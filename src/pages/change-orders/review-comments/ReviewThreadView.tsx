@@ -18,6 +18,7 @@ import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
 import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
 
 import { relativeTime } from '../changeOrderHistory';
+import { useAnnounce } from '../reviews/announceContext';
 import { changeOrderBorder, changeOrderInk, changeOrderStatus, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
 import { PersonAvatar } from '../components/ChangeOrderHistoryEntry';
 import { CommentComposer } from './CommentComposer';
@@ -48,6 +49,7 @@ function CommentItem({ comment, anchored, replyCount, reviews, onQuote }: Commen
   const [deleting, setDeleting] = useState(false);
   const menuId = `${comment.id}-${anchored ? 'diff' : 'list'}-menu`;
   const [copied, setCopied] = useState(false);
+  const announce = useAnnounce();
   const person = reviews.personOf(comment.userId);
   const mine = comment.userId !== undefined && comment.userId === reviews.currentUserId;
   const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
@@ -58,6 +60,7 @@ function CommentItem({ comment, anchored, replyCount, reviews, onQuote }: Commen
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
+      announce(copy.linkCopied);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
       // A browser that refuses the clipboard leaves the link where the address bar can show it.
@@ -87,7 +90,7 @@ function CommentItem({ comment, anchored, replyCount, reviews, onQuote }: Commen
             </Box>
           ) : null}
           {copied ? (
-            <Box component="span" role="status" sx={{ color: changeOrderStatus.success, fontSize: changeOrderType.size.small }}>
+            <Box component="span" sx={{ color: changeOrderStatus.success, fontSize: changeOrderType.size.small }}>
               {copy.linkCopied}
             </Box>
           ) : null}

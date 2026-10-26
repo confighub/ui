@@ -1,0 +1,6 @@
+{
+  "SpaceID": "{{spaceId}}",
+  "SpaceSlug": "{{slug}}",
+  "Action": "Failed",
+  "Error": { "Message": "simulated planning failure" }
+}

@@ -1,0 +1,8 @@
+{
+  "Reason": "ProtectedPath",
+  "Path": "{{path}}",
+  "Resource": { "ResourceName": "{{resource}}", "ResourceType": "apps/v1/Deployment" },
+  "Target": { "Value": "{{kept}}", "Protected": true },
+  "Source": { "Value": "{{incoming}}" },
+  "Details": "kept on merge"
+}

@@ -25,6 +25,8 @@ export interface OutcomeUnitDiffProps {
   empty?: ReactNode;
   /** Review comments on the diff's rows. */
   comments?: DiffComments;
+  /** A path whose row the server's diff marks (`ConfigDiffView`'s `highlightPath`). */
+  highlightPath?: string;
 }
 
 const NO_KEPT: readonly KeptValue[] = [];
@@ -39,7 +41,16 @@ const NO_KEPT: readonly KeptValue[] = [];
  * field changes, or only the field-diff fallback), it is said as a sentence too, so
  * it is never lost.
  */
-export function OutcomeUnitDiff({ unitId, group, columns, fallbackColumnStyle, keyPrefix, empty = null, comments }: OutcomeUnitDiffProps) {
+export function OutcomeUnitDiff({
+  unitId,
+  group,
+  columns,
+  fallbackColumnStyle,
+  keyPrefix,
+  empty = null,
+  comments,
+  highlightPath,
+}: OutcomeUnitDiffProps) {
   const fieldDiffs = group?.fieldDiffs ?? [];
   const serverDiff = fieldDiffs.length > 0 ? group?.diff : undefined;
   const refusals = useMemo(() => rowRefusals(group), [group]);
@@ -65,7 +76,14 @@ export function OutcomeUnitDiff({ unitId, group, columns, fallbackColumnStyle, k
       {fieldDiffs.length === 0 ? (
         empty
       ) : serverDiff !== undefined ? (
-        <ConfigDiffView diff={serverDiff} columns={columns} hideContext kept={kept} comments={comments} />
+        <ConfigDiffView
+          diff={serverDiff}
+          columns={columns}
+          hideContext
+          kept={kept}
+          comments={comments}
+          highlightPath={highlightPath}
+        />
       ) : (
         <TreeDiffSection
           entry={{ unitId, fieldDiffs }}

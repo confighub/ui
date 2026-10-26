@@ -11,13 +11,11 @@
  * so a generated mutation can only ever invalidate the entity it is named
  * after. It has no way to say that it also changed something else.
  *
- * Real writes are not that tidy. Applying a Unit writes a Revision, a
- * UnitAction and a QueuedOperation. Publishing a Release writes onto Revisions.
+ * Real writes are not that tidy. Publishing a Release writes onto Revisions.
  * Deleting a Space recursively deletes eleven other entity types. Without the
- * additions below, six tag types — Revision, UnitEvent, QueuedOperation,
- * Mutation, UnitAction and BridgeWorkerStatus — are provided by queries but
- * named by no mutation at all, which means nothing in the application can
- * refetch them.
+ * additions below, tag types such as Revision, UnitEvent and Mutation are
+ * provided by queries but named by no mutation at all, which means nothing in
+ * the application can refetch them.
  *
  * This file supplies the missing edges as source, so the codegen stays
  * untouched: `applyInvalidationMap` merges them into the generated definitions
@@ -52,7 +50,6 @@ const SPACE_CONTENTS: TagType[] = [
   'Trigger',
   'Invocation',
   'Target',
-  'BridgeWorker',
   'Release',
   'ChangeSet',
   'Tag',
@@ -75,29 +72,10 @@ const SPACE_CONTENTS: TagType[] = [
 const UNIT_WRITE: TagType[] = ['Revision', 'Mutation', 'ChangeSet', 'Resource'];
 
 /**
- * Acting on a Unit against its Target — apply, destroy, refresh, cancel.
- *
- * These enqueue a QueuedOperation for a bridge worker rather than doing the
- * work inline, and record a UnitAction (`Unit.HeadUnitActionNum`) and a
- * UnitEvent. The Revision moves when the worker reports back.
- *
- * Note what this does NOT fix: the mutation returns when the operation is
- * queued, so invalidating here refetches the in-flight state, not the result.
- * Settling is phase 2's job — see docs/design/ui-liveness.md.
- */
-const UNIT_ACTION: TagType[] = [
-  'Revision',
-  'UnitEvent',
-  'UnitAction',
-  'QueuedOperation',
-  'Mutation',
-];
-
-/**
  * Deleting a Unit additionally drops the Links that reference it, and with them
  * the upstream/downstream relationships other Units display.
  */
-const UNIT_DELETE: TagType[] = [...UNIT_WRITE, 'Link', 'UnitEvent', 'UnitAction'];
+const UNIT_DELETE: TagType[] = [...UNIT_WRITE, 'Link', 'UnitEvent'];
 
 /**
  * A Link establishes a Unit's upstream, which changes what those Units report
@@ -107,12 +85,9 @@ const UNIT_DELETE: TagType[] = [...UNIT_WRITE, 'Link', 'UnitEvent', 'UnitAction'
 const LINK_WRITE: TagType[] = ['Unit', 'Revision', 'Resource'];
 
 /**
- * Targets are referenced by Units (`Unit.TargetID`) and served by BridgeWorkers.
- * Deleting a BridgeWorker takes its Targets with it
- * (`TargetCore.DeleteTargetsForBridgeWorker`), which in turn strands Units.
+ * Targets are referenced by Units (`Unit.TargetID`).
  */
 const TARGET_WRITE: TagType[] = ['Unit'];
-const BRIDGE_WORKER_WRITE: TagType[] = ['Target', 'Unit', 'BridgeWorkerStatus'];
 
 /**
  * Publishing a Release stamps the release onto each member Revision and its tag
@@ -173,7 +148,6 @@ export const EXTRA_INVALIDATIONS: Record<string, TagType[]> = {
   bulkTagUnits: ['Revision', 'Tag'],
 
   // ── Unit actions ──────────────────────────────────────────────────────────
-  bulkCancelUnits: UNIT_ACTION,
 
   // ── Links ─────────────────────────────────────────────────────────────────
   createLink: LINK_WRITE,
@@ -192,18 +166,6 @@ export const EXTRA_INVALIDATIONS: Record<string, TagType[]> = {
   bulkPatchTargets: TARGET_WRITE,
   bulkDeleteTargets: TARGET_WRITE,
 
-  // ── Bridge workers ────────────────────────────────────────────────────────
-  createBridgeWorker: BRIDGE_WORKER_WRITE,
-  updateBridgeWorker: BRIDGE_WORKER_WRITE,
-  patchBridgeWorker: BRIDGE_WORKER_WRITE,
-  deleteBridgeWorker: BRIDGE_WORKER_WRITE,
-  bulkPatchBridgeWorkers: BRIDGE_WORKER_WRITE,
-  bulkDeleteBridgeWorkers: BRIDGE_WORKER_WRITE,
-
-  // A worker reporting an action result settles a queued operation. This is the
-  // completion the UI is waiting for on a function invocation.
-  userCreateActionResult: ['Unit', 'Revision', 'QueuedOperation', 'UnitAction', 'UnitEvent'],
-
   // ── Releases ──────────────────────────────────────────────────────────────
   publishRelease: RELEASE_WRITE,
   withdrawRelease: RELEASE_WRITE,
@@ -215,13 +177,12 @@ export const EXTRA_INVALIDATIONS: Record<string, TagType[]> = {
 
   // ── Spaces ────────────────────────────────────────────────────────────────
   // Deleting a Space is recursive. Updating one touches no other entity: a
-  // Release records the Target it was published for, so a Space's release
-  // Target no longer materializes anything onto a worker.
+  // Release records the Target it was published for.
   deleteSpace: SPACE_CONTENTS,
   bulkDeleteSpaces: SPACE_CONTENTS,
   updateSpace: [],
   patchSpace: [],
-  bulkPatchSpaces: ['BridgeWorker'],
+  bulkPatchSpaces: [],
 
   // ── Triggers ──────────────────────────────────────────────────────────────
   // Triggers gate applies, so a Unit's ValidationErrors change with them.
@@ -330,8 +291,7 @@ export function applyInvalidationMap(): void {
         return;
       }
       // De-duplicate: a few entries name the self-tag too, because the entity
-      // an endpoint is filed under is not always the one it changes
-      // (userCreateActionResult is tagged BridgeWorker but invalidates Unit).
+      // an endpoint is filed under is not always the one it changes.
       definition.invalidatesTags = Array.from(
         new Set([...(definition.invalidatesTags ?? []), ...extraTags]),
       );

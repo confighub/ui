@@ -26,9 +26,12 @@
  *   already revoked are skipped), then one `/attest` per Type. Not atomic; each
  *   failure says what was done. After any write the records are read again, THEN
  *   the server gates.
- * - `requestReview` / `withdrawReviewRequest`: a merge PATCH of the ChangeOrder's
- *   ReviewRequests with its Version; on a 409 the ChangeOrder is read again and
- *   the PATCH sent once more; a 403 hides the action (`canRequestReview`).
+ * - `withdraw`: revocations of the viewer's own live rejections, with no new
+ *   decision; the same reads afterwards as `submit`.
+ * - `requestReview` / `withdrawReviewRequest` / `reRequestReview`: a merge PATCH
+ *   of the ChangeOrder's ReviewRequests with its Version; on a 409 the
+ *   ChangeOrder is read again and the PATCH sent once more; a 403 hides the
+ *   action (`canRequestReview`).
  */
 
 import { skipToken } from '@reduxjs/toolkit/query';
@@ -69,6 +72,7 @@ import type {
   UseChangeOrderReviewsResult,
   UseGateReviewsResult,
   UseStageReviewsResult,
+  WithdrawReviewOutcome,
 } from './changeOrderReviewTypes';
 import { changeReviewRequests, recordAttestation, revokeAttestation, type ReviewRequestsChange } from './quietServerCalls';
 import { useAttestDryRunsByTypeQuery, useListAttestationRecordsQuery, useListRevocationsQuery } from './reviewAttestationsApi';
@@ -78,6 +82,7 @@ import {
   changedUnitIdsOf,
   gateKey,
   markUnchanged,
+  ownLiveRejections,
   planRevocations,
   refusalText,
   releaseAnswerOf,
@@ -89,6 +94,7 @@ import {
   reviewedGates,
   revocationBody,
   runRevocations,
+  WITHDRAWN_NOTE,
   type ReviewedGate,
   type RevocationTarget,
 } from './stageReviewInputs';
@@ -500,6 +506,40 @@ export function useGateReviews(detail: ChangeOrderDetail, gates: readonly Review
   const revokedInSession = useRef(new Set<string>());
   const { records, refetch } = data;
 
+  /**
+   * The records again, THEN the server verdicts, so the count and the decisions move
+   * together. These writes bypass RTK, so no tag invalidates the records or the
+   * coverage. A failed read never fails the decision: it is recorded either way.
+   */
+  const rereadRecords = useCallback(async () => {
+    try {
+      await refetch();
+      if (refetchDryRuns !== undefined) void refetchDryRuns();
+    } catch {
+      // The next poll reads them.
+    }
+  }, [refetch, refetchDryRuns]);
+  /**
+   * The server's fresh verdicts, for the page to word its result from. False when they
+   * did not arrive in time or could not be read, and the page then says so.
+   */
+  const awaitVerdicts = useCallback(async (): Promise<boolean> => {
+    let timer: number | undefined;
+    try {
+      return await Promise.race([
+        refreshServerGates().then(
+          () => true,
+          () => false,
+        ),
+        new Promise<boolean>((resolve) => {
+          timer = window.setTimeout(() => resolve(false), VERDICT_WAIT_MS);
+        }),
+      ]);
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }, [refreshServerGates]);
+
   const submit = useCallback(
     async (input: SubmitReviewInput): Promise<SubmitReviewOutcome> => {
       type Failure = Extract<SubmitReviewOutcome, { ok: false }>;
@@ -518,39 +558,9 @@ export function useGateReviews(detail: ChangeOrderDetail, gates: readonly Review
       setIsSubmitting(true);
       let wrote = false;
       let reread = false;
-      /**
-       * The records again, THEN the server verdicts, so the count and the decisions move
-       * together. These writes bypass RTK, so no tag invalidates the records or the
-       * coverage. A failed read never fails the decision: it is recorded either way.
-       */
-      const rereadRecords = async () => {
+      const rereadOnce = async () => {
         reread = true;
-        try {
-          await refetch();
-          if (refetchDryRuns !== undefined) void refetchDryRuns();
-        } catch {
-          // The next poll reads them.
-        }
-      };
-      /**
-       * The server's fresh verdicts, for the page to word its result from. False when they
-       * did not arrive in time or could not be read, and the page then says so.
-       */
-      const awaitVerdicts = async (): Promise<boolean> => {
-        let timer: number | undefined;
-        try {
-          return await Promise.race([
-            refreshServerGates().then(
-              () => true,
-              () => false,
-            ),
-            new Promise<boolean>((resolve) => {
-              timer = window.setTimeout(() => resolve(false), VERDICT_WAIT_MS);
-            }),
-          ]);
-        } finally {
-          window.clearTimeout(timer);
-        }
+        await rereadRecords();
       };
       let revokedSpaceSlugs: string[] = [];
       const recordedTypes: string[] = [];
@@ -597,20 +607,64 @@ export function useGateReviews(detail: ChangeOrderDetail, gates: readonly Review
         if (spaceErrors.length > 0) {
           return failure('record', spaceErrors.map((e) => `${e.spaceSlug}: ${e.message}`).join('; '), { revokedSpaceSlugs, recordedTypes, spaceErrors });
         }
-        await rereadRecords();
+        await rereadOnce();
         const refreshed = await awaitVerdicts();
         return { ok: true, recorded, refreshed };
       } finally {
         if (wrote && !reread) {
           // A partial failure shows at once: the verdicts follow without being waited for.
-          await rereadRecords();
+          await rereadOnce();
           refreshServerGates().catch(() => undefined);
         }
         setIsSubmitting(false);
       }
     },
-    [summary, changeOrderId, types, records, refetch, refreshServerGates, refetchDryRuns],
+    [summary, changeOrderId, types, records, rereadRecords, awaitVerdicts, refreshServerGates],
   );
+
+  /*
+   * A rejection is taken back by revoking it, with no decision in its place: the
+   * same revocations "Change my decision" sends, without the `/attest` after them.
+   * Records revoked earlier on this page are skipped, so a retry after a part-way
+   * failure does not write duplicate revocations.
+   */
+  const withdraw = useCallback(async (): Promise<WithdrawReviewOutcome> => {
+    const rejections = ownLiveRejections(summary);
+    if (changeOrderId === undefined || rejections.length === 0) {
+      return { ok: false, message: 'You have no rejection here to withdraw.', revokedSpaceSlugs: [] };
+    }
+    setIsSubmitting(true);
+    let wrote = false;
+    let reread = false;
+    try {
+      const revokeOne = async (target: RevocationTarget) => {
+        if (target.spaceId === undefined) {
+          throw new Error(`The record in ${target.spaceSlug} is no longer listed, so it cannot be withdrawn.`);
+        }
+        await revokeAttestation(authFetch, target.spaceId, revocationBody(target, changeOrderId, WITHDRAWN_NOTE));
+        wrote = true;
+      };
+      const run = await runRevocations(planRevocations(rejections, records, revokedInSession.current), revokeOne, revokedInSession.current);
+      if (!run.ok) {
+        return {
+          ok: false,
+          message: `${run.failedSpaceSlug}: ${errorText(run.error, 'The revocation was refused.')}`,
+          revokedSpaceSlugs: run.revokedSpaceSlugs,
+        };
+      }
+      reread = true;
+      await rereadRecords();
+      const refreshed = await awaitVerdicts();
+      return { ok: true, revokedSpaceSlugs: run.revokedSpaceSlugs, refreshed };
+    } finally {
+      if (wrote && !reread) {
+        // Part of it was withdrawn: show that at once, and let the verdicts follow.
+        await rereadRecords();
+        refreshServerGates().catch(() => undefined);
+      }
+      setIsSubmitting(false);
+    }
+  }, [summary, changeOrderId, records, rereadRecords, awaitVerdicts, refreshServerGates]);
 
   // Review requests: a merge PATCH of the whole list, with the Version; once more on a 409;
   // a 403 hides the action (and never sends the page to /access-denied).
@@ -643,6 +697,10 @@ export function useGateReviews(detail: ChangeOrderDetail, gates: readonly Review
     (userId: string) => changeRequests({ remove: { stage: requestStage, userId } }),
     [changeRequests, requestStage],
   );
+  const reRequestReview = useCallback(
+    (userId: string) => changeRequests({ rerequest: { stage: requestStage, userId } }),
+    [changeRequests, requestStage],
+  );
 
   return {
     ...(summary ? { summary } : {}),
@@ -656,6 +714,8 @@ export function useGateReviews(detail: ChangeOrderDetail, gates: readonly Review
     canRequestReview,
     requestReview,
     withdrawReviewRequest,
+    withdraw,
+    reRequestReview,
   };
 }
 

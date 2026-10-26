@@ -34,22 +34,29 @@ export function ShortcutMap() {
 }
 
 /**
- * Keys that act only while something is open, so they are not always in the
- * registry: listed here with the condition in their label.
+ * Keys that are not always in the registry, listed here: those that act only
+ * while something is open, with the condition in their label, and `F`, which
+ * the app's Functions panel handles on every page.
  */
 const IN_CONTEXT: Array<Pick<Shortcut, 'id' | 'keys' | 'label'>> = [
   { id: 'peek-pin', keys: 'P', label: 'Pin the open peek as a temporary view' },
   { id: 'escape', keys: 'Esc', label: 'Close the open peek, menu, popover or dialog' },
+  { id: 'functions', keys: 'F', label: 'Open or close Functions, for the selected Units; while the row panel has focus, picks the open Unit first' },
+  { id: 'panel-rows', keys: 'J / K', label: 'Next or previous row, while the row panel has focus' },
+  { id: 'panel-problems', keys: '⇧J / ⇧K', label: 'Next or previous Unit that needs attention, while the row panel has focus' },
+  { id: 'panel-primary', keys: '↵', label: "Run the Unit's first action, while the row panel has focus" },
+  { id: 'panel-upgrade', keys: 'U', label: 'Preview the upgrade from upstream, while the row panel has focus' },
+  { id: 'panel-edit', keys: 'E', label: 'Edit the config on the Unit page, while the row panel has focus' },
+  { id: 'panel-restore', keys: 'R', label: 'Restore the released revision, or open the revisions, while the row panel has focus' },
 ];
 
 function ShortcutSheet({ onClose }: { onClose: () => void }) {
   const registered = useShortcutList();
-  const list = [
-    ...registered,
-    ...IN_CONTEXT.filter((c) => !registered.some((r) => r.id === c.id)),
-  ];
-  // One line per key: the same key can be registered by two parts of the page that are never on screen together.
-  const shown = list.filter((s, i) => list.findIndex((x) => x.keys === s.keys) === i);
+  // One line per registered key: the same key can be registered by two parts of the page that are never on screen
+  // together. A key listed here for a context (the row panel's E beside a picked cell's) keeps its own line, whose
+  // label says when it acts.
+  const own = registered.filter((s, i) => registered.findIndex((x) => x.keys === s.keys) === i);
+  const shown = [...own, ...IN_CONTEXT.filter((c) => !registered.some((r) => r.id === c.id))];
   return (
     <Dialog
       open

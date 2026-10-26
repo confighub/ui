@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 
 import { ErrorBox } from '@/components/error-box/ErrorBox';
@@ -9,17 +9,14 @@ import { type MapRow, rowsToMap } from '@/components/map-field-editor/map-rows';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
 import {
-  BridgeWorkerRead,
   CreateTargetApiArg,
   SpaceRead,
   TargetRead,
   useCreateTargetMutation,
-  useListBridgeWorkersQuery,
   useListSpacesQuery,
 } from '@confighub/rtk-query';
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
 import { ENTITY_TYPES } from '@/utility/analytics-constants';
-import { grantWorkerTargetAccess } from '@/utility/bridge-worker-utils';
 // Removed service layer imports - using RTK Query directly
 import CloseIcon from '@mui/icons-material/Close';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
@@ -27,7 +24,6 @@ import Button from '@mui/material/Button';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import FormControl from '@mui/material/FormControl';
-import FormHelperText from '@mui/material/FormHelperText';
 import Grid from '@mui/material/Grid2';
 import IconButton from '@mui/material/IconButton';
 import InputLabel from '@mui/material/InputLabel';
@@ -85,34 +81,15 @@ export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPagePr
     control,
     handleSubmit,
     formState: { errors },
-    watch,
     reset,
   } = useForm<AddTargetFormData>({
     defaultValues: emptyForm,
   });
 
-  const watchedSpaceId = watch('SpaceID');
-  const [accessWorkerId, setAccessWorkerId] = useState('');
 
   const spaces = extendedSpaces
     .map((es) => es.Space)
     .filter((s): s is NonNullable<typeof s> => s !== undefined);
-
-  // Fetch bridge workers for the selected space
-  const { data: extendedBridgeWorkers = [] } = useListBridgeWorkersQuery(
-    { spaceId: watchedSpaceId || '' },
-    { skip: !watchedSpaceId },
-  );
-
-  // Extract BridgeWorkerRead objects from ExtendedBridgeWorkerRead
-  const bridgeWorkers = extendedBridgeWorkers
-    .map((ebw) => ebw.BridgeWorker)
-    .filter((bw): bw is BridgeWorkerRead => bw !== undefined);
-
-  const accessWorker = useMemo(
-    () => bridgeWorkers.find((bw) => bw.BridgeWorkerID === accessWorkerId),
-    [bridgeWorkers, accessWorkerId],
-  );
 
   const onSubmit = async (data: AddTargetFormData) => {
     const space = spaces?.find((space) => space.SpaceID === data.SpaceID) || ({} as SpaceRead);
@@ -125,7 +102,6 @@ export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPagePr
         Slug: data.Slug,
         SpaceID: data.SpaceID,
         OrganizationID: space.OrganizationID || '',
-        Permissions: grantWorkerTargetAccess(undefined, accessWorker),
       },
     } as CreateTargetApiArg;
 
@@ -134,7 +110,6 @@ export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPagePr
 
   const handleClose = () => {
     reset(emptyForm);
-    setAccessWorkerId('');
     setErrorMessage('');
     onClose();
   };
@@ -214,35 +189,6 @@ export const AddTargetPage = ({ open, onClose, onTargetAdded }: IAddTargetPagePr
                   </FormControl>
                 )}
               />
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <FormControl fullWidth size='small'>
-                <InputLabel shrink>Grant access to worker (optional)</InputLabel>
-                <Select
-                  value={accessWorkerId}
-                  label='Grant access to worker (optional)'
-                  input={<OutlinedInput label='Grant access to worker (optional)' notched />}
-                  size='small'
-                  disabled={!watchedSpaceId}
-                  displayEmpty
-                  onChange={(e) => setAccessWorkerId(e.target.value as string)}
-                >
-                  <MenuItem value=''>
-                    <em>None</em>
-                  </MenuItem>
-                  {bridgeWorkers?.map((worker) => (
-                    <MenuItem key={worker.BridgeWorkerID} value={worker.BridgeWorkerID}>
-                      {worker.DisplayName}
-                    </MenuItem>
-                  ))}
-                </Select>
-                {!watchedSpaceId && <FormHelperText>Select a space first</FormHelperText>}
-                {!!watchedSpaceId && (
-                  <FormHelperText>
-                    The worker can find the target and pull the releases published for it
-                  </FormHelperText>
-                )}
-              </FormControl>
             </Grid>
             <Grid size={{ xs: 12 }}>
               <MapFieldSection

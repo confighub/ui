@@ -376,6 +376,20 @@ export type SubmitReviewOutcome =
       spaceErrors: { spaceSlug: string; message: string }[];
     };
 
+/**
+ * What withdrawing the viewer's rejection did. Not atomic: one revocation per
+ * Space, in order, stopping at the first refusal, so a failure says which
+ * Spaces were already withdrawn.
+ */
+export type WithdrawReviewOutcome =
+  | {
+      ok: true;
+      revokedSpaceSlugs: string[];
+      /** False when the server's gate verdicts were not read again in time: the page then says so. */
+      refreshed?: boolean;
+    }
+  | { ok: false; message: string; revokedSpaceSlugs: string[] };
+
 export interface ReviewRequestOutcome {
   ok: boolean;
   message?: string;
@@ -412,6 +426,13 @@ export interface UseGateReviewsResult {
   canRequestReview: boolean;
   requestReview(userIds: string[]): Promise<ReviewRequestOutcome>;
   withdrawReviewRequest(userId: string): Promise<ReviewRequestOutcome>;
+  /**
+   * Takes back the viewer's own live rejections of this review, one per Type,
+   * with no new decision in their place. Sets `isSubmitting` while it runs.
+   */
+  withdraw(): Promise<WithdrawReviewOutcome>;
+  /** Asks one person to review again: their request gets a new time (they are requested if they were not). */
+  reRequestReview(userId: string): Promise<ReviewRequestOutcome>;
 }
 
 export interface UseChangeOrderReviewsResult {

@@ -58,8 +58,7 @@ import type {
   UseGateReviewsResult,
 } from './changeOrderReviewTypes';
 
-/** The element the band and the gate list scroll to. */
-export const REVIEW_PANEL_ID = 'review';
+import { REVIEW_PANEL_ID } from './reviewAnchor';
 
 interface ReviewPanelProps {
   reviews: UseGateReviewsResult;

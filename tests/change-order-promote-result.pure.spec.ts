@@ -33,8 +33,11 @@ import type { PromoteResult } from '@confighub/rtk-query';
 import {
   promoteAnnouncement,
   promoteGatesHolding,
+  promoteAndReleaseResult,
+  promoteFailureResult,
   promotePrecheck,
   summarisePromote,
+  whereSpaceOf,
 } from '../src/pages/x/apps/change-order/useChangeOrderActions';
 import { changeOrderCopy } from '../src/pages/x/apps/change-order/changeOrderCopy';
 
@@ -602,4 +605,151 @@ test('a promote that did nothing is never announced as a promotion', () => {
   expect(promoteAnnouncement('prod', { ok: true, message: '', didNothing: true })).not.toBe(
     changeOrderCopy.promotedTo('prod'),
   );
+});
+
+/*
+ * THE SAME FAILURES, STRUCTURED. A surface that lists failed Spaces and links
+ * their Units reads `failuresBySpace`; it must hold exactly what `failures`
+ * says, item for item, or the list and the sentence disagree about what broke.
+ */
+test('failuresBySpace holds one entry per failure, with its Space and Unit', () => {
+  const summary = summarisePromote(
+    {
+      Spaces: [
+        PROMOTED_DEV.Spaces![0],
+        {
+          SpaceID: 'prod-1',
+          SpaceSlug: 'prod',
+          Action: 'Promote',
+          Units: [
+            { Action: 'Upgrade', Slug: 'app' },
+            { Action: 'Clone', Slug: 'config', Error: { Message: 'already exists' } },
+          ],
+          Links: [{ Action: 'Create', Slug: 'app-to-secret', FromUnitSlug: 'app', Error: { Message: 'no target' } }],
+        },
+        { SpaceID: 'prod-2', SpaceSlug: 'prod-eu', Action: 'Failed', Error: { Message: 'merge refused' } },
+      ],
+    },
+    BASE_SPACE_ID,
+  );
+  expect(summary.failures).toHaveLength(3);
+  expect(summary.failuresBySpace).toEqual([
+    { spaceId: 'prod-1', spaceSlug: 'prod', unitSlug: 'config', message: 'already exists' },
+    { spaceId: 'prod-1', spaceSlug: 'prod', unitSlug: 'app', linkSlug: 'app-to-secret', message: 'no target' },
+    { spaceId: 'prod-2', spaceSlug: 'prod-eu', message: 'merge refused' },
+  ]);
+});
+
+test('a Space passed over is in failuresBySpace in the server words, and the benign skip is not', () => {
+  const summary = summarisePromote(
+    {
+      Spaces: [
+        { SpaceID: BASE_SPACE_ID, SpaceSlug: 'base', Action: 'Skipped', Reason: 'ChangeOrderSpace' },
+        {
+          SpaceID: 'qa-1',
+          SpaceSlug: 'qa',
+          Action: 'Skipped',
+          Reason: 'NotInScope',
+          Message: 'add the space to its InScopeSpaceIDs first',
+        },
+      ],
+    },
+    BASE_SPACE_ID,
+  );
+  expect(summary.failuresBySpace).toEqual([
+    { spaceId: 'qa-1', spaceSlug: 'qa', message: 'add the space to its InScopeSpaceIDs first' },
+  ]);
+});
+
+test('a clean promote has no failuresBySpace', () => {
+  expect(summarisePromote(PROMOTED_DEV, BASE_SPACE_ID).failuresBySpace).toEqual([]);
+});
+
+/*
+ * One selector per set of Spaces, whatever order they arrive in: a plan made
+ * by a dry run outside the actions hook is adopted only when its selector is
+ * the one the promote sends.
+ */
+test('whereSpaceOf names the same Spaces the same way in any order', () => {
+  expect(whereSpaceOf(['b', 'a', 'c'])).toBe("SpaceID IN ('a', 'b', 'c')");
+  expect(whereSpaceOf(['c', 'a', 'b'])).toBe(whereSpaceOf(['a', 'b', 'c']));
+});
+
+/*
+ * WHETHER A RETRY CAN WORK IS A FIELD, NOT A SENTENCE TO MATCH. A Space outside
+ * the change order's scope is passed over by every run, so the result says so
+ * in `outOfScope`; a write that failed can be finished by running again, and
+ * says nothing of the kind.
+ */
+test('a passed-over promote is marked outOfScope; a partial one is not', () => {
+  const landedDev = PROMOTED_DEV.Spaces![0];
+  const passedOver = promoteFailureResult(
+    summarisePromote(
+      {
+        Spaces: [
+          landedDev,
+          { SpaceID: 'qa-1', SpaceSlug: 'qa', Action: 'Skipped', Reason: 'NotInScope', Message: 'add the space to its InScopeSpaceIDs first' },
+        ],
+      },
+      BASE_SPACE_ID,
+    ),
+    2,
+  );
+  expect(passedOver?.outOfScope).toBe(true);
+  expect(passedOver?.message).toBe(
+    changeOrderCopy.promotePassedOver(changeOrderCopy.spaceCount(1), 'qa: add the space to its InScopeSpaceIDs first'),
+  );
+
+  const partial = promoteFailureResult(
+    summarisePromote(
+      {
+        Spaces: [
+          landedDev,
+          { SpaceID: 'dev-2', SpaceSlug: 'dev-eu', Action: 'Promote', Units: [{ Action: 'Clone', Slug: 'config', Error: { Message: 'already exists' } }] },
+        ],
+      },
+      BASE_SPACE_ID,
+    ),
+    2,
+  );
+  expect(partial?.ok).toBe(false);
+  expect(partial?.outOfScope).toBeUndefined();
+
+  expect(promoteFailureResult(summarisePromote(PROMOTED_DEV, BASE_SPACE_ID), 1)).toBeNull();
+});
+
+/*
+ * "PROMOTE AND RELEASE" IS TWO RESULTS, AND THE PROMOTE'S MUST SURVIVE THE
+ * RELEASE'S. A promote that wrote nothing followed by a release that succeeded
+ * is still "nothing to promote": announced from the release's plain success it
+ * would read as a completed promotion.
+ */
+test('promoteAndRelease keeps "did nothing" through a release that succeeded', () => {
+  const nothing = { ok: true, message: '', didNothing: true };
+  const result = promoteAndReleaseResult(nothing, { ok: true, message: '' });
+  expect(result.didNothing).toBe(true);
+  expect(result.promoteLeg).toEqual(nothing);
+  expect(promoteAnnouncement('dev', result)).toBe(changeOrderCopy.nothingToPromote('dev'));
+});
+
+test('promoteAndRelease reports a failed release as failed, even after a promote that did nothing', () => {
+  const failedRelease = { ok: false, message: changeOrderCopy.releaseFailed('1 of 2 Spaces'), action: 'release' as const };
+  const result = promoteAndReleaseResult({ ok: true, message: '', didNothing: true }, failedRelease);
+  expect(result.ok).toBe(false);
+  expect(result.didNothing).toBeUndefined();
+  expect(result.promoteLeg?.didNothing).toBe(true);
+  expect(promoteAnnouncement('dev', result)).toBe(failedRelease.message);
+});
+
+test('promoteAndRelease after a promote that wrote is the release result', () => {
+  const result = promoteAndReleaseResult({ ok: true, message: '' }, { ok: true, message: '' });
+  expect(result.ok).toBe(true);
+  expect(result.didNothing).toBeUndefined();
+  expect(promoteAnnouncement('dev', result)).toBe(changeOrderCopy.promotedTo('dev'));
+});
+
+test('a promote refused at its gates says so in gatesHolding', () => {
+  const result = promotePrecheck('co-1', 'base-1', ['s1'], { failedGateCount: 1 });
+  expect(result?.gatesHolding).toBe(changeOrderCopy.promoteHeld.refused);
+  expect(promotePrecheck('co-1', 'base-1', [], { failedGateCount: 1 })?.gatesHolding).toBeUndefined();
 });

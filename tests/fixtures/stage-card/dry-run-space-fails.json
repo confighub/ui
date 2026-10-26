@@ -1,0 +1,9 @@
+{
+  "SpaceID": "{{spaceId}}",
+  "SpaceSlug": "{{slug}}",
+  "Action": "Promote",
+  "Units": [
+    { "Action": "Upgrade", "Slug": "app", "Error": { "Message": "{{message}}" } },
+    { "Action": "Upgrade", "Slug": "worker" }
+  ]
+}

@@ -16,6 +16,12 @@ export interface SelectedUnitsState {
    *  ChangeSet labeled for this initiative. See
    *  invoker/utils/changeset-run.ts and invoker/hooks/useInvokeInChangeSet.ts. */
   invocationInitiativeId?: string;
+  /**
+   * True when the invoker's "deselect all" emptied the list (`removeAllSelectedUnits`), false
+   * after any other change. A page that keeps its own selection can then tell "clear it all"
+   * from "the last Unit was taken out": both leave `units` empty.
+   */
+  removedAll?: boolean;
 }
 
 const initialState: SelectedUnitsState = {
@@ -33,6 +39,11 @@ export const selectedUnitsSlice = createSlice({
       }>,
     ) {
       state.units = action.payload.units ? [...action.payload.units] : [];
+      state.removedAll = false;
+    },
+    removeAllSelectedUnits(state) {
+      state.units = [];
+      state.removedAll = true;
     },
     setInvocationInitiativeId(state, action: PayloadAction<string | undefined>) {
       state.invocationInitiativeId = action.payload;
@@ -41,7 +52,8 @@ export const selectedUnitsSlice = createSlice({
 });
 
 export const selectSelectedUnits = (state: RootState) => state.selectedUnits.units;
+export const selectSelectedUnitsRemovedAll = (state: RootState) => state.selectedUnits.removedAll === true;
 export const selectInvocationInitiativeId = (state: RootState) =>
   state.selectedUnits.invocationInitiativeId;
 
-export const { setSelectedUnits, setInvocationInitiativeId } = selectedUnitsSlice.actions;
+export const { setSelectedUnits, removeAllSelectedUnits, setInvocationInitiativeId } = selectedUnitsSlice.actions;

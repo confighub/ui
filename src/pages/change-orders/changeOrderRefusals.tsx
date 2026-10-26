@@ -27,6 +27,31 @@ import { Box } from '@mui/material';
 import type { ChangeOrderResourceConflict } from '../x/apps/change-order/changeOrderTypes';
 import { changeOrderInk, changeOrderShape, changeOrderStatus, changeOrderSurface, changeOrderType } from './changeOrdersTokens';
 
+/** What keeps a field's value, for the two reasons that mean the target kept it. */
+const KEPT_BY: Readonly<Record<string, string>> = {
+  ProtectedPath: 'A protected field',
+  Subtracted: 'A local override',
+};
+
+/**
+ * A refusal that is a value the target kept, said in plain words: "A protected
+ * field in api keeps spec.replicas at 6." `null` for any other refusal, which is
+ * printed with the server's own reason, since a reason nobody modelled must still
+ * be shown as it came.
+ */
+function keptSentence(conflict: ChangeOrderResourceConflict): ReactNode {
+  const subject = KEPT_BY[conflict.reason];
+  if (subject === undefined || conflict.path === undefined || conflict.path === '') return null;
+  return (
+    <>
+      <b>{subject}</b>
+      {conflict.resourceName !== undefined ? ` in ${conflict.resourceName}` : null}
+      {` keeps ${conflict.path}`}
+      {conflict.targetValue !== undefined && conflict.targetValue !== '' ? ` at ${conflict.targetValue}` : null}.
+    </>
+  );
+}
+
 /**
  * What the promotion was refused, in the reader's words.
  *
@@ -47,9 +72,13 @@ export function ChangeOrderRefusals({ conflicts }: { conflicts: readonly ChangeO
           key={`${conflict.reason}-${conflict.resourceName ?? ''}-${conflict.path ?? ''}-${index}`}
           sx={{ fontSize: changeOrderType.size.small, color: changeOrderStatus.warn, lineHeight: changeOrderType.lineHeight.body }}
         >
-          <b>{conflict.reason || 'Could not be established'}</b>
-          {conflict.resourceName !== undefined ? ` — ${conflict.resourceName}` : null}
-          {conflict.path !== undefined && conflict.path !== '' ? ` at ${conflict.path}` : null}
+          {keptSentence(conflict) ?? (
+            <>
+              <b>{conflict.reason || 'Could not be established'}</b>
+              {conflict.resourceName !== undefined ? ` — ${conflict.resourceName}` : null}
+              {conflict.path !== undefined && conflict.path !== '' ? ` at ${conflict.path}` : null}
+            </>
+          )}
           {conflict.details !== undefined && conflict.details !== '' ? (
             <Box sx={{ color: changeOrderInk.subtle }}>{conflict.details}</Box>
           ) : null}

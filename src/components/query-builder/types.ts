@@ -8,7 +8,7 @@ import type {
 /**
  * Entity types supported by the QueryBuilder
  */
-export type EntityType = 'Unit' | 'BridgeWorker' | 'Target' | 'Space' | 'Trigger';
+export type EntityType = 'Unit' | 'Target' | 'Space' | 'Trigger';
 
 /**
  * Available filter field types
@@ -35,12 +35,6 @@ export type FilterFieldType =
   | 'unreleasedChanges'
   | 'validationErrorsCount'
   | 'checkResult'
-  // BridgeWorker-specific fields
-  | 'condition'
-  | 'lastSeenAt'
-  | 'bridgeWorkerId'
-  | 'lastMessage'
-  | 'ipAddress'
   // Target-specific fields
   | 'targetId'
   // Trigger-specific fields
@@ -201,8 +195,6 @@ export interface QueryBuilderProps {
   targets?: Array<{ id: string; name: string }>;
   /** Available toolchain types */
   toolchainTypes?: string[];
-  /** Available bridge workers for the bridgeWorker filter */
-  bridgeWorkers?: Array<{ id: string; name: string }>;
   /** Available slugs for the slug autocomplete, with space grouping */
   slugs?: Array<{ slug: string; spaceName: string }>;
   /** Available resource types for the resource type filter */

@@ -1,24 +1,30 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
-import { type CSSProperties, type KeyboardEvent, memo, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type KeyboardEvent, memo, type MouseEvent, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import type { ExtendedUnitRead } from '@confighub/rtk-query';
 import { horizontalListSortingStrategy, SortableContext } from '@dnd-kit/sortable';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Checkbox from '@mui/material/Checkbox';
 import Skeleton from '@mui/material/Skeleton';
+import { alpha } from '@mui/material/styles';
 import Typography from '@mui/material/Typography';
 import { useVirtualizer } from '@tanstack/react-virtual';
+
+import { LETTER_SX } from '@/pages/x/apps/compare/slotLetter';
 
 import { type DndHandler, dragItemOf, useDndHandler } from '../dnd/registry';
 import { fieldById, STATUS_LABEL, type EntityRow } from '../model/fields';
 import { buildGroupTree, flattenGroups, type FlatItem, type GroupNode } from '../model/grouping';
 import { lensPredicate } from '../model/client-eval';
-import { groupLevelFor } from '../model/sort';
+import { groupLevelsFor } from '../model/sort';
 import type { ColumnSourceDef, EntityKind, StatusKind } from '../model/types';
 import { useExplorerContext } from '../state/context';
 import { useResults } from '../state/results-context';
+import { useRowSelection } from '../state/selection-context';
 import { useActiveTab } from '../state/useExplorer';
 import { AddColumnButton } from './AddColumnButton';
 import { type CellActions, TableCellContent } from './cells/TableCellContent';
@@ -27,6 +33,7 @@ import { GroupHeaderRow } from './GroupHeaderRow';
 import { groupPaths, groupValueText, pathLenses } from './groups';
 import { HeaderCell } from './HeaderCell';
 import { labelKeysOf } from './label-keys';
+import { type GroupSpans, groupSpans, type PinnedGroup, pinnedGroups } from './pinned-groups';
 import { type ExplorerColumn, MIN_COLUMN_WIDTH, useExplorerTable } from './useExplorerTable';
 
 /**
@@ -35,13 +42,21 @@ import { type ExplorerColumn, MIN_COLUMN_WIDTH, useExplorerTable } from './useEx
  * of thousands of Units scrolls without drawing them all. Every change made
  * here (sort, group, move, hide, resize, add a column) is a reducer action,
  * so it makes a draft and is one undo step.
+ *
+ * A Units table also has a leading track of checkboxes, for picking rows to
+ * compare. Picking is not a change to the view, so it is not a step.
  */
 
 export const HEADER_HEIGHT = 34;
 export const ROW_HEIGHT = 38;
 export const GROUP_ROW_HEIGHT = 36;
 const ADD_COLUMN_WIDTH = 44;
+/** The checkbox track before the first column of a Units table. */
+const PICK_TRACK_WIDTH = 36;
 const DEFAULT_WIDTH = 160;
+
+/** The height of an item of the virtual list; also what places the pinned group headers. */
+const itemSize = (item: FlatItem<EntityRow>) => (item.type === 'group' ? GROUP_ROW_HEIGHT : ROW_HEIGHT);
 
 const NOUN: Record<EntityKind, string> = { Unit: 'units', Space: 'spaces', Resource: 'resources' };
 
@@ -94,14 +109,14 @@ function contentWidth(entity: EntityKind, name: string): number | null {
  * to a floor, so the `+` stays in view on a narrow screen. With every width
  * fixed, the last column takes what is left.
  */
-function gridTemplate(tracks: readonly TrackInput[]): { template: string; minWidth: number } {
+function gridTemplate(tracks: readonly TrackInput[], leading: number): { template: string; minWidth: number } {
   const anyFlexible = tracks.some((t) => !t.fixed);
   const parts = tracks.map((t, i) => {
     if (!t.fixed) return `minmax(${minTrack(t.weight)}px, ${t.weight}fr)`;
     return !anyFlexible && i === tracks.length - 1 ? `minmax(${t.column.width}px, 1fr)` : `${t.column.width}px`;
   });
-  const minWidth = tracks.reduce((sum, t) => sum + (t.fixed ? t.column.width : minTrack(t.weight)), 0) + ADD_COLUMN_WIDTH;
-  return { template: [...parts, `${ADD_COLUMN_WIDTH}px`].join(' '), minWidth };
+  const minWidth = tracks.reduce((sum, t) => sum + (t.fixed ? t.column.width : minTrack(t.weight)), 0) + ADD_COLUMN_WIDTH + leading;
+  return { template: [...(leading ? [`${leading}px`] : []), ...parts, `${ADD_COLUMN_WIDTH}px`].join(' '), minWidth };
 }
 
 interface RowProps {
@@ -111,22 +126,51 @@ interface RowProps {
   columns: readonly string[];
   missingServer: boolean;
   serverColumns: ReadonlySet<string>;
+  /** The row is open in the panel. */
   selected: boolean;
   rowIndex: number;
   actions: CellActions;
   onOpen: (row: EntityRow, event: MouseEvent | KeyboardEvent) => void;
+  /** The row has a checkbox (a Units table). */
+  pickable: boolean;
+  picked: boolean;
+  /** The slot letter of a picked row among the first five in table order; empty otherwise. */
+  letter: string;
+  onPick: (row: EntityRow, event: MouseEvent) => void;
 }
 
-const TableRow = memo(function TableRow({ entity, row, rowId, columns, missingServer, serverColumns, selected, rowIndex, actions, onOpen }: RowProps) {
+const TableRow = memo(function TableRow({
+  entity,
+  row,
+  rowId,
+  columns,
+  missingServer,
+  serverColumns,
+  selected,
+  rowIndex,
+  actions,
+  onOpen,
+  pickable,
+  picked,
+  letter,
+  onPick,
+}: RowProps) {
   return (
     <Box
       role='row'
       tabIndex={0}
       aria-rowindex={rowIndex}
       data-selected={selected}
+      data-picked={pickable ? picked : undefined}
+      data-slot={letter || undefined}
       data-testid='vx-row'
       data-row-id={rowId}
       onClick={(e) => onOpen(row, e)}
+      onMouseDown={(e) => {
+        // ⇧-click picks a range; without this the browser also selects the text across it.
+        // A value keeps its own ⇧-click, which adds to the cell popover's selection.
+        if (pickable && e.shiftKey && !(e.target instanceof Element && e.target.closest('[data-vx-value]'))) e.preventDefault();
+      }}
       onKeyDown={(e) => {
         // Enter on a control inside the row (a value, a status chip) is that control's.
         if (e.key === 'Enter' && e.target === e.currentTarget) onOpen(row, e);
@@ -138,11 +182,32 @@ const TableRow = memo(function TableRow({ entity, row, rowId, columns, missingSe
         borderBottom: 1,
         borderColor: 'grey.200',
         cursor: 'pointer',
-        bgcolor: selected ? 'primary.light' : 'background.paper',
-        '&:hover': { bgcolor: selected ? 'primary.light' : 'grey.100' },
+        bgcolor: (t) => (selected ? t.palette.primary.light : picked ? alpha(t.palette.primary.main, 0.035) : t.palette.background.paper),
+        '&:hover': { bgcolor: selected || picked ? 'primary.light' : 'grey.100' },
         '&:focus-visible': { outline: 2, outlineColor: 'primary.main', outlineOffset: -2 },
+        // The checkbox stays out of the way until the row is pointed at, focused or picked;
+        // it is only hidden from sight, so it keeps its name for assistive technology.
+        '& .vx-pick': { opacity: picked ? 1 : 0 },
+        '&:hover .vx-pick, &:focus-within .vx-pick': { opacity: 1 },
       }}
     >
+      {pickable && (
+        <Box role='cell' sx={{ display: 'grid', placeItems: 'center' }}>
+          <Checkbox
+            size='small'
+            className='vx-pick'
+            checked={picked}
+            tabIndex={-1}
+            inputProps={{ 'aria-label': `Select ${(row as ExtendedUnitRead).Unit?.Slug ?? rowId}` }}
+            data-testid='vx-row-pick'
+            onClick={(e) => {
+              e.stopPropagation();
+              onPick(row, e);
+            }}
+            sx={{ p: 0.5 }}
+          />
+        </Box>
+      )}
       {columns.map((name) => {
         const primary = isPrimaryField(entity, name);
         return (
@@ -161,6 +226,11 @@ const TableRow = memo(function TableRow({ entity, row, rowId, columns, missingSe
               color: primary ? 'text.primary' : 'text.secondary',
             }}
           >
+            {primary && letter && (
+              <Box component='span' title={`Slot ${letter}`} data-testid='vx-row-slot' sx={{ ...LETTER_SX, mr: 0.75 }}>
+                {letter}
+              </Box>
+            )}
             <TableCellContent
               entity={entity}
               name={name}
@@ -178,18 +248,128 @@ const TableRow = memo(function TableRow({ entity, row, rowId, columns, missingSe
   );
 });
 
+const samePins = (a: readonly PinnedGroup<EntityRow>[], b: readonly PinnedGroup<EntityRow>[]) =>
+  a.length === b.length && a.every((p, i) => p.index === b[i].index && p.top === b[i].top);
+
+interface PinnedProps {
+  scrollRef: RefObject<HTMLDivElement | null>;
+  items: readonly FlatItem<EntityRow>[];
+  spans: GroupSpans;
+  /** The drawn height of the column header, which the pinned headers sit under. */
+  top: number;
+  entity: EntityKind;
+  collapsed: ReadonlySet<string>;
+  onToggle: (key: string) => void;
+  onPeek: (anchor: HTMLElement, node: GroupNode<EntityRow>) => void;
+  onValue: (anchor: HTMLElement, field: string, value: string | null, additive: boolean) => void;
+  /** The leading track's width, which the headers are moved right by. */
+  lead: number;
+}
+
+/**
+ * The headers of the groups scrolled into, pinned under the column header,
+ * outermost first. They are drawn over the virtual list rather than made
+ * sticky in it: its items are placed absolutely, so a sticky header there
+ * would have no group to stick within. This part follows the scroll by
+ * itself and re-renders only when a pin changes, so scrolling inside a group
+ * does not re-render the table.
+ */
+function PinnedGroupHeaders({ scrollRef, items, spans, top, entity, collapsed, onToggle, onPeek, onValue, lead }: PinnedProps) {
+  const [scrollTop, setScrollTop] = useState(0);
+  // The list is the scroll element's, not this part's, so its scroll is
+  // followed with a listener; it changes with the items it is placed over.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const read = () => {
+      const next = el.scrollTop;
+      setScrollTop((prev) =>
+        samePins(pinnedGroups(items, spans, prev, GROUP_ROW_HEIGHT), pinnedGroups(items, spans, next, GROUP_ROW_HEIGHT)) ? prev : next,
+      );
+    };
+    read();
+    el.addEventListener('scroll', read, { passive: true });
+    return () => el.removeEventListener('scroll', read);
+  }, [scrollRef, items, spans]);
+  const pins = useMemo(() => pinnedGroups(items, spans, scrollTop, GROUP_ROW_HEIGHT), [items, spans, scrollTop]);
+  const headerIndex = useMemo(() => {
+    const byKey = new Map<string, number>();
+    items.forEach((item, i) => {
+      if (item.type === 'group') byKey.set(item.node.key, i);
+    });
+    return byKey;
+  }, [items]);
+  const onPinnedToggle = useCallback(
+    (key: string) => {
+      onToggle(key);
+      // Folding from the pinned copy brings the group's own header back to where the copy was,
+      // instead of leaving the viewer deep in whatever follows.
+      const index = headerIndex.get(key);
+      const item = index === undefined ? undefined : items[index];
+      const el = scrollRef.current;
+      if (el && index !== undefined && item?.type === 'group') el.scrollTop = spans.starts[index] - item.node.depth * GROUP_ROW_HEIGHT;
+    },
+    [onToggle, headerIndex, items, scrollRef, spans],
+  );
+  if (pins.length === 0) return null;
+  return (
+    <Box data-testid='vx-pinned-groups' sx={{ position: 'sticky', top, zIndex: 2, height: 0 }}>
+      {pins.map((pin, depth) => (
+        <Box
+          key={pin.node.key}
+          // Outer levels above inner ones, so an inner header pushed up slides under its group's header.
+          style={{ position: 'absolute', left: 0, width: '100%', top: pin.top, height: GROUP_ROW_HEIGHT, zIndex: pins.length - depth }}
+        >
+          <GroupHeaderRow
+            pinned
+            lead={lead}
+            entity={entity}
+            node={pin.node}
+            collapsed={collapsed.has(pin.node.key)}
+            rowIndex={pin.index + 2}
+            onToggle={onPinnedToggle}
+            onPeek={onPeek}
+            onValue={onValue}
+          />
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+/** Show a row: unfold the groups it is in and scroll it into view. A new `seq` asks again for the same row. */
+export interface RevealRequest {
+  id: string;
+  seq: number;
+}
+
+/** The keys of the groups that hold `row`, outermost first. */
+function groupKeysOf(tree: readonly GroupNode<EntityRow>[], row: EntityRow): string[] {
+  const node = tree.find((n) => n.rows.includes(row));
+  return node ? [node.key, ...groupKeysOf(node.children, row)] : [];
+}
+
 interface Props {
   selectedId: string | null;
   onOpenRow: (row: EntityRow) => void;
   onOpenHref: (row: EntityRow) => void;
+  /**
+   * The row the panel moved to. A prop, not a slot: the table is held unchanged
+   * behind compare mode, and a slot registered here would keep stale values.
+   */
+  reveal?: RevealRequest | null;
 }
 
-export function ExplorerTable({ selectedId, onOpenRow, onOpenHref }: Props) {
+export function ExplorerTable({ selectedId, onOpenRow, onOpenHref, reveal = null }: Props) {
   const { def, universe, derived } = useResults();
   const { dispatch, slots } = useExplorerContext();
   const tab = useActiveTab();
   const entity = def.entity;
   const { rows, rowId } = derived;
+  const selection = useRowSelection();
+  const pickable = selection.enabled;
+  const lead = pickable ? PICK_TRACK_WIDTH : 0;
+  const { toggle: togglePick, range: rangePick } = selection;
 
   // Unfixed columns are given to TanStack at the width they are drawn at, so
   // a resize starts from what the viewer sees.
@@ -251,16 +431,31 @@ export function ExplorerTable({ selectedId, onOpenRow, onOpenHref }: Props) {
 
   const groupKey = def.groupBy.join('|');
   const tree = useMemo(() => {
-    const levels = def.groupBy.map((f) => groupLevelFor(entity, f)).filter((l): l is NonNullable<typeof l> => l !== null);
-    return buildGroupTree(rows, levels);
+    return buildGroupTree(rows, groupLevelsFor(entity, def.groupBy));
     // groupKey stands for def.groupBy.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, entity, groupKey]);
   const paths = useMemo(() => groupPaths(tree), [tree]);
+  // A reveal unfolds the row's groups as it arrives, in the same render, so the row is in `items` below.
+  const [revealSeen, setRevealSeen] = useState(reveal?.seq);
+  if (reveal && reveal.seq !== revealSeen) {
+    setRevealSeen(reveal.seq);
+    const row = rows.find((r) => rowId(r) === reveal.id);
+    const folded = row ? groupKeysOf(tree, row).filter((k) => collapsed.has(k)) : [];
+    if (folded.length)
+      setCollapsedByTab((prev) => {
+        const set = new Set(prev.get(tab.id) ?? []);
+        folded.forEach((k) => set.delete(k));
+        return new Map(prev).set(tab.id, set);
+      });
+  }
   const items = useMemo<FlatItem<EntityRow>[]>(() => flattenGroups(rows, tree, collapsed), [rows, tree, collapsed]);
+  const spans = useMemo(() => groupSpans(items, itemSize), [items]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
+  // The column header's drawn height (its border included), which the pinned group headers sit under.
+  const [headerHeight, setHeaderHeight] = useState(HEADER_HEIGHT);
   // The drawn widths change with the window and the lens column, which React
   // does not see; a ResizeObserver is the only way to follow them.
   useEffect(() => {
@@ -275,8 +470,10 @@ export function ExplorerTable({ selectedId, onOpenRow, onOpenHref }: Props) {
         const keys = Object.keys(next);
         return keys.length === Object.keys(prev).length && keys.every((k) => prev[k] === next[k]) ? prev : next;
       });
+      setHeaderHeight(el.offsetHeight);
     };
     const observer = new ResizeObserver(read);
+    observer.observe(el);
     el.querySelectorAll('[role="columnheader"]').forEach((h) => observer.observe(h));
     read();
     return () => observer.disconnect();
@@ -284,13 +481,28 @@ export function ExplorerTable({ selectedId, onOpenRow, onOpenHref }: Props) {
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (i) => (items[i]?.type === 'group' ? GROUP_ROW_HEIGHT : ROW_HEIGHT),
+    estimateSize: (i) => (items[i] ? itemSize(items[i]) : ROW_HEIGHT),
     getItemKey: (i) => {
       const it = items[i];
       return it.type === 'group' ? `g:${it.node.key}` : `r:${rowId(it.row)}`;
     },
     overscan: 12,
   });
+
+  // Scroll the revealed row into view, below the pinned headers of its groups, once it is in the list.
+  const scrolledSeq = useRef<number | null>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!reveal || !el || scrolledSeq.current === reveal.seq) return;
+    const index = items.findIndex((i) => i.type === 'row' && rowId(i.row) === reveal.id);
+    const item = items[index];
+    if (item?.type !== 'row') return;
+    scrolledSeq.current = reveal.seq;
+    const top = spans.starts[index];
+    const pinned = item.depth * GROUP_ROW_HEIGHT;
+    if (top - pinned < el.scrollTop) el.scrollTop = top - pinned;
+    else if (headerHeight + top + ROW_HEIGHT > el.scrollTop + el.clientHeight) el.scrollTop = headerHeight + top + ROW_HEIGHT - el.clientHeight;
+  }, [reveal, items, spans, rowId, headerHeight]);
 
   const openPeekForGroup = useCallback(
     (anchorEl: HTMLElement, node: GroupNode<EntityRow>) => {
@@ -325,12 +537,27 @@ export function ExplorerTable({ selectedId, onOpenRow, onOpenHref }: Props) {
     [slots, entity, def.groupBy, rows, rowId],
   );
 
+  // The click handlers read the rows on screen when they run, so they stay the same
+  // functions across a fold and the memoized rows are not drawn again for them.
+  const shown = useRef(items);
+  shown.current = items;
+  const onPick = useCallback(
+    (row: EntityRow, e: MouseEvent) => {
+      const id = rowId(row);
+      if (e.shiftKey) rangePick(shown.current.flatMap((i) => (i.type === 'row' ? [rowId(i.row)] : [])), id);
+      else togglePick(id);
+    },
+    [rowId, togglePick, rangePick],
+  );
+
+  // In a Units table a click with ⇧ or ⌘ picks rows, so the row's page opens with ⌘↵ instead.
   const onOpen = useCallback(
     (row: EntityRow, e: MouseEvent | KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey) onOpenHref(row);
+      if (pickable && e.type === 'click' && (e.shiftKey || e.metaKey || e.ctrlKey)) onPick(row, e as MouseEvent);
+      else if (e.metaKey || e.ctrlKey) onOpenHref(row);
       else onOpenRow(row);
     },
-    [onOpenRow, onOpenHref],
+    [pickable, onPick, onOpenRow, onOpenHref],
   );
 
   const onFilter = useCallback(
@@ -367,8 +594,10 @@ export function ExplorerTable({ selectedId, onOpenRow, onOpenHref }: Props) {
       fixed: fixedNames.has(column.name) || column.isResizing || contentWidth(entity, column.name) !== null,
       weight: defaultWidth(column.name),
     })),
+    lead,
   );
   const gridStyle = { '--vx-grid': template } as CSSProperties;
+  const allPicked = rows.length > 0 && selection.count === rows.length;
   const virtualItems = virtualizer.getVirtualItems();
 
   let body;
@@ -410,6 +639,7 @@ export function ExplorerTable({ selectedId, onOpenRow, onOpenHref }: Props) {
             >
               {item.type === 'group' ? (
                 <GroupHeaderRow
+                  lead={lead}
                   entity={entity}
                   node={item.node}
                   collapsed={collapsed.has(item.node.key)}
@@ -430,6 +660,10 @@ export function ExplorerTable({ selectedId, onOpenRow, onOpenHref }: Props) {
                   rowIndex={v.index + 2}
                   actions={actions}
                   onOpen={onOpen}
+                  pickable={pickable}
+                  picked={selection.picked.has(rowId(item.row))}
+                  letter={selection.letters.get(rowId(item.row)) ?? ''}
+                  onPick={onPick}
                 />
               )}
             </Box>
@@ -467,6 +701,20 @@ export function ExplorerTable({ selectedId, onOpenRow, onOpenHref }: Props) {
             userSelect: table.isResizing ? 'none' : undefined,
           }}
         >
+          {pickable && (
+            <Box role='columnheader' sx={{ display: 'grid', placeItems: 'center' }}>
+              <Checkbox
+                size='small'
+                checked={allPicked}
+                indeterminate={selection.count > 0 && !allPicked}
+                disabled={rows.length === 0}
+                onChange={allPicked ? selection.unselectShown : selection.selectShown}
+                inputProps={{ 'aria-label': `Select all ${rows.length} ${rows.length === 1 ? 'Unit' : 'Units'}` }}
+                data-testid='vx-pick-all'
+                sx={{ p: 0.5 }}
+              />
+            </Box>
+          )}
           <SortableContext items={columnNames} strategy={horizontalListSortingStrategy}>
             {table.columns.map((c) => {
               const field = fieldById(entity, c.name);
@@ -504,6 +752,20 @@ export function ExplorerTable({ selectedId, onOpenRow, onOpenHref }: Props) {
             />
           </Box>
         </Box>
+        {!universe.isLoading && !universe.isError && (
+          <PinnedGroupHeaders
+            scrollRef={scrollRef}
+            items={items}
+            spans={spans}
+            top={headerHeight}
+            entity={entity}
+            collapsed={collapsed}
+            onToggle={toggleGroup}
+            onPeek={openPeekForGroup}
+            onValue={onGroupValue}
+            lead={lead}
+          />
+        )}
         {body}
       </Box>
     </Box>

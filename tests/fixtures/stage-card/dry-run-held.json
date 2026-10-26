@@ -1,0 +1,20 @@
+{
+  "DryRun": true,
+  "Stages": [
+    {
+      "Name": "{{stage}}",
+      "PreviousStage": "{{previousStage}}",
+      "Chosen": true,
+      "Gates": [
+        {
+          "Prerequisite": "Healthy",
+          "SpaceID": "{{spaceId}}",
+          "SpaceSlug": "{{slug}}",
+          "Satisfied": false,
+          "Reason": "Unhealthy",
+          "Message": "simulated hold: Variant '{{slug}}' is not healthy"
+        }
+      ]
+    }
+  ]
+}

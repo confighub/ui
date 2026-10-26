@@ -142,6 +142,23 @@ export interface PromotionPreview {
   undeterminedSpaceIds: Set<string>;
 }
 
+/** {@link PromotionPreview}, with why each Space the dry run did not plan went unplanned. */
+export interface StagePromotionPreview extends PromotionPreview {
+  /**
+   * Every Space in `undeterminedSpaceIds`, with the server's `Reason` code
+   * (`UpstreamPromotedFirst`, `UpstreamFailed`, …) or, when it gave none, its
+   * `Action` (`Failed`, `Blocked`).
+   *
+   * THE CAUSE DECIDES WHETHER THE READER IS WARNED. A dry run blocks every
+   * Space that takes from another Space of the same promotion, because it
+   * cannot plan against a state that does not exist yet: that is the shape of
+   * every chained ChangeOrder, and saying "we could not tell what changes" there
+   * would fire on the commonest promotion there is. A Space that failed to plan
+   * is a different answer, and only the cause tells the two apart.
+   */
+  unplannedReasonBySpaceId: Map<string, string>;
+}
+
 /**
  * The actions that write nothing to a Unit's configuration. A Mark only moves the
  * ChangeOrder's Tags onto a Unit that already holds the change.
@@ -161,18 +178,20 @@ const PLANNED_SPACE_ACTIONS: ReadonlySet<string> = new Set(['Promote', 'Unchange
  * or reports an error for, is not: it is undetermined, and must not read as "this
  * promotion changes nothing here".
  */
-export function readPromotionPreview(result: PromoteResult | undefined): PromotionPreview {
-  const preview: PromotionPreview = {
+export function readPromotionPreview(result: PromoteResult | undefined): StagePromotionPreview {
+  const preview: StagePromotionPreview = {
     dataByUnitId: new Map(),
     diffByUnitId: new Map(),
     conflictsByUnitId: new Map(),
     unchangedUnitIds: new Set(),
     undeterminedUnitIds: new Set(),
     undeterminedSpaceIds: new Set(),
+    unplannedReasonBySpaceId: new Map(),
   };
   for (const space of result?.Spaces ?? []) {
     if (space.SpaceID !== undefined && !PLANNED_SPACE_ACTIONS.has(space.Action ?? '')) {
       preview.undeterminedSpaceIds.add(space.SpaceID);
+      preview.unplannedReasonBySpaceId.set(space.SpaceID, space.Reason || space.Action || 'Failed');
     }
     for (const unit of space.Units ?? []) {
       const unitId = unit.UnitID;

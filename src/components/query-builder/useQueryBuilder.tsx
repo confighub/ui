@@ -150,8 +150,6 @@ export interface UseQueryBuilderOptions {
   targets?: Array<{ id: string; name: string }>;
   /** Available toolchain types */
   toolchainTypes?: string[];
-  /** Available bridge workers for the bridgeWorker filter */
-  bridgeWorkers?: Array<{ id: string; name: string }>;
   /** Available slugs for the slug autocomplete, with space grouping */
   slugs?: Array<{ slug: string; spaceName: string }>;
   /** Available resource types for the resource type filter */
@@ -335,7 +333,6 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
     spaces = EMPTY_NAMED_ENTITY_ARRAY,
     targets = EMPTY_NAMED_ENTITY_ARRAY,
     toolchainTypes,
-    bridgeWorkers = EMPTY_NAMED_ENTITY_ARRAY,
     slugs = EMPTY_SLUG_OPTIONS,
     resourceTypes = EMPTY_STRING_ARRAY,
     labelOptions = EMPTY_LABEL_OPTIONS,
@@ -1965,7 +1962,6 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
         spaces={spaces}
         targets={targets}
         toolchainTypes={toolchainTypes}
-        bridgeWorkers={bridgeWorkers}
         slugs={slugs}
         resourceTypes={resourceTypes}
         labelOptions={labelOptions}
@@ -1980,7 +1976,6 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
       spaces,
       targets,
       toolchainTypes,
-      bridgeWorkers,
       slugs,
       resourceTypes,
       labelOptions,

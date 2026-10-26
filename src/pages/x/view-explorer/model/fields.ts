@@ -271,13 +271,16 @@ export function statusesFor(entity: EntityKind): StatusKind[] {
 }
 
 /** One status per Unit for the Status column: untargeted, unreleased, upgradable, then released. */
-export function unitStatusLabel(eu: ExtendedUnitRead): string {
+export function unitStatusKind(eu: ExtendedUnitRead): StatusKind {
   const u = eu.Unit;
-  if (!u?.TargetID) return STATUS_LABEL.untargeted;
-  if ((u.HeadRevisionNum ?? 0) > (u.LastReleasedRevisionNum ?? 0))
-    return STATUS_LABEL.unreleased;
-  if (isUpgradable(eu)) return STATUS_LABEL.upgradable;
-  return STATUS_LABEL.released;
+  if (!u?.TargetID) return 'untargeted';
+  if ((u.HeadRevisionNum ?? 0) > (u.LastReleasedRevisionNum ?? 0)) return 'unreleased';
+  if (isUpgradable(eu)) return 'upgradable';
+  return 'released';
+}
+
+export function unitStatusLabel(eu: ExtendedUnitRead): string {
+  return STATUS_LABEL[unitStatusKind(eu)];
 }
 
 export function isUpgradable(eu: ExtendedUnitRead): boolean {

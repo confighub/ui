@@ -61,6 +61,43 @@ export interface ChangeOrderActionResult {
    * shipped when it did not.
    */
   didNothing?: boolean;
+  /**
+   * The promote was refused because the plan it carried no longer describes
+   * what would be written (412, or a plan made for other Spaces). Nothing was
+   * written. A caller that keeps its confirmation open says so in place and
+   * plans again; the message stays the one a closed dialog needs.
+   */
+  planStale?: boolean;
+  /** Which action produced this result, so a release failure is not worded as a promote failure. */
+  action?: 'promote' | 'release';
+  /**
+   * Every failed item, by the Space it failed in, for a caller that lists them
+   * rather than quoting `message`. Absent when nothing failed item by item: a
+   * refusal, or a request that failed outright.
+   */
+  failedSpaces?: PromoteFailureItem[];
+  /**
+   * A Space the promote was headed for is outside the change order's scope
+   * (`PromoteSummary.outOfScopeSpace`), so every run passes it over the same
+   * way and retrying cannot finish the promote: the scope has to change first.
+   * Set on the passed-over result (`promotePassedOver`), and also when nothing
+   * landed at all for the same cause. Absent otherwise.
+   */
+  outOfScope?: boolean;
+  /**
+   * The promote was refused because gates hold the stage: the server's 409, or
+   * this hook's own refusal of a stage the caller says has failing gates.
+   * Every gate's sentence, joined, as `promoteGatesHolding` gives them (a
+   * generic sentence when a 409 named none). Nothing was written, so this is a
+   * hold to show, never a failed promotion to retry.
+   */
+  gatesHolding?: string;
+  /**
+   * On `promoteAndRelease`'s result: what the promote leg returned. The result
+   * itself is the release's once the promote succeeded, so this is where a
+   * caller reads what the promote did.
+   */
+  promoteLeg?: ChangeOrderActionResult;
 }
 
 const OK: ChangeOrderActionResult = { ok: true, message: '' };
@@ -159,10 +196,31 @@ const WRITING_UNIT_ACTIONS: ReadonlySet<string> = new Set([
 /** The only Link action that writes. `Unchanged`, `Skip` and `Orphaned` do not. */
 const WRITING_LINK_ACTION = 'Create';
 
+/**
+ * One failed item of a promote or release, by the Space it failed in.
+ *
+ * The same items as `PromoteSummary.failures`, structured, so a surface can
+ * link the Space and the Unit instead of printing one joined sentence.
+ */
+export interface PromoteFailureItem {
+  /** Empty when the response named no Space id. */
+  spaceId: string;
+  /** Empty when the response named no slug; resolve a name by `spaceId`. */
+  spaceSlug: string;
+  /** The Unit the item belongs to: the failed Unit, or the Unit a failed Link is from. Absent for a Space-level failure. */
+  unitSlug?: string;
+  /** Set when the failed item is a Link. */
+  linkSlug?: string;
+  /** The server's words. */
+  message: string;
+}
+
 /** What one promote response says happened, item by item. */
 export interface PromoteSummary {
   /** One sentence per failed Space, resource or link, in the order reported. */
   failures: string[];
+  /** The same failures, one entry each, in the same order, with the Space and Unit they belong to. */
+  failuresBySpace: PromoteFailureItem[];
   /** Spaces the promotion actually wrote something into. */
   writtenSpaceCount: number;
   /**
@@ -229,6 +287,7 @@ export function summarisePromote(
   baseSpaceId: string | undefined,
 ): PromoteSummary {
   const failures: string[] = [];
+  const failuresBySpace: PromoteFailureItem[] = [];
   let writtenSpaceCount = 0;
   let reachedSpaceCount = 0;
   let outOfScopeSpace = false;
@@ -246,14 +305,15 @@ export function summarisePromote(
      */
     if (space.Action !== 'Blocked' && space.Action !== 'Failed') reachedSpaceCount += 1;
     const spaceName = space.SpaceSlug ?? changeOrderCopy.unnamedSpace;
+    const where = { spaceId: space.SpaceID ?? '', spaceSlug: space.SpaceSlug ?? '' };
 
-    const spaceFailure =
-      itemFailure(spaceName, space.Error?.Message) ??
-      (reportsReason(space, result?.DryRun === true, baseSpaceId)
-        ? itemFailure(spaceName, space.Message || space.Reason)
-        : null);
-    if (spaceFailure !== null) {
+    const spaceMessage =
+      nonEmpty(space.Error?.Message) ??
+      (reportsReason(space, result?.DryRun === true, baseSpaceId) ? nonEmpty(space.Message || space.Reason) : null);
+    const spaceFailure = spaceMessage === null ? null : itemFailure(spaceName, spaceMessage);
+    if (spaceFailure !== null && spaceMessage !== null) {
       failures.push(spaceFailure);
+      failuresBySpace.push({ ...where, message: spaceMessage });
       // Asked separately, and of a different question. See `outOfScope`.
       if (outOfScope(space, baseSpaceId)) outOfScopeSpace = true;
     }
@@ -261,13 +321,26 @@ export function summarisePromote(
     let wrote = false;
     for (const unit of space.Units ?? []) {
       const failure = itemFailure(unit.Slug, unit.Error?.Message);
-      if (failure !== null) failures.push(failure);
-      else if (WRITING_UNIT_ACTIONS.has(unit.Action ?? '')) wrote = true;
+      if (failure !== null) {
+        failures.push(failure);
+        failuresBySpace.push({
+          ...where,
+          ...(unit.Slug ? { unitSlug: unit.Slug } : {}),
+          message: unit.Error?.Message ?? '',
+        });
+      } else if (WRITING_UNIT_ACTIONS.has(unit.Action ?? '')) wrote = true;
     }
     for (const link of space.Links ?? []) {
       const failure = itemFailure(link.Slug ?? link.FromUnitSlug, link.Error?.Message);
-      if (failure !== null) failures.push(failure);
-      else if (link.Action === WRITING_LINK_ACTION) wrote = true;
+      if (failure !== null) {
+        failures.push(failure);
+        failuresBySpace.push({
+          ...where,
+          ...(link.FromUnitSlug ? { unitSlug: link.FromUnitSlug } : {}),
+          ...(link.Slug ? { linkSlug: link.Slug } : {}),
+          message: link.Error?.Message ?? '',
+        });
+      } else if (link.Action === WRITING_LINK_ACTION) wrote = true;
     }
 
     // Planned AND landed. A Space whose every write failed took none of the
@@ -275,7 +348,12 @@ export function summarisePromote(
     if (space.Action === 'Promote' && wrote) writtenSpaceCount += 1;
   }
 
-  return { failures, writtenSpaceCount, reachedSpaceCount, outOfScopeSpace };
+  return { failures, failuresBySpace, writtenSpaceCount, reachedSpaceCount, outOfScopeSpace };
+}
+
+/** The text, or `null` when there is none: an empty reason names nothing. */
+function nonEmpty(text: string | undefined): string | null {
+  return typeof text === 'string' && text.length > 0 ? text : null;
 }
 
 /**
@@ -365,6 +443,22 @@ export function promoteGatesHolding(result: PromoteResult | undefined): string |
  */
 export interface PromoteRequest {
   failedGateCount: number;
+  /**
+   * The stage the action is for, recorded beside its result as
+   * `lastResultStageId`, so a page that shows one stage at a time does not
+   * show one stage's failure on another. Optional: a caller that shows the
+   * result wherever it is reads `lastResult` alone.
+   */
+  stageId?: string;
+  /**
+   * For `promoteAndRelease`: the Spaces to publish once the promote lands, when
+   * that is not every Space promoted. A Space with no release Target
+   * (`ReleaseTargetID`) is refused by the server (400, "cannot release a Space
+   * without a ReleaseTargetID"), so a stage that mixes Spaces with and without
+   * one promotes them all and publishes only those that have one. Absent:
+   * every Space promoted.
+   */
+  releaseSpaceIds?: readonly string[];
 }
 
 /**
@@ -401,7 +495,56 @@ export function promotePrecheck(
 ): ChangeOrderActionResult | null {
   if (promoteHasNothingToDo(changeOrderId, baseSpaceId, spaceIds)) return NOTHING_TO_DO;
   const refusal = promoteRefusal(request);
-  return refusal === null ? null : { ok: false, message: refusal };
+  return refusal === null ? null : { ok: false, message: refusal, gatesHolding: refusal };
+}
+
+/**
+ * The result of an applied promote whose response reports failures, or `null`
+ * when it reports none.
+ *
+ * Whether anything LANDED decides which of two true sentences this is. With a
+ * Space promoted, "nothing was changed" is false; with none, the request-failed
+ * copy is. A Space outside the change order's scope is passed over again by
+ * every run, so only the other shape may be told to retry, and `outOfScope`
+ * says so without the caller reading the sentence.
+ */
+export function promoteFailureResult(summary: PromoteSummary, spaceCount: number): ChangeOrderActionResult | null {
+  if (summary.failures.length === 0) return null;
+  const reason = summary.failures.join('; ');
+  const landed = changeOrderCopy.spaceCount(summary.writtenSpaceCount);
+  return {
+    ok: false,
+    message:
+      summary.writtenSpaceCount === 0
+        ? changeOrderCopy.promoteRequestFailed(reason, spaceCount)
+        : summary.outOfScopeSpace
+          ? changeOrderCopy.promotePassedOver(landed, reason)
+          : changeOrderCopy.promotePartial(landed, reason),
+    action: 'promote',
+    failedSpaces: summary.failuresBySpace,
+    ...(summary.outOfScopeSpace ? { outOfScope: true } : {}),
+  };
+}
+
+/**
+ * What `promoteAndRelease` returns once both legs ran: the release's result,
+ * with the promote leg carried as `promoteLeg`.
+ *
+ * ⚠️ A PROMOTE THAT DID NOTHING STAYS "DID NOTHING" THROUGH A RELEASE THAT
+ * SUCCEEDED. Otherwise the release's plain success is read as a completed
+ * promotion, and "Nothing to promote" becomes "Promoted". A release that failed
+ * keeps its failure as the result, since `didNothing` is read before `ok` and
+ * would hide it; the promote leg still says it did nothing.
+ */
+export function promoteAndReleaseResult(
+  promoted: ChangeOrderActionResult,
+  released: ChangeOrderActionResult,
+): ChangeOrderActionResult {
+  return {
+    ...released,
+    ...(promoted.didNothing === true && released.ok ? { didNothing: true } : {}),
+    promoteLeg: promoted,
+  };
 }
 
 /**
@@ -434,6 +577,35 @@ export interface PromotePreview {
   gatesHolding: string | null;
   /** Anything other than a gate that stopped the preview, or `null`. */
   error: string | null;
+}
+
+/**
+ * The Spaces of a stage as a `WhereSpace` expression.
+ *
+ * Naming the Spaces rather than the stage: the caller has already decided
+ * which of the stage's Spaces this action writes into — `promotionTargets`
+ * drops the Space the promotion passes over — and a `TargetStage` would hand
+ * that decision back to the server and undo it. The stage's gates are
+ * evaluated either way, since they are evaluated over the stage before it.
+ *
+ * SORTED, so the same set of Spaces always produces the same expression. `IN`
+ * is set membership and order means nothing to the server — but it means
+ * everything to the comparison that decides whether the plan a dry run
+ * returned still describes what is about to be written. Left in the caller's
+ * order, a stage whose Spaces re-derive in a different order between the dry
+ * run and the confirm would quietly drop the guard rather than trip it.
+ *
+ * Exported so a dry run made outside this hook plans over the very selector
+ * the promote sends, and its plan can be adopted (`adoptPlan`).
+ */
+export function whereSpaceOf(spaceIds: readonly string[]): string {
+  return `SpaceID IN (${[...spaceIds].sort().map((id) => `'${id}'`).join(', ')})`;
+}
+
+/** A dry run's plan, with the selector it was planned over. */
+export interface PlannedPromote {
+  selector: string;
+  plan: string;
 }
 
 const NO_PREVIEW: PromotePreview = {
@@ -487,7 +659,23 @@ export interface ChangeOrderActions {
   inFlightSpaceIds: ReadonlySet<string>;
   busy: boolean;
   lastResult: ChangeOrderActionResult | null;
+  /**
+   * The stage `lastResult` is about, when the action named one
+   * (`PromoteRequest.stageId`, or `release`'s `stageId`). Undefined when it
+   * named none, or when there is no result.
+   */
+  lastResultStageId: string | undefined;
   clearResult: () => void;
+  /**
+   * Hold a plan from a dry run made elsewhere, to send with the next promote
+   * as `ExpectedPlan`; `null` drops any plan held.
+   *
+   * For a surface that plans without `preview` — one that dry-runs on its own
+   * schedule and must not count as busy while it does. The selector must be
+   * `whereSpaceOf` of the Spaces the promote will name: a plan for other Spaces
+   * is refused as stale rather than sent.
+   */
+  adoptPlan: (planned: PlannedPromote | null) => void;
   /**
    * `request` states the gate situation, and stating it is NOT OPTIONAL.
    *
@@ -514,7 +702,8 @@ export interface ChangeOrderActions {
   preview: (spaceIds: string[], request: PromoteRequest) => Promise<void>;
   promotePreview: PromotePreview;
   clearPreview: () => void;
-  release: (spaceIds: string[]) => Promise<ChangeOrderActionResult>;
+  /** `options.stageId` is recorded as `lastResultStageId`, as `PromoteRequest.stageId` is. */
+  release: (spaceIds: string[], options?: { stageId?: string }) => Promise<ChangeOrderActionResult>;
   promoteAndRelease: (spaceIds: string[], request: PromoteRequest) => Promise<ChangeOrderActionResult>;
 }
 
@@ -533,40 +722,25 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
    * sending it back for a different selection would ask the server to confirm a
    * preview nobody saw.
    */
-  const plannedRef = useRef<{ selector: string; plan: string } | null>(null);
+  const plannedRef = useRef<PlannedPromote | null>(null);
   const [inFlightSpaceIds, setInFlightSpaceIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [lastResult, setLastResult] = useState<ChangeOrderActionResult | null>(null);
+  // One state, so a result and the stage it is about never render apart.
+  const [last, setLast] = useState<{ result: ChangeOrderActionResult; stageId: string | undefined } | null>(null);
   const [promotePreview, setPromotePreview] = useState<PromotePreview>(NO_PREVIEW);
 
-  const clearResult = useCallback(() => setLastResult(null), []);
+  const setLastResult = useCallback(
+    (result: ChangeOrderActionResult | null, stageId?: string) =>
+      setLast(result === null ? null : { result, stageId }),
+    [],
+  );
+  const clearResult = useCallback(() => setLast(null), []);
   const clearPreview = useCallback(() => {
     plannedRef.current = null;
     setPromotePreview(NO_PREVIEW);
   }, []);
-
-  /**
-   * The stage's Spaces as a `WhereSpace` expression.
-   *
-   * Naming the Spaces rather than the stage: the caller has already decided
-   * which of the stage's Spaces this action writes into — `promotionTargets`
-   * drops the Space the promotion passes over — and a `TargetStage` would hand that
-   * decision back to the server and undo it. The stage's gates are evaluated
-   * either way, since they are evaluated over the stage before it.
-   */
-  const whereSpace = useCallback(
-    (spaceIds: readonly string[]) =>
-      /*
-       * SORTED, so the same set of Spaces always produces the same expression.
-       * `IN` is set membership and order means nothing to the server — but it
-       * means everything to the comparison below that decides whether the plan
-       * a preview returned still describes what is about to be written. Left
-       * in the caller's order, a stage whose Spaces re-derive in a different
-       * order between opening the dialog and confirming it would quietly drop
-       * the guard rather than trip it.
-       */
-      `SpaceID IN (${[...spaceIds].sort().map((id) => `'${id}'`).join(', ')})`,
-    [],
-  );
+  const adoptPlan = useCallback((planned: PlannedPromote | null) => {
+    plannedRef.current = planned;
+  }, []);
 
   const preview = useCallback(
     async (spaceIds: string[], request: PromoteRequest): Promise<void> => {
@@ -593,7 +767,7 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
         return;
       }
 
-      const selector = whereSpace(spaceIds);
+      const selector = whereSpaceOf(spaceIds);
       setPromotePreview({ ...NO_PREVIEW, loading: true });
       try {
         const result = await runPromote({
@@ -627,7 +801,7 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
         });
       }
     },
-    [changeOrderId, baseSpaceId, runPromote, whereSpace],
+    [changeOrderId, baseSpaceId, runPromote],
   );
 
   const promote = useCallback(
@@ -637,12 +811,12 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
         // A refusal is a verdict the footer keeps showing; having had nothing
         // to do is not one, and recording it would clear a banner still
         // describing the last thing that actually ran.
-        if (stopNow.didNothing !== true) setLastResult(stopNow);
+        if (stopNow.didNothing !== true) setLastResult(stopNow, request.stageId);
         return stopNow;
       }
       setInFlightSpaceIds(new Set(spaceIds));
 
-      const selector = whereSpace(spaceIds);
+      const selector = whereSpaceOf(spaceIds);
       const planned = plannedRef.current;
       try {
         /*
@@ -656,8 +830,13 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
          * proceeds.
          */
         if (planned !== null && planned.selector !== selector) {
-          const stale: ChangeOrderActionResult = { ok: false, message: changeOrderCopy.promotePlanStale };
-          setLastResult(stale);
+          const stale: ChangeOrderActionResult = {
+            ok: false,
+            message: changeOrderCopy.promotePlanStale,
+            planStale: true,
+            action: 'promote',
+          };
+          setLastResult(stale, request.stageId);
           return stale;
         }
 
@@ -674,26 +853,9 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
         }).unwrap();
 
         const summary = summarisePromote(result, baseSpaceId);
-        if (summary.failures.length > 0) {
-          const reason = summary.failures.join('; ');
-          /*
-           * Whether anything LANDED decides which of two true sentences this
-           * is. With a Space promoted, "nothing was changed" is false; with
-           * none, the partial-failure copy is.
-           */
-          const landed = changeOrderCopy.spaceCount(summary.writtenSpaceCount);
-          const failure: ChangeOrderActionResult = {
-            ok: false,
-            message:
-              summary.writtenSpaceCount === 0
-                ? changeOrderCopy.promoteRequestFailed(reason, spaceIds.length)
-                : // A Space outside the change order's scope is passed over
-                  // again by every run, so only the other shape may retry.
-                  summary.outOfScopeSpace
-                  ? changeOrderCopy.promotePassedOver(landed, reason)
-                  : changeOrderCopy.promotePartial(landed, reason),
-          };
-          setLastResult(failure);
+        const failure = promoteFailureResult(summary, spaceIds.length);
+        if (failure !== null) {
+          setLastResult(failure, request.stageId);
           return failure;
         }
 
@@ -705,16 +867,20 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
       } catch (error) {
         const status = statusOf(error);
         const gatesHolding = status === 409 ? promoteGatesHolding(promoteResultOf(error)) : null;
+        const planStale = gatesHolding === null && status === 412;
         const failure: ChangeOrderActionResult = {
           ok: false,
           message:
             gatesHolding !== null
               ? changeOrderCopy.promoteRefused(gatesHolding)
-              : status === 412
+              : planStale
                 ? changeOrderCopy.promotePlanStale
                 : changeOrderCopy.promoteRequestFailed(describeRequestError(error), spaceIds.length),
+          action: 'promote',
+          ...(planStale ? { planStale: true } : {}),
+          ...(status === 409 ? { gatesHolding: gatesHolding ?? changeOrderCopy.promoteHeld.generic } : {}),
         };
-        setLastResult(failure);
+        setLastResult(failure, request.stageId);
         return failure;
       } finally {
         // The plan is spent either way: it was applied, or it was rejected as
@@ -725,7 +891,7 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
         onSettled?.();
       }
     },
-    [changeOrderId, baseSpaceId, runPromote, whereSpace, onSettled],
+    [changeOrderId, baseSpaceId, runPromote, setLastResult, onSettled],
   );
 
   /** Publish one Space, waiting out a gate re-evaluation but nothing else. */
@@ -752,7 +918,7 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
   );
 
   const release = useCallback(
-    async (spaceIds: string[]): Promise<ChangeOrderActionResult> => {
+    async (spaceIds: string[], options: { stageId?: string } = {}): Promise<ChangeOrderActionResult> => {
       if (spaceIds.length === 0) return OK;
       setInFlightSpaceIds(new Set(spaceIds));
       const deadline = Date.now() + GATE_WAIT_TIMEOUT_MS;
@@ -762,15 +928,22 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
         const settled = await Promise.allSettled(
           spaceIds.map((spaceId) => publishOne(spaceId, deadline)),
         );
-        const failedCount = settled.filter((s) => s.status === 'rejected').length;
+        const failedSpaces: PromoteFailureItem[] = settled.flatMap((outcome, index) =>
+          outcome.status === 'rejected'
+            ? [{ spaceId: spaceIds[index], spaceSlug: '', message: describeRequestError(outcome.reason) }]
+            : [],
+        );
+        const failedCount = failedSpaces.length;
         if (failedCount > 0) {
-          const result = {
+          const result: ChangeOrderActionResult = {
             ok: false,
             message: changeOrderCopy.releaseFailed(
               `${failedCount} of ${spaceIds.length} ${spaceIds.length === 1 ? 'Space' : 'Spaces'}`,
             ),
+            action: 'release',
+            failedSpaces,
           };
-          setLastResult(result);
+          setLastResult(result, options.stageId);
           return result;
         }
         setLastResult(null);
@@ -780,7 +953,7 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
         onSettled?.();
       }
     },
-    [publishOne, onSettled],
+    [publishOne, setLastResult, onSettled],
   );
 
   const promoteAndRelease = useCallback(
@@ -789,7 +962,10 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
       // Do not release what did not promote — that would publish the old state
       // and call it done.
       if (!promoted.ok) return promoted;
-      return release(spaceIds);
+      const released = await release(request.releaseSpaceIds === undefined ? spaceIds : [...request.releaseSpaceIds], {
+        stageId: request.stageId,
+      });
+      return promoteAndReleaseResult(promoted, released);
     },
     [promote, release],
   );
@@ -797,8 +973,10 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
   return {
     inFlightSpaceIds,
     busy: inFlightSpaceIds.size > 0 || promotePreview.loading,
-    lastResult,
+    lastResult: last?.result ?? null,
+    lastResultStageId: last?.stageId,
     clearResult,
+    adoptPlan,
     promote,
     preview,
     promotePreview,

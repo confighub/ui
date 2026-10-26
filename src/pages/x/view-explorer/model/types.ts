@@ -13,10 +13,13 @@ export type EntityKind = 'Unit' | 'Space' | 'Resource';
 
 export const ENTITY_KINDS: readonly EntityKind[] = ['Unit', 'Space', 'Resource'];
 
-/** How the results are drawn. Saved in the `ui.confighub.io/layout` annotation. */
-export type Layout = 'table' | 'list' | 'board' | 'matrix';
+/**
+ * How the results are drawn. Saved in the `ui.confighub.io/layout` annotation;
+ * a saved layout not listed here (such as the retired `list`) opens as the table.
+ */
+export type Layout = 'table' | 'board' | 'matrix';
 
-export const LAYOUTS: readonly Layout[] = ['table', 'list', 'board', 'matrix'];
+export const LAYOUTS: readonly Layout[] = ['table', 'board', 'matrix'];
 
 /**
  * The comparison a field lens makes. `is` and `isNot` with several values are
@@ -202,6 +205,12 @@ export interface ExplorerState {
    * browser tabs that start from the same stored state never make one id.
    */
   forkPrefix?: string;
+  /**
+   * The Units each tab compares, by tab id: UnitIDs in slot order, slot A
+   * first. It is not part of a tab's view, so it never makes a draft or an
+   * undo step; `reconcileCompare` (`compare.ts`) keeps it in line with the tabs.
+   */
+  compare?: Readonly<Record<string, readonly string[]>>;
 }
 
 /** A WHERE error: a plain message and the character span it is about. */

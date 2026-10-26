@@ -160,9 +160,6 @@ export const useAddTrigger = (
     const triggerData: TriggerRead = {
       Slug: data.Slug,
       ChannelID: data.ChannelID ? data.ChannelID : undefined,
-      // A Trigger still on a worker keeps it until a Channel is chosen, which replaces it:
-      // the update sends the whole Trigger, and a Trigger names one or the other.
-      ...(data.ChannelID && { BridgeWorkerID: undefined }),
       FunctionName: data.FunctionName,
       Disabled: data.Disabled || false,
       Warn: data.Warn || false,

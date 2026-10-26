@@ -1,0 +1,11 @@
+{
+  "SpaceID": "{{spaceId}}",
+  "SpaceSlug": "{{slug}}",
+  "Action": "Promote",
+  "Units": [
+    { "Action": "Upgrade", "Slug": "app" },
+    { "Action": "Upgrade", "Slug": "worker" },
+    { "Action": "Upgrade", "Slug": "config" },
+    { "Action": "Unchanged", "Slug": "namespaces", "Reason": "AlreadyTaken" }
+  ]
+}

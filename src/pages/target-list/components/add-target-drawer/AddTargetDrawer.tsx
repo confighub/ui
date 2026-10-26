@@ -12,9 +12,8 @@
  * - Labels, annotations, facts and delete gates, edited as rows of key/value fields
  * - Space selection
  * - Selecting the Triggers invoked on the Units attached to the target, and showing which are
- * - Granting a worker access to the target, so it can pull the target's releases
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Control, Controller, FieldErrors, useForm } from 'react-hook-form';
 
 import { CopyToClipboard } from '@/components/copy-to-clipboard/CopyToClipboard';
@@ -31,25 +30,21 @@ import { getApiErrorMessage } from '@/utility/error-functions';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
 import {
-  BridgeWorkerRead,
   CreateTargetApiArg,
   SpaceRead,
   Target,
   TargetRead,
   UpdateTargetApiArg,
   useCreateTargetMutation,
-  useListAllBridgeWorkersQuery,
   useListSpacesQuery,
   usePatchTargetMutation,
   useUpdateTargetMutation,
 } from '@confighub/rtk-query';
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
 import { ENTITY_TYPES } from '@/utility/analytics-constants';
-import { setWorkerTargetAccess, workerHasTargetAccess } from '@/utility/bridge-worker-utils';
 import ArrowBack from '@mui/icons-material/ArrowBack';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Checkbox from '@mui/material/Checkbox';
 import Drawer from '@mui/material/Drawer';
 import FormControl from '@mui/material/FormControl';
 import FormHelperText from '@mui/material/FormHelperText';
@@ -81,26 +76,18 @@ export interface AddTargetDrawerProps {
 /**
  * BasicInfoCard
  *
- * Handles basic target information: name, space, and a worker to grant access to.
+ * Handles basic target information: name and space.
  */
 const BasicInfoCard = ({
   control,
   errors,
   spaces,
-  workers,
   isEditMode,
-  accessWorkerIds,
-  setAccessWorkerIds,
-  workerLabel,
 }: {
   control: Control<TargetFormValues>;
   errors: FieldErrors<TargetFormValues>;
   spaces: SpaceRead[];
-  workers: BridgeWorkerRead[];
   isEditMode: boolean;
-  accessWorkerIds: string[];
-  setAccessWorkerIds: (workerIds: string[]) => void;
-  workerLabel: (worker: BridgeWorkerRead) => string;
 }) => {
   return (
     <SectionCard title='Basic Information'>
@@ -171,47 +158,6 @@ const BasicInfoCard = ({
               </FormControl>
             )}
           />
-        </Grid>
-
-        <Grid size={{ xs: 6 }}>
-          <FormControl fullWidth size='small'>
-            <InputLabel shrink>Workers with access</InputLabel>
-            <Select
-              multiple
-              value={accessWorkerIds}
-              label='Workers with access'
-              input={<OutlinedInput label='Workers with access' notched />}
-              displayEmpty
-              data-testid='target-worker-access-select'
-              renderValue={(selected) =>
-                selected.length === 0 ? (
-                  <em>None</em>
-                ) : (
-                  workers
-                    .filter((worker) => selected.includes(worker.BridgeWorkerID || ''))
-                    .map(workerLabel)
-                    .join(', ')
-                )
-              }
-              onChange={(e) => {
-                const value = e.target.value;
-                setAccessWorkerIds(typeof value === 'string' ? value.split(',') : value);
-              }}
-            >
-              {workers.map((worker) => (
-                <MenuItem key={worker.BridgeWorkerID} value={worker.BridgeWorkerID}>
-                  <Checkbox
-                    size='small'
-                    checked={accessWorkerIds.includes(worker.BridgeWorkerID || '')}
-                  />
-                  {workerLabel(worker)}
-                </MenuItem>
-              ))}
-            </Select>
-            <FormHelperText>
-              A worker with access can find the target and pull the releases published for it
-            </FormHelperText>
-          </FormControl>
         </Grid>
       </Grid>
     </SectionCard>
@@ -387,7 +333,6 @@ export const AddTargetDrawer = ({
 }: AddTargetDrawerProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState('');
-  const [accessWorkerIds, setAccessWorkerIds] = useState<string[]>([]);
 
   const isEditMode = !!existingTarget;
 
@@ -405,40 +350,6 @@ export const AddTargetDrawer = ({
   } = useForm<TargetFormValues>({
     defaultValues: targetFormValues(existingTarget),
   });
-
-  // A grant may be to a worker in another Space, so every worker in the organization is offered.
-  const { data: extendedBridgeWorkers = [] } = useListAllBridgeWorkersQuery({
-    include: 'SpaceID',
-  });
-
-  // A worker without a bot user cannot be granted anything.
-  const bridgeWorkers = useMemo(
-    () =>
-      extendedBridgeWorkers
-        .map((ebw) => ebw.BridgeWorker)
-        .filter((bw): bw is BridgeWorkerRead => bw !== undefined && !!bw.UserID),
-    [extendedBridgeWorkers],
-  );
-
-  // Workers in different Spaces may share a name, so each is shown with its Space.
-  const workerLabel = useCallback(
-    (worker: BridgeWorkerRead) => {
-      const space = extendedBridgeWorkers.find(
-        (ebw) => ebw.BridgeWorker?.BridgeWorkerID === worker.BridgeWorkerID,
-      )?.Space;
-      return space?.Slug ? `${space.Slug}/${worker.Slug}` : worker.Slug || '';
-    },
-    [extendedBridgeWorkers],
-  );
-
-  // The field opens showing who has access now: the workers the target's Permissions grant.
-  const grantedWorkerKey = bridgeWorkers
-    .filter((bw) => workerHasTargetAccess(existingTarget?.Permissions, bw))
-    .map((bw) => bw.BridgeWorkerID || '')
-    .join(',');
-  useEffect(() => {
-    setAccessWorkerIds(grantedWorkerKey ? grantedWorkerKey.split(',') : []);
-  }, [grantedWorkerKey, existingTarget?.TargetID, isOpen]);
 
   const [createTarget, { isSuccess: isCreateSuccess, error: createError, data: createData }] =
     useCreateTargetMutation();
@@ -495,11 +406,6 @@ export const AddTargetDrawer = ({
             Labels: rowsToMap(data.Labels),
             Annotations: rowsToMap(data.Annotations),
             DeleteGates: rowsToGates(data.DeleteGates),
-            Permissions: setWorkerTargetAccess(
-              existingTarget.Permissions,
-              bridgeWorkers,
-              accessWorkerIds,
-            ),
           },
         };
         await updateTarget(input);
@@ -518,7 +424,6 @@ export const AddTargetDrawer = ({
             Labels: rowsToMap(data.Labels),
             Annotations: rowsToMap(data.Annotations),
             DeleteGates: rowsToGates(data.DeleteGates),
-            Permissions: setWorkerTargetAccess(undefined, bridgeWorkers, accessWorkerIds),
           },
         };
         await createTarget(input);
@@ -591,11 +496,7 @@ export const AddTargetDrawer = ({
               control={control}
               errors={errors}
               spaces={spaces}
-              workers={bridgeWorkers}
               isEditMode={isEditMode}
-              accessWorkerIds={accessWorkerIds}
-              setAccessWorkerIds={setAccessWorkerIds}
-              workerLabel={workerLabel}
             />
             <MapFieldSection
               control={control}

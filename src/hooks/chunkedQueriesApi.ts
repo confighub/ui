@@ -484,3 +484,6 @@ export const {
   useSearchUnitMutationSourcesChunkedQuery,
   useSearchRevisionMutationSourcesChunkedQuery,
 } = chunkedQueriesApi;
+
+/** The published Releases of some Spaces as the cache has them, asking for nothing. */
+export const useListPublishedReleasesChunkedQueryState = chunkedQueriesApi.endpoints.listPublishedReleasesChunked.useQueryState;

@@ -326,8 +326,8 @@ function ActionItem({
  * Give the focus back after the popover closes, never to the page body:
  * 1. the cell it opened from, when that cell is still there;
  * 2. in the table, a value in the row now at (or after) that place;
- * 3. in any layout, its first focusable item (a list row's value, a board
- *    card), else the layout's container itself;
+ * 3. in any layout, its first focusable item (a board card), else the
+ *    layout's container itself;
  * 4. the toolbar, when the results are empty.
  * The rows may change under it (Only this, Exclude), so this waits two frames.
  */
@@ -335,7 +335,7 @@ function focusNear(selection: CellSelection): void {
   requestAnimationFrame(() => requestAnimationFrame(() => focusNow(selection)));
 }
 
-const LAYOUT_CONTAINERS = ['vx-table', 'vx-list', 'vx-board'];
+const LAYOUT_CONTAINERS = ['vx-table', 'vx-board'];
 const FOCUSABLE = '[tabindex="0"], button:not([disabled]), [href]';
 
 function focusNow(selection: CellSelection): void {
@@ -390,6 +390,7 @@ export function CellPopoverHost() {
   const paperRef = useRef<HTMLDivElement>(null);
 
   useRegisterSlot('openCellPopover', open);
+  useRegisterSlot('closeCellPopover', close);
   useDropToGroup(work.groupBy, dispatch);
 
   // Close, then put the focus back near the cells, never on the page body.

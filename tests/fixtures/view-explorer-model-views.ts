@@ -59,7 +59,7 @@ export function seedViews(): SeedView[] {
         lenses: [lens({ kind: 'status', status: 'upgradable' })],
         groupBy: ['UpstreamSpaceSlug'],
         sort: { column: 'Slug', dir: 'ASC' },
-        layout: 'list',
+        layout: 'table',
         columns: [
           'Slug',
           'Space',
@@ -145,7 +145,7 @@ export function seedViews(): SeedView[] {
         ],
         groupBy: ['Target'],
         sort: null,
-        layout: 'list',
+        layout: 'table',
       }),
     },
     {

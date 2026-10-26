@@ -10,7 +10,6 @@ import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import ViewKanbanOutlinedIcon from '@mui/icons-material/ViewKanbanOutlined';
-import ViewListOutlinedIcon from '@mui/icons-material/ViewListOutlined';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import InputBase from '@mui/material/InputBase';
@@ -38,7 +37,6 @@ import { useSaveFlow } from './useSaveFlow';
 
 const LAYOUT_ICON: Record<Layout, typeof TableChartOutlinedIcon> = {
   table: TableChartOutlinedIcon,
-  list: ViewListOutlinedIcon,
   board: ViewKanbanOutlinedIcon,
   matrix: GridViewOutlinedIcon,
 };

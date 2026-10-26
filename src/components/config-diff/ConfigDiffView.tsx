@@ -9,20 +9,76 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 
 import { componentTheme } from '@/pages/x/apps/componentTheme';
-import type { KeptValue } from '@/pages/x/apps/diffTree';
+import type { DiffTreeNode, KeptValue } from '@/pages/x/apps/diffTree';
 import { TreeDiffSection, type TreeDiffDomHooks } from '@/pages/x/apps/TreeDiffSection';
 import { useColumnResize } from '@/pages/x/apps/useColumnResize';
 
-import { buildConfigDiffTree, resourceDiffLabel } from './configDiffTree';
+import { buildConfigDiffTree, changesNamingTheirElements, resourceDiffLabel, segmentLabel, serverPathLabels } from './configDiffTree';
 import { DiffRowCommentsContext, type DiffComments } from './diffComments';
 
 /** `TreeDiffSection` reads its rows from the tree it is handed, not from field diffs. */
 const NO_FIELD_DIFFS: { path: string; oldValue: string; newValue: string }[] = [];
 
+/**
+ * A row's key as a reader writes it. In the path syntax a dot inside a key is
+ * written `~1`, so `app.kubernetes.io/name` would otherwise read
+ * `app~1kubernetes~1io/name`. Nothing else is escaped, so `~1` is all there is to undo.
+ */
+function readableKey(key: string): string {
+  return key.includes('~1') ? key.replace(/~1/g, '.') : key;
+}
+
 const DOM_HOOKS: TreeDiffDomHooks = {
   testIdPrefix: 'config-diff',
   srValuePrefix: { old: 'Before: ', new: 'After: ' },
+  formatKey: readableKey,
 };
+
+/** The id the highlighted row takes, so a caller can scroll to it. One highlighted row per page. */
+export const CONFIG_DIFF_HIGHLIGHT_ID = 'config-diff-highlight';
+
+/**
+ * The tint of the highlighted row. Amber unless an ancestor sets
+ * `--diff-highlight-bg` / `--diff-highlight-bd`, as a page marking a failure does.
+ */
+const HIGHLIGHT_SX = {
+  background: 'var(--diff-highlight-bg, var(--amber-bg))',
+  boxShadow: 'inset 0 1px 0 var(--diff-highlight-bd, var(--amber-bd)), inset 0 -1px 0 var(--diff-highlight-bd, var(--amber-bd))',
+} as const;
+
+/** A path as row labels joined with dots, so a server path and a diff's segments compare. */
+function labelPath(path: string): string {
+  return serverPathLabels(path).join('.');
+}
+
+/**
+ * Whether a row stands for `path`: the server's `DisplayPath` of a change, the path
+ * of a kept value, or the same row labels however the path was spelled.
+ */
+function changeMatches(change: NonNullable<ResourceDiff['Changes']>[number], path: string, labels: string): boolean {
+  if (change.Comment) return false;
+  if (change.DisplayPath === path) return true;
+  return (change.Segments ?? []).length > 0 && (change.Segments ?? []).map(segmentLabel).join('.') === labels;
+}
+
+function keptMatches(value: KeptValue, path: string, labels: string): boolean {
+  return value.path === path || labelPath(value.path) === labels;
+}
+
+/** The leaf of a built tree that stands for `path`, by its anchor, its kept value or its labels from the root. */
+function findLeaf(nodes: readonly DiffTreeNode[], path: string, labels: string, prefix = ''): DiffTreeNode | undefined {
+  for (const node of nodes) {
+    const full = prefix === '' ? node.key : `${prefix}.${node.key}`;
+    if (node.type === 'folder') {
+      const hit = findLeaf(node.children ?? [], path, labels, full);
+      if (hit !== undefined) return hit;
+      continue;
+    }
+    if (node.context) continue;
+    if (node.anchorPath === path || (node.kept !== undefined && keptMatches(node.kept, path, labels)) || full === labels) return node;
+  }
+  return undefined;
+}
 
 interface ResourceDiffSectionProps {
   resource: ResourceDiff;
@@ -35,16 +91,28 @@ interface ResourceDiffSectionProps {
   /** Values this resource kept, drawn as rows among its changes. */
   kept: readonly KeptValue[];
   comments?: DiffComments;
+  /** The path of the row to mark, when this resource holds it. */
+  highlightPath?: string;
   /** Drawn under the resource's heading, above its changes. */
   prelude?: ReactNode;
   domHooks: TreeDiffDomHooks;
+  resourceLabel: (resource: ResourceDiff['Resource']) => string;
 }
 
-const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDividerMouseDown, isDragging, hideContext, kept, comments, prelude, domHooks }: ResourceDiffSectionProps) => {
+const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDividerMouseDown, isDragging, hideContext, kept, comments, highlightPath, prelude, domHooks: baseHooks, resourceLabel }: ResourceDiffSectionProps) => {
   const tree = useMemo(() => {
     const changes = resource.Changes ?? [];
-    return buildConfigDiffTree(hideContext ? changes.filter((change) => change.ChangeType !== 'None') : changes, kept);
+    return buildConfigDiffTree(hideContext ? changesNamingTheirElements(changes) : changes, kept);
   }, [resource.Changes, hideContext, kept]);
+  const target = useMemo(
+    () => (highlightPath === undefined ? undefined : findLeaf(tree, highlightPath, labelPath(highlightPath))),
+    [tree, highlightPath],
+  );
+  // The renderer marks the row itself, so the mark follows the row through folders opening and closing.
+  const domHooks = useMemo<TreeDiffDomHooks>(
+    () => (target === undefined ? baseHooks : { ...baseHooks, highlight: { node: target, id: CONFIG_DIFF_HIGHLIGHT_ID, sx: HIGHLIGHT_SX } }),
+    [target, baseHooks],
+  );
   const entry = useMemo(() => ({ unitId: resourceKey, fieldDiffs: NO_FIELD_DIFFS }), [resourceKey]);
 
   const added = resource.ChangeType === 'Add';
@@ -53,7 +121,7 @@ const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDivide
     resource.PreviousResource && resource.PreviousResource.ResourceName !== resource.Resource?.ResourceName
       ? resource.PreviousResource.ResourceName
       : undefined;
-  const label = resourceDiffLabel(resource.Resource);
+  const label = resourceLabel(resource.Resource);
   const rowComments = useMemo(() => comments?.forResource(resource.Resource), [comments, resource.Resource]);
 
   return (
@@ -142,10 +210,18 @@ export interface ConfigDiffViewProps {
   kept?: readonly KeptValue[];
   /** Review comments on the rows, from a page that reviews this diff. */
   comments?: DiffComments;
+  /**
+   * A path to mark: the row for it (a change by its `DisplayPath`, or a kept value by
+   * its path) takes the id `CONFIG_DIFF_HIGHLIGHT_ID`, `data-highlighted` and a tint.
+   * Only the first resource holding it is marked.
+   */
+  highlightPath?: string;
   /** What a page draws under a resource's heading, above its changes: the release pane's image rows. */
   resourcePrelude?: (resource: ResourceDiff, index: number) => ReactNode;
   /** The rows' test ids and screen-reader prefixes, for a page that names its own. */
   domHooks?: TreeDiffDomHooks;
+  /** The heading of each resource, for a page that names resources its own way. */
+  resourceLabel?: (resource: ResourceDiff['Resource']) => string;
 }
 
 const NO_KEPT: readonly KeptValue[] = [];
@@ -158,7 +234,7 @@ const NO_KEPT: readonly KeptValue[] = [];
  * renames -- so an element inserted into a list is one added row, and the elements
  * after it are not reported as changed.
  */
-export const ConfigDiffView = ({ diff, columns, hideContext = false, kept = NO_KEPT, comments, resourcePrelude, domHooks = DOM_HOOKS }: ConfigDiffViewProps) => {
+export const ConfigDiffView = ({ diff, columns, hideContext = false, kept = NO_KEPT, comments, highlightPath, resourcePrelude, domHooks = DOM_HOOKS, resourceLabel = resourceDiffLabel }: ConfigDiffViewProps) => {
   // One set of column widths for every resource, so their columns line up.
   const ownColumns = useColumnResize();
   const { columnStyle, onDividerMouseDown, isDragging } = columns ?? ownColumns;
@@ -176,6 +252,16 @@ export const ConfigDiffView = ({ diff, columns, hideContext = false, kept = NO_K
       ),
     [resources, kept],
   );
+  const highlightIndex = useMemo(() => {
+    if (highlightPath === undefined) return -1;
+    const labels = labelPath(highlightPath);
+    return resources.findIndex(
+      (resource, i) =>
+        (resource.Changes ?? []).some(
+          (change) => !(hideContext && change.ChangeType === 'None') && changeMatches(change, highlightPath, labels),
+        ) || keptByResource[i].some((value) => keptMatches(value, highlightPath, labels)),
+    );
+  }, [resources, keptByResource, highlightPath, hideContext]);
 
   return (
     <Box data-testid='config-diff'>
@@ -190,8 +276,10 @@ export const ConfigDiffView = ({ diff, columns, hideContext = false, kept = NO_K
           hideContext={hideContext}
           kept={keptByResource[i]}
           comments={comments}
+          highlightPath={i === highlightIndex ? highlightPath : undefined}
           prelude={resourcePrelude?.(resource, i)}
           domHooks={domHooks}
+          resourceLabel={resourceLabel}
         />
       ))}
     </Box>

@@ -3,25 +3,27 @@
 
 import { useCallback } from 'react';
 
+import { compareIdsFor } from '../model/compare';
 import { DRAFT_PARAM_MAX } from '../model/view-codec';
 import type { TabState } from '../model/types';
-import { tabUrlParams, useExplorerContext } from '../state/context';
+import { tabLinkParams, useExplorerContext } from '../state/context';
 import { DRAFT_PARAM } from '../state/initial';
 
-/** A link to exactly what a tab shows, including its unsaved changes or temporary view. */
-export function tabLink(tab: TabState, versions?: ReadonlyMap<string, string>): string {
+/** A link to exactly what a tab shows, including its unsaved changes or temporary view, and the Units it compares. */
+export function tabLink(tab: TabState, versions?: ReadonlyMap<string, string>, compareIds: readonly string[] = []): string {
   const url = new URL(window.location.href);
   url.search = '';
-  for (const [k, v] of Object.entries(tabUrlParams(tab, versions))) url.searchParams.set(k, v);
+  for (const [k, v] of Object.entries(tabLinkParams(tab, versions, compareIds))) url.searchParams.set(k, v);
   return url.toString();
 }
 
 export function useCopyLink() {
-  const { toast, versions } = useExplorerContext();
+  const { toast, versions, state } = useExplorerContext();
   return useCallback(
     async (tab: TabState) => {
-      const params = tabUrlParams(tab, versions.current);
-      const link = tabLink(tab, versions.current);
+      const compareIds = compareIdsFor(state, tab.id);
+      const params = tabLinkParams(tab, versions.current, compareIds);
+      const link = tabLink(tab, versions.current, compareIds);
       try {
         if (!navigator.clipboard) throw new Error('no clipboard');
         await navigator.clipboard.writeText(link);
@@ -33,8 +35,11 @@ export function useCopyLink() {
         toast({ message: 'Link copied. It is long; some tools may cut it short.', severity: 'warning' });
         return;
       }
-      toast({ message: params[DRAFT_PARAM] ? 'Link copied. It opens this exact draft.' : 'Link copied.' });
+      const opens = params[DRAFT_PARAM] ? 'this exact draft' : '';
+      const compares = compareIds.length ? `${compareIds.length === 1 ? 'this Unit' : `these ${compareIds.length} Units`} side by side` : '';
+      const what = [opens, compares].filter(Boolean).join(', with ');
+      toast({ message: what ? `Link copied. It opens ${what}.` : 'Link copied.' });
     },
-    [toast, versions],
+    [toast, versions, state],
   );
 }

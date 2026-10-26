@@ -105,8 +105,6 @@ function getSpaceCellValue(es: ExtendedSpaceRead, column: string): string {
       return es.TotalLinkCount != null ? String(es.TotalLinkCount) : '';
     case 'TotalFilterCount':
       return es.TotalFilterCount != null ? String(es.TotalFilterCount) : '';
-    case 'TotalBridgeWorkerCount':
-      return es.TotalBridgeWorkerCount != null ? String(es.TotalBridgeWorkerCount) : '';
     case 'TotalChangeSetCount':
       return es.TotalChangeSetCount != null ? String(es.TotalChangeSetCount) : '';
     case 'TotalTagCount':

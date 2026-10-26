@@ -257,3 +257,46 @@ test.describe('what a pane says about deployments it has not read', () => {
     ).toHaveText('not in dev-1');
   });
 });
+
+test.describe('the words a pane uses for its columns', () => {
+  // The View explorer mounts the same section over Units. Its wording comes
+  // from a context whose default is the Components wording, so Components
+  // must read exactly as it did, and the explorer must never say "deployment".
+  test('Components says "deployment", word for word', async () => {
+    const rules = page.locator('[data-state="rules"]');
+    await expect(rules.getByTestId('compare-filter-differing')).toHaveAttribute(
+      'title',
+      'A field appears when the deployments do not all agree, including when some set it and others do not.',
+    );
+    await expect(rules.locator('[data-cell-kind="differs"]').first()).toHaveAttribute(
+      'title',
+      // A cell that refuses an edit says why first, then how it compares.
+      'This list gives its elements no identity, so they could only be lined up by position. An edit here could write to a different element in another deployment. prod: differs between deployments',
+    );
+    await expect(rules.locator('[data-fidelity="value-absent"]').first()).toHaveAttribute(
+      'title',
+      'prod: not set here, where another deployment sets it',
+    );
+    await expect(rules.getByTestId('compare-unit-header')).toHaveCount(1);
+    await expect(page.locator('[data-state="settled-empty"]').getByTestId('compare-empty')).toContainText(
+      'None of these deployments holds configuration to compare.',
+    );
+  });
+
+  test('the Unit noun says "Unit", and a pane without the unit header still shows its documents', async () => {
+    const units = page.locator('[data-state="unit-noun"]');
+    await expect(units.getByTestId('compare-filter-differing')).toHaveAttribute(
+      'title',
+      'A field appears when the Units do not all agree, including when some set it and others do not.',
+    );
+    await expect(units.locator('[data-cell-kind="differs"]').first()).toHaveAttribute('title', /^(?!.*deployment).*another Unit\. prod: differs between Units$/);
+    await expect(units.locator('[data-fidelity="value-absent"]').first()).toHaveAttribute('title', 'prod: not set here, where another Unit sets it');
+    await expect(units.getByTestId('compare-unit-header')).toHaveCount(0);
+    await expect(units.getByTestId('compare-document-group')).not.toHaveCount(0);
+    await expect(units.getByTestId('compare-leaf-row').first()).toBeVisible();
+    expect(await units.innerText()).not.toMatch(/deployment/i);
+    await expect(page.locator('[data-state="unit-noun-empty"]').getByTestId('compare-empty')).toContainText(
+      'None of these Units holds configuration to compare.',
+    );
+  });
+});

@@ -153,6 +153,7 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
 | `flow-graph/DeploymentFlowNode.tsx` | One node per deployment/Space. Exports `NodeUnitSummary {slug, upgrading, applyStatus:'gated'\|'pending'\|null}`. |
 | `flow-graph/flowLayout.ts` | Stage-based node positioning. Exports `NODE_WIDTH`/`NODE_HEIGHT`/`STAGE_GAP`. |
 | `ComponentSidePane.tsx` | View toggle (Tree/Source/Overview), filter tabs, per-unit rows, footer Upgrade/Release/Discard buttons (Apply removed from the build — the "unapplied changes" diff/gate display remains); staging signal state (`stageAllSignal`, `clearStagedSignal`, `discardAllSignal`, `commitStagedSignal`); merges entries into `MergedUnit[]`. |
+| `ReadmePane.tsx` / `readme.ts` | The Readme tab, right of Releases: the Markdown of the Space's `README.md` Unit (AppConfig/Text, which `cub variant upload` makes of a bundle's README.md), frontmatter stripped, via `react-markdown` + `remark-gfm`. Only web and mail links are links; relative links and images name files in the source repository and render as text. The tab bar shows when a Space has a release target or a README. |
 | `ComponentValuesSection.tsx` | **The treeview.** Staging model (checkboxes, signal props); inline editor (`onStageEdit`); per-change-type colour system; token-LCS inline diff; `nodeRowPropsAreEqual` memo. Exports `StagedChange`, `StagedChangeType`, `StagedCommitPayload`. |
 | `ComponentSourceSection.tsx` | Source view: Monaco `CodeEditor` of decoded Data; editable w/ Save/Discard bar when `onSaveData` provided. |
 | `ComponentOverviewSection.tsx` | Overview: the unit's Resources (`useUnitResources`, refetched when the unit's Data changes), sorted by kind and name, each opening to `ResourceOverview`. A lone resource opens; several wait for a click. Lazy-loaded. |
@@ -178,7 +179,8 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
 | `compare/CompareFilterStrip.tsx` | Differing/All fields segments — one definition of "differing", no rule to pick. |
 | `compare/CompareColumnDnd.tsx` | The drag layer: swaps two columns, driven by one shared `<style>` element (skeleton, drop highlight, FLIP) rather than React state. See "Compare: dragging a column" below. |
 | `compare/deploymentCompareModel.ts` | `buildCompareResult`/`rowDiffers`/`filterRows` — the pure N-column comparison model. |
-| `compare/identityPaths.ts`, `compare/compareTree.ts`, `compare/compareTracks.ts`, `compare/compareEditing.ts`, `compare/unanswerable.ts`, `compare/slotLetter.ts`, `compare/containerImagePaths.ts`, `compare/rowTypeTokens.ts` | Supporting pure logic and shared styling for the compare surface. |
+| `compare/identityPaths.ts`, `compare/compareTree.ts`, `compare/compareTracks.ts`, `compare/compareEditing.ts`, `compare/unanswerable.ts`, `compare/slotLetter.ts`, `compare/containerImagePaths.ts`, `compare/rowTypeTokens.ts`, `compare/absentPill.ts` | Supporting pure logic and shared styling for the compare surface. |
+| `compare/compareLayout.ts`, `compare/compareVocabulary.ts` | Contexts for a second page that mounts the surface (the View explorer): `CompareLayout` (`PANE_LAYOUT` / `PAGE_LAYOUT`) and `CompareVocabulary` (`deployment` / `Unit`). The defaults are this page's. See "Compare: also mounted by the View explorer" below. |
 
 **The URL is the sole source of truth for selection — there is no localStorage
 fallback.** `AppsComponentLayout` is the ONLY component that touches `useSearchParams`; it derives
@@ -840,6 +842,18 @@ list's `confighub:unit:openViewTabs`.
     POINTER activator (`{onPointerDown: listeners?.onPointerDown}`), never the full listener set,
     because the slot underneath is already a `<button>` with its own Enter/Space handling for the
     picker, and a keyboard sensor on the wrapper would fight it.
+  - **Compare: also mounted by the View explorer.** The View explorer's compare mode
+    (`src/pages/x/view-explorer/compare/CompareView.tsx`) mounts `ComponentCompareSection`,
+    `CompareGrid` and `CompareColumnDnd` from this folder. A change here changes two pages. The
+    explorer opts in through two contexts: `CompareLayout` with `PAGE_LAYOUT` (`compareLayout.ts`)
+    and `CompareVocabulary` with `UNIT_VOCABULARY` (`compareVocabulary.ts`). It also passes
+    `showUnitHeader={false}`, and a `letter` and a `heading` on each column. The defaults
+    (`PANE_LAYOUT`, `DEPLOYMENT_VOCABULARY`, `showUnitHeader` true, no `letter` or `heading`) must
+    keep this page exactly as it is. Put a behaviour for the explorer behind one of these, never
+    in the default path. After a change, run the `component-compare-*` specs and the
+    `view-explorer-compare*` specs. The harness (`tests/fixtures/compare-alignment/harness.tsx`)
+    has `unit-noun` panes for the explorer's wording. See
+    [`view-explorer-compare.md`](view-explorer-compare.md).
 
 ---
 
@@ -868,7 +882,7 @@ Do not re-propose these — they were explicitly rejected by the people who buil
 - **Bracket notation in path handling** (`env[0]`). Canonical runtime format is dot-index
   (`env.0.name`). Use helpers from `componentKeyUtils.ts` — don't write ad-hoc bracket regexes.
 - **A third `mode` prop on `ComponentSidePane`** (considered for the since-retired rollout mode).
-  Rejected: the pane owns the Configuration/Releases tabs, all four
+  Rejected: the pane owns the Configuration/Releases/Readme tabs, all four
   staging signals, release publish/withdraw, the Space settings sheet, the heavy-unit gate, the
   source-view toggle and the inspect panel — a third mode means threading "but not in rollout"
   through all of it, and every thread is a live regression path into the mode people use all day.

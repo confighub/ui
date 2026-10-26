@@ -682,6 +682,12 @@ export const changeOrderCopy = {
    */
   promotePlanStale:
     'Promote stopped: this ChangeOrder changed while the confirmation was open, so what was previewed is no longer what would be written. Nothing was changed. Close this and promote again to see the current plan.',
+  /**
+   * The same refusal where the confirmation stays open and the dry run runs
+   * again by itself, so there is nothing to close and nothing to reopen.
+   */
+  promotePlanStaleInPlace:
+    'This ChangeOrder changed since the dry run, so nothing was written. Check what would change now and confirm again.',
   /** One failed item of a promote response: which item, and the server's reason. */
   itemFailure: (resource: string, reason: string) => `${resource}: ${reason}`,
   /** Stands in when a failed item carries no slug to name it by. */

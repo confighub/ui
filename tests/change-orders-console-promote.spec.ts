@@ -9,8 +9,8 @@
  * invitation to an action the gates will refuse — which teaches a reader to
  * distrust the button rather than to read the row. So "blocked" is asserted as
  * a row that offers Resolve and writes nothing, not as a dialog full of
- * explanation. The dialog's own hold is the second layer, asserted at the end
- * of this file on the detail page, where a held stage CAN be opened directly
+ * explanation. The stage card's own hold is the second layer, asserted at the
+ * end of this file on the detail page, where a held stage CAN be opened directly
  * by URL.
  *
  * ⚠️ AND THE ORDINARY PATH IS CLICKED HERE, ONCE. A wired affordance that has
@@ -218,16 +218,16 @@ test.describe('promoting from a console row', () => {
 
     // And the stage the console refused really is the held one, so the absence
     // above is the gate and not a ChangeOrder that simply finished.
-    await expect(page.locator(`[data-promote-stage="${HELD_STAGE}"]`)).toHaveAttribute(
-      'data-promote-gated',
-      'true',
-      { timeout: 30_000 },
-    );
+    await page.goto(`${fx.changeOrderPath}/${HELD_STAGE}`);
+    await expect(page.getByTestId('stage-status')).toHaveAttribute('data-stage-state', /^(gateFailed|gateWaiting|serverHeld)$/, {
+      timeout: 30_000,
+    });
+    await expect(page.locator(`[data-promote-stage="${HELD_STAGE}"]`)).toHaveCount(0);
     expect(writes, 'a held row must write nothing').toEqual([]);
   });
 
   /*
-   * THE DIALOG'S OWN HOLD, on the stage the row above withheld Promote from.
+   * THE CARD'S OWN HOLD, on the stage the row above withheld Promote from.
    *
    * THE WHOLE CLAIM IS AN ABSENCE, so it is asserted as one. "Refused" is not
    * "an error was reported": a refusal that has already written half a
@@ -235,41 +235,30 @@ test.describe('promoting from a console row', () => {
    * taken the change, so a promotion of it would have something real to write,
    * and "nothing was written" can only pass because the hold held.
    */
-  test('a held stage\'s dialog names the hold and offers no control that promotes', async ({ page }) => {
+  test('a held stage\'s box names the hold and offers no control that promotes', async ({ page }) => {
     const traffic = await watchPromoteTraffic(page);
     await page.goto(`${fx.changeOrderPath}/${HELD_STAGE}`);
-    const promote = page.locator(`[data-promote-stage="${HELD_STAGE}"]`);
-    await expect(promote).toBeVisible({ timeout: 30_000 });
-
-    // Marked, not disabled: a reader who clicks is owed the reason the stage
-    // is held rather than a control that silently does nothing.
-    await expect(promote).toHaveAttribute('data-promote-gated', 'true');
-    await expect(promote).toBeEnabled();
-
-    await promote.click();
-    const held = page.locator('[data-held]');
-    await expect(held).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/A gate holds this stage/)).toBeVisible();
+    const box = page.getByTestId('stage-status');
+    // `dev` has the change and has not released it: staging waits on that, calmly.
+    await expect(box).toHaveAttribute('data-stage-state', /^(gateFailed|gateWaiting)$/, { timeout: 30_000 });
 
     /*
      * ⚠️ THE REASON, NOT ONLY THE FACT OF A HOLD. A reader needs to know what
-     * is holding the stage, and every other assertion here survives a dialog
+     * is holding the stage, and every other assertion here survives a box
      * reduced to one flat line. The hold here is the one failed `Released`
-     * check: `dev` has taken this order and released nothing. One failed check
-     * carries no counts, so the assertion is that a failed check is named and
-     * that its reason is about this ChangeOrder's own order — not the reason's
-     * full wording, which belongs to the gate copy.
+     * check: `dev` has taken this order and released nothing. So the assertion
+     * is that the failed check is named and that its reason is about this
+     * ChangeOrder's own order — not the reason's full wording, which belongs to
+     * the gate copy.
      */
-    await expect(held).toContainText(/A gate holds this stage: blocked: \S/);
-    await expect(held).toContainText(`'${fx.changeOrderSlug}'`);
+    await expect(page.locator('#stage-status-heading')).toContainText(/released/i);
+    await expect(box).toContainText(`'${fx.changeOrderSlug}'`);
 
     // NO CONTROL THAT PROMOTES, AND NOT A DISABLED ONE EITHER. A greyed-out
-    // confirm advertises a route past the gate; there is none to advertise.
+    // Promote advertises a route past the gate; there is none to advertise.
+    await expect(page.locator('[data-promote-stage]')).toHaveCount(0);
     await expect(page.locator('[data-confirm]')).toHaveCount(0);
     await expect(page.locator('[data-promote-rel]')).toHaveCount(0);
-    await expect(page.locator('.MuiDialogActions-root button')).toHaveCount(1);
-
-    await page.locator('[data-cancel]').click();
     expect(traffic.writes, 'a held stage must write nothing').toEqual([]);
 
     /*

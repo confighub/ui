@@ -1,5 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
+import { reconcileCompare, withCompare } from './compare';
 import { defaultViewDef } from './fields';
 import { normalizeMatrixAxes } from './matrix-axes';
 import type {
@@ -70,6 +71,8 @@ export type ExplorerAction =
   | { type: 'pin'; tabId: string }
   | { type: 'unpin'; tabId: string }
   | { type: 'setMode'; mode: EditorMode }
+  /** The Units the active tab compares, slot A first; an empty list ends the comparison. Not an edit of the view. */
+  | { type: 'setCompare'; ids: readonly string[] }
   /**
    * Several edits of the active tab's view as ONE undo step (the Matrix
    * drill-in: new filter lenses and the table layout). Meant for edits of
@@ -218,6 +221,12 @@ function editWork(
 const setLenses = (work: ViewDef, lenses: Lens[]): WorkEdit => ({ work: { ...work, lenses } });
 
 export function explorerReducer(state: ExplorerState, action: ExplorerAction): ExplorerState {
+  const next = reduce(state, action);
+  if (!state.compare && !next.compare) return next;
+  return reconcileCompare(state, next, state.compare ? editTargetTabId(state) : null);
+}
+
+function reduce(state: ExplorerState, action: ExplorerAction): ExplorerState {
   switch (action.type) {
     case 'openTab': {
       if (state.tabs.some((t) => t.id === action.tab.id))
@@ -407,6 +416,8 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
     }
     case 'setMode':
       return state.mode === action.mode ? state : { ...state, mode: action.mode };
+    case 'setCompare':
+      return withCompare(state, action.ids);
     case 'batch': {
       const before = activeTab(state);
       const next = action.actions.reduce(explorerReducer, state);
