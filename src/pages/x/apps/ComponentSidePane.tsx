@@ -23,6 +23,7 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import SearchIcon from '@mui/icons-material/Search';
 import SettingsIcon from '@mui/icons-material/Settings';
+import StorageOutlinedIcon from '@mui/icons-material/StorageOutlined';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
@@ -38,7 +39,8 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
 
-import type { ExtendedTargetRead, ResourceProtection } from '@confighub/rtk-query';
+import { useListAllUnitsQuery, type ExtendedTargetRead, type ResourceProtection } from '@confighub/rtk-query';
+import { Link as RouterLink } from 'react-router-dom';
 
 import { useUnitMutationSourcesMap } from '@/hooks/useUnitData';
 
@@ -65,7 +67,6 @@ import {
   PaneContent,
   PaneHeader,
   ResizeHandle,
-  TagBadge,
   UnitHeaderRow,
   UnitRow,
   UnitSlug,
@@ -516,6 +517,43 @@ const CodeEditorFallback = () => (
   </Box>
 );
 
+/** A chip in the row under the header: a Target, or the Unit that deploys the Space. */
+const headerChipSx = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '5px',
+  height: 24,
+  maxWidth: '100%',
+  boxSizing: 'border-box',
+  padding: '0 8px 0 7px',
+  borderRadius: `${componentTheme.radiusMd}px`,
+  border: `1px solid ${componentTheme.borderDefault}`,
+  backgroundColor: componentTheme.bgDefault,
+  color: componentTheme.fgMuted,
+  fontSize: 12,
+  fontWeight: 500,
+  fontFamily: componentTheme.fontSans,
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
+  textDecoration: 'none',
+  '& svg': { flexShrink: 0, color: componentTheme.fgSubtle },
+  '& .header-chip-label': { overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 },
+} as const;
+
+/** A header chip that is a link. The trailing icon sits inside the chip so the whole chip reads as one link. */
+const headerLinkChipSx = {
+  ...headerChipSx,
+  transition: 'color 0.15s, border-color 0.15s, background-color 0.15s',
+  '& svg': { ...headerChipSx['& svg'], transition: 'color 0.15s' },
+  '&:hover, &:focus-visible': {
+    color: componentTheme.accent,
+    borderColor: componentTheme.accent,
+    backgroundColor: componentTheme.accentMuted,
+    '& svg': { color: componentTheme.accent },
+  },
+  '&:focus-visible': { outline: `2px solid ${componentTheme.accent}`, outlineOffset: '2px' },
+} as const;
+
 // ============================================================================
 // BOTTOM BAR BUTTON STYLES
 // ============================================================================
@@ -793,6 +831,18 @@ export const ComponentSidePane = memo(
       const id = selectedDeploymentIds.values().next().value;
       return id ? deploymentMap.get(id) : undefined;
     }, [selectedDeploymentIds, deploymentMap]);
+    // The Unit that deploys the selected Space through its cluster's
+    // controller. The annotation carries only its ID, and the Unit's page is
+    // keyed by its Space too, so read that.
+    const clusterUnitId = selectedDeployment?.clusterUnitId;
+    const { clusterUnit } = useListAllUnitsQuery(
+      { where: `UnitID = '${clusterUnitId}'`, select: 'UnitID,SpaceID,Slug' },
+      { skip: !clusterUnitId, selectFromResult: ({ data }) => ({ clusterUnit: data?.[0]?.Unit }) },
+    );
+    const headerTargets = selectedDeployment?.targets ?? [];
+    const clusterUnitPath =
+      clusterUnit?.SpaceID && clusterUnit.UnitID ? `/units/${clusterUnit.SpaceID}/${clusterUnit.UnitID}` : undefined;
+    const showHeaderLinks = headerTargets.length > 0 || !!clusterUnitPath;
     // In a graph of several Components every Component has a "prod", so the
     // header says which Component the open node belongs to.
     const multiComponent = useMemo(() => isMultiComponent(deployments), [deployments]);
@@ -1960,7 +2010,7 @@ export const ComponentSidePane = memo(
           onDoubleClick={handleResizeDoubleClick}
         />
 
-        <PaneHeader>
+        <PaneHeader sx={showHeaderLinks ? { borderBottom: 'none', paddingBottom: '8px' } : undefined}>
           {headerComponent && (
             <Typography
               component='span'
@@ -2019,41 +2069,6 @@ export const ComponentSidePane = memo(
               {selectedDeployment?.displayName ?? 'Component Review'}
             </Typography>
           )}
-          {selectedDeployment?.targets.map(({ targetId, label, url }) => {
-            return url ? (
-              <Tooltip key={targetId} title={`Open ${label}`} placement='top'>
-                <Link
-                  href={url}
-                  target='_blank'
-                  rel='noopener noreferrer'
-                  sx={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 0.25,
-                    textDecoration: 'none',
-                    '& > .target-badge': {
-                      transition: 'color 0.15s, border-color 0.15s',
-                    },
-                    '&:hover > .target-badge': {
-                      color: 'primary.main',
-                      borderColor: 'primary.main',
-                    },
-                    '& svg': {
-                      fontSize: 12,
-                      color: componentTheme.fgSubtle,
-                      transition: 'color 0.15s',
-                    },
-                    '&:hover svg': { color: 'primary.main' },
-                  }}
-                >
-                  <TagBadge className='target-badge'>{label}</TagBadge>
-                  <OpenInNewIcon />
-                </Link>
-              </Tooltip>
-            ) : (
-              <TagBadge key={targetId}>{label}</TagBadge>
-            );
-          })}
           {/* Single flex wrapper carrying the ONE `ml: 'auto'` for this button
               group (design-mockups/variant-settings/BUILD-PLAN.md commit 1,
               step 2). Previously `ml: 'auto'` lived on the create-variant
@@ -2132,6 +2147,57 @@ export const ComponentSidePane = memo(
             )}
           </Box>
         </PaneHeader>
+
+        {showHeaderLinks && (
+          <Box
+            data-testid='component-side-pane-links'
+            sx={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '0 16px 10px',
+              borderBottom: `1px solid ${componentTheme.borderDefault}`,
+              backgroundColor: componentTheme.bgDefault,
+              flexShrink: 0,
+            }}
+          >
+            {headerTargets.map(({ targetId, label, url }) =>
+              url ? (
+                <Tooltip key={targetId} title={`Open ${label}`} placement='top'>
+                  <Link href={url} target='_blank' rel='noopener noreferrer' underline='none' sx={headerLinkChipSx}>
+                    <StorageOutlinedIcon sx={{ fontSize: 13 }} />
+                    <span className='header-chip-label'>{label}</span>
+                    <OpenInNewIcon sx={{ fontSize: 12 }} />
+                  </Link>
+                </Tooltip>
+              ) : (
+                <Box key={targetId} component='span' sx={headerChipSx}>
+                  <StorageOutlinedIcon sx={{ fontSize: 13 }} />
+                  <span className='header-chip-label'>{label}</span>
+                </Box>
+              ),
+            )}
+            {clusterUnitPath && (
+              // A Components side pane holds staged work, so this in-app link opens a new tab (docs/dev/links.md, rule 3).
+              <Tooltip title={`Open ${clusterUnit?.Slug}, the Unit that deploys this Space`} placement='top'>
+                <Link
+                  component={RouterLink}
+                  to={clusterUnitPath}
+                  target='_blank'
+                  rel='noopener noreferrer'
+                  underline='none'
+                  data-testid='component-side-pane-cluster-unit'
+                  sx={headerLinkChipSx}
+                >
+                  <DataObjectIcon sx={{ fontSize: 13 }} />
+                  <span className='header-chip-label'>{clusterUnit?.Slug}</span>
+                  <OpenInNewIcon sx={{ fontSize: 12 }} />
+                </Link>
+              </Tooltip>
+            )}
+          </Box>
+        )}
 
         {/* Content band: tabs + error card + both PaneContent variants (below)
             PLUS the Space settings sheet all share this box. It — not

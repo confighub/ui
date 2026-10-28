@@ -58,7 +58,6 @@ import type { ChangeOrderDetail } from '../useChangeOrderDetail';
 import { DEFAULT_ATTESTATION_TYPE, combineGateReviews, deriveGateReviews, promoteReadiness } from './changeOrderReviews';
 import type {
   GateReviewSummary,
-  NotEvaluatedReason,
   PromoteReadiness,
   ReviewCoverage,
   ReviewGateRef,
@@ -81,11 +80,12 @@ import {
   attestSpaceErrors,
   changedUnitIdsOf,
   gateKey,
+  gateServerRowsOf,
   markUnchanged,
   ownLiveRejections,
   planRevocations,
+  reviewRecordIds,
   refusalText,
-  releaseAnswerOf,
   reviewAttestTarget,
   reviewCoverageOf,
   reviewLastPromotion,
@@ -95,6 +95,7 @@ import {
   revocationBody,
   runRevocations,
   WITHDRAWN_NOTE,
+  type GateServerReads,
   type ReviewedGate,
   type RevocationTarget,
 } from './stageReviewInputs';
@@ -121,12 +122,6 @@ const promotedSomewhere = (spaceIds: readonly string[], resolved: ReadonlySet<st
 
 const entryIdsOf = (rows: readonly PromoteGateResult[]) =>
   rows.flatMap((row) => (row.Attestation?.Attestations ?? []).map((entry) => entry.AttestationID ?? '')).filter(Boolean);
-
-interface GateServerRows {
-  rows: readonly PromoteGateResult[];
-  notEvaluatedBySpaceId: Record<string, NotEvaluatedReason>;
-  completed?: boolean;
-}
 
 // ---------------------------------------------------------------------------
 // Shared reads
@@ -182,52 +177,17 @@ function useReviewData(detail: ChangeOrderDetail, options: { poll?: boolean } = 
   // The server rows of every gate, and why a Space has none.
   const { serverGatesByStage, serverGateRefusals, finalAnswer } = detail;
   const rowsByGateKey = useMemo(() => {
-    const out: Record<string, GateServerRows> = {};
-    for (const gate of gates) {
-      const notEvaluatedBySpaceId: Record<string, NotEvaluatedReason> = {};
-      const mark = (why: NotEvaluatedReason) => {
-        for (const space of gate.gateSpaces) notEvaluatedBySpaceId[space.spaceId] = why;
-      };
-      if (workflowCompleted) {
-        out[gate.gate.key] = { rows: [], notEvaluatedBySpaceId, completed: true };
-        continue;
-      }
-      if (gate.gate.kind === 'entry') {
-        const rows = serverGatesByStage[gate.gate.stageId];
-        const refused = serverGateRefusals[gate.gate.stageId];
-        if (rows === undefined) mark(refused === 403 ? 'noPermission' : 'error');
-        out[gate.gate.key] = { rows: rows ?? [], notEvaluatedBySpaceId };
-      } else if (gate.gate.kind === 'release') {
-        const rows: PromoteGateResult[] = [];
-        for (const space of gate.gateSpaces) {
-          if (!resolved.has(space.spaceId)) {
-            notEvaluatedBySpaceId[space.spaceId] = 'notReached';
-            continue;
-          }
-          if (released.has(space.spaceId)) {
-            notEvaluatedBySpaceId[space.spaceId] = 'unchanged';
-            continue;
-          }
-          const answer = releaseRuns.data?.[space.spaceId];
-          if (answer === undefined) {
-            notEvaluatedBySpaceId[space.spaceId] = releaseRuns.isError ? 'error' : 'notReached';
-            continue;
-          }
-          const read = releaseAnswerOf(answer);
-          if ('rows' in read) rows.push(...read.rows);
-          else notEvaluatedBySpaceId[space.spaceId] = read.notEvaluated;
-        }
-        out[gate.gate.key] = { rows, notEvaluatedBySpaceId };
-      } else {
-        let rows: PromoteGateResult[] = [];
-        if (finalAnswer?.kind === 'open') rows = finalAnswer.rows;
-        else if (finalAnswer?.kind === 'noPermission') mark('noPermission');
-        else if (finalAnswer?.kind === 'error') mark('error');
-        else mark('finalNotOpen');
-        out[gate.gate.key] = { rows, notEvaluatedBySpaceId };
-      }
-    }
-    return out;
+    const reads: GateServerReads = {
+      workflowCompleted,
+      serverGatesByStage,
+      serverGateRefusals,
+      ...(finalAnswer ? { finalAnswer } : {}),
+      resolvedSpaceIds: resolved,
+      releasedSpaceIds: released,
+      ...(releaseRuns.data ? { releaseAnswers: releaseRuns.data } : {}),
+      releaseReadFailed: releaseRuns.isError,
+    };
+    return Object.fromEntries(gates.map((gate) => [gate.gate.key, gateServerRowsOf(gate, reads)]));
   }, [gates, workflowCompleted, serverGatesByStage, serverGateRefusals, finalAnswer, resolved, released, releaseRuns.data, releaseRuns.isError]);
 
   // Records: this ChangeOrder's, and those the server entries name; then their revocations.
@@ -446,8 +406,8 @@ function decisionTypes(summary: GateReviewSummary | undefined): string[] {
 }
 
 /**
- * The review of one or more gates that read the same Spaces (see `combineGateReviews`):
- * a stage's release gate and the next stage's entry gate are one review, on that stage.
+ * The review of one or more gates that read the same Spaces (see `combineGateReviews`).
+ * A gate that reads other Spaces is not part of it, and its actions revoke only the review's own records.
  */
 export function useGateReviews(detail: ChangeOrderDetail, gates: readonly ReviewGateRef[]): UseGateReviewsResult {
   const data = useReviewData(detail, { poll: true });
@@ -457,7 +417,7 @@ export function useGateReviews(detail: ChangeOrderDetail, gates: readonly Review
     () => combineGateReviews(keys.split(',').flatMap((key) => (data.byGateKey[key] === undefined ? [] : [data.byGateKey[key]]))),
     [keys, data.byGateKey],
   );
-  const reviewed = data.gates.find((candidate) => candidate.gate.key === gates[0]?.key);
+  const reviewed = data.gates.find((candidate) => candidate.gate.key === summary?.gate.key);
 
   // Which Units the change changed in the Spaces reviewed: entry and Final gates read only those.
   const onlyChanged = summary !== undefined && (summary.feeds ?? [summary.gate]).every((gate) => gate.kind !== 'release');
@@ -569,13 +529,10 @@ export function useGateReviews(detail: ChangeOrderDetail, gates: readonly Review
       try {
         if (input.replaces !== undefined && input.replaces.length > 0) {
           const revokeOne = async (target: RevocationTarget) => {
-            if (target.spaceId === undefined) {
-              throw new Error(`The record in ${target.spaceSlug} is no longer listed, so it cannot be revoked.`);
-            }
             await revokeAttestation(authFetch, target.spaceId, revocationBody(target, changeOrderId));
             wrote = true;
           };
-          const run = await runRevocations(planRevocations(input.replaces, records, revokedInSession.current), revokeOne, revokedInSession.current);
+          const run = await runRevocations(planRevocations(input.replaces, records, revokedInSession.current, reviewRecordIds(summary)), revokeOne, revokedInSession.current);
           revokedSpaceSlugs = run.revokedSpaceSlugs;
           if (!run.ok) {
             return failure('revoke', `${run.failedSpaceSlug}: ${errorText(run.error, 'The revocation was refused.')}`, { revokedSpaceSlugs });
@@ -638,13 +595,10 @@ export function useGateReviews(detail: ChangeOrderDetail, gates: readonly Review
     let reread = false;
     try {
       const revokeOne = async (target: RevocationTarget) => {
-        if (target.spaceId === undefined) {
-          throw new Error(`The record in ${target.spaceSlug} is no longer listed, so it cannot be withdrawn.`);
-        }
         await revokeAttestation(authFetch, target.spaceId, revocationBody(target, changeOrderId, WITHDRAWN_NOTE));
         wrote = true;
       };
-      const run = await runRevocations(planRevocations(rejections, records, revokedInSession.current), revokeOne, revokedInSession.current);
+      const run = await runRevocations(planRevocations(rejections, records, revokedInSession.current, reviewRecordIds(summary)), revokeOne, revokedInSession.current);
       if (!run.ok) {
         return {
           ok: false,

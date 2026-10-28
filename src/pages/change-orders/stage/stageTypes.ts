@@ -82,8 +82,19 @@ export type StageCardState =
   | { kind: 'promotedNoTargets' }
   | { kind: 'promoted'; took: readonly PropagationProblem[] }
   | ({ kind: 'reviewRejected'; rejection: ReviewRejection | undefined; failedGates: readonly ChangeOrderGate[] } & StageReviewStateBase)
-  | ({ kind: 'reviewNeeded' } & StageReviewStateBase)
-  | ({ kind: 'reviewWaiting' } & StageReviewStateBase)
+  /** `failedGates` / `waitingGates`: other gates holding the stage, said as context; the review does not wait for them. */
+  | ({ kind: 'reviewNeeded'; failedGates: readonly ChangeOrderGate[]; waitingGates: readonly ChangeOrderGate[] } & StageReviewStateBase)
+  | ({ kind: 'reviewWaiting'; failedGates: readonly ChangeOrderGate[]; waitingGates: readonly ChangeOrderGate[] } & StageReviewStateBase)
+  /**
+   * The review is satisfied, and other gates still hold the stage: the box keeps the review, with
+   * who approved, and says the gates. `wait`: what the gates wait for, when none of them failed.
+   */
+  | ({
+      kind: 'reviewApproved';
+      failedGates: readonly ChangeOrderGate[];
+      waitingGates: readonly ChangeOrderGate[];
+      wait?: Omit<StageGateWait, 'gates'>;
+    } & StageReviewStateBase)
   /** A gate evaluated false on something that is there. `waiting`: gates that only wait, listed after. */
   | { kind: 'gateFailed'; gates: readonly ChangeOrderGate[]; waiting: readonly ChangeOrderGate[] }
   /** Gates that have not passed YET: the change has not reached the stage before, or its health has not reported. Neutral. */
@@ -95,7 +106,7 @@ export type StageCardState =
   | { kind: 'problem'; problems: readonly PropagationProblem[] }
   | { kind: 'inProgress' }
   | { kind: 'progressUnknown' }
-  /** `approvedByYou`: the viewer's approval has just opened the gate. */
+  /** `approvedByYou`: the viewer's own approval satisfies the review this card hosts. */
   | { kind: 'ready'; approvedByYou: boolean };
 
 export type StageCardStateKind = StageCardState['kind'];

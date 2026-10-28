@@ -62,6 +62,12 @@ export interface ComponentDeployment {
   releaseUrl?: string;
   /** Display name (DisplayName ?? Slug) of the Target referenced by releaseTargetId, resolved the same way `targets[].name` is. */
   releaseTargetName?: string;
+  /**
+   * Space.Annotations.ClusterUnitID: the Unit in a cluster's apps Space holding
+   * the Argo CD Application, Flux Kustomization or Sveltos ClusterProfile that
+   * deploys this Space. Undefined when no cluster controller deploys it.
+   */
+  clusterUnitId?: string;
   parentDeploymentId: string | null;
   stage: number;
   upgradeableCount: number;

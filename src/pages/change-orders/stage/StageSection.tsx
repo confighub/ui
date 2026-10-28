@@ -87,6 +87,7 @@ function StatusBox({ model, props }: { model: StageCardModel; props: StageSectio
   switch (state.kind) {
     case 'reviewNeeded':
     case 'reviewWaiting':
+    case 'reviewApproved':
     case 'reviewRejected': {
       const summary = model.review.summary;
       if (summary === undefined) return null;
@@ -103,6 +104,7 @@ function StatusBox({ model, props }: { model: StageCardModel; props: StageSectio
           nameOfSpace={nameOfSpace}
           nameOfUnit={nameOfUnit}
           otherGatesHolding={model.review.otherGatesHolding}
+          gateSpaces={model.gateSpaces}
           approveRef={props.approveRef}
           headingRef={headingRef}
           announce={props.announce}

@@ -331,8 +331,9 @@ function spaceProgress(requirement: Requirement, spaceId: string, spaceSlug: str
   const empty = { unsatisfied: [], truncated: false, authors: [], revisions: 0, satisfiedRevisions: 0 };
   if (row === undefined) {
     // A complete workflow: the server held every Final row (it refuses a promote saying so),
-    // and every stage was entered; it asks for no rows any more.
-    if (input.completed === true) {
+    // and every stage was entered; it asks for no rows any more. A Space the hook gives a
+    // reason for (a release dry run not read yet, or refused) is not held.
+    if (input.completed === true && input.notEvaluatedBySpaceId[spaceId] === undefined) {
       return {
         spaceId,
         spaceSlug,
@@ -632,13 +633,29 @@ export function outOfDateDecisions(summary: GateReviewSummary): ReviewDecision[]
   return Object.values(summary.viewer.ownByType).filter((decision) => (decision.notCovering?.length ?? 0) > 0);
 }
 
+/** What a review reads: its `/attest` target and its Spaces. Two reviews with one key record the same Attestations. */
+function readsKey(summary: GateReviewSummary): string {
+  const target = summary.attestTarget.TargetStage ?? summary.attestTarget.WhereSpace ?? '';
+  return `${target}|${summary.gateSpaces.map((space) => space.spaceId).sort().join(',')}`;
+}
+
+/** Which review a card shows when it is given several: a release review, then entry, then Final. */
+const GATE_KIND_ORDER: Record<GateReviewSummary['gate']['kind'], number> = { release: 0, entry: 1, final: 2 };
+
 /**
  * One review of several gates that read the same Spaces: a stage's release gate and the
  * next stage's entry gate both read the stage's own Spaces, and one `/attest` there
  * records for both. Shown as one review, so the same Revisions are never offered in two
- * forms. `summaries` share `attestTarget` and `gateSpaces`; the first names the review.
+ * forms. A summary that reads other Spaces is left out, since the viewer's decisions
+ * there are not decisions on this review, and "Change my decision" would revoke them.
+ * The review is the one of the release gate if there is one, else of the entry gate,
+ * else Final (by gate key within a kind), whatever the order given; it names the review.
  */
-export function combineGateReviews(summaries: readonly GateReviewSummary[]): GateReviewSummary | undefined {
+export function combineGateReviews(all: readonly GateReviewSummary[]): GateReviewSummary | undefined {
+  const ordered = [...all].sort((a, b) => GATE_KIND_ORDER[a.gate.kind] - GATE_KIND_ORDER[b.gate.kind] || a.gate.key.localeCompare(b.gate.key));
+  const head = ordered[0];
+  if (head === undefined) return undefined;
+  const summaries = ordered.filter((summary) => readsKey(summary) === readsKey(head));
   const [first, ...rest] = summaries;
   if (first === undefined) return undefined;
   if (rest.length === 0) return { ...first, feeds: [first.gate] };

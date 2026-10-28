@@ -63,7 +63,7 @@ import {
 import { stageDiffSections } from './stageDiffSections';
 import { classifyDryRunAnswer, dryRunLine, releaseLine } from './stageDryRun';
 import { outcomeByMajority, stagePropagation } from './stagePropagation';
-import { releaseReviewOf, stageSectionGates, subjectReviews, viewerFlow } from './stageReviewModel';
+import { stageSectionGates, subjectReviews, viewerFlow } from './stageReviewModel';
 import type { MergeControl, StageLinks } from './StageStatusBox';
 import type { StageCardState } from './stageTypes';
 import { useOutcomeFocus } from './useOutcomeFocus';
@@ -147,7 +147,6 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     (id: string) => detail.stageStates.find((s) => s.stageId === id)?.verdict,
     [detail.stageStates],
   );
-  const hasReleaseReview = useMemo(() => releaseReviewOf(coReviews.byGateKey), [coReviews.byGateKey]);
   const summaries = useMemo(() => Object.values(coReviews.byGateKey), [coReviews.byGateKey]);
   /*
    * One form per gate, on one card at a time: this card hosts the gates
@@ -155,8 +154,8 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
    * decisions for one gate.
    */
   const hosted = useMemo(
-    () => stageSectionGates(summaries, stageId, verdictOf, hasReleaseReview),
-    [summaries, stageId, verdictOf, hasReleaseReview],
+    () => stageSectionGates(summaries, stageId, verdictOf),
+    [summaries, stageId, verdictOf],
   );
   const hostedRefs = useMemo(() => hosted.map((s) => s.gate), [hosted]);
   const reviews = useGateReviews(detail, hostedRefs);
@@ -275,7 +274,6 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     (id: string | null) => setRunningAction(id === null ? null : { stageId: id, shown: shownState.current }),
     [],
   );
-  const [approvedOn, setApprovedOn] = useState<string | null>(null);
   const [askedAgain, setAskedAgain] = useState<{ stageId: string; userId: string } | null>(null);
 
   // ── The state ───────────────────────────────────────────────────────────
@@ -310,7 +308,6 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     ...(stage.verdict !== 'promoted' && hostsOwnEntry && hostedReview !== undefined ? { entryReview: hostedReview } : {}),
     ...(detail.serverGateRefusals[stageId] === undefined ? {} : { serverGateRefusal: detail.serverGateRefusals[stageId] }),
     problems: propagation.problems,
-    approvedByYou: approvedOn === stageId,
   };
   // The dry run is asked only where it can change what the box offers.
   const before = deriveStageCardState({ ...baseInput, dryRun: { mode: 'idle' } });
@@ -399,10 +396,9 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
   const onRecorded: Recorded = useCallback(
     (outcomeOfSubmit, summary, result) => {
       onReviewRecorded(outcomeOfSubmit, summary, result);
-      if (result === 'Pass') setApprovedOn(stageId);
       focusAfter('review');
     },
-    [onReviewRecorded, stageId, focusAfter],
+    [onReviewRecorded, focusAfter],
   );
   const onAskedAgain = useCallback((userId: string) => setAskedAgain({ stageId, userId }), [stageId]);
 
@@ -420,7 +416,7 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     ...(ownEntryElsewhere === undefined ? {} : { ownEntryElsewhere }),
     verdictOf,
   });
-  const sidebarSubjectReviews = subjectReviews(summaries, stageId, verdictOf, hasReleaseReview).map(({ summary, actionStageId }) => {
+  const sidebarSubjectReviews = subjectReviews(summaries, stageId, verdictOf).map(({ summary, actionStageId }) => {
     const actionStage = actionStageOf(detail.stageStates, actionStageId);
     return { summary, ...(actionStage === undefined ? {} : { actionStage }) };
   });

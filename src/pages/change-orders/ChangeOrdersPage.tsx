@@ -121,7 +121,8 @@ import { PassedOver } from './components/PassedOver';
 import { SequenceProblems } from './components/SequenceProblems';
 import { ChangeOrderStageRail } from './components/ChangeOrderStageRail';
 import { completeRailDot, railDot } from './components/railDots';
-import { reviewActionStageId, releaseReviewOf } from './stage/stageReviewModel';
+import { railGateWaits } from './components/railStage';
+import { reviewActionStageId } from './stage/stageReviewModel';
 import { StageSection, type StageSectionHandle } from './stage/StageSection';
 
 /**
@@ -732,6 +733,11 @@ export default function ChangeOrdersPage() {
   );
   const completeAbandoned =
     detail.consoleRow !== undefined && isCompleteStepAbandoned(detail.consoleRow);
+  /** Gated stages whose gates only wait: the rail and its chips draw them calm, as their cards do. */
+  const gateWaits = useMemo(
+    () => railGateWaits({ sequence: detail.sequence, stageStates: detail.stageStates, scopedSpaces: detail.scopedSpaces }),
+    [detail.sequence, detail.stageStates, detail.scopedSpaces],
+  );
   const resolvedSpaceIds = useMemo(
     () => new Set(detail.progress.resolvedSpaceIds ?? []),
     [detail.progress.resolvedSpaceIds],
@@ -1082,8 +1088,7 @@ export default function ChangeOrdersPage() {
    * (`reviewActionStageId`), so "Review now" lands where the form is. Undefined while
    * the change the review reads has not landed: the band then offers no way to a review.
    */
-  const bandFormStep =
-    bandSummary === undefined ? undefined : reviewActionStageId(bandSummary, stageVerdictOf, releaseReviewOf(coReviews.byGateKey));
+  const bandFormStep = bandSummary === undefined ? undefined : reviewActionStageId(bandSummary, stageVerdictOf);
   /** Promote and Release are on the card of the stage the gate holds, not where it is reviewed. */
   const bandGateStep = bandSummary?.gate.kind === 'final' ? COMPLETE_STAGE_ID : bandSummary?.gate.stageId;
   const onReviewBandAction = useCallback(
@@ -1553,6 +1558,7 @@ export default function ChangeOrdersPage() {
                           state.stageId === detail.nextStageId,
                           i < detail.stagesDone,
                           coReviews.railByStageId[state.stageId],
+                          gateWaits[state.stageId] !== undefined,
                         ),
                       })),
                       ...(completeTone === null
@@ -1861,6 +1867,7 @@ export default function ChangeOrdersPage() {
                 finalGates={finalGates}
                 sourceSummary={sourceSummary}
                 reviewRail={coReviews.railByStageId}
+                gateWaits={gateWaits}
                 completeReview={coReviews.completeRail}
                 completeNotOpen={
                   Object.values(coReviews.byGateKey).find((g) => g.gate.kind === 'final')?.primary?.notEvaluated === 'finalNotOpen'

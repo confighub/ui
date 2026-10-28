@@ -10,11 +10,11 @@
  * placement rule is a single function every surface asks, the band's "Review now"
  * included.
  *
- * The form for an entry gate sits on the stage it HOLDS: the reviewer approves
- * where the action waits, and the subject stage lists the review read-only with
- * a link. While a stage is promoted and still to be released, its release gate and
- * the next stage's entry gate read the same Spaces and record the same
- * Attestations, so both are one review on that stage's card until it is released.
+ * The form for an entry gate (a promotion review) sits on the stage it HOLDS: the
+ * reviewer approves where the promotion waits, and the subject stage lists the
+ * review read-only with a link. Once that stage is promoted, the promotion review
+ * is done with, so its card hosts only its release review: the two read different
+ * Spaces, and one form for both would let a decision on one revoke the other.
  */
 
 import { COMPLETE_STAGE_ID } from '../changeOrderCompleteStep';
@@ -34,10 +34,9 @@ import type { ReviewAside, ReviewerRow, ReviewerRows, ReviewRejection, ReviewVie
 
 type Placed = Pick<GateReviewSummary, 'gate' | 'attestTarget'>;
 type VerdictOf = (stageId: string) => ChangeOrderStageVerdict | undefined;
-/** Whether a stage has a release gate with reviews (`release:{stageId}`). */
-type HasReleaseReview = (stageId: string) => boolean;
 
-const NO_RELEASE_REVIEW: HasReleaseReview = () => false;
+/** Verdicts of a stage that has taken its promotion: its entry gate holds nothing now. */
+const PROMOTION_DONE: ReadonlySet<ChangeOrderStageVerdict | undefined> = new Set(['promoted', 'released']);
 
 // ---------------------------------------------------------------------------
 // Placement
@@ -45,50 +44,34 @@ const NO_RELEASE_REVIEW: HasReleaseReview = () => false;
 
 /**
  * The stage whose card hosts a gate's review actions now, or `undefined` while no
- * card does (the change the review reads has not landed).
+ * card does.
  *
  * - Final: the Complete step.
  * - Release: the stage, while it is promoted and still to be released, as its
  *   Release button is.
- * - Entry: the stage it holds, once the change in the stage it reads has landed.
- *   The first stage's entry gate reads the ChangeOrder's own Space, which always
- *   has the change. While that stage is promoted and has a release review, the
- *   entry review joins it on that stage's card instead.
+ * - Entry: the stage it holds, once the change in the stage it reads has landed,
+ *   and until that stage is promoted. The first stage's entry gate reads the
+ *   ChangeOrder's own Space, which always has the change.
  */
-export function reviewActionStageId(
-  summary: Placed,
-  verdictOf: VerdictOf,
-  hasReleaseReview: HasReleaseReview = NO_RELEASE_REVIEW,
-): string | undefined {
+export function reviewActionStageId(summary: Placed, verdictOf: VerdictOf): string | undefined {
   const { gate } = summary;
   if (gate.kind === 'final') return COMPLETE_STAGE_ID;
   if (gate.kind === 'release') return verdictOf(gate.stageId) === 'promoted' ? gate.stageId : undefined;
+  if (PROMOTION_DONE.has(verdictOf(gate.stageId))) return undefined;
   const subject = summary.attestTarget.TargetStage;
   if (subject === undefined) return gate.stageId;
-  const subjectVerdict = verdictOf(subject);
-  if (subjectVerdict === 'promoted' && hasReleaseReview(subject)) return subject;
-  return stageChangeLanded(subjectVerdict) ? gate.stageId : undefined;
-}
-
-/** `hasReleaseReview` over a set of summaries keyed by gate key. */
-export function releaseReviewOf(byGateKey: Readonly<Record<string, GateReviewSummary>>): HasReleaseReview {
-  return (stageId) => byGateKey[`release:${stageId}`] !== undefined;
+  return stageChangeLanded(verdictOf(subject)) ? gate.stageId : undefined;
 }
 
 /**
  * The summaries whose actions this stage's card hosts: its release review first,
  * then entry reviews. Never a Final gate, which the Complete step hosts.
  */
-export function stageSectionGates(
-  summaries: readonly GateReviewSummary[],
-  stageId: string,
-  verdictOf: VerdictOf,
-  hasReleaseReview: HasReleaseReview = NO_RELEASE_REVIEW,
-): GateReviewSummary[] {
+export function stageSectionGates(summaries: readonly GateReviewSummary[], stageId: string, verdictOf: VerdictOf): GateReviewSummary[] {
   if (stageId === COMPLETE_STAGE_ID) return summaries.filter((s) => s.gate.kind === 'final');
   const order = (s: GateReviewSummary) => (s.gate.kind === 'release' ? 0 : 1);
   return summaries
-    .filter((s) => s.gate.kind !== 'final' && reviewActionStageId(s, verdictOf, hasReleaseReview) === stageId)
+    .filter((s) => s.gate.kind !== 'final' && reviewActionStageId(s, verdictOf) === stageId)
     .sort((a, b) => order(a) - order(b));
 }
 
@@ -101,11 +84,10 @@ export function subjectReviews(
   summaries: readonly GateReviewSummary[],
   stageId: string,
   verdictOf: VerdictOf,
-  hasReleaseReview: HasReleaseReview = NO_RELEASE_REVIEW,
 ): { summary: GateReviewSummary; actionStageId: string | undefined }[] {
   return summaries
     .filter((s) => s.gate.kind === 'entry' && s.attestTarget.TargetStage === stageId)
-    .map((summary) => ({ summary, actionStageId: reviewActionStageId(summary, verdictOf, hasReleaseReview) }))
+    .map((summary) => ({ summary, actionStageId: reviewActionStageId(summary, verdictOf) }))
     .filter((entry) => entry.actionStageId !== stageId);
 }
 
@@ -370,6 +352,13 @@ export function reviewAside(requirement: RequirementProgress, subjectNotLanded?:
     return { icon: 'ok', text: passers.length === 0 ? copy.approvedBy(['the reviewers']) : copy.approvedBy(passers.map(nameOf)) };
   }
   return { icon: 'open', text: copy.needs(requirement.need) };
+}
+
+/** The people whose approvals the server counts toward the review, once each: "you" for the viewer. */
+export function approverNames(summary: GateReviewSummary): string[] {
+  const names = new Map<string, string>();
+  for (const r of summary.requirements) for (const p of r.passers) names.set(p.userId, nameOf(p));
+  return [...names.values()];
 }
 
 /** The decisions the viewer can withdraw as a rejection: their live Fail decisions. */

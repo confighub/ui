@@ -47,6 +47,8 @@ export const stageCardCopy = {
   headline: {
     ready: 'Ready to promote',
     readyAfterApproval: 'Approved. Ready to promote',
+    /** The headline of a stage whose review is satisfied while other gates still hold it. */
+    afterApproval: (headline: readonly CopySegment[]): CopySegment[] => [seg.text('Approved. '), ...headline],
     reviewNeeded: 'Your review is needed',
     reviewWaiting: 'Waiting on review',
     rejectedBy: (name: string) => `${name} rejected the change`,
@@ -298,6 +300,12 @@ export const stageCardCopy = {
       seg.text(` before ${stage} can be ${action === 'release' ? 'released' : 'promoted'}.`),
     ],
     rejectedRelease: (stage: string) => `the release in ${stage}`,
+    /** Other gates that hold the promotion while it is reviewed. The review does not wait for them. */
+    alsoHeldBy: (gates: readonly string[], canReview: boolean): CopySegment[] => [
+      seg.text('The promotion also waits on '),
+      ...listSegments(gates.map((gate) => [seg.code(gate)])),
+      seg.text(canReview ? '. You can review it now.' : '.'),
+    ],
     requestedOfYou: reviewCopy.requests.ofYouPanel,
     authorNeeds: (requirement: string, need: number, from: string): CopySegment[] => [
       seg.code(requirement),
@@ -306,6 +314,8 @@ export const stageCardCopy = {
     authorGroupOnly: reviewCopy.author.groupOnly,
     ownApproved: (at: string, need: number) =>
       need > 0 ? `You approved at ${at}. ${need === 1 ? '1 more approval' : `${need} more approvals`} needed.` : `You approved at ${at}.`,
+    /** Who satisfied the review, when the viewer's own approval is not among the decisions. */
+    approvedBy: (names: readonly string[]) => `Approved by ${listText(names)}.`,
     moreNeeded: (need: number) => (need === 1 ? '1 more approval needed.' : `${need} more approvals needed.`),
     countsToward: reviewCopy.panel.countsToward,
     notEvaluated: reviewCopy.notEvaluated,

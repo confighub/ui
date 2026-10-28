@@ -27,15 +27,15 @@ import { agoText, fromText, gateThing, listText, reviewCopy, reviewFeeds, review
 import type { GateReviewSummary, ReviewChoice, ReviewCoverage, ReviewPerson, SubmitReviewOutcome, UseGateReviewsResult } from '../reviews/changeOrderReviewTypes';
 import { InlineReviewForm } from './InlineReviewForm';
 import { AskAgain, RequestReviewControl } from './RequestReviewPicker';
-import { stageCardCopy } from './stageCardCopy';
-import { flowNeedsConfirmDialog, flowShowsForm } from './stageReviewModel';
-import { ProblemList } from './StageProblem';
+import { stageCardCopy, type NamedSpace } from './stageCardCopy';
+import { approverNames, flowNeedsConfirmDialog, flowShowsForm } from './stageReviewModel';
+import { GateReasons, ProblemList } from './StageProblem';
 import { CopyText, InlineNotice, QuoteBlock, StageStatusBox, StatusActions, StatusText, type StageLinks } from './StageBoxParts';
 import type { ReviewViewerFlow, StageBoxLook, StageCardState } from './stageTypes';
 
 const copy = stageCardCopy.review;
 
-type ReviewState = Extract<StageCardState, { kind: 'reviewNeeded' | 'reviewWaiting' | 'reviewRejected' }>;
+type ReviewState = Extract<StageCardState, { kind: 'reviewNeeded' | 'reviewWaiting' | 'reviewApproved' | 'reviewRejected' }>;
 
 type Mode = { kind: 'idle' } | { kind: 'form'; choice: ReviewChoice } | { kind: 'withdraw' };
 
@@ -54,6 +54,8 @@ export interface StageReviewBoxProps {
   nameOfUnit: (unitId: string) => string;
   /** For the entry gate the review counts toward: the other gates still holding its stage. */
   otherGatesHolding?: string[];
+  /** The Spaces a failing gate names, for its reason line. */
+  gateSpaces?: (gateId: string) => NamedSpace[];
   /** Given to Approve…, so "Review now" can focus it. */
   approveRef?: Ref<HTMLButtonElement>;
   headingRef?: Ref<HTMLHeadingElement>;
@@ -210,6 +212,7 @@ export function StageReviewBox(props: StageReviewBoxProps) {
         key="form"
         choice={mode.choice}
         subjectName={summary.gateStageName}
+        {...(state.action === 'promote' && subject !== undefined ? { promotionInto: stage.name } : {})}
         coverageText={coverageText(summary, flow, reviews.coverageByType)}
         blockedReason={flow.nothingRecordable ? copy.nothingRecordable : undefined}
         submitting={reviews.isSubmitting && pending === null}
@@ -293,6 +296,17 @@ export function StageReviewBox(props: StageReviewBoxProps) {
       </Box>
     );
 
+  /** "Change my decision": the decision it replaces, then Approve and Reject. */
+  const own = flow.own[0];
+  const changingDecision: ReactNode[] = [
+    <StatusText key="change">
+      {reviewCopy.you.changeLead}
+      {own === undefined ? null : reviewCopy.you.changeRest(own.result, reviewTime(own.createdAt))}
+    </StatusText>,
+    beforeYouApprove,
+    mode.kind === 'form' ? form : approveReject,
+  ];
+
   // ── Body ─────────────────────────────────────────────────────────────────
   let headline: ReactNode;
   const body: ReactNode[] = [];
@@ -346,6 +360,35 @@ export function StageReviewBox(props: StageReviewBoxProps) {
         ),
       );
     }
+  } else if (state.kind === 'reviewApproved') {
+    const h = stageCardCopy.headline;
+    const first = state.failedGates.length === 1 ? state.failedGates[0] : undefined;
+    const holding =
+      state.wait !== undefined
+        ? h.gateWaiting(state.wait.waitFor, state.wait.previousStage?.name, state.waitingGates[0]?.name ?? '')
+        : first !== undefined
+          ? h.gateFailed(first.name)
+          : h.gatesFailed(state.failedGates.length);
+    headline = <CopyText parts={h.afterApproval(holding)} codeInherit />;
+    if (editing) body.push(...changingDecision);
+    else if (flow.kind === 'ownApproved') {
+      body.push(
+        <StatusText key="flow" testId="review-own">{copy.ownApproved(reviewTime(flow.decision.createdAt), 0)}</StatusText>,
+        <StatusActions key="change">{changeButton}</StatusActions>,
+      );
+    } else {
+      const names = approverNames(summary);
+      body.push(
+        <StatusText key="flow" testId="review-approved-by">
+          {copy.approvedBy(names.length > 0 ? names : [reviewCopy.requests.someone])}
+        </StatusText>,
+      );
+    }
+    body.push(
+      <Box key="held-gates" data-testid="review-held-gates">
+        <GateReasons gates={[...state.failedGates, ...state.waitingGates]} links={links} gateSpaces={props.gateSpaces} named />
+      </Box>,
+    );
   } else {
     headline = state.kind === 'reviewNeeded' ? stageCardCopy.headline.reviewNeeded : stageCardCopy.headline.reviewWaiting;
     if (primary !== undefined) {
@@ -382,17 +425,20 @@ export function StageReviewBox(props: StageReviewBoxProps) {
       );
     }
     if (feeds.length > 1) body.push(<StatusText key="feeds" testId="review-counts-toward">{copy.countsToward(held)}</StatusText>);
+    const otherGates = [...state.failedGates, ...state.waitingGates];
+    if (otherGates.length > 0) {
+      body.push(
+        <Box key="held-gates" data-testid="review-held-gates">
+          <StatusText>
+            <CopyText parts={copy.alsoHeldBy(otherGates.map((gate) => gate.name), showsForm)} />
+          </StatusText>
+          <GateReasons gates={otherGates} links={links} gateSpaces={props.gateSpaces} named />
+        </Box>,
+      );
+    }
 
     if (editing) {
-      const own = flow.own[0];
-      body.push(
-        <StatusText key="change">
-          {reviewCopy.you.changeLead}
-          {own === undefined ? null : reviewCopy.you.changeRest(own.result, reviewTime(own.createdAt))}
-        </StatusText>,
-        beforeYouApprove,
-        mode.kind === 'form' ? form : approveReject,
-      );
+      body.push(...changingDecision);
     } else {
       switch (flow.kind) {
         case 'outOfDate': {

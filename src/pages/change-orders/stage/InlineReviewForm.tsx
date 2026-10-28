@@ -33,6 +33,8 @@ export interface InlineReviewFormProps {
   choice: ReviewChoice;
   /** The stage whose change is reviewed, for the rejection's placeholder. */
   subjectName: string;
+  /** The stage a promotion review gates: the form says it decides on the promotion into it. */
+  promotionInto?: string;
   /** "14 Units in 7 Spaces": what a decision covers, when the coverage is known. */
   coverageText?: string;
   /** Overrides the flag, for a caller that knows better. */
@@ -70,6 +72,7 @@ const focusSx = { '&.Mui-focusVisible, &:focus-visible': { outline: '2px solid v
 export function InlineReviewForm({
   choice,
   subjectName,
+  promotionInto,
   coverageText,
   required: requiredProp,
   blockedReason,
@@ -86,6 +89,7 @@ export function InlineReviewForm({
   const helpId = useId();
   const errorId = useId();
   const blockedId = useId();
+  const subjectId = useId();
   const focused = useRef(false);
   const { control, handleSubmit } = useForm<FormValues>({ defaultValues: { note: '' } });
   const note = useWatch({ control, name: 'note' });
@@ -120,12 +124,17 @@ export function InlineReviewForm({
       }}
       onKeyDown={onKeys}
       role="group"
-      aria-label={reviewCopy.form.submit(choice, subjectName)}
+      {...(promotionInto === undefined ? { 'aria-label': reviewCopy.form.submit(choice, subjectName) } : { 'aria-labelledby': subjectId })}
       data-testid="review-form"
       data-choice={choice}
       sx={{ mt: '12px', display: 'grid', gap: '12px', maxWidth: 560 }}
     >
       {lead}
+      {promotionInto !== undefined ? (
+        <Typography variant="body2" data-testid="review-form-subject" sx={{ color: 'text.secondary' }}>
+          <span id={subjectId}>{reviewCopy.form.submit(choice, subjectName, promotionInto)}</span>. {reviewCopy.form.promotionCovers(subjectName)}
+        </Typography>
+      ) : null}
       <Controller
         name="note"
         control={control}

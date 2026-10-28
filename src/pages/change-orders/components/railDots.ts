@@ -10,6 +10,7 @@ import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import RemoveIcon from '@mui/icons-material/Remove';
 import RestoreIcon from '@mui/icons-material/Restore';
+import ScheduleIcon from '@mui/icons-material/Schedule';
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 
 import type { ChangeOrderStageState } from '../../x/apps/change-order/changeOrderTypes';
@@ -22,6 +23,7 @@ import {
   changeOrderSurface,
 } from '../changeOrdersTokens';
 import type { StageReviewRail } from '../reviews/changeOrderReviewTypes';
+import { reviewHoldTone } from './railStage';
 
 /** A rail node's leading dot: the icon and its three tones. */
 export interface RailDot {
@@ -29,24 +31,6 @@ export interface RailDot {
   bg: string;
   border: string;
   color: string;
-}
-
-/**
- * Whether a stage is held on review: it is the next stage, it has not taken
- * the change, and its review requirements are waiting (`held`) or rejected
- * (`blocked`). `null` for a stage with no reviews, or one not held by them.
- */
-export function reviewHoldTone(
-  state: ChangeOrderStageState,
-  isNext: boolean,
-  review: StageReviewRail | undefined,
-): 'held' | 'blocked' | null {
-  if (review === undefined || state.verdict === 'source') return null;
-  // An entry review holds the next stage; a release review holds a promoted stage's release.
-  if (review.gateKind === 'release' ? state.verdict !== 'promoted' : !isNext) return null;
-  if (review.state === 'rejected') return 'blocked';
-  if (review.state === 'pending' || review.state === 'partial') return 'held';
-  return null;
 }
 
 /**
@@ -60,8 +44,12 @@ export function reviewHoldTone(
  *
  * `passed` is the console row's own count (`stagePathProgress`): a stage the
  * ChangeOrder has passed is drawn done, so the rail, its pips and "N of M" agree.
+ *
+ * `gatesWait`: every gate holding a `gated` stage only waits (`railGateWait`), as
+ * Healthy does while the stage before has not reported. Drawn calm with a clock,
+ * as its card draws it; red is for a gate that failed.
  */
-export function railDot(state: ChangeOrderStageState, isNext: boolean, passed: boolean, review?: StageReviewRail): RailDot {
+export function railDot(state: ChangeOrderStageState, isNext: boolean, passed: boolean, review?: StageReviewRail, gatesWait = false): RailDot {
   const done = { Icon: CheckIcon, bg: changeOrderStatus.successGround, border: changeOrderStatus.successLine, color: changeOrderStatus.success };
   if (passed && state.verdict !== 'restored' && state.verdict !== 'restore-released') return done;
   // Held on review: the next stage waits on approvals (person) or a rejection blocks it (ban).
@@ -87,6 +75,7 @@ export function railDot(state: ChangeOrderStageState, isNext: boolean, passed: b
     case 'in-progress':
       return { Icon: AutorenewIcon, bg: changeOrderStatus.progressSoft, border: changeOrderStatus.progressLine, color: changeOrderStatus.progress };
     case 'gated':
+      if (gatesWait) return { Icon: ScheduleIcon, bg: changeOrderSurface.sunk, border: changeOrderBorder.strong, color: changeOrderInk.subtle };
       return { Icon: WarningAmberOutlinedIcon, bg: changeOrderStatus.dangerSoft, border: changeOrderKindLine.unknown, color: changeOrderStatus.danger };
     case 'waiting':
       return isNext

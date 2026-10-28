@@ -1,13 +1,13 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 //
-// What a review is of, and where it is made. A stage's entry gate reads the
-// stage before it, so its review sits on that stage's card with the change it
-// approves; the first stage's entry gate reads the ChangeOrder's own Space and
-// stays on the first stage. One review serves every gate that reads the same
-// Spaces (a stage's release gate and the next stage's entry gate). Counts are
-// of the Units the change changed, and the result of a decision is worded from
-// the server's verdicts read after it. No page, no browser.
+// What a review is of. A stage's entry gate reads the stage before it, so its
+// review is of that stage's change; the first stage's entry gate reads the
+// ChangeOrder's own Space. One review serves every gate that reads the same
+// Spaces (a stage's release gate and the next stage's entry gate), and never a
+// gate that reads others. Counts are of the Units the change changed, and the
+// result of a decision is worded from the server's verdicts read after it. No
+// page, no browser.
 
 import { expect, test } from '@playwright/test';
 import type { AttestationRead, ChangeWorkflowAttestationPrerequisite, PromoteGateResult } from '@confighub/rtk-query';
@@ -24,13 +24,10 @@ import { gateThing, recordedToastText, reviewCopy, reviewFeeds, reviewSubject, s
 import {
   changedUnitIdsOf,
   markUnchanged,
-  reviewCardStageId,
   reviewCoverageOf,
-  reviewFormStageId,
   reviewUserOf,
   stageChangeLanded,
 } from '../src/pages/change-orders/reviews/stageReviewInputs';
-import type { ChangeOrderStageVerdict } from '../src/pages/x/apps/change-order/changeOrderTypes';
 
 const NOW = Date.parse('2026-10-13T12:00:00Z');
 const iso = (offset: number) => new Date(NOW + offset).toISOString();
@@ -111,38 +108,13 @@ const firstStage = () =>
 
 // ---------------------------------------------------------------------------
 
-test.describe('where a review is made', () => {
-  test("an entry gate is reviewed on the card of the stage it reads; the first stage's stays on the first stage", () => {
-    expect(reviewCardStageId(entryProd(0))).toBe('staging');
-    expect(reviewCardStageId(releaseStaging(0))).toBe('staging');
-    expect(reviewCardStageId(firstStage())).toBe('dev');
-    const final = derive({ gate: { kind: 'final', stageId: 'prod', stageName: 'prod', key: 'final:prod' }, attestTarget: { ChangeOrderID: 'co', TargetStage: 'prod' } });
-    expect(reviewCardStageId(final)).toBeUndefined();
-  });
-
-  const verdicts = (staging: ChangeOrderStageVerdict | undefined) => (stageId: string) => (stageId === 'staging' ? staging : undefined);
-
-  test('the entry gate to prod has its form on staging once the change landed in any of its Spaces, or when that is not known', () => {
-    for (const verdict of ['in-progress', 'promoted', 'released', 'unknown', undefined] as const) {
-      expect(reviewFormStageId(entryProd(0), verdicts(verdict)), String(verdict)).toBe('staging');
-    }
-  });
-
-  test('before the change lands in staging, no card has the form, and the gate to prod says when it can be reviewed', () => {
-    for (const verdict of ['gated', 'waiting'] as const) {
-      expect(stageChangeLanded(verdict)).toBe(false);
-      expect(reviewFormStageId(entryProd(0), verdicts(verdict)), verdict).toBeUndefined();
-    }
+test.describe('what a review is of', () => {
+  test('before the change lands in staging, the gate to prod says when it can be reviewed', () => {
+    for (const verdict of ['gated', 'waiting'] as const) expect(stageChangeLanded(verdict)).toBe(false);
+    for (const verdict of ['in-progress', 'promoted', 'released', 'unknown', undefined] as const) expect(stageChangeLanded(verdict)).toBe(true);
     expect(reviewCopy.entryStatus.notLanded('staging')).toBe(
       'Review opens once staging is promoted.',
     );
-  });
-
-  test("a release gate has its form while the stage is promoted; the first stage's entry gate always has its form", () => {
-    expect(reviewFormStageId(releaseStaging(0), verdicts('promoted'))).toBe('staging');
-    expect(reviewFormStageId(releaseStaging(0), verdicts('in-progress'))).toBeUndefined();
-    expect(reviewFormStageId(releaseStaging(0), verdicts('released'))).toBeUndefined();
-    expect(reviewFormStageId(firstStage(), () => 'gated')).toBe('dev');
   });
 
   test('the subject is the stage reviewed, or the own Space for the first stage', () => {
@@ -207,6 +179,30 @@ test.describe('one review for the gates that read the same Spaces', () => {
     ]);
     expect(combined.whoCanStillApprove.map((entry) => entry.person.userId).sort()).toEqual(['ana', 'bo', 'cy']);
     expect(combined.whoCanStillApprove.every((entry) => entry.requested?.user.userId === entry.person.userId)).toBe(true);
+  });
+
+  test('a gate that reads other Spaces is never part of the review, nor are its decisions', () => {
+    const P1 = { spaceId: 'sp-p1', spaceSlug: 'prod-eu' };
+    const releaseProd = derive({
+      gate: { kind: 'release', stageId: 'prod', stageName: 'prod', key: 'release:prod' },
+      gateStageName: 'prod',
+      gateSpaces: [P1],
+      requirementNames: ['release-ok'],
+      serverRows: [row('release-ok', P1, 0, 1)],
+      attestTarget: { ChangeOrderID: 'co', TargetStage: 'prod' },
+    });
+    const mine: AttestationRead[] = [
+      { AttestationID: 'm1', ChangeOrderID: 'co', UserID: 'me', Result: 'Pass', Note: '', CreatedAt: iso(-60_000), SpaceID: S1.spaceId },
+      { AttestationID: 'm2', ChangeOrderID: 'co', UserID: 'me', Result: 'Pass', Note: '', CreatedAt: iso(-59_000), SpaceID: S2.spaceId },
+    ];
+    const gateToProd = entryProd(1, { attestations: mine });
+    expect(Object.keys(gateToProd.viewer.ownByType)).toEqual(['Approval']);
+    const combined = combineGateReviews([releaseProd, gateToProd]);
+    if (combined === undefined) throw new Error('expected a review');
+    expect(combined.feeds?.map((gate) => gate.key)).toEqual(['release:prod']);
+    expect(combined.requirements.map((r) => r.name)).toEqual(['release-ok']);
+    expect(combined.decisions).toEqual([]);
+    expect(combined.viewer.ownByType).toEqual({});
   });
 
   test('a single gate is its own review, counting toward that gate only', () => {

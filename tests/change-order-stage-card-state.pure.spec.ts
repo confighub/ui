@@ -42,6 +42,7 @@ import {
 import { noteRequired, segmentsText, stageCardCopy } from '../src/pages/change-orders/stage/stageCardCopy';
 import { changeCardModel, changeScope, previousStageOf, sidebarGateFlags, sidebarMarks, sidebarSpaces } from '../src/pages/change-orders/stage/stageCardParts';
 import { diffAnchorId, hrefOfRef, spaceHref, stageTargetIds, targetsHref, workflowLink } from '../src/pages/change-orders/stage/stageLinks';
+import { flowShowsForm } from '../src/pages/change-orders/stage/stageReviewModel';
 import type { ReviewViewerFlow, StageFailure } from '../src/pages/change-orders/stage/stageTypes';
 import type { ChangeOrderGate } from '../src/pages/x/apps/change-order/changeOrderTypes';
 
@@ -211,6 +212,27 @@ test.describe('deriveStageCardState: one case per rule, in order', () => {
     expect(kindOf({ entryReview: { summary: summary({ open: true, state: 'satisfied' }), flow: flow() } })).toBe('ready');
   });
 
+  test('an entry review not yet approved comes before the other gates, which it lists; approved, it stays while the gates hold', () => {
+    const healthy = gate('Healthy', true, false, { prerequisite: 'Healthy' });
+    const custom = gate('custom-prerequisite:no-restarts', true, false, { prerequisite: 'no-restarts' });
+    const previousStage = { stageId: 'test', name: 'Test', verdict: 'released' as const, healthPending: true };
+    const state = deriveStageCardState(input({ entryReview: { summary: summary(), flow: flow() }, gates: [healthy, custom], previousStage }));
+    expect(state).toMatchObject({ kind: 'reviewNeeded', action: 'promote', failedGates: [custom], waitingGates: [healthy] });
+    if (state.kind !== 'reviewNeeded') return;
+    expect(flowShowsForm(state.flow)).toBe(true);
+    expect([...sidebarGateFlags(state).gateIdsInBox].sort()).toEqual([custom.id, healthy.id].sort());
+    expect([...sidebarGateFlags(state).waitingGateIds]).toEqual([healthy.id]);
+    // A viewer who cannot act sees the same gates, under "Waiting on review".
+    expect(deriveStageCardState(input({ entryReview: { summary: summary(), flow: flow('author') }, gates: [healthy], previousStage }))).toMatchObject({
+      kind: 'reviewWaiting',
+      waitingGates: [healthy],
+    });
+    const approved = summary({ open: true, state: 'satisfied' });
+    const held = deriveStageCardState(input({ entryReview: { summary: approved, flow: flow() }, gates: [healthy], previousStage }));
+    expect(held).toMatchObject({ kind: 'reviewApproved', waitingGates: [healthy], failedGates: [], wait: { waitFor: 'healthy' } });
+    expect([...sidebarGateFlags(held).waitingGateIds]).toEqual([healthy.id]);
+  });
+
   test('review states carry propagation problems, so a reviewer sees them first', () => {
     const state = deriveStageCardState(input({ entryReview: { summary: summary(), flow: flow() }, problems: [differs] }));
     expect(state.kind).toBe('reviewNeeded');
@@ -232,7 +254,8 @@ test.describe('deriveStageCardState: one case per rule, in order', () => {
     expect(kindOf({ verdict: 'in-progress' })).toBe('inProgress');
     expect(kindOf({ verdict: 'unknown' })).toBe('progressUnknown');
     expect(kindOf({ verdict: 'gated' })).toBe('ready');
-    expect(deriveStageCardState(input({ approvedByYou: true }))).toEqual({ kind: 'ready', approvedByYou: true });
+    // With no review on the card, nobody's approval is said.
+    expect(deriveStageCardState(input())).toEqual({ kind: 'ready', approvedByYou: false });
   });
 });
 
@@ -688,6 +711,8 @@ test.describe('copy', () => {
     expect(stageCardCopy.body.failedRest(2, 3, 'prod-eu')).toBe('The other 2 hold the change, not released.');
     expect(stageCardCopy.body.inProgress).toBe('Promote again to finish.');
     expect(stageCardCopy.review.coverageHelp('2 Units')).toBe('Covers 2 Units.');
+    expect(segmentsText(stageCardCopy.review.alsoHeldBy(['Released', 'Healthy'], true))).toBe('The promotion also waits on Released and Healthy. You can review it now.');
+    expect(segmentsText(stageCardCopy.review.alsoHeldBy(['Healthy'], false))).toBe('The promotion also waits on Healthy.');
     expect(
       segmentsText(stageCardCopy.review.needsEach([{ name: 'release-ok', need: 1 }, { name: 'security-review', need: 2 }], 'staging', 'release')),
     ).toBe('release-ok needs 1 approval and security-review needs 2 approvals before staging can be released.');

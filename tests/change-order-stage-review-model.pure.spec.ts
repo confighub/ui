@@ -8,9 +8,10 @@
  * this spec walks a whole promotion through it, asserting the invariant at every
  * step rather than at a few hand-picked ones.
  *
- * The form for an entry gate is on the stage it holds, once the change it reads
- * has landed. While a stage is promoted and still to be released, its release
- * review and the next stage's entry review are one review on that stage's card.
+ * The form for an entry gate (a promotion review) is on the stage it holds, once
+ * the change it reads has landed, and until that stage is promoted. A promoted
+ * stage's card hosts only its release review, which reads that stage's own
+ * Spaces: never the promotion review, which reads the stage before.
  *
  * Where the viewer stands decides what the status box offers, and the order is
  * the contract: what the server says about the viewer (author, not eligible)
@@ -33,7 +34,6 @@ import {
   flowNeedsConfirmDialog,
   flowShowsForm,
   rejection,
-  releaseReviewOf,
   reviewActionStageId,
   reviewAside,
   reviewerRows,
@@ -144,10 +144,18 @@ test.describe('reviewActionStageId', () => {
     expect(reviewActionStageId(release, verdicts({ staging: 'waiting' }))).toBeUndefined();
   });
 
-  test('while the subject is promoted with a release review, the entry review joins it there', () => {
+  test('a promotion review is on the stage it gates, even while its subject has a release review to do', () => {
     const entry = gateSummary('entry', 'prod', 'staging');
-    expect(reviewActionStageId(entry, verdicts({ staging: 'promoted' }), (id) => id === 'staging')).toBe('staging');
-    expect(reviewActionStageId(entry, verdicts({ staging: 'promoted' }), () => false)).toBe('prod');
+    expect(reviewActionStageId(entry, verdicts({ staging: 'promoted', prod: 'gated' }))).toBe('prod');
+  });
+
+  test('once the stage it gates is promoted or released, no card hosts the promotion review', () => {
+    const entry = gateSummary('entry', 'prod', 'staging');
+    expect(reviewActionStageId(entry, verdicts({ staging: 'released', prod: 'in-progress' }))).toBe('prod');
+    expect(reviewActionStageId(entry, verdicts({ staging: 'released', prod: 'promoted' }))).toBeUndefined();
+    expect(reviewActionStageId(entry, verdicts({ staging: 'released', prod: 'released' }))).toBeUndefined();
+    const first = gateSummary('entry', 'dev', undefined);
+    expect(reviewActionStageId(first, verdicts({ dev: 'promoted' }))).toBeUndefined();
   });
 
   test('final is on the Complete step', () => {
@@ -164,7 +172,6 @@ test.describe('stageSectionGates: one form per gate, over a whole promotion', ()
     gateSummary('entry', 'prod', 'staging'),
     gateSummary('final', 'prod', 'prod'),
   ];
-  const byKey = Object.fromEntries(summaries.map((s) => [s.gate.key, s]));
   const cards = ['dev', 'staging', 'prod', COMPLETE_STAGE_ID];
   const steps: Record<string, ChangeOrderStageVerdict>[] = [
     { dev: 'waiting', staging: 'gated', prod: 'gated' },
@@ -182,31 +189,27 @@ test.describe('stageSectionGates: one form per gate, over a whole promotion', ()
       const verdictOf = (id: string) => step[id];
       const hosts = new Map<string, string[]>();
       for (const card of cards) {
-        for (const s of stageSectionGates(summaries, card, verdictOf, releaseReviewOf(byKey))) {
+        for (const s of stageSectionGates(summaries, card, verdictOf)) {
           hosts.set(s.gate.key, [...(hosts.get(s.gate.key) ?? []), card]);
         }
       }
       for (const s of summaries) {
         const on = hosts.get(s.gate.key) ?? [];
         expect(on.length, s.gate.key).toBeLessThanOrEqual(1);
-        expect(on[0], s.gate.key).toBe(reviewActionStageId(s, verdictOf, releaseReviewOf(byKey)));
+        expect(on[0], s.gate.key).toBe(reviewActionStageId(s, verdictOf));
       }
     });
   }
 
-  test('a promoted stage hosts its release review first, then the entry reviews, its own and the next', () => {
+  test('a promoted stage hosts only its release review; the next stage hosts its promotion review', () => {
     const verdictOf = (id: string) => ({ dev: 'released', staging: 'promoted', prod: 'gated' })[id] as ChangeOrderStageVerdict;
-    expect(stageSectionGates(summaries, 'staging', verdictOf, releaseReviewOf(byKey)).map((s) => s.gate.key)).toEqual([
-      'release:staging',
-      'entry:staging',
-      'entry:prod',
-    ]);
-    expect(stageSectionGates(summaries, 'prod', verdictOf, releaseReviewOf(byKey))).toEqual([]);
+    expect(stageSectionGates(summaries, 'staging', verdictOf).map((s) => s.gate.key)).toEqual(['release:staging']);
+    expect(stageSectionGates(summaries, 'prod', verdictOf).map((s) => s.gate.key)).toEqual(['entry:prod']);
   });
 
   test('the subject stage lists the review hosted elsewhere, read-only, with where it is', () => {
     const verdictOf = (id: string) => ({ dev: 'released', staging: 'released', prod: 'waiting' })[id] as ChangeOrderStageVerdict;
-    const listed = subjectReviews(summaries, 'staging', verdictOf, releaseReviewOf(byKey));
+    const listed = subjectReviews(summaries, 'staging', verdictOf);
     expect(listed.map((x) => [x.summary.gate.key, x.actionStageId])).toEqual([['entry:prod', 'prod']]);
     // While the subject has not landed, no card hosts it yet.
     const early = subjectReviews(summaries, 'staging', () => 'waiting');

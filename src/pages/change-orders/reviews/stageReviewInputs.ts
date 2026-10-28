@@ -11,6 +11,7 @@
  * - `releaseAnswerOf`, `promoteFinalOf`: the Release dry run and the promote
  *   dry run as server rows (#5788), or why there are none. Never a text parse,
  *   except the one refusal the server reports only as text (completed workflow).
+ * - `gateServerRowsOf`: those answers as one gate's rows, and why a Space has none.
  * - `reviewCoverageOf`, `attestSpaceErrors`: what an `/attest` covers.
  * - `reviewRequestsPatch`: the merge PATCH body for ChangeOrder.ReviewRequests.
  * - `planRevocations`, `runRevocations`: "Change my decision", and withdrawing
@@ -33,6 +34,7 @@ import { classifyPrerequisite } from '../../x/apps/change-order/changeOrderWorkf
 import { previousStageOf } from '../../x/apps/change-order/changeOrderStages';
 import type { ChangeOrderSequence, ChangeOrderStageVerdict } from '../../x/apps/change-order/changeOrderTypes';
 import { reviewInitials } from './changeOrderReviews';
+import { reviewCopy } from './reviewCopy';
 import type {
   GateReviewSummary,
   NotEvaluatedReason,
@@ -155,43 +157,12 @@ export function reviewedGates(
 }
 
 /**
- * The stage whose card holds a gate's review: the stage whose Spaces it reads. A stage's
- * entry gate reads the stage before it, so its review sits with that stage's change; the
- * first stage's entry gate reads the ChangeOrder's own Space, which has no card, so it
- * stays on the first stage. Final is on the Complete step: undefined.
- */
-export function reviewCardStageId(summary: Pick<GateReviewSummary, 'gate' | 'attestTarget'>): string | undefined {
-  if (summary.gate.kind === 'final') return undefined;
-  return summary.attestTarget.TargetStage ?? summary.gate.stageId;
-}
-
-/**
  * Whether a stage's change has landed in at least one of its Spaces. Only a stage known
  * to have none ('gated', 'waiting') has not: any other verdict, 'unknown' included,
  * counts as landed, so the only place to review a gate is never hidden.
  */
 export function stageChangeLanded(verdict: ChangeOrderStageVerdict | undefined): boolean {
   return verdict !== 'gated' && verdict !== 'waiting';
-}
-
-/**
- * The stage whose card shows a gate's review form now. The card is `reviewCardStageId`;
- * it has the form while the change it reads is there: for an entry gate, once that
- * stage's change has landed anywhere (`stageChangeLanded`); for a release gate, while the
- * stage is promoted and still to be released, as its Release button is. The first stage's
- * entry gate reads the ChangeOrder's own Space, which always has the change. Undefined
- * for Final (the Complete step) and while no card has the form. The card selection and
- * every link to a review use this, so a link never leads to a card without the form.
- */
-export function reviewFormStageId(
-  summary: Pick<GateReviewSummary, 'gate' | 'attestTarget'>,
-  verdictOf: (stageId: string) => ChangeOrderStageVerdict | undefined,
-): string | undefined {
-  const card = reviewCardStageId(summary);
-  if (card === undefined || summary.attestTarget.TargetStage === undefined) return card;
-  const verdict = verdictOf(card);
-  if (summary.gate.kind === 'release') return verdict === 'promoted' ? card : undefined;
-  return stageChangeLanded(verdict) ? card : undefined;
 }
 
 /** The `/attest` target of a gate. */
@@ -295,6 +266,81 @@ export function promoteFinalOf(answer: ServerAnswer): PromoteFinalAnswer {
   // A held stage (409) is not about Final: every stage does not have the change yet.
   if (answer.status === 409) return { kind: 'notOpen' };
   return { kind: 'error' };
+}
+
+/** The server rows of one gate, why a Space has none, and whether a Space with neither counts as held. */
+export interface GateServerRows {
+  rows: readonly PromoteGateResult[];
+  notEvaluatedBySpaceId: Record<string, NotEvaluatedReason>;
+  completed?: boolean;
+}
+
+/** What the server answered about a ChangeOrder's gates, as `useChangeOrderDetail` and the Release dry runs read it. */
+export interface GateServerReads {
+  workflowCompleted: boolean;
+  serverGatesByStage: Readonly<Record<string, readonly PromoteGateResult[]>>;
+  serverGateRefusals: Readonly<Record<string, number>>;
+  finalAnswer?: PromoteFinalAnswer;
+  resolvedSpaceIds: ReadonlySet<string>;
+  releasedSpaceIds: ReadonlySet<string>;
+  /** The Release dry run of each Space, by SpaceID, once read. */
+  releaseAnswers?: Readonly<Record<string, ServerAnswer>>;
+  releaseReadFailed: boolean;
+}
+
+/**
+ * The server rows of one gate.
+ *
+ * A complete workflow (`ChangeOrder.Stage` is `Completed`, or the promote dry run
+ * says so) has passed every entry gate and Final, and the server is asked for no
+ * rows of them. A release gate is not part of that: the server completes the
+ * last stage once its Spaces have the change and satisfy Final, and does not read
+ * release gates (with no Final, a promotion completes it). So a release gate is
+ * still read from the Release dry run of each Space not yet released; a Space
+ * released, or with nothing new to release, counts as held.
+ */
+export function gateServerRowsOf(gate: ReviewedGate, reads: GateServerReads): GateServerRows {
+  const notEvaluatedBySpaceId: Record<string, NotEvaluatedReason> = {};
+  const mark = (why: NotEvaluatedReason) => {
+    for (const space of gate.gateSpaces) notEvaluatedBySpaceId[space.spaceId] = why;
+  };
+  const completed = reads.workflowCompleted;
+  const { kind, stageId } = gate.gate;
+  if (completed && kind !== 'release') return { rows: [], notEvaluatedBySpaceId, completed: true };
+  if (kind === 'entry') {
+    const rows = reads.serverGatesByStage[stageId];
+    if (rows === undefined) mark(reads.serverGateRefusals[stageId] === 403 ? 'noPermission' : 'error');
+    return { rows: rows ?? [], notEvaluatedBySpaceId };
+  }
+  if (kind === 'release') {
+    const rows: PromoteGateResult[] = [];
+    for (const space of gate.gateSpaces) {
+      if (!reads.resolvedSpaceIds.has(space.spaceId)) {
+        notEvaluatedBySpaceId[space.spaceId] = 'notReached';
+        continue;
+      }
+      if (reads.releasedSpaceIds.has(space.spaceId)) {
+        if (!completed) notEvaluatedBySpaceId[space.spaceId] = 'unchanged';
+        continue;
+      }
+      const answer = reads.releaseAnswers?.[space.spaceId];
+      if (answer === undefined) {
+        notEvaluatedBySpaceId[space.spaceId] = reads.releaseReadFailed ? 'error' : 'notReached';
+        continue;
+      }
+      const read = releaseAnswerOf(answer);
+      if ('rows' in read) rows.push(...read.rows);
+      else if (!(completed && read.notEvaluated === 'unchanged')) notEvaluatedBySpaceId[space.spaceId] = read.notEvaluated;
+    }
+    return { rows, notEvaluatedBySpaceId, ...(completed ? { completed: true } : {}) };
+  }
+  let rows: PromoteGateResult[] = [];
+  const finalAnswer = reads.finalAnswer;
+  if (finalAnswer?.kind === 'open') rows = finalAnswer.rows;
+  else if (finalAnswer?.kind === 'noPermission') mark('noPermission');
+  else if (finalAnswer?.kind === 'error') mark('error');
+  else mark('finalNotOpen');
+  return { rows, notEvaluatedBySpaceId };
 }
 
 // ---------------------------------------------------------------------------
@@ -469,19 +515,32 @@ export function reviewRequestsPatch(
 // Change my decision
 // ---------------------------------------------------------------------------
 
-/** One record of an earlier decision to revoke. `spaceId` is undefined when the record is no longer listed. */
+/** One record of an earlier decision to revoke, in the Space it is listed in. */
 export interface RevocationTarget {
   attestationId: string;
-  spaceId?: string;
+  spaceId: string;
   spaceSlug: string;
   /** The revoked record's Type: a revocation of another Type would be an Approval by default. */
   type: string;
+}
+
+/**
+ * A record of a decision that this review cannot revoke. `otherReview`: it is not one of
+ * the review's records, so taking it back here would take back a decision on another
+ * review. `notListed`: the record list does not give its Space, which a revocation needs.
+ */
+export interface UnrevocableRecord {
+  attestationId: string;
+  spaceSlug: string;
+  why: 'otherReview' | 'notListed';
 }
 
 export interface RevocationPlan {
   targets: RevocationTarget[];
   /** Spaces whose record is already revoked: by the loaded data, or earlier in this session. */
   alreadyRevokedSpaceSlugs: string[];
+  /** Not empty: nothing is to be sent, since part of the decision would stay in force. */
+  unrevocable: UnrevocableRecord[];
 }
 
 export const REPLACED_NOTE = 'Replaced by a new decision';
@@ -507,15 +566,29 @@ export function ownLiveRejections(summary: Pick<GateReviewSummary, 'viewer'> | u
 }
 
 /**
+ * The records a review counts as its decisions: those its `deriveGateReviews` took, in
+ * its Spaces or named by its server rows. The only records its actions may revoke.
+ */
+export function reviewRecordIds(summary: Pick<GateReviewSummary, 'decisions'> | undefined): ReadonlySet<string> {
+  return new Set((summary?.decisions ?? []).flatMap((decision) => decision.attestationIds));
+}
+
+/**
  * The records of `decisions` that still need a revocation. A record already
  * revoked is skipped: the server accepts a second revocation and writes a
  * duplicate (a retry after a part-way failure). `revokedInSession` covers the
  * records revoked before the list is read again.
+ *
+ * `reviewRecords`: the review's records (`reviewRecordIds`). A record outside them, or
+ * with no listed Space, is `unrevocable`, and the caller sends nothing: a new decision
+ * with the old one still in force would count twice, and a withdrawal would leave the
+ * rejection holding the stage.
  */
 export function planRevocations(
   decisions: readonly ReviewDecision[],
   attestations: readonly AttestationRead[],
   revokedInSession: ReadonlySet<string>,
+  reviewRecords: ReadonlySet<string>,
 ): RevocationPlan {
   const revoked = new Set(revokedInSession);
   const spaceIdById = new Map<string, string | undefined>();
@@ -523,12 +596,16 @@ export function planRevocations(
     if (attestation.RevokedAttestationID) revoked.add(attestation.RevokedAttestationID);
     if (attestation.AttestationID) spaceIdById.set(attestation.AttestationID, attestation.SpaceID);
   }
-  const plan: RevocationPlan = { targets: [], alreadyRevokedSpaceSlugs: [] };
+  const plan: RevocationPlan = { targets: [], alreadyRevokedSpaceSlugs: [], unrevocable: [] };
   for (const decision of decisions) {
     decision.attestationIds.forEach((attestationId, index) => {
-      const spaceSlug = decision.spaceSlugs[index] ?? attestationId;
-      if (revoked.has(attestationId)) plan.alreadyRevokedSpaceSlugs.push(spaceSlug);
-      else plan.targets.push({ attestationId, spaceId: spaceIdById.get(attestationId), spaceSlug, type: decision.type });
+      // A record with no listed Space has no slug either: the message names the record.
+      const spaceSlug = decision.spaceSlugs[index] || attestationId;
+      const spaceId = spaceIdById.get(attestationId);
+      if (!reviewRecords.has(attestationId)) plan.unrevocable.push({ attestationId, spaceSlug, why: 'otherReview' });
+      else if (revoked.has(attestationId)) plan.alreadyRevokedSpaceSlugs.push(spaceSlug);
+      else if (spaceId === undefined || spaceId === '') plan.unrevocable.push({ attestationId, spaceSlug, why: 'notListed' });
+      else plan.targets.push({ attestationId, spaceId, spaceSlug, type: decision.type });
     });
   }
   return plan;
@@ -538,13 +615,20 @@ export type RevocationRun =
   | { ok: true; revokedSpaceSlugs: string[] }
   | { ok: false; revokedSpaceSlugs: string[]; failedSpaceSlug: string; error: unknown };
 
-/** Sends the planned revocations in order and stops at the first failure; each success is remembered. */
+/**
+ * Sends the planned revocations in order and stops at the first failure; each success is
+ * remembered. A plan with an `unrevocable` record sends nothing and fails on that record.
+ */
 export async function runRevocations(
   plan: RevocationPlan,
   revokeOne: (target: RevocationTarget) => Promise<void>,
   revokedInSession: Set<string>,
 ): Promise<RevocationRun> {
   const revokedSpaceSlugs = [...plan.alreadyRevokedSpaceSlugs];
+  const unrevocable = plan.unrevocable[0];
+  if (unrevocable !== undefined) {
+    return { ok: false, revokedSpaceSlugs, failedSpaceSlug: unrevocable.spaceSlug, error: new Error(reviewCopy.confirm.unrevocable[unrevocable.why]) };
+  }
   for (const target of plan.targets) {
     try {
       await revokeOne(target);

@@ -483,7 +483,10 @@ export interface DeriveGateReviewsInput {
   lastPromotionAt?: string;
   viewerUserId?: string;
   attestTarget: { ChangeOrderID: string; TargetStage?: string; WhereSpace?: string };
-  /** The workflow is complete (the server refuses a promote with the completed 400): every requirement held, and no rows are asked for. */
+  /**
+   * The workflow is complete (`Stage` is `Completed`, or the server refuses a promote with the
+   * completed 400): a Space with no row and no reason in `notEvaluatedBySpaceId` counts as held.
+   */
   completed?: boolean;
   /** Epoch ms. */
   now: number;

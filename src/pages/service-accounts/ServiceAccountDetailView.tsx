@@ -54,6 +54,7 @@ import { CONNECTION, connectionOf } from '../channels/channelConnection';
 import { ConfirmCredentialDialog, IssueTokenDialog, RegisterKeyDialog } from './CredentialDialogs';
 import { orgRoleLabel } from './orgRoles';
 import { DeleteServiceAccountDialog, EditServiceAccountDialog } from './ServiceAccountForms';
+import { groupGrants, visibleGrants, type GrantGroup } from './grantGroups';
 import { useListGrantsToQuery, type Grant } from './serviceAccountGrants';
 import { ACTIVITY, keyExpired, lastUseText, tokenState, usageOf, type TokenState } from './serviceAccountUsage';
 
@@ -327,7 +328,7 @@ export function ServiceAccountDetailView({ serviceAccount, now }: { serviceAccou
       <SectionCard
         title='What it can reach'
         testId='service-account-access'
-        subtitle='Its organization role, its Groups, and everything whose Permissions name it or one of its Groups, as far as you can see. Links are not included.'
+        subtitle='Its organization role, its Groups, and everything whose Permissions name it or one of its Groups, as far as you can see.'
       >
         <Stack sx={{ gap: '14px' }}>
           <AccessLine label='Org role'>
@@ -401,7 +402,10 @@ const GRANT_COLUMNS: DetailColumn[] = [
   { label: 'Permissions', width: 'minmax(220px, 2.4fr)' },
 ];
 
-/** The entities whose Permissions name the account, one row each, with what they grant it and which of that comes through a Group. */
+/**
+ * The entities whose Permissions name the account, with what they grant it and which of that comes through a Group.
+ * Past a few, similar grants (see `grantGroups.ts`) are counted in a row that shows them all.
+ */
 function GrantsTable({
   grants,
   loading,
@@ -415,40 +419,69 @@ function GrantsTable({
   names: ReturnType<typeof usePrincipalNames>;
   now: number;
 }) {
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const groups = useMemo(() => groupGrants(grants?.grants ?? []), [grants]);
   if (loading) return <Typography sx={{ fontSize: 12.5, color: T.ink3 }}>…</Typography>;
   if (failed || grants === undefined) return <Typography sx={{ fontSize: 12.5, color: T.bad }}>The grants could not be read.</Typography>;
+
+  // A permission held only through Groups says which; one granted directly needs no note.
+  const permissionsOf = (grant: Grant) =>
+    grant.actions.map((a) => (a.direct ? a.action : `${a.action} via ${a.groupIds.map((groupId) => names.group(groupId).name).join(', ')}`)).join(' · ');
+
+  const grantRow = (grant: Grant) => {
+    const permissions = permissionsOf(grant);
+    const connection = grant.entityType === 'Channel' ? CONNECTION[connectionOf(grant.entity as ChannelLike, now)] : undefined;
+    return (
+      <DetailRow key={`${grant.entityType}:${grant.id}`} columns={GRANT_COLUMNS} testId='service-account-grant-row'>
+        <Cell muted>{grant.entityType}</Cell>
+        <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {grant.href ? (
+            <Box
+              component={RouterLink}
+              to={grant.href}
+              title={grant.displayName ?? grant.name}
+              sx={{ fontFamily: T.mono, fontSize: 12.5, fontWeight: 600, color: T.action, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', '&:hover': { textDecoration: 'underline' } }}
+            >
+              {grant.name}
+            </Box>
+          ) : (
+            <Cell mono title={grant.displayName ?? grant.name}>
+              {grant.name}
+            </Cell>
+          )}
+          {connection ? <StatusDot color={connection.color} hollow={connection.hollow} label={connection.label} /> : null}
+        </Box>
+        <Cell title={permissions}>{permissions}</Cell>
+      </DetailRow>
+    );
+  };
+
+  const moreRow = (group: GrantGroup, hidden: number) => {
+    const permissions = permissionsOf(group.grants[0]);
+    return (
+      <DetailRow key={`more:${group.key}`} columns={GRANT_COLUMNS} testId='service-account-grant-more' muted>
+        <Cell muted>{group.entityType}</Cell>
+        <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Cell muted>
+            {hidden} more{group.spaceSlug ? ` in ${group.spaceSlug}` : ''}
+          </Cell>
+          <RowAction onClick={() => setExpanded((keys) => new Set(keys).add(group.key))} testId='service-account-grant-show-all'>
+            Show all
+          </RowAction>
+        </Box>
+        <Cell muted title={permissions}>
+          {permissions}
+        </Cell>
+      </DetailRow>
+    );
+  };
+
   return (
     <Stack sx={{ gap: '6px' }}>
       <DetailTable columns={GRANT_COLUMNS} rowCount={grants.grants.length} emptyText='Nothing names it in its Permissions.' testId='service-account-grants'>
-        {grants.grants.map((grant) => {
-          // A permission held only through Groups says which; one granted directly needs no note.
-          const permissions = grant.actions
-            .map((a) => (a.direct ? a.action : `${a.action} via ${a.groupIds.map((groupId) => names.group(groupId).name).join(', ')}`))
-            .join(' · ');
-          const connection = grant.entityType === 'Channel' ? CONNECTION[connectionOf(grant.entity as ChannelLike, now)] : undefined;
-          return (
-            <DetailRow key={`${grant.entityType}:${grant.id}`} columns={GRANT_COLUMNS} testId='service-account-grant-row'>
-              <Cell muted>{grant.entityType}</Cell>
-              <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-                {grant.href ? (
-                  <Box
-                    component={RouterLink}
-                    to={grant.href}
-                    title={grant.displayName ?? grant.name}
-                    sx={{ fontFamily: T.mono, fontSize: 12.5, fontWeight: 600, color: T.action, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', '&:hover': { textDecoration: 'underline' } }}
-                  >
-                    {grant.name}
-                  </Box>
-                ) : (
-                  <Cell mono title={grant.displayName ?? grant.name}>
-                    {grant.name}
-                  </Cell>
-                )}
-                {connection ? <StatusDot color={connection.color} hollow={connection.hollow} label={connection.label} /> : null}
-              </Box>
-              <Cell title={permissions}>{permissions}</Cell>
-            </DetailRow>
-          );
+        {groups.flatMap((group) => {
+          const { shown, hidden } = visibleGrants(group, expanded.has(group.key));
+          return hidden > 0 ? [...shown.map(grantRow), moreRow(group, hidden)] : shown.map(grantRow);
         })}
       </DetailTable>
       {grants.searchedOnly ? (

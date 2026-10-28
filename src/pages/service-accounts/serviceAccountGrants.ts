@@ -9,9 +9,8 @@
  * with `Permissions.*.UserIDs ? '<id>'` (or `GroupIDs`), the any-action form.
  * A server that does not take that form yet gets the org-wide lists that stay
  * small read whole instead, and their Permissions checked here; the rest are not
- * searched, and the result says which were. Links are left out: they are read
- * per Space, and a grant on one is rare. The reads see only what the viewer may
- * see.
+ * searched, and the result says which were. The reads see only what the viewer
+ * may see.
  */
 
 import { confighubApi, type Permissions } from '@confighub/rtk-query';
@@ -22,6 +21,7 @@ import { serviceAccountPath } from '@/hooks/usePrincipalNames';
 import { changeOrderPath } from '../change-orders/changeOrderAddress';
 import { changeSetPath } from '../change-sets/changeSetAddress';
 import { channelPath } from '../channels/channelAddress';
+import { NO_LINK_FILTER, unitLinksHref } from '../unit-detail/unitDetailHrefs';
 
 interface GrantSource {
   /** The entity type, as people read it. */
@@ -35,6 +35,8 @@ interface GrantSource {
   readWhole?: boolean;
   /** The fields that name the entity, where it has no Slug and DisplayName. */
   nameFields?: string[];
+  /** Other fields `href` reads. */
+  hrefFields?: string[];
   /** How a row names the entity, where its Slug does not. */
   name?: (entity: GrantedEntity) => string;
   href?: (entity: GrantedEntity, spaceSlug: string) => string | undefined;
@@ -45,6 +47,7 @@ interface GrantedEntity {
   Slug?: string;
   DisplayName?: string;
   SpaceID?: string;
+  CreatedAt?: string;
   Permissions?: Permissions;
   [field: string]: unknown;
 }
@@ -62,6 +65,17 @@ const SOURCES: GrantSource[] = [
     href: (e) => (e.Slug ? serviceAccountPath(e.Slug) : undefined),
   },
   { label: 'Unit', url: '/unit', key: 'Unit', idField: 'UnitID', spaceScoped: true, href: (e) => `/units/${e.SpaceID}/${e.UnitID as string}` },
+  {
+    label: 'Link',
+    url: '/link',
+    key: 'Link',
+    idField: 'LinkID',
+    spaceScoped: true,
+    hrefFields: ['FromUnitID'],
+    // A Link has no page of its own; it is listed on the Unit it is from.
+    href: (e) =>
+      e.SpaceID && e.FromUnitID ? unitLinksHref(e.SpaceID, e.FromUnitID as string, { ...NO_LINK_FILTER, direction: 'from' }) : undefined,
+  },
   { label: 'Target', url: '/target', key: 'Target', idField: 'TargetID', spaceScoped: true, readWhole: true },
   {
     label: 'Channel',
@@ -103,6 +117,8 @@ const SOURCES: GrantSource[] = [
     idField: 'ReleaseID',
     spaceScoped: true,
     nameFields: ['ReleaseNum'],
+    // The org-wide list keeps only the newest Release of each Space, which is wanted here: whoever
+    // publishes is granted Manage on every Release, and listing each would drown out the rest.
     name: (e) => `release ${String(e.ReleaseNum ?? '')}`,
   },
   { label: 'View', url: '/view', key: 'View', idField: 'ViewID', spaceScoped: true },
@@ -119,6 +135,8 @@ export interface Grant {
   id: string;
   /** `space/slug` for an entity in a Space, the slug otherwise. */
   name: string;
+  /** The slug of the entity's Space, for an entity in one. */
+  spaceSlug?: string;
   displayName?: string;
   href?: string;
   /** Each action, with the subjects it is granted through: the account itself, or Group IDs. */
@@ -176,7 +194,14 @@ const grantsApi = confighubApi.injectEndpoints({
         }
 
         const selectOf = (source: GrantSource) =>
-          [source.idField, ...(source.nameFields ?? ['Slug', 'DisplayName']), 'Permissions', ...(source.spaceScoped ? ['SpaceID'] : [])].join(',');
+          [
+            source.idField,
+            ...(source.nameFields ?? ['Slug', 'DisplayName']),
+            ...(source.hrefFields ?? []),
+            'CreatedAt',
+            'Permissions',
+            ...(source.spaceScoped ? ['SpaceID'] : []),
+          ].join(',');
         const whereOf = (subject: { field: string; id: string }) => `Permissions.*.${subject.field} ? ${quote(subject.id)}`;
 
         // One read says whether the server takes the any-action form, before sending the rest.
@@ -221,6 +246,7 @@ const grantsApi = confighubApi.injectEndpoints({
               entityType: source.label,
               id,
               name: source.spaceScoped && spaceSlug ? `${spaceSlug}/${slug}` : slug,
+              spaceSlug: source.spaceScoped && spaceSlug ? spaceSlug : undefined,
               displayName: entity.DisplayName && entity.DisplayName !== slug ? entity.DisplayName : undefined,
               href: source.href?.(entity, spaceSlug),
               actions: actions.sort((a, b) => a.action.localeCompare(b.action)),
@@ -231,13 +257,13 @@ const grantsApi = confighubApi.injectEndpoints({
 
         const order = new Map(SOURCES.map((source, index) => [source.label, index]));
         const grants = [...byKey.values()].sort(
-          (a, b) => (order.get(a.entityType) ?? 0) - (order.get(b.entityType) ?? 0) || a.name.localeCompare(b.name),
+          (a, b) => (order.get(a.entityType) ?? 0) - (order.get(b.entityType) ?? 0) || a.name.localeCompare(b.name, undefined, { numeric: true }),
         );
         const searchedOnly = fallback ? SOURCES.filter((source) => source.readWhole).map((source) => source.label) : undefined;
         return { data: { grants, unreadable: [...unreadable], searchedOnly } };
       },
       // Grants change on any entity; every write a page makes invalidates one of these.
-      providesTags: ['ServiceAccount', 'Space', 'Unit', 'Target', 'Channel', 'Component'],
+      providesTags: ['ServiceAccount', 'Space', 'Unit', 'Link', 'Target', 'Channel', 'Component'],
     }),
   }),
   overrideExisting: false,

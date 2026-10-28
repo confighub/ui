@@ -33,6 +33,7 @@ import type {
 import {
   isCompletedWorkflowRefusal,
   planRevocations,
+  reviewRecordIds,
   reviewAttestTarget,
   reviewLastPromotion,
   reviewRailOf,
@@ -288,7 +289,7 @@ test.describe('change my decision', () => {
   const own = Object.values(s.viewer.ownByType);
 
   test('the plan lists every record of every replaced decision, with its Type (S1, S6)', () => {
-    const plan = planRevocations(own, [...approval, ...security], new Set());
+    const plan = planRevocations(own, [...approval, ...security], new Set(), reviewRecordIds(s));
     expect(plan.targets.map((t) => [t.spaceSlug, t.type]).sort()).toEqual([
       ['staging-eu', 'Approval'],
       ['staging-eu', 'SecurityReview'],
@@ -304,10 +305,10 @@ test.describe('change my decision', () => {
   });
 
   test('records already revoked (listed, or earlier on this page) are skipped', () => {
-    const listed = planRevocations([s.viewer.ownByType.Approval], [...approval, revoke(approval[0], 'me', -1)], new Set());
+    const listed = planRevocations([s.viewer.ownByType.Approval], [...approval, revoke(approval[0], 'me', -1)], new Set(), reviewRecordIds(s));
     expect(listed.targets.map((t) => t.attestationId)).toEqual([approval[1].AttestationID]);
     expect(listed.alreadyRevokedSpaceSlugs).toEqual(['staging-eu']);
-    const session = planRevocations([s.viewer.ownByType.Approval], approval, new Set([approval[0].AttestationID ?? '']));
+    const session = planRevocations([s.viewer.ownByType.Approval], approval, new Set([approval[0].AttestationID ?? '']), reviewRecordIds(s));
     expect(session.targets.map((t) => t.attestationId)).toEqual([approval[1].AttestationID]);
   });
 
@@ -320,11 +321,11 @@ test.describe('change my decision', () => {
       if (fail && target.spaceSlug === 'staging-us') throw new Error('500');
     };
     const decisionOnly = [s.viewer.ownByType.Approval];
-    const first = await runRevocations(planRevocations(decisionOnly, approval, revokedInSession), revokeOne, revokedInSession);
+    const first = await runRevocations(planRevocations(decisionOnly, approval, revokedInSession, reviewRecordIds(s)), revokeOne, revokedInSession);
     expect(first).toMatchObject({ ok: false, revokedSpaceSlugs: ['staging-eu'], failedSpaceSlug: 'staging-us' });
     fail = false;
     sent.length = 0;
-    const retry = await runRevocations(planRevocations(decisionOnly, approval, revokedInSession), revokeOne, revokedInSession);
+    const retry = await runRevocations(planRevocations(decisionOnly, approval, revokedInSession, reviewRecordIds(s)), revokeOne, revokedInSession);
     expect(sent).toEqual([approval[1].AttestationID]);
     expect(retry).toEqual({ ok: true, revokedSpaceSlugs: ['staging-eu', 'staging-us'] });
   });

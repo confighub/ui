@@ -464,7 +464,10 @@ export const reviewCopy = {
     hint: (noun: string) => `Visible to everyone on this ${noun}.`,
     reasonRequired: 'A reason is required.',
     choose: 'Choose approve or reject',
-    submit: (choice: ReviewChoice, subject: string) => `${choice === 'Pass' ? 'Approve' : 'Reject'} the change in ${subject}`,
+    /** `into`: the stage a promotion review gates, which is what the decision is on. */
+    submit: (choice: ReviewChoice, subject: string, into?: string) =>
+      into === undefined ? `${choice === 'Pass' ? 'Approve' : 'Reject'} the change in ${subject}` : `${choice === 'Pass' ? 'Approve' : 'Reject'} the promotion into ${into}`,
+    promotionCovers: (subject: string) => `It covers the Revisions in ${subject}.`,
   },
   coverage: {
     label: 'What this decision covers',
@@ -578,6 +581,11 @@ export const reviewCopy = {
         ? 'Your earlier decision was not withdrawn. Nothing changed.'
         : `Only part of your earlier decision was withdrawn (${spaces.join(', ')}). Nothing new was saved.`,
     recordFailedAfterRevoke: 'Your earlier decision is withdrawn. The new one was not saved.',
+    /** Why a record of the earlier decision is not revoked: nothing is sent, so it stays in force. */
+    unrevocable: {
+      otherReview: 'this record is a decision on another review, so it cannot be withdrawn here.',
+      notListed: 'this record is no longer listed, so it cannot be withdrawn. Reload the page and try again.',
+    },
     retry: 'Try again',
   },
   /** The result of a decision, worded from the server's gate verdicts read after it was recorded. */

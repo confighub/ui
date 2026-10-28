@@ -132,7 +132,9 @@ export function actionStageOf(
  * a question nobody has asked yet.
  */
 export function sidebarGateFlags(state: StageCardState): { waitingGateIds: ReadonlySet<string>; gateIdsInBox: ReadonlySet<string>; pending: boolean } {
-  const waiting = state.kind === 'gateWaiting' ? state.gates : state.kind === 'gateFailed' ? state.waiting : [];
+  const reviewHeld = state.kind === 'reviewNeeded' || state.kind === 'reviewWaiting' || state.kind === 'reviewApproved';
+  const waiting =
+    state.kind === 'gateWaiting' ? state.gates : state.kind === 'gateFailed' ? state.waiting : reviewHeld ? state.waitingGates : [];
   const inBox =
     state.kind === 'gateFailed'
       ? [...state.gates, ...state.waiting]
@@ -140,7 +142,9 @@ export function sidebarGateFlags(state: StageCardState): { waitingGateIds: Reado
         ? state.gates
         : state.kind === 'reviewRejected'
           ? state.failedGates
-          : [];
+          : reviewHeld
+            ? [...state.failedGates, ...state.waitingGates]
+            : [];
   return { waitingGateIds: new Set(waiting.map((g) => g.id)), gateIdsInBox: new Set(inBox.map((g) => g.id)), pending: state.kind === 'loading' };
 }
 

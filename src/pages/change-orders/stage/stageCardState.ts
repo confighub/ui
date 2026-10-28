@@ -87,8 +87,6 @@ export interface StageCardStateInput {
   /** The server gate read's refusal status for this stage (403: no permission). */
   serverGateRefusal?: number;
   problems: readonly PropagationProblem[];
-  /** The viewer has just approved, and the gate is open. */
-  approvedByYou?: boolean;
 }
 
 /** A gate the card's review rows stand for, so it is not counted twice as a failing gate. */
@@ -184,8 +182,10 @@ function dryRunOverrides(input: StageCardStateInput): boolean {
  * browser writing; a failure on this stage, unless the dry run now says the
  * server holds, refuses or forbids the promote; released; promoted with no
  * Targets; promoted, where a release review that holds comes before Release;
- * the entry review rejected; a gate that failed; a gate that only waits; the
- * entry review not open; the server holding it (409); no permission (403); the
+ * the entry review rejected; the entry review not open, with the other gates that
+ * hold the stage as context; the entry review satisfied while other gates still
+ * hold the stage; a gate that failed; a gate that only waits; the
+ * server holding it (409); no permission (403); the
  * dry run refused; and then, for a stage that may be promoted: restored, a
  * propagation problem, in progress, progress unknown, or ready.
  *
@@ -210,7 +210,7 @@ export function deriveStageCardState(input: StageCardStateInput): StageCardState
     if (review !== undefined && releaseHeld(review.summary)) {
       const base = { action: 'release' as const, gateKey: review.summary.gate.key, flow: review.flow, problems: input.problems };
       if (releaseRejected(review.summary)) return { kind: 'reviewRejected', rejection: rejection(review.summary), failedGates: [], ...base };
-      return { kind: flowIsNeeded(review.flow) ? 'reviewNeeded' : 'reviewWaiting', ...base };
+      return { kind: flowIsNeeded(review.flow) ? 'reviewNeeded' : 'reviewWaiting', failedGates: [], waitingGates: [], ...base };
     }
     return { kind: 'promoted', took: input.problems };
   }
@@ -220,32 +220,28 @@ export function deriveStageCardState(input: StageCardStateInput): StageCardState
   // A review this card hosts is said by its own state; a review gate hosted elsewhere is a gate like any other.
   const otherBlocked = entry === undefined ? blocked : blocked.filter((g) => !isReviewGate(g, entry.summary));
   const held = splitHeldGates(otherBlocked, input.previousStage);
-  const gateState = (): StageCardState | undefined => {
-    if (held.failed.length > 0) return { kind: 'gateFailed', gates: held.failed, waiting: held.waiting };
-    if (held.waiting.length > 0 && held.waitFor !== undefined) {
-      const previous = input.previousStage;
-      return {
-        kind: 'gateWaiting',
-        gates: held.waiting,
-        waitFor: held.waitFor,
-        ...(previous === undefined ? {} : { previousStage: { stageId: previous.stageId, name: previous.name } }),
-      };
-    }
-    return undefined;
-  };
+  const previous = input.previousStage;
+  const previousRef = previous === undefined ? {} : { previousStage: { stageId: previous.stageId, name: previous.name } };
+  const hostsReview = entry !== undefined && entry.summary.requirements.length > 0;
   if (entry !== undefined) {
     const base = { action: 'promote' as const, gateKey: entry.summary.gate.key, flow: entry.flow, problems: input.problems };
     if (entry.summary.state === 'rejected') {
       return { kind: 'reviewRejected', rejection: rejection(entry.summary), failedGates: held.failed, ...base };
     }
-    const byGate = gateState();
-    if (byGate !== undefined) return byGate;
-    if (!entry.summary.open && entry.summary.requirements.length > 0) {
-      return { kind: flowIsNeeded(entry.flow) ? 'reviewNeeded' : 'reviewWaiting', ...base };
+    // The server takes an approval while other gates still hold the stage, so the review does not wait for them.
+    if (!entry.summary.open && hostsReview) {
+      return { kind: flowIsNeeded(entry.flow) ? 'reviewNeeded' : 'reviewWaiting', failedGates: held.failed, waitingGates: held.waiting, ...base };
     }
-  } else {
-    const byGate = gateState();
-    if (byGate !== undefined) return byGate;
+    // Satisfied, and other gates still hold the stage: the review stays in the box, read from the
+    // server's records, so the approval and "Change my decision" are there after a reload too.
+    if (hostsReview && (held.failed.length > 0 || held.waiting.length > 0)) {
+      const wait = held.failed.length === 0 && held.waitFor !== undefined ? { wait: { waitFor: held.waitFor, ...previousRef } } : {};
+      return { kind: 'reviewApproved', failedGates: held.failed, waitingGates: held.waiting, ...wait, ...base };
+    }
+  }
+  if (held.failed.length > 0) return { kind: 'gateFailed', gates: held.failed, waiting: held.waiting };
+  if (held.waiting.length > 0 && held.waitFor !== undefined) {
+    return { kind: 'gateWaiting', gates: held.waiting, waitFor: held.waitFor, ...previousRef };
   }
 
   const dryRun = input.dryRun;
@@ -259,7 +255,7 @@ export function deriveStageCardState(input: StageCardStateInput): StageCardState
   if (input.problems.length > 0) return { kind: 'problem', problems: input.problems };
   if (input.verdict === 'in-progress') return { kind: 'inProgress' };
   if (input.verdict === 'unknown') return { kind: 'progressUnknown' };
-  return { kind: 'ready', approvedByYou: input.approvedByYou === true };
+  return { kind: 'ready', approvedByYou: entry !== undefined && hostsReview && entry.summary.open && entry.flow.kind === 'ownApproved' };
 }
 
 /**
@@ -276,7 +272,7 @@ function canRetry(failure: StageFailure, dryRun: StageDryRunView): boolean {
 
 /** The review states, which host review actions in the box. */
 export function isReviewState(kind: StageCardStateKind): boolean {
-  return kind === 'reviewNeeded' || kind === 'reviewWaiting' || kind === 'reviewRejected';
+  return kind === 'reviewNeeded' || kind === 'reviewWaiting' || kind === 'reviewRejected' || kind === 'reviewApproved';
 }
 
 /**
@@ -314,6 +310,9 @@ export function stageBoxLook(state: StageCardState): StageBoxLook {
     case 'reviewNeeded':
     case 'reviewWaiting':
       return { tone: 'neutral', tile: 'calm', icon: 'person' };
+    case 'reviewApproved':
+      // A failed gate is red here as on its own box; gates that only wait are calm.
+      return state.failedGates.length > 0 ? { tone: 'error', tile: 'solid', icon: 'error' } : { tone: 'neutral', tile: 'calm', icon: 'person' };
     case 'reviewRejected':
     case 'failed':
     case 'gateFailed':

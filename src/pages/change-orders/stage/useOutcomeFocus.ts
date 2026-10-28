@@ -27,7 +27,7 @@ const REVIEW_FOCUS_FALLBACK_MS = 4_000;
  * Focus follows an action's outcome: the headline that says what happened (also
  * when the state did not change, so focus is never left on the page), the Release
  * button after Promote only, the next action after a review (Approve… while the box
- * is still a review).
+ * still asks for a decision; the headline once the review is satisfied).
  *
  * Call `focusAfter` once the outcome is drawn or about to be (Confirm calls it after
  * the read that follows its write). It lands on the next render that has its target,
@@ -67,7 +67,7 @@ export function useOutcomeFocus(stateKind: StageCardStateKind, approveRef: RefOb
         p.target = 'heading';
         el = headingRef.current;
       }
-    } else if (!isReviewState(stateKind)) el = mainRef.current ?? headingRef.current;
+    } else if (!isReviewState(stateKind) || stateKind === 'reviewApproved') el = mainRef.current ?? headingRef.current;
     else if (age > REVIEW_FOCUS_FALLBACK_MS) el = approveRef.current;
     if (el === null) return;
     el.focus();

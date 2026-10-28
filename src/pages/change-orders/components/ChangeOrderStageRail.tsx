@@ -39,7 +39,8 @@ import type { StageReviewRail } from '../reviews/changeOrderReviewTypes';
 import { reviewCopy } from '../reviews/reviewCopy';
 import { OutcomeBar } from './OutcomeBar';
 import { OUTCOME_META, type OutcomeBarSegment } from './outcomeMeta';
-import { completeRailDot, railDot, reviewHoldTone, type RailDot } from './railDots';
+import { completeRailDot, railDot, type RailDot } from './railDots';
+import { railStageLabel, reviewHoldTone } from './railStage';
 
 interface StageLinkTone {
   bg: string;
@@ -500,6 +501,8 @@ export interface ChangeOrderStageRailDetailProps {
   sourceSummary: string;
   /** The review state of every stage with reviews (`useChangeOrderReviews`). */
   reviewRail?: Readonly<Record<string, StageReviewRail>>;
+  /** "Waiting on check/healthy" for each gated stage whose gates only wait (`railGateWaits`). */
+  gateWaits?: Readonly<Record<string, string>>;
   /** The Final sign-off's review state, for the Complete node. */
   completeReview?: StageReviewRail;
   /** The Final sign-off has no rows because Final is not open yet (PromoteResult.Complete false). */
@@ -539,6 +542,7 @@ function DetailStageRail({
   finalGates,
   sourceSummary,
   reviewRail = {},
+  gateWaits = {},
   completeReview,
   completeNotOpen,
   hrefForStage,
@@ -577,12 +581,10 @@ function DetailStageRail({
         let review: StageReviewRail | undefined;
         if (rail?.gateKind === 'release') review = state.verdict === 'promoted' ? rail : undefined;
         else review = isSource || entered || i < stagesDone ? undefined : rail;
-        const dot = railDot(state, isNext, i < stagesDone, review);
+        const gateWait = held ? gateWaits[state.stageId] : undefined;
+        const dot = railDot(state, isNext, i < stagesDone, review, gateWait !== undefined);
         const hold = reviewHoldTone(state, isNext, review);
-        let stageLabel = state.label;
-        if (hold === 'held') stageLabel = review?.gateKind === 'release' ? reviewCopy.rail.releaseHeld : reviewCopy.rail.held;
-        else if (hold === 'blocked') stageLabel = reviewCopy.rail.rejected;
-        else if (isNext && review?.state === 'satisfied') stageLabel = reviewCopy.rail.ready;
+        const stageLabel = railStageLabel(state, isNext, review, gateWait);
         return (
           /* The link and the node it leads into wrap as one step, so a link is
              never left at the end of a row with its node on the next. */
@@ -624,7 +626,7 @@ function DetailStageRail({
                   evaluated, so any negative framing here would assert an
                   assessment the data cannot support.
                 */}
-                {held && hold === null ? ' · held' : ''}
+                {held && hold === null && gateWait === undefined ? ' · held' : ''}
               </Box>
               {review !== undefined ? <StageReviewLine review={review} hold={hold} isNext={isNext} /> : null}
             </RailNode>
