@@ -215,9 +215,8 @@ export const EXTRA_INVALIDATIONS: Record<string, TagType[]> = {
   // ── Organization membership ───────────────────────────────────────────────
   createOrganizationMember: ['User', 'UserInfo'],
   deleteOrganizationMember: ['User', 'UserInfo'],
-  createOrganization: ['UserInfo'],
   updateOrganization: ['UserInfo'],
-  deleteOrganization: ['UserInfo'],
+  patchOrganization: ['UserInfo'],
 };
 
 /**

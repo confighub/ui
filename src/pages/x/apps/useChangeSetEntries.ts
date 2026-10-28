@@ -16,18 +16,27 @@
  *
  * Three reads, each for every unit at once: the unit's Revisions in its
  * ChangeSet (for the first one's number), the Revision before that (for its
- * id), and that Revision's configuration.
+ * id), and that Revision's configuration, which the pane draws. Then one read
+ * per unit of what changed, as the server diffs it, from the Revision before
+ * the ChangeSet to the unit's head (`useChangeSetDiffs`). The server matches
+ * array elements by merge key and resources by identity, so a change to a path
+ * two documents share is a change in the one document it is in. A unit the tree
+ * reads as text (`treeReadsDocuments`), whose rows no server path names, is
+ * compared instead with its current configuration, which is its head's.
  */
 
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 
-import { type ExtendedUnitRead, useListAllRevisionsQuery } from '@confighub/rtk-query';
+import { type ConfigDiff, type ExtendedUnitRead, useListAllRevisionsQuery } from '@confighub/rtk-query';
 
 import { useRevisionDataMap } from '@/hooks/useUnitData';
 
 import { changeSetLabel, changeSetUnitIds } from './changeSets';
-import type { ComponentDeployment, UpgradeEntry } from './componentTypes';
-import { buildPaths, computeFieldDiffs } from './entryBuilders';
+import { fieldDiffsFromConfigDiff, isWholeResourceChange } from './configDiffFieldDiffs';
+import type { ComponentDeployment, KeyedFieldDiff, UpgradeEntry, WholeResourceChange } from './componentTypes';
+import { treeReadsDocuments } from './componentValues';
+import { buildPaths, textFieldDiffs } from './entryBuilders';
+import { type ChangeSetDiffRead, useChangeSetDiffs } from './useChangeSetDiffs';
 
 /** A ChangeSet's change to one unit, as an upgrade-shaped entry, with the configuration it started from. */
 export interface ChangeSetEntry extends UpgradeEntry {
@@ -39,7 +48,44 @@ export interface ChangeSetEntry extends UpgradeEntry {
 /** Revisions are listed one page at a time; this covers a ChangeSet over every unit a node can show. */
 const REVISION_LIMIT = 1000;
 
+/** The rows of one Diff, cached on it, so a rebuild with the same Diff and data re-renders no row. */
+const rowsCache = new WeakMap<ConfigDiff, {
+  beforeData: string;
+  fieldDiffs: KeyedFieldDiff[];
+  wholeResourceChanges: WholeResourceChange[] | undefined;
+}>();
+
+/**
+ * The ChangeSet's changes as the tree draws them. The tree draws the unit before the
+ * ChangeSet, which is the From side of the diff.
+ */
+function rowsOf(diff: ConfigDiff, beforeData: string) {
+  const hit = rowsCache.get(diff);
+  if (hit && hit.beforeData === beforeData) return hit;
+  const fieldDiffs: KeyedFieldDiff[] = [];
+  const whole: WholeResourceChange[] = [];
+  for (const row of fieldDiffsFromConfigDiff(diff, beforeData, { treeSide: 'from' })) {
+    if (isWholeResourceChange(row)) whole.push(row);
+    else fieldDiffs.push(row);
+  }
+  const rows = { beforeData, fieldDiffs, wholeResourceChanges: whole.length > 0 ? whole : undefined };
+  rowsCache.set(diff, rows);
+  return rows;
+}
+
 const quoted = (ids: Iterable<string | number>) => [...ids].map((id) => (typeof id === 'number' ? `${id}` : `'${id}'`)).join(',');
+
+export interface ChangeSetEntries {
+  /** One per unit whose diff has landed; a unit still being read, or whose read failed, has none. */
+  entries: ChangeSetEntry[];
+  /**
+   * True while any covered unit is still being read. A unit whose read failed is not
+   * loading: it is in `errorByUnitId`, which the caller shows for it.
+   */
+  isLoading: boolean;
+  /** Why each failed unit's diff could not be read, by UnitID. */
+  errorByUnitId: ReadonlyMap<string, string>;
+}
 
 export function useChangeSetEntries({
   deployments,
@@ -51,9 +97,11 @@ export function useChangeSetEntries({
   deployments: readonly ComponentDeployment[];
   selectedDeploymentIds: ReadonlySet<string>;
   unitById: ReadonlyMap<string, ExtendedUnitRead>;
+  /** Each unit's current configuration, which is its head Revision's; read only for a unit the tree reads as text. */
   unitDataFor: (unitId?: string) => string;
+  /** Whether `unitDataFor` is still loading, so an empty configuration is not taken for a cleared one. */
   isUnitDataFetching: boolean;
-}): { entries: ChangeSetEntry[]; isLoading: boolean } {
+}): ChangeSetEntries {
   // Which ChangeSet each unit of the selected Deployments is in, or was last changed in.
   const covered = useMemo(() => {
     const byUnit = new Map<string, { changeSetId: string; deployment: ComponentDeployment; label: string; description?: string }>();
@@ -130,41 +178,77 @@ export function useChangeSetEntries({
 
   const { dataFor: revisionDataFor, ready: beforeDataReady } = useRevisionDataMap([...beforeRevisionIdByUnit.values()]);
 
-  const isLoading =
-    unitIds.length > 0 &&
-    (inChangeSet === undefined || inChangeSetFetching || beforeFetching || !beforeDataReady || isUnitDataFetching);
+  const revisionsReady =
+    unitIds.length === 0 || (inChangeSet !== undefined && !inChangeSetFetching && !beforeFetching && beforeDataReady);
 
-  const entries = useMemo(() => {
-    // Never diff against a side that has not arrived: an absent side reads as every field changed.
-    if (isLoading) return [];
-    const result: ChangeSetEntry[] = [];
+  // What each unit's diff runs between. Both ends are Revision numbers, which never change,
+  // and the To is the head's, so a new head is a new read and an unchanged unit reads nothing.
+  const reads = useMemo((): ChangeSetDiffRead[] => {
+    if (!revisionsReady) return [];
+    const result: ChangeSetDiffRead[] = [];
     for (const [unitId, firstNum] of firstNumByUnit) {
       const c = covered.get(unitId);
+      const unit = unitById.get(unitId)?.Unit;
       if (!c) continue;
       const beforeNum = firstNum - 1;
-      const beforeRevisionId = beforeRevisionIdByUnit.get(unitId);
-      // A unit created in the ChangeSet started from nothing; any other unit needs its prior Revision.
-      if (beforeNum > 0 && !beforeRevisionId) continue;
-      const beforeData = beforeNum > 0 ? revisionDataFor(beforeRevisionId) : '';
-      const afterData = unitDataFor(unitId);
-      const unit = unitById.get(unitId)?.Unit;
+      // Without its prior Revision's data the pane has nothing to draw as the current side.
+      if (beforeNum > 0 && !beforeRevisionIdByUnit.has(unitId)) continue;
+      result.push({
+        spaceId: unit?.SpaceID ?? c.deployment.deploymentId,
+        unitId,
+        fromRevisionNum: beforeNum,
+        toRevisionNum: Math.max(unit?.HeadRevisionNum ?? firstNum, firstNum),
+      });
+    }
+    return result;
+  }, [revisionsReady, firstNumByUnit, covered, unitById, beforeRevisionIdByUnit]);
+
+  const readsText = useCallback(
+    (unitId: string) => !treeReadsDocuments(unitById.get(unitId)?.Unit?.ToolchainType),
+    [unitById],
+  );
+  const diffReads = useMemo(() => reads.filter((r) => !readsText(r.unitId)), [reads, readsText]);
+  const { diffByUnitId, errorByUnitId } = useChangeSetDiffs(diffReads);
+
+  const entries = useMemo(() => {
+    const result: ChangeSetEntry[] = [];
+    for (const read of reads) {
+      const { unitId, fromRevisionNum, toRevisionNum } = read;
+      const c = covered.get(unitId);
+      if (!c) continue;
+      // A unit created in the ChangeSet started from nothing, so its resources read as added.
+      const beforeData = fromRevisionNum > 0 ? revisionDataFor(beforeRevisionIdByUnit.get(unitId)) : '';
+      let fieldDiffs: KeyedFieldDiff[];
+      let wholeResourceChanges: WholeResourceChange[] | undefined;
+      if (readsText(unitId)) {
+        const headData = unitDataFor(unitId);
+        if (headData === '' && isUnitDataFetching) continue;
+        fieldDiffs = textFieldDiffs(beforeData, headData);
+      } else {
+        const diff = diffByUnitId.get(unitId);
+        if (!diff) continue;
+        ({ fieldDiffs, wholeResourceChanges } = rowsOf(diff, beforeData));
+      }
       result.push({
         unitId,
         changeSetId: c.changeSetId,
         beforeData,
-        slug: unit?.Slug ?? unitId,
+        slug: unitById.get(unitId)?.Unit?.Slug ?? unitId,
         deploymentId: c.deployment.deploymentId,
         deploymentName: c.deployment.displayName,
         parentDeploymentName: `ChangeSet ${c.label}`,
-        upstreamRevisionNum: beforeNum,
-        upstreamHeadRevisionNum: unit?.HeadRevisionNum ?? firstNum,
-        fieldDiffs: computeFieldDiffs(beforeData, afterData),
+        upstreamRevisionNum: fromRevisionNum,
+        upstreamHeadRevisionNum: toRevisionNum,
+        fieldDiffs,
+        ...(wholeResourceChanges ? { wholeResourceChanges } : {}),
         allPaths: buildPaths(beforeData),
         upstreamDescription: c.description,
       });
     }
     return result;
-  }, [isLoading, firstNumByUnit, covered, beforeRevisionIdByUnit, revisionDataFor, unitDataFor, unitById]);
+  }, [reads, readsText, unitDataFor, isUnitDataFetching, diffByUnitId, covered, beforeRevisionIdByUnit, revisionDataFor, unitById]);
 
-  return { entries, isLoading };
+  const isLoading = unitIds.length > 0 && (!revisionsReady || entries.length + errorByUnitId.size < reads.length);
+
+  return { entries, isLoading, errorByUnitId };
 }

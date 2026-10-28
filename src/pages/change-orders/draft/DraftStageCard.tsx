@@ -12,11 +12,11 @@ import { VISUALLY_HIDDEN_SX } from '@/utility/visually-hidden';
 import { unitConfigHref, unitLinksHref } from '../../unit-detail/unitDetailHrefs';
 import { ChangeOrderGateList } from '../../x/apps/change-order/ChangeOrderGateList';
 import { ChangeOrderUnitHeader } from '../../x/apps/change-order/ChangeOrderUnitHeader';
+import { changeEntriesOf } from '../../x/apps/change-order/changeOrderChanges';
 import { componentSpaceDeepLink } from '../../x/apps/change-order/changeOrdersConsoleModel';
 import type { ChangeOrderChangeGroup, ChangeOrderGate } from '../../x/apps/change-order/changeOrderTypes';
 import { TagBadge, TagBadgeLink, UnitHeaderRow, UnitSlug } from '../../x/apps/diffStyles';
 import { componentTheme } from '../../x/apps/componentTheme';
-import { computeFieldDiffs } from '../../x/apps/entryBuilders';
 import { parseUnitData } from '../../x/apps/configParser';
 import { COMPLETE_STAGE_ID, COMPLETE_STEP_LABEL } from '../changeOrderCompleteStep';
 import type { ChangeOrderOutcomeKind } from '../changeOrderOutcome';
@@ -416,10 +416,13 @@ export function DraftStageCard({
     );
     for (const unit of units) {
       if (unit.clone === undefined) continue;
-      // A clone whose content has not been read yet is not "unchanged": it is not determined yet.
+      // One entry per resource the clone adds, as the server's diff gives it, so the card counts
+      // a clone as it counts a variant's own changes. A diff not read yet is not "unchanged": it
+      // is not determined yet.
+      const { diff, diffStatus } = unit.clone;
       byId.set(unit.unitId, {
-        fieldDiffs: unit.clone.data === undefined ? [] : computeFieldDiffs(undefined, unit.clone.data),
-        determinable: unit.clone.dataStatus === 'resolved' && unit.clone.data !== undefined,
+        fieldDiffs: diff === undefined ? [] : changeEntriesOf(diff),
+        determinable: diffStatus === 'resolved' && diff !== undefined,
         conflicts: undefined,
       });
     }

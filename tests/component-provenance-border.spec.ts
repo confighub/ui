@@ -187,8 +187,8 @@ test.describe('provenance border (differs-from-upstream) survives a landed dry-r
   });
 
   // T3 — a staged (uncommitted) manual edit must show the border IMMEDIATELY,
-  // before commit — liveVariationPaths is built from committed data and cannot
-  // see the edit yet, so this path is `hasStagedEdit`, not `liveVariationPaths`.
+  // before commit — liveVariationKeys is built from committed data and cannot
+  // see the edit yet, so this path is `hasStagedEdit`, not `liveVariationKeys`.
   // Reverting (unchecking the staged-edit pill) must drop the border again.
   test('a staged, uncommitted edit shows the border immediately, and losing it on revert', async ({ page }) => {
     await navigateAndSelectApp(page, APP_LABEL);

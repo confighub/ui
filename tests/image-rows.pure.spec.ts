@@ -30,7 +30,7 @@ import {
 const CONTAINERS = 'spec.template.spec.containers';
 const INIT = 'spec.template.spec.initContainers';
 
-/** A field diff as `computeFieldDiffs` emits it. */
+/** A field diff as `imageRowsOfResource` passes it. */
 const diff = (path: string, oldValue: string, newValue: string) => ({ path, oldValue, newValue });
 /** An old-side path as the panel already holds it. */
 const path = (p: string, value: string) => ({ path: p, value });

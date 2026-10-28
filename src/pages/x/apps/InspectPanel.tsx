@@ -151,6 +151,8 @@ export interface InspectPanelProps {
   spaceId: string;
   unitId: string;
   path: string;
+  /** The row's stage key, which names its document as well as `path`. */
+  stageKey: string;
   /** Current value of this field in this deployment. */
   currentValue: string;
   deploymentName?: string;
@@ -199,6 +201,7 @@ export const InspectPanel = memo(({
   spaceId,
   unitId,
   path,
+  stageKey,
   currentValue,
   onClose,
   upgradeValue,
@@ -275,10 +278,10 @@ export const InspectPanel = memo(({
     return result;
   }, [revisionItems, path]);
 
-  // Variation diff for this path (env difference, used when no active upgrade)
+  // Variation diff for this row (env difference, used when no active upgrade)
   const variantDiff = useMemo(
-    () => variationEntry?.fieldDiffs.find((d) => d.path === path),
-    [variationEntry, path],
+    () => variationEntry?.fieldDiffs.find((d) => d.key === stageKey),
+    [variationEntry, stageKey],
   );
 
   const hasUpgrade = upgradeValue !== undefined;

@@ -141,8 +141,8 @@ async function setupLockFixture(
 
   // Dev bumps to rev2 (e.g. adding `newFeatureFlag`) — gives prod a genuine
   // pending upgrade, so upstream-only fields actually appear as absent
-  // ("isAbsentCurrent") rows: `unionUpstreamOnlyPaths` only unions in paths
-  // from `upgradeEntry.fieldDiffs`, which requires a real revision gap.
+  // ("isAbsentCurrent") rows: the tree adds a row with no value of the unit's own
+  // only for a key of the upgrade diff, which requires a real revision gap.
   await api.uploadUnitData({ spaceId: devSpaceId, unitId: devUnitData.UnitID, body: buildDeploymentYaml(devFieldsRev2) });
 
   await waitForResolved(page, devSpaceId, devUnitData.UnitID);

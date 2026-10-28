@@ -4,6 +4,8 @@
 // Shared helpers for presenting component field values. Kept in a leaf module so
 // both ComponentValuesSection and InspectPanel can use them without a cycle.
 
+import type { LeafValueType } from './configParser';
+
 /** Placeholder string for an absent current value (present upstream, absent downstream). */
 export const ABSENT = '—';
 
@@ -12,14 +14,27 @@ export const NO_VALUE_LABEL = 'no value';
 
 /**
  * Whether an upgrade/variation field value represents an upstream REMOVAL of the
- * field. computeFieldDiffs emits the '-' absence sentinel when a path is absent
- * from the post-upgrade (dry-run) data, but some toolchains (e.g. Kubernetes with
- * a normalize step) instead emit an empty string '' for a removed annotation/key.
+ * field. The field diffs carry the '-' absence sentinel (`VALUE_PLACEHOLDER`) on the
+ * side where a path is absent, but some toolchains (e.g. Kubernetes with a normalize
+ * step) instead leave an empty string '' for a removed annotation/key.
  * Treat both as a removal so the current value renders struck-through. `undefined`
  * (no diff for this path) is NOT a removal.
  */
 export function isRemovalSentinel(value: string | undefined): boolean {
   return value === '-' || value === '';
+}
+
+/**
+ * Whether committing a value of the server's Diff removes the key. A value the Diff
+ * gives carries its type, so `-` and `''` are values there: only a side with no value
+ * (no type) is a removal. An empty string replacing a key the Unit holds still reads as a
+ * removal, as {@link isRemovalSentinel} says; for a key the Unit does not hold, such as a
+ * leaf of an element the upstream adds, `''` is the value to create. A value with no type
+ * (from a Unit the tree reads as text) is read by its sentinel alone.
+ */
+export function isRemovalWrite(value: string, valueType: LeafValueType | undefined, unitHoldsKey: boolean): boolean {
+  if (valueType === undefined) return isRemovalSentinel(value);
+  return value === '' && unitHoldsKey;
 }
 
 /**
@@ -46,4 +61,16 @@ export function isEmptyValue(value: string | undefined): boolean {
  */
 export function isYamlToolchain(toolchainType: string | undefined): boolean {
   return !!toolchainType && toolchainType.toUpperCase().includes('YAML');
+}
+
+/**
+ * Whether the value tree reads a unit's configuration as documents of keys, as the
+ * server's Diff addresses it. YAML and JSON are; the other AppConfig formats
+ * (Properties, Env, INI, TOML, Text) are read by the tree as text, one leaf or a few
+ * that name no key of the format, so the server's per-key paths match none of its rows.
+ * An unknown toolchain is taken to be read as documents.
+ */
+export function treeReadsDocuments(toolchainType: string | undefined): boolean {
+  if (!toolchainType) return true;
+  return isYamlToolchain(toolchainType) || toolchainType.toUpperCase().endsWith('/JSON');
 }

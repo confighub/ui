@@ -439,9 +439,8 @@ export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs)
    * dispatches and flips it — a real, observed one-render gap, not a
    * theoretical one. `writtenPending` gated on `isLoading` alone let
    * `stageSettled` go true for exactly that render, with `priorDataByUnitId`
-   * still empty, so the written unit's `beforeData` read as `undefined`,
-   * `determinable` false, `upgradeEntry` absent, `totalUpgradableFields` 0 —
-   * — a settled-looking snapshot that is simply wrong. Anything that acts on
+   * still empty, so the written unit's `beforeData` read as `undefined` and
+   * `determinable` false — a settled-looking snapshot that is simply wrong. Anything that acts on
    * it once is not re-run when the real, non-zero counts land a render later.
    * Checking the DATA itself (still undefined until a real response lands)
    * is immune to that gap in a way the loading flag is not.

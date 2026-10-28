@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isArrayElementPath } from './componentKeyUtils';
-import type { FieldEntry, ResourceInfo } from './configParser';
+import type { ArrayInsertion, FieldEntry, ResourceInfo } from './configParser';
 
 // ============================================================================
 // TREE BUILDING FOR DIFFS
@@ -150,6 +150,87 @@ export function stageKeyPath(key: string): string {
 export function stageKeyDocId(key: string): string | undefined {
   const i = key.indexOf(STAGE_KEY_SEP);
   return i === -1 ? undefined : key.slice(0, i);
+}
+
+/**
+ * Which stage keys a committed batch moves to another element: once the batch has
+ * inserted or removed elements of an array, every element from the first one it touched
+ * on has a new index, so a key with such an index names another element (or, for an
+ * inserted element's made-up index, nothing) after the Unit is read again. Keys are
+ * compared within their document, so a batch in one document moves no key of another.
+ *
+ * `deletedKeys` are the batch's removals: an element goes when every leaf the Unit holds
+ * under it (`unitKeys`, the stage keys of the Unit's leaves before the batch) is removed.
+ * `insertions` are the batch's new elements, by a stage key of one of their leaves: each
+ * goes after the element it follows, or at its made-up index when appended.
+ */
+export function keysMovedByBatch(
+  deletedKeys: ReadonlySet<string>,
+  insertions: Iterable<[string, ArrayInsertion]>,
+  unitKeys: Iterable<string>,
+): (key: string) => boolean {
+  // `${docId} U+0000 ${arrayPath}` → the lowest index of the array the batch moves.
+  const firstMoved = new Map<string, number>();
+  const arrayId = (docId: string | undefined, arrayPath: string) => `${docId ?? ''}\u0000${arrayPath}`;
+  const moveFrom = (id: string, index: number) => {
+    const current = firstMoved.get(id);
+    if (current === undefined || index < current) firstMoved.set(id, index);
+  };
+  /** Each array element `key` passes through: its array's id, its own id, and its index. */
+  const elementsOf = (key: string) => {
+    const docId = stageKeyDocId(key);
+    const parts = stageKeyPath(key).split('.');
+    const out: { id: string; prefix: string; index: number }[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      if (!/^\d+$/.test(parts[i])) continue;
+      const arrayPath = parts.slice(0, i).join('.');
+      out.push({ id: arrayId(docId, arrayPath), prefix: arrayId(docId, parts.slice(0, i + 1).join('.')), index: Number(parts[i]) });
+    }
+    return out;
+  };
+
+  for (const [key, insertion] of insertions) {
+    moveFrom(arrayId(stageKeyDocId(key), insertion.arrayPath), insertion.after !== undefined ? insertion.after + 1 : insertion.index);
+  }
+  if (deletedKeys.size > 0) {
+    const elements = new Map<string, { id: string; index: number; held: number; deleted: number }>();
+    for (const key of unitKeys) {
+      const deleted = deletedKeys.has(key);
+      for (const { id, prefix, index } of elementsOf(key)) {
+        const element = elements.get(prefix) ?? { id, index, held: 0, deleted: 0 };
+        element.held += 1;
+        if (deleted) element.deleted += 1;
+        elements.set(prefix, element);
+      }
+    }
+    for (const element of elements.values()) {
+      if (element.deleted === element.held) moveFrom(element.id, element.index);
+    }
+  }
+  if (firstMoved.size === 0) return () => false;
+  return (key) => elementsOf(key).some(({ id, index }) => {
+    const from = firstMoved.get(id);
+    return from !== undefined && index >= from;
+  });
+}
+
+/**
+ * The index the tree shows for each array element the Unit does not hold yet, by the
+ * stage key of the element's own path (its document, and its made-up index).
+ *
+ * The made-up index is past the array's last element so the element's rows have keys
+ * that hold still; a reader is shown the index the element has upstream instead, which is
+ * where a commit puts it. `insertions` pair a stage key of one of the element's leaves with
+ * its insertion, as {@link keysMovedByBatch} takes them.
+ */
+export function insertedElementLabels(insertions: Iterable<[string, ArrayInsertion]>): Map<string, string> {
+  const labels = new Map<string, string>();
+  for (const [key, insertion] of insertions) {
+    const docId = stageKeyDocId(key);
+    const elementPath = insertion.arrayPath ? `${insertion.arrayPath}.${insertion.index}` : String(insertion.index);
+    labels.set(docId === undefined ? elementPath : `${docId}${STAGE_KEY_SEP}${elementPath}`, String(insertion.order));
+  }
+  return labels;
 }
 
 /**

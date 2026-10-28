@@ -13,6 +13,11 @@ import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
  * changed elements, the two untouched variables among them, because each one sits where
  * a different variable sat before. The drawer shows the server's diff, which matches
  * the variables by name: one added, one changed, and nothing about the other two.
+ *
+ * With one Revision selected, the field view is the server's diff from nothing to that
+ * Revision: each resource of a multi-document Unit drawn whole, under its own heading.
+ * Flattened into one tree, two resources that share a path would show one of the two
+ * values only.
  */
 
 const deployment = (env: { name: string; value: string }[]): string =>
@@ -53,6 +58,37 @@ const AFTER = deployment([
   { name: 'REGION', value: 'us-east' },
 ]);
 
+/** A Deployment named `name`; the two of the pair differ only in the values at shared paths. */
+const namedDeployment = (name: string, replicas: number, image: string): string =>
+  [
+    'apiVersion: apps/v1',
+    'kind: Deployment',
+    'metadata:',
+    `  name: ${name}`,
+    '  namespace: default',
+    'spec:',
+    `  replicas: ${replicas}`,
+    '  selector:',
+    '    matchLabels:',
+    `      app: ${name}`,
+    '  template:',
+    '    metadata:',
+    '      labels:',
+    `        app: ${name}`,
+    '    spec:',
+    '      containers:',
+    '        - name: main',
+    `          image: ${image}`,
+    '',
+  ].join('\n');
+
+const FRONTEND_IMAGE = 'registry.example.com/frontend:2.1.0';
+const BACKEND_IMAGE = 'registry.example.com/backend:7.3.0';
+const PAIR = [
+  namedDeployment('frontend', 2, FRONTEND_IMAGE),
+  namedDeployment('backend', 5, BACKEND_IMAGE),
+].join('---\n');
+
 test.describe('revision compare drawer', () => {
   test.use({ storageState: 'authentication.json' });
 
@@ -60,6 +96,8 @@ test.describe('revision compare drawer', () => {
   let spaceId: string;
   let unitId: string;
   let headRevisionNum: number;
+  let pairUnitId: string;
+  let pairHeadRevisionNum: number;
 
   test.beforeAll(async ({ browser }) => {
     const context = await newAuthorizedContext(browser);
@@ -88,6 +126,17 @@ test.describe('revision compare drawer', () => {
       expect(response.ok()).toBe(true);
       const body = await response.json();
       headRevisionNum = (body.Unit ?? body).HeadRevisionNum;
+
+      const pair = await api.createUnit({
+        spaceId,
+        unit: { Slug: 'pair', ToolchainType: 'Kubernetes/YAML' },
+      });
+      pairUnitId = pair.UnitID as string;
+      await api.uploadUnitData({ spaceId, unitId: pairUnitId, body: PAIR });
+      const pairResponse = await hubApi.get(`/api/space/${spaceId}/unit/${pairUnitId}`);
+      expect(pairResponse.ok()).toBe(true);
+      const pairBody = await pairResponse.json();
+      pairHeadRevisionNum = (pairBody.Unit ?? pairBody).HeadRevisionNum;
     } finally {
       await context.close();
     }
@@ -140,6 +189,51 @@ test.describe('revision compare drawer', () => {
     await expect(diff.getByTestId('config-diff-new-value').filter({ hasText: 'LOG_LEVEL' })).toHaveCount(1);
     await expect(diff).not.toContainText('API_URL');
     await expect(diff).not.toContainText('REGION');
+
+    expect(refused).toEqual([]);
+  });
+
+  test('one Revision shows each resource whole, with its own values at shared paths', async ({ page }) => {
+    const revision = pairHeadRevisionNum;
+
+    const refused: string[] = [];
+    page.on('response', (response) => {
+      if (response.status() >= 400 && response.url().includes('/api/')) {
+        refused.push(`${response.status()} ${response.request().method()} ${response.url()}`);
+      }
+    });
+
+    await page.goto(
+      `/units/${spaceId}/${pairUnitId}?tab=2&revisionViewer=true&revision=${revision}&viewMode=single`,
+    );
+
+    await expect(page.getByText(`Viewing revision ${revision}`)).toBeVisible({ timeout: 20000 });
+
+    const diff = page.getByTestId('config-diff');
+    await expect(diff).toBeVisible();
+    const resources = diff.getByTestId('config-diff-resource');
+    await expect(resources).toHaveCount(2);
+
+    // Each resource is its own section, drawn whole as added, with the values of its own
+    // document at the paths the two share: replicas and the container's image.
+    const frontend = resources.filter({ hasText: 'name: frontend' });
+    const backend = resources.filter({ hasText: 'name: backend' });
+    await expect(frontend).toHaveCount(1);
+    await expect(backend).toHaveCount(1);
+
+    for (const resource of [frontend, backend]) {
+      await expect(resource.getByText('added', { exact: true })).toBeVisible();
+    }
+
+    const frontendDocument = frontend.getByTestId('config-diff-resource-document');
+    await expect(frontendDocument).toContainText('replicas: 2');
+    await expect(frontendDocument).toContainText(FRONTEND_IMAGE);
+    await expect(frontendDocument).not.toContainText(BACKEND_IMAGE);
+
+    const backendDocument = backend.getByTestId('config-diff-resource-document');
+    await expect(backendDocument).toContainText('replicas: 5');
+    await expect(backendDocument).toContainText(BACKEND_IMAGE);
+    await expect(backendDocument).not.toContainText(FRONTEND_IMAGE);
 
     expect(refused).toEqual([]);
   });

@@ -3,6 +3,7 @@
 
 import type { LiveStatus, RunningRelease } from './liveStatus';
 import type { DeploymentChangeSet, WaitingChangeSet } from './changeSets';
+import type { ArrayInsertion, LeafValueType, ResourceInfo } from './configParser';
 
 // ============================================================================
 // TYPES
@@ -164,9 +165,54 @@ export interface Stage {
 }
 
 export interface FieldDiff {
+  /** The dot-index path, as `parseUnitData` writes it. */
   path: string;
   oldValue: string;
   newValue: string;
+  /**
+   * The value tree row's stage key: `docStageKey(scope, path)`, which names the document
+   * as well as the path, and is the bare path for a single-document Unit. Absent on a diff
+   * that is not drawn as rows of the tree (the apply entries', which only the search
+   * reads); a consumer keys on `key ?? path`.
+   */
+  key?: string;
+  /** The server's path (`PathChange.Path`), the form MutationSources is keyed by; only on a row that is a whole change, not a leaf of a block. */
+  resolvedPath?: string;
+  /** What happened to the leaf. A Rename is the Update of its merge-key field. */
+  kind?: 'Add' | 'Delete' | 'Update';
+  /**
+   * The types of `oldValue` and `newValue`, from the server's Diff, so a value written
+   * back keeps its type: an env var's `"2"` stays a string. Absent on a side with no value,
+   * and on a row that does not come from the server's Diff.
+   */
+  oldValueType?: LeafValueType;
+  newValueType?: LeafValueType;
+  /**
+   * On a leaf of an element the tree does not hold, whose path gives it a made-up index
+   * after the array's last element: where the element goes when it is written.
+   */
+  insertion?: ArrayInsertion;
+}
+
+/** A {@link FieldDiff} from the server's `ConfigDiff`, which always knows its document. */
+export interface KeyedFieldDiff extends FieldDiff {
+  key: string;
+}
+
+/**
+ * A resource the upstream added or deleted as a whole. It is one row of the tree, not a
+ * row per leaf: the tree has no document to hang an added resource's leaves under, and
+ * staging a resource leaf by leaf would write part of it. It goes in only with "upgrade
+ * all", which takes the merge's output as it is.
+ *
+ * `key` is the document's id when the resource is a document of the tree in a
+ * multi-document Unit; otherwise a key that names the resource and cannot equal a tree
+ * row's key.
+ */
+export interface WholeResourceChange {
+  key: string;
+  wholeResource: 'added' | 'deleted';
+  resource: ResourceInfo | undefined;
 }
 
 export interface UpgradeEntry {
@@ -181,7 +227,12 @@ export interface UpgradeEntry {
   parentSpaceId?: string;
   /** Unit ID of the upstream unit (for linking to its revision viewer). */
   parentUnitId?: string;
-  fieldDiffs: FieldDiff[];
+  fieldDiffs: KeyedFieldDiff[];
+  /**
+   * Resources the upgrade adds or deletes as a whole; each is one change, outside
+   * `fieldDiffs`. Absent when there are none.
+   */
+  wholeResourceChanges?: WholeResourceChange[];
   /** All flattened config paths with their current values (sorted), for showing context around diffs */
   allPaths: { path: string; value: string }[];
   /** ISO timestamp when the upstream head revision was created */
@@ -189,12 +240,14 @@ export interface UpgradeEntry {
   /** User-provided description of the upstream change */
   upstreamDescription?: string;
   /**
-   * Paths where the upstream issued a Delete mutation that was swallowed by the
-   * child's local modification (SubtractMutations dropped the delete). These are
-   * surfaced as opt-in upgrades so the user can choose to accept the deletion.
-   * Populated from the dry-run Conflicts array (Reason='Subtracted', MutationType='Delete').
+   * Stage keys of the rows where the upstream issued a Delete mutation that was
+   * swallowed by the child's local modification (SubtractMutations dropped the delete).
+   * These are surfaced as opt-in upgrades so the user can choose to accept the deletion.
+   * Populated from the dry-run Conflicts array (Reason='Subtracted', MutationType='Delete'),
+   * each resolved to its row (`blockedDeleteKey`); one that names no row has a key of its
+   * own that matches none.
    */
-  blockedDeletePaths?: string[];
+  blockedDeleteKeys?: string[];
   /**
    * True when this diff describes a change that has ALREADY been applied —
    * a record of what happened, not a proposal of what would happen if
@@ -236,15 +289,20 @@ export interface VariationEntry {
   slug: string;
   deploymentId: string;
   deploymentName: string;
-  fieldDiffs: FieldDiff[];
-  localOnlyPaths: string[];
+  /** Fields differing between upstream HEAD and the downstream after its upgrade (as it
+   *  is, without a dry run): the local overrides. oldValue is upstream's, newValue the
+   *  Unit's; each is keyed on the row of the Unit's current data it names, so a list
+   *  element only the upstream has (one the Unit deleted) has no row here. */
+  fieldDiffs: KeyedFieldDiff[];
+  /** Stage keys of the rows of `fieldDiffs` that upstream does not have at all. */
+  localOnlyKeys: string[];
   allPaths: { path: string; value: string }[];
   /** Fields differing between upstream HEAD and the downstream unit's CURRENT
    *  committed data. Unlike `fieldDiffs` this never consults the dry-run, so it
    *  cannot change meaning when a dry-run lands: a path the pending upgrade is
    *  about to overwrite equals upstream POST-merge and would leave `fieldDiffs`,
    *  even though it differs right now. This is the set the value border reads. */
-  liveFieldDiffs: FieldDiff[];
+  liveFieldDiffs: KeyedFieldDiff[];
 }
 
 export interface MergedUnit {
@@ -259,5 +317,9 @@ export interface MergedUnit {
   applyEntry?: ApplyEntryWithGates;
   variationEntry?: VariationEntry;
   isUpgradeLoading: boolean;
+  /** Why the unit's entry could not be read; the unit then shows this, not a spinner. */
+  upgradeError?: string;
+  /** Why what the unit differs from its upstream in could not be read; its header shows it. */
+  variationError?: string;
   hasAction: boolean;
 }

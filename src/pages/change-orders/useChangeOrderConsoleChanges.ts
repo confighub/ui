@@ -2,19 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * What the selected stage's promotion would write, as `MergedUnit[]` ready for
- * `ComponentValuesSection`.
+ * What the selected stage's promotion would write, as `MergedUnit[]` rows and
+ * the change groups whose server diffs the page draws for them.
  *
  * Assembles the shipped pipeline rather than reproducing any part of it:
  * `useChangeOrderChanges` for the before/after values, `useChangeOrderBaseline` for the
- * state the change starts from, and `buildChangeOrderMergedUnits` for the adapter
- * into the tree's own shape. Nothing here diffs anything itself.
+ * base before the change (the resource identity of the source rows), and
+ * `buildChangeOrderMergedUnits` for the rows. Nothing here diffs anything itself.
  *
  * READS VALUES, NEVER COUNTS. `changeOrderChanges.ts` is explicit that
  * `ResolvedSpaceIDs` is a claim about Link pointers and can legitimately
  * disagree with the bytes — a Space can count as resolved while its data still
  * shows the old values. Everything below reads real configuration data for that
- * reason, and `takenSpaceIds` is used only to choose WHICH source to read per
+ * reason, and `resolvedSpaceIds` is used only to choose WHICH source to read per
  * Space, never as an answer about what changed.
  *
  * ⚠️ `select` ON THE UNITS QUERY IS SAFE AND IS NOT THE `/change_order` RULE.
@@ -77,11 +77,10 @@ export interface ChangeOrderConsoleChanges {
    * carries; the other states what promoting into a given stage would write.
    * They overlap in field names and answer different questions.
    *
-   * Stage-invariant by construction, so it costs no extra request: the two
-   * sides are the base before the change (`useChangeOrderBaseline`) and the base as
-   * it stands now, both already fetched for the override machinery. Deriving it
-   * from a second `useChangeOrderChanges` pinned to the source stage would re-run
-   * the whole dry-run pipeline for an answer that cannot vary by stage.
+   * Stage-invariant by construction: it is each base Unit's server diff from the
+   * ChangeOrder's start Tag to its end Tag. Deriving it from a second
+   * `useChangeOrderChanges` pinned to the source stage would re-run the whole
+   * dry-run pipeline for an answer that cannot vary by stage.
    */
   sourceUnits: MergedUnit[];
   /**
@@ -256,7 +255,6 @@ export function partitionSourceUnitsByChange<TUnit extends { unitId: string }>(
 const EMPTY_UNITS: MergedUnit[] = [];
 const EMPTY_SOURCE_GROUPS: ReadonlyMap<string, ChangeOrderChangeGroup> = new Map();
 const EMPTY_KEYS: ReadonlySet<string> = new Set();
-const EMPTY_DATA: ReadonlyMap<string, string> = new Map();
 const EMPTY_SPACE_GROUPS: ChangeOrderOutcomeGroup[] = [];
 
 /** The id of the synthetic stage an Invoke ChangeOrder's source is read as. Never shown. */
@@ -284,9 +282,8 @@ function invocationSourceChanges(input: {
   currentDataByUnitId: ReadonlyMap<string, { slug: string; spaceId: string; data?: string; toolchainType?: string }>;
   spaceIdByUnitId: ReadonlyMap<string, string>;
   spaceNameBySpaceId: ReadonlyMap<string, string>;
-  takenSpaceIds: ReadonlySet<string>;
 }): SourceChanges {
-  const { groups, spaceIds, currentDataByUnitId, spaceIdByUnitId, spaceNameBySpaceId, takenSpaceIds } = input;
+  const { groups, spaceIds, currentDataByUnitId, spaceIdByUnitId, spaceNameBySpaceId } = input;
   if (groups.length === 0 || spaceIds.length === 0) {
     return { units: EMPTY_UNITS, dropped: 0, createdResourceKeys: EMPTY_KEYS, groupsByUnitId: EMPTY_SOURCE_GROUPS };
   }
@@ -304,17 +301,7 @@ function invocationSourceChanges(input: {
   const representativeGroups = groups.filter((group) =>
     representatives.has(spaceIdByUnitId.get(group.unitId) ?? ''),
   );
-  const built = buildChangeOrderMergedUnits({
-    groups: representativeGroups,
-    currentDataByUnitId,
-    deploymentNameBySpaceId: spaceNameBySpaceId,
-    // The Invocation's change is the source; there is no starting point to weigh
-    // local overrides against here. The stage previews do that.
-    beforeChangeBySlug: EMPTY_DATA,
-    currentBySlug: EMPTY_DATA,
-    baselineStatus: 'unresolvable',
-    takenSpaceIds,
-  });
+  const built = buildChangeOrderMergedUnits({ groups: representativeGroups, currentDataByUnitId });
   const groupsByUnitId = new Map<string, ChangeOrderChangeGroup>();
   for (const group of representativeGroups) groupsByUnitId.set(group.unitId, group);
   return {
@@ -337,7 +324,6 @@ function invocationSourceChanges(input: {
 function fanOutSourceChanges(
   fanOutSource: FanOutSource,
   diffs: readonly UnitDiff[] | undefined,
-  takenSpaceIds: ReadonlySet<string>,
 ): SourceChanges {
   if (fanOutSource.status !== 'resolved' || fanOutSource.units.length === 0 || diffs === undefined) {
     return { units: EMPTY_UNITS, dropped: 0, createdResourceKeys: EMPTY_KEYS, groupsByUnitId: EMPTY_SOURCE_GROUPS };
@@ -372,16 +358,7 @@ function fanOutSourceChanges(
       toolchainType: unit.toolchainType,
     });
   }
-  const built = buildChangeOrderMergedUnits({
-    groups,
-    currentDataByUnitId: context,
-    deploymentNameBySpaceId: fanOutSource.spaceNameBySpaceId,
-    // A source Unit has no local overrides to weigh: it is where the change was made.
-    beforeChangeBySlug: EMPTY_DATA,
-    currentBySlug: EMPTY_DATA,
-    baselineStatus: 'unresolvable',
-    takenSpaceIds,
-  });
+  const built = buildChangeOrderMergedUnits({ groups, currentDataByUnitId: context });
   const groupsByUnitId = new Map<string, ChangeOrderChangeGroup>();
   for (const group of groups) groupsByUnitId.set(group.unitId, group);
   return {
@@ -599,16 +576,8 @@ export function useChangeOrderConsoleChanges(args: {
               ? 'loading'
               : 'resolved';
 
-  const currentBySlug = useMemo(() => {
-    const index = new Map<string, string>();
-    for (const ctx of currentDataByUnitId.values()) {
-      if (ctx.spaceId === baseSpaceId && ctx.data !== undefined) index.set(ctx.slug, ctx.data);
-    }
-    return index;
-  }, [currentDataByUnitId, baseSpaceId]);
-
   const source = useMemo((): SourceChanges => {
-    if (fanOutSource !== undefined) return fanOutSourceChanges(fanOutSource, fanOutDiffs, resolvedSpaceIds);
+    if (fanOutSource !== undefined) return fanOutSourceChanges(fanOutSource, fanOutDiffs);
     if (runsInvocation) {
       return invocationSourceChanges({
         groups: invocationGroupsByStageId.get(INVOCATION_SOURCE_STAGE_ID) ?? [],
@@ -616,7 +585,6 @@ export function useChangeOrderConsoleChanges(args: {
         currentDataByUnitId,
         spaceIdByUnitId: unitSpaceIdIndex,
         spaceNameBySpaceId,
-        takenSpaceIds: resolvedSpaceIds,
       });
     }
     if (baseSpaceId === undefined || baseDiffs === undefined) {
@@ -693,15 +661,7 @@ export function useChangeOrderConsoleChanges(args: {
     if (sourceGroups.length === 0) {
       return { units: EMPTY_UNITS, dropped: droppedFromSource, createdResourceKeys, groupsByUnitId: sourceGroupsByUnitId };
     }
-    const built = buildChangeOrderMergedUnits({
-      groups: sourceGroups,
-      currentDataByUnitId,
-      deploymentNameBySpaceId: spaceNameBySpaceId,
-      beforeChangeBySlug: baseline.dataBySlug,
-      currentBySlug,
-      baselineStatus: baseline.status,
-      takenSpaceIds: resolvedSpaceIds,
-    });
+    const built = buildChangeOrderMergedUnits({ groups: sourceGroups, currentDataByUnitId });
     // Both drops count: the ones this loop made for want of a starting point,
     // and the ones the builder made for want of configuration context.
     return {
@@ -725,8 +685,6 @@ export function useChangeOrderConsoleChanges(args: {
     baseline.dataBySlug,
     currentDataByUnitId,
     spaceNameBySpaceId,
-    currentBySlug,
-    resolvedSpaceIds,
   ]);
 
   // No Spaces in scope: there is nothing for the Invocation to run on, which is a settled answer.
@@ -811,15 +769,7 @@ export function useChangeOrderConsoleChanges(args: {
       };
     }
 
-    const built = buildChangeOrderMergedUnits({
-      groups,
-      currentDataByUnitId,
-      deploymentNameBySpaceId: spaceNameBySpaceId,
-      beforeChangeBySlug: baseline.dataBySlug,
-      currentBySlug,
-      baselineStatus: baseline.status,
-      takenSpaceIds: resolvedSpaceIds,
-    });
+    const built = buildChangeOrderMergedUnits({ groups, currentDataByUnitId });
 
     const groupsByUnitId = new Map<string, ChangeOrderChangeGroup>();
     for (const group of groups) groupsByUnitId.set(group.unitId, group);
@@ -867,10 +817,6 @@ export function useChangeOrderConsoleChanges(args: {
     slugByUnitId,
     unitSpaceIdIndex,
     source,
-    baseline.dataBySlug,
-    baseline.status,
-    currentBySlug,
-    resolvedSpaceIds,
     skip,
     fanOutSourceStatus,
     invocationSourceStatus,

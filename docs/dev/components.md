@@ -38,16 +38,17 @@ you can cite them in review.
 3. **Upstream removals ARE counted as real upgrades.** A removed path (removal sentinel `newValue`
    of `'-'` *or* `''` — some toolchains normalize a deleted key to empty string; use
    `isRemovalSentinel`, `componentValues.ts`) is a genuine upgrade change and is shown
-   **struck-through** in the upgradable view; swallowed `blockedDeletePaths` (rule 6) count too. The
+   **struck-through** in the upgradable view; swallowed `blockedDeleteKeys` (rule 6) count too. The
    **only** paths excluded from "upgradable" are those with a **local override**
    (`variationEntry.fieldDiffs`) — consistent with rule 1. See `countUpgradableBadgeFields`
-   (`ComponentSidePane.tsx:82`), the single predicate behind count/filter/dimming (rule 4).
+   (`entryBuilders.ts`), the single predicate behind count/filter/dimming (rule 4).
    *(This supersedes an earlier "don't count deletions as upgradable" stance from before #4570's
    removal-preview work — do not reintroduce it; it would contradict rules 6 and 7.)*
 4. **Keep count, filter, and dimming on the SAME predicate.** `hasRealUpgrade` /
-   `countUpgradableBadgeFields` (`ComponentSidePane.tsx:82-105`) are the single source of truth so the
-   badge number and the dimmed rows can never diverge. Divergence here is a recurring,
-   user-caught bug.
+   `countUpgradableBadgeFields` (`entryBuilders.ts`) and the section's `upgradableStageKeys` are
+   the single source of truth so the badge number and the dimmed rows can never diverge. All of
+   them key a change by its stage key (`fieldDiffKey`: `key ?? path`), never by its bare path.
+   Divergence here is a recurring, user-caught bug.
 5. **Kick the user off the Upgradable tab when a node has nothing upgradable.** Don't strand them on
    an empty tab. Guard the auto-switch on **`dryRunSettled`**, not `!isDryRunLoading`
    (`ComponentSidePane.tsx`) — at a node switch `isDryRunLoading` is briefly `false` before
@@ -81,9 +82,10 @@ you can cite them in review.
 15. **Do not touch the pill-group inline-diff hover CSS** (`.pill-group :has(.upgrade-pill:hover) …`
     in `ComponentValuesSection.tsx`). It is load-bearing for superimposition and treated as a no-touch
     invariant.
-16. **Do not build an `UpgradeEntry` before its dry-run lands** (`entryBuilders.ts:118`). Absent
-    dry-run data flags *every* field as removed (`-` sentinel) → a transient "everything removed"
-    preview. See Gotchas → phantom deletions.
+16. **Do not build an `UpgradeEntry` before its dry-run Diff lands** (`buildUpgradeEntries`,
+    `entryBuilders.ts`). An entry with no Diff offers nothing to upgrade, and one built from
+    anything else risks flagging *every* field as removed (`-` sentinel) → a transient
+    "everything removed" preview. See Gotchas → phantom deletions.
 17. **Source-view edits use an explicit Save button** — never auto-save / blur-to-save.
 
 ---
@@ -115,7 +117,9 @@ you can cite them in review.
 | **Inspect panel** | Click a field path → revision history (incoming value, source attribution, sibling-variant values across deployments). `InspectPanel.tsx`. Access via the **kebab menu** (inspect magnifier is no longer on hover). |
 | **Treeview node** | `DiffTreeNode {key, type:'folder'\|'leaf', children, diff, context}`. `context:true` = a dimmed surrounding row shown for context. |
 | **Key-deletion (swallowed / blocked)** | Upstream issued a `Delete` mutation. **Case 1**: child never modified the key → deletion passes through as a normal upgrade (`newValue` = `-`). **Case 2**: child locally modified the key → `SubtractMutations` drops the upstream Delete (`ConflictReasonSubtracted`) and the key persists, *silently swallowed*. #4570 makes Case 2 an opt-in upgrade. |
-| **upstream-only path** | Present upstream, absent downstream; unioned in via `unionUpstreamOnlyPaths`, rendered with absent value `—` and a `+` prefix. |
+| **upstream-only path** | Present upstream, absent downstream: an upgrade diff whose stage key is no leaf of the unit (`upstreamOnlyKeys` in `ComponentValuesSection`). Drawn in the document its key names, with absent value `—` and a `+` prefix. |
+| **Stage key** | `docStageKey(scope, path)` (`diffTree.ts`): a document's id, U+0001, then the dot-index path; the bare path in a single-document unit. Staging, the upgrade diffs, the counts and the narrowing all key on it, so a path two documents share is two rows. |
+| **Whole-resource change** | `WholeResourceChange`: a resource the upgrade adds or deletes as a whole. One row below the tree (`component-whole-resource-row`), counted as one change, never staged field by field. It goes in only with the wholesale upgrade (`upgrade-all`): checking it stages every incoming change, and leaving any change out or staging an edit leaves it out (`withoutUnreachableWholeResources`). |
 | **Sync with upstream** | The override-row action tooltip verb (was "Force the upstream value" — renamed in #4619). |
 | **`data-change-type`** | Attribute on `[data-testid="component-leaf-row"]` set to `'upgrade' \| 'edit' \| 'delete' \| 'add' \| 'protect' \| 'none'`. `'protect'` is the LOWEST-precedence type (`upgrade > edit > delete > add > protect`) — a row with only a staged protection change and nothing else. Use this in Playwright tests to assert change type; don't rely on visual-only CSS. |
 | **`data-protected`** | Attribute on `[data-testid="component-leaf-row"]`, `'true' \| 'false'` — the row's EFFECTIVE kept state (staged protection change, if any, else the committed baseline). Independent of `data-change-type`: editing an already-kept value shows `data-change-type="edit"` and `data-protected="true"` at once — the rail and the border are driven by two different signals on purpose (see "Locking (protection)" below). |
@@ -160,7 +164,9 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
 | `useResourceCounts.ts` | Resources per Space, from one `GET /resource` narrowed to `SpaceID`, for the deployment selectors' `N units · M resources` line. |
 | `ComponentKeyComposer.tsx` | Inline new-key composer row; uses `validateKey` from `componentKeyUtils.ts`. |
 | `InspectPanel.tsx` | Field-history inspector (`useListExtendedRevisionsQuery`) + sibling variants across deployments. |
-| `entryBuilders.ts` | Pure builders: `computeFieldDiffs`, `buildPaths`, `unionUpstreamOnlyPaths`, `buildUpgradeEntries`, `buildAllApplyEntries` (still needed for the side pane's unapplied-changes/gate display), `buildVariationEntries`, `countLogicalChanges`. |
+| `configDiffFieldDiffs.ts` | `fieldDiffsFromConfigDiff(diff, treeData, {treeSide, findElementsByMergeKey?})`: a server `ConfigDiff` as keyed `FieldDiff`s and `WholeResourceChange`s, each keyed as the tree keys the row; `addedResourceLeafRows`; `resolveConflictPath`. Covered by `tests/component-config-diff-entries.pure.spec.ts`. |
+| `entryBuilders.ts` | Pure builders: `textFieldDiffs` (the rows of a Unit the tree reads as text, from its own leaves), `buildPaths`, `buildUpgradeEntries` (from the dry run's Diff, through `fieldDiffsFromConfigDiff`; blocked deletes through `blockedDeleteKey`), the counters (`fieldDiffKey`, `countUpgradableBadgeFields`, `hasRealUpgrade`, `countLogicalChanges`), `buildAllApplyEntries` (still needed for the side pane's unapplied-changes/gate display; its `fieldDiffs`, which only the toolbar search reads, come from the server's bulk `/unit_diff` from `LastReleasedRevisionNum` to head), `buildVariationEntries` (from the server's variation diffs, `VariationDiffs`). |
+| `useVariationDiffs.ts` | The variation reads: per downstream Unit, `POST /diff` from the upstream's head to the Unit's head, and, for a Unit with a dry run, from the upstream's head to the dry run's configuration (inline). Heads are named by Revision number, so the reads are untagged. A few at a time; a Unit's last answer stands in while its next read is in flight. |
 | `componentData.ts` | `buildComponentData(spaces, units, …)` → `{deployments, stages}`; parent/child edges from `UpstreamUnitID`; label consts `Component`/`Owner`/`Variant`; `arrowKey`. |
 | `componentKeyUtils.ts` | **Dot-index path helpers**: `validateKey`, `isArrayIndexSegment`, `isArrayElementPath`, `pathContainsArrayIndex`. Fixes dormant bracket-vs-dot-index bugs — use these, don't write ad-hoc regex. |
 | `configParser.ts` | `parseUnitData` (base64 → JSON/YAML/multi-YAML/INI/Properties/line-fallback → flat `Map<path,value>`), `flattenObject`, `setValueAtPath`/`deleteValueAtPath`, `mapPathsToLines`. |
@@ -240,7 +246,10 @@ land on `ComponentDeployment.changeSets`.
 - **Side pane.** The `ChangeSet` filter beside Incoming and All draws what the ChangeSet changed
   in the Incoming view's own style, so there is one diff format in the pane. `useChangeSetEntries`
   builds an upgrade-shaped `ChangeSetEntry` per unit: "current" is the unit before the ChangeSet
-  (the Revision before its first Revision in the ChangeSet), "incoming" is the unit now. The pane
+  (the Revision before its first Revision in the ChangeSet), "incoming" is the unit now. Its rows
+  are the server's diff between the two (`useChangeSetDiffs`), keyed by stage key; a unit created
+  in the ChangeSet is diffed from nothing, a unit the tree reads as text is compared as the tree
+  reads it (`textFieldDiffs`), and a failed read shows as an error in the unit's header. The pane
   swaps those into its units (`changeSetUnits`) and mounts `ComponentValuesSection` `readOnly`, so
   nothing stages and Upgrade is disabled. Every unit stays listed, with the same key, so switching
   filters never unmounts a section and loses staged edits (rule 9). A separate server-diff section
@@ -292,9 +301,13 @@ has no place here (a node is a real deployment, not something a keypress should 
   loading state waits for every batch (primary, extra, upstream) to settle before painting.
 - **Polling:** 2s interval while gates are pending; `refetchOnFocus`.
 - **Dry-run merge preview:** selecting a node fires `dryRunPatch({upgrade:true, dryRun:true, where:
-  UnitID IN(...)})`. Results → `dryRunData: Map<unitId, base64Data>` and `dryRunConflicts:
-  Map<unitId, MutationConflict[]>`. `dryRunPendingIds` gates skeletons; `dryRunSettled` distinguishes
-  "not finished" vs "zero upgradable".
+  UnitID IN(...), include:'ConfigData,Diff'})`. Results → `dryRunData: Map<unitId, data>` (the
+  configuration the upgrade would produce, which the post-upgrade variation read sends inline to
+  `POST /diff` to compare with upstream),
+  `dryRunDiffs: Map<unitId, ConfigDiff>` (the server's diff from the unit as it is to that
+  configuration, which the upgrade entries are drawn from) and `dryRunConflicts: Map<unitId,
+  MutationConflict[]>`. Every reset clears all three. `dryRunPendingIds` gates skeletons;
+  `dryRunSettled` distinguishes "not finished" vs "zero upgradable".
 - **Staging signals flow:** `ComponentSidePane` owns four `useState` counters it bumps into
   `ComponentValuesSection` as props: `stageAllSignal` (entering Upgradable tab or "Select all"),
   `clearStagedSignal` (leaving Upgradable tab), `discardAllSignal` (Discard button), and
@@ -304,8 +317,9 @@ has no place here (a node is a real deployment, not something a keypress should 
 
 ### Core types (`componentTypes.ts`)
 
-`ComponentDeployment` (node) · `Stage` · `FieldDiff {path, oldValue, newValue}` ·
-`UpgradeEntry` (incl. `blockedDeletePaths?` and `allPaths`) · `ApplyEntry` /
+`ComponentDeployment` (node) · `Stage` · `FieldDiff {path, oldValue, newValue, key?, resolvedPath?, kind?}`
+(`KeyedFieldDiff` when `key` is set) · `WholeResourceChange {key, wholeResource, resource}` ·
+`UpgradeEntry` (incl. `wholeResourceChanges?`, `blockedDeleteKeys?` and `allPaths`) · `ApplyEntry` /
 `ApplyEntryWithGates {isGated, gateKeys}` · `VariationEntry` · **`MergedUnit`** (the unified per-unit
 row carrying optional `upgradeEntry` / `applyEntry` / `variationEntry` + `validationErrors`).
 
@@ -329,7 +343,7 @@ No endpoint is promotion-specific; the view composes generic Unit + bulk-patch +
 - **#4570 fix layer.** The swallowed-deletion (Case 2) fix is **frontend classification**, not a
   merge-engine change. `entryBuilders.ts` filters the dry-run `dryRunConflicts` for
   `Reason==='Subtracted' && Source.MutationType==='Delete'` and populates
-  `UpgradeEntry.blockedDeletePaths`. **#4570 contained no backend changes at all** — it touched only
+  `UpgradeEntry.blockedDeleteKeys`, each resolved to its row by `resolveConflictPath`. **#4570 contained no backend changes at all** — it touched only
   frontend files. The backend merge still subtracts (output stays correct) and emits the advisory
   Conflicts; the frontend reads them to offer opt-in. Don't go looking for a behavior change in
   `yamlkit`.
@@ -727,7 +741,7 @@ list's `confighub:unit:openViewTabs`.
 - **Treeview rendering** (`ComponentValuesSection`): builds `upgradeFieldDiffs` / `variationFieldDiffs`
   maps and a `DiffTreeNode` tree from each `MergedUnit`'s entries. Folder chains collapse; `context`
   rows around a diff are dimmed. Each leaf row gets a `data-change-type` attribute reflecting its
-  staged state.
+  staged state. See "Upgrade diffs and stage keys" below for what each map is keyed by.
 - **Unit row expansion** (`isUnitExpandedInPane`): unit rows start **collapsed** in every view and on
   every tab. The pane opens a row unasked only when it already knows there is something to read
   inside it — a unit with a pending upgrade while the Incoming tab is showing, a unit the user
@@ -763,7 +777,7 @@ list's `confighub:unit:openViewTabs`.
   `AppComponentView` wires `onCommitStaged` to a `bulkPatch` call. No review dialog. The committed
   rows stay visible post-refetch via `committedDiffs` (cleared on explicit Discard, not on
   `clearStagedSignal`).
-- **Opt-in upgrades (swallowed key-deletions)**: `blockedDeletePaths` render as *blocked / lock*
+- **Opt-in upgrades (swallowed key-deletions)**: `blockedDeleteKeys` render as *blocked / lock*
   checkboxes (with a lock-shake animation when Upgrade button is hovered). Checking them goes through
   the normal staging path. Origin: `entryBuilders.ts` reading dry-run Conflicts.
 - **Source view** (`ComponentSourceSection`): Monaco editor of decoded Data; editable with an explicit
@@ -855,6 +869,56 @@ list's `confighub:unit:openViewTabs`.
     has `unit-noun` panes for the explorer's wording. See
     [`view-explorer-compare.md`](view-explorer-compare.md).
 
+### Upgrade diffs and stage keys
+
+The upgrade rows come from the server. `buildUpgradeEntries` reads the dry run's Diff and turns it
+into rows through `fieldDiffsFromConfigDiff(diff, currentData, { treeSide: 'from' })`: the tree
+draws the downstream's current data, which is the Diff's From side. The server matched array
+elements by merge key, so an env var inserted mid-list is one added element (given an index after
+the last one) and the elements after it are not changes; and it matched resources by identity, so
+a path two documents share changes only in the document it changed in. The rows are cached on the
+Diff object (`upgradeRowsCache`), so a rebuild with the same Diff and data hands back the same
+arrays and re-renders no row.
+
+Every upgrade row carries its stage key (`FieldDiff.key`), and `ComponentValuesSection` keys on it
+throughout: `upgradeFieldDiffs` (stage key → incoming value), `upstreamOnlyKeys`,
+`downstreamValueByKey` (per document, from the unit's own leaves), the narrowing sets
+(`baseNarrowedKeys` / `narrowedKeys`), the text filter (`filteredRows`), `upgradableStageKeys`, and
+the commit builder. `selectGroupedEntries` draws a row with no leaf of its own inside the document
+its key names, not in the last one. `NodeRow` looks its upgrade value up by `stageKey`, not
+`fullPath`.
+
+The variation rows come from the server too. `buildVariationEntries` reads two diffs per
+downstream Unit (`useVariationDiffs`): from the upstream's head to the Unit's head
+(`liveFieldDiffs`, the value border and the kept-on-merge chip), and, for a Unit with a dry run,
+from the upstream's head to the dry run's configuration (`fieldDiffs`, the overrides that keep
+an upgrade out, the local-overrides and local-only scopes, and the "Sync with upstream" rows).
+Both go through `fieldDiffsFromConfigDiff` with `treeSide: 'to'` against the Unit's current data,
+which the tree draws. The live diff's To side is that data. The post-upgrade diff's To side is
+what the upgrade would make it, which differs from the tree where the upgrade adds or removes
+list elements, so it also takes `findElementsByMergeKey`: an element is found by its merge keys
+in the tree, not by its index on the To side. A resource only the Unit has is one local-only row
+per leaf (`addedResourceLeafRows`). A Unit with a dry run gets no variation entry, and no upgrade
+entry, until both diffs land (`previewPendingIds` in `AppComponentView`): an upgrade count
+without its overrides would stage what they keep out. A failed read is that Unit's preview error
+(`upgradeError`), or, for a Unit with nothing to upgrade, an error icon in its header
+(`variationError`). A Unit the tree reads as text is compared as the tree reads it
+(`textFieldDiffs`) and is not read.
+
+A blocked delete is keyed on the row its conflict names (`blockedDeleteKey`, through
+`resolveConflictPath`). A conflict whose path names no row of the tree keeps a key of its own
+that matches no row: it is counted and staged like any blocked delete, has no row to draw, and
+the commit writes nothing for it.
+
+What stays bare, on purpose:
+
+- **The prefix index and the context tree** (`buildPrefixIndex`, `buildContextTree`) address folders
+  by path alone, so they get bare projections (`upgradeFieldDiffsByPath`, `variationFieldDiffsByPath`,
+  `changedPaths`, `upgradablePaths`, `variationPaths`, `keptOnMergePaths`). A folder of one document
+  can auto-expand, or stay undimmed on hover, because the same folder path of another document
+  changes. Cosmetic only; no row is marked from these.
+- **Protection** (`isProtected`) is looked up by bare path, from `MutationSources`.
+
 ---
 
 ## Rejected approaches / anti-patterns
@@ -889,8 +953,8 @@ Do not re-propose these — they were explicitly rejected by the people who buil
   Measured the alternative (extracting the per-unit section into a shared child) too: ~30 props after
   generous bundling, all four staging signals among them, ~18 of 30 belonging to subsystems rollout
   has no use for — a "shared" child two-thirds of whose surface one caller ignores is not shared.
-  Reuse landed one level down instead: mount `ComponentValuesSection` itself, read-only, fed by a data
-  adapter (`changeOrderMergedUnits.ts`). `ComponentSidePane.tsx` is not opened by this reuse at all.
+  The ChangeOrder pages draw each Unit's server diff with `ConfigDiffView` under
+  `ChangeOrderUnitHeader` instead. `ComponentSidePane.tsx` is not opened by them at all.
 - **An inline right-hand-slot toggle for protection** (a per-row ambient switch next to the value,
   mirroring the upgrade checkbox's position). Built and rejected by the lock-interaction design track:
   it collides with the upgrade checkbox at the pane's 460px width, and a switch that waits for a button
@@ -915,8 +979,8 @@ Do not re-propose these — they were explicitly rejected by the people who buil
   picks (manual edits are sticky). `discardAllSignal` clears everything. Bumping `clearStagedSignal`
   when you mean a full discard leaves stale manual edits staged — a silent data-corruption risk.
 - **Phantom deletions.** If a dry-run returns no data for a unit, every current path naively diffs as
-  a deletion. Guard: don't build an `UpgradeEntry` until its dry-run lands (rule 16,
-  `entryBuilders.ts:118`); never treat a no-data dry-run as mass deletions.
+  a deletion. Guard: don't build an `UpgradeEntry` until its dry-run Diff lands (rule 16,
+  `buildUpgradeEntries`); never treat a no-data dry-run as mass deletions.
 - **`dryRunSettled` vs `!isDryRunLoading`.** Only `dryRunSettled` may gate the auto-switch off the
   Upgradable tab; at a node switch `isDryRunLoading` is momentarily `false`.
 - **StrictMode double-render trap** (`AppComponentView.tsx`): `prevGraphKeyRef` is updated in a

@@ -45,9 +45,10 @@ export const HEAVY_UNIT_BUILD_BUDGET_MS = 300;
  *
  *     5,373,106 bytes  →  901.72 ms   =  176.0 ms per MB
  *
- * That is the cost of ONE cold build exactly as ComponentValuesSection performs
- * it (computeFieldDiffs + buildPaths + buildFieldPathMeta + buildPathTree +
- * injectKeyContext). A second, independent sweep over document subsets of the
+ * That is the cost of ONE cold build of a unit's field tree, with both sides
+ * parsed and diffed on the client, then buildPaths + buildFieldPathMeta +
+ * buildPathTree + injectKeyContext. ComponentValuesSection reads its field diffs
+ * from the server's ConfigDiff, so its build does no more work than this. A second, independent sweep over document subsets of the
  * same fixture agreed closely and, importantly, showed the rate is FLAT with
  * size — 186.8 ms/MB at 3.04MB and 186.9 ms/MB at 5.12MB — so cost is linear in
  * bytes and one byte threshold prices every unit. Taking ~180 ms/MB:

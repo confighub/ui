@@ -7,12 +7,10 @@ import { CodeEditor, type Language } from '@/components/code-editor/CodeEditor';
 import { ConfigDiffView } from '@/components/config-diff/ConfigDiffView';
 import { summarizeConfigDiff } from '@/components/config-diff/configDiffTree';
 import { DiffEditor } from '@/components/diff-editor/DiffEditor';
+import { useGetConfigDiffQuery } from '@/hooks/configDiffApi';
 import { useRevisionDataMap } from '@/hooks/useUnitData';
-import { buildUnitDiff } from '@/components/invoker/utils/diff-from-revisions';
 import { Ellipses } from '@/components/styled';
 import { RevisionViewerUrlState, UseRevisionViewerUrlReturn } from '@/hooks/useRevisionViewerUrl';
-import { TreeDiffSection } from '@/pages/x/apps/TreeDiffSection';
-import { useColumnResize } from '@/pages/x/apps/useColumnResize';
 import { type RevisionRow } from '@/types';
 import { TOP_NAV_HEIGHT } from '@/utility/constants';
 import { getApiErrorMessage } from '@/utility/error-functions';
@@ -109,8 +107,6 @@ export const RevisionCompareDrawer = ({
   onRevisionConfirmed,
   revisionViewerUrl,
 }: RevisionCompareDrawerProps) => {
-  const { columnStyle, onDividerMouseDown, isDragging: isColumnDragging } = useColumnResize();
-
   const [showFieldTree, setShowFieldTree] = useState(true);
 
   // Sort revisions by revision number (newest first for display)
@@ -219,14 +215,32 @@ export const RevisionCompareDrawer = ({
     [unitDiff],
   );
 
-  // The configuration is not on the Revision. The comparison's source view needs both sides,
-  // and the single-Revision view needs its one; the comparison's field tree needs neither.
+  // One Revision's field tree is the server's diff from nothing to it: each resource comes
+  // back whole and on its own, so two resources that share a path keep their own values.
+  const singleUnitId = comparison ? undefined : activeRevision?.Revision?.UnitID;
+  const singleRevisionNum = activeRevision?.RevisionNum;
+  const {
+    currentData: revisionContents,
+    isFetching: isContentsFetching,
+    error: contentsError,
+  } = useGetConfigDiffQuery(
+    {
+      diffRequest: {
+        From: {},
+        To: { UnitID: singleUnitId as string, Revision: String(singleRevisionNum) },
+      },
+    },
+    { skip: !showFieldTree || !singleUnitId || singleRevisionNum === undefined },
+  );
+
+  // The configuration is not on the Revision. Only the source views need it, both sides of a
+  // comparison or the one Revision; the field trees are the server's diffs.
   const { dataFor } = useRevisionDataMap(
-    comparison
-      ? showFieldTree
-        ? []
-        : [comparison.fromRevision.Revision?.RevisionID, comparison.toRevision.Revision?.RevisionID]
-      : [activeRevision?.Revision?.RevisionID],
+    showFieldTree
+      ? []
+      : comparison
+        ? [comparison.fromRevision.Revision?.RevisionID, comparison.toRevision.Revision?.RevisionID]
+        : [activeRevision?.Revision?.RevisionID],
   );
 
   // Handle revision selection
@@ -282,17 +296,9 @@ export const RevisionCompareDrawer = ({
     if (comparison) {
       return { type: 'compare' as const, ...comparison };
     } else if (activeRevision) {
-      const unitDiff = buildUnitDiff(
-        activeRevision.id,
-        '',
-        '',
-        undefined,
-        dataFor(activeRevision.Revision?.RevisionID) || revisionData,
-      );
       return {
         type: 'single' as const,
         revision: activeRevision,
-        unitDiff,
         decodedData: dataFor(activeRevision.Revision?.RevisionID) || revisionData,
       };
     }
@@ -524,26 +530,22 @@ export const RevisionCompareDrawer = ({
                   )}
 
                   {showFieldTree ? (
-                    renderData.unitDiff.diffs.length > 0 ? (
-                      <TreeDiffSection
-                        entry={{
-                          unitId: renderData.unitDiff.unitId,
-                          fieldDiffs: renderData.unitDiff.diffs,
-                        }}
-                        allPaths={renderData.unitDiff.allPaths}
-                        keyPrefix='rev-single'
-                        label={`Revision ${renderData.revision.RevisionNum}`}
-                        variant='data'
-                        viewOnly
-                        columnStyle={columnStyle}
-                        onDividerMouseDown={onDividerMouseDown}
-                        isDragging={isColumnDragging}
-                        hideLabel
-                      />
-                    ) : (
-                      <Typography variant='body2' color='text.secondary' fontStyle='italic'>
-                        Structured diff unavailable for this format
+                    revisionContents ? (
+                      revisionContents.Diff?.Resources?.length ? (
+                        <ConfigDiffView diff={revisionContents.Diff} />
+                      ) : (
+                        <Typography variant='body2' color='text.secondary' fontStyle='italic'>
+                          This Revision holds no configuration.
+                        </Typography>
+                      )
+                    ) : contentsError ? (
+                      <Typography variant='body2' color='error'>
+                        {getApiErrorMessage(contentsError, 'The configuration could not be loaded.')}
                       </Typography>
+                    ) : (
+                      isContentsFetching && (
+                        <CircularProgress size={20} aria-label='Loading configuration' />
+                      )
                     )
                   ) : (
                     <CodeEditor

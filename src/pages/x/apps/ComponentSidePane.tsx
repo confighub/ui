@@ -76,7 +76,8 @@ import {
 import { formatTimeAgo } from './diffTree';
 import { HeavyUnitGate, HeavyUnitLoading, UnitSizeChip, UnitSourceOverrideBar } from './HeavyUnitGate';
 import { isHeavyUnitData, shouldDeferUnitPaint, shouldShowUnitSizeChip } from './unitSizeGuard';
-import { computeTotalAllFields, countLogicalChanges, countUpgradableBadgeFields, hasRealUpgrade } from './entryBuilders';
+import { computeTotalAllFields, countLogicalChanges, countUpgradableBadgeFields, fieldDiffKey, hasRealUpgrade } from './entryBuilders';
+import { upgradeButtonState } from './upgradeButtonState';
 import { buildDeploymentMap } from './componentData';
 import { componentTheme } from './componentTheme';
 import { isMultiComponent } from './flow-graph/componentFrames';
@@ -297,7 +298,7 @@ const isUnitExpandedInPane = (unit: MergedUnit, state: UnitExpansionState): bool
     // Incoming and ChangeSet both show a unit's diff; a unit with one opens.
     (state.filterMode !== 'all' && !!unit.upgradeEntry) ||
     (state.scopeFilter === 'local-overrides' && (unit.variationEntry?.fieldDiffs.length ?? 0) > 0) ||
-    (state.scopeFilter === 'local-only' && (unit.variationEntry?.localOnlyPaths?.length ?? 0) > 0) ||
+    (state.scopeFilter === 'local-only' && (unit.variationEntry?.localOnlyKeys.length ?? 0) > 0) ||
     // Over-inclusive on purpose (same reasoning as 'local-overrides'): a unit
     // with zero live diffs has zero candidates for "kept", but a unit WITH
     // live diffs may or may not have any actually kept — expanding it either
@@ -368,6 +369,12 @@ export interface ComponentSidePaneProps {
   changeSetEntries?: ChangeSetEntry[];
   /** The ChangeSet entries are still being read. */
   isChangeSetLoading?: boolean;
+  /** Why a unit's ChangeSet entry could not be read, by UnitID; such a unit shows the error. */
+  changeSetErrorByUnitId?: ReadonlyMap<string, string>;
+  /** Why an upgradable unit's upgrade preview could not be built, by UnitID; such a unit shows the error, not its rows. */
+  upgradeErrorByUnitId?: ReadonlyMap<string, string>;
+  /** Why what a unit differs from its upstream in could not be read, by UnitID; its header shows it. */
+  variationErrorByUnitId?: ReadonlyMap<string, string>;
   /** Closes a ChangeSet on every unit it is open on; resolves true on success. */
   onCloseChangeSet?: (changeSetId: string) => Promise<boolean>;
   /** Opens a Deployment on the ChangeSet filter. */
@@ -569,6 +576,9 @@ export const ComponentSidePane = memo(
     variationEntries,
     changeSetEntries,
     isChangeSetLoading = false,
+    changeSetErrorByUnitId,
+    upgradeErrorByUnitId,
+    variationErrorByUnitId,
     onCloseChangeSet,
     onOpenChangeSet,
     deployments,
@@ -1035,14 +1045,17 @@ export const ComponentSidePane = memo(
           const ue = upgradeByUnit.get(u.unitId);
           const ae = applyByUnit.get(u.unitId);
           const ve = variationByUnit.get(u.unitId);
-          const isUpgradeLoading = !!dryRunPendingIds?.has(u.unitId);
+          const upgradeError = ue ? undefined : upgradeErrorByUnitId?.get(u.unitId);
+          const isUpgradeLoading = !upgradeError && !!dryRunPendingIds?.has(u.unitId);
           units.push({
             ...u,
             upgradeEntry: ue,
             applyEntry: ae,
             variationEntry: ve,
             isUpgradeLoading,
-            hasAction: !!ue || !!ae || isUpgradeLoading,
+            upgradeError,
+            variationError: variationErrorByUnitId?.get(u.unitId),
+            hasAction: !!ue || !!ae || isUpgradeLoading || !!upgradeError,
           });
         }
       }
@@ -1060,6 +1073,8 @@ export const ComponentSidePane = memo(
       unitsByDeployment,
       selectedDeploymentIds,
       dryRunPendingIds,
+      upgradeErrorByUnitId,
+      variationErrorByUnitId,
     ]);
 
     // The ChangeSet filter's view of the same units: a unit a ChangeSet covers
@@ -1084,13 +1099,16 @@ export const ComponentSidePane = memo(
       const units: MergedUnit[] = mergedUnits.map((u) => {
         const entry = byUnit.get(u.unitId);
         const covered = changeSetCoveredUnitIds.has(u.unitId);
+        const upgradeError = covered && !entry ? changeSetErrorByUnitId?.get(u.unitId) : undefined;
         return {
           ...u,
           data: entry ? entry.beforeData : u.data,
           upgradeEntry: entry,
           applyEntry: undefined,
           variationEntry: undefined,
-          isUpgradeLoading: covered && !entry && isChangeSetLoading,
+          isUpgradeLoading: covered && !entry && !upgradeError && isChangeSetLoading,
+          upgradeError,
+          variationError: undefined,
           hasAction: covered,
         };
       });
@@ -1099,7 +1117,7 @@ export const ComponentSidePane = memo(
         return a.slug.localeCompare(b.slug);
       });
       return units;
-    }, [mergedUnits, changeSetEntries, changeSetCoveredUnitIds, isChangeSetLoading]);
+    }, [mergedUnits, changeSetEntries, changeSetCoveredUnitIds, isChangeSetLoading, changeSetErrorByUnitId]);
     const totalChangeSetFields = useMemo(
       () => changeSetUnits.reduce((n, u) => n + (u.upgradeEntry ? countUpgradableBadgeFields(u) : 0), 0),
       [changeSetUnits],
@@ -1413,11 +1431,11 @@ export const ComponentSidePane = memo(
       [mergedUnits, expansionState],
     );
     const totalLocalOverrides = useMemo(
-      () => mergedUnits.reduce((n, u) => n + countLogicalChanges((u.variationEntry?.fieldDiffs ?? []).map((d) => d.path)), 0),
+      () => mergedUnits.reduce((n, u) => n + countLogicalChanges((u.variationEntry?.fieldDiffs ?? []).map(fieldDiffKey)), 0),
       [mergedUnits],
     );
     const totalLocalOnly = useMemo(
-      () => mergedUnits.reduce((n, u) => n + (u.variationEntry?.localOnlyPaths?.length ?? 0), 0),
+      () => mergedUnits.reduce((n, u) => n + (u.variationEntry?.localOnlyKeys.length ?? 0), 0),
       [mergedUnits],
     );
 
@@ -2503,6 +2521,7 @@ export const ComponentSidePane = memo(
           )}
           {filteredUnits.map((unit) => {
             const upgradeLoading = unit.isUpgradeLoading && !unit.upgradeEntry;
+            const upgradeError = unit.upgradeEntry ? undefined : unit.upgradeError;
             const unitKey = unit.unitId;
             const isUnitExpanded = isUnitExpandedInPane(unit, expansionState);
             const revisionLabel = unit.upgradeEntry
@@ -2625,6 +2644,22 @@ export const ComponentSidePane = memo(
                       sx={{ color: componentTheme.upgrade, flexShrink: 0 }}
                     />
                   )}
+                  {upgradeError && (
+                    <Tooltip title={upgradeError} placement='left' arrow>
+                      <ErrorOutlineIcon
+                        data-testid='component-unit-entry-error-icon'
+                        sx={{ fontSize: 14, color: componentTheme.danger, flexShrink: 0 }}
+                      />
+                    </Tooltip>
+                  )}
+                  {unit.variationError && (
+                    <Tooltip title={`The local overrides could not be read: ${unit.variationError}`} placement='left' arrow>
+                      <ErrorOutlineIcon
+                        data-testid='component-unit-variation-error-icon'
+                        sx={{ fontSize: 14, color: componentTheme.danger, flexShrink: 0 }}
+                      />
+                    </Tooltip>
+                  )}
                   <Fade
                     in={!!unit.applyEntry?.isGated}
                     timeout={300}
@@ -2671,6 +2706,20 @@ export const ComponentSidePane = memo(
                 </UnitHeaderRow>
                 {isUnitExpanded && (
                   <>
+                    {upgradeError && (
+                      <Typography
+                        data-testid='component-unit-entry-error'
+                        sx={{
+                          px: 2,
+                          py: 1.5,
+                          fontSize: 12.5,
+                          fontFamily: componentTheme.fontSans,
+                          color: componentTheme.danger,
+                        }}
+                      >
+                        The changes to this Unit could not be read: {upgradeError}
+                      </Typography>
+                    )}
                     {upgradeLoading && (
                       <Box
                         sx={{
@@ -2714,7 +2763,7 @@ export const ComponentSidePane = memo(
                         parse is paid per unit, so the gate has to be decided per
                         unit too — a single 5MB payload among ten open rows would
                         otherwise stall the whole pane. */}
-                    {!upgradeLoading && viewMode === 'diff' && isUnitGated(unit, materializedUnitIds) && !isSourceOverridden && (
+                    {!upgradeLoading && !upgradeError && viewMode === 'diff' && isUnitGated(unit, materializedUnitIds) && !isSourceOverridden && (
                       isMaterializing && materializingUnitId === unit.unitId ? (
                         <HeavyUnitLoading narrate />
                       ) : (
@@ -2727,7 +2776,7 @@ export const ComponentSidePane = memo(
                         />
                       )
                     )}
-                    {!upgradeLoading && viewMode === 'diff' && !isUnitGated(unit, materializedUnitIds) && (
+                    {!upgradeLoading && !upgradeError && viewMode === 'diff' && !isUnitGated(unit, materializedUnitIds) && (
                       // A large-but-allowed unit shows skeleton rows for the one
                       // high-priority render before the deferred key catches up,
                       // so the pane's chrome paints without waiting on its tree.
@@ -3075,13 +3124,28 @@ export const ComponentSidePane = memo(
                   never be resolved. This does NOT loosen the normal case: when
                   there ARE upgradable fields simply not yet staged
                   (totalUpgradableFields > 0 && totalStaged === 0), the button
-                  stays disabled exactly as before. */}
+                  stays disabled exactly as before. Nor does it enable while a
+                  preview is still loading: nothing is stageable then only because
+                  nothing is known yet (upgradeButtonState). */}
               {(() => {
-                const isDormantEdgeCase =
-                  totalStaged === 0 && totalUpgradableFields === 0 && !!hasUpgradableUnits && !isUpgrading;
+                const upgradeButton = upgradeButtonState({
+                  totalStaged,
+                  totalStagedProtection,
+                  totalUpgradableFields,
+                  hasUpgradableUnits: !!hasUpgradableUnits,
+                  isPreviewPending: !!isDryRunLoading,
+                  isUpgrading: !!isUpgrading,
+                  isChangeSetView: filterMode === 'changeset',
+                });
                 return (
                   <Tooltip
-                    title={isDormantEdgeCase ? 'No fields to stage, but the revision is behind — this brings the revisions in line.' : ''}
+                    title={
+                      upgradeButton.reason === 'revision-gap'
+                        ? 'No fields to stage, but the revision is behind — this brings the revisions in line.'
+                        : upgradeButton.reason === 'preview-pending'
+                          ? 'Reading what the upgrade would change…'
+                          : ''
+                    }
                     placement='top'
                   >
                     <span>
@@ -3089,7 +3153,7 @@ export const ComponentSidePane = memo(
                         data-testid='component-upgrade-button'
                         variant='contained'
                         size='small'
-                        disabled={isUpgrading || filterMode === 'changeset' || (totalStaged === 0 && totalStagedProtection === 0 && !(totalUpgradableFields === 0 && hasUpgradableUnits))}
+                        disabled={upgradeButton.disabled}
                         onClick={() => {
                           // Commit all staged changes immediately — no review step.
                           handleConfirmCommit();

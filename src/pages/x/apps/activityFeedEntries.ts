@@ -33,11 +33,6 @@ export interface FeedEntry {
   isAutomated: boolean;
   autoDisplayName?: string;
   autoSubLabel?: string;
-  /**
-   * Slug of the unit this revision belongs to. Not part of the row's identity — the row is
-   * labelled by space — it is diff context: RevisionDiffPanel labels the diff with it.
-   */
-  unitSlug?: string;
   revision: RevisionRead;
   /** The human user who made this change; absent for automated revisions. */
   revisionUser?: UserRead;

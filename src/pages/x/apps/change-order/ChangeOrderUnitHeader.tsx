@@ -2,21 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The thin, ChangeOrder-owned row above each unit's `ComponentValuesSection` (D1
- * (b), U3): slug, resource kind, and the row-level marker that replaced the
- * deleted tense header (D7, ruling 5) — never a fabricated revision label.
+ * The thin, ChangeOrder-owned row above each Unit's diff: slug, resource kind,
+ * and the row-level marker — never a fabricated revision label.
  *
  * NOT a revision label. `ComponentSidePane`'s own unit header prints
- * `r{upstreamRevisionNum}->r{upstreamHeadRevisionNum}`, but a ChangeOrder-driven
- * synthetic `UpgradeEntry` has no real upstream Link revision pair — the
- * adapter (`changeOrderMergedUnits.ts`) fills those two fields with a sentinel
- * zero precisely so nothing reads them. This header prints NOTHING in that
- * slot rather than a made-up `r0->r0` (§10.2).
+ * `r{upstreamRevisionNum}->r{upstreamHeadRevisionNum}`, but a ChangeOrder row
+ * has no upstream Link Revision pair, so this header prints NOTHING in that
+ * slot rather than a made-up one.
  *
  * Reuses the shared per-unit chrome (`UnitRow`, `UnitHeaderRow`, `UnitSlug`,
  * `ChevronIcon`, `TagBadge`) from `diffStyles.ts` — the same primitives
- * `ComponentSidePane` mounts its own unit rows with — so R2 ("same per-unit
- * section chrome") holds without duplicating the styling. Not collapsible
+ * `ComponentSidePane` mounts its own unit rows with — so both draw the same
+ * per-unit section chrome without duplicating the styling. Not collapsible
  * here (ChangeOrder has no per-unit expand state), so the row's own click-affordance
  * styling is neutralised.
  */

@@ -10,13 +10,13 @@ import MenuItem from '@mui/material/MenuItem';
 import Tooltip from '@mui/material/Tooltip';
 import { highlightText } from '@/components/entity-data-grid/utils/highlightText';
 import type { ResourceProtection } from '@confighub/rtk-query';
-import { buildFieldPathMeta, deleteValueAtPath, parseUnitData, setValueAtPath } from './configParser';
+import { applyConfigWrites, buildFieldPathMeta, parseUnitData, type ArrayInsertion, type ConfigWrite, type LeafValueType } from './configParser';
 import type { FieldEntry, FieldPathMeta } from './configParser';
-import { buildGroupedPaths, buildPaths, countLogicalChanges, unionUpstreamOnlyPaths } from './entryBuilders';
+import { availableWholeResourceChanges, buildGroupedPaths, buildPaths, countLogicalChanges, fieldDiffKey } from './entryBuilders';
 import { componentTheme } from './componentTheme';
-import { ABSENT, NO_VALUE_LABEL, isEmptyValue, isRemovalSentinel, isYamlToolchain } from './componentValues';
-import type { MergedUnit, ComponentDeployment, VariationEntry } from './componentTypes';
-import { buildContextTree, buildPrefixIndex, buildResourceGroupedTree, computeDocumentScopes, docStageKey, injectKeyContext, injectPendingFolders, MASSIVE_UNIT_THRESHOLD, stageKeyDocId, stageKeyPath, type DiffTreeNode, type DocumentIdentity, type DocumentScope, type PrefixIndex } from './diffTree';
+import { ABSENT, NO_VALUE_LABEL, isEmptyValue, isRemovalSentinel, isRemovalWrite, isYamlToolchain } from './componentValues';
+import type { MergedUnit, ComponentDeployment, VariationEntry, WholeResourceChange } from './componentTypes';
+import { buildContextTree, buildPrefixIndex, buildResourceGroupedTree, computeDocumentScopes, docStageKey, documentGroupLabel, groupFieldEntriesByDocument, injectKeyContext, injectPendingFolders, insertedElementLabels, keysMovedByBatch, MASSIVE_UNIT_THRESHOLD, stageKeyDocId, stageKeyPath, type DiffTreeNode, type DocumentIdentity, type DocumentScope, type PrefixIndex } from './diffTree';
 import { AfterCell, PathValue, PropertyCell, ReviewRow, UpgradePreviewDimRow } from './diffStyles';
 import { getInlineDiff } from './inlineDiff';
 import { CurrentPill, PillTooltipContent, type RowChangeType } from './ValuePill';
@@ -30,37 +30,64 @@ import { ComposerRow, type ComposingDescriptor } from './ComponentKeyComposer';
 // ============================================================================
 
 /**
- * Narrow the unit's per-document leaves to those the caller wants rendered.
+ * One row the tree can draw, under the key its staged state, its diff and its
+ * narrowing are all looked up by: `docStageKey(scope, path)`, the bare path in a
+ * single-document Unit. `entry` is the unit's own leaf; a row without one (a path
+ * only upstream has, or a just-committed delete) is drawn in the document its key
+ * names.
+ */
+interface TreeRow {
+  key: string;
+  path: string;
+  value: string;
+  entry?: FieldEntry;
+}
+
+/**
+ * Narrow the unit's per-document leaves to the rows the caller wants rendered.
  *
- * `visiblePaths` is always a subset of `allPaths` — the flat, DEDUPLICATED
- * bare-path list the filter/narrow logic works on. It is used purely as a
- * membership test here: values come from each document's OWN leaf, so a path that
- * exists in several documents (`apiVersion`, `kind`, ...) renders each document's
- * real value instead of the single merged last-write-wins one.
- *
- * Paths in `visiblePaths` with no structured leaf — upstream-only promotable rows
- * and just-committed deletes, which exist in `allPaths` but not in the unit's data
- * — are synthesised into the LAST document. That mirrors setValueAtPath, which
- * creates new keys in the last object-typed document, and it keeps a
- * single-document unit at exactly ONE group so it renders bare (unwrapped), as it
- * does today. `segments` is unused for tree shape, hence left empty.
+ * Values come from each document's OWN leaf, so a path that exists in several
+ * documents (`apiVersion`, `kind`, ...) renders each document's real value. A row
+ * with no leaf is synthesised right after the last leaf of the document its key
+ * names, carrying that document's resource (by reference, which is how
+ * `groupFieldEntriesByDocument` tells documents apart), so it renders inside that
+ * document's wrapper. A row whose document is not found goes into the LAST document,
+ * which is where setValueAtPath creates a new key. `segments` is unused for tree
+ * shape, hence left empty.
  */
 function selectGroupedEntries(
   groupedEntries: FieldEntry[],
-  visiblePaths: { path: string; value: string }[],
+  documentScopes: readonly DocumentScope[],
+  visibleRows: readonly TreeRow[],
 ): FieldEntry[] {
-  const visible = new Set(visiblePaths.map((p) => p.path));
-  const structured = groupedEntries.filter((e) => visible.has(e.path));
+  const visibleEntries = new Set<FieldEntry>();
+  const syntheticByDoc = new Map<string | undefined, TreeRow[]>();
+  for (const row of visibleRows) {
+    if (row.entry) {
+      visibleEntries.add(row.entry);
+      continue;
+    }
+    const docId = stageKeyDocId(row.key);
+    const list = syntheticByDoc.get(docId);
+    if (list) list.push(row); else syntheticByDoc.set(docId, [row]);
+  }
 
-  const known = new Set(groupedEntries.map((e) => e.path));
-  const lastResource = groupedEntries.length > 0
-    ? groupedEntries[groupedEntries.length - 1].resource
-    : undefined;
-  const synthetic = visiblePaths
-    .filter((p) => !known.has(p.path))
-    .map((p): FieldEntry => ({ path: p.path, segments: [], value: p.value, resource: lastResource }));
-
-  return synthetic.length > 0 ? [...structured, ...synthetic] : structured;
+  const groups = groupFieldEntriesByDocument(groupedEntries);
+  const out: FieldEntry[] = [];
+  const synthesise = (rows: TreeRow[], resource: FieldEntry['resource']) => {
+    for (const r of rows) out.push({ path: r.path, segments: [], value: r.value, resource });
+  };
+  groups.forEach((group, i) => {
+    for (const e of group.entries) if (visibleEntries.has(e)) out.push(e);
+    const docId = documentScopes[i]?.id;
+    const rows = syntheticByDoc.get(docId);
+    if (!rows) return;
+    syntheticByDoc.delete(docId);
+    synthesise(rows, group.resource);
+  });
+  const lastResource = groups[groups.length - 1]?.resource;
+  for (const rows of syntheticByDoc.values()) synthesise(rows, lastResource);
+  return out;
 }
 
 /**
@@ -81,6 +108,42 @@ function countLogicalChangesScoped(keys: Iterable<string>): number {
   let total = 0;
   for (const paths of byDoc.values()) total += countLogicalChanges(paths);
   return total;
+}
+
+/**
+ * Whether committing `staged` is the wholesale upgrade (`upgrade: true`): every
+ * upgradable key is staged, every staged key is an upgrade key, and no manual edit is
+ * staged (the wholesale upgrade would discard the user's values).
+ */
+function isUpgradeAllBatch(
+  staged: ReadonlySet<string>,
+  upgradableKeys: readonly string[],
+  upgradeKeys: ReadonlySet<string>,
+  edits: ReadonlyMap<string, string>,
+): boolean {
+  if (upgradableKeys.length === 0 || !upgradableKeys.every((k) => staged.has(k))) return false;
+  for (const k of staged) if (!upgradeKeys.has(k) || edits.has(k)) return false;
+  return true;
+}
+
+/**
+ * `staged` without the whole-resource keys it cannot commit: only the wholesale upgrade
+ * adds or deletes a whole resource, so outside that batch they are dropped. The same
+ * set back when nothing is dropped.
+ */
+function withoutUnreachableWholeResources(
+  staged: Set<string>,
+  wholeResourceKeys: ReadonlySet<string>,
+  upgradableKeys: readonly string[],
+  upgradeKeys: ReadonlySet<string>,
+  edits: ReadonlyMap<string, string>,
+): Set<string> {
+  if (wholeResourceKeys.size === 0) return staged;
+  if (![...wholeResourceKeys].some((k) => staged.has(k))) return staged;
+  if (isUpgradeAllBatch(staged, upgradableKeys, upgradeKeys, edits)) return staged;
+  const next = new Set(staged);
+  for (const k of wholeResourceKeys) next.delete(k);
+  return next;
 }
 
 /** Stable default for NodeRowProps.isProtected / ComponentValuesSectionProps.isProtected
@@ -415,11 +478,14 @@ const ActionTooltipContent = ({
 const UpgradeCheckbox = ({
   staged,
   blocked,
+  disabled,
   changeType,
   onToggle,
 }: {
   staged?: boolean;
   blocked?: boolean;
+  /** The change cannot be selected at all, not only kept back by a local value. */
+  disabled?: boolean;
   /** The change type this control commits — drives its FILL colour: upgrade =
    *  purple #7c3aed, edit = yellow #ca8a04, delete = red #dc2626, add = green
    *  #16a34a. A blocked row's lock is amber + the box is disabled. */
@@ -447,6 +513,7 @@ const UpgradeCheckbox = ({
     <Checkbox
       size="small"
       checked={!!staged}
+      disabled={disabled}
       onChange={onToggle}
       sx={{
         padding: '2px',
@@ -504,14 +571,14 @@ interface MembershipContextValue {
    * Per committed (non-removal) path: the downstream value at commit time (undefined =
    * absent, i.e. an ADD). A committed value is a temporary optimistic snapshot shown so a
    * just-committed ADD/CHANGE displays instantly, BEFORE the RTK refetch of unit.data
-   * converges. A leaf compares this baseline against the live downstreamValueByPath to
+   * converges. A leaf compares this baseline against the live downstreamValueByKey to
    * decide, at render, whether the refetch has landed (value diverged) and display should
    * hand back to the authoritative node.diff.newValue — WITHOUT deleting the committedDiffs
    * entry, which must persist to keep the committed "done" row visible. */
   committedBaseline: Map<string, string | undefined>;
-  /** Live current downstream value per path (same source that feeds node.diff.newValue).
+  /** Live current downstream value per stage key (same source that feeds node.diff.newValue).
    * Changes on every refetch, so a leaf's convergence check re-evaluates with no effect. */
-  downstreamValueByPath: Map<string, string>;
+  downstreamValueByKey: Map<string, string>;
   /**
    * Staged MANUAL edits: path → the user-typed value (or STAGED_DELETE_SENTINEL
    * for a staged removal). A staged edit defers the write until commit, so the
@@ -551,7 +618,7 @@ const MembershipContext = createContext<MembershipContextValue>({
   committedDiffs: new Map(),
   committedAddPaths: new Set(),
   committedBaseline: new Map(),
-  downstreamValueByPath: new Map(),
+  downstreamValueByKey: new Map(),
   stagedEditedValues: new Map(),
   onRevertEdit: () => {},
   stagedProtection: new Map(),
@@ -584,14 +651,23 @@ interface NodeRowProps {
    */
   readOnly?: boolean;
   pathPrefix: string;
+  /** Stage key → the value the upgrade brings. */
   upgradeFieldDiffs: Map<string, string>;
+  /** Stage key → the upstream value a local override keeps out. */
   variationFieldDiffs: Map<string, string>;
-  /** Paths differing between upstream HEAD and the unit's CURRENT committed data
-   *  (never the dry-run) — drives the value border. See VariationEntry.liveFieldDiffs. */
-  liveVariationPaths: Set<string>;
+  /** Stage keys of the rows differing between upstream HEAD and the unit's CURRENT committed
+   *  data (never the dry-run) — drives the value border. See VariationEntry.liveFieldDiffs. */
+  liveVariationKeys: Set<string>;
   allPaths: { path: string; value: string }[];
-  /** Paths present upstream but absent downstream — rendered with an absent ("—") current value. */
-  upstreamOnlyPaths: Set<string>;
+  /** Stage keys of rows present upstream but absent downstream — rendered with an absent ("—") current value. */
+  upstreamOnlyKeys: Set<string>;
+  /**
+   * Stage key of a new array element's path (under its made-up index) → the index to show
+   * for it, its index upstream (see `insertedElementLabels`). Display only: the row is
+   * still keyed and addressed by the made-up index.
+   */
+  elementLabels: Map<string, string>;
+  /** Bare paths, for the context tree a path segment opens. */
   changedPaths: Set<string>;
   changedDiffs: Map<string, { oldValue: string; newValue: string }>;
   /** Precomputed prefix-index for O(log n)/O(1) descendant lookups (replaces per-folder allPaths scans). */
@@ -868,9 +944,10 @@ const NodeRow = memo(({
   pathPrefix,
   upgradeFieldDiffs,
   variationFieldDiffs,
-  liveVariationPaths,
+  liveVariationKeys,
   allPaths,
-  upstreamOnlyPaths,
+  upstreamOnlyKeys,
+  elementLabels,
   changedPaths,
   changedDiffs,
   prefixIndex,
@@ -915,7 +992,7 @@ const NodeRow = memo(({
   // it must not extend the path: it resolves to its parent's prefix. That keeps every
   // descendant on its BARE dot-path (`spec.replicas`, never
   // `Service guestbook.spec.replicas`), which is the namespace all the
-  // changedPaths / upgradeFieldDiffs / prefixIndex / setValueAtPath lookups use.
+  // changedPaths / prefixIndex / setValueAtPath lookups use.
   const fullPath = node.pathTransparent
     ? pathPrefix
     : pathPrefix ? `${pathPrefix}.${node.key}` : node.key;
@@ -936,6 +1013,8 @@ const NodeRow = memo(({
   // of the same bare path. For a single-document unit docScope is undefined, so the
   // key IS the bare path — behaviour there is byte-identical to before scoping.
   const stageKey = docStageKey(docScope, fullPath);
+  // A scalar element the Unit does not hold yet reads as its upstream index, not its made-up one.
+  const leafLabel = elementLabels.get(stageKey) ?? node.key;
   // Gate for every "add a key" action under this row. A document that is not
   // uniquely addressable (duplicate/absent resource identity, or a toolchain whose
   // writes ignore the resource scope) would swallow the write into the LAST
@@ -949,7 +1028,7 @@ const NodeRow = memo(({
   // path re-renders only the mounted leaves that read it — folders (which never
   // read membership) are not part of the cascade. With lazy expansion the set of
   // mounted leaves is O(visible), so this stays cheap.
-  const { stagedPaths, committedDiffs, committedAddPaths, committedBaseline, downstreamValueByPath, stagedEditedValues, onRevertEdit, stagedProtection, onToggleProtection } = useContext(MembershipContext);
+  const { stagedPaths, committedDiffs, committedAddPaths, committedBaseline, downstreamValueByKey, stagedEditedValues, onRevertEdit, stagedProtection, onToggleProtection } = useContext(MembershipContext);
 
   // Lazy expansion: folders default to COLLAPSED so a massive unit only mounts
   // O(visible) NodeRows instead of O(all leaves). Folders that are ancestors of a
@@ -989,7 +1068,7 @@ const NodeRow = memo(({
   }, []);
 
   // Pre-compute leaf derived values here so handleSave can reference them via useCallback
-  const upgradeValue = upgradeFieldDiffs.get(fullPath);
+  const upgradeValue = upgradeFieldDiffs.get(stageKey);
   // STAGED: the user picked this upgrade locally; nothing is written until commit.
   const isStaged = stagedPaths.has(stageKey);
   // COMMITTED: this path's staged upgrade was committed; its upstream diff has
@@ -1015,8 +1094,8 @@ const NodeRow = memo(({
   // it feeds, would show the stale committed value. A committed DELETE (removal sentinel)
   // is NOT a value to display — it keeps the absent/struck-through treatment, excluded here.
   const converged = committedBaseline.has(stageKey)
-    && (downstreamValueByPath.get(fullPath) !== committedBaseline.get(stageKey)
-      || downstreamValueByPath.get(fullPath) === committedValue);
+    && (downstreamValueByKey.get(stageKey) !== committedBaseline.get(stageKey)
+      || downstreamValueByKey.get(stageKey) === committedValue);
   const hasCommittedValue = isCommitted && !isRemovalSentinel(committedValue) && !converged;
   const _rawCurrentValue = overlayEntry != null
     ? overlayEntry
@@ -1027,13 +1106,13 @@ const NodeRow = memo(({
   // Also absent when the overlay marks the field as deleted (null). A path with a committed
   // (non-removal) value is no longer absent — it now has a real downstream value to show.
   const isAbsentCurrent = overlayEntry === null
-    || (overlayEntry === undefined && !hasCommittedValue && upstreamOnlyPaths.has(fullPath));
+    || (overlayEntry === undefined && !hasCommittedValue && upstreamOnlyKeys.has(stageKey));
   // Always reflect the CURRENT value here (absent → "—"). Staging must NOT collapse
   // this to the upstream value: the row keeps showing the current→proposed diff (via
   // previewSegments / current-preview) so the user can still review every change
   // before committing. Only the pill (up-arrow → undo) and the staged tint change.
   const displayedCurrentValue = isAbsentCurrent ? ABSENT : _rawCurrentValue;
-  const overriddenUpstreamValue = variationFieldDiffs.get(fullPath);
+  const overriddenUpstreamValue = variationFieldDiffs.get(stageKey);
   const showOverriddenUpstreamPill = overriddenUpstreamValue !== undefined && upgradeValue === undefined;
 
   // STAGED MANUAL EDIT: the user typed a value (or a delete sentinel) for this
@@ -1043,9 +1122,9 @@ const NodeRow = memo(({
   const stagedEditValue = stagedEditedValues.get(stageKey);
   const hasStagedEdit = stagedEditValue !== undefined;
   const isStagedDelete = hasStagedEdit && isStagedDeleteSentinel(stagedEditValue);
-  // A staged edit differs from upstream the moment it is typed; liveVariationPaths
+  // A staged edit differs from upstream the moment it is typed; liveVariationKeys
   // is built from COMMITTED data and cannot see it until commit.
-  const differsFromUpstream = hasStagedEdit || liveVariationPaths.has(fullPath);
+  const differsFromUpstream = hasStagedEdit || liveVariationKeys.has(stageKey);
 
   // "Kept on merge" (protection) — EFFECTIVE state for this row: a staged
   // protection change (if any) always wins over the committed baseline, so a
@@ -1175,7 +1254,7 @@ const NodeRow = memo(({
     // a locally-overridden path whose upstream value is gone rendered as a red,
     // struck-through deletion of a value that is not going anywhere, on paths
     // the ChangeOrder does not even touch (its `variationEntry` carries
-    // only paths the promotion leaves alone — see `buildVariationEntry`).
+    // only paths the promotion leaves alone).
     //
     // Excluded HERE, at the source, rather than at each of the four places this
     // flag is painted, so no fifth one can reappear. `readOnly` is the only
@@ -1527,7 +1606,7 @@ const NodeRow = memo(({
             >{previewRemoved ? '−' : previewAdded ? '+' : ''}</Box>
           </Tooltip>
           <PathValue className="dim-path" onClick={(e: React.MouseEvent) => { e.stopPropagation(); onInspectPath(isInspecting ? null : fullPath); }} style={{ color: isRemoving ? componentTheme.danger : componentTheme.fgDefault, opacity: isRemoving ? 0.7 : 0.65, minWidth: 0, overflowWrap: 'break-word', transition: 'opacity .12s', cursor: 'pointer', textDecoration: isRemoving ? 'line-through' : undefined }}>
-            {filterText ? highlightText(node.key, filterText) : node.key}
+            {filterText ? highlightText(leafLabel, filterText) : leafLabel}
           </PathValue>
           {/* NEW icon — compact sparkle marking recently-added paths */}
           {isNewlyAdded && (
@@ -2057,6 +2136,7 @@ const NodeRow = memo(({
           upgradeCreatedAt={upgradeCreatedAt}
           upgradeDescription={upgradeDescription}
           variationEntry={variationEntry}
+          stageKey={stageKey}
           onClose={() => onInspectPath(null)}
           siblingVariants={siblingVariants}
           upgradeSourceSpaceId={upgradeSourceSpaceId}
@@ -2107,7 +2187,7 @@ const NodeRow = memo(({
   // from the count entirely, not shown as a separately-disabled sub-count —
   // the same choice protectedPaths.ts already makes for the Scope chip.
   const eligibleLeafPaths = collectLeafPaths(childNodes, contextPrefix ?? fullPath)
-    .filter((p) => !pathContainsArrayIndex(p) && !upstreamOnlyPaths.has(p));
+    .filter((p) => !pathContainsArrayIndex(p) && !upstreamOnlyKeys.has(docStageKey(docScope, p)));
   // EFFECTIVE protection per leaf — staged (if any) wins over committed,
   // exactly like a leaf row's own `effectiveKept` (Section 2/1).
   const isCurrentlyProtectedFn = isProtected ?? isProtectedFallback;
@@ -2165,9 +2245,10 @@ const NodeRow = memo(({
     documentScope: docScope,
     upgradeFieldDiffs,
     variationFieldDiffs,
-    liveVariationPaths,
+    liveVariationKeys,
     allPaths,
-    upstreamOnlyPaths,
+    upstreamOnlyKeys,
+    elementLabels,
     changedPaths,
     changedDiffs,
     prefixIndex,
@@ -2259,6 +2340,7 @@ const NodeRow = memo(({
 
             const segPath = segments.slice(0, i + 1).join('.');
             const segPrefix = pathPrefix ? `${pathPrefix}.${segPath}` : segPath;
+            const segLabel = node.pathTransparent ? seg : elementLabels.get(docStageKey(docScope, segPrefix)) ?? seg;
             // O(log allPaths) range counts (were O(allPaths) filters per segment).
             const totalAtLevel = prefixIndex.totalUnder(segPrefix);
             const changedAtLevel = prefixIndex.changedUnder(segPrefix);
@@ -2298,7 +2380,7 @@ const NodeRow = memo(({
                   ...(folderExpanded && expandedSegment === i && { textDecorationColor: `${componentTheme.fgMuted} !important` }),
                 }}
               >
-                {filterText ? highlightText(seg, filterText) : seg}
+                {filterText ? highlightText(segLabel, filterText) : segLabel}
                 <Box
                   component="span"
                   className="seg-chevron"
@@ -2582,6 +2664,109 @@ const NodeRow = memo(({
 NodeRow.displayName = 'NodeRow';
 
 // ============================================================================
+// WHOLE-RESOURCE ROW
+// ============================================================================
+
+/**
+ * One row for a resource the upgrade adds or deletes as a whole. It is staged as one
+ * change and goes in only with the wholesale upgrade: checking it selects every
+ * incoming change, and leaving any of them out, or editing a value, leaves it out.
+ * A read-only mount shows it without the checkbox. While the wholesale upgrade cannot
+ * be the batch (`availableWholeResourceChanges`), its checkbox is disabled and says why.
+ */
+const WholeResourceRow = memo(({
+  change,
+  staged,
+  available,
+  readOnly,
+  onToggle,
+}: {
+  change: WholeResourceChange;
+  staged: boolean;
+  available: boolean;
+  readOnly: boolean;
+  onToggle: (key: string) => void;
+}): ReactNode => {
+  const added = change.wholeResource === 'added';
+  const changeType: RowChangeType = added ? 'add' : 'delete';
+  const tokens = ROW_TYPE_TOKENS[changeType];
+  const label = documentGroupLabel(change.resource, 0);
+  const shown = readOnly || staged;
+  return (
+    <UpgradePreviewDimRow className={shown ? undefined : 'field-unchanged'}>
+      <ReviewRow
+        $plain
+        data-testid="component-whole-resource-row"
+        data-whole-resource={change.wholeResource}
+        data-change-type={shown ? changeType : 'none'}
+        sx={{
+          py: 0,
+          minHeight: 22,
+          alignItems: 'center',
+          position: 'relative',
+          background: shown ? tokens.tint : componentTheme.bgSubtle,
+          ...(shown && {
+            '&::after': {
+              content: '""', position: 'absolute', left: 0, top: 0, bottom: 0, width: '2px',
+              background: tokens.bar, borderRadius: '0 1px 1px 0', pointerEvents: 'none',
+            },
+          }),
+        }}
+      >
+        <PropertyCell sx={{ width: 'auto', flexShrink: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '6px', fontSize: 12.5, fontFamily: componentTheme.fontMono }}>
+          <Box component="span" sx={{ fontWeight: 700, color: added ? componentTheme.success : componentTheme.danger }}>
+            {added ? '+' : '−'}
+          </Box>
+          <PathValue>{label}</PathValue>
+        </PropertyCell>
+        <AfterCell sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+          <Box component="span" sx={{ fontSize: 11.5, fontFamily: componentTheme.fontSans, color: componentTheme.fgMuted }}>
+            {added ? 'Whole resource added upstream' : 'Whole resource deleted upstream'}
+          </Box>
+          {!readOnly && (
+            <Tooltip
+              title={available ? (
+                <ActionTooltipContent
+                  type={staged ? 'staged' : changeType}
+                  icon={staged ? <T1UndoIcon /> : added ? <T1AddIcon /> : <T1RemoveIcon />}
+                  action={staged ? 'Uncheck to leave it out' : added ? 'Add with Upgrade all' : 'Delete with Upgrade all'}
+                  value={label}
+                  status="goes in only when every incoming change is selected and no value is edited"
+                />
+              ) : (
+                <ActionTooltipContent
+                  type="blocked"
+                  icon={<T1LockIcon />}
+                  action={added ? 'Cannot add yet' : 'Cannot delete yet'}
+                  value={label}
+                  status="goes in only with Upgrade all, which cannot also accept an upstream deletion of a key this Unit changed. Upgrade the other changes first."
+                />
+              )}
+              placement="top"
+              disableInteractive
+              {...TOOLTIP_HOVER_DELAY}
+              slotProps={{ tooltip: { sx: { ...tooltipSx, pointerEvents: 'none' } } }}
+            >
+              <span data-testid="component-whole-resource-checkbox" data-available={available ? 'true' : 'false'}>
+                <UpgradeCheckbox
+                  staged={staged}
+                  blocked={!available}
+                  disabled={!available}
+                  changeType={changeType}
+                  onToggle={() => onToggle(change.key)}
+                />
+              </span>
+            </Tooltip>
+          )}
+        </AfterCell>
+      </ReviewRow>
+    </UpgradePreviewDimRow>
+  );
+});
+
+WholeResourceRow.displayName = 'WholeResourceRow';
+
+// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
@@ -2651,56 +2836,57 @@ export const ComponentValuesSection = memo(({
     for (const s of documentScopes) map.set(s.id, s);
     return map;
   }, [documentScopes]);
-  // For a bare path, the document scopes that actually CONTAIN it — so an upgradable
-  // path shared by two documents auto-stages a separate key in EACH, never one that
-  // silently covers both. Single-doc units get an empty map and keep bare keys.
-  const scopesByPath = useMemo(() => {
-    const map = new Map<string, DocumentScope[]>();
-    for (const s of documentScopes) {
-      for (const p of s.paths) {
-        const list = map.get(p);
-        if (list) list.push(s); else map.set(p, [s]);
-      }
-    }
-    return map;
-  }, [documentScopes]);
-  // Expand a bare path into its per-document stage keys (the bare path itself when the
-  // unit is single-document). A path no document has yet, such as one only upstream
-  // has, takes the last document's key: `selectGroupedEntries` draws it there, and its
-  // row reads its staged state by that document's key.
-  const stageKeysForPath = useCallback((path: string): string[] => {
-    const scopes = scopesByPath.get(path);
-    if (scopes && scopes.length > 0) return scopes.map((s) => docStageKey(s, path));
-    const lastScope = documentScopes[documentScopes.length - 1];
-    return lastScope ? [docStageKey(lastScope, path)] : [path];
-  }, [scopesByPath, documentScopes]);
-
   const downstreamPaths = useMemo(() => {
     if (activeEntry?.allPaths?.length) return activeEntry.allPaths;
     return buildPaths(unit.data);
   }, [activeEntry, unit.data]);
 
-  // Current downstream value per path (same source that feeds node.diff.newValue for a
-  // present path). Used to reconcile committedDiffs: a committed value is a temporary
-  // snapshot that must yield to the authoritative refetched value once it lands.
-  const downstreamValueByPath = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const { path, value } of downstreamPaths) map.set(path, value);
-    return map;
-  }, [downstreamPaths]);
+  // The unit's own leaves as tree rows, each under its stage key. A path two
+  // documents share is two rows.
+  const entryRows = useMemo(() => {
+    const rows: TreeRow[] = [];
+    groupFieldEntriesByDocument(groupedEntries).forEach((group, i) => {
+      const scope = documentScopes[i];
+      for (const entry of group.entries) {
+        rows.push({ key: docStageKey(scope, entry.path), path: entry.path, value: String(entry.value), entry });
+      }
+    });
+    return rows;
+  }, [groupedEntries, documentScopes]);
 
+  // Current downstream value per stage key (the same source that feeds node.diff.newValue
+  // for a present row). Used to reconcile committedDiffs: a committed value is a temporary
+  // snapshot that must yield to the authoritative refetched value once it lands.
+  const downstreamValueByKey = useMemo(
+    () => new Map(entryRows.map((r) => [r.key, r.value])),
+    [entryRows],
+  );
+
+  // Stage key → the value the upgrade brings.
   const upgradeFieldDiffs = useMemo(() => {
     const map = new Map<string, string>();
-    (unit.upgradeEntry?.fieldDiffs ?? []).forEach((d) => map.set(d.path, d.newValue));
+    for (const d of unit.upgradeEntry?.fieldDiffs ?? []) map.set(fieldDiffKey(d), d.newValue);
     return map;
-  }, [unit.upgradeEntry]);
+  }, [unit.upgradeEntry?.fieldDiffs]);
 
-  // COMMITTED diffs: path → committed value, captured when a staged batch commit
+  // Resources the upgrade adds or deletes whole: one row each, below the tree.
+  const wholeResourceChanges = unit.upgradeEntry?.wholeResourceChanges;
+  const wholeResourceKeys = useMemo(
+    () => new Set((wholeResourceChanges ?? []).map((c) => c.key)),
+    [wholeResourceChanges],
+  );
+  // Of those, the ones the user can take now; the others show without a checkbox.
+  const availableWholeResourceKeys = useMemo(
+    () => new Set(availableWholeResourceChanges(unit.upgradeEntry).map((c) => c.key)),
+    [unit.upgradeEntry],
+  );
+
+  // COMMITTED diffs: stage key → committed value, captured when a staged batch commit
   // succeeds. Keeps just-committed rows VISIBLE (showing their applied value, in a
-  // "done" state) across the commit's RTK refetch — which clears the path from
-  // upgradeFieldDiffs/upgradablePaths and would otherwise make the row vanish.
+  // "done" state) across the commit's RTK refetch — which clears the key from
+  // upgradeFieldDiffs/upgradableStageKeys and would otherwise make the row vanish.
   // Restores the legacy frozenUpgradeDiffs behavior for the staging commit flow.
-  // Declared early because allPaths/baseNarrowedPaths read it.
+  // Declared early because the tree rows and baseNarrowedKeys read it.
   const [committedDiffs, setCommittedDiffs] = useState<Map<string, string>>(new Map());
   // Of the committed paths, which were ADDS (upstream-only / absent downstream at
   // commit time). Lets a committed ADD show a green `+` while a committed plain
@@ -2708,86 +2894,136 @@ export const ComponentValuesSection = memo(({
   // detected from the removal sentinel in committedDiffs.
   const [committedAddPaths, setCommittedAddPaths] = useState<Set<string>>(new Set());
 
-
-  // Union downstream paths with upstream-only paths (present upstream, absent
-  // downstream) so those fields render as normal promotable rows with an absent
-  // current value. Safe ordering: all consumers below read allPaths, none feed it.
-  // Also re-inject just-committed DELETE paths that vanished from both
-  // downstreamPaths and upgradeFieldDiffs after the commit's refetch — so the
-  // committed-delete row stays visible (in its "done" state) until the unit changes.
-  const { allPaths, upstreamOnlyPaths } = useMemo(() => {
-    const { allPaths: basePaths, upstreamOnlyPaths: baseUpstream } =
-      unionUpstreamOnlyPaths(downstreamPaths, upgradeFieldDiffs);
-    if (committedDiffs.size === 0) return { allPaths: basePaths, upstreamOnlyPaths: baseUpstream };
-    const existing = new Set(basePaths.map((p) => p.path));
-    const extra = [...committedDiffs.entries()]
-      .filter(([p, v]) => isRemovalSentinel(v) && !existing.has(p))
-      .map(([p]) => p);
-    if (extra.length === 0) return { allPaths: basePaths, upstreamOnlyPaths: baseUpstream };
-    return {
-      allPaths: [...basePaths, ...extra.map((path) => ({ path, value: '' }))],
-      upstreamOnlyPaths: new Set([...baseUpstream, ...extra]),
+  // Rows with no leaf of the unit's own: a key only upstream has (an upgrade adds it),
+  // and a just-committed DELETE whose key vanished from both the data and the upgrade
+  // diff after the commit's refetch — so the committed-delete row stays visible (in its
+  // "done" state) until the unit changes. Both render with an absent current value.
+  const { treeRows, upstreamOnlyKeys } = useMemo(() => {
+    const own = new Set(entryRows.map((r) => r.key));
+    const extra: TreeRow[] = [];
+    const addExtra = (key: string) => {
+      if (own.has(key)) return;
+      own.add(key);
+      extra.push({ key, path: stageKeyPath(key), value: '' });
     };
-  }, [downstreamPaths, upgradeFieldDiffs, committedDiffs]);
+    for (const key of upgradeFieldDiffs.keys()) addExtra(key);
+    for (const [key, value] of committedDiffs) if (isRemovalSentinel(value)) addExtra(key);
+    return {
+      treeRows: extra.length > 0 ? [...entryRows, ...extra] : entryRows,
+      upstreamOnlyKeys: new Set(extra.map((r) => r.key)),
+    };
+  }, [entryRows, upgradeFieldDiffs, committedDiffs]);
 
+  // The bare-path view of the rows (one per path, whichever documents hold it), for
+  // what is drawn by path alone: the context tree a path segment opens, the prefix
+  // index's folder counts and auto-expansion, key context, and the composer.
+  const allPaths = useMemo(() => {
+    const known = new Set(downstreamPaths.map((p) => p.path));
+    const extra: { path: string; value: string }[] = [];
+    for (const key of upstreamOnlyKeys) {
+      const path = stageKeyPath(key);
+      if (known.has(path)) continue;
+      known.add(path);
+      extra.push({ path, value: '' });
+    }
+    return extra.length > 0 ? [...downstreamPaths, ...extra] : downstreamPaths;
+  }, [downstreamPaths, upstreamOnlyKeys]);
+
+  // Stage key → the upstream value a local override keeps out.
   const variationFieldDiffs = useMemo(() => {
     const map = new Map<string, string>();
-    (unit.variationEntry?.fieldDiffs ?? []).forEach((d) => {
-      if (d.oldValue !== undefined) map.set(d.path, d.oldValue);
-    });
+    for (const d of unit.variationEntry?.fieldDiffs ?? []) map.set(fieldDiffKey(d), d.oldValue);
     return map;
   }, [unit.variationEntry]);
 
-  // Paths differing from upstream right now, built from CURRENT committed data
+  // Stage key → where the new array element it is a leaf of goes, for the commit. Only
+  // the upgrade brings one: a local override is always of a row the tree holds.
+  const insertionByKey = useMemo(() => {
+    const map = new Map<string, ArrayInsertion>();
+    for (const d of unit.upgradeEntry?.fieldDiffs ?? []) if (d.insertion) map.set(fieldDiffKey(d), d.insertion);
+    return map;
+  }, [unit.upgradeEntry?.fieldDiffs]);
+  const elementLabels = useMemo(() => insertedElementLabels(insertionByKey), [insertionByKey]);
+
+  // Stage key → the type of the value a commit writes for it from the Diff: the
+  // upstream's value a local override keeps out, or the value the upgrade brings, which
+  // wins, as it does for the value itself. Undefined where that side has no value.
+  const diffValueTypeByKey = useMemo(() => {
+    const map = new Map<string, LeafValueType | undefined>();
+    for (const d of unit.variationEntry?.fieldDiffs ?? []) map.set(fieldDiffKey(d), d.oldValueType);
+    for (const d of unit.upgradeEntry?.fieldDiffs ?? []) map.set(fieldDiffKey(d), d.newValueType);
+    return map;
+  }, [unit.variationEntry, unit.upgradeEntry?.fieldDiffs]);
+
+  // Rows differing from upstream right now, built from CURRENT committed data
   // only (never the dry-run) — this is what the value border reads. See
   // VariationEntry.liveFieldDiffs for why this must stay independent of
-  // variationFieldDiffs/variationPaths (those are dry-run-tainted).
-  const liveVariationPaths = useMemo(
-    () => new Set(unit.variationEntry?.liveFieldDiffs.map(d => d.path) ?? []),
+  // variationFieldDiffs/variationKeys (those are dry-run-tainted).
+  const liveVariationKeys = useMemo(
+    () => new Set(unit.variationEntry?.liveFieldDiffs.map(fieldDiffKey) ?? []),
     [unit.variationEntry],
   );
 
-  // Paths the unit overrides with a local value — these block the upstream
-  // upgrade for that path (shared by both the "upgradable" and "difference" views).
-  const variationPaths = useMemo(
-    () => new Set(unit.variationEntry?.fieldDiffs.map(d => d.path) ?? []),
-    [unit.variationEntry],
+  // Rows the unit overrides with a local value — these block the upstream
+  // upgrade for that row (shared by both the "upgradable" and "difference" views).
+  const variationKeys = useMemo(
+    () => new Set(variationFieldDiffs.keys()),
+    [variationFieldDiffs],
   );
 
-  // Upstream paths that would genuinely upgrade: not locally overridden.
-  // Includes brand-new upstream-only paths AND upstream removals (newValue
+  // Stage keys of the rows that would genuinely upgrade: not locally overridden.
+  // Includes brand-new upstream-only rows AND upstream removals (newValue
   // '-' or ''), which render struck-through in the upgradable view.
   // Also includes blocked upstream deletions (paths the upstream deleted but the
   // child preserved via a local mutation) so they appear in the upgradable filter.
-  // This is the SINGLE source of truth for the "Upgradable" filter set — both the
-  // tree's upgradable view and staging's "Select all" derive from it so they can
-  // never diverge.
-  const upgradablePaths = useMemo(
-    () => [
-      ...(unit.upgradeEntry?.fieldDiffs ?? [])
-        // A path kept on merge is not an upgrade candidate at all — "Select
-        // all" and the Upgradable-tab auto-stage must never pick it up, or
-        // the very next commit replays right over the value it protects.
-        .filter(d => !variationPaths.has(d.path) && !isProtected(d.path))
-        .map(d => d.path),
-      ...(unit.upgradeEntry?.blockedDeletePaths ?? []),
-    ],
-    [unit.upgradeEntry, variationPaths, isProtected],
-  );
+  // This is the SINGLE source of truth for the "Upgradable" filter set — the tree's
+  // upgradable view, staging's "Select all" and the staged count all derive from it
+  // so they can never diverge (rule 4).
+  const upgradableFieldKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const d of unit.upgradeEntry?.fieldDiffs ?? []) {
+      const key = fieldDiffKey(d);
+      // A path kept on merge is not an upgrade candidate at all — "Select
+      // all" and the Upgradable-tab auto-stage must never pick it up, or
+      // the very next commit replays right over the value it protects.
+      if (variationKeys.has(key) || isProtected(d.path)) continue;
+      keys.add(key);
+    }
+    for (const key of unit.upgradeEntry?.blockedDeleteKeys ?? []) keys.add(key);
+    return [...keys];
+  }, [unit.upgradeEntry?.fieldDiffs, unit.upgradeEntry?.blockedDeleteKeys, variationKeys, isProtected]);
 
-  // The upgradable set expressed as per-document STAGE KEYS — what "Select all" and
-  // the Upgradable-tab auto-stage actually add to `stagedPaths`. A path shared by two
-  // documents contributes one key per document, so staging is scoped, not merged.
-  // (upgradablePaths itself stays BARE — it feeds bare-path tree/narrowing lookups.)
+  // What "Select all" and the Upgradable-tab auto-stage add to `stagedPaths`: every
+  // upgradable row's key, and each whole-resource change the user can take.
   const upgradableStageKeys = useMemo(
-    () => upgradablePaths.flatMap((p) => stageKeysForPath(p)),
-    [upgradablePaths, stageKeysForPath],
+    () => (availableWholeResourceKeys.size > 0 ? [...upgradableFieldKeys, ...availableWholeResourceKeys] : upgradableFieldKeys),
+    [upgradableFieldKeys, availableWholeResourceKeys],
   );
 
+  // Every key the upgrade changes, overridden ones included.
+  const changedKeys = useMemo(() => new Set(upgradeFieldDiffs.keys()), [upgradeFieldDiffs]);
+
+  // Bare-path projections of the keyed sets, for the prefix index and the context tree,
+  // which address folders by path alone.
   const changedPaths = useMemo(
-    () => new Set([...upgradeFieldDiffs.keys()]),
-    [upgradeFieldDiffs],
+    () => new Set([...changedKeys].map(stageKeyPath)),
+    [changedKeys],
   );
+  const upgradeFieldDiffsByPath = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [key, value] of upgradeFieldDiffs) map.set(stageKeyPath(key), value);
+    return map;
+  }, [upgradeFieldDiffs]);
+  const upgradablePaths = useMemo(
+    () => new Set(upgradableFieldKeys.map(stageKeyPath)),
+    [upgradableFieldKeys],
+  );
+  const variationFieldDiffsByPath = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [key, value] of variationFieldDiffs) map.set(stageKeyPath(key), value);
+    return map;
+  }, [variationFieldDiffs]);
+  const variationPaths = useMemo(() => new Set(variationFieldDiffsByPath.keys()), [variationFieldDiffsByPath]);
 
   const changedDiffs = useMemo(() => {
     const map = new Map<string, { oldValue: string; newValue: string }>();
@@ -2795,16 +3031,16 @@ export const ComponentValuesSection = memo(({
       // Upgrade paths: the current value is the incoming new value.
       if (changedPaths.has(path)) {
         map.set(path, { oldValue: '', newValue: value });
-      } else if (variationFieldDiffs.has(path)) {
+      } else if (variationFieldDiffsByPath.has(path)) {
         // Variation (locally-overridden) paths: carry the real upstream oldValue
         // so the difference-filter context tree doesn't fall back to a blank
         // oldValue and lose the override's "from" value. Shape matches how
         // variation diffs are rendered elsewhere (variationFieldDiffs = oldValue).
-        map.set(path, { oldValue: variationFieldDiffs.get(path) ?? '', newValue: value });
+        map.set(path, { oldValue: variationFieldDiffsByPath.get(path) ?? '', newValue: value });
       }
     });
     return map;
-  }, [allPaths, changedPaths, variationFieldDiffs]);
+  }, [allPaths, changedPaths, variationFieldDiffsByPath]);
 
   // STAGED set: the user's local upgrade picks (true staging — nothing is written
   // until commit). Served to leaves via MembershipContext so a toggle re-renders
@@ -2836,10 +3072,41 @@ export const ComponentValuesSection = memo(({
   const [recentlyAddedPaths, setRecentlyAddedPaths] = useState<Set<string>>(new Set());
 
   // "Select all" stages EXACTLY the set shown under the Upgradable filter
-  // (`upgradablePaths`) — derived from the same predicate so the two can never
-  // diverge. `upgradePathSet` (all upstream-diff keys, incl. locally-overridden
-  // ones) is kept only for the commit-time wholesale `upgrade:true` detection.
-  const upgradePathSet = useMemo(() => new Set(upgradeFieldDiffs.keys()), [upgradeFieldDiffs]);
+  // (`upgradableStageKeys`) — derived from the same predicate so the two can never
+  // diverge. `upgradeKeySet` (every upgrade key, incl. locally-overridden ones, and
+  // the whole-resource changes) is kept for the commit-time wholesale `upgrade:true`
+  // detection.
+  const upgradeKeySet = useMemo(
+    () => (wholeResourceKeys.size > 0 ? new Set([...changedKeys, ...wholeResourceKeys]) : changedKeys),
+    [changedKeys, wholeResourceKeys],
+  );
+
+  // A whole-resource change goes in only with the wholesale upgrade, so it is staged in
+  // effect only while the batch is one: every upgradable key staged, nothing else, and no
+  // manual edit. Its key stays in `stagedPaths` meanwhile, so re-checking the one field
+  // the user left out brings it back. The staged count, the whole-resource row and the
+  // commit all read this set, so none of them counts a change the commit would drop.
+  const effectiveStagedPaths = useMemo(
+    () => withoutUnreachableWholeResources(stagedPaths, wholeResourceKeys, upgradableStageKeys, upgradeKeySet, stagedEditedValues),
+    [stagedPaths, wholeResourceKeys, upgradableStageKeys, upgradeKeySet, stagedEditedValues],
+  );
+  const effectiveStagedPathsRef = useRef(effectiveStagedPaths);
+  effectiveStagedPathsRef.current = effectiveStagedPaths;
+  // Checking a whole-resource row selects every incoming change, the only batch that
+  // adds or deletes it; unchecking leaves just the resource out.
+  const onToggleWholeResource = useCallback((key: string) => {
+    if (effectiveStagedPathsRef.current.has(key)) {
+      setStagedPaths((prev) => {
+        if (!prev.has(key)) return prev;
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+      return;
+    }
+    const keys = upgradableStageKeysRef.current;
+    setStagedPaths((prev) => new Set([...prev, ...keys]));
+  }, []);
 
   const onStagePath = useCallback((path: string) => {
     setStagedPaths((prev) => (prev.has(path) ? prev : new Set([...prev, path])));
@@ -2943,8 +3210,8 @@ export const ComponentValuesSection = memo(({
   // LOGICAL count, not raw leaf count: a wholly-added array element (e.g. one env
   // var = name+value, or a new container = many leaves) reads as ONE change.
   useEffect(() => {
-    onStagedCountChange?.(unit.unitId, countLogicalChangesScoped(stagedPaths));
-  }, [onStagedCountChange, unit.unitId, stagedPaths]);
+    onStagedCountChange?.(unit.unitId, countLogicalChangesScoped(effectiveStagedPaths));
+  }, [onStagedCountChange, unit.unitId, effectiveStagedPaths]);
   // Report a final 0 on unmount so the side pane doesn't keep stale counts.
   useEffect(() => {
     const cb = onStagedCountChange;
@@ -3032,7 +3299,7 @@ export const ComponentValuesSection = memo(({
   }, [undoKeepStagedEditsSignal, stagedEditKeepablePaths]);
 
   // ── Select-all signal: stage EXACTLY the Upgradable-filter set for this unit ──
-  // Uses the same `upgradablePaths` the tree's Upgradable view renders, so Select
+  // Uses the same `upgradableStageKeys` the tree's Upgradable view renders, so Select
   // all and the Upgradable filter are guaranteed to match.
   const lastStageAllRef = useRef(stageAllSignal ?? 0);
   useEffect(() => {
@@ -3048,7 +3315,7 @@ export const ComponentValuesSection = memo(({
   // ── First-open auto-stage guard ────────────────────────────────────────────
   // On first open of a deployment the side pane fires stageAllSignal (via the
   // mount one-shot / the "select a node → setFilterModeWithStaging('upgradable')"
-  // effect) BEFORE this section's RTK dry-run data has loaded, so upgradablePaths
+  // effect) BEFORE this section's RTK dry-run data has loaded, so upgradableStageKeys
   // is still empty: the stageAll effect above advances its signal ref and bails on
   // the `length === 0` guard, and nothing re-stages once the data arrives. This
   // per-section guard fills that gap AND keeps up with upgradable paths that arrive
@@ -3134,18 +3401,24 @@ export const ComponentValuesSection = memo(({
   upgradeFieldDiffsRef.current = upgradeFieldDiffs;
   const variationFieldDiffsRef = useRef(variationFieldDiffs);
   variationFieldDiffsRef.current = variationFieldDiffs;
+  const insertionByKeyRef = useRef(insertionByKey);
+  insertionByKeyRef.current = insertionByKey;
+  const diffValueTypeByKeyRef = useRef(diffValueTypeByKey);
+  diffValueTypeByKeyRef.current = diffValueTypeByKey;
   const unitDataRef = useRef(unit.data);
   unitDataRef.current = unit.data;
-  const upgradePathSetRef = useRef(upgradePathSet);
-  upgradePathSetRef.current = upgradePathSet;
+  const upgradeKeySetRef = useRef(upgradeKeySet);
+  upgradeKeySetRef.current = upgradeKeySet;
+  const wholeResourceKeysRef = useRef(wholeResourceKeys);
+  wholeResourceKeysRef.current = wholeResourceKeys;
   const upgradableStageKeysRef = useRef(upgradableStageKeys);
   upgradableStageKeysRef.current = upgradableStageKeys;
   const docScopeByIdRef = useRef(docScopeById);
   docScopeByIdRef.current = docScopeById;
-  const upstreamOnlyPathsRef = useRef(upstreamOnlyPaths);
-  upstreamOnlyPathsRef.current = upstreamOnlyPaths;
-  const downstreamValueByPathRef = useRef(downstreamValueByPath);
-  downstreamValueByPathRef.current = downstreamValueByPath;
+  const upstreamOnlyKeysRef = useRef(upstreamOnlyKeys);
+  upstreamOnlyKeysRef.current = upstreamOnlyKeys;
+  const downstreamValueByKeyRef = useRef(downstreamValueByKey);
+  downstreamValueByKeyRef.current = downstreamValueByKey;
   // Per committed (non-removal) path: the downstream value at commit time (undefined =
   // absent, i.e. an ADD). This baseline snapshot is consumed at RENDER time by the
   // `converged` check in NodeRow: while the live downstream value still equals this
@@ -3163,7 +3436,14 @@ export const ComponentValuesSection = memo(({
     if ((commitStagedSignal ?? 0) === lastCommitRef.current) return;
     lastCommitRef.current = commitStagedSignal ?? 0;
 
-    const staged = stagedPathsRef.current;
+    const edits = stagedEditedValuesRef.current;
+    const staged = withoutUnreachableWholeResources(
+      stagedPathsRef.current,
+      wholeResourceKeysRef.current,
+      upgradableStageKeysRef.current,
+      upgradeKeySetRef.current,
+      edits,
+    );
     const protectionStaged = stagedProtectionRef.current;
     if (staged.size === 0 && protectionStaged.size === 0) return;
 
@@ -3200,56 +3480,72 @@ export const ComponentValuesSection = memo(({
     // showing its applied value after the refetch clears upgradeFieldDiffs. Also
     // record which committed paths were ADDS (upstream-only at commit time) so the
     // row can show a green `+` rather than the value-change done check.
-    const edits = stagedEditedValuesRef.current;
-    const committedValues = new Map<string, string>();
-    const committedAdds = new Set<string>();
+    let committedValues = new Map<string, string>();
+    let committedAdds = new Set<string>();
+    const committedDeletes = new Set<string>();
+    // Whether the Diff's value for `key` removes it: a typed value is a value, even ''
+    // for a key the Unit does not hold yet (isRemovalWrite).
+    const diffValueRemoves = (key: string, value: string) =>
+      isRemovalWrite(value, diffValueTypeByKeyRef.current.get(key), downstreamValueByKeyRef.current.has(key));
     {
       const upDiffs = upgradeFieldDiffsRef.current;
       const varDiffs = variationFieldDiffsRef.current;
-      const upstreamOnly = upstreamOnlyPathsRef.current;
+      const upstreamOnly = upstreamOnlyKeysRef.current;
       for (const key of staged) {
-        // `key` is a document-scoped stage key; the diff/override/upstream-only maps
-        // are keyed on the BARE path it carries. The committed maps keep the stage
-        // key so the row that staged it (and only that row) reads its "done" state.
-        const bare = stageKeyPath(key);
+        // `key` is a document-scoped stage key, as are the upgrade, override and
+        // upstream-only maps. The committed maps keep the stage key so the row that
+        // staged it (and only that row) reads its "done" state.
         // A manual edit overrides the upstream/override value for the committed
         // (frozen) display too. A staged DELETE normalises to the '-' removal
         // sentinel so the committed-delete row renders struck-through (the
         // committed/done mechanism keys off isRemovalSentinel).
         const editVal = edits.get(key);
+        const diffVal = upDiffs.get(key) ?? varDiffs.get(key);
         const isDel = editVal !== undefined
           ? isStagedDeleteSentinel(editVal)
-          : isRemovalSentinel(upDiffs.get(bare) ?? varDiffs.get(bare));
+          : diffVal !== undefined && diffValueRemoves(key, diffVal);
         const v = editVal !== undefined
           ? (isStagedDeleteSentinel(editVal) ? '-' : editVal)
-          : (upDiffs.get(bare) ?? varDiffs.get(bare));
-        if (v !== undefined) committedValues.set(key, v);
-        if (upstreamOnly.has(bare) && !isDel) committedAdds.add(key);
+          : diffVal;
+        // A committed mark reads '-' and '' as a removal, so a value that reads as one
+        // gets no mark rather than a wrong one.
+        if (v !== undefined && (isDel || !isRemovalSentinel(v))) committedValues.set(key, v);
+        if (upstreamOnly.has(key) && !isDel) committedAdds.add(key);
+        if (isDel) committedDeletes.add(key);
       }
     }
+    // A batch that inserts or removes list elements moves the elements after them, so a
+    // mark keyed on one of their indices would land on another element once the Unit is
+    // read again. Such marks, this batch's and earlier ones, are dropped: a row loses its
+    // "done" mark rather than another row taking it.
+    const movedByBatch = keysMovedByBatch(
+      committedDeletes,
+      [...staged].flatMap((key): [string, ArrayInsertion][] => {
+        const insertion = committedDeletes.has(key) ? undefined : insertionByKeyRef.current.get(key);
+        return insertion ? [[key, insertion]] : [];
+      }),
+      downstreamValueByKeyRef.current.keys(),
+    );
+    committedValues = new Map([...committedValues].filter(([key]) => !movedByBatch(key)));
+    committedAdds = new Set([...committedAdds].filter((key) => !movedByBatch(key)));
 
-    // Wholesale shortcut: every upgradable path (from upgradablePaths — the same
+    // Wholesale shortcut: every upgradable key (from upgradableStageKeys — the same
     // set "Select All" stages, excluding locally-overridden paths) is staged, AND
     // no manual edit is staged → one-shot upgrade:true mutation. ANY staged manual
     // edit forces the patch-data merge (wholesale would discard the user's values).
-    const upgradeKeys = upgradePathSetRef.current;
-    const upgradableKeys = upgradableStageKeysRef.current;
-    // Compare on the bare path each stage key carries (upgradeKeys is bare-keyed);
-    // "all staged" compares the per-document stage keys directly.
-    const onlyUpgradesStaged = [...staged].every((p) => upgradeKeys.has(stageKeyPath(p)));
-    const allUpgradesStaged = upgradableKeys.length > 0 && upgradableKeys.every((k) => staged.has(k));
-    const anyEditStaged = [...staged].some((p) => edits.has(p));
-
     let payload: StagedCommitPayload;
-    if (onlyUpgradesStaged && allUpgradesStaged && !anyEditStaged) {
+    if (isUpgradeAllBatch(staged, upgradableStageKeysRef.current, upgradeKeySetRef.current, edits)) {
       payload = { kind: 'upgrade-all' };
     } else {
       // Subset (or any manual edit): merge every staged change into ONE document.
-      let data = unitDataRef.current ?? '';
+      // Every staged key names an element by its index in the current data, so the
+      // writes are applied in an order that keeps those indices valid
+      // (`applyConfigWrites`), not in the order they were staged. A key of an element
+      // the Unit does not hold has a made-up index; its insertion says where it goes.
       const upDiffs = upgradeFieldDiffsRef.current;
       const varDiffs = variationFieldDiffsRef.current;
       const docScopes = docScopeByIdRef.current;
-      const failedPaths: string[] = [];
+      const writes: ConfigWrite[] = [];
       for (const key of staged) {
         // Decode the document-scoped stage key: the BARE path to write, and the
         // owning document. When that document is uniquely addressable, its resource
@@ -3261,8 +3557,8 @@ export const ComponentValuesSection = memo(({
         const scope = docId !== undefined ? docScopes.get(docId) : undefined;
         const resource = scope?.writable ? scope.resource : undefined;
         const editVal = edits.get(key);
-        const upgradeVal = upDiffs.get(bare);
-        const overrideVal = varDiffs.get(bare);
+        const upgradeVal = upDiffs.get(key);
+        const overrideVal = varDiffs.get(key);
         // Resolve the value this staged path commits to, in priority order:
         //  - manual edit (editVal) — a user-typed value OVERRIDES the upstream value;
         //    a staged removal-sentinel → delete the path
@@ -3275,16 +3571,15 @@ export const ComponentValuesSection = memo(({
         if (targetValue === undefined) continue;
         const isDelete = editVal !== undefined
           ? isStagedDeleteSentinel(editVal)
-          : isRemovalSentinel(targetValue);
-        const result = isDelete
-          ? deleteValueAtPath(data, bare, resource)
-          : setValueAtPath(data, bare, targetValue, resource);
-        if (result.ok) {
-          data = result.data;
-        } else {
-          failedPaths.push(bare);
-        }
+          : diffValueRemoves(key, targetValue);
+        const insertion = insertionByKeyRef.current.get(key);
+        // A value from the Diff is written as its type; a typed edit is read as typed.
+        const valueType = editVal !== undefined ? undefined : diffValueTypeByKeyRef.current.get(key);
+        writes.push(isDelete
+          ? { path: bare, kind: 'delete', resource, documentId: docId, insertion }
+          : { path: bare, kind: 'set', value: targetValue, valueType, resource, documentId: docId, insertion });
       }
+      const { data, failedPaths } = applyConfigWrites(unitDataRef.current ?? '', writes);
       // If any path failed to serialize, abort the entire commit. A partial write
       // would silently drop staged changes with no indication to the user. Surface
       // an inline error and keep staged rows intact so the user can retry.
@@ -3304,31 +3599,30 @@ export const ComponentValuesSection = memo(({
       // this baseline) and hand display back to the authoritative value — without deleting
       // the committedDiffs entry that keeps the "done" row visible. Removal-sentinel paths
       // are excluded: their committed entry drives the sticky struck-through row and the
-      // upstreamOnlyPaths union, and never yields display to a refetched value.
+      // upstream-only rows, and never yields display to a refetched value.
       {
         const baselines = committedBaselineRef.current;
-        const downstream = downstreamValueByPathRef.current;
-        // Baselines are keyed by the (document-scoped) stage key so each row reads its
-        // own; the live downstream value is looked up on the bare path that key carries.
+        const downstream = downstreamValueByKeyRef.current;
+        // Baselines and the live downstream values are both keyed by the
+        // (document-scoped) stage key, so each row reads its own.
+        for (const p of [...baselines.keys()]) if (movedByBatch(p)) baselines.delete(p);
         for (const [p, v] of committedValues) {
           if (isRemovalSentinel(v)) baselines.delete(p);
-          else baselines.set(p, downstream.get(stageKeyPath(p)));
+          else baselines.set(p, downstream.get(p));
         }
       }
       // Record the committed paths so they stay visible (in a "done" state) after
       // the refetch clears their upstream diff — then clear them from staged.
       setCommittedDiffs((prev) => {
-        const next = new Map(prev);
+        const next = new Map([...prev].filter(([p]) => !movedByBatch(p)));
         for (const [p, v] of committedValues) next.set(p, v);
         return next;
       });
-      if (committedAdds.size > 0) {
-        setCommittedAddPaths((prev) => {
-          const next = new Set(prev);
-          for (const p of committedAdds) next.add(p);
-          return next;
-        });
-      }
+      setCommittedAddPaths((prev) => {
+        const next = new Set([...prev].filter((p) => !movedByBatch(p)));
+        for (const p of committedAdds) next.add(p);
+        return next;
+      });
       // Clear only the paths we committed (the user may have staged more meanwhile).
       setStagedPaths((prev) => {
         if (prev.size === 0) return prev;
@@ -3455,18 +3749,18 @@ export const ComponentValuesSection = memo(({
     });
   }, []);
 
-  const filteredPaths = useMemo(() => {
-    if (!filterText) return allPaths;
+  const filteredRows = useMemo(() => {
+    if (!filterText) return treeRows;
     const lower = filterText.toLowerCase();
     const matchesFilter = (text: string | undefined): boolean =>
       text != null && text.toLowerCase().includes(lower);
-    return allPaths.filter(({ path, value }) => {
+    return treeRows.filter(({ key, path, value }) => {
       // path covers the leaf key (suffix match) and full dot-notation path.
       // value is the current value as parsed from the unit data.
       // Also match against upgrade and overridden-upstream values so a
       // row stays visible when any of its rendered pills contains the query.
-      const upgradeValue = upgradeFieldDiffs.get(path);
-      const overriddenUpstreamValue = variationFieldDiffs.get(path);
+      const upgradeValue = upgradeFieldDiffs.get(key);
+      const overriddenUpstreamValue = variationFieldDiffs.get(key);
       return (
         matchesFilter(path) ||
         matchesFilter(value) ||
@@ -3474,143 +3768,142 @@ export const ComponentValuesSection = memo(({
         matchesFilter(overriddenUpstreamValue)
       );
     });
-  }, [allPaths, filterText, upgradeFieldDiffs, variationFieldDiffs]);
+  }, [treeRows, filterText, upgradeFieldDiffs, variationFieldDiffs]);
 
   // The tree itself is built ONCE, in `activeTree` below — the visible path set is
   // chosen first (narrowed vs filtered) and only the chosen one is ever built.
 
-  // `variationPaths` and `upgradablePaths` are derived earlier (single source of
+  // `variationKeys` and `upgradableStageKeys` are derived earlier (single source of
   // truth shared with staging's "Select all").
 
-  // Bare paths, from the UNTAINTED `liveVariationPaths` (never the dry-run-
-  // tainted `variationPaths` — same reasoning as the L2 chip and the border
-  // itself), that are currently checkable (non-array, Finding 1) AND
+  // Stage keys, from the UNTAINTED `liveVariationKeys` (never the dry-run-
+  // tainted `variationKeys` — same reasoning as the L2 chip and the border
+  // itself), of the rows that are currently checkable (non-array, Finding 1) AND
   // EFFECTIVELY kept (a staged protection change wins over the committed
   // baseline). Powers the Scope chip's flattened "Kept on merge" filter
   // (Section 7/card 4b) — deliberately depends on `stagedProtection`, unlike
-  // `baseNarrowedPaths` below's general "stable" invariant, because this
+  // `baseNarrowedKeys` below's general "stable" invariant, because this
   // filter's whole point is to reflect a just-staged unprotect immediately.
-  const keptOnMergePaths = useMemo(() => {
+  const keptOnMergeKeys = useMemo(() => {
     const set = new Set<string>();
-    for (const p of liveVariationPaths) {
-      if (pathContainsArrayIndex(p)) continue;
-      const keys = stageKeysForPath(p);
-      const stagedEntry = keys.map((k) => stagedProtection.get(k)).find((v) => v !== undefined);
-      if (stagedEntry ?? isProtected(p)) set.add(p);
+    for (const key of liveVariationKeys) {
+      const path = stageKeyPath(key);
+      if (pathContainsArrayIndex(path)) continue;
+      if (stagedProtection.get(key) ?? isProtected(path)) set.add(key);
     }
     return set;
-  }, [liveVariationPaths, stagedProtection, isProtected, stageKeysForPath]);
+  }, [liveVariationKeys, stagedProtection, isProtected]);
+  const keptOnMergePaths = useMemo(() => new Set([...keptOnMergeKeys].map(stageKeyPath)), [keptOnMergeKeys]);
 
   // ── Stop keeping N keys (Section 7/card 4b) — STAGE an unprotect for every
   // currently checkable, effectively-kept path. Placed here (not with the
-  // other staging signals above) because it depends on `keptOnMergePaths`,
+  // other staging signals above) because it depends on `keptOnMergeKeys`,
   // which itself needs `stagedProtection`/`isProtected` already declared.
   const lastStopKeepingAllRef = useRef(stopKeepingAllSignal ?? 0);
   useEffect(() => {
     if ((stopKeepingAllSignal ?? 0) === lastStopKeepingAllRef.current) return;
     lastStopKeepingAllRef.current = stopKeepingAllSignal ?? 0;
-    if (keptOnMergePaths.size === 0) return;
+    if (keptOnMergeKeys.size === 0) return;
     setStagedProtection((prev) => {
       const next = new Map(prev);
-      for (const p of keptOnMergePaths) {
-        for (const k of stageKeysForPath(p)) next.set(k, false);
-      }
+      for (const k of keptOnMergeKeys) next.set(k, false);
       return next;
     });
-  }, [stopKeepingAllSignal, keptOnMergePaths, stageKeysForPath]);
+  }, [stopKeepingAllSignal, keptOnMergeKeys]);
 
-  // Base narrowed paths: stable, does NOT depend on stagedPaths. Depending on
+  // Base narrowed keys: stable, does NOT depend on stagedPaths. Depending on
   // stagedPaths here causes narrowedTree to rebuild on every stage/unstage toggle:
-  // even when the staged path is already in upgradablePaths (same set content),
+  // even when the staged key is already in upgradableFieldKeys (same set content),
   // the new Set reference causes narrowedTree to produce new node objects → new
   // top-level keys when collapseFolderChains runs differently (e.g. a staged path
   // that shares a parent with an upgradable path prevents single-child collapse,
   // changing "spec.template.containers.0" → "spec") → NodeRow unmounts/remounts
   // → expansion state resets → the "whole unit expands" regression.
-  // Just-committed paths are kept in the narrowed set so the row stays visible
-  // after the commit's refetch clears it from upgradablePaths. committedDiffs only
+  // Just-committed keys are kept in the narrowed set so the row stays visible
+  // after the commit's refetch clears it from upgradableFieldKeys. committedDiffs only
   // changes on commit (never on stage/unstage), so folding it in here preserves the
-  // stage-time reference stability the narrowedPaths memo below relies on.
-  const baseNarrowedPaths = useMemo(() => {
+  // stage-time reference stability the narrowedKeys memo below relies on.
+  const baseNarrowedKeys = useMemo(() => {
     if (filterMode === 'upgradable') {
-      const set = new Set(upgradablePaths);
-      committedDiffs.forEach((_v, p) => set.add(stageKeyPath(p)));
+      const set = new Set(upgradableFieldKeys);
+      committedDiffs.forEach((_v, k) => set.add(k));
       return set;
     }
     if (filterMode === 'changed') {
-      // No variationPaths exclusion — see the filterMode prop's own doc
+      // No variationKeys exclusion — see the filterMode prop's own doc
       // comment. committedDiffs folded in for the same reason the
-      // 'upgradable' branch above does: a just-committed path should stay
+      // 'upgradable' branch above does: a just-committed key should stay
       // visible through the refetch that would otherwise drop it from
-      // changedPaths.
-      const set = new Set(changedPaths);
-      committedDiffs.forEach((_v, p) => set.add(stageKeyPath(p)));
+      // changedKeys.
+      const set = new Set(changedKeys);
+      committedDiffs.forEach((_v, k) => set.add(k));
       return set;
     }
     if (scopeFilter === 'local-overrides') {
       // Keep just-committed rows visible (value + ✓ done state) after the commit's
-      // refetch clears them from variation paths — same as the upgradable tab.
-      const set = new Set(variationPaths);
-      committedDiffs.forEach((_v, p) => set.add(stageKeyPath(p)));
+      // refetch clears them from the variation keys — same as the upgradable tab.
+      const set = new Set(variationKeys);
+      committedDiffs.forEach((_v, k) => set.add(k));
       return set;
     }
     if (scopeFilter === 'local-only') {
-      return new Set(unit.variationEntry?.localOnlyPaths ?? []);
+      return new Set(unit.variationEntry?.localOnlyKeys ?? []);
     }
     if (scopeFilter === 'kept-on-merge') {
-      return keptOnMergePaths;
+      return keptOnMergeKeys;
     }
     return null;
-  }, [filterMode, scopeFilter, variationPaths, upgradablePaths, changedPaths, committedDiffs, unit.variationEntry, keptOnMergePaths]);
+  }, [filterMode, scopeFilter, variationKeys, upgradableFieldKeys, changedKeys, committedDiffs, unit.variationEntry, keptOnMergeKeys]);
 
-  // Only extend with staged picks that fell OUTSIDE the base set — e.g. a path
+  // Only extend with staged picks that fell OUTSIDE the base set — e.g. a key
   // that was staged before the upstream diff cleared mid-session (so the row stays
   // visible after upgradeEntry.fieldDiffs updates). In the common case
-  // (stagedPaths ⊆ baseNarrowedPaths) this returns the SAME reference so
+  // (stagedPaths ⊆ baseNarrowedKeys) this returns the SAME reference so
   // narrowedTree is NOT rebuilt on stage/unstage.
-  const narrowedPaths = useMemo(() => {
-    if (!baseNarrowedPaths) return null;
-    // stagedPaths holds document-scoped keys; narrowedPaths is matched against bare
-    // allPaths, so compare/extend on the bare path a stage key carries.
+  // A whole-resource key has no row in the tree, so it never extends the set; counting
+  // it as an extra would rebuild the tree on every stage/unstage.
+  const narrowedKeys = useMemo(() => {
+    if (!baseNarrowedKeys) return null;
     let hasExtra = false;
-    for (const p of stagedPaths) {
-      if (!baseNarrowedPaths.has(stageKeyPath(p))) { hasExtra = true; break; }
+    for (const k of stagedPaths) {
+      if (!baseNarrowedKeys.has(k) && !wholeResourceKeys.has(k)) { hasExtra = true; break; }
     }
-    if (!hasExtra) return baseNarrowedPaths; // stable reference → narrowedTree skips rebuild
-    const extended = new Set(baseNarrowedPaths);
-    stagedPaths.forEach(p => extended.add(stageKeyPath(p)));
+    if (!hasExtra) return baseNarrowedKeys; // stable reference → narrowedTree skips rebuild
+    const extended = new Set(baseNarrowedKeys);
+    stagedPaths.forEach((k) => { if (!wholeResourceKeys.has(k)) extended.add(k); });
     return extended;
-  }, [baseNarrowedPaths, stagedPaths]);
+  }, [baseNarrowedKeys, stagedPaths, wholeResourceKeys]);
 
-  // THE tree — built exactly once per selection. Pick the visible path set first,
+  // THE tree — built exactly once per selection. Pick the visible row set first,
   // then build; the full tree used to be built unconditionally alongside this one
   // and then discarded in every narrowing mode.
   //
   // Which set:
-  //   narrowedPaths === null → NOT a narrowing mode ('all') → the filtered full set.
-  //   narrowedPaths !== null → a narrowing mode (upgradable/difference) → only the
-  //     matching paths. CRITICAL: when the narrowed set is EMPTY the tree must come
+  //   narrowedKeys === null → NOT a narrowing mode ('all') → the filtered full set.
+  //   narrowedKeys !== null → a narrowing mode (upgradable/difference) → only the
+  //     matching rows. CRITICAL: when the narrowed set is EMPTY the tree must come
   //     out EMPTY, never fall back to the full unit — that fallback is what expanded
   //     the whole unit. A narrowing mode with zero matches shows nothing, not
-  //     everything. (This guards the staging regression: if upgradablePaths
+  //     everything. (This guards the staging regression: if upgradableFieldKeys
   //     transiently empties while a stage/unstage churns the set, the view must stay
   //     narrowed.) Selecting the set inside this memo — rather than falling back on a
   //     null result — makes that structural, not a convention a caller must honour.
   //
   // Reference stability (the "whole unit expands" invariant): none of these deps
-  // changes on stage/unstage. narrowedPaths deliberately returns the SAME Set
-  // reference while stagedPaths ⊆ baseNarrowedPaths (see above), and filteredPaths /
-  // allPaths / groupedEntries are all staging-independent — so a stage/unstage
-  // produces no new node objects, no NodeRow remounts, and no expansion reset.
+  // changes on stage/unstage. narrowedKeys deliberately returns the SAME Set
+  // reference while stagedPaths ⊆ baseNarrowedKeys (see above), and filteredRows /
+  // treeRows / allPaths / groupedEntries are all staging-independent — so a
+  // stage/unstage produces no new node objects, no NodeRow remounts, and no
+  // expansion reset.
   const activeTree = useMemo(() => {
-    const visiblePaths = narrowedPaths
-      ? allPaths.filter(({ path }) => narrowedPaths.has(path))
-      : filteredPaths;
+    const visibleRows = narrowedKeys
+      ? treeRows.filter(({ key }) => narrowedKeys.has(key))
+      : filteredRows;
     return injectKeyContext(
-      buildResourceGroupedTree(selectGroupedEntries(groupedEntries, visiblePaths), { scopedWritesSupported, fullDocumentScopes: documentScopes }),
+      buildResourceGroupedTree(selectGroupedEntries(groupedEntries, documentScopes, visibleRows), { scopedWritesSupported, fullDocumentScopes: documentScopes }),
       allPaths,
     );
-  }, [narrowedPaths, filteredPaths, allPaths, groupedEntries, scopedWritesSupported, documentScopes]);
+  }, [narrowedKeys, filteredRows, treeRows, allPaths, groupedEntries, scopedWritesSupported, documentScopes]);
 
   // Optimistic pending folders: only show if their path isn't already in allPaths
   // (i.e. disappear once a child write lands and causes a refetch that includes them)
@@ -3623,23 +3916,36 @@ export const ComponentValuesSection = memo(({
     [activeTree, activePendingFolders],
   );
 
+  // Bare paths: the prefix index and the context tree address folders by path alone.
   const activeChangedPaths = useMemo(() => {
-    if (filterMode === 'upgradable') return new Set(upgradablePaths);
-    if (scopeFilter === 'local-overrides') return new Set(variationPaths);
-    if (scopeFilter === 'local-only') return new Set(unit.variationEntry?.localOnlyPaths ?? []);
+    if (filterMode === 'upgradable') return upgradablePaths;
+    if (scopeFilter === 'local-overrides') return variationPaths;
+    if (scopeFilter === 'local-only') return new Set((unit.variationEntry?.localOnlyKeys ?? []).map(stageKeyPath));
     if (scopeFilter === 'kept-on-merge') return keptOnMergePaths;
     return changedPaths;
   }, [filterMode, scopeFilter, variationPaths, upgradablePaths, changedPaths, unit.variationEntry, keptOnMergePaths]);
 
   const isMassive = allPaths.length >= MASSIVE_UNIT_THRESHOLD;
 
+  // The whole-resource rows show beside the field rows of the upgrade, not under a
+  // scope filter (they are neither overrides nor local-only nor kept), and a search
+  // keeps the ones whose resource it names.
+  const visibleWholeResourceChanges = useMemo(() => {
+    if (!wholeResourceChanges || scopeFilter) return [];
+    if (!filterText) return wholeResourceChanges;
+    const lower = filterText.toLowerCase();
+    return wholeResourceChanges.filter((c) =>
+      documentGroupLabel(c.resource, 0).toLowerCase().includes(lower)
+      || (c.resource?.ResourceName ?? '').toLowerCase().includes(lower));
+  }, [wholeResourceChanges, scopeFilter, filterText]);
+
   // Precompute prefix-index ONCE per build (sorted-path binary search for counts,
   // ancestor Sets for O(1) membership). Replaces the per-folder O(allPaths) scans
   // that previously ran inside every NodeRow render. Keyed on the same inputs the
   // folder rows consume so counts/ancestor flags stay consistent with the tree.
   const prefixIndex = useMemo(
-    () => buildPrefixIndex(allPaths, activeChangedPaths, upgradeFieldDiffs, variationFieldDiffs, isMassive),
-    [allPaths, activeChangedPaths, upgradeFieldDiffs, variationFieldDiffs, isMassive],
+    () => buildPrefixIndex(allPaths, activeChangedPaths, upgradeFieldDiffsByPath, variationFieldDiffsByPath, isMassive),
+    [allPaths, activeChangedPaths, upgradeFieldDiffsByPath, variationFieldDiffsByPath, isMassive],
   );
 
   // Provide staged membership via context (instead of drilling the Set through
@@ -3648,9 +3954,9 @@ export const ComponentValuesSection = memo(({
   const membership = useMemo<MembershipContextValue>(
     // committedBaseline is a ref-held map read fresh at leaf render; it is (re)populated on
     // commit, when committedDiffs (a dep) also changes, so the context refreshes with it.
-    // downstreamValueByPath changes on refetch, refreshing every leaf's convergence check.
-    () => ({ stagedPaths, committedDiffs, committedAddPaths, committedBaseline: committedBaselineRef.current, downstreamValueByPath, stagedEditedValues, onRevertEdit, stagedProtection, onToggleProtection }),
-    [stagedPaths, committedDiffs, committedAddPaths, downstreamValueByPath, stagedEditedValues, onRevertEdit, stagedProtection, onToggleProtection],
+    // downstreamValueByKey changes on refetch, refreshing every leaf's convergence check.
+    () => ({ stagedPaths, committedDiffs, committedAddPaths, committedBaseline: committedBaselineRef.current, downstreamValueByKey, stagedEditedValues, onRevertEdit, stagedProtection, onToggleProtection }),
+    [stagedPaths, committedDiffs, committedAddPaths, downstreamValueByKey, stagedEditedValues, onRevertEdit, stagedProtection, onToggleProtection],
   );
 
   return (
@@ -3761,7 +4067,7 @@ export const ComponentValuesSection = memo(({
           </Box>
         </Box>
       )}
-      {filteredPaths.length === 0 && (
+      {filteredRows.length === 0 && (
         <Box sx={{ px: 2, py: 2, fontSize: 12, fontFamily: componentTheme.fontSans, color: componentTheme.fgMuted, fontStyle: 'italic' }}>
           {filterText ? `No matches for "${filterText}"` : 'No configuration data'}
         </Box>
@@ -3781,9 +4087,10 @@ export const ComponentValuesSection = memo(({
           pathPrefix: '' as const,
           upgradeFieldDiffs,
           variationFieldDiffs,
-          liveVariationPaths,
+          liveVariationKeys,
           allPaths,
-          upstreamOnlyPaths,
+          upstreamOnlyKeys,
+          elementLabels,
           changedPaths: activeChangedPaths,
           changedDiffs,
           prefixIndex,
@@ -3836,6 +4143,16 @@ export const ComponentValuesSection = memo(({
           </Fragment>
         );
       })}
+      {visibleWholeResourceChanges.map((change) => (
+        <WholeResourceRow
+          key={change.key}
+          change={change}
+          staged={effectiveStagedPaths.has(change.key)}
+          available={availableWholeResourceKeys.has(change.key)}
+          readOnly={readOnly}
+          onToggle={onToggleWholeResource}
+        />
+      ))}
     </Box>
     </MembershipContext.Provider>
   );

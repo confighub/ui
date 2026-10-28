@@ -3,9 +3,13 @@
 import { useMemo } from 'react';
 
 import {
+  MAX_PARALLEL_CHUNKS,
+  inParallel,
   useSearchRevisionDataChunkedQuery,
   useSearchUnitDataChunkedQuery,
 } from '@/hooks/chunkedQueriesApi';
+import { configDiffApi, isNothingToDiff } from '@/hooks/configDiffApi';
+import { type ConfigDiff, confighubApi } from '@confighub/rtk-query';
 
 import { buildChangeOrderSequence } from '../../x/apps/change-order/changeOrderStages';
 import type { ChangeOrderSequence } from '../../x/apps/change-order/changeOrderTypes';
@@ -51,7 +55,61 @@ export interface DraftClone {
   data: string | undefined;
   /** `failed`: the data could not be read — "Could not establish", never an empty resource. */
   dataStatus: DraftReadStatus;
+  /** The server's diff from nothing to the base Unit at the end: each resource a whole Add. `undefined` unless read. */
+  diff: ConfigDiff | undefined;
+  /** `failed`: the diff could not be read, so what the clone writes is not determined. */
+  diffStatus: DraftReadStatus;
 }
+
+/** A base Unit at the Revision a change ends at, which the promotion clones into variants. */
+interface DraftCloneDiffItem {
+  unitId: string;
+  revisionId: string;
+}
+
+const cloneDiffKey = (item: DraftCloneDiffItem) => `${item.unitId}@${item.revisionId}`;
+
+/**
+ * By `cloneDiffKey`. `undefined` only for an item whose read failed; a Revision that names
+ * nothing writes nothing, which is an empty diff.
+ */
+type DraftCloneDiffs = Record<string, ConfigDiff | undefined>;
+
+/*
+ * What each clone would write, from nothing to its base Unit at the end, as the server diffs
+ * it. One `getConfigDiff` per base Unit, so each is its own cache entry and a scope that gains
+ * a Unit reads only that one; a read that fails is an item without a diff rather than a failed
+ * whole, so one Unit that cannot be read leaves the others' counts standing.
+ */
+const draftCloneDiffApi = confighubApi.injectEndpoints({
+  endpoints: (build) => ({
+    getDraftCloneDiffs: build.query<DraftCloneDiffs, { items: DraftCloneDiffItem[] }>({
+      queryFn: async ({ items }, api) => {
+        const diffs = await inParallel(items, MAX_PARALLEL_CHUNKS, async (item) => {
+          const result = await api.dispatch(
+            configDiffApi.endpoints.getConfigDiff.initiate(
+              {
+                diffRequest: {
+                  From: {},
+                  To: { UnitID: item.unitId, Revision: item.revisionId },
+                },
+              },
+              { subscribe: false },
+            ),
+          );
+          if (result.data === undefined) return undefined;
+          return isNothingToDiff(result.data) ? {} : (result.data.Diff ?? {});
+        });
+        const data: DraftCloneDiffs = {};
+        items.forEach((item, at) => {
+          data[cloneDiffKey(item)] = diffs[at];
+        });
+        return { data };
+      },
+    }),
+  }),
+  overrideExisting: false,
+});
 
 export interface DraftPreview {
   /**
@@ -156,7 +214,8 @@ interface PreviewKey {
  * `getUnitUpgradePreview` — untagged, keyed on the scope, the Units, the end and the basis, and
  * asked once the scope and end have been still for `DRAFT_PREVIEW_SETTLE_MS`; each variant
  * Unit's current data; each stage's members (`useWorkflowStageSpaces`, the detail view's own);
- * and the base's data at the end for every Unit a variant does not have yet.
+ * the base's data at the end for every Unit a variant does not have yet; and the server's diff
+ * from nothing to that data, for what each such clone writes.
  */
 export function useDraftPreview(args: UseDraftPreviewArgs): DraftPreview {
   const {
@@ -266,6 +325,21 @@ export function useDraftPreview(args: UseDraftPreviewArgs): DraftPreview {
     { revisionIds: cloneRevisionIds },
     { skip: skip || cloneRevisionIds.length === 0 },
   );
+  const cloneDiffItems = useMemo(
+    () =>
+      cloneRanges
+        .flatMap((range): DraftCloneDiffItem[] =>
+          range.endRevisionId === undefined
+            ? []
+            : [{ unitId: range.unitId, revisionId: range.endRevisionId }],
+        )
+        .sort((a, b) => cloneDiffKey(a).localeCompare(cloneDiffKey(b))),
+    [cloneRanges],
+  );
+  const cloneDiffRead = draftCloneDiffApi.useGetDraftCloneDiffsQuery(
+    { items: cloneDiffItems },
+    { skip: skip || cloneDiffItems.length === 0 },
+  );
 
   const workflowStages = workflow?.kind === 'workflow' ? workflow.workflow.stages : undefined;
   const {
@@ -320,8 +394,20 @@ export function useDraftPreview(args: UseDraftPreviewArgs): DraftPreview {
       if (revisionId === undefined || cloneDataRead.isError) return 'failed';
       return cloneDataRead.currentData === undefined ? 'loading' : 'resolved';
     };
-    return cloneRanges.flatMap((range) =>
-      range.cloneSpaceIds.map(
+    const diffOf = (range: DraftUnitRange): Pick<DraftClone, 'diff' | 'diffStatus'> => {
+      if (range.endRevisionId === undefined || cloneDiffRead.isError)
+        return { diff: undefined, diffStatus: 'failed' };
+      if (cloneDiffRead.currentData === undefined)
+        return { diff: undefined, diffStatus: 'loading' };
+      const diff =
+        cloneDiffRead.currentData[
+          cloneDiffKey({ unitId: range.unitId, revisionId: range.endRevisionId })
+        ];
+      return { diff, diffStatus: diff === undefined ? 'failed' : 'resolved' };
+    };
+    return cloneRanges.flatMap((range) => {
+      const diff = diffOf(range);
+      return range.cloneSpaceIds.map(
         (spaceId): DraftClone => ({
           spaceId,
           baseUnitId: range.unitId,
@@ -331,12 +417,35 @@ export function useDraftPreview(args: UseDraftPreviewArgs): DraftPreview {
               ? undefined
               : dataById.get(range.endRevisionId) || undefined,
           dataStatus: dataStatus(range.endRevisionId),
+          ...diff,
         }),
-      ),
-    );
-  }, [cloneRanges, cloneDataRead.currentData, cloneDataRead.isError]);
+      );
+    });
+  }, [
+    cloneRanges,
+    cloneDataRead.currentData,
+    cloneDataRead.isError,
+    cloneDiffRead.currentData,
+    cloneDiffRead.isError,
+  ]);
 
-  const retry = useRetry([replayed, squashed, unitDataRead, cloneDataRead], upstream?.retry);
+  const retry = useRetry(
+    [
+      replayed,
+      squashed,
+      unitDataRead,
+      cloneDataRead,
+      // A clone's diff that failed is an item without a diff, not a failed read.
+      {
+        isError:
+          cloneDiffRead.isError ||
+          Object.values(cloneDiffRead.currentData ?? {}).some((diff) => diff === undefined),
+        isUninitialized: cloneDiffRead.isUninitialized,
+        refetch: cloneDiffRead.refetch,
+      },
+    ],
+    upstream?.retry,
+  );
 
   return useMemo((): DraftPreview => {
     const common = {

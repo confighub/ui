@@ -260,9 +260,9 @@ const CONTAINER_LIST_ORDER: Record<ContainerImagePath['list'], number> = {
  *
  * The two sources are deliberately different in kind, and that is what keeps the
  * change model honest:
- *   `fieldDiffs`  the changes. A container added, removed or re-tagged is here,
- *                 because `computeFieldDiffs` unions the keys of both sides and
- *                 emits wherever they differ.
+ *   `fieldDiffs`  the changes. An image or container name that the diff changes
+ *                 is here, because `imageRowsOfResource` passes each scalar
+ *                 change to one of them.
  *   `allPaths`    every path on the old side. An image absent from `fieldDiffs`
  *                 but present here is by definition identical on both sides.
  * So an unchanged container never enters the change list. Nothing here

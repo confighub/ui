@@ -1,15 +1,17 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
+import type { SerializedError } from '@reduxjs/toolkit';
+import type { FetchBaseQueryError } from '@reduxjs/toolkit/query';
 
 import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
-import { buildUnitDiff } from '@/components/invoker/utils/diff-from-revisions';
+import { ConfigDiffView, type ConfigDiffColumns } from '@/components/config-diff/ConfigDiffView';
+import { summarizeConfigDiff } from '@/components/config-diff/configDiffTree';
 import {
   type ExtendedRevisionRead,
   type ExtendedSpaceRead,
   type RevisionRead,
-  useListExtendedRevisionsQuery,
   useListSpacesQuery,
 } from '@confighub/rtk-query';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -27,8 +29,10 @@ import { alpha, keyframes, useTheme, type Theme } from '@mui/material/styles';
 
 import { formatShortTimestamp } from '@/components/invoker/utils/date-format.utils';
 import { useListRecentRevisionsChunkedQuery } from '@/hooks/chunkedQueriesApi';
+import { useGetRevisionDiffQuery } from '@/hooks/configDiffApi';
 import { spaceComponentSlug, useComponentSlugs } from '@/hooks/useComponentSlugs';
 import { useInViewport } from '@/hooks/useInViewport';
+import { getApiErrorMessage } from '@/utility/error-functions';
 
 import {
   countEntriesByTab,
@@ -38,19 +42,17 @@ import {
   type FeedEntry,
 } from './activityFeedEntries';
 import { ROUTE_COMPONENTS } from './appTypes';
-import { TreeDiffSection } from './TreeDiffSection';
 import { useColumnResize } from './useColumnResize';
-import { useRevisionDataMap } from '@/hooks/useUnitData';
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
 
 /**
- * IntersectionObserver rootMargin used to lazily trigger predecessor-revision
- * prefetching for feed rows. Positive margin starts the fetch slightly before
- * a row is actually on-screen so the "N fields changed" badge is usually
- * already populated by the time the user scrolls to it.
+ * IntersectionObserver rootMargin used to lazily read each feed row's diff.
+ * Positive margin starts the read slightly before a row is actually on-screen
+ * so the "N changes" badge is usually already populated by the time the user
+ * scrolls to it.
  */
 const PREFETCH_ROOT_MARGIN = '400px 0px';
 
@@ -112,67 +114,43 @@ function getRevisionDescription(revision: RevisionRead | undefined): string {
 }
 
 // ============================================================================
-// PREDECESSOR DIFF (shared fetch/compute, two trigger sources)
+// REVISION DIFF (one read, two trigger sources)
 // ============================================================================
 
 /**
- * Fetches the predecessor revision (RevisionNum - 1) for `revision` and
- * computes the field-level diff against it. Shared by two trigger sources:
- *  - FeedEntryRow, which enables this once the row scrolls near the viewport,
- *    purely to resolve the "N fields changed" badge count.
- *  - RevisionDiffPanel, which always enables this once mounted (row expanded)
- *    to render the full diff.
- * Both call sites use identical query args (spaceId, unitId, RevisionNum - 1),
- * so RTK Query's cache dedups them — whichever fires first satisfies both,
- * and re-triggering an already-fetched row is free.
+ * What `revision` changed: the server's diff from the Revision before it. Read by two
+ * trigger sources with the same arguments, so RTK Query serves both from one request:
+ *  - FeedEntryRow, once the row scrolls near the viewport, for the "N changes" badge.
+ *  - RevisionDiffPanel, once the row is expanded, for the diff itself.
  *
- * When `onFieldChangeCount` is provided, the resolved count is published
- * upward as soon as it's known so collapsed rows can keep showing the badge.
+ * The server matches array elements by merge key, so an element inserted into a list
+ * is one change, and the elements after it are not reported as changed.
+ *
+ * A first Revision is not read. In this feed it is usually a clone, whose diff from
+ * nothing would list every resource as added; the panel says there is no previous instead.
+ *
+ * `from` is named rather than left to the server's default, the Revision before `to`: a
+ * Revision that a named selector cannot find is a 404 the panel can tell apart, as
+ * `isNoPreviousRevision` does, where the default's lookup answers a 500.
  */
-function usePredecessorDiff(
-  revision: RevisionRead,
-  unitSlug: string | undefined,
-  enabled: boolean,
-  onFieldChangeCount?: (revisionId: string, count: number) => void,
-) {
+function useRevisionChangeDiff(revision: RevisionRead, enabled: boolean) {
   const revNum = revision.RevisionNum ?? 0;
   const isFirstRevision = revNum <= 1;
   const spaceId = revision.SpaceID ?? '';
   const unitId = revision.UnitID ?? '';
-  const canFetch = enabled && !isFirstRevision && !!spaceId && !!unitId;
 
-  const { data: prevExtended = [], isFetching } = useListExtendedRevisionsQuery(
-    { spaceId, unitId, where: `RevisionNum = ${revNum - 1}` },
-    { skip: !canFetch },
+  const { data, error } = useGetRevisionDiffQuery(
+    { spaceId, unitId, from: String(revNum - 1), to: String(revNum) },
+    { skip: !enabled || isFirstRevision || !spaceId || !unitId },
   );
+  const summary = useMemo(() => (data ? summarizeConfigDiff(data.Diff) : undefined), [data]);
 
-  const prevRevision = prevExtended[0]?.Revision;
+  return { isFirstRevision, data, error, summary };
+}
 
-  // Both Revisions of the diff come from one request; configuration is not on the Revision.
-  const { dataFor } = useRevisionDataMap([prevRevision?.RevisionID, revision.RevisionID]);
-
-  const diff = useMemo(() => {
-    if (!canFetch || isFetching || !prevRevision) return null;
-    return buildUnitDiff(
-      unitId,
-      spaceId,
-      unitSlug ?? unitId,
-      dataFor(prevRevision.RevisionID),
-      dataFor(revision.RevisionID),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canFetch, isFetching, prevRevision, unitId, spaceId, unitSlug, revision.RevisionID, dataFor]);
-
-  // Publish the count upward so the collapsed row keeps its "N fields changed"
-  // badge once it's known, regardless of which trigger source resolved it.
-  const revisionId = revision.RevisionID ?? '';
-  const resolvedCount = diff?.diffs.length;
-  useEffect(() => {
-    if (resolvedCount === undefined || !revisionId || !onFieldChangeCount) return;
-    onFieldChangeCount(revisionId, resolvedCount);
-  }, [resolvedCount, revisionId, onFieldChangeCount]);
-
-  return { isFirstRevision, canFetch, isFetching, prevRevision, diff };
+/** The 404 the server answers when the `from` Revision is not found, as `from: <why>`. */
+function isNoPreviousRevision(error: FetchBaseQueryError | SerializedError): boolean {
+  return 'status' in error && error.status === 404 && getApiErrorMessage(error, '').startsWith('from: ');
 }
 
 // ============================================================================
@@ -181,60 +159,42 @@ function usePredecessorDiff(
 
 interface RevisionDiffPanelProps {
   revision: RevisionRead;
-  unitSlug?: string;
   onCollapse: () => void;
-  columnStyle: CSSProperties;
-  onDividerMouseDown: (columnIndex: 0 | 1, e: React.MouseEvent) => void;
-  isDragging: boolean;
-  /**
-   * Reports the resolved field-change count back to the feed so the collapsed
-   * row can keep showing the "N fields changed" badge after the panel closes.
-   * FeedEntryRow may also have already resolved (and reported) this same
-   * count via its own viewport-triggered prefetch — in that case this panel's
-   * fetch is served from the RTK Query cache instead of hitting the network.
-   */
-  onFieldChangeCount: (revisionId: string, count: number) => void;
+  /** Column widths shared by every row's panel, so a resize holds across rows. */
+  columns: ConfigDiffColumns;
+}
+
+function PanelMessage({ children, color = 'text.secondary' }: { children: React.ReactNode; color?: string }) {
+  return (
+    <Box sx={{ px: 1.5, py: 1.5 }}>
+      <Typography sx={{ fontSize: 12, color }}>{children}</Typography>
+    </Box>
+  );
 }
 
 /**
- * Accordion panel rendered beneath an expanded revision feed row.
- * Fetches the previous revision and renders a TreeDiffSection showing
- * the field-level before→after diff.
+ * Accordion panel rendered beneath an expanded revision feed row: what the
+ * Revision changed from the one before it, resource by resource.
  */
-const RevisionDiffPanel = ({
-  revision,
-  unitSlug,
-  onCollapse,
-  columnStyle,
-  onDividerMouseDown,
-  isDragging,
-  onFieldChangeCount,
-}: RevisionDiffPanelProps) => {
+const RevisionDiffPanel = ({ revision, onCollapse, columns }: RevisionDiffPanelProps) => {
   const theme = useTheme();
   const revNum = revision.RevisionNum ?? 0;
 
-  // Always enabled: this panel is only mounted when a row is expanded
-  // (`Collapse unmountOnExit`), so fetching unconditionally here is still
-  // lazy at the panel level. If FeedEntryRow's viewport-triggered prefetch
-  // already resolved this same revision, RTK Query serves it from cache.
-  const { isFirstRevision, isFetching, prevRevision, diff } = usePredecessorDiff(
-    revision,
-    unitSlug,
-    true,
-    onFieldChangeCount,
-  );
+  // This panel is mounted only while its row is expanded (`Collapse unmountOnExit`),
+  // so reading unconditionally here is still lazy.
+  const { isFirstRevision, data, error, summary } = useRevisionChangeDiff(revision, true);
 
-  // Determine the panel body based on state
   let panelBody: React.ReactNode;
   if (isFirstRevision) {
-    panelBody = (
-      <Box sx={{ px: 1.5, py: 1.5 }}>
-        <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
-          First revision — no previous to compare
-        </Typography>
-      </Box>
-    );
-  } else if (isFetching) {
+    panelBody = <PanelMessage>First revision — no previous to compare</PanelMessage>;
+  } else if (error) {
+    panelBody =
+      isNoPreviousRevision(error) ? (
+        <PanelMessage>Previous revision not available</PanelMessage>
+      ) : (
+        <PanelMessage color='error.main'>{getApiErrorMessage(error, 'The diff could not be loaded.')}</PanelMessage>
+      );
+  } else if (!data || !summary) {
     panelBody = (
       <Box sx={{ px: 1.5, py: 1.5, display: 'flex', flexDirection: 'column', gap: '6px' }}>
         <Skeleton variant='text' width='80%' height={14} />
@@ -242,40 +202,15 @@ const RevisionDiffPanel = ({
         <Skeleton variant='text' width='70%' height={14} />
       </Box>
     );
-  } else if (!prevRevision) {
-    panelBody = (
-      <Box sx={{ px: 1.5, py: 1.5 }}>
-        <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
-          Previous revision not available
-        </Typography>
-      </Box>
-    );
-  } else if (!diff || diff.diffs.length === 0) {
-    panelBody = (
-      <Box sx={{ px: 1.5, py: 1.5 }}>
-        <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
-          No field changes detected
-        </Typography>
-      </Box>
-    );
+  } else if (summary.total === 0) {
+    panelBody = <PanelMessage>No changes detected</PanelMessage>;
   } else {
-    panelBody = (
-      <TreeDiffSection
-        entry={{ unitId: diff.unitId, fieldDiffs: diff.diffs }}
-        allPaths={diff.allPaths}
-        keyPrefix={`feed-diff-${revision.RevisionID}`}
-        label='config changes'
-        variant='data'
-        hideLabel
-        columnStyle={columnStyle}
-        onDividerMouseDown={onDividerMouseDown}
-        isDragging={isDragging}
-      />
-    );
+    panelBody = <ConfigDiffView diff={data.Diff ?? {}} columns={columns} />;
   }
 
   return (
     <Box
+      data-testid='activity-feed-diff'
       sx={{
         pl: 7,
         pr: 0,
@@ -348,21 +283,9 @@ interface FeedEntryRowProps {
   isExpanded: boolean;
   /** Toggle the accordion open/closed. Called for both open and close. */
   onToggle: () => void;
-  columnStyle: CSSProperties;
-  onDividerMouseDown: (columnIndex: 0 | 1, e: React.MouseEvent) => void;
-  isDragging: boolean;
+  columns: ConfigDiffColumns;
   /** SpaceID (lowercased) → Slug map for substituting UUIDs in revision description text. */
   spaceIdToSlug: Map<string, string>;
-  /**
-   * Resolved field-change count for this row. Undefined until it has resolved — either because
-   * this row scrolled near the viewport (see the `useInViewport`-gated prefetch below) or because
-   * the row was expanded — and always undefined for first revisions (nothing to diff against). 0
-   * means no config fields changed (e.g. metadata-only patch). Supplied via parent state
-   * (`fieldChangeCounts` in ComponentActivityFeed), written by whichever trigger resolves first.
-   */
-  fieldChangeCount?: number;
-  /** Passed through to RevisionDiffPanel and the viewport prefetch so both can publish the resolved count. */
-  onFieldChangeCount: (revisionId: string, count: number) => void;
 }
 
 const FeedEntryRow = ({
@@ -370,12 +293,8 @@ const FeedEntryRow = ({
   isCurrentUser,
   isExpanded,
   onToggle,
-  columnStyle,
-  onDividerMouseDown,
-  isDragging,
+  columns,
   spaceIdToSlug,
-  fieldChangeCount,
-  onFieldChangeCount,
 }: FeedEntryRowProps) => {
   const theme = useTheme();
   const { componentName, isAutomated, autoDisplayName, autoSubLabel } = entry;
@@ -393,18 +312,20 @@ const FeedEntryRow = ({
   // verbatim.
   const descriptionText = substituteUuids(getRevisionDescription(entry.revision), spaceIdToSlug);
 
-  // ── Viewport-based predecessor prefetch ─────────────────────────────────────
-  // Once this row scrolls into (or near) the viewport, kick off the same
-  // predecessor-revision fetch RevisionDiffPanel uses, purely to resolve the
-  // "N fields changed" badge without requiring the user to expand the row.
+  // ── Viewport-based diff read ────────────────────────────────────────────────
+  // Once this row scrolls into (or near) the viewport, read the same diff
+  // RevisionDiffPanel draws, so the "N changes" badge shows without expanding
+  // the row. Reading every row on mount would fire one request per row on first paint.
   const [prefetchRef, hasBeenInView] = useInViewport<HTMLDivElement>(PREFETCH_ROOT_MARGIN);
-  const shouldPrefetch = hasBeenInView && fieldChangeCount === undefined;
-  usePredecessorDiff(entry.revision, entry.unitSlug, shouldPrefetch, onFieldChangeCount);
+  const { summary } = useRevisionChangeDiff(entry.revision, hasBeenInView);
+  const changeCount = summary?.total;
 
   return (
     <>
       <Box
         ref={prefetchRef}
+        data-testid='activity-feed-row'
+        data-revision-num={entry.revision.RevisionNum}
         role='button'
         tabIndex={0}
         onClick={onToggle}
@@ -500,8 +421,8 @@ const FeedEntryRow = ({
 
           {/* Row 2: "on [component] / [space] — description".
               No unit segment: activity is attributed to the space it happened in, which is the
-              level this feed is read at and the level the link navigates to. The unit still appears
-              in the expanded diff panel, where it is the thing actually being diffed. */}
+              level this feed is read at and the level the link navigates to. The expanded diff
+              panel names each resource the Revision changed. */}
           <Box sx={{ mt: '2px' }}>
             <Typography component='span' sx={{ fontSize: 13, color: 'text.secondary' }}>
               {'on '}
@@ -531,9 +452,9 @@ const FeedEntryRow = ({
               </Link>
               {' — '}
               {descriptionText}
-              {fieldChangeCount !== undefined && (
-                <Box component='span' sx={{ color: 'text.disabled' }}>
-                  {` · ${fieldChangeCount} field${fieldChangeCount === 1 ? '' : 's'} changed`}
+              {changeCount !== undefined && (
+                <Box component='span' data-testid='activity-feed-change-count' sx={{ color: 'text.disabled' }}>
+                  {` · ${changeCount} change${changeCount === 1 ? '' : 's'}`}
                 </Box>
               )}
             </Typography>
@@ -571,15 +492,7 @@ const FeedEntryRow = ({
 
       {/* Accordion diff panel */}
       <Collapse in={isExpanded} timeout={280} unmountOnExit>
-        <RevisionDiffPanel
-          revision={entry.revision}
-          unitSlug={entry.unitSlug}
-          onCollapse={onToggle}
-          columnStyle={columnStyle}
-          onDividerMouseDown={onDividerMouseDown}
-          isDragging={isDragging}
-          onFieldChangeCount={onFieldChangeCount}
-        />
+        <RevisionDiffPanel revision={entry.revision} onCollapse={onToggle} columns={columns} />
       </Collapse>
     </>
   );
@@ -599,19 +512,11 @@ export const ComponentActivityFeed = ({ spaces }: ComponentActivityFeedProps) =>
   const [activeTab, setActiveTab] = useState<ActivityFeedTab>('all');
   const [expandedRevisionId, setExpandedRevisionId] = useState<string | null>(null);
 
-  // Per-row field-change counts, populated by RevisionDiffPanel when a row is
-  // expanded and its predecessor revision resolves. Keyed by RevisionID.
-  // Deliberately lazy: preloading every row on mount fired one extra request
-  // per revision row (up to MAX_FEED_ENTRIES) on first paint.
-  const [fieldChangeCounts, setFieldChangeCounts] = useState<Map<string, number>>(() => new Map());
-
-  // Stable callback: idempotent to avoid render loops (returns prev when unchanged).
-  const handleCountResult = useCallback((revisionId: string, count: number) => {
-    setFieldChangeCounts((prev) =>
-      prev.get(revisionId) === count ? prev : new Map(prev).set(revisionId, count),
-    );
-  }, []);
   const { columnStyle, onDividerMouseDown, isDragging } = useColumnResize();
+  const columns = useMemo<ConfigDiffColumns>(
+    () => ({ columnStyle, onDividerMouseDown, isDragging }),
+    [columnStyle, onDividerMouseDown, isDragging],
+  );
 
   const handleToggleRevision = useCallback((revisionId: string) => {
     setExpandedRevisionId((prev) => (prev === revisionId ? null : revisionId));
@@ -646,7 +551,6 @@ export const ComponentActivityFeed = ({ spaces }: ComponentActivityFeedProps) =>
   );
 
   // ── Build revision feed entries ─────────────────────────────────────────────
-  // extended.Unit?.Slug is available because include: 'UserID,UnitID' is set above.
   const revisionFeedEntries = useMemo((): FeedEntry[] => {
     return (revisionsData as ExtendedRevisionRead[])
       .map((extended): FeedEntry | null => {
@@ -657,7 +561,6 @@ export const ComponentActivityFeed = ({ spaces }: ComponentActivityFeedProps) =>
         const timestamp = revision.CreatedAt ? new Date(revision.CreatedAt).getTime() : 0;
         // A Revision written by no User, such as by a Trigger, has no UserID.
         const automated = !revision.UserID;
-        const unitSlug = extended.Unit?.Slug;
 
         if (automated) {
           return {
@@ -666,7 +569,6 @@ export const ComponentActivityFeed = ({ spaces }: ComponentActivityFeedProps) =>
             timestamp,
             isAutomated: true,
             revision,
-            unitSlug,
             autoDisplayName: 'ConfigHub System',
             autoSubLabel: REVISION_SOURCE_LABELS[revision.Source ?? ''],
           };
@@ -678,7 +580,6 @@ export const ComponentActivityFeed = ({ spaces }: ComponentActivityFeedProps) =>
           timestamp,
           isAutomated: false,
           revision,
-          unitSlug,
           revisionUser: extended.User,
         };
       })
@@ -870,12 +771,8 @@ export const ComponentActivityFeed = ({ spaces }: ComponentActivityFeedProps) =>
                 isCurrentUser={!!(userInfo?.UserID && userInfo.UserID === entryUserID)}
                 isExpanded={expandedRevisionId === revisionId}
                 onToggle={() => handleToggleRevision(revisionId)}
-                columnStyle={columnStyle}
-                onDividerMouseDown={onDividerMouseDown}
-                isDragging={isDragging}
+                columns={columns}
                 spaceIdToSlug={spaceIdToSlug}
-                fieldChangeCount={fieldChangeCounts.get(revisionId)}
-                onFieldChangeCount={handleCountResult}
               />
             );
           })}

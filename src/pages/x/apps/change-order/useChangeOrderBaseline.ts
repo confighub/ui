@@ -2,21 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The state the change starts FROM — the yardstick a local override is measured
- * against.
- *
- * WHY NOT JUST COMPARE AGAINST THE BASE AS IT IS NOW. Because the base is where
- * the change was made, so its current data already contains the change. A Space
- * that has not yet been promoted therefore differs from it on exactly the paths
- * the ChangeOrder carries — and calling those differences "local overrides" is
- * calling the pending change an override. That mistake reported ~30 overrides in
- * a fixture that had none, and, far worse, told a Space whose pinned image was
- * about to be replaced that "the promote does not touch it".
- *
- * A local override is a value a Space holds that differs from the SHARED
- * STARTING POINT — what the base looked like immediately before the change.
- * Match that, and the Space is simply un-promoted. Differ from it, and the Space
- * has genuinely claimed its own value.
+ * The state the change starts FROM: the base Space's Units immediately before
+ * the change. The ChangeOrder console reads it for the resource identity of its
+ * source rows, because a change that alters identity (a rename, a namespace
+ * rewrite) leaves the old spelling only on this side, and the stage rows are
+ * keyed from it.
  *
  * That state has a name in the API: `Before:ChangeOrder:<id>`, the same
  * reference a promotion's clone step uses to decide what a downstream Space
@@ -25,22 +15,16 @@
  * the server resolves the reference and returns each unit's resolved Data
  * without persisting anything.
  *
- * NOT VIA THE REVISION HISTORY (an earlier version of this hook, and how the
- * doc comment above used to read). `/api/revision` for a given Unit returns
- * only its CURRENT head row, not an archive of every past edit — confirmed
- * empirically by making further edits to a unit and watching the row count
- * stay at 1 while RevisionNum climbed. A hook that scans for "the Revision
- * immediately before the one carrying this ChangeOrder" therefore never finds
- * more than the one row already at hand, and permanently reports `unresolvable`
- * — which is exactly what shipped and is what this rewrite fixes.
+ * NOT VIA THE REVISION HISTORY. `/api/revision` for a given Unit returns only
+ * its CURRENT head row, not an archive of every past edit, so a scan for "the
+ * Revision immediately before the one carrying this ChangeOrder" never finds
+ * more than the one row already at hand.
  *
- * WHEN IT CANNOT BE RESOLVED AT ALL, NO OVERRIDE IS CLAIMED. Not "probably
- * none", not a fallback to comparing against the current base — nothing. This
- * feature's whole job is telling someone whether their local value survives a
- * promote, and a guess there is the one thing worse than silence. A 207 whose
- * items are individually errored degrades per unit instead: an errored unit's
- * slug is simply absent from `dataBySlug`, which callers already treat as "no
- * baseline for this one" (see `changeOrderMergedUnits.ts`).
+ * WHEN IT CANNOT BE RESOLVED AT ALL, NOTHING IS CLAIMED: no fallback to the
+ * base as it stands now, which already contains the change. A 207 whose items
+ * are individually errored degrades per unit instead: an errored unit's slug is
+ * simply absent from `dataBySlug`, and the caller then keys that row from the
+ * Unit's current data (see `useChangeOrderConsoleChanges.ts`).
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -60,7 +44,7 @@ export interface UseChangeOrderBaselineArgs {
  * Three states, not two.
  *
  * `loading` is deliberately distinct from `unresolvable`. Collapsing them into
- * one boolean means the UI announces "overrides cannot be determined" during
+ * one boolean means the UI announces "cannot be determined" during
  * every ordinary fetch — claiming an ignorance it does not yet have, which is
  * the same fault as claiming knowledge it does not have. Not knowing YET and
  * not being able to know are different things and the reader deserves the

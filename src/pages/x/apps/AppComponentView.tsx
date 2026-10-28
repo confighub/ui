@@ -9,6 +9,7 @@ import {
   type ExtendedTargetRead,
   type ExtendedUnitRead,
   type ListAllUnitsApiArg,
+  type ConfigDiff,
   type MutationConflict,
   type ResourceProtection,
   type TargetRead,
@@ -41,13 +42,16 @@ import { ComponentFlowGraphSkeleton } from './ComponentFlowGraphSkeleton';
 import { ComponentSidePane } from './ComponentSidePane';
 import { usePreviewUnitUpgradeMutation } from './upgradePreviewApi';
 import type { StagedCommitPayload } from './ComponentValuesSection';
-import { useRevisionDataMap, useUnitDataMap, useUploadUnitData } from '@/hooks/useUnitData';
+import { useUnitDataMap, useUploadUnitData } from '@/hooks/useUnitData';
 import { useListAllUnitsChunkedQuery } from '@/hooks/chunkedQueriesApi';
-import { buildAllApplyEntries, buildUpgradeEntries, buildVariationEntries } from './entryBuilders';
+import { buildAllApplyEntries, buildUpgradeEntries, buildVariationEntries, splitDryRunItems } from './entryBuilders';
 import { type SetValueResult } from './configParser';
 import { arrowKey, buildComponentData } from './componentData';
 import { buildChangeSetsBySpace, changeSetIdsOf, openChangeSetIdOf, upstreamChangeSetBlocking, type WaitingChangeSet } from './changeSets';
 import { useChangeSetEntries } from './useChangeSetEntries';
+import { useUnreleasedDiffs } from './useUnreleasedDiffs';
+import { useVariationDiffs, type VariationDiffRead } from './useVariationDiffs';
+import { treeReadsDocuments } from './componentValues';
 import { batchIds } from './componentGroupFields';
 import { useBatchedQuery } from './useBatchedQuery';
 import { isYamlToolchain, useSetAttributesMutation } from './useSetAttributesMutation';
@@ -302,6 +306,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     // switches (unit IDs don't collide, but memory grows unboundedly in long
     // sessions).
     setDryRunData(new Map());
+    setDryRunDiffs(new Map());
     fetchedDryRunIds.current = new Set();
     // Close any open variant composer when switching graphs.
     setComposerParentId(null);
@@ -388,8 +393,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   const allUnits = useMemo(() => currentAllUnits ?? EMPTY_UNITS, [currentAllUnits]);
 
   // Configuration is read from the data endpoints, in one request for everything on screen,
-  // and handed to the entry builders as accessors. The Revisions are the head and
-  // last-applied of each Unit, which is what the Unapplied diff compares.
+  // and handed to the entry builders as accessors.
   // `isFetching` is the ONLY honest source of "still loading" for a unit's
   // configuration. Without it a consumer has to infer waiting from an empty
   // string, which is also what a unit with no configuration returns — so an
@@ -397,13 +401,10 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   const { dataFor: unitDataFor, isFetching: isUnitDataFetching } = useUnitDataMap(
     allUnits.map((u) => u.Unit?.UnitID),
   );
-  const { dataFor: revisionDataFor } = useRevisionDataMap(
-    allUnits.flatMap((u) => [u.HeadRevision?.RevisionID, u.LastReleasedRevision?.RevisionID]),
-  );
-  const dataAccessors = useMemo(
-    () => ({ unitData: unitDataFor, revisionData: revisionDataFor }),
-    [unitDataFor, revisionDataFor],
-  );
+  const dataAccessors = useMemo(() => ({ unitData: unitDataFor }), [unitDataFor]);
+  // What each Unit with unreleased changes changes since its last release, so the search
+  // finds a Unit by a value that change replaces or removes.
+  const unreleasedDiffs = useUnreleasedDiffs(allUnits);
   // Drives a subtle in-place "refreshing" indicator in the side pane for
   // post-mutation invalidation / settle-window polling refetches. Whenever
   // this component reaches the side-pane render path below, unitsLoading is
@@ -631,7 +632,10 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   }, [selectedDeploymentIds, unitsByDeployment, unitById, dispatch]);
 
   // ── Dry-run for accurate merge preview ──
+  // The configuration each Unit's upgrade would produce (variation compares upstream with
+  // it), and the Diff from the Unit as it is to that configuration (the upgrade entries).
   const [dryRunData, setDryRunData] = useState<Map<string, string>>(() => new Map());
+  const [dryRunDiffs, setDryRunDiffs] = useState<Map<string, ConfigDiff>>(() => new Map());
   const [dryRunConflicts, setDryRunConflicts] = useState<Map<string, MutationConflict[]>>(() => new Map());
   const [dryRunPendingIds, setDryRunPendingIds] = useState<Set<string>>(() => new Set());
   const fetchedDryRunIds = useRef<Set<string>>(new Set());
@@ -735,9 +739,11 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
         dryRunPatch({
           where: `UnitID IN (${batch.map((id) => `'${id}'`).join(',')})`,
           changeSetId,
-          // A dry run stores nothing, so the configuration it would produce comes back on the
-          // response only when asked for. It is what this preview diffs against.
-          include: 'ConfigData',
+          // A dry run stores nothing, so what it would produce comes back on the response
+          // only when asked for: the configuration, which the variation compares with
+          // upstream, and the server's Diff of it from the Unit's current configuration,
+          // which the upgrade entries are drawn from.
+          include: 'ConfigData,Diff',
           // @ts-expect-error RTK Query merge-patch+json content type requires pre-stringified body
           body: JSON.stringify({}),
         }).unwrap(),
@@ -745,16 +751,38 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     ).then((settled) => {
       const results: UnitCreateOrUpdateResponseRead[] = [];
       let anyFailed = false;
-      for (const outcome of settled) {
-        if (outcome.status === 'fulfilled') {
-          results.push(...outcome.value);
-        } else {
+      // A batch that succeeds can still fail some of its Units (`splitDryRunItems`).
+      const itemErrors: { unitId: string; message: string }[] = [];
+      settled.forEach((outcome, at) => {
+        if (outcome.status !== 'fulfilled') {
           anyFailed = true;
+          return;
+        }
+        const split = splitDryRunItems(batches[at].batch, outcome.value);
+        results.push(...split.results);
+        itemErrors.push(...split.errors);
+      });
+      if (itemErrors.length > 0) {
+        const detailsByDeployment = new Map<string, string[]>();
+        for (const { unitId, message } of itemErrors) {
+          const unit = unitById.get(unitId)?.Unit;
+          if (!unit?.SpaceID) continue;
+          const details = detailsByDeployment.get(unit.SpaceID) ?? [];
+          details.push(`${unit.Slug ?? unitId}: ${message}`);
+          detailsByDeployment.set(unit.SpaceID, details);
+        }
+        const timestamp = new Date();
+        for (const [deploymentId, details] of detailsByDeployment) {
+          setErrorsForDeployments([deploymentId], { title: 'Upgrade preview failed', detail: details.join('\n'), timestamp });
         }
       }
-      if (results.length > 0) {
+      if (results.length > 0 || itemErrors.length > 0) {
+        // A Unit whose preview failed keeps nothing from an earlier one, which would no
+        // longer be what its upgrade does.
+        const failedIds = itemErrors.map((e) => e.unitId);
         setDryRunData((prev) => {
           const next = new Map(prev);
+          for (const uid of failedIds) next.delete(uid);
           for (const r of results) {
             const uid = r.Unit?.UnitID;
             const data = r.ConfigData;
@@ -762,8 +790,18 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
           }
           return next;
         });
+        setDryRunDiffs((prev) => {
+          const next = new Map(prev);
+          for (const uid of failedIds) next.delete(uid);
+          for (const r of results) {
+            const uid = r.Unit?.UnitID;
+            if (uid && r.Diff) next.set(uid, r.Diff);
+          }
+          return next;
+        });
         setDryRunConflicts((prev) => {
           const next = new Map(prev);
+          for (const uid of failedIds) next.delete(uid);
           for (const r of results) {
             const uid = r.Unit?.UnitID;
             if (uid && r.Conflicts && r.Conflicts.length > 0) next.set(uid, r.Conflicts);
@@ -790,7 +828,57 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     });
   }, [upgradeableUnitIds, unitById, dryRunPatch, setErrorsForDeployments]);
 
-  const isDryRunLoading = dryRunPendingIds.size > 0;
+  // What each selected Unit differs from its upstream in, from the server: its local
+  // overrides now, and after the upgrade its dry run previews. A Unit the tree reads as
+  // text is compared as the tree reads it instead (`buildVariationEntries`), so not read.
+  const variationReads = useMemo(() => {
+    const reads: VariationDiffRead[] = [];
+    if (selectedDeploymentIds.size === 0) return reads;
+    for (const u of allUnits) {
+      const unit = u.Unit;
+      if (!unit?.UnitID || !unit.UpstreamUnitID) continue;
+      if (!unit.SpaceID || !selectedDeploymentIds.has(unit.SpaceID)) continue;
+      if (!treeReadsDocuments(unit.ToolchainType)) continue;
+      const upstream = unitById.get(unit.UpstreamUnitID)?.Unit;
+      const revisionNum = unit.HeadRevisionNum ?? 0;
+      const upstreamRevisionNum = upstream?.HeadRevisionNum ?? 0;
+      if (revisionNum <= 0 || upstreamRevisionNum <= 0) continue;
+      reads.push({
+        unitId: unit.UnitID,
+        revisionNum,
+        upstreamUnitId: unit.UpstreamUnitID,
+        upstreamRevisionNum,
+        toolchainType: unit.ToolchainType,
+      });
+    }
+    return reads;
+  }, [selectedDeploymentIds, allUnits, unitById]);
+  const variationDiffs = useVariationDiffs(variationReads, dryRunData);
+
+  // An upgradable Unit's preview is its dry run AND its variation after it: until the
+  // variation lands, its count would read every path a local override keeps out as
+  // upgradable, and the Incoming tab would stage them. So the Unit stays pending until
+  // both land, and a failed variation read is a failed preview.
+  const upgradeableUnitIdSet = useMemo(() => new Set(upgradeableUnitIds), [upgradeableUnitIds]);
+  const previewPendingIds = useMemo(() => {
+    let next: Set<string> | undefined;
+    for (const id of variationDiffs.pendingUnitIds) {
+      if (!upgradeableUnitIdSet.has(id) || dryRunPendingIds.has(id)) continue;
+      next ??= new Set(dryRunPendingIds);
+      next.add(id);
+    }
+    return next ?? dryRunPendingIds;
+  }, [variationDiffs.pendingUnitIds, upgradeableUnitIdSet, dryRunPendingIds]);
+  const { upgradeErrorByUnitId, variationErrorByUnitId } = useMemo(() => {
+    const upgradeErrors = new Map<string, string>();
+    const variationErrors = new Map<string, string>();
+    for (const [id, message] of variationDiffs.errorByUnitId) {
+      (upgradeableUnitIdSet.has(id) ? upgradeErrors : variationErrors).set(id, message);
+    }
+    return { upgradeErrorByUnitId: upgradeErrors, variationErrorByUnitId: variationErrors };
+  }, [variationDiffs.errorByUnitId, upgradeableUnitIdSet]);
+
+  const isDryRunLoading = previewPendingIds.size > 0;
 
   // Per-node "dry run settled" signal: true when the selected node has no
   // upgradable units, or when every upgradable unit has been fetched and is no
@@ -800,7 +888,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   // always coincides with a dryRunPendingIds state change that re-renders.
   const dryRunSettled =
     upgradeableUnitIds.length === 0 ||
-    upgradeableUnitIds.every((id) => fetchedDryRunIds.current.has(id) && !dryRunPendingIds.has(id));
+    upgradeableUnitIds.every((id) => fetchedDryRunIds.current.has(id) && !previewPendingIds.has(id));
 
   // Build target name map (Labels.DisplayName ?? Slug) for displaying target
   // labels above deployment nodes.
@@ -947,7 +1035,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   }, [componentDeployments, allUnits, unitById, changeSetsData]);
 
   // What the selected Deployment's ChangeSets changed, for the side pane's ChangeSet filter.
-  const { entries: changeSetEntries, isLoading: isChangeSetLoading } = useChangeSetEntries({
+  const { entries: changeSetEntries, isLoading: isChangeSetLoading, errorByUnitId: changeSetErrorByUnitId } = useChangeSetEntries({
     deployments,
     selectedDeploymentIds,
     unitById,
@@ -1115,24 +1203,24 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
       }
     }
 
-    return buildUpgradeEntries(activeUpgrades, allUnits, unitById, deploymentNameById, dryRunData, dryRunConflicts, dataAccessors)
-      .filter((e) => !dryRunPendingIds.has(e.unitId));
+    return buildUpgradeEntries(activeUpgrades, allUnits, unitById, deploymentNameById, dryRunDiffs, dryRunData, dryRunConflicts, dataAccessors)
+      .filter((e) => !previewPendingIds.has(e.unitId) && !upgradeErrorByUnitId.has(e.unitId));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDeploymentIds, deployments, allUnits, unitById, deploymentNameById, dryRunData, dryRunConflicts, dryRunPendingIds, dataAccessors]);
+  }, [selectedDeploymentIds, deployments, allUnits, unitById, deploymentNameById, dryRunDiffs, dryRunData, dryRunConflicts, previewPendingIds, upgradeErrorByUnitId, dataAccessors]);
 
   // Compute all apply entries including gated (for side pane display)
   const allApplyEntries = useMemo(() => {
     if (selectedDeploymentIds.size === 0) return [];
-    return buildAllApplyEntries(allUnits, Array.from(selectedDeploymentIds), deploymentNameById, dataAccessors);
+    return buildAllApplyEntries(allUnits, Array.from(selectedDeploymentIds), deploymentNameById, dataAccessors, unreleasedDiffs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDeploymentIds, allUnits, deploymentNameById, dataAccessors]);
+  }, [selectedDeploymentIds, allUnits, deploymentNameById, dataAccessors, unreleasedDiffs]);
 
   // Compute variation entries (environment differences between upstream and downstream)
   const variationEntries = useMemo(() => {
     if (selectedDeploymentIds.size === 0) return [];
-    return buildVariationEntries(Array.from(selectedDeploymentIds), allUnits, unitById, deploymentNameById, dryRunData, dataAccessors);
+    return buildVariationEntries(Array.from(selectedDeploymentIds), allUnits, unitById, deploymentNameById, dryRunData, variationDiffs, dataAccessors);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDeploymentIds, allUnits, unitById, deploymentNameById, dryRunData, dataAccessors]);
+  }, [selectedDeploymentIds, allUnits, unitById, deploymentNameById, dryRunData, variationDiffs, dataAccessors]);
 
   // ── Handlers ──
 
@@ -1323,6 +1411,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
         // "new" again so the next dry-run effect run recomputes all of them.
         fetchedDryRunIds.current.clear();
         setDryRunData(new Map());
+        setDryRunDiffs(new Map());
         setDryRunConflicts(new Map());
         flashSuccess(new Set([spaceId]), 'Upgraded');
         return true;
@@ -1354,6 +1443,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     });
     fetchedDryRunIds.current.clear();
     setDryRunData(new Map());
+    setDryRunDiffs(new Map());
     setDryRunConflicts(new Map());
   }, []);
 
@@ -1840,6 +1930,9 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
                 variationEntries={variationEntries}
                 changeSetEntries={changeSetEntries}
                 isChangeSetLoading={isChangeSetLoading}
+                changeSetErrorByUnitId={changeSetErrorByUnitId}
+                upgradeErrorByUnitId={upgradeErrorByUnitId}
+                variationErrorByUnitId={variationErrorByUnitId}
                 onCloseChangeSet={handleCloseChangeSet}
                 onOpenChangeSet={handleOpenChangeSet}
                 deployments={deployments}
@@ -1859,7 +1952,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
                 isRefreshing={unitsBackgroundRefreshing}
                 hasUpgradableUnits={upgradeableUnitIds.length > 0}
                 dryRunSettled={dryRunSettled}
-                dryRunPendingIds={dryRunPendingIds}
+                dryRunPendingIds={previewPendingIds}
                 isResizing={isSidePaneResizing}
                 onResizeStart={handleResizeStart}
                 onResizeEnd={handleResizeEnd}

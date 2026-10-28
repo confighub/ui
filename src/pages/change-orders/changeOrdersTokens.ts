@@ -11,7 +11,7 @@
  * the contract is wrong that is a finding about the instrument.
  *
  * ⚠️ THIS COVERS THE MARKUP THIS PAGE WRITES, AND NOTHING ELSE. The reused diff
- * components — `ComponentValuesSection`, `ChangeOrderGateList`, `ChangeOrderUnitHeader`
+ * components — `ConfigDiffView`, `ChangeOrderGateList`, `ChangeOrderUnitHeader`
  * — style themselves from `componentTheme`, which 58 files import. They cannot
  * be retuned from here, and retuning `componentTheme`'s values directly would
  * change the Component view as a side effect. That work is U3's CSS

@@ -385,6 +385,42 @@ function coerceCreatedValue(newValue: string): unknown {
   return newValue;
 }
 
+/**
+ * The type of a scalar, as the server's Diff reports it (`PathChange` data types, and the
+ * values of a YAML block). A value carried as text keeps its type through a write only
+ * with it: the text `2` is the string of an env var's `value: "2"` or the int of
+ * `replicas: 2`.
+ */
+export type LeafValueType = 'string' | 'int' | 'float' | 'bool' | 'null';
+
+/** The type of a parsed scalar, undefined for a map or array. */
+export function leafValueTypeOf(value: unknown): LeafValueType | undefined {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value === 'string') return 'string';
+  if (typeof value === 'boolean') return 'bool';
+  if (typeof value === 'number') return Number.isInteger(value) ? 'int' : 'float';
+  return undefined;
+}
+
+/** `text` read as a value of `type`. A number that does not parse stays text. */
+function typedValue(text: string, type: LeafValueType): unknown {
+  switch (type) {
+    case 'string': return text;
+    case 'bool': return text === 'true';
+    case 'null': return null;
+    default: {
+      if (text === 'NaN') return NaN;
+      const n = Number(text);
+      return Number.isNaN(n) ? text : n;
+    }
+  }
+}
+
+/** A value being created: of its type when known, else as {@link coerceCreatedValue} reads it. */
+function createdValue(text: string, type: LeafValueType | undefined): unknown {
+  return type ? typedValue(text, type) : coerceCreatedValue(text);
+}
+
 /** True if any key in `keys[start..end]` (inclusive) is a numeric array index. */
 function rangeHasNumericKey(keys: (string | number)[], start: number, end: number): boolean {
   for (let s = start; s <= end; s++) {
@@ -401,7 +437,13 @@ function rangeHasNumericKey(keys: (string | number)[], start: number, end: numbe
  *
  * Returns `true` if an existing key was found and set, `false` otherwise.
  */
-function setExistingValue(obj: unknown, keys: (string | number)[], newValue: string): boolean {
+function setExistingValue(
+  obj: unknown,
+  keys: (string | number)[],
+  newValue: string,
+  valueType?: LeafValueType,
+): boolean {
+  const replaced = (original: unknown) => (valueType ? typedValue(newValue, valueType) : coerceValue(newValue, original));
   function navigate(current: unknown, keyIdx: number): boolean {
     if (keyIdx >= keys.length) return false;
     if (current == null || typeof current !== 'object') return false;
@@ -413,7 +455,7 @@ function setExistingValue(obj: unknown, keys: (string | number)[], newValue: str
       const arr = current as unknown[];
       if (key < 0 || key >= arr.length) return false;
       if (keyIdx === keys.length - 1) {
-        arr[key] = coerceValue(newValue, arr[key]);
+        arr[key] = replaced(arr[key]);
         return true;
       }
       return navigate(arr[key], keyIdx + 1);
@@ -434,7 +476,7 @@ function setExistingValue(obj: unknown, keys: (string | number)[], newValue: str
 
       if (end === keys.length - 1) {
         // This is the final key — set the value.
-        rec[tryKey] = coerceValue(newValue, rec[tryKey]);
+        rec[tryKey] = replaced(rec[tryKey]);
         return true;
       }
       // Not the final key — recurse into the child.
@@ -449,18 +491,37 @@ function setExistingValue(obj: unknown, keys: (string | number)[], newValue: str
 
 /**
  * Create a missing key (including intermediate objects) at the given path using
- * a naive single-segment walk. Arrays are never fabricated — paths that require
- * an array index report 'array-creation-needed'. A segment that collides with an
- * existing scalar reports 'conflict'.
+ * a naive single-segment walk. A missing array, and a missing element at the array's
+ * end, are created, so a list the upstream adds is written element by element in index
+ * order. An index past the end reports 'array-creation-needed': the elements before it
+ * are not there to keep it in place. A segment that collides with an existing scalar
+ * reports 'conflict'.
  */
-function createNestedValue(obj: unknown, keys: (string | number)[], newValue: string): NestedSetResult {
+function createNestedValue(
+  obj: unknown,
+  keys: (string | number)[],
+  newValue: string,
+  valueType?: LeafValueType,
+): NestedSetResult {
   let current = obj;
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
     const isLast = i === keys.length - 1;
+    const next = keys[i + 1];
 
-    // We never fabricate arrays for missing keys.
-    if (typeof key === 'number') return { status: 'array-creation-needed' };
+    if (typeof key === 'number') {
+      if (!Array.isArray(current)) return { status: 'conflict', conflictSegment: String(keys[i - 1]) };
+      if (key > current.length) return { status: 'array-creation-needed' };
+      if (isLast) {
+        current[key] = createdValue(newValue, valueType);
+        return { status: 'set' };
+      }
+      if (key === current.length) current.push(typeof next === 'number' ? [] : {});
+      const child: unknown = current[key];
+      if (child == null || typeof child !== 'object') return { status: 'conflict', conflictSegment: String(key) };
+      current = child;
+      continue;
+    }
 
     if (current == null || typeof current !== 'object' || Array.isArray(current)) {
       return { status: 'conflict', conflictSegment: String(keys[i - 1]) };
@@ -468,20 +529,16 @@ function createNestedValue(obj: unknown, keys: (string | number)[], newValue: st
     const rec = current as Record<string, unknown>;
 
     if (isLast) {
-      rec[key] = coerceCreatedValue(newValue);
+      rec[key] = createdValue(newValue, valueType);
       return { status: 'set' };
     }
 
-    const next = keys[i + 1];
-    // The next segment is an array index — would require fabricating an array.
-    if (typeof next === 'number') return { status: 'array-creation-needed' };
-
     if (!(key in rec)) {
-      rec[key] = {};
+      rec[key] = typeof next === 'number' ? [] : {};
       current = rec[key];
     } else {
       const child = rec[key];
-      if (child == null || typeof child !== 'object' || Array.isArray(child)) {
+      if (child == null || typeof child !== 'object' || Array.isArray(child) !== (typeof next === 'number')) {
         return { status: 'conflict', conflictSegment: key };
       }
       current = child;
@@ -499,10 +556,11 @@ function setNestedValue(
   keys: (string | number)[],
   newValue: string,
   create: boolean,
+  valueType?: LeafValueType,
 ): NestedSetResult {
-  if (setExistingValue(obj, keys, newValue)) return { status: 'set' };
+  if (setExistingValue(obj, keys, newValue, valueType)) return { status: 'set' };
   if (!create) return { status: 'not-found' };
-  return createNestedValue(obj, keys, newValue);
+  return createNestedValue(obj, keys, newValue, valueType);
 }
 
 /**
@@ -566,7 +624,7 @@ function setFailureResult(result: NestedSetResult, path: string): SetValueResult
     return {
       ok: false,
       code: 'array-creation-unsupported',
-      message: `Can't add "${path}": adding new array elements isn't supported. Edit the unit's config directly to add this field.`,
+      message: `Can't add "${path}": the array elements before it are not there. Edit the unit's config directly to add this field.`,
     };
   }
   if (result.status === 'conflict') {
@@ -606,21 +664,37 @@ function isMultiDocYaml(content: string): boolean {
 }
 
 /**
- * Re-serialise a parsed multi-document YAML stream, re-stringifying only the
- * edited document (at `updatedIdx`) and preserving the original text — including
- * comments — for every other document. Mirrors the `---` separators between docs.
+ * Re-serialise a parsed multi-document YAML stream from its source text.
+ *
+ * Every document but the edited one (at `updatedIdx`) is copied from `content` byte
+ * for byte, with its `---` marker, comments and directives, so a write never touches a
+ * sibling. A document's own text starts where the previous document's ends, which takes
+ * in its directives, its `---` marker and its trailing comments: a separator is never
+ * written twice and a leading `---` stays. The edited document keeps that text around
+ * its body and gets a re-stringified body; when its value has not changed it is copied
+ * too, so a write that changes nothing gives back `content` unchanged.
  */
 function serializeMultiDocYaml(
+  content: string,
   docs: ReturnType<typeof parseAllDocuments>,
   docObjects: unknown[],
   updatedIdx: number,
 ): string {
+  let start = 0;
   return docs
     .map((doc, i) => {
-      const yamlStr = i === updatedIdx
-        ? (docObjects[i] != null ? stringifyYaml(docObjects[i] as object) : '')
-        : doc.toString();
-      return i === 0 ? yamlStr : `---\n${yamlStr}`;
+      // A parsed document always has its range; one without is not from `content`.
+      if (!doc.range) throw new Error('document without a source range');
+      const [, valueEnd, nodeEnd] = doc.range;
+      const end = i === docs.length - 1 ? content.length : nodeEnd;
+      const own = content.slice(start, end);
+      const ownStart = start;
+      start = end;
+      const obj = docObjects[i];
+      if (i !== updatedIdx || JSON.stringify(obj) === JSON.stringify(doc.toJSON())) return own;
+      const head = own.slice(0, (doc.contents?.range?.[0] ?? valueEnd) - ownStart);
+      const body = obj != null ? stringifyYaml(obj as object) : '';
+      return (head === '' || head.endsWith('\n') ? head : `${head}\n`) + body + own.slice(valueEnd - ownStart);
     })
     .join('');
 }
@@ -646,17 +720,23 @@ function documentCandidateIdxs(docObjects: unknown[], resource?: ResourceInfo): 
 /**
  * Set a field value at `path` (dot-notation with bracket indices) inside `data`
  * (JSON or YAML). Missing keys (including nested intermediate
- * objects) are CREATED for JSON and YAML. Arrays are never fabricated, and
+ * objects) are CREATED for JSON and YAML. An array element is created only at the
+ * array's end (see {@link createNestedValue}), and
  * INI/Properties/line-based formats fail gracefully with a specific message.
  *
  * When `resource` is supplied and `data` is multi-document YAML, the write is
  * pinned to the document with that resource identity (see {@link documentCandidateIdxs}).
+ *
+ * With `valueType`, the value is written as that type. Without it, a value replacing
+ * another takes that value's type where it reads as one, and a created value is read as
+ * a number, boolean or null where it looks like one (a typed edit).
  */
 export function setValueAtPath(
   data: string | undefined,
   path: string,
   newValue: string,
   resource?: ResourceInfo,
+  valueType?: LeafValueType,
 ): SetValueResult {
   if (!data) return { ok: true, data: data ?? '' };
 
@@ -668,7 +748,7 @@ export function setValueAtPath(
   try {
     const parsed: unknown = JSON.parse(content);
     if (parsed != null && typeof parsed === 'object') {
-      const result = setNestedValue(parsed, keys, newValue, true);
+      const result = setNestedValue(parsed, keys, newValue, true, valueType);
       if (result.status === 'set') {
         return { ok: true, data: JSON.stringify(parsed, null, 2) };
       }
@@ -690,7 +770,7 @@ export function setValueAtPath(
       let updatedIdx = -1;
       for (const i of candidateIdxs) {
         const obj = docObjects[i];
-        if (obj != null && typeof obj === 'object' && setExistingValue(obj, keys, newValue)) {
+        if (obj != null && typeof obj === 'object' && setExistingValue(obj, keys, newValue, valueType)) {
           updatedIdx = i;
           break;
         }
@@ -701,14 +781,14 @@ export function setValueAtPath(
         for (const i of candidateIdxs) {
           const obj = docObjects[i];
           if (obj != null && typeof obj === 'object' && !Array.isArray(obj)) {
-            createResult = createNestedValue(obj, keys, newValue);
+            createResult = createNestedValue(obj, keys, newValue, valueType);
             if (createResult.status === 'set') { updatedIdx = i; }
             break;
           }
         }
       }
       if (updatedIdx >= 0) {
-        return { ok: true, data: serializeMultiDocYaml(docs, docObjects, updatedIdx) };
+        return { ok: true, data: serializeMultiDocYaml(content, docs, docObjects, updatedIdx) };
       }
       if (createResult && createResult.status !== 'set') {
         return setFailureResult(createResult, path);
@@ -721,7 +801,7 @@ export function setValueAtPath(
   try {
     const parsed = parseYaml(content);
     if (parsed != null && typeof parsed === 'object') {
-      const result = setNestedValue(parsed, keys, newValue, true);
+      const result = setNestedValue(parsed, keys, newValue, true, valueType);
       if (result.status === 'set') {
         return { ok: true, data: stringifyYaml(parsed) };
       }
@@ -773,7 +853,7 @@ export function deleteValueAtPath(data: string | undefined, path: string, resour
         }
       }
       if (updatedIdx >= 0) {
-        return { ok: true, data: serializeMultiDocYaml(docs, docObjects, updatedIdx) };
+        return { ok: true, data: serializeMultiDocYaml(content, docs, docObjects, updatedIdx) };
       }
       return { ok: true, data }; // key already absent
     } catch { /* fall through */ }
@@ -801,6 +881,334 @@ export function deleteValueAtPath(data: string | undefined, path: string, resour
     code: 'unsupported-format',
     message: `Can't remove "${path}": editing isn't supported for this configuration format.`,
   };
+}
+
+// ============================================================================
+// BATCHED WRITES
+// ============================================================================
+
+/**
+ * A write into an array element the configuration does not hold yet: where the element
+ * goes. Every leaf of one new element carries the same insertion.
+ */
+export interface ArrayInsertion {
+  /** The array's dot-index path, as the write's path names it. */
+  arrayPath: string;
+  /** The made-up index the write's path gives the element, past the array's last element. */
+  index: number;
+  /**
+   * The index of the element the new one follows, -1 for the start of the array.
+   * Absent when it is not known; the element is then appended.
+   */
+  after?: number;
+  /**
+   * The element's index upstream (the other side of the diff). It orders the new elements
+   * of one array, and it is the index the tree shows for the element.
+   */
+  order: number;
+}
+
+/**
+ * One change of a batch, at a path of the configuration as it was BEFORE the batch:
+ * every path of a batch names an element by its index in that one configuration.
+ */
+export interface ConfigWrite {
+  path: string;
+  kind: 'set' | 'delete';
+  /** The value to set; unused by a delete. */
+  value?: string;
+  /**
+   * The type to write `value` as, for a value the server's Diff gives. Absent for a value
+   * the user typed, which is read as {@link setValueAtPath} reads one.
+   */
+  valueType?: LeafValueType;
+  /** The document to pin the write to (see {@link documentCandidateIdxs}). */
+  resource?: ResourceInfo;
+  /** The document the path is in. Writes to different documents never affect each other. */
+  documentId?: string;
+  /** Set when the path runs through an element the configuration does not hold yet. */
+  insertion?: ArrayInsertion;
+}
+
+/** Whether path `a` is a strict ancestor of path `b`. */
+function isAncestorPath(a: (string | number)[], b: (string | number)[]): boolean {
+  return a.length < b.length && a.every((k, i) => k === b[i]);
+}
+
+/**
+ * A total order on paths that puts a higher array index first, so that deleting one
+ * element never moves an element a later write still names: removing index i moves
+ * only the elements after it, which have been written already. Map keys are ordered
+ * alphabetically only to make the order total.
+ */
+function compareIndexDescending(a: (string | number)[], b: (string | number)[]): number {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (x === y) continue;
+    if (typeof x === 'number' && typeof y === 'number') return y - x;
+    if (typeof x === 'number') return -1;
+    if (typeof y === 'number') return 1;
+    return x < y ? -1 : 1;
+  }
+  return a.length - b.length;
+}
+
+/** As {@link compareIndexDescending}, but a lower array index first. */
+function compareIndexAscending(a: (string | number)[], b: (string | number)[]): number {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (x === y) continue;
+    if (typeof x === 'number' && typeof y === 'number') return x - y;
+    if (typeof x === 'number') return -1;
+    if (typeof y === 'number') return 1;
+    return x < y ? -1 : 1;
+  }
+  return a.length - b.length;
+}
+
+/**
+ * The order to apply `writes` in so each one lands on the element its path names in the
+ * configuration before the batch. A delete that empties an array element removes the
+ * element, and the elements after it move down an index; so:
+ *
+ *  1. a delete of a strict ancestor of a set in the same document goes first, in the
+ *     order given: it is the scalar a Replace turns into a map, and the map's leaves
+ *     cannot be set under the scalar;
+ *  2. then every set, lower array index first (see {@link compareIndexAscending}): a
+ *     set never moves an element, and a list the configuration does not hold is built
+ *     element by element from its start;
+ *  3. then the other deletes, higher array index first (see {@link compareIndexDescending}).
+ */
+export function orderConfigWrites<W extends ConfigWrite>(writes: readonly W[]): W[] {
+  const keyed = writes.map((w) => ({ w, keys: parseDotPath(w.path) }));
+  const sets = keyed.filter((x) => x.w.kind === 'set');
+  const clearing: typeof keyed = [];
+  const rest: typeof keyed = [];
+  for (const x of keyed) {
+    if (x.w.kind !== 'delete') continue;
+    const clears = sets.some((s) => s.w.documentId === x.w.documentId && isAncestorPath(x.keys, s.keys));
+    (clears ? clearing : rest).push(x);
+  }
+  sets.sort((a, b) => compareIndexAscending(a.keys, b.keys));
+  rest.sort((a, b) => compareIndexDescending(a.keys, b.keys));
+  return [...clearing, ...sets, ...rest].map((x) => x.w);
+}
+
+/** The node at `keys` among the keys `obj` holds, matching dotted keys as {@link setExistingValue} does. */
+function existingNodeAt(obj: unknown, keys: (string | number)[]): unknown {
+  function navigate(current: unknown, keyIdx: number): unknown {
+    if (keyIdx >= keys.length) return current;
+    if (current == null || typeof current !== 'object') return undefined;
+    const key = keys[keyIdx];
+    if (typeof key === 'number') {
+      if (!Array.isArray(current) || key < 0 || key >= current.length) return undefined;
+      return navigate(current[key], keyIdx + 1);
+    }
+    if (Array.isArray(current)) return undefined;
+    const rec = current as Record<string, unknown>;
+    for (let end = keys.length - 1; end >= keyIdx; end--) {
+      if (rangeHasNumericKey(keys, keyIdx, end)) continue;
+      const tryKey = (keys.slice(keyIdx, end + 1) as string[]).join('.');
+      if (!(tryKey in rec)) continue;
+      const found = navigate(rec[tryKey], end + 1);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  return navigate(obj, 0);
+}
+
+/** A leaf of a new element, at a path relative to the element. */
+interface ElementLeaf {
+  rel: (string | number)[];
+  value: string;
+  valueType?: LeafValueType;
+}
+
+/**
+ * A new element from the leaves staged for it, each at a path relative to the element.
+ * A leaf at the element itself makes a scalar. A leaf left out is not created, and a
+ * list in the element keeps the order of the leaves it has.
+ */
+function buildElement(leaves: ElementLeaf[]): unknown {
+  const whole = leaves.find((l) => l.rel.length === 0);
+  if (whole) return createdValue(whole.value, whole.valueType);
+  const root: Record<string, unknown> = {};
+  for (const { rel, value, valueType } of leaves) {
+    let current: Record<string | number, unknown> = root;
+    for (let i = 0; i < rel.length - 1; i++) {
+      const key = rel[i];
+      const child = current[key];
+      if (child == null || typeof child !== 'object') current[key] = typeof rel[i + 1] === 'number' ? [] : {};
+      current = current[key] as Record<string | number, unknown>;
+    }
+    current[rel[rel.length - 1]] = createdValue(value, valueType);
+  }
+  const compact = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.filter((v) => v !== undefined).map(compact);
+    if (node != null && typeof node === 'object') {
+      const rec = node as Record<string, unknown>;
+      for (const k of Object.keys(rec)) rec[k] = compact(rec[k]);
+    }
+    return node;
+  };
+  return compact(root);
+}
+
+/**
+ * Insert `element` into the array at `arrayKeys` of `data`, at `position`, or at the
+ * array's end when `position` is undefined or past it. Pinned to `resource`'s document
+ * as {@link setValueAtPath} is. Gives the index the element took.
+ */
+function insertArrayElement(
+  data: string,
+  arrayKeys: (string | number)[],
+  position: number | undefined,
+  element: unknown,
+  resource?: ResourceInfo,
+): { ok: true; data: string; index: number } | { ok: false } {
+  let index = -1;
+  const insertInto = (obj: unknown): boolean => {
+    const arr = existingNodeAt(obj, arrayKeys);
+    if (!Array.isArray(arr)) return false;
+    index = position === undefined ? arr.length : Math.min(Math.max(position, 0), arr.length);
+    arr.splice(index, 0, element);
+    return true;
+  };
+  try {
+    const parsed: unknown = JSON.parse(data);
+    if (parsed != null && typeof parsed === 'object') {
+      return insertInto(parsed) ? { ok: true, data: JSON.stringify(parsed, null, 2), index } : { ok: false };
+    }
+  } catch { /* not JSON */ }
+  if (isMultiDocYaml(data)) {
+    try {
+      const docs = parseAllDocuments(data);
+      const docObjects = docs.map((d) => d.toJSON() as unknown);
+      for (const i of documentCandidateIdxs(docObjects, resource)) {
+        if (insertInto(docObjects[i])) return { ok: true, data: serializeMultiDocYaml(data, docs, docObjects, i), index };
+      }
+    } catch { /* fall through */ }
+    return { ok: false };
+  }
+  try {
+    const parsed = parseYaml(data);
+    if (parsed != null && typeof parsed === 'object' && insertInto(parsed)) {
+      return { ok: true, data: stringifyYaml(parsed), index };
+    }
+  } catch { /* not YAML */ }
+  return { ok: false };
+}
+
+/** The writes of one new element, and where it goes. */
+interface NewElement {
+  documentId?: string;
+  resource?: ResourceInfo;
+  arrayKeys: (string | number)[];
+  after?: number;
+  order: number;
+  index: number;
+  leaves: ElementLeaf[];
+  paths: string[];
+}
+
+/** Whether `keys` runs through the array `arrayKeys` at `index` or after it. */
+function passesAtOrAfter(keys: (string | number)[], arrayKeys: (string | number)[], index: number): boolean {
+  if (keys.length <= arrayKeys.length || !arrayKeys.every((k, i) => k === keys[i])) return false;
+  const at = keys[arrayKeys.length];
+  return typeof at === 'number' && at >= index;
+}
+
+/**
+ * Apply a batch of writes to `data`. The paths that could not be written come back in
+ * `failedPaths`, and `data` then holds only the writes that could.
+ *
+ * The new elements go in first, while every index still names the element it named
+ * before the batch: each goes right after the element its insertion says it follows,
+ * and after any new element placed there before it, so new elements that follow one
+ * element keep their upstream order. Every path still to be written that runs through
+ * the array at or after that place then moves up one index. The other writes follow, in
+ * the order {@link orderConfigWrites} gives. A delete under a new element deletes
+ * nothing, and is dropped.
+ */
+export function applyConfigWrites(
+  data: string,
+  writes: readonly ConfigWrite[],
+): { data: string; failedPaths: string[] } {
+  const elements = new Map<string, NewElement>();
+  const rest: { w: ConfigWrite; keys: (string | number)[] }[] = [];
+  for (const w of writes) {
+    const keys = parseDotPath(w.path);
+    const ins = w.insertion;
+    const arrayKeys = ins ? parseDotPath(ins.arrayPath) : [];
+    if (!ins || keys[arrayKeys.length] !== ins.index || !arrayKeys.every((k, i) => k === keys[i])) {
+      rest.push({ w, keys });
+      continue;
+    }
+    if (w.kind === 'delete') continue;
+    const id = `${w.documentId ?? ''}\u0000${ins.arrayPath}\u0000${ins.index}`;
+    let el = elements.get(id);
+    if (!el) {
+      el = {
+        documentId: w.documentId,
+        resource: w.resource,
+        arrayKeys,
+        ...(ins.after !== undefined ? { after: ins.after } : {}),
+        order: ins.order,
+        index: ins.index,
+        leaves: [],
+        paths: [],
+      };
+      elements.set(id, el);
+    }
+    el.leaves.push({ rel: keys.slice(arrayKeys.length + 1), value: w.value ?? '', valueType: w.valueType });
+    el.paths.push(w.path);
+  }
+
+  let out = data;
+  const failedPaths: string[] = [];
+  const pending = [...elements.values()].sort((a, b) =>
+    Number(a.after === undefined) - Number(b.after === undefined) || a.order - b.order || a.index - b.index);
+  while (pending.length > 0) {
+    const el = pending.shift()!;
+    const result = insertArrayElement(
+      out, el.arrayKeys, el.after === undefined ? undefined : el.after + 1, buildElement(el.leaves), el.resource);
+    if (!result.ok) {
+      failedPaths.push(...el.paths);
+      continue;
+    }
+    out = result.data;
+    const at = result.index;
+    for (const x of rest) {
+      if (x.w.documentId !== el.documentId || !passesAtOrAfter(x.keys, el.arrayKeys, at)) continue;
+      x.keys = x.keys.map((k, i) => (i === el.arrayKeys.length ? (k as number) + 1 : k));
+      x.w = { ...x.w, path: x.keys.join('.') };
+    }
+    for (const other of pending) {
+      if (other.documentId !== el.documentId) continue;
+      const sameArray = other.arrayKeys.length === el.arrayKeys.length
+        && other.arrayKeys.every((k, i) => k === el.arrayKeys[i]);
+      if (sameArray) {
+        if (other.after === el.after && other.after !== undefined) other.after = at;
+        else if (other.after !== undefined && other.after >= at) other.after += 1;
+      } else if (passesAtOrAfter(other.arrayKeys, el.arrayKeys, at)) {
+        other.arrayKeys = other.arrayKeys.map((k, i) => (i === el.arrayKeys.length ? (k as number) + 1 : k));
+      }
+    }
+  }
+
+  for (const w of orderConfigWrites(rest.map((x) => x.w))) {
+    const result = w.kind === 'delete'
+      ? deleteValueAtPath(out, w.path, w.resource)
+      : setValueAtPath(out, w.path, w.value ?? '', w.resource, w.valueType);
+    if (result.ok) out = result.data;
+    else failedPaths.push(w.path);
+  }
+  return { data: out, failedPaths };
 }
 
 // ============================================================================

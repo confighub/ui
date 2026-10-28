@@ -14,10 +14,10 @@
  * side, and the oldest Release has no predecessor, so a comparison from nothing reads each
  * Unit through `POST /diff`, whose empty From side is no configuration at all.
  */
-import { confighubApi, type DiffResult, type SearchUnitDiffApiResponse, type UnitDiff } from '@confighub/rtk-query';
-import type { FetchBaseQueryError } from '@reduxjs/toolkit/query';
+import { confighubApi, type SearchUnitDiffApiResponse, type UnitDiff } from '@confighub/rtk-query';
 
 import { fetchChunks, inParallel, MAX_PARALLEL_CHUNKS } from '@/hooks/chunkedQueriesApi';
+import { fetchConfigDiff, isNothingToDiff } from '@/hooks/configDiffApi';
 import { unitDiffErrorOf } from '@/pages/change-orders/changeOrderImageDiffApi';
 
 /** The `to` of a comparison that ends at each Unit's head rather than at a Release. */
@@ -57,19 +57,15 @@ export const releaseDiffApi = confighubApi.injectEndpoints({
           return 'error' in result ? { error: result.error } : { data: result.data };
         }
         const data = await inParallel(unitIds, MAX_PARALLEL_CHUNKS, async (unitId): Promise<UnitDiff> => {
-          const result = await baseQuery({
-            url: '/diff',
-            method: 'POST',
-            params: { include },
-            body: { From: {}, To: { UnitID: unitId, Revision: toSelector(to) } },
-          });
-          if (result.error) {
-            const error = result.error as FetchBaseQueryError;
-            // The Release bundled no Revision of the Unit: there is nothing on either side.
-            if (error.status === 404) return { UnitID: unitId, FromRevisionNum: 0, ToRevisionNum: 0 };
-            return unitDiffErrorOf(unitId, error);
-          }
-          const read = result.data as DiffResult;
+          const result = await fetchConfigDiff(
+            baseQuery,
+            { From: {}, To: { UnitID: unitId, Revision: toSelector(to) } },
+            include,
+          );
+          if ('error' in result) return unitDiffErrorOf(unitId, result.error);
+          const read = result.data;
+          // The Release bundled no Revision of the Unit: there is nothing on either side.
+          if (isNothingToDiff(read)) return { UnitID: unitId, FromRevisionNum: 0, ToRevisionNum: 0 };
           return {
             UnitID: unitId,
             SpaceID: read.To?.SpaceID,

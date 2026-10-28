@@ -28,8 +28,7 @@ import {
   changeEntriesOf,
   type ChangeOrderChangeSource,
 } from '../src/pages/x/apps/change-order/changeOrderChanges';
-import { resourceIdentitiesOf } from '../src/pages/x/apps/configParser';
-import { computeFieldDiffs } from '../src/pages/x/apps/entryBuilders';
+import { parseUnitData, resourceIdentitiesOf } from '../src/pages/x/apps/configParser';
 import { resourceIdentityJoinKeysOf, resourceIdentityKeyOf } from '../src/pages/x/apps/change-order/changeOrderChanges';
 import { buildStageMatrix } from '../src/pages/x/apps/change-order/changeOrderMatrix';
 import { buildChangeOrderOutcome, carriedResourceKeysOf, partitionShortfall } from '../src/pages/change-orders/changeOrderOutcome';
@@ -76,6 +75,15 @@ function resourceInfoOf(document: string): ResourceInfo | undefined {
   return { ...identity, ResourceNameWithoutScope: name.slice(name.indexOf('/') + 1) };
 }
 
+/** The leaves two documents disagree on, each with its value on both sides; absent on one side is undefined. */
+function changedLeavesOf(beforeText: string, afterText: string): { path: string; from?: string; to?: string }[] {
+  const before = parseUnitData(beforeText);
+  const after = parseUnitData(afterText);
+  return [...new Set([...before.keys(), ...after.keys()])]
+    .filter((path) => before.get(path) !== after.get(path))
+    .map((path) => ({ path, from: before.get(path), to: after.get(path) }));
+}
+
 /**
  * The diff the server reports for these cases, close enough to stand in for it: each
  * document diffed on its own, paired with the document of the same identity on the
@@ -97,13 +105,13 @@ function serverDiffOf(beforeData: string | undefined, afterData: string | undefi
       resources.push({ ChangeType: 'Add', Resource: document.resource, ToValue: document.text });
       continue;
     }
-    const changes = computeFieldDiffs(previous.text, document.text).map((d) => ({
-      ChangeType: d.oldValue === '-' ? 'Add' : d.newValue === '-' ? 'Delete' : 'Update',
+    const changes = changedLeavesOf(previous.text, document.text).map((d) => ({
+      ChangeType: d.from === undefined ? 'Add' : d.to === undefined ? 'Delete' : 'Update',
       Path: d.path,
       DisplayPath: d.path,
       Segments: d.path.split('.').map((field) => ({ Field: field })),
-      FromValue: d.oldValue === '-' ? undefined : d.oldValue,
-      ToValue: d.newValue === '-' ? undefined : d.newValue,
+      FromValue: d.from,
+      ToValue: d.to,
     }));
     if (changes.length > 0) resources.push({ ChangeType: 'Update', Resource: document.resource, Changes: changes });
   }
