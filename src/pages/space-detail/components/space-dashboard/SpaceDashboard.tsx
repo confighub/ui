@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink } from 'react-router-dom';
 
 import { BorderedAccordion } from '@/components/styled';
 import { ExtendedSpaceRead } from '@confighub/rtk-query';
@@ -11,6 +11,7 @@ import AccordionDetails from '@mui/material/AccordionDetails';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
+import CardActionArea from '@mui/material/CardActionArea';
 import CardContent from '@mui/material/CardContent';
 import Divider from '@mui/material/Divider';
 import Grid from '@mui/material/Grid2';
@@ -30,25 +31,50 @@ const StatCard = ({
   title,
   value,
   loading,
+  to,
   onClick,
 }: {
   title: string;
   value: number | string;
   loading?: boolean;
+  /** The page the card links to */
+  to?: string;
+  /** Use instead of `to` when the card changes the view on this page */
   onClick?: () => void;
 }) => {
+  const interactive = Boolean(to || onClick);
+  const content = (
+    <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+      <Stack direction='row' spacing={1.5} alignItems='center'>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography
+            variant='caption'
+            color='text.secondary'
+            sx={{ display: 'block', lineHeight: 1.2 }}
+          >
+            {title}
+          </Typography>
+          {loading ? (
+            <Skeleton width={40} height={24} />
+          ) : (
+            <Typography variant='h5' fontWeight={600} sx={{ lineHeight: 1.2 }}>
+              {value}
+            </Typography>
+          )}
+        </Box>
+      </Stack>
+    </CardContent>
+  );
   return (
     <Card
       elevation={0}
-      onClick={onClick}
       sx={{
         border: '1px solid',
         borderColor: 'divider',
         borderRadius: 2,
         transition: 'all 0.2s ease-in-out',
         height: '100%',
-        cursor: onClick ? 'pointer' : 'default',
-        '&:hover': onClick
+        '&:hover': interactive
           ? {
               borderColor: 'primary.main',
               boxShadow: '0px 4px 12px rgba(0,0,0,0.08)',
@@ -57,26 +83,17 @@ const StatCard = ({
           : {},
       }}
     >
-      <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-        <Stack direction='row' spacing={1.5} alignItems='center'>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography
-              variant='caption'
-              color='text.secondary'
-              sx={{ display: 'block', lineHeight: 1.2 }}
-            >
-              {title}
-            </Typography>
-            {loading ? (
-              <Skeleton width={40} height={24} />
-            ) : (
-              <Typography variant='h5' fontWeight={600} sx={{ lineHeight: 1.2 }}>
-                {value}
-              </Typography>
-            )}
-          </Box>
-        </Stack>
-      </CardContent>
+      {to ? (
+        <CardActionArea component={RouterLink} to={to} sx={{ height: '100%' }}>
+          {content}
+        </CardActionArea>
+      ) : onClick ? (
+        <CardActionArea onClick={onClick} sx={{ height: '100%' }}>
+          {content}
+        </CardActionArea>
+      ) : (
+        content
+      )}
     </Card>
   );
 };
@@ -86,30 +103,31 @@ export const SpaceDashboard = ({
   isLoading = false,
   onShowAppliedTriggers,
 }: SpaceDashboardProps) => {
-  const navigate = useNavigate();
   const space = extendedSpace.Space;
 
-  const handleNavigateToUnits = (whereClause: string) => {
+  const unitsHref = (whereClause: string) => {
     const params = new URLSearchParams();
     const spaceFilter = `SpaceID = '${space?.SpaceID}'`;
     const fullWhere = whereClause ? `${spaceFilter} AND ${whereClause}` : spaceFilter;
     params.set(FILTER_URL_PARAMS.WHERE, fullWhere);
-    navigate(`/units?${params.toString()}`);
+    return `/units?${params.toString()}`;
   };
 
-  const handleNavigateToTargets = () => {
+  const targetsHref = () => {
     const params = new URLSearchParams();
     params.set(FILTER_URL_PARAMS.WHERE, `SpaceID = '${space?.SpaceID}'`);
-    navigate(`/targets?${params.toString()}`);
+    return `/targets?${params.toString()}`;
   };
 
-  // A Unit count opens the Units it counts; Targets and Triggers open their lists.
-  const statClickHandler = (c: SpaceSummaryCount): (() => void) | undefined => {
-    if (c.unitWhere !== undefined) return () => handleNavigateToUnits(c.unitWhere || '');
-    if (c.field === 'TotalTargetCount') return handleNavigateToTargets;
-    if (c.field === 'TriggerCountByEventType') return onShowAppliedTriggers;
+  // A Unit count links to the Units it counts and Targets to their list. Triggers
+  // stays a button, because it changes the tab on this page.
+  const statTo = (c: SpaceSummaryCount): string | undefined => {
+    if (c.unitWhere !== undefined) return unitsHref(c.unitWhere || '');
+    if (c.field === 'TotalTargetCount') return targetsHref();
     return undefined;
   };
+  const statClickHandler = (c: SpaceSummaryCount): (() => void) | undefined =>
+    c.field === 'TriggerCountByEventType' ? onShowAppliedTriggers : undefined;
 
   return (
     <BorderedAccordion expanded>
@@ -136,6 +154,7 @@ export const SpaceDashboard = ({
                       title={c.label}
                       value={c.getValue(extendedSpace)}
                       loading={isLoading}
+                      to={statTo(c)}
                       onClick={statClickHandler(c)}
                     />
                   </Grid>

@@ -29,7 +29,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { OrganizationRow } from '@/components/organization-switcher/OrganizationRow';
 
@@ -87,6 +87,8 @@ export type DetailStatus = 'loading' | 'ready' | 'missing' | 'forbidden' | 'fail
  * nobody made was reported as a read that failed, offering a retry that had
  * nothing to retry.
  */
+const workflowHref = (changeWorkflowId: string) => `/change-workflows/${changeWorkflowId}`;
+
 function NoWorkflow({ status, onRetry }: { status: DetailStatus; onRetry: () => void }) {
   switch (status) {
     case 'loading':
@@ -118,7 +120,7 @@ export default function WorkflowBuilderPage() {
      waiting that never ends. Absent stays absent. */
   const openId = changeWorkflowId || null;
   const setOpenId = useCallback(
-    (id: string | null) => navigate(id ? `/change-workflows/${id}` : '/change-workflows'),
+    (id: string | null) => navigate(id ? workflowHref(id) : '/change-workflows'),
     [navigate],
   );
   const detail = useChangeWorkflowDetail(openId ?? undefined);
@@ -144,19 +146,16 @@ export default function WorkflowBuilderPage() {
   const [draftMode, setDraftMode] = useState(false);
   const onNewBlank = useCallback(() => setDraftMode(true), []);
   /**
-   * The only other legitimate way `draftMode` clears. `setOpenId(null)` alone
-   * was the backlink's whole handler until this was found: it works for a real
-   * workflow, whose `openId` was non-null, but a blank draft's `openId` was
-   * already null from the moment it opened -- clearing it a second time changes
-   * nothing `showingList` reads, and nothing else on the page could get the
-   * reader back to the console at all. Calling both setters unconditionally is
-   * correct for either case: whichever one actually held the open workflow is
-   * the one this clears, and clearing the other is a no-op.
+   * The only other legitimate way `draftMode` clears. The backlink's URL change
+   * clears `openId` for a real workflow, but a blank draft's `openId` is already
+   * null, so the URL alone changes nothing `showingList` reads. Only a plain
+   * click leaves this tab: a modified click opens the console in a new tab and
+   * must keep the draft here.
    */
-  const leaveWorkflow = useCallback(() => {
+  const leaveWorkflow = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     setDraftMode(false);
-    setOpenId(null);
-  }, [setOpenId]);
+  }, []);
 
   /**
    * The blank workflow's own base shape, and the key that tells
@@ -400,7 +399,7 @@ export default function WorkflowBuilderPage() {
           isLoading={list.isLoading}
           failed={list.error !== undefined}
           unreadable={list.unreadableRows}
-          onOpen={setOpenId}
+          workflowHref={workflowHref}
           onRefresh={list.refetch}
           createFlow={createFlow}
           destinationSpaces={writableSpaces.spaces}
@@ -411,14 +410,9 @@ export default function WorkflowBuilderPage() {
         <NoWorkflow status={status} onRetry={retry} />
       ) : (
         <div className='shell'>
-          <button
-            className='backlink'
-            type='button'
-            data-act='goconsole'
-            onClick={leaveWorkflow}
-          >
+          <Link className='backlink' to='/change-workflows' data-act='goconsole' onClick={leaveWorkflow}>
             &#8592; All workflows
-          </button>
+          </Link>
 
           <SummaryCard
             api={api}
@@ -427,7 +421,7 @@ export default function WorkflowBuilderPage() {
             cloneFlow={cloneFlow}
             destinationSpaces={writableSpaces.spaces}
             destinationSpacesStatus={writableSpaces.status}
-            onOpenClone={setOpenId}
+            cloneHref={workflowHref}
             /* This branch only renders once `isLoaded(api)`, which for `openId
                === null` can only mean the seeded value was a draft -- the other
                way to reach "loaded with no id" (nothing asked for) is the

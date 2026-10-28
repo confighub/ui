@@ -41,8 +41,8 @@ export function kindsOf(images: readonly ImageChange[]): 'images' | 'versions' |
 /** The hint on a shut "Full diff": what the card above already says in full. */
 export function onlyChangesHint(images: readonly ImageChange[]): string {
   const kinds = kindsOf(images);
-  if (kinds === 'both') return 'Only images and versions change, as shown above.';
-  return kinds === 'versions' ? 'Only versions change, as shown above.' : 'Only images change, as shown above.';
+  if (kinds === 'both') return 'Images and versions only';
+  return kinds === 'versions' ? 'Versions only' : 'Images only';
 }
 
 /** The hero's bump pill: what kind of move the new image tag is. */

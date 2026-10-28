@@ -291,8 +291,7 @@ test.describe('ChangeOrder history', () => {
     const card = await openChangeOrder(page, TYPICAL);
     // 4 promotions + 1 override + 2 failures + 4 Releases = 11 records. The override joins Marco's
     // promotion, and the dev failure joins the dev promotion: 9 entries.
-    await expect(card.locator('[data-history-count]')).toHaveText('9 entries from 11 records, newest first');
-    await expect(card.getByText('Records of one promote action are matched by person, Stage and time')).toBeVisible();
+    await expect(card.locator('[data-history-count]')).toHaveText('9 entries');
     // Newest first, grouped by day, and the ChangeOrder opened entry closes the list.
     await expect(card.locator('[data-history-day]')).toHaveText([/^Today, Tue 6 Oct/, /^Yesterday, Mon 5 Oct/, /^Mon 14 Sep/]);
     await expect(card.locator('[data-history-entry="opened"]')).toContainText('ChangeOrder opened');
@@ -320,9 +319,6 @@ test.describe('ChangeOrder history', () => {
     const noRecord = override.locator('[data-history-reach="no-record"]');
     await expect(noRecord).toContainText('checkout-prod-ap-south');
     await expect(noRecord).toContainText('No record. It may not have been reached.');
-    await expect(override).toContainText(
-      'Matched from 2 records (override, promotion) by person and Stage: the promotion was written at most 60 s after the override.',
-    );
     await expect(card).not.toContainText(/not reached/i);
   });
 
@@ -362,8 +358,8 @@ test.describe('ChangeOrder history', () => {
     await expect(failed.locator('[data-history-sentence]')).toHaveText(['promoted 1 Space into', '1 more had failures.']);
     await expect(failed).toContainText('dev.');
     await failed.getByRole('button', { name: 'Space, Unit and Link errors' }).click();
-    await expect(failed).toContainText('the promotion and the failure were written within 2 s of each other.');
-    await expect(failed).not.toContainText('60 s');
+    // The dev failure joined the dev promotion: one entry for the two records.
+    await expect(card.locator('[data-history-entry="failure"]').filter({ hasText: 'Unknown user' })).toHaveCount(1);
     await expect(failed.locator('[data-history-failure-space="checkout-dev-sandbox"] [data-history-headline]')).toHaveText(
       'Could not be planned. Nothing was written to this Space.',
     );
@@ -387,7 +383,6 @@ test.describe('ChangeOrder history', () => {
     await expect(card.locator('[data-history-folded]')).toHaveCount(0);
     const rel7 = releases.filter({ hasText: 'rel-7' });
     await expect(rel7).toContainText('Publisher not recorded');
-    await expect(rel7).toContainText('This Release was published before ConfigHub recorded who publishes Releases.');
     await expect(card.locator('[data-history-entry="opened"]')).toContainText('ChangeOrder opened');
 
     // The summary card's Last activity: the newest promote action, which was forced.
@@ -415,7 +410,7 @@ test.describe('ChangeOrder history', () => {
     // Older days fold their routine entries; the folded row holds the only control.
     await expect(card.locator('[data-history-folded]')).toHaveCount(4);
     await expect(card.locator('[data-history-day]').nth(2).getByRole('button')).toHaveCount(0);
-    await expect(card.locator('[data-history-folded]').first().getByRole('button', { name: 'Show them' })).toBeVisible();
+    await expect(card.locator('[data-history-folded]').first().getByRole('button', { name: 'Show', exact: true })).toBeVisible();
     // The override on 1 Oct stays on screen in its folded day.
     const override = card.locator('[data-history-entry="override"]');
     await expect(override).toBeVisible();

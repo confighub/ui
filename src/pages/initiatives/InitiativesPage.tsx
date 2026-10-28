@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useMatch, useNavigate, useParams } from 'react-router-dom';
+import { Link as RouterLink, useMatch, useNavigate, useParams } from 'react-router-dom';
 
 import { useAppDispatch, useAppSelector } from '@/hooks/useApp';
 import { useInitiatives } from '@/hooks/useInitiatives';
@@ -104,7 +104,7 @@ function isAllRacedResponse(responses: FunctionInvocationsResponse[]): boolean {
   });
 }
 
-const EmptyInitiatives = ({ onCreateClick }: { onCreateClick: () => void }) => (
+const EmptyInitiatives = () => (
   <Box
     sx={{
       display: 'flex',
@@ -125,7 +125,13 @@ const EmptyInitiatives = ({ onCreateClick }: { onCreateClick: () => void }) => (
       Initiatives help you track and coordinate org-wide configuration updates across your unit
       fleet.
     </Typography>
-    <Button variant='contained' startIcon={<AddIcon />} onClick={onCreateClick} sx={{ mt: 1 }}>
+    <Button
+      variant='contained'
+      startIcon={<AddIcon />}
+      component={RouterLink}
+      to='/x/initiatives/new'
+      sx={{ mt: 1 }}
+    >
       Create your first initiative
     </Button>
   </Box>
@@ -246,13 +252,8 @@ export const InitiativesPage = () => {
     [invokeFunctions, updateInitiative],
   );
 
-  // URL drives selection: selecting a card pushes /:id, deselect navigates back.
-  const handleSelect = useCallback((id: string) => {
-    navigate(`/x/initiatives/${id}`);
-  }, [navigate]);
-
   // Respond to URL-driven selectedId changes: clear transient state and queue a scroll.
-  // Handles both user clicks (via navigate) and deeplinks (initial load with :id).
+  // Handles both card links and deeplinks (initial load with :id).
   const prevSelectedIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (prevSelectedIdRef.current === selectedId) return;
@@ -567,7 +568,7 @@ export const InitiativesPage = () => {
         <Header
           breadCrumbs={[{ name: 'Initiatives' }]}
           addButtonText='New Initiative'
-          onAddButtonClick={() => navigate('/x/initiatives/new')}
+          addButtonTo='/x/initiatives/new'
         />
       </Box>
 
@@ -576,7 +577,7 @@ export const InitiativesPage = () => {
           <CircularProgress />
         </Box>
       ) : initiatives.length === 0 ? (
-        <EmptyInitiatives onCreateClick={() => navigate('/x/initiatives/new')} />
+        <EmptyInitiatives />
       ) : (
         <>
           {/* Kanban board */}
@@ -584,8 +585,6 @@ export const InitiativesPage = () => {
             <InitiativesKanban
               initiatives={initiatives}
               selectedId={selectedId}
-              onSelect={handleSelect}
-              onEdit={(id) => navigate(`/x/initiatives/${id}/edit`)}
               onDelete={setDeleteTarget}
               onStatusChange={handleStatusChange}
             />
@@ -598,18 +597,15 @@ export const InitiativesPage = () => {
                 initiative={selectedInitiative}
                 isRunningCheck={isCheckBlocked}
                 canRunCheck={canRunCheck}
-                onBack={() => navigate('/x/initiatives')}
-                onEdit={() => navigate(`/x/initiatives/${selectedId}/edit`)}
+                backTo='/x/initiatives'
+                editTo={`/x/initiatives/${selectedId}/edit`}
                 onRunCheck={handleRunCheck}
                 checkedAt={selectedInitiative.checkSummary?.checkedAt}
                 unitCount={checkResults ? checkResults.length : selectedInitiative.checkSummary?.total}
                 toolchain={selectedInitiative.triggerId ? 'Kyverno' : undefined}
-                onOpenTrigger={
+                triggerTo={
                   selectedInitiative.triggerId && selectedInitiative.spaceId
-                    ? () =>
-                        navigate(
-                          `/spaces/${selectedInitiative.spaceId}?tab=1&edit=${selectedInitiative.triggerId}`,
-                        )
+                    ? `/spaces/${selectedInitiative.spaceId}?tab=1&edit=${selectedInitiative.triggerId}`
                     : undefined
                 }
               />
@@ -689,7 +685,6 @@ export const InitiativesPage = () => {
  */
 const InitiativeEditor = ({ editorId }: { editorId: string }) => {
   const theme = useTheme();
-  const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const { initiatives } = useInitiatives();
 
@@ -775,7 +770,8 @@ const InitiativeEditor = ({ editorId }: { editorId: string }) => {
               <Button
                 size='small'
                 startIcon={<ArrowBackIcon />}
-                onClick={() => navigate('/x/initiatives')}
+                component={RouterLink}
+                to='/x/initiatives'
                 sx={{ textTransform: 'none', color: 'primary.main', minWidth: 'auto' }}
               >
                 Back

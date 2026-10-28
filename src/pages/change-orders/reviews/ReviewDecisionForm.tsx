@@ -19,7 +19,7 @@ import TextField from '@mui/material/TextField';
 import BlockIcon from '@mui/icons-material/Block';
 import CheckIcon from '@mui/icons-material/Check';
 
-import { changeOrderBorder, changeOrderFontMono, changeOrderInk, changeOrderShape, changeOrderStatus, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
+import { changeOrderAction, changeOrderBorder, changeOrderFontMono, changeOrderInk, changeOrderShape, changeOrderStatus, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
 import { reviewDangerButtonSx, reviewQuietButtonSx, reviewTextButtonSx } from './reviewButtons';
 import { REVIEW_NOTE_MAX, reviewCopy } from './reviewCopy';
 import type { ReviewChoice } from './changeOrderReviewTypes';
@@ -33,7 +33,7 @@ export interface ReviewDecisionValues {
 
 interface ReviewDecisionFormProps {
   stageName: string;
-  /** What is reviewed, for the hint under the reason: "Everyone on this ChangeOrder can read it." */
+  /** What is reviewed, for the hint under the reason: "Visible to everyone on this ChangeOrder." */
   subjectNoun?: string;
   /** Why nothing can be submitted (M6: the dry run says nothing would be recorded). Disables submit. */
   blockedReason?: string;
@@ -87,7 +87,7 @@ function ChoiceButton({
         color: changeOrderInk.default,
         '& svg': { fontSize: 15, color: fg },
         '&:hover': { background: changeOrderSurface.sunk },
-        '&:focus-visible': { outline: `2px solid ${changeOrderStatus.accent}`, outlineOffset: 2 },
+        '&:focus-visible': { outline: `2px solid ${changeOrderAction.focus}`, outlineOffset: 2 },
         ...(selected
           ? {
               background: pass ? changeOrderStatus.successGround : changeOrderStatus.dangerSoft,
@@ -224,7 +224,7 @@ export function ReviewDecisionForm({
           </Box>
         ) : (
           <Box component="p" id="review-note-hint" sx={{ margin: 0, fontSize: changeOrderType.size.small, color: changeOrderInk.subtle }}>
-            {copy.hint(choice, subjectNoun)}
+            {copy.hint(subjectNoun)}
           </Box>
         )}
       </Box>
@@ -256,11 +256,7 @@ export function ReviewDecisionForm({
           <Box component="button" type="button" onClick={onCancel} sx={{ ...reviewTextButtonSx, alignSelf: 'center' }}>
             {cancelLabel}
           </Box>
-        ) : (
-          <Box component="span" sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.subtle, textAlign: 'center' }}>
-            {copy.confirmNext}
-          </Box>
-        )}
+        ) : null}
       </Box>
     </Box>
   );

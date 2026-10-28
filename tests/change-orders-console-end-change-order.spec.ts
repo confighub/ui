@@ -53,7 +53,7 @@ async function openRowMenu(page: Page, slug: string) {
   // The menu portals to the body, so it is found on the page and not in the row.
   await expect(page.getByTestId('change-order-row-abort').or(page.getByTestId('change-order-row-rollback')).first())
     .toBeVisible({ timeout: 10_000 });
-  // The row must NOT have navigated: the menu button stops its own click.
+  // The row must NOT have navigated: the menu button sits above the row's link.
   expect(new URL(page.url()).pathname).toBe('/change-orders');
 }
 

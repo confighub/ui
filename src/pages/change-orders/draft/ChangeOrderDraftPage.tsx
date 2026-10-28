@@ -16,46 +16,59 @@ import { SummaryCard } from '../components/SummaryFacts';
 import { changeOrderFontSans, changeOrderInk, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
 import { DRAFT_END_ID } from './ChangeCardRibbon';
 import { draftCopy } from './draftCopy';
-import { focusWhenDrawn, ledgerRowId, revealCardWhenFocused } from './draftFocus';
-import { DraftHeader, DRAFT_NAME_INPUT_ID } from './DraftHeader';
-import { DraftLedger, type LedgerNeed } from './DraftLedger';
+import { DraftFacts } from './DraftFacts';
+import { DRAFT_PLACE_OF_ROW, draftFixId, draftPlaceId, focusWhenDrawn, revealCardWhenFocused } from './draftFocus';
+import { DraftFanOutSections } from './DraftFanOutSections';
+import { DraftInvokeSections } from './DraftInvokeSections';
+import { applyDraftAddressPatch, kindOfPast } from './draftDecisions';
+import { FOCUS_TITLE_STATE } from '../changeOrderAddress';
+import { DraftHeader, DRAFT_DESCRIPTION_ID, DRAFT_NAME_INPUT_ID } from './DraftHeader';
 import { DraftLowerSections, DraftSourceSections, type DraftLowerSectionsHandle } from './DraftLowerSections';
 import type { OutlierAction } from './draftPageModel';
 import { DRAFT_BLOCKER_ID, DraftSideColumn } from './DraftSideColumn';
 import { DRAFT_STICKY_BLOCKER_ID, DraftStickyBar } from './DraftStickyBar';
 import type { DraftProblem, DraftRow } from './draftTypes';
 import { DRAFT_SCOPE_ID } from './ScopePopover';
-import { useChangeOrderDraft } from './useChangeOrderDraft';
+import { DRAFT_ROW_ORDER, useChangeOrderDraft } from './useChangeOrderDraft';
 import { useDraftFieldWaits } from './useDraftField';
 import { useOutOfView } from './useOutOfView';
-import { DRAFT_UPDATE_TYPE_ID, DRAFT_WORKFLOW_ID } from './WorkflowPopover';
+import { DRAFT_KIND_ID } from './KindTrack';
+import { DRAFT_UPDATE_TYPE_ID } from './UpdateTypeBar';
+import { DRAFT_WORKFLOW_ID } from './WorkflowPopover';
 
 const copy = draftCopy.page;
 
-/** The control each ledger row's problem is fixed at: what the blocker beside Create focuses. */
+/** The control each kind of problem is fixed at: what the blocker beside Create focuses. */
 const FOCUS_BY_ROW: Partial<Record<DraftRow, string>> = {
   name: DRAFT_NAME_INPUT_ID,
+  description: DRAFT_DESCRIPTION_ID,
   path: DRAFT_WORKFLOW_ID,
   where: DRAFT_SCOPE_ID,
   howMuch: DRAFT_END_ID,
   same: DRAFT_UPDATE_TYPE_ID,
+  what: DRAFT_KIND_ID,
   template: 'draft-template',
 };
 
-/** Focus the control that fixes a row's problem; a row with no such control takes focus itself. */
-function focusRow(row: DraftRow) {
+/**
+ * Focus what fixes a problem: its control; when that is not drawn, the problem's own fix ("End
+ * at latest" for an end that names nothing); else the part of the card the problem is said in.
+ */
+function focusProblem(problem: DraftProblem) {
+  const { row } = problem;
+  if (problem.focusId !== undefined && document.getElementById(problem.focusId) !== null) {
+    focusWhenDrawn(problem.focusId, { select: true });
+    return;
+  }
   const id = FOCUS_BY_ROW[row];
-  const target = id === undefined ? null : document.getElementById(id);
-  focusWhenDrawn(target === null ? ledgerRowId(row) : (id as string), { select: row === 'name' });
+  const place = DRAFT_PLACE_OF_ROW[row];
+  if (id !== undefined && document.getElementById(id) !== null) focusWhenDrawn(id, { select: row === 'name' });
+  else if (problem.fix !== undefined && document.getElementById(draftFixId(problem)) !== null) focusWhenDrawn(draftFixId(problem));
+  else if (place !== undefined) focusWhenDrawn(draftPlaceId(place));
 }
 
-/** The rows holding a problem that stops Create; the first of them in ledger order is `next`. */
-function ledgerNeeds(problems: readonly DraftProblem[], blocker: DraftProblem | undefined): Map<DraftRow, LedgerNeed> {
-  const needs = new Map<DraftRow, LedgerNeed>();
-  for (const problem of problems) if (problem.blocks) needs.set(problem.row, 'need');
-  if (blocker !== undefined) needs.set(blocker.row, 'next');
-  return needs;
-}
+/** Whether a problem with `row` comes before one with `other` in the order the blocker is picked in. */
+const comesBefore = (row: DraftRow, other: DraftRow) => DRAFT_ROW_ORDER.indexOf(row) < DRAFT_ROW_ORDER.indexOf(other);
 
 /** The app bar covers the top of the viewport: something under it is out of view. */
 const BELOW_APP_BAR = `-${TOP_NAV_HEIGHT}px 0px 0px 0px`;
@@ -82,9 +95,9 @@ const NO_STAGES: readonly string[] = [];
  * Create a ChangeOrder, by re-aiming the last one: `/change-orders/new?space=<base>&…`.
  *
  * The URL is the draft (`useDraftAddress`); this page lays out what `useChangeOrderDraft` says.
- * The summary card holds the title, the ledger of decisions against last time and the dry run
- * with Create; the change at the source sits in its full-width row; the promotion path and the
- * selected stage follow as cards of their own. Create commits with no confirm step: the page is
+ * The summary card holds the title, the facts with the dry run's outcome and the change under
+ * them, and the dry run's stages with Create; the change at the source sits in its full-width
+ * row; the promotion path and the selected stage follow as cards of their own. Create commits with no confirm step: the page is
  * the preview.
  */
 export default function ChangeOrderDraftPage() {
@@ -107,10 +120,11 @@ export default function ChangeOrderDraftPage() {
   const createProblem = createRefusal !== null && createRefusal.search === search ? createRefusal.problem : undefined;
   const problems = useMemo(() => (createProblem === undefined ? draft.problems : [...draft.problems, createProblem]), [draft.problems, createProblem]);
   const blocker = draft.blocker ?? (createProblem?.blocks === true ? createProblem : undefined);
-  const needs = useMemo(() => ledgerNeeds(problems, blocker), [problems, blocker]);
+  const nextRow = blocker?.row;
   const nameProblems = useMemo(() => problems.filter((problem) => problem.row === 'name'), [problems]);
+  const titleProblems = useMemo(() => problems.filter((problem) => problem.row === 'template' || problem.row === 'description'), [problems]);
 
-  const { create } = draft;
+  const { create, hold } = draft;
   const canCreate = draft.canCreate && !fields.pending;
   const onCreate = useCallback(async () => {
     if (fields.pending) return;
@@ -118,15 +132,25 @@ export default function ChangeOrderDraftPage() {
     const outcome = await create();
     if (outcome === undefined) return;
     if (outcome.ok) {
-      // The draft is done: Back from the new ChangeOrder goes where the reader came from, not to the draft.
-      navigate(outcome.path, { replace: true });
+      // The draft is done: Back from the new ChangeOrder goes where the reader came from, not to
+      // the draft. Its title takes the keyboard, so a screen reader hears where it landed.
+      navigate(outcome.path, { replace: true, state: { [FOCUS_TITLE_STATE]: true } });
       return;
     }
-    setCreateRefusal({ problem: outcome.problem, search });
+    // An Invocation this Create left saved is held: the draft runs it from now on, whatever its
+    // name becomes. The refusal belongs to the draft as that leaves it.
+    const pin = outcome.kept === undefined ? undefined : hold(outcome.kept);
+    let refusedSearch = search;
+    if (pin !== undefined) {
+      const next = applyDraftAddressPatch(new URLSearchParams(window.location.search), pin).toString();
+      refusedSearch = next === '' ? '' : `?${next}`;
+      update(pin);
+    }
+    setCreateRefusal({ problem: outcome.problem, search: refusedSearch });
     // The refusal is said beside the Create that was pressed; a refusal that blocks nothing
     // leaves focus on Create.
     if (outcome.problem.blocks) focusWhenDrawn(ctaOutOfView ? DRAFT_STICKY_BLOCKER_ID : DRAFT_BLOCKER_ID);
-  }, [create, navigate, search, fields.pending, ctaOutOfView]);
+  }, [create, hold, update, navigate, search, fields.pending, ctaOutOfView]);
 
   const onShow = useCallback(
     (item: OutlierAction) => {
@@ -166,13 +190,13 @@ export default function ChangeOrderDraftPage() {
     const focusInToast = active !== null && toastRef.current?.contains(active) === true;
     setToast(null);
     setUndoFocused(false);
-    // The chip it came from has gone: a keyboard that was in the toast goes back to the row it
-    // was in. One that has moved on stays where it is.
-    if (focusInToast) focusWhenDrawn(ledgerRowId('where'));
+    // The chip it came from has gone: a keyboard that was in the toast goes to the scope, the
+    // fact Leave out and Undo change. One that has moved on stays where it is.
+    if (focusInToast) focusWhenDrawn(DRAFT_SCOPE_ID);
   }, []);
 
   const onFocusBlocker = useCallback(() => {
-    if (blocker !== undefined) focusRow(blocker.row);
+    if (blocker !== undefined) focusProblem(blocker);
   }, [blocker]);
   const onSelectStage = useCallback(
     (stage: string) => {
@@ -182,6 +206,20 @@ export default function ChangeOrderDraftPage() {
     [update],
   );
 
+  // What the path's source node and the stage cards call the change, by its kind.
+  const kindValue = decisions?.kind.value;
+  const fanOutValue = draft.fanOut.fanOut;
+  const invokeName = draft.invoke.invoke?.sourceName;
+  const lowerUpdateType = useMemo(() => {
+    if (kindValue === 'transformPaths') return fanOutValue?.type.value ?? 'TransformPaths';
+    if (kindValue === 'invoke') return 'Invoke';
+    return decisions?.updateType.value ?? 'UpgradeUnit';
+  }, [kindValue, fanOutValue, decisions]);
+  const lowerSource = useMemo(() => {
+    if (kindValue === 'transformPaths') return fanOutValue === undefined ? undefined : { summary: fanOutValue.sourceName, verdict: draftCopy.path.sourceSummary(fanOutValue.carried) };
+    if (kindValue === 'invoke') return { summary: invokeName ?? '', verdict: draftCopy.invoke.changeDefined };
+    return undefined;
+  }, [kindValue, fanOutValue, invokeName]);
   const componentName = context.component?.name ?? context.baseSpace?.slug ?? '';
   const nameStem = context.component?.slug ?? context.baseSpace?.slug ?? '';
   const workflowChoice = decisions?.workflow.value;
@@ -262,20 +300,30 @@ export default function ChangeOrderDraftPage() {
                   description={decisions.description.value}
                   template={decisions.template}
                   nameProblems={nameProblems}
+                  titleProblems={titleProblems}
+                  titleNext={nextRow === 'template' || nextRow === 'description'}
+                  blockedBeforeName={nextRow !== undefined && nextRow !== 'name' && comesBefore(nextRow, 'name')}
                   pastChangeOrders={context.pastChangeOrders}
+                  kindOf={kindOfPast}
                   takenSlugs={context.takenSlugs}
                   componentName={componentName}
                   nameStem={nameStem}
                   onChange={update}
                   fieldSignals={fields.signals}
                 />
-                <DraftLedger
+                <DraftFacts
                   context={context}
                   decisions={decisions}
                   cards={cards}
+                  links={draft.links}
                   preview={preview}
+                  invoke={draft.invoke}
+                  invokePreview={draft.invokePreview}
+                  fanOut={draft.fanOut}
+                  skippedUnits={draft.validation.skippedUnits}
+                  address={address}
                   problemsByRow={problemsByRow}
-                  needs={needs}
+                  nextRow={nextRow}
                   onChange={update}
                   onShow={onShow}
                   onLeaveOut={onLeaveOut}
@@ -300,13 +348,21 @@ export default function ChangeOrderDraftPage() {
                 ctaRef={ctaRef}
               />
               <Box sx={{ gridColumn: '1 / -1', minWidth: 0, marginTop: '2px' }}>
-                <DraftSourceSections
-                  source={draft.source}
-                  validation={draft.validation}
-                  cards={draft.cards}
-                  baseSpace={context.baseSpace}
-                  stageNames={stageNames}
-                />
+                {decisions.kind.value === 'invoke' ? (
+                  <DraftInvokeSections invoke={draft.invoke.invoke} preview={draft.invokePreview} stageNames={stageNames} />
+                ) : null}
+                {decisions.kind.value === 'transformPaths' ? (
+                  <DraftFanOutSections fanOut={draft.fanOut.fanOut} preview={draft.invokePreview} stageNames={stageNames} />
+                ) : null}
+                {decisions.kind.value !== 'baseChanges' ? null : (
+                  <DraftSourceSections
+                    source={draft.source}
+                    validation={draft.validation}
+                    cards={draft.cards}
+                    baseSpace={context.baseSpace}
+                    stageNames={stageNames}
+                  />
+                )}
               </Box>
             </Box>
           </SummaryCard>
@@ -318,7 +374,8 @@ export default function ChangeOrderDraftPage() {
             variants={context.variants}
             workflow={workflow}
             scope={scope}
-            updateType={decisions.updateType.value}
+            updateType={lowerUpdateType}
+            source={lowerSource}
             stage={decisions.stage}
             onSelectStage={onSelectStage}
             shownSpaceId={shownSpaceId}

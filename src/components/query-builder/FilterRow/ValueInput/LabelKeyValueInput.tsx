@@ -51,7 +51,7 @@ const autocompleteStyles = {
       border: 'none',
     },
     '&:hover': {
-      backgroundColor: 'rgba(25, 118, 210, 0.08)',
+      backgroundColor: 'var(--bg-hover)',
     },
   },
   '& .MuiInputBase-input': {

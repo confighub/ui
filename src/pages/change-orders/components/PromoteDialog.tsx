@@ -173,8 +173,8 @@ export function PromoteDialog({
               Both actions promote — this is a choice between two real paths,
               not a primary/secondary pair — so both take the same purple the
               Components view uses for its one primary action
-              (`componentTheme.done`/`doneEmphasis`, the `bottomBarPrimaryButtonSx`
-              treatment), replacing the ad hoc blue and MUI's `color="warning"`.
+              (`componentTheme.promote`/`promoteEmphasis`, the
+              `bottomBarPrimaryButtonSx` treatment).
 
               Only when `canRelease` — a stage none of whose variants have a
               release Target offers one real path, not two.
@@ -183,7 +183,7 @@ export function PromoteDialog({
               <Button
                 onClick={() => onConfirm({ release: true })}
                 disabled={busy}
-                sx={{ color: componentTheme.done, fontWeight: 600, textTransform: 'none' }}
+                sx={{ color: componentTheme.promote, fontWeight: 600, textTransform: 'none' }}
                 data-promote-rel
               >
                 Promote and release
@@ -196,9 +196,9 @@ export function PromoteDialog({
               sx={{
                 textTransform: 'none',
                 fontWeight: 600,
-                backgroundColor: componentTheme.done,
+                backgroundColor: componentTheme.promote,
                 color: componentTheme.fgOnEmphasis,
-                '&:hover': { backgroundColor: componentTheme.doneEmphasis },
+                '&:hover': { backgroundColor: componentTheme.promoteEmphasis },
               }}
               data-confirm
             >

@@ -295,7 +295,7 @@ const KeptLeafRow = memo(({ node, kept, depth, striped, domHooks }: { node: Diff
               whiteSpace: 'nowrap',
               cursor: 'help',
               borderRadius: '3px',
-              '&:focus-visible': { outline: `2px solid ${tone}`, outlineOffset: '2px' },
+              '&:focus-visible': { outline: `2px solid ${componentTheme.accent}`, outlineOffset: '2px' },
             }}
           >
             <LockOutlinedIcon aria-hidden="true" sx={{ fontSize: 13 }} />
@@ -632,7 +632,7 @@ const TreeNodeRow = memo(({ node, depth, variant, filterText = '', pathPrefix = 
                     textDecoration: 'underline',
                     textDecorationColor: 'transparent',
                     textUnderlineOffset: 2,
-                    ...(expandedSegment === i && { textDecorationColor: `${componentTheme.variation} !important` }),
+                    ...(expandedSegment === i && { textDecorationColor: `${componentTheme.accent} !important` }),
                     '& .seg-chevron': { width: 0, opacity: 0, transition: 'width .1s, opacity .1s' },
                     '&:hover': { color: componentTheme.fgDefault, ...(extraCount > 0 && { '& .seg-chevron': { width: 10, opacity: 0.6 } }) },
                   }}

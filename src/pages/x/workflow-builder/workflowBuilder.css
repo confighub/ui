@@ -681,6 +681,7 @@
 .wfb .row{border:0;border-bottom:1px solid var(--line);background:transparent;width:100%;text-align:left;cursor:pointer;padding-top:11px;padding-bottom:11px;font:inherit;color:inherit}
 .wfb .row:last-child{border-bottom:0}
 .wfb .row:hover{background:var(--sunk)}
+.wfb a.row,.wfb a.btn{text-decoration:none}
 .wfb .rname{font-size:13.5px;font-weight:600;line-height:1.35;display:block}
 .wfb .rslug{font-family:var(--mono);font-size:11px;color:var(--ink-subtle);display:block;margin-top:2px}
 .wfb .strip{display:flex;align-items:center;gap:4px;flex-wrap:wrap}

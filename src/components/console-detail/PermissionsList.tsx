@@ -50,7 +50,7 @@ export function PrincipalChip({ principal }: { principal: Principal }) {
       component={RouterLink}
       to={principal.href}
       title={principal.id}
-      sx={{ ...sx, transition: 'border-color .12s, background .12s', '&:hover': { borderColor: T.accent, background: T.accentSoft } }}
+      sx={{ ...sx, transition: 'border-color .12s, background .12s', '&:hover': { borderColor: T.action, background: T.actionSoft } }}
     >
       {body}
     </Box>

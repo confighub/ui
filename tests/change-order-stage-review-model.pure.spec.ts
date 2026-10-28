@@ -334,7 +334,7 @@ test.describe('viewerFlow: decisions that do not count, and authors', () => {
     const eligibility = { kind: 'notEligible' as const, requirementNames: [] };
     const flow = viewerFlow(withEligibility(eligibility, { viewer: { eligibility, ownByType: { Approval: decision() } } }), {});
     expect(flow.kind).toBe('notEligible');
-    expect(flow.ownNotCounted).toEqual([`You approved at ${reviewTime('2026-10-17T12:00:00Z')}. It is recorded, but it does not count.`]);
+    expect(flow.ownNotCounted).toEqual([`You approved at ${reviewTime('2026-10-17T12:00:00Z')}. It does not count.`]);
   });
 
   test('the not-counted line says why, in the Review details’ words', () => {
@@ -342,7 +342,7 @@ test.describe('viewerFlow: decisions that do not count, and authors', () => {
     const rules = { ...requirement().rules, fromGroups: [{ groupId: 'g1', name: 'security-reviewers', memberUserIds: [] }] };
     const own = decision({ countsToward: [], byRequirement: { 'prod-approval': { countedOn: 0, reason: 'NotEligible' } } });
     const flow = viewerFlow(withEligibility(eligibility, { requirements: [requirement({ rules })], viewer: { eligibility, ownByType: { Approval: own } } }), {});
-    expect(flow.ownNotCounted[0]).toContain('It is recorded, but it does not count. Not counted: not in security-reviewers.');
+    expect(flow.ownNotCounted[0]).toContain('It does not count. Not counted: not in security-reviewers.');
   });
 
   test('the same for an author, and the Type is named when there are several', () => {
@@ -350,10 +350,10 @@ test.describe('viewerFlow: decisions that do not count, and authors', () => {
     const own = { Approval: decision(), Security: decision({ id: 'd2', type: 'Security', result: 'Fail' }) };
     const flow = viewerFlow(withEligibility(eligibility, { viewer: { eligibility, ownByType: own } }), {});
     expect(flow.ownNotCounted).toEqual([
-      `You approved (Approval) at ${reviewTime('2026-10-17T12:00:00Z')}. It is recorded, but it does not count.`,
-      `You rejected (Security) at ${reviewTime('2026-10-17T12:00:00Z')}. It is recorded, but it does not count.`,
+      `You approved (Approval) at ${reviewTime('2026-10-17T12:00:00Z')}. It does not count.`,
+      `You rejected (Security) at ${reviewTime('2026-10-17T12:00:00Z')}. It does not count.`,
     ]);
-    expect(flow.authorNote).toBe('You wrote part of this change in dev. Your decision is recorded but does not count there.');
+    expect(flow.authorNote).toBe('You wrote part of this change in dev, so your decision does not count there.');
   });
 
   test('an eligible viewer’s decision is not "not counted"', () => {

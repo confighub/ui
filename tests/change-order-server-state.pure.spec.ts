@@ -326,7 +326,7 @@ test.describe('after the last stage, the chip and the Blocker agree', () => {
       });
       expect(row.nextStageId).toBeNull();
       expect(row.state).toBe('held');
-      expect(row.blocker).toMatch(/final prerequisites are not satisfied/);
+      expect(row.blocker).toMatch(/Final prerequisites are not satisfied/);
     });
   }
 
@@ -353,8 +353,8 @@ test.describe('after the last stage, the chip and the Blocker agree', () => {
       },
     });
     expect(row.state).toBe('progressing');
-    expect(row.blocker).not.toMatch(/final prerequisites/);
-    expect(row.blocker).toMatch(/in a stage/);
+    expect(row.blocker).not.toMatch(/final prerequisites/i);
+    expect(row.blocker).toMatch(/in no stage/);
   });
 });
 

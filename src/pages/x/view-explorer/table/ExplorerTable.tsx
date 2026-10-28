@@ -26,6 +26,7 @@ import { useExplorerContext } from '../state/context';
 import { useResults } from '../state/results-context';
 import { useRowSelection } from '../state/selection-context';
 import { useActiveTab } from '../state/useExplorer';
+import { ExplorerRowLink } from '../results/ExplorerRowLink';
 import { AddColumnButton } from './AddColumnButton';
 import { type CellActions, TableCellContent } from './cells/TableCellContent';
 import { isPrimaryField } from './format';
@@ -131,6 +132,8 @@ interface RowProps {
   rowIndex: number;
   actions: CellActions;
   onOpen: (row: EntityRow, event: MouseEvent | KeyboardEvent) => void;
+  /** A plain click on the row's name link: the details panel. */
+  onOpenRow: (row: EntityRow) => void;
   /** The row has a checkbox (a Units table). */
   pickable: boolean;
   picked: boolean;
@@ -150,6 +153,7 @@ const TableRow = memo(function TableRow({
   rowIndex,
   actions,
   onOpen,
+  onOpenRow,
   pickable,
   picked,
   letter,
@@ -165,6 +169,9 @@ const TableRow = memo(function TableRow({
       data-slot={letter || undefined}
       data-testid='vx-row'
       data-row-id={rowId}
+      // A click on the name link does not reach the row (NavLink stops it), so the link
+      // handles every click on itself (in a Units table, a ⇧-click there picks a range, and a
+      // ⌘/Ctrl-click opens the page in a new tab), and the row handles clicks on the rest of it.
       onClick={(e) => onOpen(row, e)}
       onMouseDown={(e) => {
         // ⇧-click picks a range; without this the browser also selects the text across it.
@@ -172,7 +179,7 @@ const TableRow = memo(function TableRow({
         if (pickable && e.shiftKey && !(e.target instanceof Element && e.target.closest('[data-vx-value]'))) e.preventDefault();
       }}
       onKeyDown={(e) => {
-        // Enter on a control inside the row (a value, a status chip) is that control's.
+        // Enter on a control inside the row (a value, a status chip, the name link) is that control's.
         if (e.key === 'Enter' && e.target === e.currentTarget) onOpen(row, e);
       }}
       sx={{
@@ -231,15 +238,35 @@ const TableRow = memo(function TableRow({
                 {letter}
               </Box>
             )}
-            <TableCellContent
-              entity={entity}
-              name={name}
-              row={row}
-              rowId={rowId}
-              primary={primary}
-              serverMissing={missingServer && serverColumns.has(name)}
-              actions={actions}
-            />
+            {primary ? (
+              <ExplorerRowLink
+                entity={entity}
+                row={row}
+                onOpen={() => onOpenRow(row)}
+                onRangePick={pickable ? (e) => onPick(row, e) : undefined}
+                style={{ display: 'flex', alignItems: 'center', flex: 1, alignSelf: 'stretch', minWidth: 0 }}
+              >
+                <TableCellContent
+                  entity={entity}
+                  name={name}
+                  row={row}
+                  rowId={rowId}
+                  primary
+                  serverMissing={missingServer && serverColumns.has(name)}
+                  actions={actions}
+                />
+              </ExplorerRowLink>
+            ) : (
+              <TableCellContent
+                entity={entity}
+                name={name}
+                row={row}
+                rowId={rowId}
+                primary={false}
+                serverMissing={missingServer && serverColumns.has(name)}
+                actions={actions}
+              />
+            )}
           </Box>
         );
       })}
@@ -550,7 +577,9 @@ export function ExplorerTable({ selectedId, onOpenRow, onOpenHref, reveal = null
     [rowId, togglePick, rangePick],
   );
 
-  // In a Units table a click with ⇧ or ⌘ picks rows, so the row's page opens with ⌘↵ instead.
+  // In a Units table a click with ⇧ or ⌘ on the row outside its name link picks rows, so
+  // ⌘↵ opens the row's page there. Elsewhere ⌘/Ctrl+Enter, and a ⌘/Ctrl-click on the row
+  // outside its name link, have no link to take them, so they open the row's page themselves.
   const onOpen = useCallback(
     (row: EntityRow, e: MouseEvent | KeyboardEvent) => {
       if (pickable && e.type === 'click' && (e.shiftKey || e.metaKey || e.ctrlKey)) onPick(row, e as MouseEvent);
@@ -660,6 +689,7 @@ export function ExplorerTable({ selectedId, onOpenRow, onOpenHref, reveal = null
                   rowIndex={v.index + 2}
                   actions={actions}
                   onOpen={onOpen}
+                  onOpenRow={onOpenRow}
                   pickable={pickable}
                   picked={selection.picked.has(rowId(item.row))}
                   letter={selection.letters.get(rowId(item.row)) ?? ''}

@@ -33,6 +33,7 @@ import { getApiErrorMessage } from '@/utility/error-functions';
 
 import { changeOrderPath } from '../change-orders/changeOrderAddress';
 import {
+  changeOrderAction,
   changeOrderFontMono,
   changeOrderInk,
   changeOrderStatus,
@@ -228,7 +229,7 @@ export function ChangeSetDetailView({ detail, onNotice }: { detail: ChangeSetDet
               sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '14px', margin: '16px 0 0' }}
             >
               <Fact term="Space" icon={FolderOutlinedIcon}>
-                <FactLink href={`/spaces/${changeSet.SpaceID}`}>{changeSet.SpaceSlug ?? changeSet.SpaceID}</FactLink>
+                <FactLink href={`/spaces/${changeSet.SpaceID}`} newTab={false}>{changeSet.SpaceSlug ?? changeSet.SpaceID}</FactLink>
               </Fact>
               <Fact term="Units" icon={DataObjectOutlinedIcon}>
                 <span data-testid="change-set-unit-count">
@@ -362,7 +363,7 @@ export function ChangeSetDetailView({ detail, onNotice }: { detail: ChangeSetDet
           <Box component="ul" data-testid="change-set-change-orders" sx={{ margin: 0, paddingLeft: '18px', fontSize: changeOrderType.size.prose }}>
             {detail.changeOrders.map((order) => (
               <li key={order.changeOrderId}>
-                <Box component={RouterLink} to={changeOrderPath(order.spaceSlug, order.slug)} sx={{ fontFamily: changeOrderFontMono, color: changeOrderStatus.accent }}>
+                <Box component={RouterLink} to={changeOrderPath(order.spaceSlug, order.slug)} sx={{ fontFamily: changeOrderFontMono, color: changeOrderAction.ink }}>
                   {order.spaceSlug ? `${order.spaceSlug}/${order.slug}` : order.slug}
                 </Box>
               </li>

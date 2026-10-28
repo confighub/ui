@@ -7,11 +7,11 @@
  * A row says whether the account is in use: when one of its keys or tokens last
  * authenticated, and which one, so an account nothing has used in weeks, or one
  * with no credentials at all, stands out. Accounts in use come first, most
- * recently used first.
+ * recently used first, until a column head is clicked to sort by it.
  */
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -19,21 +19,19 @@ import Typography from '@mui/material/Typography';
 import { useListServiceAccountsQuery, type ServiceAccountRead } from '@confighub/rtk-query';
 
 import { StatusDot, When } from '@/components/console-detail/ConsoleDetail';
+import { timeOf } from '@/components/console-detail/consoleDetailUtil';
+import { ConsoleTable, type ConsoleTableColumn } from '@/components/console-table/ConsoleTable';
 import { serviceAccountPath } from '@/hooks/usePrincipalNames';
 
 import {
   ConsoleClearButton,
-  ConsoleColumnHead,
   ConsoleEmpty,
   ConsoleFilterBar,
   ConsoleFooter,
   ConsoleIntro,
-  ConsoleList,
-  ConsoleLoading,
   ConsoleSearch,
   ConsoleSelectFilter,
   ConsoleTitleRow,
-  type ConsoleColumn,
 } from '../change-orders/components/ConsoleParts';
 import { KpiStrip, type KpiCard } from '../change-orders/components/KpiStrip';
 import {
@@ -43,13 +41,14 @@ import {
   KPI_LABEL_SX,
   KPI_NUM_SX,
   KPI_PARTIAL_CARD_SX,
-  R_MICRO,
+  ABOVE_ROW_LINK_SX,
+  ROW_LINK_SX,
   ageFrom,
   consoleTokens as T,
   controlSx,
   freshnessFrom,
 } from '../change-orders/consoleStyle';
-import { orgRoleLabel } from './orgRoles';
+import { ORG_ROLES, orgRoleLabel } from './orgRoles';
 import { CreateServiceAccountDialog } from './ServiceAccountForms';
 import { ACTIVITY, lastUseText, useListServiceAccountCredentialsQuery, usageOf, type Activity, type Usage } from './serviceAccountUsage';
 
@@ -65,14 +64,7 @@ const GRID = {
 } as const;
 const HIDE_NARROW = { '@media (max-width: 1100px)': { display: 'none' } } as const;
 
-const COLUMNS: ConsoleColumn[] = [
-  { key: 'name', label: 'Service account' },
-  { key: 'use', label: 'Last used' },
-  { key: 'credentials', label: 'Credentials' },
-  { key: 'role', label: 'Org role', sx: HIDE_NARROW },
-  { key: 'age', label: 'Age', sx: { ...HIDE_NARROW, textAlign: 'right' } },
-  { key: 'action', label: '', sx: { textAlign: 'right' } },
-];
+const RIGHT_NARROW = { ...HIDE_NARROW, textAlign: 'right' } as const;
 
 const ACTIVITY_ORDER: Record<Activity, number> = { active: 0, idle: 1, unused: 2, none: 3, unknown: 4 };
 const ACTIVITY_FILTERS = ['Active', 'Idle', 'Never used', 'No credentials'] as const;
@@ -88,118 +80,130 @@ function credentialsText(usage: Usage): string {
   return parts.length === 0 ? 'None' : parts.join(' · ');
 }
 
-const ServiceAccountRow = memo(function ServiceAccountRow({
-  serviceAccount,
-  usage,
-  credentialsLoading,
-  now,
-  onOpen,
-}: {
+interface ServiceAccountItem {
   serviceAccount: ServiceAccountRead;
   usage: Usage;
   credentialsLoading: boolean;
   now: number;
-  onOpen: (serviceAccount: ServiceAccountRead) => void;
-}) {
-  const open = useCallback(() => onOpen(serviceAccount), [onOpen, serviceAccount]);
-  const onKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      if (event.target !== event.currentTarget) return;
-      event.preventDefault();
-      open();
-    },
-    [open],
-  );
+}
+
+/** Weakest first, as `ORG_ROLES` lists them; a role it does not know has no rank. */
+function roleRank(role: string | undefined): number | undefined {
+  const index = ORG_ROLES.findIndex((entry) => entry.value === (role || 'none'));
+  return index === -1 ? undefined : index;
+}
+
+function LastUseCell({ usage, credentialsLoading }: ServiceAccountItem) {
+  if (credentialsLoading) return <Typography sx={{ fontSize: 12.5, color: T.ink3 }}>…</Typography>;
   const activity = ACTIVITY[usage.activity];
-  const subline = serviceAccount.DisplayName && serviceAccount.DisplayName !== serviceAccount.Slug ? serviceAccount.DisplayName : '';
-
   return (
-    <Box
-      role='button'
-      tabIndex={0}
-      data-testid='service-accounts-row'
-      data-slug={serviceAccount.Slug}
-      data-activity={usage.activity}
-      onClick={open}
-      onKeyDown={onKeyDown}
-      aria-label={`Open service account ${serviceAccount.Slug}`}
-      sx={{
-        ...GRID,
-        paddingTop: '11px',
-        paddingBottom: '11px',
-        borderBottom: `1px solid ${T.line}`,
-        cursor: 'pointer',
-        transition: 'background .1s ease',
-        '&:hover': { background: T.surfaceSunk },
-        '&:focus-visible': { outline: `2px solid ${T.accent}`, outlineOffset: -2, borderRadius: R_MICRO },
-        '&:last-of-type': { borderBottom: 'none' },
-      }}
-    >
-      <Box sx={{ minWidth: 0 }}>
-        <Typography
-          component='span'
-          title={serviceAccount.Slug}
-          sx={{ fontFamily: T.mono, fontSize: 13.5, lineHeight: T.lh, fontWeight: 600, color: T.ink, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-        >
-          {serviceAccount.Slug}
-        </Typography>
-        {subline ? (
-          <Typography component='span' title={subline} sx={{ fontSize: 11.5, lineHeight: T.lh, color: T.ink3, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {subline}
+    <>
+      <StatusDot
+        color={activity.color}
+        hollow={activity.hollow}
+        testId='service-accounts-row-activity'
+        label={usage.lastUse ? <When value={usage.lastUse.at} /> : activity.label}
+      />
+      <Typography
+        component='span'
+        title={lastUseText(usage.lastUse)}
+        sx={{ ...ABOVE_ROW_LINK_SX, fontSize: 11.5, lineHeight: T.lh, color: T.ink3, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingLeft: '14px' }}
+      >
+        {usage.lastUse ? `${activity.label} · ${lastUseText(usage.lastUse)}` : usage.activity === 'unknown' ? 'Credentials not readable' : ' '}
+      </Typography>
+    </>
+  );
+}
+
+const SERVICE_ACCOUNT_COLUMNS: ConsoleTableColumn<ServiceAccountItem>[] = [
+  {
+    id: 'name',
+    header: 'Service account',
+    sortValue: ({ serviceAccount }) => serviceAccount.Slug,
+    cell: ({ serviceAccount }) => {
+      const subline = serviceAccount.DisplayName && serviceAccount.DisplayName !== serviceAccount.Slug ? serviceAccount.DisplayName : '';
+      return (
+        <>
+          <Typography
+            component={RouterLink}
+            to={serviceAccountPath(serviceAccount.Slug)}
+            aria-label={`Open service account ${serviceAccount.Slug}`}
+            title={serviceAccount.Slug}
+            sx={{ ...ROW_LINK_SX, fontFamily: T.mono, fontSize: 13.5, lineHeight: T.lh, fontWeight: 600, color: T.ink, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
+            {serviceAccount.Slug}
           </Typography>
-        ) : null}
-      </Box>
-
-      <Box sx={{ minWidth: 0 }}>
-        {credentialsLoading ? (
-          <Typography sx={{ fontSize: 12.5, color: T.ink3 }}>…</Typography>
-        ) : (
-          <>
-            <StatusDot
-              color={activity.color}
-              hollow={activity.hollow}
-              testId='service-accounts-row-activity'
-              label={usage.lastUse ? <When value={usage.lastUse.at} /> : activity.label}
-            />
-            <Typography
-              component='span'
-              title={lastUseText(usage.lastUse)}
-              sx={{ fontSize: 11.5, lineHeight: T.lh, color: T.ink3, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingLeft: '14px' }}
-            >
-              {usage.lastUse ? `${activity.label} · ${lastUseText(usage.lastUse)}` : usage.activity === 'unknown' ? 'Credentials not readable' : ' '}
+          {subline ? (
+            <Typography component='span' title={subline} sx={{ ...ABOVE_ROW_LINK_SX, fontSize: 11.5, lineHeight: T.lh, color: T.ink3, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {subline}
             </Typography>
-          </>
-        )}
-      </Box>
-
+          ) : null}
+        </>
+      );
+    },
+  },
+  {
+    id: 'use',
+    header: 'Last used',
+    // Most recent first on the first click; an account with no use sorts last, in the console's order.
+    sortValue: ({ usage }) => (usage.lastUse ? new Date(usage.lastUse.at) : undefined),
+    sortDescFirst: true,
+    cell: (item) => <LastUseCell {...item} />,
+  },
+  {
+    id: 'credentials',
+    header: 'Credentials',
+    sortValue: ({ usage }) => (usage.activity === 'unknown' ? undefined : usage.liveKeys + usage.liveTokens),
+    cell: ({ usage, credentialsLoading }) => (
       <Typography data-testid='service-accounts-row-credentials' sx={{ fontSize: 12.5, lineHeight: T.lh, color: T.ink2, whiteSpace: 'nowrap' }}>
         {credentialsLoading ? '…' : credentialsText(usage)}
       </Typography>
-
-      <Typography sx={{ ...HIDE_NARROW, fontSize: 12.5, lineHeight: T.lh, color: serviceAccount.OrgRole && serviceAccount.OrgRole !== 'none' ? T.ink : T.ink3 }}>
+    ),
+  },
+  {
+    id: 'role',
+    header: 'Org role',
+    sx: HIDE_NARROW,
+    sortValue: ({ serviceAccount }) => roleRank(serviceAccount.OrgRole),
+    cell: ({ serviceAccount }) => (
+      <Typography sx={{ fontSize: 12.5, lineHeight: T.lh, color: serviceAccount.OrgRole && serviceAccount.OrgRole !== 'none' ? T.ink : T.ink3 }}>
         {orgRoleLabel(serviceAccount.OrgRole)}
       </Typography>
-
-      <Typography sx={{ ...HIDE_NARROW, fontFamily: T.mono, fontSize: 12.5, lineHeight: T.lh, color: T.ink3, textAlign: 'right' }}>
-        {ageFrom(serviceAccount.CreatedAt, now)}
-      </Typography>
-
+    ),
+  },
+  {
+    id: 'age',
+    header: 'Age',
+    sx: RIGHT_NARROW,
+    // Youngest first ascending, as the ages read.
+    sortValue: ({ serviceAccount, now }) => {
+      const created = timeOf(serviceAccount.CreatedAt);
+      return created === undefined ? undefined : now - created;
+    },
+    cell: ({ serviceAccount, now }) => (
+      <Typography sx={{ fontFamily: T.mono, fontSize: 12.5, lineHeight: T.lh, color: T.ink3, textAlign: 'right' }}>{ageFrom(serviceAccount.CreatedAt, now)}</Typography>
+    ),
+  },
+  {
+    id: 'action',
+    header: '',
+    sx: { textAlign: 'right' },
+    cell: () => (
       <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <Box
-          component='button'
-          type='button'
-          onClick={(event: React.MouseEvent) => {
-            event.stopPropagation();
-            open();
-          }}
-          sx={controlSx('quiet', true)}
-        >
+        {/* The row's link covers it, so it is a picture of a control, not a second one. */}
+        <Box component='span' aria-hidden='true' sx={controlSx('quiet', true)}>
           Open
         </Box>
       </Box>
-    </Box>
-  );
+    ),
+  },
+];
+
+const serviceAccountRowId = ({ serviceAccount }: ServiceAccountItem) => serviceAccount.ServiceAccountID ?? serviceAccount.Slug;
+const serviceAccountRowAttributes = ({ serviceAccount, usage }: ServiceAccountItem) => ({
+  'data-testid': 'service-accounts-row',
+  'data-slug': serviceAccount.Slug,
+  'data-activity': usage.activity,
 });
 
 export function ServiceAccountList() {
@@ -256,8 +260,9 @@ export function ServiceAccountList() {
           (ub.lastUse?.at ?? '').localeCompare(ua.lastUse?.at ?? '') ||
           a.Slug.localeCompare(b.Slug)
         );
-      });
-  }, [serviceAccounts, search, activityFilter, roleFilter, usage]);
+      })
+      .map((serviceAccount): ServiceAccountItem => ({ serviceAccount, usage: usage(serviceAccount), credentialsLoading: credentials.isLoading, now }));
+  }, [serviceAccounts, search, activityFilter, roleFilter, usage, credentials.isLoading, now]);
 
   const count = (activity: Activity) => serviceAccounts.filter((sa) => usage(sa).activity === activity).length;
   const card = (key: Activity, hint: string, tone: string): KpiCard => ({
@@ -280,8 +285,6 @@ export function ServiceAccountList() {
     const label = ACTIVITY[key as Activity].label;
     setActivityFilter((current) => (current === label ? 'all' : label));
   };
-
-  const onOpen = useCallback((sa: ServiceAccountRead) => navigate(serviceAccountPath(sa.Slug)), [navigate]);
 
   return (
     <Box component='section' role='region' aria-label='Service accounts console' data-testid='service-accounts-console' sx={{ fontFamily: T.sans, color: T.ink, minWidth: 0 }}>
@@ -333,11 +336,16 @@ export function ServiceAccountList() {
         </Box>
       ) : null}
 
-      <ConsoleList label='Service accounts'>
-        <ConsoleColumnHead columns={COLUMNS} grid={GRID} />
-        {isLoading ? (
-          <ConsoleLoading testId='service-accounts-loading' />
-        ) : matched.length === 0 ? (
+      <ConsoleTable
+        label='Service accounts'
+        data={matched}
+        columns={SERVICE_ACCOUNT_COLUMNS}
+        grid={GRID}
+        getRowId={serviceAccountRowId}
+        isLoading={isLoading}
+        loadingTestId='service-accounts-loading'
+        rowAttributes={serviceAccountRowAttributes}
+        empty={
           <ConsoleEmpty
             message={serviceAccounts.length === 0 ? 'No service accounts yet.' : 'No service account matches these filters.'}
             action={
@@ -348,26 +356,9 @@ export function ServiceAccountList() {
               ) : null
             }
           />
-        ) : (
-          <>
-            {matched.map((sa) => (
-              <ServiceAccountRow
-                key={sa.ServiceAccountID}
-                serviceAccount={sa}
-                usage={usage(sa)}
-                credentialsLoading={credentials.isLoading}
-                now={now}
-                onOpen={onOpen}
-              />
-            ))}
-            <ConsoleFooter
-              countTestId='service-accounts-count'
-              count={plural(matched.length, 'service account')}
-              hint='Select a row to see its keys, tokens and access.'
-            />
-          </>
-        )}
-      </ConsoleList>
+        }
+        footer={<ConsoleFooter countTestId='service-accounts-count' count={plural(matched.length, 'service account')} hint='Select a row to see its keys, tokens and access.' />}
+      />
       <CreateServiceAccountDialog
         open={creating}
         onClose={() => setCreating(false)}

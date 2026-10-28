@@ -20,12 +20,12 @@ import { shortDigest, versionPathOf, type ImageChanges, type ImageChange } from 
 import { ImageMark, ImageTag, RolePill, TagArrow } from './ImageChangeAtoms';
 import { BUMP_TONE } from '../imageChangeTone';
 import {
+  changeOrderAction,
   changeOrderBorder,
   changeOrderCardTokens,
   changeOrderFontMono,
   changeOrderInk,
   changeOrderShape,
-  changeOrderStatus,
   changeOrderSurface,
   changeOrderType,
 } from '../changeOrdersTokens';
@@ -83,7 +83,7 @@ function TagPane({ image, side }: { image: ImageChange; side: 'from' | 'to' }) {
         padding: '9px 14px',
         minWidth: 0,
         background: isTo ? changeOrderSurface.card : 'transparent',
-        boxShadow: isTo ? `inset ${changeOrderShape.accentEdge}px 0 0 ${BUMP_TONE[image.bump].ink}` : 'none',
+        boxShadow: isTo ? `inset ${changeOrderShape.leadingEdge}px 0 0 ${BUMP_TONE[image.bump].ink}` : 'none',
       }}
     >
       <Box sx={{ fontSize: changeOrderType.size.small, lineHeight: changeOrderType.lineHeight.body, color: changeOrderInk.subtle, marginBottom: '2px' }}>
@@ -173,6 +173,7 @@ function HeroRow({
   subject,
   meta,
   inset,
+  variantCount,
 }: {
   image: ImageChange;
   stageNames: readonly string[];
@@ -180,6 +181,7 @@ function HeroRow({
   subject: ImageChangeSubject;
   meta: HeroMeta;
   inset: number | undefined;
+  variantCount: number | undefined;
 }) {
   const workload = workloadLabel(image);
   const isVersion = image.kind === 'version';
@@ -301,6 +303,14 @@ function HeroRow({
           separate line that says only the order the change promotes through.
         */}
         {meta === 'bump' && !isVersion ? <BumpPill image={image} /> : null}
+        {meta === 'bump' && variantCount !== undefined ? (
+          <Box data-testid={`${subject.idPrefix}-image-hero-variants`} sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted }}>
+            In{' '}
+            <Box component="b" sx={{ color: changeOrderInk.default, fontWeight: changeOrderType.weight.semibold }}>
+              {variantCount} {variantCount === 1 ? 'variant' : 'variants'}
+            </Box>
+          </Box>
+        ) : null}
         {isVersion || meta === 'bump' ? null : (
           <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted }}>
             In{' '}
@@ -351,6 +361,7 @@ function ImageChangeHero({
   subject,
   meta,
   inset,
+  variantCount,
 }: {
   images: readonly ImageChange[];
   fieldChangeCount: number;
@@ -358,6 +369,7 @@ function ImageChangeHero({
   subject: ImageChangeSubject;
   meta: HeroMeta;
   inset: number | undefined;
+  variantCount: number | undefined;
 }) {
   const n = images.length;
   const kinds = kindsOf(images);
@@ -392,12 +404,12 @@ function ImageChangeHero({
         </Box>
         <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.subtle }}>
           {fieldChangeCount > 0
-            ? `and ${fieldChangeCount} other field ${fieldChangeCount === 1 ? 'change' : 'changes'} in the diff below`
+            ? `+${fieldChangeCount} other field ${fieldChangeCount === 1 ? 'change' : 'changes'}`
             : 'No other field changes'}
         </Box>
       </Box>
       {images.map((image, i) => (
-        <HeroRow key={image.key} image={image} stageNames={stageNames} first={i === 0} subject={subject} meta={meta} inset={inset} />
+        <HeroRow key={image.key} image={image} stageNames={stageNames} first={i === 0} subject={subject} meta={meta} inset={inset} variantCount={variantCount} />
       ))}
     </Panel>
   );
@@ -441,6 +453,7 @@ export function ImageChangeSummary({
   subject = CHANGE_ORDER_IMAGE_SUBJECT,
   meta = 'units',
   inset,
+  variantCount,
 }: {
   changes: ImageChanges;
   /** The stages the change promotes through, in order; none for a change that is not promoted. */
@@ -453,6 +466,8 @@ export function ImageChangeSummary({
    * over its card's padding so that the text still lines up with the card's content edge.
    */
   inset?: number;
+  /** How many variants the change reaches, said under the bump: a draft's, from its dry run. */
+  variantCount?: number;
 }) {
   switch (changes.status) {
     case 'some':
@@ -464,6 +479,7 @@ export function ImageChangeSummary({
           subject={subject}
           meta={meta}
           inset={inset}
+          variantCount={variantCount}
         />
       );
     case 'none':
@@ -472,13 +488,12 @@ export function ImageChangeSummary({
           <Box component="b" sx={{ color: changeOrderInk.default, fontWeight: changeOrderType.weight.semibold }}>
             No image change.
           </Box>
-          {changes.fieldChanges.count > 0 ? ` This ${subject.noun} changes configuration fields only.` : null}
         </QuietNote>
       );
     case 'unavailable':
       return (
         <QuietNote testId={`${subject.idPrefix}-image-changes-unavailable`}>
-          The image changes could not be read. The full diff below shows everything this {subject.noun} changes.
+          Could not read the image changes.
         </QuietNote>
       );
     default:
@@ -494,7 +509,7 @@ export function FullDiffDisclosure({
   changeCount,
   unitCount,
   imagesOnly,
-  hintText = 'Only images change, as shown above.',
+  hintText = 'Images only',
   expanded,
   onToggle,
   renderBody,
@@ -546,7 +561,7 @@ export function FullDiffDisclosure({
           background: changeOrderSurface.sunk,
           borderBottom: expanded ? `1px solid ${changeOrderBorder.default}` : 'none',
           '&:hover': { background: changeOrderSurface.inset },
-          '&:focus-visible': { outline: `2px solid ${changeOrderBorder.strong}`, outlineOffset: '-2px' },
+          '&:focus-visible': { outline: `2px solid ${changeOrderAction.focus}`, outlineOffset: '-2px' },
         }}
       >
         <ExpandMoreIcon
@@ -571,7 +586,7 @@ export function FullDiffDisclosure({
               {hintText}
             </Box>
           ) : null}
-          <Box component="span" sx={{ color: changeOrderStatus.accent, fontWeight: changeOrderType.weight.semibold }}>
+          <Box component="span" sx={{ color: changeOrderAction.ink, fontWeight: changeOrderType.weight.semibold }}>
             {expanded ? 'Hide diff' : 'Show diff'}
           </Box>
         </Box>

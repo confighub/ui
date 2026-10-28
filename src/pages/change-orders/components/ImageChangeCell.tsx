@@ -15,7 +15,7 @@
  * fan-out) is not read at all: its base Space diff is empty by construction,
  * and reading that as "No image change" would be false.
  *
- * Nothing in the cell is interactive: the row is the button.
+ * Nothing in the cell is interactive: the row's link opens the ChangeOrder.
  */
 
 import { memo, useMemo } from 'react';
@@ -31,6 +31,7 @@ import { tooltipSx } from '../../x/apps/valuePillTooltip';
 import { NO_VALUE_LABEL } from '../../x/apps/componentValues';
 import { getInlineDiff } from '../../x/apps/inlineDiff';
 import { changeOrderOwnSpaceReached } from '../../x/apps/change-order/changeOrderStages';
+import { ABOVE_ROW_LINK_SX } from '../consoleStyle';
 import { changeOrderBorder, changeOrderInk, changeOrderSurface } from '../changeOrdersTokens';
 import { shortDigest, versionPathOf, type ImageChanges, type FieldChangeDetail, type ImageChange } from '../imageChange';
 import { useChangeOrderImageChanges } from '../useChangeOrderImageChanges';
@@ -57,7 +58,8 @@ const QUIET_TEXT = {
  *
  * `CurrentPill` keeps its diff hidden until its review row reveals it; this
  * wrapper does the same reveal, so the pill itself is unchanged. The chip is
- * not focusable and handles no click: the row stays the only control.
+ * not focusable and handles no click. It sits above the row's stretched link,
+ * so that its hover still shows.
  */
 function FieldChip({ detail }: { detail: FieldChangeDetail }) {
   const segments = useMemo(() => getInlineDiff(detail.from, detail.to), [detail.from, detail.to]);
@@ -90,6 +92,8 @@ function FieldChip({ detail }: { detail: FieldChangeDetail }) {
           overflow: 'hidden',
           color: changeOrderInk.muted,
           cursor: 'default',
+          position: 'relative',
+          zIndex: 1,
           // The reveal the review row does: hide the plain value, show old → new.
           '& .current-text': { display: 'none' },
           '& .current-preview, & .current-old-preview': { display: 'inline' },
@@ -153,6 +157,8 @@ function ImageTags({ image, solo }: { image: ImageChange; solo: boolean }) {
   // (it grows to its text only when there is room, and is cut before the new one is), then the arrow,
   // then the new image tag, which never shrinks. So the new image tags start at one x down the list.
   const tracks = {
+    // Its title holds the full image tags and digests, which the line may cut.
+    ...ABOVE_ROW_LINK_SX,
     display: 'grid',
     // `max-content`, never `auto`: an auto track stretches into the free space and moves the new image tag.
     gridTemplateColumns: `minmax(${FROM_TRACK}px, max-content) max-content max-content`,
@@ -251,7 +257,7 @@ function ImageLine({ image, solo }: { image: ImageChange; solo: boolean }) {
     >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
         <ImageMark image={image} size={solo ? 'md' : 'sm'} />
-        <Box sx={{ minWidth: 0 }} title={identityTitle(image)}>
+        <Box sx={{ ...ABOVE_ROW_LINK_SX, minWidth: 0 }} title={identityTitle(image)}>
           {/* The role pill sits outside the part of the name that may be cut, so it is never cut itself. */}
           <Box component="span" sx={{ display: 'flex', alignItems: 'baseline', minWidth: 0 }}>
             <Box
@@ -473,8 +479,7 @@ export const ImageChangeCell = memo(function ImageChangeCell({
     // An Invoke ChangeOrder has changed nothing anywhere until its Invocation runs.
     <Box
       component="span"
-      title="An Invoke ChangeOrder changes the Units when each stage is promoted. See the ChangeOrder page for the change."
-      sx={{ ...QUIET_TEXT, fontSize: 12.5 }}
+      sx={{ ...QUIET_TEXT, ...ABOVE_ROW_LINK_SX, fontSize: 12.5 }}
     >
       Runs when promoted
     </Box>

@@ -296,7 +296,7 @@ test.describe('stagePropagation: the box names fields as the change lines do', (
     expect(p.problems[0]).toMatchObject({ kind: 'kept', label: 'image tag', value: 'ghcr.io/acme/api:v0.1.9', valueText: 'v0.1.9' });
     expect(p.marks.get('c')).toEqual({ kind: 'keeps', value: 'v0.1.9', title: 'ghcr.io/acme/api:v0.1.9' });
     const parts = problemSegments(p.problems[0], (spaceId) => ({ spaceId, name: spaceId }), (id) => id);
-    expect(segmentsText(parts)).toBe('c: a protected field in c/api keeps image tag at v0.1.9. The other changes still apply.');
+    expect(segmentsText(parts)).toBe('c: a protected field in c/api keeps image tag at v0.1.9.');
     expect(acknowledgementText(p.problems, (id) => id)).toBe('c should keep image tag: v0.1.9.');
   });
 
@@ -364,7 +364,7 @@ test.describe('stagePropagation: what cannot be established, by cause', () => {
     expect(p.marks.has('b')).toBe(false);
     expect(p.chainedSpaceIds).toEqual(['b']);
     expect(p.quietNotes).toEqual([
-      'Previewed 1 of 2. The other takes from a variant earlier in this promotion, so what it receives cannot be shown until that one is promoted.',
+      'Previewed 1 of 2. 1 takes from an earlier variant.',
     ]);
   });
 
@@ -372,7 +372,7 @@ test.describe('stagePropagation: what cannot be established, by cause', () => {
     const p = propagationOf([{ space: 'a', name: 'api', fields: tag('2.0') }], ['a', 'b']);
     expect(p.problems).toEqual([{ kind: 'unknown', spaceIds: ['b'], cause: 'noResources' }]);
     expect(p.marks.get('b')).toEqual({ kind: 'unknown' });
-    expect(p.quietNotes).toContain('Some Spaces in prod hold no resources yet, so more may change than shown.');
+    expect(p.quietNotes).toContain('Some Spaces in prod hold no resources yet.');
   });
 
   test('a dry run that did not plan a Space for another reason is unplanned', () => {

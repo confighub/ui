@@ -123,13 +123,13 @@ export const bottomBarPrimaryButtonSx = {
   fontWeight: 600,
   fontSize: 14,
   borderRadius: `${componentTheme.radiusSm}px`,
-  backgroundColor: componentTheme.done,
+  backgroundColor: componentTheme.promote,
   color: componentTheme.fgOnEmphasis,
   boxShadow: componentTheme.shadowSm,
   px: 1.5,
   py: 0.5,
   gap: 1,
-  '&:hover': { backgroundColor: componentTheme.doneEmphasis },
+  '&:hover': { backgroundColor: componentTheme.promoteEmphasis },
   // A DISABLED BUTTON STILL LOOKS LIKE A BUTTON (user request: "the buttons
   // turn into text when disabled, I don't want that, just grey them out").
   //

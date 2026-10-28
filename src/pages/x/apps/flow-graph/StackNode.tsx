@@ -158,7 +158,7 @@ export const CaretButton = styled('button')({
   transition: 'background-color 0.15s',
   '&:hover': { background: componentTheme.bgInset, color: componentTheme.fgDefault },
   '&:focus-visible': {
-    outline: `2px solid ${componentTheme.accentFocusRing}`,
+    outline: `2px solid ${componentTheme.accent}`,
     outlineOffset: 1,
   },
   '& svg': { fontSize: 18 },

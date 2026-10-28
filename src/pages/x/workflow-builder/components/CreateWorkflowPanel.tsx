@@ -42,7 +42,7 @@ interface CreateWorkflowPanelProps {
   sourceStatus: 'loading' | 'ready' | 'failed';
   spaces: readonly SpaceOption[];
   spacesStatus: 'loading' | 'ready' | 'failed';
-  onOpenClone: (changeWorkflowId: string) => void;
+  cloneHref: (changeWorkflowId: string) => string;
 }
 
 export function CreateWorkflowPanel({
@@ -50,13 +50,9 @@ export function CreateWorkflowPanel({
   sourceStatus,
   spaces,
   spacesStatus,
-  onOpenClone,
+  cloneHref,
 }: CreateWorkflowPanelProps) {
   if (!flow.open) return null;
-
-  const openClone = () => {
-    if (flow.clonedTo) onOpenClone(flow.clonedTo.changeWorkflowId);
-  };
 
   return (
     <div className='newwfpanel' role='group' aria-label='New workflow'>
@@ -81,7 +77,11 @@ export function CreateWorkflowPanel({
         onDestination={flow.onDestination}
         saving={flow.saving}
         error={flow.error}
-        clonedTo={flow.clonedTo ? { spaceSlug: flow.clonedTo.spaceSlug, open: openClone } : null}
+        clonedTo={
+          flow.clonedTo
+            ? { spaceSlug: flow.clonedTo.spaceSlug, href: cloneHref(flow.clonedTo.changeWorkflowId) }
+            : null
+        }
         onConfirm={flow.confirm}
         onCancel={flow.cancel}
         helpText='The Stages, their selectors and every custom prerequisite are copied exactly. Nothing about the workflow you are copying from changes.'

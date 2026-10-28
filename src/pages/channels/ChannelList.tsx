@@ -7,11 +7,11 @@
  * A row says whether a bot is connected to the Channel now, when it last polled
  * and from where, what it last reported, and who may claim it, so a bot that has
  * gone quiet stands out. Lapsed leases come first, as the ones to look at, then
- * connected Channels, then the rest.
+ * connected Channels, then the rest, until a column head is clicked to sort by it.
  */
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -19,21 +19,18 @@ import Typography from '@mui/material/Typography';
 import { useListAllChannelsQuery, type ChannelRead } from '@confighub/rtk-query';
 
 import { StatusDot, When } from '@/components/console-detail/ConsoleDetail';
+import { ConsoleTable, type ConsoleTableColumn } from '@/components/console-table/ConsoleTable';
 import { usePrincipalNames } from '@/hooks/usePrincipalNames';
 
 import {
   ConsoleClearButton,
-  ConsoleColumnHead,
   ConsoleEmpty,
   ConsoleFilterBar,
   ConsoleFooter,
   ConsoleIntro,
-  ConsoleList,
-  ConsoleLoading,
   ConsoleSearch,
   ConsoleSelectFilter,
   ConsoleTitleRow,
-  type ConsoleColumn,
 } from '../change-orders/components/ConsoleParts';
 import { KpiStrip, type KpiCard } from '../change-orders/components/KpiStrip';
 import {
@@ -43,7 +40,8 @@ import {
   KPI_LABEL_SX,
   KPI_NUM_SX,
   KPI_PARTIAL_CARD_SX,
-  R_MICRO,
+  ABOVE_ROW_LINK_SX,
+  ROW_LINK_SX,
   consoleTokens as T,
   controlSx,
   freshnessFrom,
@@ -67,141 +65,144 @@ const GRID = {
 } as const;
 const HIDE_NARROW = { '@media (max-width: 1200px)': { display: 'none' } } as const;
 
-const COLUMNS: ConsoleColumn[] = [
-  { key: 'name', label: 'Channel' },
-  { key: 'connection', label: 'Connection' },
-  { key: 'claim', label: 'Claimed by' },
-  { key: 'subscriptions', label: 'Subscribes to', sx: HIDE_NARROW },
-  { key: 'commands', label: 'Commands', sx: { ...HIDE_NARROW, textAlign: 'right' } },
-  { key: 'action', label: '' },
-];
+interface ChannelItem {
+  channel: ChannelRead;
+  connection: Connection;
+  claimants: string[];
+}
 
 const CONNECTION_ORDER: Record<Connection, number> = { lapsed: 0, connected: 1, disconnected: 2, never: 3 };
 const CONNECTION_KEYS: Connection[] = ['connected', 'lapsed', 'disconnected', 'never'];
 const CONNECTION_FILTERS = CONNECTION_KEYS.map((key) => CONNECTION[key].label);
+const RIGHT_NARROW = { ...HIDE_NARROW, textAlign: 'right' } as const;
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const commandsOf = (channel: ChannelRead) => Object.keys(channel.Commands ?? {}).sort();
 
-const ChannelRow = memo(function ChannelRow({
-  channel,
-  connection,
-  claimants,
-  onOpen,
-}: {
-  channel: ChannelRead;
-  connection: Connection;
-  claimants: string[];
-  onOpen: (channel: ChannelRead) => void;
-}) {
-  const open = useCallback(() => onOpen(channel), [onOpen, channel]);
-  const onKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      if (event.target !== event.currentTarget) return;
-      event.preventDefault();
-      open();
-    },
-    [open],
-  );
+function ConnectionCell({ channel, connection }: ChannelItem) {
   const style = CONNECTION[connection];
-  const commands = Object.keys(channel.Commands ?? {}).sort();
-  const subscriptions = subscriptionSummary(channel);
   const detail = [channel.IPAddress ? `from ${channel.IPAddress}` : '', channel.LastMessage ?? ''].filter(Boolean).join(' · ');
-
   return (
-    <Box
-      role='button'
-      tabIndex={0}
-      data-testid='channels-row'
-      data-slug={channel.Slug}
-      data-connection={connection}
-      onClick={open}
-      onKeyDown={onKeyDown}
-      aria-label={`Open Channel ${channel.SpaceSlug}/${channel.Slug}`}
-      sx={{
-        ...GRID,
-        paddingTop: '11px',
-        paddingBottom: '11px',
-        borderBottom: `1px solid ${T.line}`,
-        cursor: 'pointer',
-        transition: 'background .1s ease',
-        '&:hover': { background: T.surfaceSunk },
-        '&:focus-visible': { outline: `2px solid ${T.accent}`, outlineOffset: -2, borderRadius: R_MICRO },
-        '&:last-of-type': { borderBottom: 'none' },
-      }}
-    >
-      <Box sx={{ minWidth: 0 }}>
+    <>
+      <StatusDot
+        color={style.color}
+        hollow={style.hollow}
+        testId='channels-row-connection'
+        label={
+          connection === 'never' ? (
+            style.label
+          ) : (
+            <>
+              {style.label}
+              <Box component='span' sx={{ fontWeight: 400, color: T.ink3 }}>
+                {' · seen '}
+                <When value={channel.LastSeenAt} />
+              </Box>
+            </>
+          )
+        }
+      />
+      <Typography
+        component='span'
+        title={detail}
+        sx={{ ...ABOVE_ROW_LINK_SX, fontSize: 11.5, lineHeight: T.lh, color: T.ink3, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingLeft: '14px' }}
+      >
+        {detail || ' '}
+      </Typography>
+    </>
+  );
+}
+
+const CHANNEL_COLUMNS: ConsoleTableColumn<ChannelItem>[] = [
+  {
+    id: 'name',
+    header: 'Channel',
+    sortValue: ({ channel }) => channel.Slug,
+    cell: ({ channel }) => (
+      <>
         <Typography
-          component='span'
+          component={RouterLink}
+          to={channelPath(channel.SpaceSlug ?? '', channel.Slug)}
+          aria-label={`Open Channel ${channel.SpaceSlug}/${channel.Slug}`}
           title={channel.Slug}
-          sx={{ fontFamily: T.mono, fontSize: 13.5, lineHeight: T.lh, fontWeight: 600, color: T.ink, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          sx={{ ...ROW_LINK_SX, fontFamily: T.mono, fontSize: 13.5, lineHeight: T.lh, fontWeight: 600, color: T.ink, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
         >
           {channel.Slug}
         </Typography>
         <Typography component='span' sx={{ fontSize: 11.5, lineHeight: T.lh, color: T.ink3, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {channel.SpaceSlug}
         </Typography>
-      </Box>
-
-      <Box sx={{ minWidth: 0 }}>
-        <StatusDot
-          color={style.color}
-          hollow={style.hollow}
-          testId='channels-row-connection'
-          label={
-            connection === 'never' ? (
-              style.label
-            ) : (
-              <>
-                {style.label}
-                <Box component='span' sx={{ fontWeight: 400, color: T.ink3 }}>
-                  {' · seen '}
-                  <When value={channel.LastSeenAt} />
-                </Box>
-              </>
-            )
-          }
-        />
-        <Typography
-          component='span'
-          title={detail}
-          sx={{ fontSize: 11.5, lineHeight: T.lh, color: T.ink3, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingLeft: '14px' }}
-        >
-          {detail || ' '}
-        </Typography>
-      </Box>
-
+      </>
+    ),
+  },
+  {
+    id: 'connection',
+    header: 'Connection',
+    // Lapsed first, as in the console's own order; within a state, that order (most recently seen first) holds.
+    sortValue: ({ connection }) => CONNECTION_ORDER[connection],
+    cell: (item) => <ConnectionCell {...item} />,
+  },
+  {
+    id: 'claim',
+    header: 'Claimed by',
+    sortValue: ({ claimants }) => (claimants.length > 0 ? claimants.join(', ') : undefined),
+    cell: ({ claimants }) => (
       <Typography
         data-testid='channels-row-claimants'
         title={claimants.join(', ')}
-        sx={{ fontFamily: claimants.length > 0 ? T.mono : undefined, fontSize: 12.5, lineHeight: T.lh, color: claimants.length > 0 ? T.ink2 : T.ink3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+        sx={{ ...ABOVE_ROW_LINK_SX, fontFamily: claimants.length > 0 ? T.mono : undefined, fontSize: 12.5, lineHeight: T.lh, color: claimants.length > 0 ? T.ink2 : T.ink3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
       >
         {claimants.length > 0 ? claimants.join(', ') : 'No one'}
       </Typography>
-
-      <Typography title={subscriptions} sx={{ ...HIDE_NARROW, fontSize: 12.5, lineHeight: T.lh, color: T.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-        {subscriptions}
-      </Typography>
-
-      <Typography title={commands.join('\n')} sx={{ ...HIDE_NARROW, fontFamily: T.mono, fontSize: 12.5, lineHeight: T.lh, color: T.ink2, textAlign: 'right' }}>
-        {commands.length}
-      </Typography>
-
+    ),
+  },
+  {
+    id: 'subscriptions',
+    header: 'Subscribes to',
+    sx: HIDE_NARROW,
+    sortValue: ({ channel }) => subscriptionSummary(channel),
+    cell: ({ channel }) => {
+      const subscriptions = subscriptionSummary(channel);
+      return (
+        <Typography title={subscriptions} sx={{ ...ABOVE_ROW_LINK_SX, fontSize: 12.5, lineHeight: T.lh, color: T.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {subscriptions}
+        </Typography>
+      );
+    },
+  },
+  {
+    id: 'commands',
+    header: 'Commands',
+    sx: RIGHT_NARROW,
+    sortValue: ({ channel }) => commandsOf(channel).length,
+    cell: ({ channel }) => {
+      const commands = commandsOf(channel);
+      return (
+        <Typography title={commands.join('\n')} sx={{ ...ABOVE_ROW_LINK_SX, marginLeft: 'auto', fontFamily: T.mono, fontSize: 12.5, lineHeight: T.lh, color: T.ink2 }}>
+          {commands.length}
+        </Typography>
+      );
+    },
+  },
+  {
+    id: 'action',
+    header: '',
+    cell: () => (
       <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <Box
-          component='button'
-          type='button'
-          onClick={(event: React.MouseEvent) => {
-            event.stopPropagation();
-            open();
-          }}
-          sx={controlSx('quiet', true)}
-        >
+        {/* The row's link covers it, so it is a picture of a control, not a second one. */}
+        <Box component='span' aria-hidden='true' sx={controlSx('quiet', true)}>
           Open
         </Box>
       </Box>
-    </Box>
-  );
+    ),
+  },
+];
+
+const channelRowId = ({ channel }: ChannelItem) => channel.ChannelID ?? `${channel.SpaceSlug}/${channel.Slug}`;
+const channelRowAttributes = ({ channel, connection }: ChannelItem) => ({
+  'data-testid': 'channels-row',
+  'data-slug': channel.Slug,
+  'data-connection': connection,
 });
 
 export function ChannelList() {
@@ -265,8 +266,6 @@ export function ChannelList() {
     setConnectionFilter((current) => (current === label ? 'all' : label));
   };
 
-  const onOpen = useCallback((channel: ChannelRead) => navigate(channelPath(channel.SpaceSlug ?? '', channel.Slug)), [navigate]);
-
   return (
     <Box component='section' role='region' aria-label='Channels console' data-testid='channels-console' sx={{ fontFamily: T.sans, color: T.ink, minWidth: 0 }}>
       <ConsoleTitleRow
@@ -314,11 +313,16 @@ export function ChannelList() {
         </Box>
       ) : null}
 
-      <ConsoleList label='Channels'>
-        <ConsoleColumnHead columns={COLUMNS} grid={GRID} />
-        {isLoading ? (
-          <ConsoleLoading testId='channels-loading' />
-        ) : matched.length === 0 ? (
+      <ConsoleTable
+        label='Channels'
+        data={matched}
+        columns={CHANNEL_COLUMNS}
+        grid={GRID}
+        getRowId={channelRowId}
+        isLoading={isLoading}
+        loadingTestId='channels-loading'
+        rowAttributes={channelRowAttributes}
+        empty={
           <ConsoleEmpty
             message={channels.length === 0 ? 'No Channels yet.' : 'No Channel matches these filters.'}
             action={
@@ -329,15 +333,9 @@ export function ChannelList() {
               ) : null
             }
           />
-        ) : (
-          <>
-            {matched.map(({ channel, connection, claimants }) => (
-              <ChannelRow key={channel.ChannelID} channel={channel} connection={connection} claimants={claimants} onOpen={onOpen} />
-            ))}
-            <ConsoleFooter countTestId='channels-count' count={plural(matched.length, 'Channel')} hint='Select a row to see its commands, recent runs and access.' />
-          </>
-        )}
-      </ConsoleList>
+        }
+        footer={<ConsoleFooter countTestId='channels-count' count={plural(matched.length, 'Channel')} hint='Select a row to see its commands, recent runs and access.' />}
+      />
       <CreateChannelDialog
         open={creating}
         onClose={() => setCreating(false)}

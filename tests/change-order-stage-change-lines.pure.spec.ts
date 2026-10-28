@@ -53,7 +53,7 @@ test.describe('changeCardNotice', () => {
     const notice = changeCardNotice({ status: 'resolved', fieldCount: 0, groups: [read], notReachedFrom: { stageId: 'staging', name: 'staging' }, sourceFieldCount: 5 });
     expect(notice?.kind).toBe('notReached');
     if (notice?.kind === 'notReached') {
-      expect(notice.parts.map((p) => p.text).join('')).toBe('Shown once staging has the change. At the source it changes 5 fields.');
+      expect(notice.parts.map((p) => p.text).join('')).toBe('Shown once staging has the change. 5 fields at the source.');
       expect(notice.parts[1]).toMatchObject({ kind: 'link', ref: { to: 'stage', stageId: 'staging' } });
     }
   });
@@ -67,7 +67,7 @@ test.describe('changeCardNotice', () => {
   test('nothing read is not nothing written', () => {
     expect(changeCardNotice({ status: 'resolved', fieldCount: 0, groups: [unread] })?.kind).toBe('unreadable');
     expect(changeCardNotice({ status: 'failed', fieldCount: 0, groups: [read] })?.kind).toBe('unreadable');
-    expect(changeCardNotice({ status: 'resolved', fieldCount: 0, groups: [read] })).toEqual({ kind: 'nothing', text: 'This change writes no field here.' });
+    expect(changeCardNotice({ status: 'resolved', fieldCount: 0, groups: [read] })).toEqual({ kind: 'nothing', text: 'No field changes here.' });
     expect(changeCardNotice({ status: 'resolved', fieldCount: 2, groups: [read] })).toBeNull();
   });
 });

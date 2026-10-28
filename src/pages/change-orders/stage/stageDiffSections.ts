@@ -42,8 +42,7 @@ export const stageDiffCopy = {
   close: 'Close',
   fields: (n: number) => (n === 1 ? 'field' : 'fields'),
   unknownTile: 'unknown',
-  hint: (kind: ChangeOrderOutcomeKind) => OUTCOME_META[kind].hint,
-  oneVariant: 'One variant in this stage, so there is nothing to compare it against.',
+  oneVariant: 'One variant. Nothing to compare.',
   barLabel: (n: number) => `Outcome across ${plural(n, 'Space')}`,
   noFields: 'No fields differ here.',
   spaceCount: (n: number) => plural(n, 'Space'),
@@ -51,13 +50,13 @@ export const stageDiffCopy = {
   sameAsTail: ` the same change as in ${OUTCOME_META.same.label}.`,
   alreadyHolds: (spaces: number) =>
     spaces === 1
-      ? 'This Space already holds every value this change writes. Nothing is written there.'
-      : 'These Spaces already hold every value this change writes. Nothing is written there.',
+      ? 'This Space already has every value. Nothing is written.'
+      : 'These Spaces already have every value. Nothing is written.',
   noResources: changeOrderCopy.noResourcesYet,
   unknown: (spaces: number) =>
     spaces === 1
-      ? 'What the change does in this Space could not be established this round, so there is no diff to show.'
-      : 'What the change does in these Spaces could not be established this round, so there is no diff to show.',
+      ? 'Could not establish the change in this Space.'
+      : 'Could not establish the change in these Spaces.',
 } as const;
 
 /** The boxes' region id: a link to the diff (`#stage-diff`) lands on it. */

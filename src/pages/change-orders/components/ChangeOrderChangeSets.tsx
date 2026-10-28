@@ -17,6 +17,7 @@ import { FILTER_URL_PARAMS } from '@/utility/constants/url-params';
 import { changeSetPath } from '../../change-sets/changeSetAddress';
 
 import {
+  changeOrderAction,
   changeOrderBorder,
   changeOrderFontMono,
   changeOrderInk,
@@ -73,7 +74,7 @@ export function ChangeOrderChangeSets({ changeSets, baseSpaceId }: ChangeOrderCh
       </Box>
       {changeSets.map((changeSet) => {
         const open = changeSet.state === 'Open';
-        const tone = open ? changeOrderStatus.accent : changeOrderInk.subtle;
+        const tone = open ? changeOrderStatus.progress : changeOrderInk.subtle;
         const units = changeSet.unitIds.length;
         return (
           <Box
@@ -81,7 +82,7 @@ export function ChangeOrderChangeSets({ changeSets, baseSpaceId }: ChangeOrderCh
             data-testid="change-order-change-set"
             sx={{
               border: `1px solid ${changeOrderBorder.default}`,
-              borderLeft: `${changeOrderShape.accentEdge}px solid ${open ? changeOrderStatus.accentLine : changeOrderBorder.strong}`,
+              borderLeft: `${changeOrderShape.leadingEdge}px solid ${open ? changeOrderStatus.progressLine : changeOrderBorder.strong}`,
               borderRadius: `${changeOrderShape.radius.md}px`,
               background: changeOrderSurface.sunk,
               padding: '8px 12px',
@@ -89,7 +90,9 @@ export function ChangeOrderChangeSets({ changeSets, baseSpaceId }: ChangeOrderCh
           >
             <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: `${changeOrderShape.gap.md}px` }}>
               <Box
-                {...(changeSet.spaceSlug ? { component: RouterLink, to: changeSetPath(changeSet.spaceSlug, changeSet.slug) } : { component: 'span' })}
+                {...(changeSet.spaceSlug
+                  ? { component: RouterLink, to: changeSetPath(changeSet.spaceSlug, changeSet.slug), target: '_blank', rel: 'noopener noreferrer' }
+                  : { component: 'span' })}
                 data-testid="change-order-change-set-slug"
                 sx={{
                   fontFamily: changeOrderFontMono,
@@ -121,14 +124,16 @@ export function ChangeOrderChangeSets({ changeSets, baseSpaceId }: ChangeOrderCh
                 <Box
                   component={RouterLink}
                   to={unitListHref(changeSet.unitIds)}
-                  sx={{ fontSize: changeOrderType.size.small, color: changeOrderStatus.accent }}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  sx={{ fontSize: changeOrderType.size.small, color: changeOrderAction.ink }}
                 >
                   {units === 1 ? '1 unit' : `${units} units`}
                 </Box>
               ) : null}
               {changeSet.adopted ? (
                 <Box component="span" sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.subtle }}>
-                  ChangeOrder ends where this ChangeSet ends
+                  Sets the end
                 </Box>
               ) : null}
             </Box>

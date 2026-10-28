@@ -181,7 +181,7 @@ export function useDraftChangeCards(args: UseDraftChangeCardsArgs): DraftChangeC
         const unit = entry.Unit;
         if (unit?.UnitID === undefined) return [];
         return [
-          { unitId: unit.UnitID, slug: unit.Slug, headRevisionNum: unit.HeadRevisionNum ?? 0 },
+          { unitId: unit.UnitID, slug: unit.Slug, headRevisionNum: unit.HeadRevisionNum ?? 0, toolchainType: unit.ToolchainType || undefined },
         ];
       }),
     [baseUnitsRead.currentData],

@@ -22,6 +22,12 @@
  */
 
 /** The fields of a ChangeOrder that address it. */
+/**
+ * The navigation state a page sets when it sends the reader to a ChangeOrder it has just made: the
+ * detail view's title takes the keyboard once it is drawn.
+ */
+export const FOCUS_TITLE_STATE = 'focusChangeOrderTitle';
+
 export interface ChangeOrderRef {
   spaceId: string;
   spaceSlug: string;

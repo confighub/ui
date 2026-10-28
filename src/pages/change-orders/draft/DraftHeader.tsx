@@ -8,6 +8,7 @@ import InputBase from '@mui/material/InputBase';
 
 import { StateChip } from '../components/SummaryFacts';
 import {
+  changeOrderAction,
   changeOrderBorder,
   changeOrderFontMono,
   changeOrderInk,
@@ -23,15 +24,22 @@ import {
   type DraftAddressPatch,
   type DraftTemplate,
 } from './draftDecisions';
+import { draftPlaceId, focusWhenDrawn } from './draftFocus';
+import { PLACE_SX, problemEdgeSx } from './draftLook';
+import { RevertButton } from './DraftPopover';
+import { DraftProblems } from './DraftProblems';
 import type { DraftPastChangeOrder, DraftProblem } from './draftTypes';
+import type { DraftKind } from './draftKinds';
 import { TemplatePicker } from './TemplatePopover';
 import { useDraftField, type DraftFieldSignals, type DraftTextField } from './useDraftField';
 
 const copy = draftCopy.page;
 
-/** The id the blocker and the ledger's Name row focus. */
+/** The id the blocker focuses when the name holds the first problem. */
 export const DRAFT_NAME_INPUT_ID = 'draft-name';
 export const DRAFT_NAME_ERROR_ID = 'draft-name-error';
+/** The id the blocker focuses when the description holds the first problem. */
+export const DRAFT_DESCRIPTION_ID = 'draft-description';
 
 /** The title's type: the detail view's slug heading, in its monospace face. */
 const NAME_TYPE = {
@@ -49,7 +57,18 @@ export interface DraftHeaderProps {
   template: DraftTemplate;
   /** The name's problems the page knows of: the client's checks and the server's refusal. */
   nameProblems: readonly DraftProblem[];
+  /** The template's and the description's problems, said under the title. */
+  titleProblems: readonly DraftProblem[];
+  /** The blocker beside Create names the template or the description: their problem carries the rust edge. */
+  titleNext: boolean;
+  /**
+   * Something before the name stops Create, so a problem with the name is not the next one. The
+   * name's edge is decided here, from the same check that shows its words, so both come together.
+   */
+  blockedBeforeName: boolean;
   pastChangeOrders: readonly DraftPastChangeOrder[];
+  /** The kind of change each past ChangeOrder made, for the template picker. */
+  kindOf: (order: DraftPastChangeOrder) => DraftKind | undefined;
   takenSlugs: ReadonlySet<string>;
   componentName: string;
   /** The Component's slug (or the base Space's): what a name with no last ChangeOrder starts from. */
@@ -60,8 +79,9 @@ export interface DraftHeaderProps {
 }
 
 /**
- * The draft's title block: its name as the page's `h1`, editable in place; the Draft chip; the
- * template it re-aims; the name's problem, if it has one; and its description.
+ * The draft's title block: its name as the page's `h1`, editable in place, with the way back
+ * to the default name when it is not that; the Draft chip; the template it re-aims; the name's
+ * and the template's problems, if they have any; and its description.
  *
  * Each field keeps its own text while it is edited and hands it to the URL when typing pauses
  * (`useDraftField`), so the address is the draft and no keystroke is lost to a navigation. They
@@ -72,7 +92,11 @@ export const DraftHeader = memo(function DraftHeader({
   description,
   template,
   nameProblems,
+  titleProblems,
+  titleNext,
+  blockedBeforeName,
   pastChangeOrders,
+  kindOf,
   takenSlugs,
   componentName,
   nameStem,
@@ -99,11 +123,14 @@ export const DraftHeader = memo(function DraftHeader({
   // An empty name shows the default as a hint, trailing off like a placeholder.
   const placeholder = `${suggestion}…`;
   const invalid = problem !== undefined;
+  // The name the URL holds is not the default: the way back to it sits beside the name.
+  const named = name !== suggestion;
+  const templateStale = titleProblems.some((item) => item.code === 'template-not-found');
   const ink = invalid ? changeOrderStatus.danger : changeOrderInk.default;
   const rule = invalid ? changeOrderStatus.danger : changeOrderBorder.strong;
 
   return (
-    <>
+    <Box id={draftPlaceId('title')} tabIndex={-1} sx={PLACE_SX}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
         <Box component="h1" sx={{ margin: 0, font: 'inherit', display: 'block', flex: 'none', maxWidth: '100%' }}>
           {/*
@@ -169,7 +196,7 @@ export const DraftHeader = memo(function DraftHeader({
                     background: changeOrderSurface.sunk,
                     // Two pixels, taken from the bottom padding, so the text does not move.
                     paddingBottom: 0,
-                    borderBottom: `2px solid ${invalid ? changeOrderStatus.danger : changeOrderStatus.accent}`,
+                    borderBottom: `2px solid ${invalid ? changeOrderStatus.danger : changeOrderAction.focus}`,
                   },
                   '&::placeholder': { color: changeOrderInk.subtle, opacity: 1 },
                 },
@@ -177,18 +204,38 @@ export const DraftHeader = memo(function DraftHeader({
             />
           </Box>
         </Box>
+        {named ? (
+          <RevertButton
+            label={copy.facts.backTo(suggestion)}
+            onClick={() => {
+              onChange({ name: null });
+              focusWhenDrawn(DRAFT_NAME_INPUT_ID, {
+                select: true,
+                ready: (element) => element instanceof HTMLInputElement && element.value === suggestion,
+              });
+            }}
+          />
+        ) : null}
         <StateChip label={copy.draftChip} tone={changeOrderInk.subtle} />
-        <TemplatePicker template={template} pastChangeOrders={pastChangeOrders} componentName={componentName} onChange={onChange} />
+        <TemplatePicker
+          template={template}
+          stale={templateStale}
+          pastChangeOrders={pastChangeOrders}
+          kindOf={kindOf}
+          componentName={componentName}
+          onChange={onChange}
+        />
       </Box>
       {invalid ? (
         <Box
           id={DRAFT_NAME_ERROR_ID}
           role="alert"
-          sx={{ fontSize: 12, lineHeight: changeOrderType.lineHeight.body, color: changeOrderStatus.danger, marginTop: '2px' }}
+          sx={{ fontSize: 12, lineHeight: changeOrderType.lineHeight.body, color: changeOrderStatus.danger, marginTop: '2px', ...problemEdgeSx(!blockedBeforeName) }}
         >
           {problem.message}
         </Box>
       ) : null}
+      <DraftProblems place="title" problems={titleProblems} next={titleNext} onFix={onChange} />
       <InputBase
         fullWidth
         value={descriptionField.text}
@@ -196,6 +243,7 @@ export const DraftHeader = memo(function DraftHeader({
         onFocus={descriptionField.onFocus}
         onBlur={descriptionField.onBlur}
         placeholder={copy.descriptionPlaceholder}
+        id={DRAFT_DESCRIPTION_ID}
         inputProps={{ 'aria-label': copy.descriptionLabel, autoComplete: 'off', name: 'changeorder-description' }}
         sx={{
           display: 'block',
@@ -212,11 +260,12 @@ export const DraftHeader = memo(function DraftHeader({
             borderRadius: '3px',
             transition: 'background-color .18s, box-shadow .18s',
             '&:hover': { background: changeOrderSurface.sunk },
-            '&:focus': { background: changeOrderSurface.sunk, boxShadow: `inset 0 -1px 0 ${changeOrderStatus.accent}` },
+            // Two pixels, as the name's: the house's focus weight.
+            '&:focus': { background: changeOrderSurface.sunk, boxShadow: `inset 0 -2px 0 ${changeOrderAction.focus}` },
             '&::placeholder': { color: changeOrderInk.subtle, opacity: 1 },
           },
         }}
       />
-    </>
+    </Box>
   );
 });

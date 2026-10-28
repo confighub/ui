@@ -7,13 +7,15 @@ import Box from '@mui/material/Box';
 import InputBase from '@mui/material/InputBase';
 import CheckIcon from '@mui/icons-material/Check';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FolderCopyOutlinedIcon from '@mui/icons-material/FolderCopyOutlined';
 import SearchIcon from '@mui/icons-material/Search';
+
+import { VISUALLY_HIDDEN_SX } from '@/utility/visually-hidden';
 
 import type { ChangeOrderOutcomeKind } from '../changeOrderOutcome';
 import { OUTCOME_META } from '../components/outcomeMeta';
 import {
+  changeOrderAction,
   changeOrderBorder,
   changeOrderFontMono,
   changeOrderInk,
@@ -23,13 +25,13 @@ import {
   changeOrderType,
 } from '../changeOrdersTokens';
 import { draftCopy } from './draftCopy';
-import { BARE_BUTTON, DRAFT_TRANSITION, FIELD_BUTTON_SX, FOCUS_RING, NOW_VALUE_SX, OPTION_SX, PILL_SX } from './draftLook';
-import { DraftPopover, PopoverHeading } from './DraftPopover';
+import { BARE_BUTTON, DRAFT_TRANSITION, FOCUS_RING, OPTION_SX } from './draftLook';
+import { DraftPopover, FactSlot, PopoverHeading } from './DraftPopover';
 import type { DraftVariant } from './draftTypes';
 
 const copy = draftCopy.page.scope;
 
-/** The id the blocker focuses when Where holds the first problem. */
+/** The id the blocker focuses when the scope holds the first problem. */
 export const DRAFT_SCOPE_ID = 'draft-scope';
 
 /** A stage at most this long lists its variants flat; a longer one groups them by region. */
@@ -59,8 +61,8 @@ function Check({ state }: CheckProps) {
         width: 15,
         height: 15,
         borderRadius: '3px',
-        border: `1px solid ${on ? changeOrderStatus.accent : changeOrderBorder.strong}`,
-        background: on ? changeOrderStatus.accent : changeOrderSurface.card,
+        border: `1px solid ${on ? changeOrderAction.ink : changeOrderBorder.strong}`,
+        background: on ? changeOrderAction.ink : changeOrderSurface.card,
         display: 'grid',
         placeItems: 'center',
         flex: 'none',
@@ -119,11 +121,10 @@ export interface ScopePickerProps {
   kindBySpaceId: ReadonlyMap<string, ChangeOrderOutcomeKind>;
   /** `out=` as it should be: slugs left out, `[]` for every variant, `null` for as last time. */
   onChange: (out: string[] | null) => void;
-  asChip: boolean;
-  /** "−1 +2" against last time, for the diff row. */
-  delta?: string;
-  /** Told when the popover opens and closes, so the ledger keeps the control where it was while it is open. */
-  onOpenChange?: (open: boolean) => void;
+  /** How many variants last time's ChangeOrder covered, when this draft's scope is not the same: the slot says so, and offers the way back. */
+  lastCount: number | undefined;
+  /** The ids of the problems said about the scope. */
+  problemIds: readonly string[];
 }
 
 /**
@@ -137,15 +138,10 @@ export function ScopePicker({
   stageOrder,
   kindBySpaceId,
   onChange,
-  asChip,
-  delta,
-  onOpenChange,
+  lastCount,
+  problemIds,
 }: ScopePickerProps) {
-  const [anchor, setAnchorState] = useState<HTMLElement | null>(null);
-  const setAnchor = (next: HTMLElement | null) => {
-    setAnchorState(next);
-    onOpenChange?.(next !== null);
-  };
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [query, setQuery] = useState('');
   const [openRegions, setOpenRegions] = useState<ReadonlySet<string>>(new Set());
   const inScope = useMemo(() => new Set(inScopeIds), [inScopeIds]);
@@ -204,6 +200,8 @@ export function ScopePicker({
   const variantRow = (id: string, aside: string | undefined) => {
     const variant = byId.get(id);
     if (variant === undefined) return null;
+    // The last one in scope stays, and says why: a ChangeOrder headed nowhere is not one.
+    const only = inScope.has(id) && inScope.size === 1;
     return (
       <Box
         key={id}
@@ -211,9 +209,12 @@ export function ScopePicker({
         type="button"
         role="menuitemcheckbox"
         data-draft-option
+        data-variant={variant.slug}
         aria-checked={inScope.has(id)}
+        aria-disabled={only ? true : undefined}
+        title={only ? copy.oneAtLeast : undefined}
         onClick={() => toggleOne(id)}
-        sx={SMALL_ROW_SX}
+        sx={{ ...SMALL_ROW_SX, '&[aria-disabled="true"]': { cursor: 'not-allowed' } }}
       >
         <Check state={inScope.has(id) ? 'true' : 'false'} />
         <Box component="span" translate="no" sx={{ ...MONO_SX, flex: 1, minWidth: 0 }}>
@@ -221,46 +222,29 @@ export function ScopePicker({
         </Box>
         <Dots ids={[id]} kindBySpaceId={kindBySpaceId} />
         {aside === undefined ? null : <Box component="span" sx={ASIDE_SX}>{aside}</Box>}
+        {only ? (
+          <Box component="span" sx={VISUALLY_HIDDEN_SX}>
+            {`, ${copy.oneAtLeast}`}
+          </Box>
+        ) : null}
       </Box>
     );
   };
 
   return (
     <>
-      <Box
-        component="button"
-        type="button"
+      <FactSlot
         id={DRAFT_SCOPE_ID}
-        aria-haspopup="dialog"
-        aria-expanded={anchor !== null}
-        aria-label={`${copy.title}: ${draftCopy.page.ledger.variants(count)}`}
-        onClick={(event) => setAnchor(event.currentTarget)}
-        data-testid="draft-scope"
-        sx={asChip ? PILL_SX : FIELD_BUTTON_SX}
-      >
-        {asChip ? (
-          <>
-            <FolderCopyOutlinedIcon aria-hidden />
-            <Box component="span" sx={{ fontWeight: changeOrderType.weight.semibold, color: changeOrderInk.default, fontVariantNumeric: 'tabular-nums' }}>
-              {count}
-            </Box>
-            {draftCopy.page.ledger.variants(count).replace(/^\d+ /, '')}
-            <ExpandMoreIcon aria-hidden />
-          </>
-        ) : (
-          <>
-            <Box component="span" sx={NOW_VALUE_SX}>
-              {draftCopy.page.ledger.variants(count)}
-            </Box>
-            <ExpandMoreIcon aria-hidden sx={{ fontSize: 16, color: changeOrderInk.subtle }} />
-          </>
-        )}
-      </Box>
-      {delta === undefined || delta === '' ? null : (
-        <Box component="span" sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.subtle }}>
-          {delta}
-        </Box>
-      )}
+        testId="draft-scope"
+        term={copy.title}
+        value={draftCopy.page.facts.variants(count)}
+        last={lastCount === undefined ? undefined : draftCopy.page.facts.variants(lastCount)}
+        revert={lastCount === undefined ? undefined : { label: draftCopy.page.facts.backToScope(lastCount), onClick: () => onChange(null) }}
+        open={anchor !== null}
+        tone={count === 0 ? changeOrderStatus.warn : undefined}
+        problemIds={problemIds}
+        onOpen={setAnchor}
+      />
       <DraftPopover anchorEl={anchor} onClose={() => setAnchor(null)} label={copy.title} wide height={420}>
         <PopoverHeading icon={<FolderCopyOutlinedIcon aria-hidden />}>{copy.title}</PopoverHeading>
         {variants.length > SEARCH_FROM ? (
@@ -310,7 +294,7 @@ export function ScopePicker({
                 </Box>
                 <Box sx={{ paddingLeft: '26px' }}>
                   {flat
-                    ? group.ids.map((id) => variantRow(id, byId.get(id)?.region ?? '—'))
+                    ? group.ids.map((id) => variantRow(id, byId.get(id)?.region ?? copy.noRegion))
                     : group.regions.map(({ region, ids }) => {
                         const key = `${group.stage}|${region}`;
                         const open = openRegions.has(key);

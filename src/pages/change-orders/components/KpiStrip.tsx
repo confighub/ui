@@ -25,7 +25,8 @@ const ARIA_PRESSED = { on: 'true', partial: 'mixed', off: 'false' } as const;
 export interface KpiCard {
   key: string;
   label: string;
-  hint: string;
+  /** A second line under the label; omitted, the card shows the label alone. */
+  hint?: string;
   count: number;
   status: 'on' | 'partial' | 'off';
   /** The figure's colour. */
@@ -124,14 +125,13 @@ export function KpiStrip({
                 ⚠️ `variant='caption'` UPPERCASES: this theme's `caption`
                 role carries `textTransform: uppercase` globally
                 (`ThemeProvider.tsx:195`). Sentence case is the caller's to
-                ask for — `hintSx={{ textTransform: 'none' }}` alongside its
-                colour override — so the role keeps the theme default here
-                and the override stays visible at the call site that wants
-                it. Same shape as `ChangeOrderStageStrip.tsx:186`.
+                ask for through `hintSx`.
               */}
-              <Typography variant='caption' component='span' color='text.secondary' sx={hintSx}>
-                {card.hint}
-              </Typography>
+              {card.hint === undefined ? null : (
+                <Typography variant='caption' component='span' color='text.secondary' sx={hintSx}>
+                  {card.hint}
+                </Typography>
+              )}
             </Stack>
           </Box>
         );

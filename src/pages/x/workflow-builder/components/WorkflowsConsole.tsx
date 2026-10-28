@@ -23,6 +23,7 @@
  */
 
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { RefreshIcon } from '../icons';
 import { definitionFaults, plural } from '../model';
@@ -93,8 +94,8 @@ interface WorkflowsConsoleProps {
    * that is a thing the reader did on purpose and can undo. This is not.
    */
   unreadable?: number;
-  /** Which workflow to open. Held by the page, since the fetch is keyed on it. */
-  onOpen: (changeWorkflowId: string) => void;
+  /** The page of a workflow. Held by the page, since the fetch is keyed on its URL. */
+  workflowHref: (changeWorkflowId: string) => string;
   onRefresh: () => void;
   /** Starting a new workflow from an existing one. Held by the page: it needs
       the write and the same `entities` this console already reads. */
@@ -115,7 +116,7 @@ export function WorkflowsConsole({
   isLoading,
   failed,
   unreadable = 0,
-  onOpen,
+  workflowHref,
   onRefresh,
   createFlow,
   destinationSpaces,
@@ -217,13 +218,12 @@ export function WorkflowsConsole({
       const wf = r.entity.workflow;
       const isBad = r.isBad;
       return (
-        <button
+        <Link
           className='row grid4'
-          type='button'
           key={r.entity.identity.changeWorkflowId}
           data-act='openwf'
           data-id={r.entity.identity.changeWorkflowId}
-          onClick={() => onOpen(r.entity.identity.changeWorkflowId)}
+          to={workflowHref(r.entity.identity.changeWorkflowId)}
         >
           <span>
             <span className='rname'>{wf.displayName}</span>
@@ -236,7 +236,7 @@ export function WorkflowsConsole({
               {isBad ? 'Fix the definition' : 'Open the definition'}
             </span>
           </span>
-        </button>
+        </Link>
       );
     });
   }
@@ -362,7 +362,7 @@ export function WorkflowsConsole({
         sourceStatus={failed ? 'failed' : isLoading ? 'loading' : 'ready'}
         spaces={destinationSpaces}
         spacesStatus={destinationSpacesStatus}
-        onOpenClone={onOpen}
+        cloneHref={workflowHref}
       />
 
       {/* A plain segment is a Stage, not a healthy one. The console faults what the

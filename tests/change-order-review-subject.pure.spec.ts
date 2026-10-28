@@ -134,7 +134,7 @@ test.describe('where a review is made', () => {
       expect(reviewFormStageId(entryProd(0), verdicts(verdict)), verdict).toBeUndefined();
     }
     expect(reviewCopy.entryStatus.notLanded('staging')).toBe(
-      'The change has not landed in staging yet. You can review it there after staging is promoted.',
+      'Review opens once staging is promoted.',
     );
   });
 
@@ -252,7 +252,7 @@ test.describe('only the Units the change changed are counted', () => {
     ]);
     expect(markUnchanged(coverage, changed, false).covered.some((r) => r.unchanged)).toBe(false);
     expect(markUnchanged(coverage, undefined, true).covered.some((r) => r.unchanged)).toBe(false);
-    expect(reviewCopy.coverage.notChanged).toBe('Not needed: the change did not touch this Unit.');
+    expect(reviewCopy.coverage.notChanged).toBe('Not touched by the change.');
   });
 });
 
@@ -283,7 +283,7 @@ test.describe('the result of a decision comes from the server', () => {
 
   test('verdicts not read again in time: it says so, and predicts nothing', () => {
     expect(recordedToastText([entryProd(1)], 'staging', 'Pass', () => undefined, false)).toBe(
-      'Approval of the change in staging recorded. The gates could not be read again yet. They update on the next check.',
+      'Approval of the change in staging recorded. Gates update on the next check.',
     );
   });
 

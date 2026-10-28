@@ -71,7 +71,12 @@
 import type { ChangeOrderStageMatrix } from '../x/apps/change-order/changeOrderMatrix';
 import type { ChangeOrderChangeGroup } from '../x/apps/change-order/changeOrderTypes';
 
-export type ChangeOrderOutcomeKind = 'same' | 'differs' | 'adds' | 'unknown';
+/**
+ * `nothing` is a draft's own: a variant an Invoke change runs in and finds nothing to change
+ * (the selection misses it, or its configuration already says so). `buildChangeOrderOutcome`
+ * never makes it; the draft's preview moves such variants into it from what the dry run said.
+ */
+export type ChangeOrderOutcomeKind = 'same' | 'differs' | 'adds' | 'unknown' | 'nothing';
 
 export interface ChangeOrderOutcomeGroup {
   kind: ChangeOrderOutcomeKind;

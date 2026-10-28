@@ -142,8 +142,8 @@ export function reviewFeeds(summary: Pick<GateReviewSummary, 'gate' | 'feeds'>):
 
 /** The plain words for a skipped Unit's reason code from the attest dry run (#5788). */
 const SKIPPED_CODE_TEXT: Record<string, string> = {
-  NoTarget: 'It has no Target, so it is never released.',
-  NoRevision: 'The change did not reach it.',
+  NoTarget: 'No Target, so never released.',
+  NoRevision: 'Not reached by the change.',
 };
 
 /** The words for a skip code, or `undefined` for a code the UI does not know. */
@@ -164,10 +164,10 @@ export function authorInText(authorIn: readonly ReviewAuthorIn[]): string {
 export const reviewCopy = {
   /** Why a gate has no counts for the viewer (#5788: the server rows are the only counts). */
   notEvaluated: {
-    noPermission: 'No count for you: you do not have permission to promote or release here.',
-    notReached: 'Not evaluated yet: the change has not reached this stage.',
+    noPermission: 'You cannot promote or release here.',
+    notReached: 'The change has not reached this stage.',
     finalNotOpen: 'Sign-off opens when every stage has the change.',
-    unchanged: 'There is nothing new to release here, so this stage has no release review now.',
+    unchanged: 'Nothing new to release.',
     error: 'Not evaluated: the server did not answer.',
     short: 'Not evaluated for you',
   },
@@ -193,9 +193,9 @@ export const reviewCopy = {
   },
   /** The viewer's eligibility from the server's Caller (#5788). */
   caller: {
-    author: (where: string) => `You wrote part of this change in ${where}. Your decision is recorded but does not count there.`,
+    author: (where: string) => `You wrote part of this change in ${where}, so your decision does not count there.`,
     authorIn: (space: string, authored: number, revisions: number) => `${space} (${authored} of ${plural(revisions, 'Unit')})`,
-    notEligible: 'This requirement does not name you or a group of yours.',
+    notEligible: 'You are not a reviewer for this requirement.',
   },
   /** One Space of a requirement, from the server's row. */
   space: {
@@ -219,12 +219,12 @@ export const reviewCopy = {
     requestPlaceholder: 'Choose who can approve',
     request: 'Request',
     withdraw: 'Withdraw',
-    none: 'No review is requested yet.',
+    none: 'No requests.',
     requestedTag: 'requested',
     requested: (names: string) => `Review requested from ${names}.`,
     withdrawn: (name: string) => `Review request to ${name} withdrawn.`,
     failed: 'The review request could not be saved.',
-    conflict: 'Someone changed the requests at the same time. Try again.',
+    conflict: 'The requests changed meanwhile. Try again.',
     sinceRequest: (when: string) => `, since the request on ${when}`,
     sincePromotion: (when: string) => `, since the promotion on ${when}`,
   },
@@ -242,9 +242,9 @@ export const reviewCopy = {
     waiting: (subject: string) => `Waiting for approval of the change in ${subject}.`,
     rejected: (subject: string) => `The change in ${subject} was rejected.`,
     open: (subject: string) => `The change in ${subject} is approved.`,
-    notEvaluated: (subject: string) => `The change in ${subject} is reviewed on its own stage.`,
-    where: (subject: string) => `You review it on ${subject}, where that change landed.`,
-    notLanded: (subject: string) => `The change has not landed in ${subject} yet. You can review it there after ${subject} is promoted.`,
+    notEvaluated: (subject: string) => `Reviewed on ${subject}.`,
+    where: (subject: string) => `Review it on ${subject}.`,
+    notLanded: (subject: string) => `Review opens once ${subject} is promoted.`,
     goTo: (subject: string) => `Go to ${subject}`,
   },
   band: {
@@ -256,7 +256,7 @@ export const reviewCopy = {
       `${stage} needs ${need === 1 ? '1 more approval' : `${need} more approvals`} of the change in ${subject} on`,
     completeTitle: (stage: string) => `${stage} can be promoted`,
     /** A release review has its form once every Space of the stage has the change, as Release does. */
-    releaseNotYet: (stage: string) => `You can review the release once ${stage} is promoted.`,
+    releaseNotYet: (stage: string) => `Review opens once ${stage} is promoted.`,
     /** Reviews are satisfied, but other gates still hold the stage (M5): never "can be promoted". */
     reviewsCompleteTitle: (stage: string, others: string[]) =>
       others.length === 0
@@ -272,7 +272,7 @@ export const reviewCopy = {
     blockedReleaseTitle: (stage: string) => `rejected the release in ${stage}`,
     blockedFinalTitle: 'rejected the sign-off',
     clearsWhenAny: (name: string) =>
-      `Clears when ${name} or a manager of the Space withdraws it, when it expires, or when the change is reviewed again`,
+      `Clears when ${name} or a Space manager withdraws it, it expires, or the change is reviewed again`,
     blockedTitle: (stage: string, subject: string) => `rejected the change in ${subject}, so ${stage} is blocked`,
     recorded: 'recorded',
     // The server's verdict and the UI's count disagree (a poll in between, or
@@ -292,13 +292,13 @@ export const reviewCopy = {
       if (revoked > 0) parts.push(`${plural(revoked, 'rejection')} withdrawn`);
       return parts.join(', ');
     },
-    youEligible: 'You are eligible to review.',
-    youPartial: 'You can review. Some of your decision will not count.',
+    youEligible: 'You can review.',
+    youPartial: 'You can review. Part will not count.',
     youApproved: 'You approved. Waiting on others.',
-    youOutOfDate: 'Your earlier decision does not cover this change. Review again.',
+    youOutOfDate: 'Your decision is out of date. Review again.',
     youRejected: 'You rejected this change.',
-    youAuthor: 'You wrote this change, so you cannot approve it.',
-    youNotListed: 'You are not on the list of reviewers.',
+    youAuthor: 'You wrote this change. You cannot approve it.',
+    youNotListed: 'You are not a reviewer.',
     youSignedOut: 'Sign in to review.',
     reviewNow: 'Review now',
     openReview: 'Open review',
@@ -352,7 +352,7 @@ export const reviewCopy = {
     isSatisfiedFor: (subject: string) => `is met for the change in ${subject}.`,
     moreNeeded: (need: number) => (need === 1 ? '1 more approval needed.' : `${need} more approvals needed.`),
     rejectionStands: 'A rejection stands.',
-    serverHolds: 'The server does not count it as satisfied yet.',
+    serverHolds: 'Not satisfied yet.',
     reviewLink: 'Review',
     reviewIn: (subject: string) => `Review in ${subject}`,
     spaceTag: (passes: number, required: number) => `${passes} of ${required}`,
@@ -374,8 +374,8 @@ export const reviewCopy = {
     sinceRequest: (when: string) => `since the request, ${when}`,
     sincePromotion: (when: string) => `since the promotion, ${when}`,
     loading: 'Loading reviews…',
-    loadError: 'Reviews could not be loaded. The gate above still shows the server verdict.',
-    truncated: 'Some reviews were not loaded. The gate above shows the server verdict.',
+    loadError: 'Reviews could not be loaded.',
+    truncated: 'Some reviews were not loaded.',
     yourReview: 'Your review',
     /** Named by what the requirements hold: "the gate to prod", "the release in staging", or both. */
     requirementsFor: (things: string) => `Requirements for ${things}`,
@@ -390,19 +390,19 @@ export const reviewCopy = {
   },
   you: {
     eligibleLead: (requirements: string[]) =>
-      `, you can review. You are a reviewer for ${requirements.join(', ')}, and you did not write this change.`,
+      `, you can review for ${requirements.join(', ')}.`,
     /** The viewer wrote gate Revisions, but the requirement allows authors (AllowAuthors). */
     eligibleAuthorLead: (requirements: string[]) =>
-      `, you can review. You are a reviewer for ${requirements.join(', ')}. You wrote part of this change, and authors may approve here.`,
+      `, you can review for ${requirements.join(', ')}. Authors may approve here.`,
     /** The viewer's own decision that the server does not count (Caller.Counts false). */
     ownNotCounted: (choice: ReviewChoice, at: string) => ({
       lead: choice === 'Pass' ? 'You approved' : 'You rejected',
-      rest: ` at ${at}. It is recorded, but it does not count.`,
+      rest: ` at ${at}. It does not count.`,
     }),
     /** M3: the viewer wrote some gate Revisions, so the decision counts only on the others. */
     partialLead: (requirements: string[]) => `, you can review for ${requirements.join(', ')}.`,
-    serverChecksOnSubmit: 'The server checks whether your decision counts when you submit.',
-    partialAuthor: (where: string) => `You wrote ${where}. Your decision is recorded there too, but it does not count there.`,
+    serverChecksOnSubmit: 'The server checks it on submit.',
+    partialAuthor: (where: string) => `You wrote ${where}, so it does not count there.`,
     countsOn: (where: string) => `It counts on ${where}.`,
     approved: (at: string, revisions: string, until: string | undefined) =>
       until === undefined
@@ -412,20 +412,20 @@ export const reviewCopy = {
     /** The viewer's live decision does not cover every Revision a gate of this review reads now. */
     outOfDate: (choice: ReviewChoice, at: string, requirements: string[]) => ({
       lead: choice === 'Pass' ? 'Your approval' : 'Your rejection',
-      rest: ` from ${at} does not cover the change that ${requirements.join(', ')} reads now. Review again so that your decision counts.`,
+      rest: ` from ${at} does not cover what ${requirements.join(', ')} reads now. Review again.`,
     }),
     /** The coverage says the decision counts on no Unit the gates read: no form, and why. */
-    wouldNotCount: `, your decision would not count here. You wrote the change on every Unit it covers, and these requirements do not accept approvals from authors.`,
+    wouldNotCount: `, your decision would not count: you wrote all of this change, and authors cannot approve.`,
     changeMyDecision: 'Change my decision',
     changeLead: 'Change your decision.',
     changeRest: (choice: ReviewChoice, at: string) =>
-      ` Your ${choice === 'Pass' ? 'approval' : 'rejection'} from ${at} is withdrawn, and your new decision replaces it.`,
+      ` It replaces your ${choice === 'Pass' ? 'approval' : 'rejection'} from ${at}.`,
     keepMine: (choice: ReviewChoice) => (choice === 'Pass' ? 'Keep my approval' : 'Keep my rejection'),
     rejectionStands: 'A rejection stands.',
     rejectionStandsRest: (held: string, name: string) =>
-      ` Your approval is recorded, but ${held} stays blocked until ${name} withdraws the rejection.`,
+      ` ${sentenceStart(held)} stays blocked until ${name} withdraws it.`,
     notListedTitle: 'You are not a reviewer of this change',
-    notListed: 'These requirements accept approvals only from the people and groups below.',
+    notListed: 'Only these people and groups can approve.',
     signedOut: 'Sign in to review this change.',
   },
   author: {
@@ -438,14 +438,14 @@ export const reviewCopy = {
     created: (order: string) => ({ lead: 'You opened ', order, rest: '.' }),
     rule: (requirement: string) => ({
       requirement,
-      rest: ' does not accept approvals from the person who wrote or promoted the change. This is separation of duties.',
+      rest: ' does not accept approvals from who wrote or promoted the change.',
     }),
     needFrom: (need: number) => `${need === 1 ? '1 more approval' : `${need} more approvals`} needed from`,
     anyoneWithApprove: 'Anyone with Approve on these Spaces can approve.',
-    groupOnly: 'People in these groups can approve. The UI cannot list group members.',
+    groupOnly: 'Members of these groups can approve.',
     viaGroup: (group: string) => `in ${group}`,
     authorOn: (where: string) => `You wrote ${where}.`,
-    authorRule: ' This requirement does not accept an approval from a person who wrote the change. This is separation of duties.',
+    authorRule: ' does not accept approvals from authors.',
     notReviewed: 'Not reviewed',
     approvedAgo: (ago: string) => `Approved ${ago}`,
     rejectedAgo: (ago: string) => `Rejected ${ago}`,
@@ -461,14 +461,10 @@ export const reviewCopy = {
     counter: (n: number) => `${n} / ${REVIEW_NOTE_MAX}`,
     placeholderPass: 'What did you check?',
     placeholderFail: (subject: string) => `What must change in ${subject}?`,
-    hint: (choice: ReviewChoice | null, noun: string) =>
-      choice === 'Fail'
-        ? `Stored with your rejection. Everyone on this ${noun} can read it.`
-        : `Saved with your approval. Everyone on this ${noun} can read it.`,
+    hint: (noun: string) => `Visible to everyone on this ${noun}.`,
     reasonRequired: 'A reason is required.',
     choose: 'Choose approve or reject',
     submit: (choice: ReviewChoice, subject: string) => `${choice === 'Pass' ? 'Approve' : 'Reject'} the change in ${subject}`,
-    confirmNext: 'You confirm in the next step.',
   },
   coverage: {
     label: 'What this decision covers',
@@ -480,13 +476,13 @@ export const reviewCopy = {
     authorHead: 'Your decision would be saved on',
     authorTail: ', but it would not count: you wrote or promoted this change.',
     skipped: 'Skipped.',
-    notChanged: 'Not needed: the change did not touch this Unit.',
+    notChanged: 'Not touched by the change.',
     authorHere: 'Does not count: you wrote the change here.',
     spaceError: 'Not recorded here:',
     nothingRecordable: 'A decision from you would record nothing.',
     typeHead: (type: string) => type,
     loading: 'Checking what a decision covers…',
-    unavailable: 'Coverage is not available. You can still submit.',
+    unavailable: 'Coverage unavailable.',
   },
   requirements: {
     needed: (n: number) => `${n} needed`,
@@ -500,7 +496,7 @@ export const reviewCopy = {
     oneRejectionBlocks: 'one rejection blocks',
     oneFromEachGroup: 'one from each group',
     rejectionsIgnored: 'rejections do not block',
-    groupTooltip: (id: string) => `Group ${id}. You are not in it, so its name cannot be read.`,
+    groupTooltip: (id: string) => `Group ${id}`,
     forGate: (thing: string) => `For ${thing}`,
   },
   decision: {
@@ -522,8 +518,8 @@ export const reviewCopy = {
       `Replaces ${first}’s ${choice === 'Pass' ? 'approval' : 'rejection'} from ${at}.`,
     /** A decision not made on this ChangeOrder, which its gates count because the change is the same. */
     origin: (origin: 'other' | 'none', counts: boolean) =>
-      `${origin === 'other' ? 'Made on another ChangeOrder.' : 'Made outside a ChangeOrder.'}${counts ? ' It counts here because the change is the same.' : ''}`,
-    noLongerCounts: (first: string) => `No longer counts. ${first} can approve again. The change is the same.`,
+      `${origin === 'other' ? 'Made on another ChangeOrder.' : 'Made outside a ChangeOrder.'}${counts ? ' Counts here: same change.' : ''}`,
+    noLongerCounts: (first: string) => `No longer counts. ${first} can approve again.`,
     none: 'No decisions yet.',
   },
   confirm: {
@@ -551,30 +547,29 @@ export const reviewCopy = {
     reason: 'Your reason',
     effectCompletes: (req: string) => `This completes ${req}.`,
     effectMoves: (req: string, n: number, of: number) =>
-      `${req} moves to ${n} of ${of}. ${of - n === 1 ? 'One more approval is' : `${of - n} more approvals are`} needed.`,
-    effectStaysBlocked: (held: string, name: string) => `${sentenceStart(held)} stays blocked. A rejection from ${name} still stands.`,
+      `${req}: ${n} of ${of}.`,
+    effectStaysBlocked: (held: string, name: string) => `${sentenceStart(held)} stays blocked by ${name}’s rejection.`,
     effectBlocks: (held: string) =>
-      `This blocks ${held} for everyone, whatever the number of approvals, until you withdraw it or the change is reviewed again.`,
+      `This blocks ${held} until you withdraw it or the change is reviewed again.`,
     /** S4: no requirement of this Type blocks on a rejection. */
     effectRecordedNotBlocking: (reqs: string[]) =>
-      `Your rejection is recorded. It does not block, because ${reqs.join(', ')} ${reqs.length === 1 ? 'ignores' : 'ignore'} rejections.`,
+      `Does not block: ${reqs.join(', ')} ${reqs.length === 1 ? 'ignores' : 'ignore'} rejections.`,
     /** What the decision does to each gate it counts toward, on a line of its own. */
     gateOpens: (thing: string) => `This opens ${thing}.`,
     gateSignOff: 'The ChangeOrder can then complete.',
     gateOthersHold: (thing: string, others: string[]) =>
       `${sentenceStart(thing)} stays closed: ${others.join(', ')} still ${others.length === 1 ? 'holds' : 'hold'} it.`,
-    gateUnknown: (thing: string) => `Whether ${thing} opens depends on its other gates.`,
-    gateStaysClosed: (thing: string) => `${sentenceStart(thing)} stays closed until its other requirements are met.`,
+    gateUnknown: (thing: string) => `${sentenceStart(thing)} depends on its other gates.`,
+    gateStaysClosed: (thing: string) => `${sentenceStart(thing)} stays closed: other requirements remain.`,
     gateNotYet: (thing: string) => `${sentenceStart(thing)} stays closed until then.`,
     typeBlock: (type: string) => type,
-    nothingRecorded: 'Nothing was saved. The change did not reach any Space your decision would cover.',
+    nothingRecorded: 'Nothing was saved: the change reached no Space you cover.',
     partlyRecorded: (types: string[]) => `Recorded for ${types.join(', ')} only.`,
-    effectReplaces: 'This replaces your earlier decision. The count does not change.',
-    effectSatisfied: 'The requirement is already satisfied. Your approval adds to it.',
+    effectReplaces: 'Replaces your earlier decision.',
+    effectSatisfied: 'Already satisfied.',
     /** The decision counts on only some of the Units the gates read: never "this completes". */
     effectPartlyCounts: (counts: number, total: number) =>
-      `Your approval counts on ${counts} of ${plural(total, 'Unit')}. You wrote the change on the others, so they still need an approval from someone else.`,
-    cannotEdit: ' You cannot edit a decision. To change it later, use Change my decision.',
+      `Counts on ${counts} of ${plural(total, 'Unit')}. You wrote the others.`,
     cancel: 'Cancel',
     approve: 'Approve',
     reject: 'Reject',
@@ -597,7 +592,7 @@ export const reviewCopy = {
     reviewsDone: (stage: string) => `The reviews for ${stage} are complete.`,
     progress: (req: string, passes: number, required: number, thing: string) => `${req}: ${passes} of ${required} for ${thing}.`,
     blocked: (thing: string) => `${sentenceStart(thing)} is blocked.`,
-    notRead: 'The gates could not be read again yet. They update on the next check.',
+    notRead: 'Gates update on the next check.',
   },
 } as const;
 

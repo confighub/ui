@@ -26,7 +26,13 @@ import { AppComponentView } from './AppComponentView';
 import { ComponentOverviewMatrix } from './ComponentOverviewMatrix';
 import { ComponentOverviewMatrixSkeleton } from './ComponentOverviewMatrixSkeleton';
 import { ComponentFlowGraphSkeleton } from './ComponentFlowGraphSkeleton';
-import { type ComponentDisplayMode, type SelectedApp, type ViewParamsPatch } from './appTypes';
+import {
+  applyViewParamsPatch,
+  type ComponentDisplayMode,
+  type SelectedApp,
+  selectComponentPatch,
+  type ViewParamsPatch,
+} from './appTypes';
 import {
   COMPONENT_DEFAULT_LEVELS,
   deriveComponentTreePath,
@@ -199,26 +205,9 @@ export const AppsComponentLayout = ({
    */
   const updateParams = useCallback(
     (patch: ViewParamsPatch, options?: { push?: boolean }) => {
-      setSearchParams(
-        () => {
-          const next = readLiveSearchParams();
-          for (const [key, value] of Object.entries(patch)) {
-            if (value === undefined) continue;
-            if (value === null) {
-              next.delete(key);
-            } else if (Array.isArray(value)) {
-              next.delete(key);
-              for (const v of value) {
-                if (v) next.append(key, v);
-              }
-            } else {
-              next.set(key, value);
-            }
-          }
-          return next;
-        },
-        { replace: !options?.push },
-      );
+      setSearchParams(() => applyViewParamsPatch(readLiveSearchParams(), patch), {
+        replace: !options?.push,
+      });
     },
     [setSearchParams],
   );
@@ -376,19 +365,9 @@ export const AppsComponentLayout = ({
   const handleAppSelect = useCallback(
     (app: SelectedApp) => {
       if (readLiveSearchParams().get('app') === app.name) return;
-      // `space`/`compare`/`group` are cleared: opening a different Component
-      // starts a fresh graph selection, and a `?group=` node graph is no
-      // longer what's on screen. Every `view*` / `filter*` / `type` param is
-      // left untouched (functional updater merge, not a param-replacing
-      // plain-object `setSearchParams` call). `display` is deliberately
-      // OMITTED (not reset), unlike `mode` — the Graph/Dashboard choice is
-      // sticky across node clicks until the user picks Auto/Custom
-      // themselves (`FlowViewControl`, which does clear it) or returns to
-      // Overview (`handleOverviewSelect`, which also clears it).
-      updateParams(
-        { app: app.name, space: null, compare: null, group: null, graphGroup: null },
-        { push: true },
-      );
+      // Merged over the live URL by `updateParams`, not a param-replacing
+      // plain-object `setSearchParams` call; see `selectComponentPatch`.
+      updateParams(selectComponentPatch(app.name), { push: true });
     },
     [updateParams],
   );

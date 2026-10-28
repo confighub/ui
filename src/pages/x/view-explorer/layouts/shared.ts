@@ -149,7 +149,11 @@ export function useLayoutActions(entity: EntityKind, groupBy: readonly string[],
     [slots, entity, groupKey, rowId],
   );
 
-  /** A row or card: the details panel, or with ⌘/Ctrl the row's own page in a new tab. */
+  /**
+   * A row or card: the details panel, or with ⌘/Ctrl the row's own page in a new
+   * tab. A click on the row's name link is the browser's and does not reach this;
+   * ⌘/Ctrl+Enter and a ⌘/Ctrl-click elsewhere on the row have no link to take them.
+   */
   const openRow = useCallback(
     (row: EntityRow, e: OpenModifiers) => {
       if (e.metaKey || e.ctrlKey) {

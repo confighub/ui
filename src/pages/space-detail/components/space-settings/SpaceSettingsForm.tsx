@@ -7,7 +7,7 @@
 
 import { type ReactNode, useEffect, useRef } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink } from 'react-router-dom';
 
 import { CopyToClipboard } from '@/components/copy-to-clipboard/CopyToClipboard';
 import { EntityRefSelect } from '@/components/entity-ref-select/EntityRefSelect';
@@ -86,8 +86,11 @@ export interface SpaceSettingsFormProps {
   extendedSpace: ExtendedSpaceRead;
   onSpaceUpdated: () => void;
   setServerError: (message: string) => void;
-  /** Shows the Triggers applied to the Space, with a way to refresh them */
-  onShowAppliedTriggers: () => void;
+  /** Shows the Triggers applied to the Space in place, with a way to refresh them */
+  onShowAppliedTriggers?: () => void;
+  /** The page that shows the Triggers applied to the Space. Use instead of
+   *  `onShowAppliedTriggers` where that list is on a different page. */
+  appliedTriggersTo?: string;
   /** Drawn beside the Save button, such as a link to the Space's page */
   actions?: ReactNode;
 }
@@ -97,9 +100,9 @@ export const SpaceSettingsForm = ({
   onSpaceUpdated,
   setServerError,
   onShowAppliedTriggers,
+  appliedTriggersTo,
   actions,
 }: SpaceSettingsFormProps) => {
-  const navigate = useNavigate();
   const space = extendedSpace.Space;
 
   const [updateSpace, { isSuccess, error, isLoading: isSaving }] = useUpdateSpaceMutation();
@@ -257,12 +260,7 @@ export const SpaceSettingsForm = ({
               <Typography variant='caption' color='text.secondary' sx={{ display: 'block' }}>
                 Cloned from
               </Typography>
-              <Link
-                component='button'
-                type='button'
-                variant='body2'
-                onClick={() => navigate(`/spaces/${space.UpstreamSpaceID}`)}
-              >
+              <Link component={RouterLink} to={`/spaces/${space.UpstreamSpaceID}`} variant='body2'>
                 {space.UpstreamSpaceID}
               </Link>
             </Grid>
@@ -344,15 +342,26 @@ export const SpaceSettingsForm = ({
               <Typography variant='caption' color='text.secondary'>
                 Applied Triggers ({appliedTriggerCount})
               </Typography>
-              <Link
-                component='button'
-                type='button'
-                variant='caption'
-                onClick={onShowAppliedTriggers}
-                data-testid='space-applied-triggers-link'
-              >
-                Show and refresh
-              </Link>
+              {appliedTriggersTo ? (
+                <Link
+                  component={RouterLink}
+                  to={appliedTriggersTo}
+                  variant='caption'
+                  data-testid='space-applied-triggers-link'
+                >
+                  Show and refresh
+                </Link>
+              ) : (
+                <Link
+                  component='button'
+                  type='button'
+                  variant='caption'
+                  onClick={onShowAppliedTriggers}
+                  data-testid='space-applied-triggers-link'
+                >
+                  Show and refresh
+                </Link>
+              )}
             </Stack>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
               {appliedTriggerCount === 0 && (
@@ -367,17 +376,27 @@ export const SpaceSettingsForm = ({
                   variant='outlined'
                   label={trigger.Slug}
                   title={`${trigger.FunctionName} on ${trigger.Event}`}
-                  onClick={() =>
-                    navigate(`/spaces/${trigger.SpaceID}?tab=1&edit=${trigger.TriggerID}`)
-                  }
+                  component={RouterLink}
+                  to={`/spaces/${trigger.SpaceID}?tab=1&edit=${trigger.TriggerID}`}
+                  clickable
                 />
               ))}
               {appliedTriggerCount > APPLIED_TRIGGER_CHIP_LIMIT && (
-                <Chip
-                  size='small'
-                  label={`+${appliedTriggerCount - APPLIED_TRIGGER_CHIP_LIMIT} more`}
-                  onClick={onShowAppliedTriggers}
-                />
+                appliedTriggersTo ? (
+                  <Chip
+                    size='small'
+                    label={`+${appliedTriggerCount - APPLIED_TRIGGER_CHIP_LIMIT} more`}
+                    component={RouterLink}
+                    to={appliedTriggersTo}
+                    clickable
+                  />
+                ) : (
+                  <Chip
+                    size='small'
+                    label={`+${appliedTriggerCount - APPLIED_TRIGGER_CHIP_LIMIT} more`}
+                    onClick={onShowAppliedTriggers}
+                  />
+                )
               )}
             </Box>
           </Grid>

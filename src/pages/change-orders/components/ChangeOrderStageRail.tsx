@@ -25,6 +25,7 @@ import type {
 } from '../../x/apps/change-order/changeOrderTypes';
 import { COMPLETE_STAGE_ID, COMPLETE_STEP_LABEL, type CompleteStepTone } from '../changeOrderCompleteStep';
 import {
+  changeOrderAction,
   changeOrderBorder,
   changeOrderFontMono,
   changeOrderInk,
@@ -126,7 +127,7 @@ export function StageLink(props: StageLinkProps) {
   let tone: StageLinkTone = passed
     ? { bg: changeOrderStatus.successGround, border: changeOrderStatus.successLine, color: changeOrderStatus.success, Icon: LockOpenOutlinedIcon }
     : open
-      ? { bg: changeOrderStatus.accentSoft, border: changeOrderStatus.accentLine, color: changeOrderStatus.accent, Icon: ArrowForwardIcon }
+      ? { bg: changeOrderStatus.progressSoft, border: changeOrderStatus.progressLine, color: changeOrderStatus.progress, Icon: ArrowForwardIcon }
       : CLOSED_LINK;
   let tally = changeOrderCopy.laneGateTally(state.gateTally.satisfied, state.gateTally.total);
   if (hold === 'held') {
@@ -277,7 +278,7 @@ function railNodeSx(selected: boolean, minWidth: number) {
     */
     // Positioned so the node's hidden text stays inside it.
     position: 'relative',
-    border: `${changeOrderShape.borderWidth}px solid ${selected ? changeOrderStatus.accent : changeOrderBorder.default}`,
+    border: `${changeOrderShape.borderWidth}px solid ${selected ? changeOrderAction.ink : changeOrderBorder.default}`,
     boxShadow: selected ? changeOrderSelectedRing : 'none',
     borderRadius: `${changeOrderShape.radius.lg}px`,
     padding: '10px 12px',
@@ -328,8 +329,8 @@ function RailNode({ stageId, selected, selection, testId, minWidth = 150, childr
           flexDirection: 'column',
           justifyContent: 'flex-start',
           alignItems: 'stretch',
-          '&:hover': { borderColor: selected ? changeOrderStatus.accent : changeOrderBorder.strong },
-          '&:focus-visible': { outline: `2px solid ${changeOrderStatus.accent}`, outlineOffset: '2px' },
+          '&:hover': { borderColor: selected ? changeOrderAction.ink : changeOrderBorder.strong },
+          '&:focus-visible': { outline: `2px solid ${changeOrderAction.focus}`, outlineOffset: '2px' },
         }}
       >
         {children}
@@ -705,6 +706,8 @@ export interface ChangeOrderStageRailPreviewProps {
   selectedStageId: string | undefined;
   /** The source node's one line, such as how many changes the draft carries. Empty for none. */
   sourceSummary: string;
+  /** A line under it, in words: "Change defined" for a change that runs as each stage is promoted. */
+  sourceVerdict?: string;
   /** The trailing Complete step: how many `Final` prerequisites guard it. `null` with no workflow. */
   complete: { gateCount: number } | null;
 }
@@ -735,6 +738,7 @@ function PreviewStageRail({
   stages,
   selectedStageId,
   sourceSummary,
+  sourceVerdict,
   complete,
   hrefForStage,
   onSelectStage,
@@ -785,6 +789,9 @@ function PreviewStageRail({
                 >
                   {sourceSummary}
                 </Box>
+              ) : null}
+              {stage.isSource && sourceVerdict !== undefined ? (
+                <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.muted, marginTop: '2px' }}>{sourceVerdict}</Box>
               ) : null}
               {!stage.isSource && segments !== undefined && stage.variantCount > 0 ? (
                 <>

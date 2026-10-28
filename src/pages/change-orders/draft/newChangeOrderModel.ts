@@ -12,10 +12,13 @@
  * lineage recorded there is nothing to promote to. Spaces whose upstreams go round in a circle
  * descend from no root. A release Target says nothing about any of this: a variant can have none.
  *
- * THE LAST CHANGEORDER is the one the draft re-aims by default (`isDefaultTemplate`).
+ * THE LAST CHANGEORDER is the one the draft re-aims by default, of any kind (`isReAimable`): what
+ * the row names, and what the draft opens on.
  *
- * WAITING is read off the Units, as the draft reads its start, for each variant in scope (last
- * time's scope, or every variant with no last ChangeOrder). A base Unit has changes waiting for
+ * WAITING is about base changes: read off the Units, as the draft reads its start, for each variant
+ * in the scope of the last ChangeOrder that carried base changes (`isDefaultTemplate`), or every
+ * variant with none. When it says changes are waiting and the last ChangeOrder made another kind of
+ * change, the row opens the draft on Base changes, where they are. A base Unit has changes waiting for
  * a variant that holds no clone of it (the draft would add it), or whose clone took an earlier
  * Revision of it than its head. What cannot be told is not guessed, and makes "nothing
  * waiting" unknown: a MergeUnits ChangeOrder, whose Links no clone records; no variant in
@@ -28,7 +31,8 @@ import type { ChangeOrderRead } from '@confighub/rtk-query';
 
 import { pastChangeOrderOf } from './draftContextModel';
 import { draftCopy } from './draftCopy';
-import { isDefaultTemplate } from './draftDecisions';
+import { DRAFT_KIND_WORDS } from './draftKinds';
+import { type DraftAddress, isDefaultTemplate, isReAimable } from './draftDecisions';
 import type { DraftPastChangeOrder } from './draftTypes';
 
 /** The column each of the picker's reads by Space id filters on. */
@@ -161,9 +165,10 @@ export function draftBases(
 /** A person the picker never shows: the draft's rule reads no author. */
 const NOBODY = { key: '', kind: 'none', name: '', isYou: false, colorSeed: '' } as const;
 
-/** Each base Space's last ChangeOrder, by the rule the draft picks its default template by. */
-export function lastChangeOrderBySpace(
+/** Each base Space's newest ChangeOrder that `keep` holds, newest first by creation. */
+function newestBySpace(
   orders: readonly ChangeOrderRead[],
+  keep: (past: DraftPastChangeOrder) => boolean,
 ): Map<string, PickerChangeOrder> {
   const newestFirst = orders
     .flatMap((order): { spaceId: string; past: DraftPastChangeOrder }[] => {
@@ -176,8 +181,7 @@ export function lastChangeOrderBySpace(
     .sort((a, b) => Date.parse(b.past.createdAt ?? '') - Date.parse(a.past.createdAt ?? ''));
   const last = new Map<string, PickerChangeOrder>();
   for (const { spaceId, past } of newestFirst) {
-    if (last.has(spaceId) || !isDefaultTemplate(past) || past.createdAt === undefined)
-      continue;
+    if (last.has(spaceId) || !keep(past) || past.createdAt === undefined) continue;
     last.set(spaceId, {
       slug: past.slug,
       createdAt: past.createdAt,
@@ -186,6 +190,26 @@ export function lastChangeOrderBySpace(
     });
   }
   return last;
+}
+
+/** Each base Space's last ChangeOrder, by the rule the draft picks its default template by: any kind. */
+export function lastChangeOrderBySpace(orders: readonly ChangeOrderRead[]): Map<string, PickerChangeOrder> {
+  return newestBySpace(orders, isReAimable);
+}
+
+/** Each base Space's last ChangeOrder that carried base changes: whose scope "waiting" is read for. */
+export function lastBaseChangeOrderBySpace(orders: readonly ChangeOrderRead[]): Map<string, PickerChangeOrder> {
+  return newestBySpace(orders, isDefaultTemplate);
+}
+
+/**
+ * Where a row opens the draft: the base, and Base changes when changes wait there while the last
+ * ChangeOrder made another kind of change (which the draft would otherwise open on).
+ */
+export function pickerDraftAddress(row: PickerRow): DraftAddress {
+  const address: DraftAddress = { space: row.base.spaceSlug };
+  if (row.waiting === 'waiting' && row.last !== undefined && row.last.updateType === 'Invoke') address.kind = DRAFT_KIND_WORDS.baseChanges;
+  return address;
 }
 
 export type PickerWaiting = 'waiting' | 'level' | 'unknown';
@@ -252,6 +276,7 @@ export function groupBySpace<T extends { spaceId: string }>(
 /** One row of the picker. */
 export interface PickerRow {
   base: DraftBase;
+  /** The last ChangeOrder of any kind: what the row names. */
   last: PickerChangeOrder | undefined;
   /** Undefined when the Units could not be read: the picker does not group then. */
   waiting: PickerWaiting | undefined;

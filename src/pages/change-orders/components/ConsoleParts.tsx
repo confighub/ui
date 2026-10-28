@@ -4,7 +4,7 @@
 /**
  * The parts the list consoles (ChangeOrders, ChangeSets) are built from: the title
  * row with its count and Refresh, the one-line explanation, the filter bar's
- * fields, the column head, the empty state and the footer. Each console keeps its
+ * fields, the empty state and the footer. Each console keeps its
  * own rows, grid and state; these keep the two looking like one product.
  */
 
@@ -13,7 +13,6 @@ import { useId, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import type { SxProps, Theme } from '@mui/material/styles';
 import RefreshIcon from '@mui/icons-material/Cached';
 
 import { consoleTokens as T, FILTER_SELECT_SX, R_SURFACE, SELECT_SX, controlSx } from '../consoleStyle';
@@ -248,48 +247,6 @@ export function ConsoleList({ label, children }: { label: string; children: Reac
   );
 }
 
-export interface ConsoleColumn {
-  key: string;
-  label: string;
-  sx?: SxProps<Theme>;
-}
-
-/** Column labels, in sentence case, on the rows' own grid so the two cannot drift apart. */
-export function ConsoleColumnHead({ columns, grid }: { columns: readonly ConsoleColumn[]; grid: SxProps<Theme> }) {
-  return (
-    <Box
-      role="row"
-      sx={{
-        ...(grid as object),
-        height: 33,
-        borderBottom: `1px solid ${T.line}`,
-        background: T.surfaceSunk,
-      }}
-    >
-      {columns.map((column) => (
-        <Typography
-          key={column.key}
-          component="span"
-          sx={{
-            fontSize: 11.5,
-            lineHeight: T.lh,
-            fontWeight: 700,
-            letterSpacing: '.02em',
-            textTransform: 'none',
-            color: T.ink3,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            ...(column.sx as object),
-          }}
-        >
-          {column.label}
-        </Typography>
-      ))}
-    </Box>
-  );
-}
-
 export function ConsoleLoading({ testId }: { testId?: string }) {
   return (
     <Typography data-testid={testId} sx={{ fontSize: 12.5, lineHeight: T.lh, color: T.ink3, padding: '46px 20px 50px', textAlign: 'center' }}>
@@ -309,7 +266,7 @@ export function ConsoleEmpty({ message, action }: { message: string; action?: Re
 }
 
 /** Always under a list: how many rows are shown, and a hint. */
-export function ConsoleFooter({ count, hint, countTestId }: { count: ReactNode; hint: ReactNode; countTestId?: string }) {
+export function ConsoleFooter({ count, hint, countTestId }: { count: ReactNode; hint?: ReactNode; countTestId?: string }) {
   return (
     <Stack
       direction="row"
@@ -329,9 +286,11 @@ export function ConsoleFooter({ count, hint, countTestId }: { count: ReactNode; 
       <Typography component="span" data-testid={countTestId} sx={{ fontSize: 12.5, lineHeight: T.lh, color: T.ink3 }}>
         {count}
       </Typography>
-      <Typography component="span" sx={{ fontSize: 12.5, lineHeight: T.lh, color: T.ink3 }}>
-        {hint}
-      </Typography>
+      {hint === undefined ? null : (
+        <Typography component="span" sx={{ fontSize: 12.5, lineHeight: T.lh, color: T.ink3 }}>
+          {hint}
+        </Typography>
+      )}
     </Stack>
   );
 }

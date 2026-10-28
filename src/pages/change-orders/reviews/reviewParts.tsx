@@ -19,6 +19,7 @@ import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 
 
 import {
+  changeOrderAction,
   changeOrderBorder,
   changeOrderFontMono,
   changeOrderInk,
@@ -40,7 +41,7 @@ const stageLinkSx = {
   verticalAlign: 'baseline',
   cursor: 'pointer',
   '&:hover, &:active, &:visited': { color: 'inherit', textDecorationColor: 'currentColor' },
-  '&:focus-visible': { outline: `2px solid ${changeOrderStatus.accent}`, outlineOffset: 2, borderRadius: '2px' },
+  '&:focus-visible': { outline: `2px solid ${changeOrderAction.focus}`, outlineOffset: 2, borderRadius: '2px' },
 } as const;
 
 /**
@@ -264,7 +265,7 @@ export function CollapsibleSection({
           textTransform: 'uppercase',
           color: changeOrderInk.subtle,
           '&:hover': { color: changeOrderInk.default },
-          '&:focus-visible': { outline: `2px solid ${changeOrderStatus.accent}`, outlineOffset: 2 },
+          '&:focus-visible': { outline: `2px solid ${changeOrderAction.focus}`, outlineOffset: 2 },
         }}
       >
         <ExpandMoreIcon
@@ -457,7 +458,7 @@ export function ReviewGateBlockedLine({ summary, onGoToSubject }: { summary: Sta
         alignItems: 'flex-start',
         padding: '8px 12px',
         border: `1px solid ${t.line}`,
-        borderLeftWidth: `${changeOrderShape.accentEdge}px`,
+        borderLeftWidth: `${changeOrderShape.leadingEdge}px`,
         borderRadius: `${changeOrderShape.radius.md}px`,
         background: t.bg,
         color: t.fg,
@@ -519,7 +520,7 @@ export function ReviewEntryStatus({ summary, onGo }: { summary: StageReviewSumma
         flexWrap: 'wrap',
         padding: '8px 12px',
         border: `1px solid ${t.line}`,
-        borderLeftWidth: `${changeOrderShape.accentEdge}px`,
+        borderLeftWidth: `${changeOrderShape.leadingEdge}px`,
         borderRadius: `${changeOrderShape.radius.md}px`,
         background: t.bg,
         color: t.fg,

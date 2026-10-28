@@ -195,6 +195,48 @@ test.describe('unit list page', () => {
     await expect(page.getByText(unitName)).toBeVisible();
   });
 
+  test('the tree view, with its edge and node types, survives a click into a node and Back', async ({ page }) => {
+    test.setTimeout(90000);
+    const name = RandomSlugGenerator.randomSlugName();
+    const unitListPage = new UnitListPage(page);
+    const unit = await unitListPage.createUnitViaAPI({ unitType: 'todo-app-fe', slug: name });
+    const nodeLink = () => page.locator('.react-flow__node').getByRole('link').first();
+    const param = (key: string) => new URL(page.url()).searchParams.get(key);
+
+    // Only this Unit, so that its node is the one on the canvas. The radios follow the URL,
+    // so they are clicked and then read, not `check()`ed, which reads them at once.
+    await page.goto(`/units?display=tree&filterWhere=${encodeURIComponent(`Slug = '${name}'`)}`);
+    await page.getByRole('radio', { name: 'Link', exact: true }).click();
+    await expect.poll(() => param('edges')).toBe('link');
+
+    // A Unit node opens the Unit.
+    await expect(nodeLink()).toHaveAttribute('href', `/units/${unit.SpaceID}/${unit.UnitID}`);
+    await nodeLink().click();
+    await expect.poll(() => new URL(page.url()).pathname).toBe(`/units/${unit.SpaceID}/${unit.UnitID}`);
+    await page.goBack();
+    await expect.poll(() => param('display')).toBe('tree');
+    await expect(page.getByRole('radio', { name: 'Link', exact: true })).toBeChecked();
+    await expect(page.getByRole('radio', { name: 'Unit', exact: true })).toBeChecked();
+
+    // A Space node opens the Space.
+    await page.getByRole('radio', { name: 'Space', exact: true }).click();
+    await expect.poll(() => param('nodes')).toBe('space');
+    await expect(nodeLink()).toHaveAttribute('href', `/spaces/${unit.SpaceID}`);
+    await nodeLink().click();
+    await expect.poll(() => new URL(page.url()).pathname).toBe(`/spaces/${unit.SpaceID}`);
+    await page.goBack();
+    await expect.poll(() => param('display')).toBe('tree');
+    await expect(page.getByRole('radio', { name: 'Link', exact: true })).toBeChecked();
+    await expect(page.getByRole('radio', { name: 'Space', exact: true })).toBeChecked();
+
+    // The defaults are left out of the URL.
+    await page.getByRole('radio', { name: 'Clone', exact: true }).click();
+    await expect.poll(() => param('edges')).toBeNull();
+    await page.getByRole('radio', { name: 'Unit', exact: true }).click();
+    await expect.poll(() => param('nodes')).toBeNull();
+    expect(param('display')).toBe('tree');
+  });
+
   test('should use unit toolchain type as default in function sidebar', async ({ page }) => {
     const unitListPage = new UnitListPage(page);
 

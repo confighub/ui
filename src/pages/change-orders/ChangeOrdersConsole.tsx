@@ -101,6 +101,7 @@ import { changeWorkflowLabel, useChangeWorkflowNames } from './useChangeWorkflow
 import { changeOrdersConsoleCopy } from '../x/apps/change-order/changeOrdersConsoleCopy';
 import { changeOrderCopy, stageDisplayName } from '../x/apps/change-order/changeOrderCopy';
 import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
+import { ConsoleTable, ConsoleTableRow, type ConsoleTableColumn } from '@/components/console-table/ConsoleTable';
 import { LiveRegion } from '@/components/live-region/LiveRegion';
 import { useListUsersByIdChunkedQuery } from '@/hooks/chunkedQueriesApi';
 import { reviewPersonOf } from '../change-sets/changeSetReviewModel';
@@ -123,22 +124,19 @@ import {
   KPI_PARTIAL_CARD_SX,
   R_CONTROL,
   R_MICRO,
+  ABOVE_ROW_LINK_SX,
+  ROW_LINK_SX,
   ageFrom,
   controlSx,
   freshnessFrom,
-  sentenceCase,
   truncateWords,
 } from './consoleStyle';
 import {
   ConsoleClearButton,
-  ConsoleColumnHead,
   ConsoleDateRange,
   ConsoleEmpty,
   ConsoleFilterBar,
   ConsoleFooter,
-  ConsoleIntro,
-  ConsoleList,
-  ConsoleLoading,
   ConsoleSearch,
   ConsoleSelectFilter,
   ConsoleTitleRow,
@@ -214,14 +212,14 @@ const IMAGE_CHANGE_CELL = {
 const SEGMENT_TONES: Record<SegmentTone, SxProps<Theme>> = {
   done: { bgcolor: T.ok, borderRadius: R_MICRO, boxShadow: 'none' },
   ready: {
-    bgcolor: T.accentSoft,
+    bgcolor: T.progressSoft,
     borderRadius: R_MICRO,
-    boxShadow: `inset 0 0 0 1.5px ${T.accent}`,
+    boxShadow: `inset 0 0 0 1.5px ${T.progress}`,
   },
   progressing: {
     borderRadius: R_MICRO,
-    backgroundImage: `repeating-linear-gradient(115deg, ${T.accentSoft} 0 4px, ${T.accentInk} 4px 8px)`,
-    boxShadow: `inset 0 0 0 1.5px ${T.accent}`,
+    backgroundImage: `repeating-linear-gradient(115deg, ${T.progressSoft} 0 4px, ${T.progressInk} 4px 8px)`,
+    boxShadow: `inset 0 0 0 1.5px ${T.progress}`,
     animation: 'change-order-seg-live 1.6s ease-in-out infinite',
     '@keyframes change-order-seg-live': { '0%, 100%': { opacity: 1 }, '50%': { opacity: 0.55 } },
     '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
@@ -259,11 +257,11 @@ const SEGMENT_TONES: Record<SegmentTone, SxProps<Theme>> = {
  * contrast floor for no added meaning.
  */
 const STATE_INK: Record<ConsoleState, string> = {
-  ready: T.accent,
+  ready: T.progress,
   degraded: T.bad,
   blocked: T.wait,
   held: T.wait,
-  progressing: T.accent,
+  progressing: T.progress,
   complete: T.ok,
   // Deliberately not the green of `complete`, and deliberately not a warning
   // hue either. Nothing is wrong; something simply went unread.
@@ -281,9 +279,9 @@ const STATE_INK: Record<ConsoleState, string> = {
  * behaviour and holds no palette of its own, so all six are stated here — the
  * page that shows the strip is the page that decides how it reads.
  *
- * Needs you is the only card in the accent, because it is the only group that
+ * Needs you is the only card in the progress blue, because it is the only group that
  * asks the reader to act. In progress asks nothing, so it takes the neutral
- * secondary ink, not `progressing`'s accent: two accent figures would make the
+ * secondary ink, not `progressing`'s blue: two blue figures would make the
  * strip ask for action twice. Stuck takes the warning ink, not `degraded`'s:
  * most of what it counts is waiting on a fix, and only some of it is failing.
  */
@@ -310,11 +308,11 @@ export interface ChangeOrdersConsoleProps {
    */
   data?: ChangeOrderConsoleData;
   /**
-   * Opens one ChangeOrder. Absent leaves the control rendered and disabled rather
+   * The address of one ChangeOrder. Absent leaves the control rendered and disabled rather
    * than hidden: the affordance exists in this design, and hiding it would
    * misreport the screen as one that never offers it.
    */
-  onOpenChangeOrder?: (row: ConsoleRow) => void;
+  changeOrderHref?: (row: ConsoleRow) => string;
   /**
    * Hands this console's announcement to a page that already owns a live region.
    *
@@ -340,7 +338,7 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
   userNames,
   viewerUserId,
   now,
-  onOpenChangeOrder,
+  changeOrderHref,
   onPromoteChangeOrder,
   onEndRequest,
 }: {
@@ -354,16 +352,14 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
   userNames: ReadonlyMap<string, string>;
   viewerUserId: string | undefined;
   now: number;
-  onOpenChangeOrder?: (row: ConsoleRow) => void;
+  changeOrderHref?: (row: ConsoleRow) => string;
   onPromoteChangeOrder?: (row: ConsoleRow) => void;
   onEndRequest?: (intent: ChangeOrderEndIntent, row: ConsoleRow) => void;
 }) {
   const action = actionFor(row);
-  const actionHandler = action.label === 'Promote' ? onPromoteChangeOrder : onOpenChangeOrder;
+  const href = changeOrderHref?.(row);
   const state = changeOrdersConsoleCopy.states[row.state];
-
-  const openChangeOrder = useCallback(() => onOpenChangeOrder?.(row), [onOpenChangeOrder, row]);
-  const runAction = useCallback(() => actionHandler?.(row), [actionHandler, row]);
+  const promote = useCallback(() => onPromoteChangeOrder?.(row), [onPromoteChangeOrder, row]);
 
   /*
    * The two ways to END this ChangeOrder, on the rule every other surface reads.
@@ -389,66 +385,28 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
     [onEndRequest, row],
   );
 
-  /*
-   * The row is a container with a button's role, not a `<button>`, and the
-   * reference says why in its own source: "The console row is a container, not
-   * a button, because it holds a real button of its own." A `<button>` inside a
-   * `<button>` is invalid and assistive technology resolves it inconsistently.
-   *
-   * So the row carries its own keyboard contract, and it fires only when the
-   * row ITSELF has focus — never when the event bubbled up from the action
-   * button inside it, which would run two different actions from one keypress.
-   */
-  const onKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      if (event.target !== event.currentTarget) return;
-      event.preventDefault();
-      openChangeOrder();
-    },
-    [openChangeOrder],
-  );
-
   // The next stage is never the source row, so it is always a real one and is named by the workflow's own word for it.
   const stageKey = row.nextStageId === null ? '' : stageDisplayName(row.nextStageId, false);
   const creator = row.userId ? reviewPersonOf(row.userId, userNames, viewerUserId).name : undefined;
   const reviewers = (row.reviewerUserIds ?? []).map((userId) => reviewPersonOf(userId, userNames, viewerUserId));
 
   return (
-    <Box
-      role="button"
-      tabIndex={0}
-      data-change-order-slug={row.slug}
-      onClick={openChangeOrder}
-      onKeyDown={onKeyDown}
-      /*
-       * Short and distinguishing. The reference names each row by its own
-       * contents — 136 to 176 characters — which is why its rows were dropped
-       * from the contract's own control inventory as fixture data. A name is
-       * how the row is addressed, not a summary of it.
-       */
-      aria-label={`Open ChangeOrder ${row.slug}`}
-      sx={{
-        ...GRID,
-        paddingTop: '11px',
-        paddingBottom: '11px',
-        borderBottom: `1px solid ${T.line}`,
-        background: 'transparent',
-        textAlign: 'left',
-        cursor: onOpenChangeOrder === undefined ? 'default' : 'pointer',
-        transition: 'background .1s ease',
-        '&:hover': { background: T.surfaceSunk },
-        '&:focus-visible': {
-          outline: `2px solid ${T.accent}`,
-          outlineOffset: -2,
-          borderRadius: R_MICRO,
-        },
-        '&:last-of-type': { borderBottom: 'none' },
-      }}
-    >
+    <ConsoleTableRow grid={GRID} attributes={{ 'data-change-order-slug': row.slug }}>
       <Box sx={{ minWidth: 0 }}>
         <Typography
-          component="span"
+          {...(href === undefined
+            ? { component: 'span' as const }
+            : {
+                component: RouterLink,
+                to: href,
+                /*
+                 * Short and distinguishing. The reference names each row by its own
+                 * contents — 136 to 176 characters — which is why its rows were dropped
+                 * from the contract's own control inventory as fixture data. A name is
+                 * how the row is addressed, not a summary of it.
+                 */
+                'aria-label': `Open ChangeOrder ${row.slug}`,
+              })}
           sx={{
             fontFamily: T.mono,
             fontSize: 13.5,
@@ -462,6 +420,7 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
             WebkitLineClamp: 2,
             WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
+            ...(href === undefined ? {} : ROW_LINK_SX),
           }}
           title={row.slug}
         >
@@ -470,6 +429,7 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
         <Typography
           component="span"
           sx={{
+            ...ABOVE_ROW_LINK_SX,
             fontSize: 11.5,
             lineHeight: T.lh,
             marginTop: '2px',
@@ -491,16 +451,16 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
                 data-testid="change-order-component"
                 to={`${ROUTE_COMPONENTS}?app=${encodeURIComponent(row.appName)}`}
                 title={row.appName}
-                // The row navigates on click; this link goes somewhere else.
-                onClick={(event: React.MouseEvent) => event.stopPropagation()}
                 sx={{
+                  position: 'relative',
+                  zIndex: 1,
                   fontSize: 11.5,
                   lineHeight: T.lh,
                   color: T.ink2,
                   textDecoration: 'underline',
                   textDecorationColor: T.lineStrong,
-                  '&:hover': { color: T.accentInk, textDecorationColor: T.accentInk },
-                  '&:focus-visible': { outline: `2px solid ${T.accent}`, outlineOffset: 1, borderRadius: R_MICRO },
+                  '&:hover': { color: T.actionInk, textDecorationColor: T.actionInk },
+                  '&:focus-visible': { outline: `2px solid ${T.focus}`, outlineOffset: 1, borderRadius: R_MICRO },
                 }}
               >
                 {row.appName}
@@ -621,14 +581,9 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
       </Stack>
 
       {/*
-        Icon + short headline + one line of detail, not a wrapped paragraph.
-        The headline is `state.hint` — already in `changeOrdersConsoleCopy`, a
-        fragment written for exactly this ("waiting on you", "needs a
-        Release") — so no new copy is invented here. `row.blocker`, the
-        model's own full sentence, becomes the ONE-LINE supporting detail: it
-        still carries every word, but truncates instead of wrapping, and the
-        full sentence is still reachable as a native tooltip. A row's height
-        can no longer vary with how much its blocker has to say.
+        The blocker on one line: it truncates rather than wraps, and the full
+        sentence is a native tooltip, so a row's height does not vary. The
+        state is named once, in the stages cell; no headline repeats it here.
       */}
       <Stack direction="row" sx={{ gap: '7px', minWidth: 0, alignItems: 'flex-start' }}>
         <Box
@@ -643,13 +598,11 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
           }}
         />
         <Stack sx={{ minWidth: 0, gap: '1px' }}>
-          <Typography component="b" sx={{ fontSize: 12.5, lineHeight: T.lh, fontWeight: 600, color: T.ink }}>
-            {sentenceCase(state.hint)}
-          </Typography>
           <Typography
             data-testid="change-order-blocker"
             title={row.blocker}
             sx={{
+              ...ABOVE_ROW_LINK_SX,
               fontSize: 11.5,
               lineHeight: T.lh,
               color: T.ink2,
@@ -667,7 +620,7 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
         <Typography
           data-testid="change-order-creator"
           title={creator}
-          sx={{ fontSize: 12.5, lineHeight: T.lh, color: T.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+          sx={{ ...ABOVE_ROW_LINK_SX, fontSize: 12.5, lineHeight: T.lh, color: T.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
         >
           {creator === undefined ? '—' : truncateWords(creator, 32)}
         </Typography>
@@ -675,7 +628,7 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
           <Typography
             data-testid="change-order-reviewers"
             title={reviewers.map((reviewer) => reviewer.name).join(', ')}
-            sx={{ fontSize: 11.5, lineHeight: T.lh, color: T.ink3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            sx={{ ...ABOVE_ROW_LINK_SX, fontSize: 11.5, lineHeight: T.lh, color: T.ink3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
           >
             Requested: {reviewers.map((reviewer) => `${reviewer.name}${reviewer.isYou ? ' (you)' : ''}`).join(', ')}
           </Typography>
@@ -705,22 +658,31 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
         a shortcut, never the only route to an action.
       */}
       <Box sx={{ ...HIDE_ACTION, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '4px' }}>
-        <Box
-          component="button"
-          type="button"
-          onClick={(event: React.MouseEvent) => {
-            // The row navigates on click. Without this the action would open the
-            // dialog and navigate away from it in the same gesture.
-            event.stopPropagation();
-            runAction();
-          }}
-          disabled={actionHandler === undefined}
-          sx={controlSx(action.primary ? 'primary' : 'quiet', actionHandler !== undefined)}
-        >
-          {action.label}
-        </Box>
+        {action.label !== 'Promote' && href !== undefined ? (
+          <Box
+            component={RouterLink}
+            to={href}
+            sx={{ ...controlSx(action.primary ? 'primary' : 'quiet', true), position: 'relative', zIndex: 1 }}
+          >
+            {action.label}
+          </Box>
+        ) : (
+          <Box
+            component="button"
+            type="button"
+            onClick={promote}
+            disabled={action.label !== 'Promote' || onPromoteChangeOrder === undefined}
+            sx={{
+              ...controlSx(action.primary ? 'primary' : 'quiet', action.label === 'Promote' && onPromoteChangeOrder !== undefined),
+              position: 'relative',
+              zIndex: 1,
+            }}
+          >
+            {action.label}
+          </Box>
+        )}
         {/*
-          A MENU, NOT TWO MORE PILLS. This row navigates on click, and a bare
+          A MENU, NOT TWO MORE PILLS. This row opens on click, and a bare
           destructive control repeated down a fleet-length list is a misclick
           away from taking a change back out of production. `MoreVertIcon` row
           menus are this codebase's existing shape for that (`SpacesCard.tsx`,
@@ -743,21 +705,12 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
               aria-label={`ChangeOrder actions for ${row.slug}`}
               aria-haspopup="true"
               aria-expanded={menuAnchor !== null ? 'true' : undefined}
-              onClick={(event: React.MouseEvent<HTMLElement>) => {
-                // Same reason as the action button above: the row navigates.
-                event.stopPropagation();
-                setMenuAnchor(event.currentTarget);
-              }}
-              sx={{ color: T.ink3, padding: '3px', borderRadius: R_MICRO }}
+              onClick={(event: React.MouseEvent<HTMLElement>) => setMenuAnchor(event.currentTarget)}
+              sx={{ zIndex: 1, color: T.ink3, padding: '3px', borderRadius: R_MICRO }}
             >
               <MoreVertIcon sx={{ fontSize: 17 }} />
             </IconButton>
-            <Menu
-              anchorEl={menuAnchor}
-              open={menuAnchor !== null}
-              onClose={closeMenu}
-              onClick={(event) => event.stopPropagation()}
-            >
+            <Menu anchorEl={menuAnchor} open={menuAnchor !== null} onClose={closeMenu}>
               {/*
                 Roll back first and marked destructive: it is the one that
                 MOVES something. "Abort" decides and writes into no Space, so it
@@ -797,7 +750,7 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
           </>
         ) : null}
       </Box>
-    </Box>
+    </ConsoleTableRow>
   );
 });
 
@@ -835,7 +788,7 @@ function CheckMark({ check, disabled }: { check: SectionCheck; disabled: boolean
   const Icon = CHECK_ICON[check];
   return (
     <Icon
-      sx={{ fontSize: 17, color: disabled ? T.lineStrong : check === 'unchecked' ? T.ink3 : T.accent }}
+      sx={{ fontSize: 17, color: disabled ? T.lineStrong : check === 'unchecked' ? T.ink3 : T.action }}
     />
   );
 }
@@ -1091,13 +1044,13 @@ function FilterBar({
  * a structural probe can find, exactly like this file's other `data-*` hooks.
  */
 const LEGEND: { tone: SegmentTone; label: string }[] = [
-  { tone: 'done', label: 'Stage complete' },
-  { tone: 'unverified', label: 'Landed, health unchecked' },
-  { tone: 'ready', label: 'Ready to promote' },
+  { tone: 'done', label: 'Done' },
+  { tone: 'unverified', label: 'Health unchecked' },
+  { tone: 'ready', label: 'Ready' },
   { tone: 'progressing', label: 'Promoting' },
-  { tone: 'blocked', label: 'Held for a Release' },
+  { tone: 'blocked', label: 'Needs Release' },
   { tone: 'degraded', label: 'Degraded' },
-  { tone: 'gated', label: 'Not yet reached' },
+  { tone: 'gated', label: 'Not reached' },
 ];
 
 function Legend() {
@@ -1127,22 +1080,49 @@ function Legend() {
   );
 }
 
-/**
- * Column labels. Sentence case.
- */
-const COLUMNS = [
-  { key: 'name', label: changeOrdersConsoleCopy.columns.name, sx: {} },
-  { key: 'image', label: changeOrdersConsoleCopy.columns.imageChange, sx: HIDE_IMAGE_HEAD },
-  { key: 'stages', label: changeOrdersConsoleCopy.columns.stages, sx: {} },
-  { key: 'blocker', label: changeOrdersConsoleCopy.columns.blocker, sx: {} },
-  { key: 'creator', label: changeOrdersConsoleCopy.columns.createdBy, sx: HIDE_CREATOR },
-  { key: 'age', label: changeOrdersConsoleCopy.columns.age, sx: { ...HIDE_AGE, textAlign: 'right' } },
-  { key: 'action', label: 'Next action', sx: { ...HIDE_ACTION, textAlign: 'right' } },
-] as const;
+/** Needs you first, then stuck, in progress, finished and the rest: the State filter's own order. */
+const STATE_RANK: ReadonlyMap<ConsoleState, number> = new Map(
+  STATE_SECTIONS.flatMap((section) => statesInSection(section)).map((state, index) => [state, index]),
+);
 
-function ColumnHead() {
-  return <ConsoleColumnHead columns={COLUMNS} grid={GRID} />;
+/**
+ * The column heads, in sentence case, and what each one sorts by. The cells are
+ * `ConsoleRowLine`'s, in this order.
+ *
+ * The Image change does not sort: each cell reads its own image tags, so the
+ * list holds no value to sort it by. Created by sorts by the name the cell
+ * shows, so it is built with the names the list has read.
+ */
+function changeOrderColumns(userNames: ReadonlyMap<string, string>, viewerUserId: string | undefined): ConsoleTableColumn<ConsoleRow>[] {
+  return [
+    { id: 'name', header: changeOrdersConsoleCopy.columns.name, sortValue: (row) => row.slug },
+    { id: 'image', header: changeOrdersConsoleCopy.columns.imageChange, sx: HIDE_IMAGE_HEAD },
+    {
+      id: 'stages',
+      header: changeOrdersConsoleCopy.columns.stages,
+      // The share of the path done, so a short path and a long one compare by how far each has gone.
+      sortValue: (row) =>
+        row.progressUnavailable || row.stagesTotal === 0 || row.state === 'no-stages' ? undefined : row.stagesDone / row.stagesTotal,
+    },
+    { id: 'blocker', header: changeOrdersConsoleCopy.columns.blocker, sortValue: (row) => STATE_RANK.get(row.state) },
+    {
+      id: 'creator',
+      header: changeOrdersConsoleCopy.columns.createdBy,
+      sx: HIDE_CREATOR,
+      sortValue: (row) => (row.userId ? reviewPersonOf(row.userId, userNames, viewerUserId).name : undefined),
+    },
+    {
+      id: 'age',
+      header: changeOrdersConsoleCopy.columns.age,
+      sx: { ...HIDE_AGE, textAlign: 'right' },
+      // Age, not date: ascending is the youngest first. A missing or unreadable date is NaN, which sorts last.
+      sortValue: (row) => (row.createdAt === undefined ? undefined : -Date.parse(row.createdAt)),
+    },
+    { id: 'action', header: 'Next action', sx: { ...HIDE_ACTION, textAlign: 'right' } },
+  ];
 }
+
+const changeOrderRowId = (row: ConsoleRow) => row.changeOrderId;
 
 /**
  * The console, rendering data it is given.
@@ -1154,7 +1134,7 @@ function ColumnHead() {
  */
 export function ChangeOrdersConsoleView({
   data,
-  onOpenChangeOrder,
+  changeOrderHref,
   onPromoteChangeOrder,
   onEndRequest,
   onAnnounce,
@@ -1309,6 +1289,23 @@ export function ChangeOrdersConsoleView({
   const freshness = freshnessFrom(lastLoadedAt, now);
   const emptyBecauseFiltered = rows.length > 0 && matched.length === 0;
 
+  const columns = useMemo(() => changeOrderColumns(userNames, viewerUserId), [userNames, viewerUserId]);
+  const renderRow = useCallback(
+    (row: ConsoleRow) => (
+      <ConsoleRowLine
+        row={row}
+        workflowLabel={changeWorkflowLabel(row.changeWorkflowId, workflowNames)}
+        userNames={userNames}
+        viewerUserId={viewerUserId}
+        now={now}
+        changeOrderHref={changeOrderHref}
+        onPromoteChangeOrder={onPromoteChangeOrder}
+        onEndRequest={onEndRequest}
+      />
+    ),
+    [workflowNames, userNames, viewerUserId, now, changeOrderHref, onPromoteChangeOrder, onEndRequest],
+  );
+
   /*
    * What a screen reader is told after the list changes.
    *
@@ -1383,14 +1380,6 @@ export function ChangeOrdersConsoleView({
       </Stack>
 
       {/*
-        The one-sentence explanation, under the title row rather than beside
-        it. `max-width` caps it well short of the console's own width — an
-        operator reading this forty times a week should be able to skip a
-        short paragraph at a glance, not parse one that runs the page's width.
-      */}
-      <ConsoleIntro>{changeOrdersConsoleCopy.pageIntro}</ConsoleIntro>
-
-      {/*
         `selection` is the State filter's one value, the same one the State
         dropdown in `FilterBar` edits; a card click becomes the next selection
         through `selectionAfterCardClick`, so the cards keep no state of their
@@ -1460,12 +1449,20 @@ export function ChangeOrdersConsoleView({
       )}
 
       {/* Square at the top: the Legend directly above supplies that edge, so the panels read as one card. */}
-      <ConsoleList label={changeOrdersConsoleCopy.pageTitle}>
-        <ColumnHead />
-
-        {isLoading ? (
-          <ConsoleLoading testId="change-orders-loading" />
-        ) : matched.length === 0 ? (
+      {/*
+        Newest first until a head is clicked: that is the order `rows` arrives in.
+        The list is one flat run, not sections, so a sort orders the whole of it.
+      */}
+      <ConsoleTable
+        label={changeOrdersConsoleCopy.pageTitle}
+        data={matched}
+        columns={columns}
+        grid={GRID}
+        getRowId={changeOrderRowId}
+        isLoading={isLoading}
+        loadingTestId="change-orders-loading"
+        renderRow={renderRow}
+        empty={
           /*
             Two distinct empty claims: "nothing exists" and "your filters matched
             nothing", which Clear undoes. Telling the reader to Clear filters when
@@ -1482,36 +1479,19 @@ export function ChangeOrdersConsoleView({
               ) : null
             }
           />
-        ) : (
-          <>
-            {matched.map((row) => (
-              <ConsoleRowLine
-                key={row.changeOrderId}
-                row={row}
-                workflowLabel={changeWorkflowLabel(row.changeWorkflowId, workflowNames)}
-                userNames={userNames}
-                viewerUserId={viewerUserId}
-                now={now}
-                onOpenChangeOrder={onOpenChangeOrder}
-                onPromoteChangeOrder={onPromoteChangeOrder}
-                onEndRequest={onEndRequest}
-              />
-            ))}
-            {/*
-              A persistent footer, not a conditional one — present whenever
-              there is a list to describe, the same way the reference's
-              `.tfoot` always sits under the table. The hidden-ChangeOrders reveal
-              folds in here rather than getting a second, separately-styled
-              bar underneath it.
-            */}
-            <ConsoleFooter
-              countTestId="change-orders-count"
-              count={`${matched.length} ${matched.length === 1 ? 'ChangeOrder' : 'ChangeOrders'}`}
-              hint="Select a row to open its promotion rail."
-            />
-          </>
-        )}
-      </ConsoleList>
+        }
+        footer={
+          /*
+            A persistent footer, not a conditional one — present whenever
+            there is a list to describe, the same way the reference's
+            `.tfoot` always sits under the table.
+          */
+          <ConsoleFooter
+            countTestId="change-orders-count"
+            count={`${matched.length} ${matched.length === 1 ? 'ChangeOrder' : 'ChangeOrders'}`}
+          />
+        }
+      />
 
       {onAnnounce === undefined && (
         <LiveRegion message={announcement} data-testid="change-orders-announce" />

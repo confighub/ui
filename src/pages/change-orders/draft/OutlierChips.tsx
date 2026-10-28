@@ -70,13 +70,22 @@ export interface OutcomeSquareProps {
   kind: ChangeOrderOutcomeKind;
 }
 
-/** The square in front of an outlier: the outcome its stage puts it in. */
+/** The square in front of an outlier: the outcome its stage puts it in. Nothing to change is hollow: no change, no fill. */
 export function OutcomeSquare({ kind }: OutcomeSquareProps) {
+  const hollow = kind === 'nothing';
   return (
     <Box
       component="i"
       aria-hidden="true"
-      sx={{ width: 8, height: 8, borderRadius: `${changeOrderShape.radius.xs}px`, flex: 'none', background: OUTCOME_META[kind].tone }}
+      sx={{
+        boxSizing: 'border-box',
+        width: 8,
+        height: 8,
+        borderRadius: `${changeOrderShape.radius.xs}px`,
+        flex: 'none',
+        background: hollow ? 'transparent' : OUTCOME_META[kind].tone,
+        border: hollow ? `1.5px solid ${changeOrderInk.subtle}` : 'none',
+      }}
     />
   );
 }
@@ -107,6 +116,14 @@ interface FactLineProps {
 
 /** What the dry run found, as the reader checks it: the path, what the variant keeps, what the base writes. */
 function FactLine({ fact }: FactLineProps) {
+  if (fact.kind === 'nothing') return <>{copy.nothingHere}</>;
+  if (fact.kind === 'lacks') {
+    return (
+      <>
+        <Code>{fact.slug}</Code> {copy.lacksTail}
+      </>
+    );
+  }
   if (fact.kind === 'adds') {
     return (
       <>
@@ -284,7 +301,7 @@ export function OutlierChips({ items, onShow, onLeaveOut }: OutlierChipsProps) {
       <DraftPopover anchorEl={open?.anchor ?? null} onClose={close} label={open?.item.outlier.name ?? ''} restoreFocus={restoreFocus}>
         {open === null ? null : (
           <>
-            <PopoverHeading icon={<HistoryIcon aria-hidden />}>{draftCopy.page.ledger.variants(1)}</PopoverHeading>
+            <PopoverHeading icon={<HistoryIcon aria-hidden />}>{draftCopy.page.facts.variants(1)}</PopoverHeading>
             <Box sx={FACT_SX}>
               {open.item.outlier.facts.map((fact, index) => (
                 <Box key={index}>
@@ -368,10 +385,9 @@ export function OutsideChips({ variants, workflowSlug, onLeaveOut }: OutsideChip
       <DraftPopover anchorEl={open?.anchor ?? null} onClose={() => setOpen(null)} label={open?.variant.name ?? ''} restoreFocus={restoreFocus}>
         {open === null ? null : (
           <>
-            <PopoverHeading icon={<BlockIcon aria-hidden />}>{draftCopy.page.ledger.variants(1)}</PopoverHeading>
+            <PopoverHeading icon={<BlockIcon aria-hidden />}>{draftCopy.page.facts.variants(1)}</PopoverHeading>
             <Box sx={FACT_SX}>
               <Code>{open.variant.name}</Code> {copy.outsideLine} <Code>{workflowSlug}</Code>
-              {copy.outsideTail}
             </Box>
             <VariantPill name={open.variant.name} />
             <Box sx={{ display: 'flex', gap: '6px', padding: '6px 8px 4px' }}>

@@ -167,13 +167,6 @@ export const BulkDiffDrawer = ({
                     fullWidth
                     onClick={onConfirm}
                     disabled={isLoading}
-                    sx={{
-                      transition: 'all 0.2s ease-in-out',
-                      '&:hover': {
-                        transform: 'translateY(-1px)',
-                        boxShadow: '0 8px 25px rgba(25, 118, 210, 0.3)',
-                      },
-                    }}
                   >
                     {isLoading ? 'Applying Changes...' : 'Apply Changes'}
                   </Button>

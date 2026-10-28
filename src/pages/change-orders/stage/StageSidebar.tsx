@@ -231,13 +231,9 @@ function GatesSection({
             {workflow.label || copy.noWorkflow}
           </Box>
         ) : (
-          <Tooltip title={copy.frozenCopy}>
-            <span>
-              <ProseLink href={workflow.href} code weight={400}>
-                {workflow.label}
-              </ProseLink>
-            </span>
-          </Tooltip>
+          <ProseLink href={workflow.href} code weight={400}>
+            {workflow.label}
+          </ProseLink>
         )}
       </Typography>
     </Section>
@@ -270,6 +266,8 @@ function SpacesSection({ spaces, marks }: Pick<StageSidebarProps, 'spaces' | 'ma
                 <Link
                   component={RouterLink}
                   to={spaceHref(space.spaceId)}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   title={space.name}
                   // Slugs of one ChangeOrder share their head; when one does not fit, the ellipsis goes at the start so the end that tells them apart stays.
                   sx={{ ...listLinkSx, direction: 'rtl', textAlign: 'left', ...(strong ? { color: 'text.primary' } : {}) }}

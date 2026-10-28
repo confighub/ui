@@ -42,13 +42,11 @@ function sortByCompletedAt(initiatives: Initiative[]): Initiative[] {
 interface InitiativesKanbanProps {
   initiatives: Initiative[];
   selectedId: string | null;
-  onSelect: (id: string) => void;
-  onEdit: (id: string) => void;
   onDelete: (initiative: Initiative) => void;
   onStatusChange: (id: string, status: InitiativeStatus) => void;
 }
 
-export const InitiativesKanban = ({ initiatives, selectedId, onSelect, onEdit, onDelete, onStatusChange }: InitiativesKanbanProps) => {
+export const InitiativesKanban = ({ initiatives, selectedId, onDelete, onStatusChange }: InitiativesKanbanProps) => {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const [collapsed, setCollapsed] = useState<Record<InitiativeStatus, boolean>>({
@@ -104,13 +102,36 @@ export const InitiativesKanban = ({ initiatives, selectedId, onSelect, onEdit, o
     [activeId, initiatives],
   );
 
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveId(String(event.active.id));
+  // dnd-kit stops the click that ends a drag before React sees it, but not the
+  // browser's default action, so a drop on the card's own link would follow
+  // it. A window capture listener runs before dnd-kit's document listener.
+  const releaseClickGuardRef = useRef<(() => void) | null>(null);
+  const guardClicksDuringDrag = useCallback(() => {
+    releaseClickGuardRef.current?.();
+    const prevent = (e: MouseEvent) => e.preventDefault();
+    window.addEventListener('click', prevent, { capture: true });
+    releaseClickGuardRef.current = () => window.removeEventListener('click', prevent, { capture: true });
   }, []);
+  // The click follows pointerup, so wait as long as dnd-kit does before removing the guard.
+  const releaseClickGuardSoon = useCallback(() => {
+    const release = releaseClickGuardRef.current;
+    releaseClickGuardRef.current = null;
+    if (release) setTimeout(release, 50);
+  }, []);
+  useEffect(() => () => releaseClickGuardRef.current?.(), []);
+
+  const handleDragStart = useCallback(
+    (event: DragStartEvent) => {
+      setActiveId(String(event.active.id));
+      guardClicksDuringDrag();
+    },
+    [guardClicksDuringDrag],
+  );
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       setActiveId(null);
+      releaseClickGuardSoon();
       const { active, over } = event;
       if (!over) return;
 
@@ -124,12 +145,13 @@ export const InitiativesKanban = ({ initiatives, selectedId, onSelect, onEdit, o
         onStatusChange(initiativeId, targetStatus);
       }
     },
-    [initiatives, onStatusChange],
+    [initiatives, onStatusChange, releaseClickGuardSoon],
   );
 
   const handleDragCancel = useCallback(() => {
     setActiveId(null);
-  }, []);
+    releaseClickGuardSoon();
+  }, [releaseClickGuardSoon]);
 
   return (
     <DndContext
@@ -159,8 +181,6 @@ export const InitiativesKanban = ({ initiatives, selectedId, onSelect, onEdit, o
             selectedId={selectedId}
             isCollapsed={collapsed[status]}
             onToggleCollapse={() => handleToggleCollapse(status)}
-            onSelect={onSelect}
-            onEdit={onEdit}
             onDelete={onDelete}
             onStatusChange={onStatusChange}
           />
@@ -172,8 +192,6 @@ export const InitiativesKanban = ({ initiatives, selectedId, onSelect, onEdit, o
             <InitiativeKanbanCard
               initiative={activeInitiative}
               isSelected={false}
-              onSelect={() => {}}
-              onEdit={() => {}}
               onDelete={() => {}}
               onStatusChange={() => {}}
             />

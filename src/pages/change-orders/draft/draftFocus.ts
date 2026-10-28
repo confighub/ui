@@ -1,6 +1,8 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
+import type { DraftProblem, DraftRow } from './draftTypes';
+
 /** How many frames to wait for an element that a change is about to draw (about ten seconds). */
 const WAIT_FRAMES = 600;
 
@@ -13,7 +15,7 @@ export interface FocusWhenDrawnOptions {
   select?: boolean;
   /**
    * Wait for a new element with this id: the one there now is about to be replaced (a re-read
-   * redraws it, a decision moves it to another row), and focusing it would lose focus with it.
+   * redraws it, an end chip gives way to its opposite), and focusing it would lose focus with it.
    */
   fresh?: boolean;
   /**
@@ -21,6 +23,11 @@ export interface FocusWhenDrawnOptions {
    * with `tabIndex={-1}`): never on the page's body in between.
    */
   holdAt?: string;
+  /**
+   * Wait until the element shows what the change drew (a field its new value): focusing it
+   * sooner would keep the old text in a field that does not take a new value while focused.
+   */
+  ready?: (element: HTMLElement) => boolean;
 }
 
 /** The reader has not gone anywhere since asking: focus is on nothing, on what is being replaced, or where it was held. */
@@ -35,9 +42,9 @@ const focusIsFree = (stale: Element | null, hold: Element | null) => {
  * elsewhere in the meantime keeps it there. Returns a cancel, which does nothing once a later
  * request has replaced this one.
  *
- * For a control that a decision moves or redraws (the end chip after "End at", the update type
- * after it leaves the Same row): the element the keyboard was on is gone, and the reader should
- * land on its successor rather than at the top of the page.
+ * For a control that a decision redraws (the end chip after "End at", which gives way to its
+ * opposite): the element the keyboard was on is gone, and the reader should land on its
+ * successor rather than at the top of the page.
  */
 export function focusWhenDrawn(id: string, options: FocusWhenDrawnOptions = {}): () => void {
   if (pending !== undefined) window.cancelAnimationFrame(pending);
@@ -48,7 +55,7 @@ export function focusWhenDrawn(id: string, options: FocusWhenDrawnOptions = {}):
   let frames = 0;
   const attempt = () => {
     const element = document.getElementById(id);
-    const ready = element !== null && element !== stale;
+    const ready = element !== null && element !== stale && (options.ready === undefined || options.ready(element));
     if (ready) {
       pending = undefined;
       if (options.fresh === true && !focusIsFree(stale, hold)) return;
@@ -71,8 +78,41 @@ export function focusWhenDrawn(id: string, options: FocusWhenDrawnOptions = {}):
   };
 }
 
-/** The id of a ledger row: the fallback focus target for a problem with no control of its own. */
-export const ledgerRowId = (row: string) => `draft-row-${row}`;
+/**
+ * The parts of the summary card a problem is said in: under the title, under the facts, under
+ * the dry run's outcome, under What and How much.
+ */
+export type DraftPlace = 'title' | 'facts' | 'outcome' | 'change';
+
+/** The id of a part of the summary card: the fallback focus target for a problem with no control of its own. */
+export const draftPlaceId = (place: DraftPlace) => `draft-place-${place}`;
+
+/** A short, stable hash of a text, for an id made from it. */
+function textHash(text: string): string {
+  let hash = 5381;
+  for (let index = 0; index < text.length; index += 1) hash = (hash * 33 + text.charCodeAt(index)) | 0;
+  return (hash >>> 0).toString(36);
+}
+
+/** The id of a problem's words on the card: what the control it is about is described by. */
+export const draftProblemId = (problem: Pick<DraftProblem, 'code' | 'message'>) =>
+  `draft-problem-${problem.code}-${textHash(problem.message)}`;
+
+/** The id of a problem's fix: where the blocker sends the keyboard when the control is not drawn. */
+export const draftFixId = (problem: Pick<DraftProblem, 'code' | 'message'>) => `${draftProblemId(problem)}-fix`;
+
+/** Where each kind of problem is said. A refusal of Create itself is said beside Create, not in the card. */
+export const DRAFT_PLACE_OF_ROW: Readonly<Record<DraftRow, DraftPlace | undefined>> = {
+  template: 'title',
+  name: 'title',
+  description: 'title',
+  what: 'change',
+  howMuch: 'change',
+  where: 'outcome',
+  path: 'facts',
+  same: 'change',
+  create: undefined,
+};
 
 /**
  * Keep the keyboard's place after `control` asked for something that may redraw it away (a

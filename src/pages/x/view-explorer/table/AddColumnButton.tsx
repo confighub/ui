@@ -15,13 +15,15 @@ import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 
-import { type FieldCategory, type FieldDef, fieldCatalog } from '../model/fields';
+import { type FieldDef, fieldCatalog } from '../model/fields';
 import type { EntityKind } from '../model/types';
+import { addColumnSections } from './add-column-sections';
 
 /**
  * The `+` at the end of the header: pick a field to show as a new column.
- * Fields are grouped the way the lens column groups them, and the search
- * matches labels and ids, so `Labels.tier` is found by "tier".
+ * Fields are under the headings of the Units and Spaces pages' Columns panel
+ * (`addColumnSections`), and the search matches labels and ids, so
+ * `Labels.tier` is found by "tier".
  */
 
 interface Props {
@@ -32,14 +34,6 @@ interface Props {
   viewColumns?: ReadonlyArray<{ id: string; label: string }>;
   onAdd: (name: string) => void;
 }
-
-const CATEGORY_TITLE: Record<FieldCategory, string> = {
-  field: 'Fields',
-  computed: 'Computed',
-  label: 'Labels',
-  'space-label': 'Space labels',
-};
-const CATEGORY_ORDER: FieldCategory[] = ['field', 'computed', 'label', 'space-label'];
 
 export function AddColumnButton({
   entity,
@@ -59,10 +53,7 @@ export function AddColumnButton({
         !shown.has(f.id) &&
         (!q || f.label.toLowerCase().includes(q) || f.id.toLowerCase().includes(q)),
     );
-    return CATEGORY_ORDER.map((c) => ({
-      category: c,
-      fields: fields.filter((f) => f.category === c),
-    })).filter((g) => g.fields.length > 0);
+    return addColumnSections(entity, fields);
   }, [entity, labelKeys, visible, query]);
 
   const q = query.trim().toLowerCase();
@@ -170,7 +161,8 @@ export function AddColumnButton({
             )}
             {groups.flatMap((g) => [
               <ListSubheader
-                key={`h-${g.category}`}
+                key={`h-${g.title}`}
+                data-testid='vx-add-column-heading'
                 sx={{
                   lineHeight: '28px',
                   typography: 'caption',
@@ -178,10 +170,15 @@ export function AddColumnButton({
                   color: 'text.disabled',
                 }}
               >
-                {CATEGORY_TITLE[g.category]}
+                {g.title}
               </ListSubheader>,
               ...g.fields.map((f) => (
-                <MenuItem key={f.id} onClick={() => pick(f)} data-field={f.id}>
+                <MenuItem
+                  key={f.id}
+                  onClick={() => pick(f)}
+                  data-field={f.id}
+                  data-group={g.title}
+                >
                   {f.label}
                 </MenuItem>
               )),

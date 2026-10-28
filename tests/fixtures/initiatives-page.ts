@@ -18,7 +18,7 @@ export class InitiativesPage {
     await this.page.goto('/x/initiatives');
   }
 
-  /** Click the "New Initiative" button in the header to navigate to the create form. */
+  /** Click the "New Initiative" link in the header to go to the create form. */
   async clickNewInitiative() {
     // Wait for the spaces list to load — the form silently does nothing if no space is found.
     // Set up the response promise BEFORE the click to avoid a race where the request
@@ -26,7 +26,7 @@ export class InitiativesPage {
     const spaceResponse = this.page.waitForResponse(
       (r) => r.url().includes('/api/space') && r.status() === 200,
     );
-    await this.page.getByRole('button', { name: 'New Initiative' }).click();
+    await this.page.getByRole('link', { name: 'New Initiative' }).click();
     await this.page.waitForURL('**/x/initiatives/new');
     await spaceResponse;
   }
@@ -91,8 +91,7 @@ export class InitiativesPage {
   async openCardMenu(initiativeName: string) {
     const card = this.getCard(initiativeName);
     await card.hover();
-    // The MoreVert icon button is inside the card header area
-    await card.getByRole('button').first().click();
+    await card.getByRole('button', { name: 'Initiative actions' }).click();
   }
 
   /** Click "Edit" from the open card context menu. */
@@ -118,9 +117,10 @@ export class InitiativesPage {
     await this.page.waitForSelector('[role="dialog"]', { state: 'hidden' });
   }
 
-  /** Click the initiative card to select it and show the detail view. */
+  /** Click the initiative card's link to select it and show the detail view. */
   async selectInitiative(initiativeName: string) {
-    await this.getCard(initiativeName).click();
+    await this.getCard(initiativeName).getByRole('link', { name: initiativeName }).click();
+    await this.page.waitForURL(/\/x\/initiatives\/[^/]+$/);
   }
 
   /** Assert a initiative card with the given name is visible in the kanban. */

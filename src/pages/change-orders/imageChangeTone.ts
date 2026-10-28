@@ -12,7 +12,7 @@ import type { BumpKind } from './imageChange';
  */
 export const BUMP_TONE: Record<BumpKind, { ink: string; soft: string; line: string }> = {
   major: { ink: changeOrderStatus.warn, soft: changeOrderStatus.warnSoft, line: changeOrderStatus.warnLine },
-  minor: { ink: changeOrderStatus.accent, soft: changeOrderStatus.accentSoft, line: changeOrderStatus.accentLine },
+  minor: { ink: changeOrderStatus.progress, soft: changeOrderStatus.progressSoft, line: changeOrderStatus.progressLine },
   patch: { ink: changeOrderStatus.success, soft: changeOrderStatus.successGround, line: changeOrderStatus.successLine },
   downgrade: { ink: changeOrderStatus.danger, soft: changeOrderStatus.dangerSoft, line: changeOrderStatus.dangerLine },
   build: { ink: changeOrderInk.muted, soft: changeOrderSurface.inset, line: changeOrderBorder.strong },

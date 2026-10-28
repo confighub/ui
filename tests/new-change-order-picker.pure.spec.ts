@@ -22,7 +22,9 @@ import {
   baseForFilter,
   draftBases,
   groupBySpace,
+  lastBaseChangeOrderBySpace,
   lastChangeOrderBySpace,
+  pickerDraftAddress,
   pickerGroups,
   upstreamOfSpace,
   waitingOf,
@@ -133,6 +135,21 @@ test.describe('the last ChangeOrder', () => {
       order('newest-kept', '2026-10-04T00:00:00Z'),
     ]);
     expect(last.get('b')?.slug).toBe('newest-kept');
+  });
+
+  test('is the newest of any kind the draft opens on; waiting is read from the newest that carried base changes', () => {
+    const orders = [
+      order('release', '2026-10-01T00:00:00Z'),
+      order('image', '2026-10-08T00:00:00Z', { UpdateType: 'Invoke', InvocationID: 'inv' }),
+    ];
+    expect(lastChangeOrderBySpace(orders).get('b')?.slug).toBe('image');
+    expect(lastBaseChangeOrderBySpace(orders).get('b')?.slug).toBe('release');
+    const [base] = draftBases([space('b', 'acme'), space('v1', 'acme', 'b')], components);
+    const last = lastChangeOrderBySpace(orders).get('b');
+    // Changes waiting while the last one ran a function: the row opens the draft on them.
+    expect(pickerDraftAddress({ base, last, waiting: 'waiting' })).toEqual({ space: base.spaceSlug, kind: 'base' });
+    expect(pickerDraftAddress({ base, last, waiting: 'level' })).toEqual({ space: base.spaceSlug });
+    expect(pickerDraftAddress({ base, last: lastBaseChangeOrderBySpace(orders).get('b'), waiting: 'waiting' })).toEqual({ space: base.spaceSlug });
   });
 });
 

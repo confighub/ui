@@ -29,26 +29,19 @@ export type DraftDerivedStatus = DraftReadStatus | 'undetermined';
 /** The update types a "Base changes" draft can propagate by. */
 export type DraftUpdateType = 'UpgradeUnit' | 'MergeUnits';
 
-/**
- * Where a decision's value came from, for the ledger's provenance icon.
- *
- * - `last`: as the ChangeOrder the draft re-aims had it, or worked out the same way it was.
- * - `policy`: worked out from the Component's policy and the change itself, with no last
- *   ChangeOrder to copy, or where copying it is not allowed any more.
- * - `you`: set on this draft, and different from last time.
- */
-export type DraftDecisionOrigin = 'last' | 'policy' | 'you';
-
 export interface DraftDecision<T> {
   value: T;
-  origin: DraftDecisionOrigin;
   /** What the last ChangeOrder had. `undefined` when there is none, or it is not comparable. */
   last: T | undefined;
-  /** True when `last` is known and `value` is not it: the ledger strikes the left side. */
+  /** True when `last` is known and `value` is not it: the fact's rule turns rust. */
   differsFromLast: boolean;
 }
 
-/** The ledger rows, and the other places a problem can be shown. */
+/**
+ * What a problem is about: the template and the name (title), what and how much (the change),
+ * where (the dry run's outcome and the scope), the path (a fact), the update type (`same`,
+ * under the change's kind), and Create.
+ */
 export type DraftRow =
   | 'template'
   | 'what'
@@ -76,6 +69,18 @@ export interface DraftProblem {
   blocks: boolean;
   /** The one-click way out, where there is one: "End at latest", "Leave out". */
   fix?: DraftProblemFix;
+  /**
+   * What the blocker beside Create says, where the row's own words ("Fix what changes") say less
+   * than the problem does: "Type the new image tag", "Type the key".
+   */
+  blockerLabel?: string;
+  /** The id of the control that fixes it, where its row has several: the blocker focuses it. */
+  focusId?: string;
+  /**
+   * A second sentence, said on its own line under the message: what a failed Create left behind
+   * ("Invocation x is saved in payments-base. Create uses it.").
+   */
+  detail?: string;
 }
 
 /** A change to the draft that clears a problem: a button beside it. */
@@ -124,7 +129,7 @@ export interface DraftWorkflow {
   spec: ChangeWorkflowSpec;
 }
 
-/** A ChangeOrder of the base Space, for the template picker and the ledger's left side. */
+/** A ChangeOrder of the base Space, for the template picker and the defaults it gives. */
 export interface DraftPastChangeOrder {
   changeOrderId: string;
   slug: string;

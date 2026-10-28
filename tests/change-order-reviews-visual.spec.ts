@@ -32,8 +32,9 @@ test.describe.configure({ mode: 'serial' });
 
 const SHOT_DIR = 'test-results/change-order-reviews';
 const PROD = 'prod';
-const PRIMARY = 'rgb(186, 61, 3)'; // theme primary: Promote, and "Go to promote"
-const PRIMARY_DARK = 'rgb(140, 44, 0)'; // primary.dark: their hover
+const PURPLE = 'rgb(104, 36, 196)'; // componentTheme.promote: Promote, Release, and "Go to promote" / "Go to release"
+const PURPLE_HOVER = 'rgb(78, 26, 150)'; // componentTheme.promoteEmphasis: their hover
+const PRIMARY = 'rgb(186, 61, 3)'; // theme primary: every other filled action, such as submitting a review
 const INK = 'rgb(25, 29, 35)'; // changeOrderInk.default: the band keeps its own tokens
 const BORDER_STRONG = 'rgb(205, 210, 218)'; // changeOrderBorder.strong
 const CARD = 'rgb(255, 255, 255)'; // changeOrderSurface.card
@@ -292,7 +293,7 @@ test.describe('ChangeOrder reviews — the six design states', () => {
     await expect(reason).toHaveAttribute('placeholder', stageCardCopy.review.placeholderPass);
     // Whether an approval needs a reason is one flag (the server accepts none).
     await expect(form.getByLabel(stageCardCopy.review.reasonLabel(noteRequired('Pass')))).toBeVisible();
-    await expect(form).toContainText(stageCardCopy.review.coverageHelp(undefined));
+    await expect(form).toContainText(stageCardCopy.review.coverageHelp(stageCardCopy.review.coverageSummary(2, 2)));
     await expect(submit).toHaveText(stageCardCopy.review.submitApproval);
     await expect(submit).toHaveCSS('background-color', PRIMARY);
     // The counter appears only near the limit.
@@ -471,10 +472,10 @@ test.describe('ChangeOrder reviews — the six design states', () => {
     await expect(coverage).not.toContainText('does not count');
     await expect(coverage).not.toContainText('would not count');
     const card = page.getByTestId('stage-card');
-    await expect(card).not.toContainText('you did not write this change');
+    await expect(card).not.toContainText('you can review for');
     // security-review allows authors, so the author is offered the decision.
     await expect(statusBox(page).getByTestId('review-approve')).toBeVisible();
-    await expect(card).not.toContainText('authors may approve here');
+    await expect(card).not.toContainText('Authors may approve here.');
   });
 
   test('a not-eligible viewer with a decision: not eligible first, and no way to change it', async ({ page }) => {
@@ -485,11 +486,11 @@ test.describe('ChangeOrder reviews — the six design states', () => {
     await openReview(page, fx, { details: false });
     const box = statusBox(page);
     await expect(box).toHaveAttribute('data-stage-state', 'reviewWaiting');
-    await expect(box.getByTestId('review-not-eligible')).toContainText('does not name you or a group of yours');
+    await expect(box.getByTestId('review-not-eligible')).toContainText('You are not a reviewer for this requirement.');
     await expect(box).not.toContainText('Your approval covers');
     await expect(page.getByTestId('review-change')).toHaveCount(0);
     await expect(page.getByTestId('review-band')).not.toContainText('You approved. Waiting on others.');
-    await expect(page.getByTestId('review-band')).toContainText('You are not on the list of reviewers.');
+    await expect(page.getByTestId('review-band')).toContainText('You are not a reviewer.');
   });
 
   test('a not-eligible viewer with a decision: the box lists it as recorded but not counted', async ({ page }) => {
@@ -499,7 +500,7 @@ test.describe('ChangeOrder reviews — the six design states', () => {
     });
     await openReview(page, fx, { details: false });
     const own = statusBox(page).getByTestId('review-own-not-counted').first();
-    await expect(own).toContainText('It is recorded, but it does not count.', { timeout: 10000 });
+    await expect(own).toContainText('It does not count.', { timeout: 10000 });
     await expect(own).toContainText('Not counted: not in security-reviewers');
   });
 
@@ -527,7 +528,7 @@ test.describe('ChangeOrder reviews — the six design states', () => {
     // Sam is not in security-reviewers, and not listed for qa-signoff.
     await mockReviews(page, fx, 'partial', { viewer: 'sam' });
     await openReview(page, fx, { details: false });
-    await expect(statusBox(page).getByTestId('review-not-eligible')).toContainText('does not name you or a group of yours');
+    await expect(statusBox(page).getByTestId('review-not-eligible')).toContainText('You are not a reviewer for this requirement.');
     await expect(page.getByTestId('review-approve')).toHaveCount(0);
     await expect(page.getByTestId('review-form')).toHaveCount(0);
   });
@@ -559,7 +560,7 @@ test.describe('ChangeOrder reviews — the six design states', () => {
     await statusBox(page).getByRole('button', { name: stageCardCopy.review.requestReview }).click();
     const picker = statusBox(page).getByTestId('review-request-picker');
     await expect(picker).toContainText(stageCardCopy.review.requestFrom);
-    await expect(picker).toContainText(stageCardCopy.review.requestHint);
+    await expect(picker.getByRole('checkbox', { name: 'Priya Nair' })).toBeVisible();
     const submit = picker.getByRole('button', { name: stageCardCopy.review.requestSubmit, exact: true });
     await expect(submit).toHaveAttribute('aria-disabled', 'true');
     await picker.getByRole('checkbox', { name: 'Priya Nair' }).check();
@@ -593,14 +594,14 @@ test.describe('ChangeOrder reviews — the six design states', () => {
     const box = statusBox(page);
     // From the server's Caller: where the viewer is an author, with its Unit count.
     await expect(box).toContainText(
-      `You wrote part of this change in ${fx.spacesInStage('staging')[0].slug} (1 of 1 Unit). Your decision is recorded but does not count there.`,
+      `You wrote part of this change in ${fx.spacesInStage('staging')[0].slug} (1 of 1 Unit), so your decision does not count there.`,
     );
     await box.getByTestId('review-approve').click();
     await box.getByTestId('review-reason').fill('Checked it.');
     await box.getByTestId('review-submit').click();
     // A partly counting approval is confirmed, and never says "This completes".
     const effect = page.getByTestId('review-confirm-effect');
-    await expect(effect).toContainText(/Your approval counts on \d+ of \d+ Units?\./);
+    await expect(effect).toContainText(/Counts on \d+ of \d+ Units?\./);
     await expect(effect).not.toContainText('This completes');
     await expect(page.getByTestId('review-confirm-gate-effect')).toHaveCount(0);
   });
@@ -611,7 +612,7 @@ test.describe('ChangeOrder reviews — the six design states', () => {
     await openReview(page, fx, { details: false });
     await expect(statusBox(page)).toContainText(stageCardCopy.review.wouldNotCount);
     await expect(page.getByTestId('review-approve')).toHaveCount(0);
-    await expect(page.getByTestId('stage-card')).not.toContainText('authors may approve here');
+    await expect(page.getByTestId('stage-card')).not.toContainText('Authors may approve here.');
   });
 
   test('a decision from another ChangeOrder says so; history names the reviewed stage and the gate', async ({ page }) => {
@@ -641,7 +642,7 @@ test.describe('ChangeOrder reviews — the six design states', () => {
     await openReview(page, fx, { details: false });
     const box = statusBox(page);
     await expect(box).toContainText('Priya Nair');
-    await expect(box).not.toContainText('cannot list group members');
+    await expect(box).not.toContainText('Members of these groups can approve.');
   });
 
   test('"Ready to promote" only when every server gate is satisfied; else "Reviews complete"', async ({ page }) => {
@@ -651,12 +652,12 @@ test.describe('ChangeOrder reviews — the six design states', () => {
     await expect(band).toContainText('can be promoted');
     await expect(page.getByRole('region', { name: 'ChangeOrder summary' })).toContainText('Ready to promote');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'ready');
-    // "Go to promote" leads to Promote, so it is Promote's colour: the theme primary.
+    // "Go to promote" leads to Promote, so it is Promote's purple.
     const goToPromote = page.locator('[data-review-cta="promote"]');
     await expect(goToPromote).toHaveText('Go to promote');
-    await expect(goToPromote).toHaveCSS('background-color', PRIMARY);
+    await expect(goToPromote).toHaveCSS('background-color', PURPLE);
     await goToPromote.hover();
-    await expect(goToPromote).toHaveCSS('background-color', PRIMARY_DARK);
+    await expect(goToPromote).toHaveCSS('background-color', PURPLE_HOVER);
     await page.mouse.move(0, 0);
 
     await page.unrouteAll({ behavior: 'ignoreErrors' });
@@ -676,7 +677,7 @@ test.describe('ChangeOrder reviews — the six design states', () => {
     // A skipped Unit shows the server's Message first; without one, words for its code; never the bare code (#5788).
     const skipped = page.locator('[data-coverage="skipped"]');
     await expect(skipped.filter({ hasText: 'app' })).toContainText('Skipped. Not changed in this Space.');
-    await expect(skipped.filter({ hasText: 'worker' })).toContainText('Skipped. It has no Target, so it is never released.');
+    await expect(skipped.filter({ hasText: 'worker' })).toContainText('Skipped. No Target, so never released.');
     await expect(skipped).not.toContainText(['NoRevision']);
     await expect(skipped.filter({ hasText: 'worker' })).not.toContainText('NoTarget');
     await statusBox(page).getByTestId('review-approve').click();
@@ -718,7 +719,7 @@ test.describe('ChangeOrder reviews — the six design states', () => {
     const coverage = page.locator('[data-testid="review-coverage"][data-coverage-type="Approval"]');
     const notNeeded = coverage.locator('[data-coverage="not-needed"]');
     await expect(notNeeded).toHaveCount(1, { timeout: 20000 });
-    await expect(notNeeded).toContainText('Not needed: the change did not touch this Unit.');
+    await expect(notNeeded).toContainText('Not touched by the change.');
     const counted = await coverage.locator('[data-coverage="covered"]').count();
     const units = `${counted} ${counted === 1 ? 'Unit' : 'Units'}`;
     await expect(coverage).toContainText(`Covers ${units} in`);

@@ -6,7 +6,7 @@
 
 import { type ReactNode, useEffect, useMemo, useRef } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink } from 'react-router-dom';
 
 import { CopyToClipboard } from '@/components/copy-to-clipboard/CopyToClipboard';
 import { LabelTextField } from '@/components/label-text-field/LabelTextField';
@@ -27,12 +27,13 @@ import { setAlert } from '@/state/slices/alert';
 import { formatRelative } from '@/utility/date-format';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import { isIDInvalid } from '@/utility/validation-functions';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import FormControl from '@mui/material/FormControl';
+import IconButton from '@mui/material/IconButton';
 import Grid from '@mui/material/Grid2';
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
@@ -96,7 +97,6 @@ export const UnitSettingsForm = ({
   onUnitUpdated,
   actions,
 }: UnitSettingsFormProps) => {
-  const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const unit = extendedUnit.Unit;
 
@@ -194,12 +194,15 @@ export const UnitSettingsForm = ({
                 isIDInvalid(unit?.UpstreamUnitID) ? null : (
                   <>
                     <CopyToClipboard text={unit?.UpstreamUnitID || ''} />
-                    <OpenInNewIcon
-                      sx={{ color: 'text.secondary', cursor: 'pointer' }}
-                      onClick={() =>
-                        navigate(`/units/${unit?.UpstreamSpaceID}/${unit?.UpstreamUnitID}`)
-                      }
-                    />
+                    <IconButton
+                      size='small'
+                      component={RouterLink}
+                      to={`/units/${unit?.UpstreamSpaceID}/${unit?.UpstreamUnitID}`}
+                      aria-label='Open upstream Unit'
+                      title='Open upstream Unit'
+                    >
+                      <ArrowForwardIcon fontSize='small' />
+                    </IconButton>
                   </>
                 )
               }

@@ -85,12 +85,12 @@ export function railDot(state: ChangeOrderStageState, isNext: boolean, passed: b
     case 'released':
       return done;
     case 'in-progress':
-      return { Icon: AutorenewIcon, bg: changeOrderStatus.accentSoft, border: changeOrderStatus.accentLine, color: changeOrderStatus.accent };
+      return { Icon: AutorenewIcon, bg: changeOrderStatus.progressSoft, border: changeOrderStatus.progressLine, color: changeOrderStatus.progress };
     case 'gated':
       return { Icon: WarningAmberOutlinedIcon, bg: changeOrderStatus.dangerSoft, border: changeOrderKindLine.unknown, color: changeOrderStatus.danger };
     case 'waiting':
       return isNext
-        ? { Icon: PlayCircleOutlineIcon, bg: changeOrderStatus.accentSoft, border: changeOrderStatus.accentLine, color: changeOrderStatus.accent }
+        ? { Icon: PlayCircleOutlineIcon, bg: changeOrderStatus.progressSoft, border: changeOrderStatus.progressLine, color: changeOrderStatus.progress }
         : { Icon: LockOutlinedIcon, bg: changeOrderSurface.sunk, border: changeOrderBorder.strong, color: changeOrderInk.subtle };
     case 'unknown':
       return { Icon: LockOutlinedIcon, bg: changeOrderSurface.sunk, border: changeOrderBorder.strong, color: changeOrderInk.subtle };
@@ -116,7 +116,7 @@ export function railDot(state: ChangeOrderStageState, isNext: boolean, passed: b
  * the left draws a plain green tick off promote/release counts — and the
  * node's label ("Complete, unverified") says when health went unchecked.
  *
- * `blocked` takes the accent rather than the danger tone — something is
+ * `blocked` takes the progress blue rather than the danger tone — something is
  * outstanding, which is a thing to do, not a thing that failed.
  *
  * ⚠️ `restored` NEEDS `abandoned` TO DRAW AT ALL, AND THE TONE ALONE CANNOT
@@ -136,7 +136,7 @@ export function completeRailDot(tone: CompleteStepTone, abandoned: boolean): Rai
     case 'degraded':
       return { Icon: WarningAmberOutlinedIcon, bg: changeOrderStatus.dangerSoft, border: changeOrderKindLine.unknown, color: changeOrderStatus.danger };
     case 'blocked':
-      return { Icon: WarningAmberOutlinedIcon, bg: changeOrderStatus.accentSoft, border: changeOrderStatus.accentLine, color: changeOrderStatus.accent };
+      return { Icon: WarningAmberOutlinedIcon, bg: changeOrderStatus.progressSoft, border: changeOrderStatus.progressLine, color: changeOrderStatus.progress };
     case 'restored':
       return {
         Icon: abandoned ? BlockIcon : RestoreIcon,

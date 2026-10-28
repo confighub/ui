@@ -12,13 +12,13 @@ import { cardRepresentativeSpaceId, cardRepresentativeUnits, outcomeGroupKey } f
 import type { ChangeOrderOutcomeGroup, ChangeOrderOutcomeKind } from '../changeOrderOutcome';
 import { ChangeOrderBlockedResources } from '../changeOrderRefusals';
 import {
+  changeOrderAction,
   changeOrderBorder,
   changeOrderCardTokens,
   changeOrderFontMono,
   changeOrderInk,
   changeOrderKindLine,
   changeOrderShape,
-  changeOrderStatus,
   changeOrderSurface,
   changeOrderType,
 } from '../changeOrdersTokens';
@@ -40,7 +40,7 @@ export interface OutcomeGroupCardProps {
   bodyId: string;
   expanded: boolean;
   onToggle: () => void;
-  /** The line under the label. Defaults to the outcome's hint. */
+  /** The line under the label. Nothing is drawn without one. */
   subtitle?: ReactNode;
   /**
    * Content beside the label, such as the members as chips. It may be
@@ -66,7 +66,7 @@ const HEADER_SX = {
 } as const;
 
 /** Drawn inside the header, which the card's `overflow: hidden` would otherwise clip. */
-const FOCUS_RING_INSET = { outline: `2px solid ${changeOrderStatus.accent}`, outlineOffset: '-2px' } as const;
+const FOCUS_RING_INSET = { outline: `2px solid ${changeOrderAction.focus}`, outlineOffset: '-2px' } as const;
 
 const TOGGLE_SX = {
   marginLeft: 'auto',
@@ -101,6 +101,10 @@ export function OutcomeGroupCard({
 }: OutcomeGroupCardProps) {
   const meta = OUTCOME_META[kind];
   const badge = OUTCOME_BADGE[kind];
+  // Nothing to change has no fields to count: its badge says so, rather than "0 fields".
+  const counted = kind !== 'nothing';
+  let unit = '';
+  if (counted) unit = fieldCount === 1 ? 'field' : 'fields';
   const toggleLabel = (
     <>
       {expanded ? 'Hide' : 'Open'}
@@ -140,7 +144,7 @@ export function OutcomeGroupCard({
             textAlign: 'center',
           }}
         >
-          {fieldCount}
+          {counted ? fieldCount : '—'}
         </Box>
         <Box
           data-testid="outcome-group-badge-unit"
@@ -151,7 +155,7 @@ export function OutcomeGroupCard({
             letterSpacing: '.02em',
           }}
         >
-          {fieldCount === 1 ? 'field' : 'fields'}
+          {unit}
         </Box>
       </Box>
       {/*
@@ -179,23 +183,25 @@ export function OutcomeGroupCard({
         >
           {meta.label}
         </Box>
-        <Box
-          sx={{
-            fontSize: changeOrderType.size.small,
-            lineHeight: changeOrderType.lineHeight.body,
-            fontWeight: changeOrderType.weight.regular,
-            color: changeOrderInk.muted,
-          }}
-        >
-          {subtitle ?? meta.hint}
-        </Box>
+        {subtitle === undefined ? null : (
+          <Box
+            sx={{
+              fontSize: changeOrderType.size.small,
+              lineHeight: changeOrderType.lineHeight.body,
+              fontWeight: changeOrderType.weight.regular,
+              color: changeOrderInk.muted,
+            }}
+          >
+            {subtitle}
+          </Box>
+        )}
       </Box>
     </>
   );
   return (
     <Box
       role="group"
-      aria-label={`${fieldCount} changed ${fieldCount === 1 ? 'field' : 'fields'}, ${meta.label}, ${memberCount} ${memberCount === 1 ? 'variant' : 'variants'}`}
+      aria-label={`${counted ? `${fieldCount} changed ${unit}, ` : ''}${meta.label}, ${memberCount} ${memberCount === 1 ? 'variant' : 'variants'}`}
       sx={{
         border: `1px solid ${changeOrderKindLine[kind]}`,
         borderRadius: `${changeOrderCardTokens.radius}px`,
@@ -246,7 +252,7 @@ export function OutcomeGroupCard({
               all: 'unset',
               cursor: 'pointer',
               ...TOGGLE_SX,
-              '&:focus-visible': { outline: `2px solid ${changeOrderStatus.accent}`, outlineOffset: '2px' },
+              '&:focus-visible': { outline: `2px solid ${changeOrderAction.focus}`, outlineOffset: '2px' },
             }}
           >
             {toggleLabel}
@@ -287,7 +293,7 @@ export interface OutcomeGroupCardsProps<TUnit extends { unitId: string; spaceId:
   onToggle: () => void;
   /** One resource row, rendered the same above the blocked block and inside it. Keyed by the caller. */
   renderUnit: (unit: TUnit, card: OutcomeCardContext) => ReactNode;
-  /** The line under a card's label. Defaults to the outcome's hint. */
+  /** The line under a card's label. Nothing is drawn without one. */
   subtitle?: (card: OutcomeCardContext) => ReactNode;
   /** Content beside a card's label, such as the members as chips. */
   headerExtra?: (card: OutcomeCardContext) => ReactNode;

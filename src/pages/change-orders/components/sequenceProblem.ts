@@ -14,7 +14,7 @@ import type { ChangeOrderSequenceProblem } from '../../x/apps/change-order/chang
 export function describeSequenceProblem(problem: ChangeOrderSequenceProblem): string {
   switch (problem.kind) {
     case 'no-workflow':
-      return 'This ChangeOrder has no governing ChangeWorkflow, so no sequence could be built.';
+      return 'No ChangeWorkflow governs this ChangeOrder.';
     case 'stage-selects-nothing':
       return `Stage "${problem.stageName}" selects no Space.`;
   }

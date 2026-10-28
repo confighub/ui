@@ -10,10 +10,13 @@ import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 
+import { getAdapter } from '../../adapters';
 import type { ResourceViewRow } from '../../adapters/resource-row';
+import type { GroupNavRow } from '../../cell-value';
 import { fieldById, type EntityRow } from '../../model/fields';
 import type { EntityKind } from '../../model/types';
 import { type CellActions, TableCellContent } from '../../table/cells/TableCellContent';
+import { ExplorerRowLink } from '../../results/ExplorerRowLink';
 import { toolchainColor } from '../../table/format';
 import { countOf, type OpenModifiers } from '../shared';
 
@@ -48,27 +51,41 @@ function Cell({ entity, name, row, rowId, actions, primary = false }: { entity: 
   );
 }
 
-/** The row's name: the one control that opens it. Its ::after covers the card. */
-function OpenButton({ text, onOpen }: { text: string; onOpen: (e: OpenModifiers) => void }) {
-  return (
-    <ButtonBase
-      className='vx-card-open'
-      data-testid='vx-board-card-open'
-      onClick={(e) => onOpen(e)}
-      disableRipple
-      sx={{
-        minWidth: 0,
-        justifyContent: 'flex-start',
-        font: 'inherit',
-        fontWeight: 700,
-        color: 'text.primary',
-        position: 'static',
-        '& .vx-card-open-text': { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-        '&::after': { content: '""', position: 'absolute', inset: 0, borderRadius: 'inherit', cursor: 'pointer' },
-      }}
-    >
+const openSx = {
+  minWidth: 0,
+  justifyContent: 'flex-start',
+  font: 'inherit',
+  fontWeight: 700,
+  color: 'text.primary',
+  position: 'static',
+  '& .vx-card-open-text': { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  '&::after': { content: '""', position: 'absolute', inset: 0, borderRadius: 'inherit', cursor: 'pointer' },
+} as const;
+
+/**
+ * The row's name: the one control that opens it. Its ::after covers the card.
+ * A link to the row's page where it has one, so the browser offers a new tab.
+ */
+function OpenButton({ entity, row, text, onOpen }: { entity: EntityKind; row: EntityRow; text: string; onOpen: (e: OpenModifiers) => void }) {
+  const button = (
+    <ButtonBase className='vx-card-open' data-testid='vx-board-card-open' onClick={(e) => onOpen(e)} disableRipple sx={openSx}>
       <span className='vx-card-open-text'>{text}</span>
     </ButtonBase>
+  );
+  if (!getAdapter(entity).getRowHref(row as GroupNavRow)) return button;
+  return (
+    <Box component='span' sx={{ display: 'flex', minWidth: 0, '& > a': { display: 'inline-flex', ...openSx } }}>
+      <ExplorerRowLink
+        entity={entity}
+        row={row}
+        onOpen={() => onOpen({ metaKey: false, ctrlKey: false })}
+        openOnSpace
+        className='vx-card-open'
+        data-testid='vx-board-card-open'
+      >
+        <span className='vx-card-open-text'>{text}</span>
+      </ExplorerRowLink>
+    </Box>
   );
 }
 
@@ -118,7 +135,7 @@ export function BoardCard({ entity, row, rowId, actions, labelKeys, onOpen }: Bo
   const cell = (name: string, primary = false) => <Cell entity={entity} name={name} row={row} rowId={rowId} actions={actions} primary={primary} />;
   const nameField = entity === 'Resource' ? 'ResourceName' : 'Slug';
   const name = String(fieldById(entity, nameField)?.value(row) ?? '') || rowId;
-  const open = <OpenButton text={name} onOpen={(e) => onOpen(row, e)} />;
+  const open = <OpenButton entity={entity} row={row} text={name} onOpen={(e) => onOpen(row, e)} />;
 
   let title: ReactNode;
   let meta: ReactNode;
@@ -201,7 +218,11 @@ export function BoardCard({ entity, row, rowId, actions, labelKeys, onOpen }: Bo
         fontSize: 12.5,
         transition: (t) => t.transitions.create(['border-color', 'box-shadow', 'transform'], { duration: 150 }),
         '&:hover': { borderColor: 'grey.400', boxShadow: 'var(--sh-md)', transform: 'translateY(-1px)' },
-        '&:has(.vx-card-open.Mui-focusVisible)': { outline: (t) => `2px solid ${t.palette.primary.main}`, outlineOffset: 1 },
+        '&:has(.vx-card-open.Mui-focusVisible), &:has(a.vx-card-open:focus-visible)': {
+          outline: (t) => `2px solid ${t.palette.primary.main}`,
+          outlineOffset: 1,
+        },
+        '& a.vx-card-open:focus-visible': { outline: 'none' },
         // Values stay clickable above the name's stretched hit area.
         '& [data-column]': { position: 'relative', zIndex: 1 },
         '@media (prefers-reduced-motion: reduce)': { transition: 'none', '&:hover': { transform: 'none' } },

@@ -89,6 +89,12 @@ export interface DraftPreview {
   totals: DraftPreviewTotals | undefined;
   /** No base Unit carries anything under the end. */
   nothingToCarry: boolean;
+  /**
+   * A resolved preview with nothing to show yet, and why, in the page's words ("Nothing changes
+   * yet", "Nothing changes"): the outcome line says it, the stage bars are drawn empty, and the
+   * stage card has no outcome to give. Absent whenever there is an outcome.
+   */
+  idle?: string;
   clones: DraftClone[];
   /** For the stage cards' trees and labels. */
   nameBySpaceId: ReadonlyMap<string, string>;

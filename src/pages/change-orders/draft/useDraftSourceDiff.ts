@@ -14,6 +14,7 @@ import type { ChangeOrderChangeGroup } from '../../x/apps/change-order/changeOrd
 import { useGetDraftSourceDiffQuery } from '../changeOrderImageDiffApi';
 import { carriedResourceKeysOf } from '../changeOrderOutcome';
 import {
+  IMAGE_CHANGES_NONE,
   IMAGE_CHANGES_UNAVAILABLE,
   type ImageChanges,
   imageChangesOfRead,
@@ -174,7 +175,8 @@ export function useDraftSourceDiff(args: {
         reason: undefined,
         retry,
         unitDiffs: [],
-        imageChanges: imageChangesOfRead([], false),
+        // No base Unit carries anything, so there is nothing to read: the change is known empty.
+        imageChanges: IMAGE_CHANGES_NONE,
         sourceGroups: [],
         createdResourceKeys: NO_KEYS,
         carriedResourceKeys: new Set(),

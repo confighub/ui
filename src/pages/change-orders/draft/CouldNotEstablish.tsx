@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 
 import { changeOrderBorder, changeOrderCardTokens, changeOrderInk, changeOrderType } from '../changeOrdersTokens';
@@ -54,7 +55,7 @@ export interface CouldNotEstablishProps {
   retryWhat?: string;
   /** Where focus goes if the retry redraws its button away: a heading or result with `tabIndex={-1}`. */
   focusAfterRetry?: string;
-  /** Why, when the data layer says: the words' title. */
+  /** Why, when the data layer says: an icon after the words, its tooltip and its name. */
   reason?: string;
   /** In a dashed frame of its own, where a section would otherwise stand. */
   framed?: boolean;
@@ -62,8 +63,9 @@ export interface CouldNotEstablishProps {
 }
 
 /**
- * The detail view's word for a value nobody could read, with a way to ask again when asking
- * again can help. Never "nothing changes", never a zero.
+ * The detail view's word for a value nobody could read, with why where the data layer says (an
+ * icon the keyboard reaches, its tooltip and its name the reason), and a way to ask again when
+ * asking again can help. Never "nothing changes", never a zero.
  */
 export function CouldNotEstablish({
   subject,
@@ -89,7 +91,7 @@ export function CouldNotEstablish({
       data-testid={testId}
       sx={{ ...frame, alignItems: 'center', gap: '4px', fontSize: changeOrderType.size.body, color: changeOrderInk.muted }}
     >
-      <span title={reason}>
+      <span>
         {subject === undefined ? null : (
           <>
             <Box component="b" sx={{ color: changeOrderInk.default, fontWeight: changeOrderType.weight.semibold }}>
@@ -99,6 +101,20 @@ export function CouldNotEstablish({
         )}
         {draftCopy.couldNotEstablish}
       </span>
+      {reason === undefined ? null : (
+        <Tooltip title={reason} enterDelay={TOOLTIP_DELAY_MS}>
+          <Box
+            component="span"
+            tabIndex={0}
+            role="img"
+            aria-label={reason}
+            data-testid="draft-reason"
+            sx={{ display: 'inline-grid', placeItems: 'center', borderRadius: '3px', color: changeOrderInk.subtle, cursor: 'default', '&:focus-visible': FOCUS_RING }}
+          >
+            <InfoOutlinedIcon aria-hidden sx={{ fontSize: 14 }} />
+          </Box>
+        </Tooltip>
+      )}
       {onRetry === undefined ? null : <RetryButton onRetry={onRetry} label={draftCopy.retry(retryWhat ?? '')} focusAfter={focusAfterRetry} />}
     </Box>
   );

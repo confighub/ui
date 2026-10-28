@@ -102,7 +102,7 @@ export function StageStateBox(props: StageStateBoxProps) {
         <CopyText parts={h.gateWaiting(state.waitFor, prev?.name, state.gates[0]?.name ?? '')} codeInherit />,
         <>
           <GateReasons gates={state.gates} links={links} gateSpaces={props.gateSpaces} />
-          <StatusText>{b.gateWait(props.gateCheckedAt, state.gates.length)}</StatusText>
+          {props.gateCheckedAt !== undefined ? <StatusText>{b.gateWait(props.gateCheckedAt)}</StatusText> : null}
           {prev !== undefined && state.waitFor !== 'healthy' ? (
             <StatusActions>
               <GoToNext next={{ name: prev.name, href: links.resolvers.hrefForStage(prev.stageId) }} label={b.goToPrevious(prev.name)} testId="stage-go-previous" />

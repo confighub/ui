@@ -10,14 +10,15 @@ import { InitiativeKanbanCard } from './InitiativeKanbanCard';
 interface DraggableCardProps {
   initiative: Initiative;
   isSelected: boolean;
-  onSelect: () => void;
-  onEdit: () => void;
   onDelete: () => void;
   onStatusChange: (status: InitiativeStatus) => void;
 }
 
-export const DraggableCard = ({ initiative, isSelected, onSelect, onEdit, onDelete, onStatusChange }: DraggableCardProps) => {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+export const DraggableCard = ({ initiative, isSelected, onDelete, onStatusChange }: DraggableCardProps) => {
+  // dnd-kit's `attributes` are left off: they make the wrapper a focusable button (role, tabIndex,
+  // aria-pressed) and describe keyboard dragging, but only the pointer sensor is registered. The
+  // card's link and menu button are the controls a keyboard reaches.
+  const { listeners, setNodeRef, isDragging } = useDraggable({
     id: initiative.id,
   });
 
@@ -25,7 +26,6 @@ export const DraggableCard = ({ initiative, isSelected, onSelect, onEdit, onDele
     <Box
       ref={setNodeRef}
       {...listeners}
-      {...attributes}
       sx={{
         opacity: isDragging ? 0.3 : 1,
         cursor: 'grab',
@@ -37,8 +37,6 @@ export const DraggableCard = ({ initiative, isSelected, onSelect, onEdit, onDele
       <InitiativeKanbanCard
         initiative={initiative}
         isSelected={isSelected}
-        onSelect={onSelect}
-        onEdit={onEdit}
         onDelete={onDelete}
         onStatusChange={onStatusChange}
       />

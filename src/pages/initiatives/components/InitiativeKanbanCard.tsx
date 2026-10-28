@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { useState } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 
 import { useListAllUnitsQuery } from '@confighub/rtk-query';
 import type { Initiative, InitiativeStatus } from '@/types/initiative';
 import { PRIORITY_COLORS } from '@/types/initiative';
 import { getInitiativeStatus } from '@/pages/initiatives/utils/deriveInitiativeStatus';
+import { NavLink } from '@/components/nav-link/NavLink';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
@@ -30,13 +32,11 @@ import dayjs from 'dayjs';
 interface InitiativeKanbanCardProps {
   initiative: Initiative;
   isSelected?: boolean;
-  onSelect: () => void;
-  onEdit: () => void;
   onDelete: () => void;
   onStatusChange: (status: InitiativeStatus) => void;
 }
 
-export const InitiativeKanbanCard = ({ initiative, isSelected = false, onSelect, onEdit, onDelete, onStatusChange }: InitiativeKanbanCardProps) => {
+export const InitiativeKanbanCard = ({ initiative, isSelected = false, onDelete, onStatusChange }: InitiativeKanbanCardProps) => {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
 
   const status = getInitiativeStatus(initiative);
@@ -75,7 +75,6 @@ export const InitiativeKanbanCard = ({ initiative, isSelected = false, onSelect,
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
     setMenuAnchor(null);
-    onEdit();
   };
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -92,6 +91,7 @@ export const InitiativeKanbanCard = ({ initiative, isSelected = false, onSelect,
         borderRadius: '8px',
         border: isSelected ? '2px solid' : '1px solid',
         borderColor: isSelected ? 'primary.main' : 'divider',
+        position: 'relative',
         transition: 'all 0.2s ease-in-out',
         cursor: 'pointer',
         '&:hover': {
@@ -99,16 +99,39 @@ export const InitiativeKanbanCard = ({ initiative, isSelected = false, onSelect,
           boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.08)',
           transform: 'translateY(-1px)',
         },
+        '& .initiative-card-link::after': {
+          content: '""',
+          position: 'absolute',
+          inset: 0,
+        },
+        '&:has(.initiative-card-link:focus-visible)': {
+          outline: '2px solid',
+          outlineColor: 'primary.main',
+          outlineOffset: 2,
+        },
       }}
-      onClick={onSelect}
     >
       <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
         {/* Header: name + menu */}
         <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 0.5 }}>
           <Typography variant='subtitle2' fontWeight={600} sx={{ flex: 1, mr: 0.5, lineHeight: 1.3 }}>
-            {initiative.name}
+            {/* Stretched over the card so the whole card is the link. draggable={false}
+                keeps the browser's own link drag from taking over the dnd-kit drag. */}
+            <NavLink
+              to={`/x/initiatives/${initiative.id}`}
+              className='initiative-card-link'
+              draggable={false}
+              style={{ outline: 'none' }}
+            >
+              {initiative.name}
+            </NavLink>
           </Typography>
-          <IconButton size='small' onClick={handleMenuOpen} sx={{ mt: -0.5, mr: -0.5 }}>
+          <IconButton
+            size='small'
+            aria-label='Initiative actions'
+            onClick={handleMenuOpen}
+            sx={{ mt: -0.5, mr: -0.5, position: 'relative', zIndex: 1 }}
+          >
             <MoreVertIcon fontSize='small' />
           </IconButton>
         </Box>
@@ -151,6 +174,9 @@ export const InitiativeKanbanCard = ({ initiative, isSelected = false, onSelect,
               size='small'
               title='Failures block Apply with ValidationErrors'
               sx={{
+                // Above the card's stretched link, so that its tooltip shows on hover.
+                position: 'relative',
+                zIndex: 1,
                 fontWeight: 700,
                 fontSize: '0.65rem',
                 letterSpacing: 0.5,
@@ -214,7 +240,7 @@ export const InitiativeKanbanCard = ({ initiative, isSelected = false, onSelect,
             <ListItemText>Move to Draft</ListItemText>
           </MenuItem>
         )}
-        <MenuItem onClick={handleEdit}>
+        <MenuItem component={RouterLink} to={`/x/initiatives/${initiative.id}/edit`} onClick={handleEdit}>
           <ListItemIcon><EditIcon fontSize='small' /></ListItemIcon>
           <ListItemText>Edit</ListItemText>
         </MenuItem>

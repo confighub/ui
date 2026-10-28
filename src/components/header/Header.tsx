@@ -1,6 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { useState } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 
 import { DropdownMenu } from '@/components/dropdown-menu/DropdownMenu';
 import { NavLink } from '@/components/nav-link/NavLink';
@@ -68,6 +69,8 @@ export interface HeaderProps {
   actions?: React.ReactNode;
   /** Optional add button click. */
   onAddButtonClick?: () => void;
+  /** Optional page the add button links to. Use instead of `onAddButtonClick` when the button only navigates. */
+  addButtonTo?: string;
   /** Optional delete button click. */
   onDeleteButtonClicked?: () => void;
   /** Optional customizable delete button. */
@@ -104,6 +107,7 @@ export const Header = ({
   addButtonText,
   deleteButtonText,
   onAddButtonClick,
+  addButtonTo,
   onDeleteButtonClicked,
   actions,
   deleteButton,
@@ -136,15 +140,28 @@ export const Header = ({
       {addButton}
       {addButtonText && (
         <Box>
-          <Button
-            variant='contained'
-            size='small'
-            color='primary'
-            data-testid='header-add-button'
-            onClick={() => onAddButtonClick?.()}
-          >
-            {addButtonText}
-          </Button>
+          {addButtonTo ? (
+            <Button
+              variant='contained'
+              size='small'
+              color='primary'
+              data-testid='header-add-button'
+              component={RouterLink}
+              to={addButtonTo}
+            >
+              {addButtonText}
+            </Button>
+          ) : (
+            <Button
+              variant='contained'
+              size='small'
+              color='primary'
+              data-testid='header-add-button'
+              onClick={() => onAddButtonClick?.()}
+            >
+              {addButtonText}
+            </Button>
+          )}
         </Box>
       )}
       {editButton}

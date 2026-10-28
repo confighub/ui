@@ -27,11 +27,17 @@ const tokens = {
   t3: '#8e9aaa',
   t4: '#bcc6d0',
 
-  // Brand — action signal only, never for status
+  // Brand — action, selection and focus; never for status
   rust: '#ba3d03',
   rustDark: '#8c2c00',
   rustBg: 'rgba(186,61,3,0.055)',
+  // A soft halo or chip border. 1.31:1 on white, so never a focus indicator on its own.
   rustRing: 'rgba(186,61,3,0.18)',
+  // Opaque selected/pressed ground and border, for surfaces that must not composite.
+  rustSoft: '#fdece3',
+  rustLine: '#f0b99a',
+  // Keyboard focus outline: 2px solid, 5.59:1 on #ffffff and 5.31:1 on #f8f9fb.
+  rustFocus: '#ba3d03',
 
   // Semantic — success/ready
   green: '#15803d',
@@ -64,6 +70,8 @@ const tokens = {
   shMd: '0 4px 12px rgba(0,0,0,0.07),0 1px 3px rgba(0,0,0,0.04)',
   shLg: '0 8px 24px rgba(0,0,0,0.08),0 2px 6px rgba(0,0,0,0.04)',
   shSel: '0 0 0 2px #ba3d03,0 8px 24px rgba(186,61,3,0.09)',
+  // Selected / pressed: a ring that changes colour without changing the border width.
+  shSelInset: 'inset 0 0 0 1.5px #ba3d03',
 
   // Radius
   rSm: 5,
@@ -799,6 +807,9 @@ const globalTokenStyles = {
     '--rust-dark': tokens.rustDark,
     '--rust-bg': tokens.rustBg,
     '--rust-ring': tokens.rustRing,
+    '--rust-soft': tokens.rustSoft,
+    '--rust-line': tokens.rustLine,
+    '--rust-focus': tokens.rustFocus,
     '--green': tokens.green,
     '--green-bg': tokens.greenBg,
     '--green-bd': tokens.greenBd,
@@ -819,6 +830,7 @@ const globalTokenStyles = {
     '--sh-md': tokens.shMd,
     '--sh-lg': tokens.shLg,
     '--sh-sel': tokens.shSel,
+    '--sh-sel-inset': tokens.shSelInset,
     '--r-sm': `${tokens.rSm}px`,
     '--r-md': `${tokens.rMd}px`,
     '--r-pill': `${tokens.rPill}px`,

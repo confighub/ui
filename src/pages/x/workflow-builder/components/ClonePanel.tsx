@@ -27,6 +27,8 @@
  * Presentation only. The Spaces, the request and its outcome come from outside.
  */
 
+import { Link } from 'react-router-dom';
+
 import { SpacePicker } from './SpacePicker';
 import type { SpaceOption } from './SpacePicker';
 
@@ -48,7 +50,7 @@ interface ClonePanelProps {
   /** Set when the copy was refused, in the server's own words. */
   error: string | null;
   /** Set once the copy exists, so it can be opened instead of leaving this one. */
-  clonedTo: { spaceSlug: string; open: () => void } | null;
+  clonedTo: { spaceSlug: string; href: string } | null;
   onConfirm: () => void;
   onCancel: () => void;
   /** Said under the destination control. Defaults to the in-workflow wording. */
@@ -69,9 +71,9 @@ export function ClonePanel(props: ClonePanelProps) {
       <div className='clonepanel' role='status'>
         <p className='prose'>{confirmedText(clonedTo.spaceSlug)}</p>
         <div className='rowbtns'>
-          <button className='btn sm' type='button' data-act='openclone' onClick={clonedTo.open}>
+          <Link className='btn sm' data-act='openclone' to={clonedTo.href}>
             Open the copy
-          </button>
+          </Link>
           <button className='btn sm' type='button' onClick={props.onCancel}>
             Stay here
           </button>

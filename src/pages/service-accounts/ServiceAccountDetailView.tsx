@@ -435,7 +435,7 @@ function GrantsTable({
                     component={RouterLink}
                     to={grant.href}
                     title={grant.displayName ?? grant.name}
-                    sx={{ fontFamily: T.mono, fontSize: 12.5, fontWeight: 600, color: T.accentInk, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', '&:hover': { textDecoration: 'underline' } }}
+                    sx={{ fontFamily: T.mono, fontSize: 12.5, fontWeight: 600, color: T.action, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', '&:hover': { textDecoration: 'underline' } }}
                   >
                     {grant.name}
                   </Box>

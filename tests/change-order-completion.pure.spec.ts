@@ -155,7 +155,7 @@ test('a console row is Complete only when the final prerequisites hold', () => {
 test('a final prerequisite that is not about health still reports as held', () => {
   const held = consoleRow(FINAL_RELEASED, HEALTHY, LAST_STAGE, { released: [DEV] });
   expect(held.state).toBe('blocked');
-  expect(held.blocker).toMatch(/final prerequisites are not satisfied/);
+  expect(held.blocker).toMatch(/Final prerequisites are not satisfied/);
 });
 
 /*
@@ -205,7 +205,7 @@ test('a last stage reporting nothing at all reads Complete, unverified', () => {
   const unverified = consoleRow(NO_FINAL, null, COMPLETED);
   expect(unverified.state).toBe('complete-unverified');
   expect(unverified.blocker).not.toBe('No blocker.');
-  expect(unverified.blocker).toMatch(/no health check on its last stage/);
+  expect(unverified.blocker).toMatch(/health not checked/);
   expect(unverified.stages.at(-1)?.segmentTone).toBe('done');
 });
 

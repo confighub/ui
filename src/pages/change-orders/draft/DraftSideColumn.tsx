@@ -6,8 +6,8 @@ import { memo, type Ref } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Skeleton from '@mui/material/Skeleton';
-import Tooltip from '@mui/material/Tooltip';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import ScienceOutlinedIcon from '@mui/icons-material/ScienceOutlined';
 
 import { VISUALLY_HIDDEN_SX } from '@/utility/visually-hidden';
@@ -15,7 +15,7 @@ import { VISUALLY_HIDDEN_SX } from '@/utility/visually-hidden';
 import { componentTheme } from '../../x/apps/componentTheme';
 import { OutcomeBar } from '../components/OutcomeBar';
 import { OUTCOME_META, outcomeSegments, type OutcomeBarSegment } from '../components/outcomeMeta';
-import { changeOrderFontMono, changeOrderInk, changeOrderShape, changeOrderStatus, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
+import { changeOrderAction, changeOrderFontMono, changeOrderInk, changeOrderShape, changeOrderStatus, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
 import { CouldNotEstablish, RetryButton as CouldNotEstablishRetry } from './CouldNotEstablish';
 import { draftCopy } from './draftCopy';
 import { BARE_BUTTON, DRAFT_TRANSITION, FOCUS_RING } from './draftLook';
@@ -36,31 +36,27 @@ export interface CreateButtonProps {
 /** The Create button: the detail view's Promote purple, at the theme's standard 32px height as the page's one primary action. */
 export function CreateButton({ canCreate, isCreating, onCreate, describedBy }: CreateButtonProps) {
   const disabled = !canCreate || isCreating;
-  // A disabled button takes no pointer events, so its wrapper holds the tooltip. The tooltip
-  // describes; the button keeps its own name.
   return (
-    <Tooltip title={copy.createTip} enterDelay={400} describeChild>
-      <Box component="span" sx={{ display: 'inline-flex', cursor: disabled ? 'not-allowed' : undefined }}>
-        <Button
-          variant="contained"
-          disabled={disabled}
-          onClick={onCreate}
-          aria-describedby={describedBy}
-          data-testid="draft-create"
-          sx={{
-            backgroundColor: componentTheme.done,
-            '&:hover': { backgroundColor: componentTheme.doneEmphasis },
-            '&.Mui-disabled': { backgroundColor: componentTheme.upgradeSkeleton, color: changeOrderInk.subtle },
-            '&:focus-visible': FOCUS_RING,
-            transition: DRAFT_TRANSITION,
-            '&:active': { transform: 'scale(.98)' },
-            '@media (prefers-reduced-motion: reduce)': { '&:active': { transform: 'none' } },
-          }}
-        >
-          {isCreating ? copy.creating : copy.create}
-        </Button>
-      </Box>
-    </Tooltip>
+    <Box component="span" sx={{ display: 'inline-flex', cursor: disabled ? 'not-allowed' : undefined }}>
+      <Button
+        variant="contained"
+        disabled={disabled}
+        onClick={onCreate}
+        aria-describedby={describedBy}
+        data-testid="draft-create"
+        sx={{
+          backgroundColor: componentTheme.promote,
+          '&:hover': { backgroundColor: componentTheme.promoteEmphasis },
+          '&.Mui-disabled': { backgroundColor: componentTheme.upgradeSkeleton, color: changeOrderInk.subtle },
+          '&:focus-visible': FOCUS_RING,
+          transition: DRAFT_TRANSITION,
+          '&:active': { transform: 'scale(.98)' },
+          '@media (prefers-reduced-motion: reduce)': { '&:active': { transform: 'none' } },
+        }}
+      >
+        {isCreating ? copy.creating : copy.create}
+      </Button>
+    </Box>
   );
 }
 
@@ -82,8 +78,9 @@ export interface BlockerProps {
 }
 
 /**
- * Why Create cannot run. "↑ Fix the name" is a link to the row that says so; a problem with no
- * row of its own (the create itself failed) is said in plain words, with nowhere to go.
+ * Why Create cannot run. "↑ Fix the name" takes the keyboard to what fixes it; a problem with no
+ * place of its own on the card (the create itself failed) is said in plain words, with nowhere
+ * to go.
  */
 export function Blocker({ blocker, id, onFocus, onRetry, alreadySaid = false }: BlockerProps) {
   const text = { fontSize: changeOrderType.size.small, fontWeight: changeOrderType.weight.semibold, whiteSpace: 'nowrap' } as const;
@@ -94,19 +91,55 @@ export function Blocker({ blocker, id, onFocus, onRetry, alreadySaid = false }: 
       </Box>
     );
   }
-  if (blocker.row === 'create') {
+  if (blocker.row === 'create' && blocker.detail === undefined && blocker.source === 'server' && RETRYABLE_BLOCKERS.has(blocker.code)) {
     return (
       <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
         <Box
           id={id}
           component="span"
           tabIndex={-1}
-          // The design's reason line: small and quiet, not a link.
+          // A dry run that did not answer: small and quiet, with its retry.
           sx={{ fontSize: 11.5, whiteSpace: 'nowrap', color: changeOrderInk.subtle, outline: 'none' }}
         >
           {blocker.message}
         </Box>
-        {onRetry === undefined || !RETRYABLE_BLOCKERS.has(blocker.code) ? null : <CouldNotEstablishRetry onRetry={onRetry} label={draftCopy.retry(draftCopy.page.retryWhat.createDryRun)} focusAfter={id} />}
+        {onRetry === undefined ? null : <CouldNotEstablishRetry onRetry={onRetry} label={draftCopy.retry(draftCopy.page.retryWhat.createDryRun)} focusAfter={id} />}
+      </Box>
+    );
+  }
+  if (blocker.row === 'create') {
+    // Create itself failed: said in the error style, what failed first, then what it left behind.
+    return (
+      <Box
+        id={id}
+        role="alert"
+        tabIndex={-1}
+        data-testid="draft-create-failed"
+        sx={{
+          display: 'flex',
+          gap: '6px',
+          alignItems: 'flex-start',
+          maxWidth: 232,
+          padding: '2px 0 2px 9px',
+          boxShadow: `inset ${changeOrderShape.leadingEdge}px 0 0 ${changeOrderStatus.danger}`,
+          fontSize: changeOrderType.size.small,
+          lineHeight: changeOrderType.lineHeight.body,
+          color: changeOrderStatus.danger,
+          outline: 'none',
+          '&:focus-visible': FOCUS_RING,
+        }}
+      >
+        <ErrorOutlineIcon aria-hidden sx={{ fontSize: 15, marginTop: '1px', flex: 'none' }} />
+        <Box component="span" sx={{ minWidth: 0 }}>
+          <Box component="span" sx={{ display: 'block', fontWeight: changeOrderType.weight.semibold }}>
+            {blocker.message}
+          </Box>
+          {blocker.detail === undefined ? null : (
+            <Box component="span" data-testid="draft-create-failed-detail" sx={{ display: 'block', color: changeOrderInk.muted }}>
+              {blocker.detail}
+            </Box>
+          )}
+        </Box>
       </Box>
     );
   }
@@ -123,7 +156,7 @@ export function Blocker({ blocker, id, onFocus, onRetry, alreadySaid = false }: 
         display: 'inline-flex',
         alignItems: 'center',
         gap: '4px',
-        color: changeOrderStatus.accent,
+        color: changeOrderAction.ink,
         borderRadius: '4px',
         padding: '0 2px',
         '&:hover': { textDecoration: 'underline', textUnderlineOffset: '2px' },
@@ -131,7 +164,7 @@ export function Blocker({ blocker, id, onFocus, onRetry, alreadySaid = false }: 
       }}
     >
       <ArrowUpwardIcon aria-hidden sx={{ fontSize: 15 }} />
-      {draftCopy.page.blockers[blocker.row]}
+      {blocker.blockerLabel ?? draftCopy.page.blockers[blocker.row]}
     </Box>
   );
 }
@@ -143,10 +176,11 @@ interface StageRow {
   segments: OutcomeBarSegment[];
 }
 
-/** "prod: 2 differs, 3 same change" — the bar, read out. */
+/** "prod, 5 variants: 2 differs, 3 same change" — the bar, read out. */
 function stageLabel(row: StageRow): string {
   if (row.count === undefined) return row.name;
-  return `${row.name}: ${row.segments.map((segment) => `${segment.count} ${OUTCOME_META[segment.kind].label.toLowerCase()}`).join(', ')}`;
+  if (row.segments.length === 0) return copy.stageIdle(row.name, row.count);
+  return `${row.name}, ${draftCopy.path.variants(row.count)}: ${row.segments.map((segment) => `${segment.count} ${OUTCOME_META[segment.kind].label.toLowerCase()}`).join(', ')}`;
 }
 
 export interface DraftSideColumnProps {
@@ -168,20 +202,39 @@ export interface DraftSideColumnProps {
   ctaRef: Ref<HTMLDivElement>;
 }
 
+interface StageTrackProps {
+  row: StageRow;
+}
+
+/** A stage's bar: its outcomes; an empty track while there are none to show; its shape while they are read. */
+function StageTrack({ row }: StageTrackProps) {
+  if (row.count === undefined) return <Skeleton variant="rounded" height={8} sx={{ borderRadius: `${changeOrderShape.radius.sm}px` }} />;
+  if (row.segments.length === 0) return <Box data-testid="draft-stage-track-empty" sx={{ height: 8, borderRadius: `${changeOrderShape.radius.sm}px`, background: changeOrderSurface.inset }} />;
+  return <OutcomeBar segments={row.segments} height={8} />;
+}
+
 export const DRAFT_BLOCKER_ID = 'draft-blocker-side';
 /** The column's heading: where focus goes when a retry redraws its button away. */
 const DRY_RUN_HEADING_ID = 'draft-dry-run-heading';
 
 /** What the live region says once the dry run has settled, or failed. */
-function liveSentence(preview: DraftPreview, outsideNames: readonly string[]): string {
+function liveSentence(preview: DraftPreview, outsideNames: readonly string[], blocker: DraftProblem | undefined): string {
+  if (preview.status === 'resolved' && preview.idle !== undefined) {
+    // No count to give: say why, and what Create waits for.
+    const waits = blocker === undefined ? '' : `. ${blocker.blockerLabel ?? blocker.message}`;
+    return `${copy.sentenceIdle(preview.idle)}${waits}`;
+  }
+  if (preview.status === 'resolved' && preview.totals === undefined) return blocker === undefined ? '' : copy.sentenceIdle(blocker.message);
   if (preview.status === 'resolved') return dryRunSentence(preview, outsideNames);
-  if (preview.status === 'failed') return copy.sentenceFailed;
-  return '';
+  if (preview.status === 'loading') return '';
+  // Failed, or nothing to establish (MergeUnits, no variant in scope, an end that names nothing):
+  // said once it settles, with the reason when there is one, as the card shows it.
+  return preview.reason === undefined ? copy.sentenceFailed : `${copy.sentenceFailed}. ${preview.reason}`;
 }
 
 /**
  * The right column: the dry run as one bar per stage (each selects its stage below), and Create.
- * The figure the eye reads is the ledger's "N of M same"; this column keeps the stages and the
+ * The figure the eye reads is the outcome line's "N of M same"; this column keeps the stages and the
  * action, and says the settled dry run once to a screen reader.
  */
 export const DraftSideColumn = memo(function DraftSideColumn({
@@ -200,15 +253,20 @@ export const DraftSideColumn = memo(function DraftSideColumn({
   ctaRef,
 }: DraftSideColumnProps) {
   const resolved = preview.status === 'resolved';
-  const rows: StageRow[] = resolved
-    ? preview.stages.map((stage) => ({
+  // Nothing to show yet: each stage drawn with its variants and an empty track.
+  const idle = resolved && preview.idle !== undefined;
+  const idleCount = (name: string) => preview.sequence?.stages.find((stage) => stage.id === name)?.spaceIds.length ?? 0;
+  let rows: StageRow[];
+  if (idle) rows = stageNames.map((name) => ({ stageId: name, name, count: idleCount(name), segments: [] }));
+  else if (resolved)
+    rows = preview.stages.map((stage) => ({
         stageId: stage.stageId,
-        name: stage.stageId === DRAFT_SCOPE_STAGE_ID ? draftCopy.page.ledger.scope.toLowerCase() : stage.stageId,
+        name: stage.stageId === DRAFT_SCOPE_STAGE_ID ? draftCopy.page.scope.title.toLowerCase() : stage.stageId,
         count: stage.spaceIds.length,
         // Worst first, as the detail view orders a stage's outcomes.
         segments: outcomeSegments(stage.outcome.groups),
-      }))
-    : stageNames.map((name) => ({ stageId: name, name, count: undefined, segments: [] }));
+      }));
+  else rows = stageNames.map((name) => ({ stageId: name, name, count: undefined, segments: [] }));
   const failed = preview.status === 'failed' || preview.status === 'unavailable';
 
   return (
@@ -224,7 +282,7 @@ export const DraftSideColumn = memo(function DraftSideColumn({
         {copy.dryRun}
       </Box>
       <Box role="status" aria-live="polite" sx={VISUALLY_HIDDEN_SX}>
-        {liveSentence(preview, outsideNames)}
+        {liveSentence(preview, outsideNames, blocker)}
       </Box>
       {failed ? (
         <Box sx={{ marginTop: '12px' }}>
@@ -265,11 +323,7 @@ export const DraftSideColumn = memo(function DraftSideColumn({
               <Box component="span" translate="no" sx={{ fontFamily: changeOrderFontMono, fontSize: changeOrderType.size.small, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {row.name}
               </Box>
-              {row.count === undefined ? (
-                <Skeleton variant="rounded" height={8} sx={{ borderRadius: `${changeOrderShape.radius.sm}px` }} />
-              ) : (
-                <OutcomeBar segments={row.segments} height={8} />
-              )}
+              <StageTrack row={row} />
               <Box component="span" sx={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: changeOrderInk.subtle }}>
                 {row.count ?? ''}
               </Box>

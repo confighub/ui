@@ -39,7 +39,7 @@ export function SummaryCard({
   cloneFlow,
   destinationSpaces,
   destinationSpacesStatus,
-  onOpenClone,
+  cloneHref,
   neverSaved,
   pendingSpaceId,
   onPendingSpaceChange,
@@ -55,8 +55,8 @@ export function SummaryCard({
       Space yet for a first Save to write into. */
   neverSaved: boolean;
   destinationSpacesStatus: 'loading' | 'ready' | 'failed';
-  /** Which workflow to open. Held by the page, same as the console's own `onOpen`. */
-  onOpenClone: (changeWorkflowId: string) => void;
+  /** The page of a workflow. Held by the page, same as the console's own `workflowHref`. */
+  cloneHref: (changeWorkflowId: string) => string;
   /** The Space a blank draft will be created in, chosen at first Save rather
       than upfront. Empty until picked; meaningless when `neverSaved` is false. */
   pendingSpaceId: string;
@@ -324,7 +324,7 @@ export function SummaryCard({
         error={cloneFlow.error}
         clonedTo={
           cloneFlow.clonedTo
-            ? { spaceSlug: cloneFlow.clonedTo.spaceSlug, open: () => onOpenClone(cloneFlow.clonedTo!.changeWorkflowId) }
+            ? { spaceSlug: cloneFlow.clonedTo.spaceSlug, href: cloneHref(cloneFlow.clonedTo.changeWorkflowId) }
             : null
         }
         onConfirm={cloneFlow.confirm}

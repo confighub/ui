@@ -94,7 +94,7 @@ export const changeOrderCopy = {
   // ── Empty states. Honest, and each says what to do about it. ──
   emptyNoStages: {
     title: 'No stage of this ChangeOrder selects any Space',
-    body: 'Every stage of the governing ChangeWorkflow resolved to zero Spaces. Check the WhereSpace expression on each stage of the workflow.',
+    body: 'Check each stage\'s WhereSpace in the ChangeWorkflow.',
   },
   // ── Progress ──
   /**
@@ -108,7 +108,7 @@ export const changeOrderCopy = {
    */
   carriesNothing: {
     title: 'This ChangeOrder carries no change',
-    body: 'No revision belongs to its interval, so there is nothing for the stages below to promote and nothing will move. This usually means the ChangeSet was not opened before the change was made, or the ChangeOrder was cut over a Space that holds no resources.',
+    body: 'No revision is in its interval, so nothing will move.',
     progressLabel: 'Carries no change',
   },
 
@@ -121,7 +121,7 @@ export const changeOrderCopy = {
    */
   progressUnavailable: 'ChangeOrder progress is unavailable',
   progressUnavailableDetail:
-    'The server did not report where this ChangeOrder has got to, so the stages below cannot be shown as promoted or not. This does not mean nothing has been promoted.',
+    'The server did not report which stages are promoted.',
   stagesPromoted: (done: number, total: number) => `${done} of ${total} stages promoted`,
 
   // ── Lane heads. No label keys — see the file header, point 3. ──
@@ -342,7 +342,7 @@ export const changeOrderCopy = {
      * and saying otherwise would grant a verdict nothing earned.
      */
     liveStatusTargetless: (variant: string) =>
-      `Not evaluated. ${variant} has no release target, so its health cannot be determined.`,
+      `Not evaluated. ${variant} has no release target.`,
     /**
      * The previous stage's Spaces, or their Releases, have not loaded yet.
      * Distinct from their live status being absent — one is "we have not
@@ -365,7 +365,7 @@ export const changeOrderCopy = {
      * taken the change is all the `Released` check can ask of it.
      */
     releasedTargetless: (previousStage: string) =>
-      `${previousStage} has taken this change; its Spaces without a release target have nothing to release.`,
+      `${previousStage} has taken this change.`,
 
     /**
      * Shown for a gate that has not been assessed because an earlier one in the
@@ -407,7 +407,7 @@ export const changeOrderCopy = {
      * declared check wants.
      */
     validated: (evaluatedStage: string) =>
-      `The change must have no ValidationErrors in any Space of '${evaluatedStage}'. The server checks this.`,
+      `No ValidationErrors in any Space of '${evaluatedStage}'.`,
     customPrerequisite: (evaluatedStage: string, prerequisite: string, description?: string) =>
       description !== undefined && description !== ''
         ? `Every Space of '${evaluatedStage}' must satisfy '${prerequisite}': ${description} The server checks this.`
@@ -437,12 +437,12 @@ export const changeOrderCopy = {
    */
   noGates: {
     base: 'No gate applies to the source.',
-    stage: (stage: string) => `No gate applies to ${stage}. It has no previous stage.`,
+    stage: (stage: string) => `No gate applies to ${stage}.`,
   },
 
   // ── Stage detail ──
   detailHeadGates: 'Gates on this stage',
-  loadingValues: 'Working out what this ChangeOrder changes here…',
+  loadingValues: 'Loading…',
   /**
    * The per-unit marker for a resource this ChangeOrder does not touch (restored
    * after the pane rebuild — predecessor's `ChangeOrderChangeTree.tsx`). Only shown
@@ -504,7 +504,7 @@ export const changeOrderCopy = {
    * `stageSettled` at the call site tells them apart.
    */
   noResourcesYet:
-    'These Spaces hold no resources for this ChangeOrder yet. The promote brings them in.',
+    'No resources here yet. Promote adds them.',
   /**
    * The stage-first pane: stage header, variant roster, and the variant matrix.
    *
@@ -532,8 +532,8 @@ export const changeOrderCopy = {
     resourceCountPartial: (resources: number, contributing: number, total: number) =>
       `${resources} ${resources === 1 ? 'resource' : 'resources'}, from ${contributing} of ${total} Spaces`,
     /** Names the Spaces the count did NOT come from, so the floor is legible. */
-    partialNote: (emptySpaces: string[], resources: number, populated: string) =>
-      `${emptySpaces.join(' and ')} hold no resources for this ChangeOrder yet, so ${resources} is what this stage promotes into ${populated}, not the whole stage's total.`,
+    partialNote: (emptySpaces: string[], populated: string) =>
+      `Count for ${populated} only. ${emptySpaces.join(' and ')} hold no resources yet.`,
 
     // ── The matrix ──
     matrixResourceHead: 'resource',
@@ -548,10 +548,10 @@ export const changeOrderCopy = {
       unknown: 'cannot be determined yet',
     },
     cellTitle: {
-      same: 'Takes the stage change verbatim.',
+      same: 'Same change',
       differs: (variant: string) => `Differs here. Open ${variant}.`,
-      new: 'Not here yet. The promote brings it in.',
-      unknown: 'Could not be established this round. Not the same as unchanged.',
+      new: 'Not here yet',
+      unknown: 'Could not establish',
     },
 
     /**
@@ -569,7 +569,7 @@ export const changeOrderCopy = {
      * resources are not shown.
      */
     divergentOnly: (divergent: number, total: number) =>
-      `${divergent} of ${total} ${total === 1 ? 'resource differs' : 'resources differ'} across these variants. The grid is replaced by this list because the stage has more than 8 Spaces.`,
+      `${divergent} of ${total} ${total === 1 ? 'resource differs' : 'resources differ'}`,
     divergentIn: (variants: string[]) => `differs in ${variants.join(', ')}`,
 
     // ── The scope line above the diff ──
@@ -580,10 +580,10 @@ export const changeOrderCopy = {
      */
     diffScope: (variant: string, differing: number) =>
       differing === 0
-        ? `Diff shown for ${variant}. No variant differs.`
-        : `Diff shown for ${variant}. ${differing} ${differing === 1 ? 'variant differs' : 'variants differ'}.`,
+        ? `Diff for ${variant}`
+        : `Diff for ${variant} · ${differing} ${differing === 1 ? 'variant differs' : 'variants differ'}`,
     diffScopeOnlyPopulated: (variant: string) =>
-      `Diff shown for ${variant}, the only populated variant.`,
+      `Diff for ${variant}`,
     /** The per-resource marker in the stage tree: where the claim stops being universal. */
     differsIn: (variants: string[]) => `differs in ${variants.join(', ')}`,
     /** The same marker in the variant tree, which can name what it differs FROM. */
@@ -593,7 +593,7 @@ export const changeOrderCopy = {
 
     // ── Stages with nothing to compare ──
     sourceNoMatrix:
-      'No matrix: the base is where the change was made, so there is no incoming change to compare across variants.',
+      'The change was made here.',
     /**
      * Progress unavailable. The roster STAYS — which Spaces are in a stage is a
      * label fact and remains true when progress does not — but every claim
@@ -601,7 +601,7 @@ export const changeOrderCopy = {
      * against unknown progress is not meaningful.
      */
     progressUnavailableVariants:
-      'The server did not report where this ChangeOrder has got to, so the variants below cannot be shown as promoted or not. This does not mean nothing has been promoted.',
+      'The server did not report which variants are promoted.',
     /** Per-row replacement for a verdict sentence we cannot back up. */
     variantProgressUnavailable: 'Progress unavailable',
     /** A Space of the stage that holds no resources for this ChangeOrder yet. */
@@ -614,7 +614,7 @@ export const changeOrderCopy = {
      * the promote is what brings the resources in.
      */
     variantNoResources: (variant: string) =>
-      `${variant} holds no resources for this ChangeOrder yet. The promote brings them in.`,
+      `No resources in ${variant} yet. Promote adds them.`,
   },
 
 
@@ -649,7 +649,7 @@ export const changeOrderCopy = {
    * other advice.
    */
   promotePartial: (spaces: string, reason: string) =>
-    `Promote partly failed. ${spaces} took the change, and the rest did not land (${reason}). Run the promote again to finish it — it repeats nothing that already arrived.`,
+    `Promote partly failed (${reason}). ${spaces} took the change. Promote again to finish.`,
   /**
    * Some Spaces took the change and others were passed over entirely.
    *
@@ -664,7 +664,7 @@ export const changeOrderCopy = {
    * talking over the one useful instruction on the screen.
    */
   promotePassedOver: (spaces: string, reason: string) =>
-    `Promote incomplete. ${spaces} took the change, and these were passed over — ${reason}. Running the promote again passes them over in the same way, so the reason above is what has to change first.`,
+    `Promote incomplete. ${spaces} took the change; the rest were passed over: ${reason}. Fix this before you promote again.`,
   /**
    * The server refused the promote at its gates. Nothing was written.
    *
@@ -681,13 +681,13 @@ export const changeOrderCopy = {
    * what the reader was shown and told they were confirming.
    */
   promotePlanStale:
-    'Promote stopped: this ChangeOrder changed while the confirmation was open, so what was previewed is no longer what would be written. Nothing was changed. Close this and promote again to see the current plan.',
+    'Promote stopped: the ChangeOrder changed after the preview. Nothing was written. Promote again.',
   /**
    * The same refusal where the confirmation stays open and the dry run runs
    * again by itself, so there is nothing to close and nothing to reopen.
    */
   promotePlanStaleInPlace:
-    'This ChangeOrder changed since the dry run, so nothing was written. Check what would change now and confirm again.',
+    'The ChangeOrder changed after the dry run. Nothing was written. Check and confirm again.',
   /** One failed item of a promote response: which item, and the server's reason. */
   itemFailure: (resource: string, reason: string) => `${resource}: ${reason}`,
   /** Stands in when a failed item carries no slug to name it by. */
@@ -710,8 +710,8 @@ export const changeOrderCopy = {
   previewReach: (previewed: number, total: number) => {
     const rest = total - previewed;
     return rest === 1
-      ? `Previewed ${previewed} of ${total}. The other takes from a variant earlier in this promotion, so what it receives cannot be shown until that one is promoted.`
-      : `Previewed ${previewed} of ${total}. The other ${rest} take from variants earlier in this promotion, so what they receive cannot be shown until those are promoted.`;
+      ? `Previewed ${previewed} of ${total}. 1 takes from an earlier variant.`
+      : `Previewed ${previewed} of ${total}. ${rest} take from earlier variants.`;
   },
   /** How a count of Spaces is named in a failure sentence. */
   spaceCount: (count: number) => (count === 1 ? 'This Space' : `${count} Spaces`),
@@ -720,7 +720,7 @@ export const changeOrderCopy = {
     `Promote failed: ${reason}. ${spaceCount === 1 ? 'The Space was' : 'The Spaces were'} not changed.`,
   releaseFailed: (spaces: string) => `Release failed for ${spaces}.`,
   partialFailure: (ok: number, failed: number) =>
-    `${ok} succeeded, ${failed} failed. See the Spaces named below.`,
+    `${ok} succeeded, ${failed} failed.`,
 
   // Setting AbortedReason is the whole of abort: no rollback, no
   // reconciliation stops (docs/design/change-workflows.md line ~347).
@@ -737,8 +737,8 @@ export const changeOrderCopy = {
      */
     actionsBlocked: 'This ChangeOrder was aborted.',
     dialogTitle: 'Abort ChangeOrder',
-    dialogBodyBefore: 'This marks ',
-    dialogBodyAfter: ' and records your reason against it. Nothing is rolled back and no reconciliation stops.',
+    dialogBodyBefore: 'Marks ',
+    dialogBodyAfter: ' as aborted. Nothing is rolled back.',
     dialogBodyPromoted: (stages: number) =>
       stages === 0
         ? 'No stage has been promoted, and none will be.'
@@ -747,7 +747,7 @@ export const changeOrderCopy = {
           : `The ${stages} stages already promoted stay promoted.`,
     reasonLabel: 'Reason',
     reasonPlaceholder: 'Why this ChangeOrder is being abandoned',
-    reasonHelp: 'Recorded on the ChangeOrder and cannot be edited afterwards.',
+    reasonHelp: 'Cannot be edited later.',
     reasonCount: (used: number) => `${used} / 1024`,
     cancel: 'Cancel',
     /** Dismisses a dialog that has already done its work — no longer a cancellation. */
@@ -757,9 +757,9 @@ export const changeOrderCopy = {
     errorTooLong: 'A reason must be 1024 characters or fewer.',
     errorEdgeSpace: 'Remove the space at the start or the end.',
     errorIllegalCharBefore: 'Remove the ',
-    errorIllegalCharAfter: ' character. Quotes, backslashes and line breaks cannot be recorded.',
+    errorIllegalCharAfter: ' character.',
     failed: (reason: string) => `Abort failed: ${reason}. The ChangeOrder was not changed.`,
-    notReady: 'Abort failed: this ChangeOrder is not loaded yet. Reload and try again.',
+    notReady: 'Abort failed: not loaded yet. Reload and try again.',
   },
   /**
    * Two ways to end a ChangeOrder.
@@ -779,8 +779,8 @@ export const changeOrderCopy = {
     abortLabel: 'Abort',
     rollBackTitle: 'Roll back this ChangeOrder',
     abortTitle: 'Abort this ChangeOrder',
-    rollBackLead: 'Takes the change back out of every Space that has taken it, and stops it reaching the rest.',
-    abortLead: 'Stops the change reaching any further Space. What already landed stays exactly as it is.',
+    rollBackLead: 'Removes the change from every Space that took it.',
+    abortLead: 'Stops the change. What landed stays.',
 
     /**
      * THE CONSEQUENCES GO IN THE DIALOG, NOT IN A TOOLTIP. Every one of these
@@ -789,14 +789,13 @@ export const changeOrderCopy = {
      */
     consequencesTitle: 'Before you confirm',
     rollBackConsequences: [
-      'This ChangeOrder can never be promoted again. Only a new ChangeOrder can re-apply the change.',
-      'Changes made to these components after this ChangeOrder are dropped. Nothing replays them.',
-      'Nothing reaches a cluster until a release is published. This screen does not publish.',
+      'This ChangeOrder can never be promoted again.',
+      'Later changes to these components are dropped.',
+      'Clusters change only when a release is published.',
     ],
     abortConsequences: [
-      'Spaces that already took the change keep it. Roll back is what takes it back out.',
-      'Nothing is written and nothing reaches a cluster.',
-      'This decision can be reversed until something is rolled back. After that it is permanent.',
+      'Spaces that took the change keep it.',
+      'Reversible until something is rolled back.',
     ],
 
     /** The scope, named before the reader confirms rather than reported after. */
@@ -804,16 +803,16 @@ export const changeOrderCopy = {
       count === 1 ? 'The change is taken back out of 1 Space' : `The change is taken back out of ${count} Spaces`,
     spacesTitleAbort: (count: number) =>
       count === 1 ? 'The change stays in 1 Space' : `The change stays in ${count} Spaces`,
-    spacesNote: 'Spaces already rolled back are not listed: the change is no longer in them.',
+    spacesNote: 'Spaces already rolled back are not listed.',
     /** No Space is left to restore — every one that took the change has been rolled back. */
-    scopeNone: 'Every Space that took this change has already been rolled back.',
+    scopeNone: 'Already rolled back everywhere.',
     /**
      * The server did not derive the propagation fields, so which Spaces hold
      * the change is unknown. Rolling back over a guess is the one thing worse
      * than not offering it.
      */
     scopeUnavailable:
-      'Which Spaces hold this change could not be determined, so it cannot be rolled back from here.',
+      'Cannot roll back: could not establish which Spaces hold the change.',
 
     rollBackConfirm: 'Roll back',
     abortConfirm: 'Abort',
@@ -830,7 +829,7 @@ export const changeOrderCopy = {
     succeeded: (count: number) =>
       count === 1 ? 'Rolled back in 1 Space.' : `Rolled back in ${count} Spaces.`,
     /** Announced after an abort-only. The dialog closes, so this is the only report of it. */
-    abortAnnouncement: 'This ChangeOrder will not be promoted any further.',
+    abortAnnouncement: 'ChangeOrder aborted.',
     /**
      * ⚠️ THE SENTENCE THIS WHOLE FEATURE EXISTS TO BE ABLE TO SAY. Once any
      * Space has been restored the abort cannot be cleared, so a rollback that
@@ -838,10 +837,10 @@ export const changeOrderCopy = {
      * from.
      */
     strandedAdvice:
-      'This ChangeOrder is now aborted and partly rolled back. It cannot be made promotable again — only a new ChangeOrder can re-apply the change. Retry the Spaces below, or finish them with `cub variant demote`.',
+      'Aborted and partly rolled back. It cannot be promoted again. Retry the Spaces below, or use `cub variant demote`.',
     /** Nothing was restored, but the abort did land. */
     abortedNotRolledBackAdvice:
-      'This ChangeOrder is aborted and nothing was rolled back. It can still be put back on its way by clearing the reason.',
+      'Aborted. Nothing was rolled back. Clear the reason to resume it.',
   },
   /** Announced when a promote succeeded and wrote something. */
   promotedTo: (stageId: string) => `Promoted to ${stageId}.`,
@@ -870,10 +869,10 @@ export const changeOrderCopy = {
      * asked to promote a held stage — the backstop speaking, since no surface
      * offers the action while a gate holds it.
      */
-    refused: 'A gate is holding this stage, so it was not promoted.',
+    refused: 'A gate holds this stage. Not promoted.',
     /** In the promote dialog, below what is holding the stage. */
     dialogExplainer:
-      'The stage can be promoted once its gates open. There is nothing to confirm until then.',
+      'Promote opens when the gates pass.',
   },
 
 } as const;

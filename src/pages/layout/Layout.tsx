@@ -1,7 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, Link as RouterLink, useLocation } from 'react-router-dom';
 
 import { ConfigHubIcon } from '@/components/icons/ConfigHubIcon';
 import { DiscordIcon } from '@/components/icons/DiscordIcon';
@@ -113,7 +113,6 @@ const ContentArea = styled(Box)({
  */
 const TopNavButton = memo(({ item }: { item: INavItem }) => {
   const location = useLocation();
-  const navigate = useNavigate();
 
   const isActive =
     !!item.navigate &&
@@ -121,36 +120,41 @@ const TopNavButton = memo(({ item }: { item: INavItem }) => {
     (location.pathname === item.navigate ||
       location.pathname.startsWith(item.navigate + '/'));
 
-  const handleClick = useCallback(() => {
-    if (item.onClick) {
-      item.onClick();
-    } else if (item.external && item.navigate) {
-      window.open(item.navigate, '_blank', 'noopener,noreferrer');
-    } else if (item.navigate) {
-      navigate(item.navigate);
-    }
-  }, [item, navigate]);
+  const buttonProps = {
+    color: 'inherit' as const,
+    size: 'small' as const,
+    startIcon: item.component,
+    sx: {
+      textTransform: 'none',
+      fontWeight: isActive ? 600 : 400,
+      bgcolor: isActive ? 'rgba(255,255,255,0.15)' : 'transparent',
+      borderRadius: 1,
+      px: 1.5,
+      py: 0.75,
+      whiteSpace: 'nowrap',
+      flexShrink: 0,
+      '&:hover': {
+        bgcolor: isActive ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.1)',
+      },
+    },
+  };
 
+  if (!item.onClick && item.navigate && item.external) {
+    return (
+      <Button {...buttonProps} href={item.navigate} target='_blank' rel='noopener noreferrer'>
+        {item.text}
+      </Button>
+    );
+  }
+  if (!item.onClick && item.navigate) {
+    return (
+      <Button {...buttonProps} component={RouterLink} to={item.navigate}>
+        {item.text}
+      </Button>
+    );
+  }
   return (
-    <Button
-      color='inherit'
-      size='small'
-      startIcon={item.component}
-      onClick={handleClick}
-      sx={{
-        textTransform: 'none',
-        fontWeight: isActive ? 600 : 400,
-        bgcolor: isActive ? 'rgba(255,255,255,0.15)' : 'transparent',
-        borderRadius: 1,
-        px: 1.5,
-        py: 0.75,
-        whiteSpace: 'nowrap',
-        flexShrink: 0,
-        '&:hover': {
-          bgcolor: isActive ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.1)',
-        },
-      }}
-    >
+    <Button {...buttonProps} onClick={item.onClick}>
       {item.text}
     </Button>
   );
@@ -164,7 +168,6 @@ TopNavButton.displayName = 'TopNavButton';
  */
 const TopNavMenuButton = memo(({ item }: { item: INavItem }) => {
   const location = useLocation();
-  const navigate = useNavigate();
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
 
   const hasActiveChild = item.subItems?.some(
@@ -181,14 +184,6 @@ const TopNavMenuButton = memo(({ item }: { item: INavItem }) => {
   const handleClose = useCallback(() => {
     setAnchor(null);
   }, []);
-
-  const handleSubItemClick = useCallback(
-    (sub: INavItem) => {
-      handleClose();
-      if (sub.navigate) navigate(sub.navigate);
-    },
-    [handleClose, navigate],
-  );
 
   return (
     <>
@@ -240,7 +235,9 @@ const TopNavMenuButton = memo(({ item }: { item: INavItem }) => {
           return (
             <MenuItem
               key={sub.text}
-              onClick={() => handleSubItemClick(sub)}
+              component={RouterLink}
+              to={sub.navigate ?? ''}
+              onClick={handleClose}
               selected={isSubActive}
               sx={{ gap: 1.5, py: 1, minHeight: 40, color: 'text.secondary' }}
             >

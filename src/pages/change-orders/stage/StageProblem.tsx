@@ -172,7 +172,7 @@ export function StageHeldBox({ state, look, stage, links, nameOfSpace, gateCheck
     >
       <GateReasons gates={state.gates} links={links} gateSpaces={gateSpaces} />
       {state.waiting.length > 0 ? <GateReasons gates={state.waiting} links={links} gateSpaces={gateSpaces} named /> : null}
-      <StatusText>{b.gateWait(gateCheckedAt, state.gates.length + state.waiting.length)}</StatusText>
+      {gateCheckedAt !== undefined ? <StatusText>{b.gateWait(gateCheckedAt)}</StatusText> : null}
     </StageStatusBox>
   );
 }

@@ -159,7 +159,7 @@ export function InlineReviewForm({
               slotProps={{
                 htmlInput: {
                   maxLength: REVIEW_NOTE_MAX,
-                  'aria-describedby': fieldState.error !== undefined ? `${errorId} ${helpId}` : helpId,
+                  'aria-describedby': [fieldState.error !== undefined ? errorId : '', coverageText !== undefined ? helpId : ''].filter(Boolean).join(' ') || undefined,
                   'aria-invalid': fieldState.error !== undefined,
                   'data-testid': 'review-reason',
                 },
@@ -177,9 +177,11 @@ export function InlineReviewForm({
                 {fieldState.error.message}
               </FormHelperText>
             ) : null}
-            <FormHelperText id={helpId} sx={{ ...helperSx, color: 'text.secondary' }}>
-              {pass ? copy.coverageHelp(coverageText) : copy.coverageHelpFail(coverageText)}
-            </FormHelperText>
+            {coverageText !== undefined ? (
+              <FormHelperText id={helpId} sx={{ ...helperSx, color: 'text.secondary' }}>
+                {copy.coverageHelp(coverageText)}
+              </FormHelperText>
+            ) : null}
           </Box>
         )}
       />

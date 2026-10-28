@@ -252,7 +252,7 @@ test('a production release that already landed can still be rolled back', () => 
  */
 test('the left-behind stage is named, not an unrelated workloads health', () => {
   const row = landedWithLateSpace();
-  expect(row.blocker).toBe('Done, with staging left behind: it holds a Space the change never reached.');
+  expect(row.blocker).toBe('staging has a Space the change never reached.');
   expect(actionFor(row).label).toBe('Resolve');
 });
 

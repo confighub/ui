@@ -13,13 +13,13 @@ import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
 
 import { controlSx } from '../consoleStyle';
-import { changeOrderBorder, changeOrderFontMono, changeOrderInk, changeOrderShape, changeOrderStatus, changeOrderType } from '../changeOrdersTokens';
+import { changeOrderAction, changeOrderBorder, changeOrderFontMono, changeOrderInk, changeOrderShape, changeOrderType } from '../changeOrdersTokens';
 import { CouldNotEstablish } from './CouldNotEstablish';
 import { draftCopy } from './draftCopy';
 import { draftHref } from './draftDecisions';
 import { OPTION_SX } from './draftLook';
 import { DraftPopover } from './DraftPopover';
-import { agoText, baseForFilter, pickerGroups, type DraftBase, type PickerGroup, type PickerRow } from './newChangeOrderModel';
+import { agoText, baseForFilter, pickerDraftAddress, pickerGroups, type DraftBase, type PickerGroup, type PickerRow } from './newChangeOrderModel';
 import { useDraftBases, usePickerRows } from './useDraftBases';
 
 const copy = draftCopy.page;
@@ -30,7 +30,6 @@ const SKELETON_ROWS = 4;
 /** How tall the list grows before it scrolls under the pinned search. */
 const LIST_MAX_HEIGHT = 'min(420px, calc(100vh - 220px))';
 
-const baseHref = (base: DraftBase) => draftHref({ space: base.spaceSlug });
 
 interface PickerOptionProps {
   row: PickerRow;
@@ -44,11 +43,17 @@ function PickerOption({ row, now, onPick }: PickerOptionProps) {
   return (
     <Box
       component={RouterLink}
-      to={baseHref(base)}
+      to={draftHref(pickerDraftAddress(row))}
       role="menuitem"
       data-draft-option
       data-base={base.spaceSlug}
       onClick={onPick}
+      onKeyDown={(event: KeyboardEvent<HTMLAnchorElement>) => {
+        // A menu item activates on Space as well as Enter; an anchor does only on Enter.
+        if (event.key !== ' ') return;
+        event.preventDefault();
+        event.currentTarget.click();
+      }}
       sx={{ ...OPTION_SX, color: 'inherit', textDecoration: 'none' }}
     >
       <AccountTreeOutlinedIcon aria-hidden />
@@ -140,7 +145,7 @@ function Picker({ bases, basesStatus, retryBases, open, onPick }: PickerProps) {
     } else if (event.key === 'Enter' && first !== undefined) {
       event.preventDefault();
       onPick();
-      navigate(baseHref(first.base));
+      navigate(draftHref(pickerDraftAddress(first)));
     }
   };
 
@@ -200,7 +205,7 @@ function Picker({ bases, basesStatus, retryBases, open, onPick }: PickerProps) {
           height: 30,
           border: `1px solid ${changeOrderBorder.default}`,
           borderRadius: `${changeOrderShape.radius.md}px`,
-          '&:focus-within': { borderColor: changeOrderStatus.accent },
+          '&:focus-within': { borderColor: changeOrderAction.focus },
         }}
       >
         <SearchIcon aria-hidden sx={{ fontSize: 16, color: changeOrderInk.subtle }} />
@@ -233,7 +238,6 @@ export interface NewChangeOrderButtonProps {
  * otherwise it asks which Component.
  */
 export function NewChangeOrderButton({ componentSlug, spaceSlug }: NewChangeOrderButtonProps) {
-  const navigate = useNavigate();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   // Each opening starts with an empty search; the list stays drawn while the popover closes.
   const [openings, setOpenings] = useState(0);
@@ -247,33 +251,26 @@ export function NewChangeOrderButton({ componentSlug, spaceSlug }: NewChangeOrde
   const direct = baseForFilter(bases, { componentSlug, spaceSlug }) ?? (bases.length === 1 ? bases[0] : undefined);
   const opensDraft = status === 'resolved' && direct !== undefined;
   const disabled = status === 'resolved' && bases.length === 0;
-  // One button whatever the reads say, so it never swaps under the pointer or the keyboard:
-  // with one base to go to it opens that draft, else it asks which.
-  const button = (
+  const sx = { ...controlSx('primary', !disabled), gap: '6px' };
+  // With one base to go to it is a link to that draft, else a button that asks which.
+  const button = opensDraft ? (
+    <Box component={RouterLink} to={draftHref({ space: direct.spaceSlug })} data-testid="new-change-order" sx={sx}>
+      {content}
+    </Box>
+  ) : (
     <Box
       component="button"
       type="button"
       data-testid="new-change-order"
-      aria-haspopup={opensDraft ? undefined : 'dialog'}
-      aria-expanded={opensDraft ? undefined : anchor !== null}
+      aria-haspopup="dialog"
+      aria-expanded={anchor !== null}
       aria-disabled={disabled}
       onClick={(event) => {
         if (disabled) return;
-        if (opensDraft) {
-          navigate(baseHref(direct));
-          return;
-        }
         setOpenings((count) => count + 1);
         setAnchor(event.currentTarget);
       }}
-      sx={{
-        ...controlSx('primary', !disabled),
-        // The page's one primary action takes the brand's action colour, as the theme's contained primary does.
-        ...(disabled
-          ? {}
-          : { backgroundColor: 'primary.main', borderColor: 'primary.dark', '&:hover': { backgroundColor: 'primary.dark' } }),
-        gap: '6px',
-      }}
+      sx={sx}
     >
       {content}
     </Box>

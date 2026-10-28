@@ -80,8 +80,9 @@ export interface UseDraftValidationArgs {
  * on each dry run. Asking again about the same decisions reads the answer already had.
  *
  * Its answer is `SkippedUnits` ("Passed over") and every refusal the create would meet, mapped
- * to the ledger row it belongs to: a name the Space has (409) on Name; the policy on Path; a
- * Space the change cannot reach, or targets that disagree on the start, on Where and How much.
+ * to the decision it belongs to: a name the Space has (409) on the name; the policy on the
+ * workflow; a Space the change cannot reach, or targets that disagree on the start, on the
+ * outcome and How much.
  */
 export function useDraftValidation(args: UseDraftValidationArgs): DraftValidation {
   const {

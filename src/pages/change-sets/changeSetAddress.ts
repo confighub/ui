@@ -17,7 +17,7 @@ export const CHANGE_SETS_PATH = '/change-sets';
 
 /** The tone of a ChangeSet's State: Open is in progress, New has had nothing attached, Closed is done. */
 export function changeSetStateTone(state: string | undefined): string {
-  if (state === 'Open') return changeOrderStatus.accent;
+  if (state === 'Open') return changeOrderStatus.progress;
   if (state === 'Closed') return changeOrderInk.muted;
   return changeOrderInk.subtle;
 }

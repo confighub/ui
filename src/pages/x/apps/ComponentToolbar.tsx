@@ -379,12 +379,14 @@ export function ComponentToolbar({
                   display: 'inline-flex', alignItems: 'center', gap: '5px',
                   fontSize: 11, fontWeight: 600, lineHeight: '18px',
                   padding: '1px 10px', borderRadius: '10px',
-                  border: `1px solid ${active ? componentTheme.variation : componentTheme.borderMuted}`,
-                  background: active ? componentTheme.variationMuted : 'transparent',
-                  color: active ? componentTheme.variationEmphasis : componentTheme.fgSubtle,
+                  // Pressed is a selection, so rust; the dot keeps the local-override hue it names.
+                  border: `1px solid ${active ? componentTheme.accent : componentTheme.borderMuted}`,
+                  background: active ? componentTheme.accentMuted : 'transparent',
+                  color: active ? componentTheme.accent : componentTheme.fgSubtle,
                   cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: componentTheme.fontSans,
                   transition: 'all .12s',
-                  '&:hover': { borderColor: !active ? componentTheme.variation : undefined },
+                  '&:hover': { borderColor: !active ? componentTheme.accent : undefined },
+                  '&:focus-visible': { outline: `2px solid ${componentTheme.accent}`, outlineOffset: '2px' },
                 }}
               >
                 <Box component="span" sx={{ width: 7, height: 7, borderRadius: '50%', background: componentTheme.variation, flexShrink: 0 }} />

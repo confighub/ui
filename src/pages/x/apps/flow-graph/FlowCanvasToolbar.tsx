@@ -183,7 +183,7 @@ const GroupButton = styled(ButtonBase)({
   transition: 'background-color 0.15s',
   '&:hover': { background: componentTheme.bgSubtle },
   '&.Mui-focusVisible': {
-    outline: `2px solid ${componentTheme.accentFocusRing}`,
+    outline: `2px solid ${componentTheme.accent}`,
     outlineOffset: 2,
   },
   '& svg': { fontSize: 16, color: componentTheme.fgSubtle },

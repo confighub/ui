@@ -56,7 +56,9 @@ export function dryRunSentence(preview: DraftPreview, outsideNames: readonly str
   const kinds = outcomeKindBySpaceId(preview);
   const parts = [draftCopy.page.side.sentenceSame(preview.totals.same, preview.totals.variants)];
   for (const outlier of preview.outliers) {
-    parts.push(`${outlier.name} ${draftCopy.page.side.kindWord[kinds.get(outlier.spaceId) ?? 'differs']}`);
+    const kind = kinds.get(outlier.spaceId) ?? 'differs';
+    // Nothing to change is said as the chip says it: "prod-apac: no payments-worker here".
+    parts.push(kind === 'nothing' ? `${outlier.name}: ${outlier.text}` : `${outlier.name} ${draftCopy.page.side.kindWord[kind]}`);
   }
   for (const name of outsideNames) parts.push(`${name} ${draftCopy.page.outlier.outsideText}`);
   return parts.join(', ');
@@ -68,4 +70,13 @@ export function dayMonth(at: string | undefined): string {
   const time = Date.parse(at);
   if (Number.isNaN(time)) return '';
   return new Date(time).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
+
+/**
+ * A fact slot's name to a screen reader: the fact and its value, and last time's value when this
+ * draft changes it ("Update type: MergeUnits, was UpgradeUnit").
+ */
+export function factSlotLabel(term: string, value: string, last: string | undefined): string {
+  return last === undefined ? `${term}: ${value}` : `${term}: ${value}, ${draftCopy.page.facts.was(last)}`;
 }

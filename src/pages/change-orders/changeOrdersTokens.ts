@@ -61,12 +61,13 @@ export const changeOrderCardTokens = {
   shadow: '0 1px 2px rgba(25,29,35,.05), 0 1px 1px rgba(25,29,35,.04)',
 } as const;
 
-/** Outcome-kind border tints, for a panel's own edge — `--wait-line` / `--bad-line` / `--accent-line`. */
+/** Outcome-kind border tints, for a panel's own edge — the contract's `--wait-line` / `--bad-line` / `--accent-line`. */
 export const changeOrderKindLine = {
   same: '#e2e5ea',
   differs: '#e8d5a6',
   adds: '#b9cbf3',
   unknown: '#eec5c5',
+  nothing: '#e2e5ea',
 } as const;
 
 export const changeOrderBorder = {
@@ -97,11 +98,34 @@ export const changeOrderStatus = {
   warnSoft: '#fbf1dc',
   /** `--wait-line`. The border of an override's tile or a Blocked tag, and a Reason's edge. */
   warnLine: '#e8d5a6',
-  accent: '#234ba6',
-  /** `--accent-soft`. A next/promoting dot's own fill. */
-  accentSoft: '#eaf0fd',
-  /** `--accent-line`, same value as `changeOrderKindLine.adds` — a different property, coincidentally identical in the reference. A next/promoting dot's own border. */
-  accentLine: '#b9cbf3',
+  /**
+   * In progress, next, open: a status, never an action. 7.99:1 on white. Blue is
+   * a status colour only; action, selection and focus are `changeOrderAction`.
+   */
+  progress: '#234ba6',
+  /** A next/promoting dot's own fill. */
+  progressSoft: '#eaf0fd',
+  /** Same value as `changeOrderKindLine.adds` — a different property, coincidentally identical. A next/promoting dot's own border. */
+  progressLine: '#b9cbf3',
+} as const;
+
+/**
+ * Action, selection and focus: the brand rust, the same values as `ThemeProvider`'s
+ * `rust`, `rustDark`, `rustSoft`, `rustLine` and `rustFocus`. A deliberate departure
+ * from the contract, whose blue accent doubled as a status colour: in this product
+ * blue means "in progress" (`changeOrderStatus.progress`) and nothing else.
+ */
+export const changeOrderAction = {
+  /** Link-styled actions, pressed and selected text, the selected ring. 5.59:1 on white. */
+  ink: '#ba3d03',
+  /** Hover on a filled action. 8.48:1 on white. */
+  inkHover: '#8c2c00',
+  /** A selected or suggested control's ground. Rust text on it is 4.87:1. */
+  soft: '#fdece3',
+  /** A selected or suggested control's border; decorative, always paired with text or a ring. */
+  line: '#f0b99a',
+  /** The 2px keyboard focus outline: 5.59:1 on #ffffff, 5.31:1 on #f8f9fb, 5.12:1 on #f4f5f7. */
+  focus: '#ba3d03',
 } as const;
 
 /**
@@ -169,16 +193,16 @@ export const changeOrderType = {
  *
  * The contract contains **no circle** and **no 2px border** — radii are
  * 2/3/6/8/9/10/999 and border widths are 1px, with 3px and 4px appearing only
- * as accent edges on one side. A selected state therefore reads as an inset
+ * as leading edges on one side. A selected state therefore reads as an inset
  * ring rather than a doubled border, which is also what keeps a selection from
  * shifting its own content by a pixel.
  */
 export const changeOrderShape = {
   radius: { xs: 2, sm: 3, md: 6, lg: 8, xl: 10, pill: 999 },
   borderWidth: 1,
-  accentEdge: 3,
+  leadingEdge: 3,
   gap: { xs: 2, sm: 6, md: 8, lg: 10, xl: 16, xxl: 20 },
 } as const;
 
 /** The selected-state ring, from `contract.geometry.shadow`. */
-export const changeOrderSelectedRing = `inset 0 0 0 1.5px ${changeOrderStatus.accent}`;
+export const changeOrderSelectedRing = `inset 0 0 0 1.5px ${changeOrderAction.ink}`;

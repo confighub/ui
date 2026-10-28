@@ -137,9 +137,9 @@ test('a targeted Space reporting Degraded is reported degraded', () => {
 test('a targetless Space reporting Degraded is still a degraded ChangeOrder', () => {
   const built = row(false, FAILING);
   expect(built.state).toBe('degraded');
-  // Not "Done, but unchecked": something WAS checked, and it said Degraded.
+  // Not "health not checked": something WAS checked, and it said Degraded.
   expect(built.blocker).toContain('myapp-dev');
-  expect(built.blocker).not.toContain('Done, but unchecked');
+  expect(built.blocker).not.toContain('health not checked');
 });
 
 /*

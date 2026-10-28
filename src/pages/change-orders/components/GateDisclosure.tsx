@@ -9,6 +9,7 @@ import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 
 import type { ChangeOrderGateState } from '../../x/apps/change-order/changeOrderGates';
 import {
+  changeOrderAction,
   changeOrderBorder,
   changeOrderInk,
   changeOrderShape,
@@ -56,7 +57,7 @@ export function GateDisclosure({ state, summary, bodyId, expanded, onToggle, chi
           border: `1px solid ${changeOrderBorder.default}`,
           background: changeOrderSurface.sunk,
           marginBottom: expanded ? '8px' : 0,
-          '&:focus-visible': { outline: `2px solid ${changeOrderStatus.accent}`, outlineOffset: '2px' },
+          '&:focus-visible': { outline: `2px solid ${changeOrderAction.focus}`, outlineOffset: '2px' },
         }}
       >
         <GateStateIcon aria-hidden="true" sx={{ fontSize: 16, color: tone, flex: '0 0 auto' }} />

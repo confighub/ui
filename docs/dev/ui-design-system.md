@@ -49,14 +49,17 @@ All tokens live in the `tokens` object in `ThemeProvider.tsx` and are available 
 
 ### Brand Color (Rust)
 
-**Rust is an action signal only. Never use it for status indicators.**
+**Rust is the action, selection and focus colour. Never use it for status indicators.**
 
 | Token | Value | CSS var | MUI alias | Use for |
 |-------|-------|---------|-----------|---------|
-| `rust` | `#ba3d03` | `--rust` | `primary.main` | CTAs, active nav, selected state |
+| `rust` | `#ba3d03` | `--rust` | `primary.main` | CTAs, links styled as actions, active nav, selected state |
 | `rustDark` | `#8c2c00` | `--rust-dark` | `primary.dark` | Hover on rust buttons |
 | `rustBg` | `rgba(186,61,3,0.055)` | `--rust-bg` | `primary.light` | Selected row bg, chip bg |
-| `rustRing` | `rgba(186,61,3,0.18)` | `--rust-ring` | — | Focused ring, chip border |
+| `rustRing` | `rgba(186,61,3,0.18)` | `--rust-ring` | — | Chip border, soft halo. 1.31:1 on white: never the only focus indicator |
+| `rustSoft` | `#fdece3` | `--rust-soft` | — | Opaque ground of a selected, pressed or suggested control (rust text on it 4.87:1) |
+| `rustLine` | `#f0b99a` | `--rust-line` | — | Opaque border of a selected or suggested control; always paired with text or a ring |
+| `rustFocus` | `#ba3d03` | `--rust-focus` | — | Keyboard focus outline, `2px solid`: 5.59:1 on `#ffffff`, 5.31:1 on `#f8f9fb` |
 
 ### Semantic Colors
 
@@ -65,12 +68,44 @@ Each semantic color has three variants: foreground, background tint, border.
 | Meaning | Foreground | Bg tint | Border | MUI color |
 |---------|-----------|---------|--------|-----------|
 | Success / Ready | `--green` `#15803d` | `--green-bg` | `--green-bd` | `success` |
-| Info / Applying | `--blue` `#1a50c1` | `--blue-bg` | `--blue-bd` | `info` |
+| Info / Applying / In progress (status only) | `--blue` `#1a50c1` | `--blue-bg` | `--blue-bd` | `info` |
 | Upgrade / Premium | `--purple` `#6824c4` | `--purple-bg` | `--purple-bd` | `secondary` |
 | Warning / Gated | `--amber` `#b45309` | `--amber-bg` | `--amber-bd` | `warning` |
 | Error / Degraded | `--red` `#b91c1c` | `--red-bg` | `--red-bd` | `error` |
 
 **Usage rule:** Match color to meaning, not to aesthetics. A "Degraded" status is always `error` (red). An "Applying" status is always `info` (blue).
+
+### Action, selection and focus are rust; blue is a status colour only
+
+- **Rust is the only interactive accent.** Primary buttons, link-styled actions,
+  active tabs and segments, toggles and checkboxes that are on, the selected or
+  pressed item, and every keyboard focus ring use the rust tokens
+  (`primary.main` / `--rust`, `primary.dark`, `--rust-soft`, `--rust-line`,
+  `--rust-focus`). Nothing else says "you can act here" or "this is chosen".
+  The one exception is Promote and Release (below), which have their own purple.
+- **Blue is a status colour only.** `info` / `--blue` means something is in
+  progress, applying, open, pending or next, or it is an informational notice.
+  It never colours a button, a link, a selection or a focus ring.
+- **No local accent tokens.** A feature's token set (`componentTheme`,
+  `consoleTokens`, `changeOrderAction`, a CSS file's custom properties) may
+  alias the rust tokens; it may not define its own action, selection or focus
+  hue. A blue status token is named for its meaning (`progress`, `info`,
+  `variation`), never `accent`.
+- **Focus:** `outline: 2px solid var(--rust-focus)`, offset `2px` (`-2px` inside a
+  clipped container). Rust measures 5.59:1 on `#ffffff`, 5.31:1 on `#f8f9fb` and
+  5.12:1 on `#f4f5f7`. `--rust-ring` (1.31:1) and other translucent tints may
+  sit around a rust border as a halo, but are never the only focus indicator.
+- **Selected / pressed:** an inset `1.5px` rust ring (`--sh-sel-inset`), with an
+  optional `--rust-soft` ground. The border width never changes.
+- **Rust is never a bare state mark.** Rust is as dark as the warning amber and
+  the error red (1.0–1.2:1) and close to them in hue for colour-blind readers
+  (ΔE2000 about 2 against amber under deuteranopia), so a rust signal is always
+  a shape (ring, fill with white text, underline, outline, leading edge), and a
+  status always has a word or an icon as well as a colour. An invalid field says
+  so in text; it does not rely on its red underline differing from the rust one.
+- Diff and data-visualisation hues (the compare view's "differs", image bump
+  kinds, monogram and avatar hues, graph edge types) are categorical and may be
+  blue. They are not interactive.
 
 ### Shadows
 
@@ -81,6 +116,7 @@ Each semantic color has three variants: foreground, background tint, border.
 | `shMd` | `--sh-md` | Popovers, menus, autocomplete |
 | `shLg` | `--sh-lg` | Dialogs, drawers |
 | `shSel` | `--sh-sel` | Rust ring + lift (selected/focused CTA) |
+| `shSelInset` | `--sh-sel-inset` | `inset 0 0 0 1.5px` rust: selected / pressed item |
 
 In MUI: use `elevation` prop. `elevation={2}` → shSm, `elevation={4}` → shMd, `elevation={8}` → shLg.
 
@@ -132,6 +168,17 @@ The font is **Manrope** (`--font-sans`). Never hardcode a font family — use `t
 
 **Rules:**
 - `contained primary` = rust background — use sparingly (one per screen region)
+- **Promote is purple.** The buttons that move a change between stages —
+  Promote and Release (the ChangeOrder stage card's main button, its in-place
+  confirm, and the outlined "…anyway" form), "Go to promote" and "Go to release",
+  Create (a ChangeOrder) and the Component view's bottom-bar primary — use the
+  theme's `secondary` purple `#6824c4` (`componentTheme.promote`), hover
+  `#4e1a96` (`promoteEmphasis`), never the rust primary. A contained one is
+  `color="secondary"`; an outlined one sets the purple border and text itself,
+  because the theme's `outlined` override draws every outlined button in neutral
+  ink. White text measures 7.96:1 and 10.98:1; the purple on white is 7.96:1.
+  Their focus ring stays rust. Do not use `componentTheme.done` (`#9951f4`) for a
+  filled button: white on it is 4.34:1, under AA.
 - Never set a custom `backgroundColor` on buttons; use `color` prop instead
 - `disableElevation` is set globally — don't override it
 
@@ -440,6 +487,9 @@ Theme adds a 3px colored left border and semantic background tint. Use `standard
 | `backgroundColor: '#f6f7f9'` | `bgcolor: 'background.default'` |
 | `fontFamily: 'Roboto'` | `fontFamily: theme.typography.fontFamily` |
 | Rust on a status badge | Use `color="success/error/warning/info"` |
+| Blue for a button, link, selected, pressed or focused state | `primary.main` / `--rust`, `--sh-sel-inset`, `--rust-focus` |
+| A local `accent` colour token in a feature's token set | Alias the rust tokens; name status blues for their meaning (`progress`) |
+| `--rust-ring` or another tint as the focus outline | `2px solid var(--rust-focus)` |
 | Border on an IconButton | Don't — theme removes them globally |
 | `size="medium"` on form inputs | Use `size="small"` |
 | Hardcoded `boxShadow` strings | Use `tokens.shMd` (in ThemeProvider) or `elevation` prop |

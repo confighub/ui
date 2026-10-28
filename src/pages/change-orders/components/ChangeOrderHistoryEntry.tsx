@@ -53,7 +53,6 @@ import {
   fullTime,
   isCutError,
   isLongError,
-  matchedFromText,
   overrideReach,
   plural,
   shortDate,
@@ -69,6 +68,7 @@ import {
   type ReleaseRun,
 } from '../changeOrderHistory';
 import {
+  changeOrderAction,
   changeOrderBorder,
   changeOrderFontMono,
   changeOrderInk,
@@ -108,10 +108,10 @@ const initials = reviewInitials;
 const linkButtonSx = {
   fontFamily: 'inherit',
   fontSize: changeOrderType.size.small,
-  color: changeOrderStatus.accent,
+  color: changeOrderAction.ink,
   textDecoration: 'underline',
-  textDecorationColor: changeOrderStatus.accentLine,
-  '&:focus-visible': { outline: `2px solid ${changeOrderStatus.accent}`, outlineOffset: 2, borderRadius: '3px' },
+  textDecorationColor: changeOrderAction.line,
+  '&:focus-visible': { outline: `2px solid ${changeOrderAction.focus}`, outlineOffset: 2, borderRadius: '3px' },
 } as const;
 
 export function LinkButton({
@@ -191,8 +191,8 @@ function Marker({ children, tone }: { children: ReactNode; tone: 'you' | 'auto' 
         letterSpacing: '.04em',
         borderRadius: `${changeOrderShape.radius.sm}px`,
         padding: '1px 4px',
-        color: tone === 'you' ? changeOrderStatus.accent : changeOrderInk.muted,
-        background: tone === 'you' ? changeOrderStatus.accentSoft : changeOrderSurface.inset,
+        color: tone === 'you' ? changeOrderAction.ink : changeOrderInk.muted,
+        background: tone === 'you' ? changeOrderAction.soft : changeOrderSurface.inset,
       }}
     >
       {children}
@@ -604,7 +604,7 @@ const ENTRY_TONE: Record<EntryTone, { fg: string; border: string; bg: string; ed
   promotion: { fg: changeOrderStatus.success, border: changeOrderStatus.successLine, bg: changeOrderStatus.successGround },
   override: { fg: changeOrderStatus.warn, border: changeOrderStatus.warnLine, bg: changeOrderStatus.warnSoft, edge: changeOrderStatus.warn },
   failure: { fg: changeOrderStatus.danger, border: changeOrderStatus.dangerLine, bg: changeOrderStatus.dangerSoft, edge: changeOrderStatus.danger },
-  release: { fg: changeOrderStatus.accent, border: changeOrderStatus.accentLine, bg: changeOrderStatus.accentSoft },
+  release: { fg: changeOrderStatus.progress, border: changeOrderStatus.progressLine, bg: changeOrderStatus.progressSoft },
   opened: { fg: changeOrderInk.subtle, border: changeOrderBorder.default, bg: changeOrderSurface.sunk },
   reviewWait: { fg: changeOrderStatus.warn, border: changeOrderStatus.warnLine, bg: changeOrderStatus.warnSoft },
   reviewVoid: { fg: changeOrderInk.subtle, border: changeOrderBorder.strong, bg: changeOrderSurface.inset },
@@ -662,7 +662,7 @@ function EntryFrame({
                 left: 0,
                 top: 0,
                 bottom: 0,
-                width: `${changeOrderShape.accentEdge}px`,
+                width: `${changeOrderShape.leadingEdge}px`,
                 background: t.edge,
               },
             }
@@ -802,7 +802,6 @@ function ActionEntry({
   const detailId = useId();
   const written = action.promotion?.SpaceIDs ?? [];
   const failedSpaces = action.failure?.Spaces ?? [];
-  const matched = matchedFromText(action);
 
   let tone: EntryTone;
   let Icon: SvgIconComponent;
@@ -843,7 +842,7 @@ function ActionEntry({
             sx={{
               margin: 0,
               padding: '8px 12px',
-              borderLeft: `${changeOrderShape.accentEdge}px solid ${changeOrderStatus.warnLine}`,
+              borderLeft: `${changeOrderShape.leadingEdge}px solid ${changeOrderStatus.warnLine}`,
               background: changeOrderSurface.sunk,
               borderRadius: '0 6px 6px 0',
               fontSize: changeOrderType.size.prose,
@@ -895,8 +894,7 @@ function ActionEntry({
             })}
           </Box>
           <Note>
-            ConfigHub records an override before it writes anything, so a listed Space may not have received the
-            change. The outcome comes from the promotion and failure records matched to this override.
+            Recorded before the write, so a listed Space may not have the change.
           </Note>
         </Box>
         {failedSpaces.length > 0 ? (
@@ -976,15 +974,8 @@ function ActionEntry({
           </Disclosure>
           <Box id={detailId} hidden={!open} sx={open ? detailSx : undefined} data-history-detail>
             {open ? detail : null}
-            {open && matched ? (
-              <Box sx={{ ...sectionSx, borderTop: `1px solid ${changeOrderSurface.inset}` }}>
-                <Note>{matched}</Note>
-              </Box>
-            ) : null}
           </Box>
         </>
-      ) : matched ? (
-        <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.subtle, marginTop: '4px' }}>{matched}</Box>
       ) : null}
     </EntryFrame>
   );
@@ -1035,11 +1026,6 @@ function ReleaseEntry({ entry }: { entry: HistoryReleaseEntry }) {
           </>
         )}
       </Box>
-      {entry.person.kind === 'none' ? (
-        <Box sx={{ ...metaSx, fontSize: changeOrderType.size.small, color: changeOrderInk.subtle }}>
-          This Release was published before ConfigHub recorded who publishes Releases.
-        </Box>
-      ) : null}
     </EntryFrame>
   );
 }

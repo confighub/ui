@@ -9,6 +9,7 @@
 import type { SxProps, Theme } from '@mui/material/styles';
 
 import { componentTheme } from '../x/apps/componentTheme';
+import { changeOrderAction } from './changeOrdersTokens';
 
 /**
  * THE CONSOLES' OWN TOKENS, TAKEN FROM `tools/design-fidelity/contract.json`.
@@ -52,11 +53,18 @@ export const consoleTokens = {
   idleLine: '#d3d8df',
   idleSoft: '#eef0f3',
 
-  /** The ONLY accent: selection and primary action. */
-  accent: '#2f5fd0',
-  /** The text-on-white and hover value of the accent. */
-  accentInk: '#234ba6',
-  accentSoft: '#eaf0fd',
+  /** Primary action, selection: the brand rust, shared with the ChangeOrder pages. */
+  action: changeOrderAction.ink,
+  /** The hover and border of a filled action. */
+  actionInk: changeOrderAction.inkHover,
+  actionSoft: changeOrderAction.soft,
+  /** The 2px keyboard focus outline. 5.59:1 on white, 5.31:1 on sunk. */
+  focus: changeOrderAction.focus,
+
+  /** A stage in progress or ready to act on: a status, so blue, never the action rust. */
+  progress: '#2f5fd0',
+  progressInk: '#234ba6',
+  progressSoft: '#eaf0fd',
 
   ok: '#1c7a4c',
   wait: '#8a6100',
@@ -109,6 +117,31 @@ export const R_MICRO = '3px';
 export const R_CONTROL = '8px';
 export const R_SURFACE = '10px';
 
+/**
+ * The link on a console row's name. The row holds controls of its own, so it
+ * cannot be one anchor: the link's ::after covers the row (which is
+ * `position: relative`), and the row's controls sit above it with `zIndex: 1`.
+ */
+export const ROW_LINK_SX = {
+  textDecoration: 'none',
+  '&::after': { content: '""', position: 'absolute', inset: 0, cursor: 'pointer' },
+  '&:focus-visible': { outline: 'none' },
+  '&:focus-visible::after': { outline: `2px solid ${consoleTokens.focus}`, outlineOffset: -2, borderRadius: R_MICRO },
+} as const;
+
+/**
+ * For a row element whose `title` holds what the row does not show (cut text,
+ * an explanation). The row link's ::after covers the row and hides the native
+ * tooltip, so the element sits above it. It is sized to its text, because a
+ * raised element is not part of the link: the rest of the cell still opens the row.
+ */
+export const ABOVE_ROW_LINK_SX = {
+  position: 'relative',
+  zIndex: 1,
+  width: 'fit-content',
+  maxWidth: '100%',
+} as const;
+
 /** The contract's own figure type: `ui-monospace | 18px | 650 | 1 | -0.36px`. */
 export const KPI_NUM_SX = {
   fontFamily: consoleTokens.mono,
@@ -159,27 +192,22 @@ export const KPI_CARD_SX = {
 } as const;
 
 export const KPI_ACTIVE_CARD_SX = {
-  borderColor: consoleTokens.accent,
-  background: consoleTokens.accentSoft,
-  boxShadow: `inset 0 0 0 1px ${consoleTokens.accent}`,
+  borderColor: consoleTokens.action,
+  background: consoleTokens.actionSoft,
+  boxShadow: `inset 0 0 0 1px ${consoleTokens.action}`,
 } as const;
 
 /**
  * The State dropdown holds some of this card's states, or these and others.
- * The accent border says the card takes part in the filter; the dash and the
+ * The action border says the card takes part in the filter; the dash and the
  * plain surface say it is not the whole of it. Line style, never opacity (R11).
  */
 export const KPI_PARTIAL_CARD_SX = {
-  borderColor: consoleTokens.accent,
+  borderColor: consoleTokens.action,
   borderStyle: 'dashed',
   background: consoleTokens.surface,
   boxShadow: 'none',
 } as const;
-
-/** `"needs a Release"` -> `"Needs a Release"`. The copy module writes hints as fragments; this is the only place they are read as sentences. */
-export function sentenceCase(s: string): string {
-  return s.length === 0 ? s : s.charAt(0).toUpperCase() + s.slice(1);
-}
 
 /**
  * A short label, not a clipped sentence — cut at the last whole word inside
@@ -245,7 +273,7 @@ export function controlSx(variant: 'primary' | 'quiet', enabled: boolean): SxPro
      * ⚠️ DISABLED IS A CHOSEN COLOUR, NEVER `opacity` (R11).
      *
      * An opacity composite produces a value nobody picked and no vocabulary
-     * check can see: the token says `#2f5fd0`, the screen shows whatever 0.55
+     * check can see: the token says `#ba3d03`, the screen shows whatever 0.55
      * of it over whatever happens to be behind it comes to. That mechanism is
      * behind the reference's four worst below-AA pairs — the ratio is never
      * wrong on purpose, it is simply never anybody's decision.
@@ -270,10 +298,10 @@ export function controlSx(variant: 'primary' | 'quiet', enabled: boolean): SxPro
       ? { background: consoleTokens.surface, color: consoleTokens.ink3, borderColor: consoleTokens.lineStrong }
       : variant === 'primary'
         ? {
-            background: consoleTokens.accent,
+            background: consoleTokens.action,
             color: consoleTokens.onEmphasis,
-            borderColor: consoleTokens.accentInk,
-            '&:hover': { background: consoleTokens.accentInk },
+            borderColor: consoleTokens.actionInk,
+            '&:hover': { background: consoleTokens.actionInk },
           }
         : {
             background: consoleTokens.surface,
@@ -282,7 +310,7 @@ export function controlSx(variant: 'primary' | 'quiet', enabled: boolean): SxPro
             '&:hover': { background: consoleTokens.surfaceSunk },
           }),
     '&:focus-visible': {
-      outline: `2px solid ${consoleTokens.accent}`,
+      outline: `2px solid ${consoleTokens.focus}`,
       outlineOffset: 2,
       borderRadius: R_MICRO,
     },
@@ -299,7 +327,7 @@ export const SELECT_SX: SxProps<Theme> = {
   border: `1px solid ${consoleTokens.lineStrong}`,
   borderRadius: R_CONTROL,
   padding: '0 8px',
-  '&:focus-visible': { outline: `2px solid ${consoleTokens.accent}`, outlineOffset: 1 },
+  '&:focus-visible': { outline: `2px solid ${consoleTokens.focus}`, outlineOffset: 1 },
 };
 
 /**

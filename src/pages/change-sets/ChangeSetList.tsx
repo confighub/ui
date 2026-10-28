@@ -8,11 +8,13 @@
  * Open ChangeSets come first, as they are the work in progress, then the rest by
  * when they last changed. A row says what the ChangeSet changes (its image change),
  * how its reviews stand and whose were asked for, who created it, and what to do
- * next: Review when a review was asked of the viewer, Open otherwise.
+ * next: Review when a review was asked of the viewer, Open otherwise. A column head
+ * sorts by what the ChangeSet itself records; the image change, the review status
+ * and the next action are read row by row, so their columns do not sort.
  */
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
@@ -22,23 +24,20 @@ import CheckIcon from '@mui/icons-material/Check';
 import { useListAllChangeSetsQuery, type ChangeSetRead } from '@confighub/rtk-query';
 
 import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
+import { ConsoleTable, ConsoleTableRow, type ConsoleTableColumn } from '@/components/console-table/ConsoleTable';
 import { useInViewport } from '@/hooks/useInViewport';
 import { useListUsersByIdChunkedQuery } from '@/hooks/chunkedQueriesApi';
 
 import {
   ConsoleClearButton,
-  ConsoleColumnHead,
   ConsoleDateRange,
   ConsoleEmpty,
   ConsoleFilterBar,
   ConsoleFooter,
   ConsoleIntro,
-  ConsoleList,
-  ConsoleLoading,
   ConsoleSearch,
   ConsoleSelectFilter,
   ConsoleTitleRow,
-  type ConsoleColumn,
 } from '../change-orders/components/ConsoleParts';
 import { ImageChangesView } from '../change-orders/components/ImageChangeCell';
 import { KpiStrip, type KpiCard } from '../change-orders/components/KpiStrip';
@@ -49,7 +48,8 @@ import {
   KPI_LABEL_SX,
   KPI_NUM_SX,
   KPI_PARTIAL_CARD_SX,
-  R_MICRO,
+  ABOVE_ROW_LINK_SX,
+  ROW_LINK_SX,
   ageFrom,
   consoleTokens as T,
   controlSx,
@@ -86,14 +86,28 @@ const IMAGE_CHANGE_CELL = {
   '@media (max-width: 1275px)': { gridColumn: '1 / -1', gridRow: 2, marginTop: '8px', maxWidth: 640 },
 } as const;
 
-const COLUMNS: ConsoleColumn[] = [
-  { key: 'name', label: 'ChangeSet' },
-  { key: 'image', label: 'Image change', sx: HIDE_NARROW },
-  { key: 'reviews', label: 'Reviews' },
-  { key: 'creator', label: 'Created by' },
-  { key: 'age', label: 'Age', sx: { ...HIDE_NARROW, textAlign: 'right' } },
-  { key: 'action', label: 'Next action', sx: { textAlign: 'right' } },
-];
+const AGE_SX = { ...HIDE_NARROW, textAlign: 'right' } as const;
+
+/** Newer first when ascending, as the column shows ages, not dates. */
+function ageSortValue(changeSet: ChangeSetRead): number | undefined {
+  const created = Date.parse(changeSet.CreatedAt ?? '');
+  return Number.isNaN(created) ? undefined : -created;
+}
+
+/** The heads, and how each sorts. `ChangeSetRow` draws the cells, in this order. */
+function changeSetColumns(userNames: ReadonlyMap<string, string>): ConsoleTableColumn<ChangeSetRead>[] {
+  return [
+    { id: 'name', header: 'ChangeSet', sortValue: (cs) => cs.Slug },
+    { id: 'image', header: 'Image change', sx: HIDE_NARROW },
+    // The column leads with the State; the review status beside it is read row by row.
+    { id: 'reviews', header: 'Reviews', sortValue: (cs) => STATE_ORDER[cs.State ?? ''] ?? 3 },
+    { id: 'creator', header: 'Created by', sortValue: (cs) => (cs.UserID ? reviewPersonOf(cs.UserID, userNames, undefined).name : undefined) },
+    { id: 'age', header: 'Age', sx: AGE_SX, sortValue: ageSortValue },
+    { id: 'action', header: 'Next action', sx: { textAlign: 'right' } },
+  ];
+}
+
+const changeSetRowId = (cs: ChangeSetRead) => cs.ChangeSetID ?? `${cs.SpaceSlug ?? ''}/${cs.Slug}`;
 
 type CardKey = 'requested' | 'open' | 'closed';
 
@@ -117,14 +131,12 @@ const ChangeSetRow = memo(function ChangeSetRow({
   viewerUserId,
   loadedAt,
   now,
-  onOpen,
 }: {
   changeSet: ChangeSetRead;
   userNames: ReadonlyMap<string, string>;
   viewerUserId: string | undefined;
   loadedAt: number;
   now: number;
-  onOpen: (changeSet: ChangeSetRead) => void;
 }) {
   const [ref, nearScreen] = useInViewport<HTMLDivElement>(NEAR_SCREEN);
   const changeSetId = changeSet.ChangeSetID ?? '';
@@ -162,47 +174,22 @@ const ChangeSetRow = memo(function ChangeSetRow({
     changeSet.State !== 'Closed' && reviews.requests.some((request) => request.user.isYou && !request.reviewed);
   const creator = changeSet.UserID ? reviewPersonOf(changeSet.UserID, userNames, viewerUserId).name : undefined;
 
-  const open = useCallback(() => onOpen(changeSet), [onOpen, changeSet]);
-  const onKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      if (event.target !== event.currentTarget) return;
-      event.preventDefault();
-      open();
-    },
-    [open],
+  const attributes = useMemo(
+    () => ({ 'data-testid': 'change-sets-row', 'data-change-set-slug': changeSet.Slug, 'data-state': changeSet.State }),
+    [changeSet.Slug, changeSet.State],
   );
   const subline = [changeSet.SpaceSlug, firstLine(changeSet.Description)].filter(Boolean).join(' · ');
 
   return (
-    <Box
-      ref={ref}
-      role="button"
-      tabIndex={0}
-      data-testid="change-sets-row"
-      data-change-set-slug={changeSet.Slug}
-      data-state={changeSet.State}
-      onClick={open}
-      onKeyDown={onKeyDown}
-      aria-label={`Open ChangeSet ${changeSet.Slug}`}
-      sx={{
-        ...GRID,
-        paddingTop: '11px',
-        paddingBottom: '11px',
-        borderBottom: `1px solid ${T.line}`,
-        textAlign: 'left',
-        cursor: 'pointer',
-        transition: 'background .1s ease',
-        '&:hover': { background: T.surfaceSunk },
-        '&:focus-visible': { outline: `2px solid ${T.accent}`, outlineOffset: -2, borderRadius: R_MICRO },
-        '&:last-of-type': { borderBottom: 'none' },
-      }}
-    >
+    <ConsoleTableRow grid={GRID} attributes={attributes} rowRef={ref}>
       <Box sx={{ minWidth: 0 }}>
         <Typography
-          component="span"
+          component={RouterLink}
+          to={changeSetPath(changeSet.SpaceSlug ?? '', changeSet.Slug)}
+          aria-label={`Open ChangeSet ${changeSet.Slug}`}
           title={changeSet.Slug}
           sx={{
+            ...ROW_LINK_SX,
             fontFamily: T.mono,
             fontSize: 13.5,
             lineHeight: T.lh,
@@ -221,7 +208,7 @@ const ChangeSetRow = memo(function ChangeSetRow({
         <Typography
           component="span"
           title={subline}
-          sx={{ fontSize: 11.5, lineHeight: T.lh, marginTop: '2px', color: T.ink3, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+          sx={{ ...ABOVE_ROW_LINK_SX, fontSize: 11.5, lineHeight: T.lh, marginTop: '2px', color: T.ink3, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
         >
           {subline}
         </Typography>
@@ -240,7 +227,7 @@ const ChangeSetRow = memo(function ChangeSetRow({
               width: 6,
               height: 6,
               borderRadius: '999px',
-              background: changeSet.State === 'Open' ? T.accent : changeSet.State === 'Closed' ? T.ok : T.ink3,
+              background: changeSet.State === 'Open' ? T.progress : changeSet.State === 'Closed' ? T.ok : T.ink3,
             }}
           />
           <Typography component="b" data-testid="change-sets-row-state" sx={{ fontSize: 12.5, lineHeight: T.lh, fontWeight: 600, color: T.ink }}>
@@ -259,7 +246,7 @@ const ChangeSetRow = memo(function ChangeSetRow({
             component="span"
             data-testid="change-sets-row-reviewers"
             title={reviews.requests.map((r) => `${r.user.name}${r.reviewed ? ' (reviewed)' : ''}`).join(', ')}
-            sx={{ fontSize: 11.5, lineHeight: T.lh, color: T.ink3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            sx={{ ...ABOVE_ROW_LINK_SX, fontSize: 11.5, lineHeight: T.lh, color: T.ink3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
           >
             Requested:{' '}
             {reviews.requests.map((r, i) => (
@@ -277,7 +264,7 @@ const ChangeSetRow = memo(function ChangeSetRow({
       <Typography
         data-testid="change-sets-row-creator"
         title={creator}
-        sx={{ fontSize: 12.5, lineHeight: T.lh, color: T.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+        sx={{ ...ABOVE_ROW_LINK_SX, fontSize: 12.5, lineHeight: T.lh, color: T.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
       >
         {creator === undefined ? '—' : truncateWords(creator, 32)}
       </Typography>
@@ -287,25 +274,16 @@ const ChangeSetRow = memo(function ChangeSetRow({
       </Typography>
 
       <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <Box
-          component="button"
-          type="button"
-          data-testid="change-sets-row-action"
-          onClick={(event: React.MouseEvent) => {
-            event.stopPropagation();
-            open();
-          }}
-          sx={controlSx(awaitingViewer ? 'primary' : 'quiet', true)}
-        >
+        {/* The row's link covers it, so it is a picture of a control, not a second one. */}
+        <Box component="span" aria-hidden="true" data-testid="change-sets-row-action" sx={controlSx(awaitingViewer ? 'primary' : 'quiet', true)}>
           {awaitingViewer ? 'Review' : 'Open'}
         </Box>
       </Box>
-    </Box>
+    </ConsoleTableRow>
   );
 });
 
 export function ChangeSetList() {
-  const navigate = useNavigate();
   const { userInfo } = useUserInfo();
   const viewerUserId = userInfo?.UserID;
   const { data, isLoading, isFetching, isError, fulfilledTimeStamp, refetch } = useListAllChangeSetsQuery({});
@@ -378,7 +356,7 @@ export function ChangeSetList() {
       hint: 'asked of you, not closed',
       count: changeSets.filter((cs) => requestedOf(cs, viewerUserId) && cs.State !== 'Closed').length,
       status: requestedOnly ? 'on' : 'off',
-      tone: T.accent,
+      tone: T.progress,
     },
     {
       key: 'open',
@@ -405,9 +383,12 @@ export function ChangeSetList() {
     }
   };
 
-  const onOpen = useCallback(
-    (changeSet: ChangeSetRead) => navigate(changeSetPath(changeSet.SpaceSlug ?? '', changeSet.Slug)),
-    [navigate],
+  const columns = useMemo(() => changeSetColumns(userNames), [userNames]);
+  const renderRow = useCallback(
+    (cs: ChangeSetRead) => (
+      <ChangeSetRow changeSet={cs} userNames={userNames} viewerUserId={viewerUserId} loadedAt={loadedAt} now={now} />
+    ),
+    [userNames, viewerUserId, loadedAt, now],
   );
 
   return (
@@ -456,11 +437,16 @@ export function ChangeSetList() {
         </Box>
       ) : null}
 
-      <ConsoleList label="ChangeSets">
-        <ConsoleColumnHead columns={COLUMNS} grid={GRID} />
-        {isLoading ? (
-          <ConsoleLoading testId="change-sets-loading" />
-        ) : matched.length === 0 ? (
+      <ConsoleTable
+        label="ChangeSets"
+        data={matched}
+        columns={columns}
+        grid={GRID}
+        getRowId={changeSetRowId}
+        isLoading={isLoading}
+        loadingTestId="change-sets-loading"
+        renderRow={renderRow}
+        empty={
           <ConsoleEmpty
             message={changeSets.length === 0 ? 'No ChangeSets yet.' : 'No ChangeSet matches these filters.'}
             action={
@@ -471,27 +457,15 @@ export function ChangeSetList() {
               ) : null
             }
           />
-        ) : (
-          <>
-            {matched.map((cs) => (
-              <ChangeSetRow
-                key={cs.ChangeSetID}
-                changeSet={cs}
-                userNames={userNames}
-                viewerUserId={viewerUserId}
-                loadedAt={loadedAt}
-                now={now}
-                onOpen={onOpen}
-              />
-            ))}
-            <ConsoleFooter
-              countTestId="change-sets-count"
-              count={`${matched.length} ${matched.length === 1 ? 'ChangeSet' : 'ChangeSets'}`}
-              hint="Select a row to open its change and reviews."
-            />
-          </>
-        )}
-      </ConsoleList>
+        }
+        footer={
+          <ConsoleFooter
+            countTestId="change-sets-count"
+            count={`${matched.length} ${matched.length === 1 ? 'ChangeSet' : 'ChangeSets'}`}
+            hint="Select a row to open its change and reviews."
+          />
+        }
+      />
     </Box>
   );
 }

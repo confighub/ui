@@ -2127,7 +2127,7 @@ function StepUnits(props: StepUnitsProps) {
                       sx={{
                         fontSize: 10.5,
                         fontWeight: 700,
-                        color: componentTheme.variation,
+                        color: componentTheme.fgMuted,
                         textTransform: 'uppercase',
                         letterSpacing: '0.04em',
                       }}
@@ -2395,7 +2395,7 @@ function StepReview({
                         sx={{
                           fontSize: 10.5,
                           fontWeight: 700,
-                          color: componentTheme.variation,
+                          color: componentTheme.fgMuted,
                           textTransform: 'uppercase',
                           letterSpacing: '0.04em',
                         }}

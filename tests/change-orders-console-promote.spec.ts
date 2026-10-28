@@ -212,8 +212,8 @@ test.describe('promoting from a console row', () => {
     await expect(row.getByRole('button', { name: 'Promote', exact: true })).toHaveCount(0);
 
     // `Resolve` is what a held row offers: something to look at, not something
-    // to write. Pressing it opens the ChangeOrder, which is a navigation.
-    await row.getByRole('button', { name: 'Resolve', exact: true }).click();
+    // to write. It is a link to the ChangeOrder.
+    await row.getByRole('link', { name: 'Resolve', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(fx.changeOrderPath), { timeout: 20_000 });
 
     // And the stage the console refused really is the held one, so the absence

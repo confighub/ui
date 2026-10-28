@@ -7,6 +7,7 @@ import Box from '@mui/material/Box';
 import Skeleton from '@mui/material/Skeleton';
 
 import type { ConfigDiffColumns } from '@/components/config-diff/ConfigDiffView';
+import { VISUALLY_HIDDEN_SX } from '@/utility/visually-hidden';
 
 import { unitConfigHref, unitLinksHref } from '../../unit-detail/unitDetailHrefs';
 import { ChangeOrderGateList } from '../../x/apps/change-order/ChangeOrderGateList';
@@ -21,6 +22,7 @@ import { COMPLETE_STAGE_ID, COMPLETE_STEP_LABEL } from '../changeOrderCompleteSt
 import type { ChangeOrderOutcomeKind } from '../changeOrderOutcome';
 import { OutcomeUnitDiff } from '../components/OutcomeUnitDiff';
 import {
+  changeOrderAction,
   changeOrderBorder,
   changeOrderCardTokens,
   changeOrderFontMono,
@@ -157,15 +159,15 @@ function VariantChip({ label, pressed, onClick, id }: VariantChipProps) {
         alignItems: 'center',
         gap: '5px',
         borderRadius: `${changeOrderShape.radius.pill}px`,
-        border: `1px solid ${pressed ? changeOrderStatus.accent : changeOrderBorder.strong}`,
+        border: `1px solid ${pressed ? changeOrderAction.ink : changeOrderBorder.strong}`,
         boxShadow: pressed ? changeOrderSelectedRing : 'none',
         background: changeOrderSurface.card,
         fontFamily: changeOrderFontMono,
         fontSize: changeOrderType.size.small,
-        color: pressed ? changeOrderStatus.accent : changeOrderInk.muted,
+        color: pressed ? changeOrderAction.ink : changeOrderInk.muted,
         whiteSpace: 'nowrap',
         transition: DRAFT_TRANSITION,
-        '&:hover': { borderColor: pressed ? changeOrderStatus.accent : changeOrderInk.subtle },
+        '&:hover': { borderColor: pressed ? changeOrderAction.ink : changeOrderInk.subtle },
         '&:focus-visible': FOCUS_RING,
         ...PRESS,
       }}
@@ -181,7 +183,7 @@ export interface LeaveOutButtonProps {
   ariaLabel: string;
 }
 
-/** "Leave out": a link-styled action in the accent, as the design's notes carry it. */
+/** "Leave out": a link-styled action in the action rust, as the design's notes carry it. */
 export function LeaveOutButton({ onClick, ariaLabel }: LeaveOutButtonProps) {
   return (
     <Box
@@ -194,7 +196,7 @@ export function LeaveOutButton({ onClick, ariaLabel }: LeaveOutButtonProps) {
         cursor: 'pointer',
         fontSize: changeOrderType.size.small,
         fontWeight: changeOrderType.weight.semibold,
-        color: changeOrderStatus.accent,
+        color: changeOrderAction.ink,
         borderRadius: `${changeOrderShape.radius.sm}px`,
         transition: DRAFT_TRANSITION,
         '&:hover': { textDecoration: 'underline', textUnderlineOffset: '2px' },
@@ -242,7 +244,7 @@ function CloneRow({ unit, spaceName, spaceHref, baseSpaceId, onRetry }: CloneRow
         )}
         {kind !== undefined ? <TagBadge>{kind}</TagBadge> : null}
         <TagBadge
-          sx={{ color: changeOrderStatus.accent, background: changeOrderStatus.accentSoft, borderColor: changeOrderStatus.accentLine }}
+          sx={{ color: changeOrderStatus.progress, background: changeOrderStatus.progressSoft, borderColor: changeOrderStatus.progressLine }}
         >
           {draftCopy.path.added}
         </TagBadge>
@@ -453,7 +455,8 @@ export function DraftStageCard({
           undetermined={group?.determinable === false}
           unchanged={fieldDiffs.length === 0}
           spaceHref={spaceHrefOf(unit.spaceId)}
-          linksHref={unitLinksHref(unit.spaceId, unit.unitId, { updateType, otherSpacesOnly: true, direction: 'from' })}
+          // An Invoke change travels over no Link: there are none to open.
+          linksHref={updateType === 'Invoke' ? undefined : unitLinksHref(unit.spaceId, unit.unitId, { updateType, otherSpacesOnly: true, direction: 'from' })}
         />
         <OutcomeUnitDiff unitId={unit.unitId} group={group} columns={columns.columns} keyPrefix={`draft-group-${card.groupKey}`} />
       </Box>
@@ -538,6 +541,16 @@ export function DraftStageCard({
   let writes: ReactNode;
   if (spaceIds.length === 0) {
     writes = <Box sx={NOTE_SX}>{draftCopy.path.noVariants}</Box>;
+  } else if (preview.status === 'resolved' && preview.idle !== undefined) {
+    // Nothing to show yet: no outcome, and no "could not establish" either.
+    writes = (
+      <Box data-testid="draft-writes-idle" sx={{ ...NOTE_SX, color: changeOrderInk.subtle }}>
+        <span aria-hidden="true">{draftCopy.page.facts.none}</span>
+        <Box component="span" sx={VISUALLY_HIDDEN_SX}>
+          {preview.idle}
+        </Box>
+      </Box>
+    );
   } else if (preview.status === 'loading') {
     writes = <WritesSkeleton />;
   } else if (preview.status !== 'resolved' || outcome === undefined) {

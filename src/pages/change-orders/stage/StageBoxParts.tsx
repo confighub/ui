@@ -93,8 +93,10 @@ function SegmentLink({ part, links }: { part: Extract<CopySegment, { kind: 'link
       </Link>
     );
   }
+  // A stage link stays on this ChangeOrder; a Space or Unit opens in a new tab, so the review here is kept.
+  const newTab = ref.to === 'space' || ref.to === 'unit' ? { target: '_blank', rel: 'noopener noreferrer' } : {};
   return (
-    <Link component={RouterLink} to={href} title={part.title} sx={sx}>
+    <Link component={RouterLink} to={href} title={part.title} sx={sx} {...newTab}>
       {text}
     </Link>
   );
@@ -124,10 +126,16 @@ export function CopyText({ parts, links, codeInherit = false }: { parts: readonl
   );
 }
 
-/** A link to an app route inside a sentence. */
+/** A link to an app route inside a sentence. It leaves the ChangeOrder, so it opens a new tab. */
 export function ProseLink({ href, children, code = false, weight = 500 }: { href: string; children: ReactNode; code?: boolean; weight?: 400 | 500 }) {
   return (
-    <Link component={RouterLink} to={href} sx={{ ...proseLinkSx, ...(code ? { ...codeSx, fontWeight: weight } : {}) }}>
+    <Link
+      component={RouterLink}
+      to={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      sx={{ ...proseLinkSx, ...(code ? { ...codeSx, fontWeight: weight } : {}) }}
+    >
       {children}
     </Link>
   );

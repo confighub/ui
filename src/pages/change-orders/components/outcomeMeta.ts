@@ -2,13 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import type { ChangeOrderOutcomeGroup, ChangeOrderOutcomeKind } from '../changeOrderOutcome';
-import { changeOrderInk, changeOrderStatus, changeOrderSurface } from '../changeOrdersTokens';
+import { changeOrderBorder, changeOrderInk, changeOrderStatus, changeOrderSurface } from '../changeOrdersTokens';
 
-/** How one outcome kind reads: its tone, its name, and the plain-language half under the name. */
+/** How one outcome kind reads: its tone and its name. */
 export interface OutcomeMeta {
   tone: string;
   label: string;
-  hint: string;
 }
 
 /** An outcome badge's fill and ink. */
@@ -31,17 +30,13 @@ export interface OutcomeBadgeTone {
  * Until the base has been read there is no authored change to weigh against and
  * no row is excluded, so the label falls back to its second half alone. That is
  * the noisier reading, never the quieter one.
- *
- * `hint` is the plain-language half of each label, rendered under it. A label is
- * a name for an outcome and cannot also explain itself; "Adds resources" tells a
- * reader which group this is, and "do not hold it yet" tells them what it means
- * for the variants inside.
  */
 export const OUTCOME_META: Record<ChangeOrderOutcomeKind, OutcomeMeta> = {
-  same: { tone: changeOrderStatus.success, label: 'Same change', hint: 'take the change identically' },
-  differs: { tone: changeOrderStatus.warn, label: 'Differs', hint: 'take a different change' },
-  adds: { tone: changeOrderInk.muted, label: 'Adds resources', hint: 'do not hold it yet' },
-  unknown: { tone: changeOrderInk.subtle, label: 'Could not establish', hint: 'not determinable this round' },
+  same: { tone: changeOrderStatus.success, label: 'Same change' },
+  differs: { tone: changeOrderStatus.warn, label: 'Differs' },
+  adds: { tone: changeOrderInk.muted, label: 'Adds resources' },
+  unknown: { tone: changeOrderInk.subtle, label: 'Could not establish' },
+  nothing: { tone: changeOrderBorder.strong, label: 'Nothing to change here' },
 };
 
 /**
@@ -57,6 +52,7 @@ export const OUTCOME_BADGE: Record<ChangeOrderOutcomeKind, OutcomeBadgeTone> = {
   differs: { bg: changeOrderStatus.warnSoft, fg: changeOrderStatus.warn },
   adds: { bg: changeOrderSurface.inset, fg: changeOrderInk.muted },
   unknown: { bg: changeOrderSurface.inset, fg: changeOrderInk.subtle },
+  nothing: { bg: changeOrderSurface.sunk, fg: changeOrderInk.subtle },
 };
 
 /** One outcome's share of a stage: how many variants came out this way. */

@@ -69,18 +69,19 @@ import {
 import { cardRepresentativeUnits, rowRefusals } from './changeOrderCard';
 import { partitionSourceUnitsByChange, useChangeOrderConsoleChanges } from './useChangeOrderConsoleChanges';
 import {
+  changeOrderAction,
   changeOrderBorder,
   changeOrderCardTokens,
-  changeOrderInk,
   changeOrderFontMono,
   changeOrderFontSans,
+  changeOrderInk,
   changeOrderShape,
   changeOrderStatus,
   changeOrderSurface,
   changeOrderType,
 } from './changeOrdersTokens';
 import { ChangeOrderBlockedResources, ChangeOrderRefusals } from './changeOrderRefusals';
-import { changeOrderPath } from './changeOrderAddress';
+import { FOCUS_TITLE_STATE, changeOrderPath } from './changeOrderAddress';
 import { useSharedDiffColumns } from './useSharedDiffColumns';
 import { UnitDiffRow } from './components/UnitDiffRow';
 import { Fact, FactLink, OpenedAt, StateChip, SummaryCard } from './components/SummaryFacts';
@@ -126,7 +127,7 @@ import { StageSection, type StageSectionHandle } from './stage/StageSection';
 /**
  * The header status chip's own tone, per `ConsoleState`.
  *
- * ⚠️ THE CHIP MUST BE TONED BY STATE, not by a single accent. Every state
+ * ⚠️ THE CHIP MUST BE TONED BY STATE, not by a single colour. Every state
  * renders through this one chip, so a constant colour makes a degraded ChangeOrder
  * and a healthy one indistinguishable at the spot a reader looks first.
  *
@@ -137,11 +138,11 @@ import { StageSection, type StageSectionHandle } from './stage/StageSection';
  * happen to agree.
  */
 const CONSOLE_STATE_TONE: Record<ConsoleState, string> = {
-  ready: changeOrderStatus.accent,
+  ready: changeOrderStatus.progress,
   degraded: changeOrderStatus.danger,
   blocked: changeOrderStatus.warn,
   held: changeOrderStatus.warn,
-  progressing: changeOrderStatus.accent,
+  progressing: changeOrderStatus.progress,
   complete: changeOrderStatus.success,
   'complete-unverified': changeOrderInk.subtle,
   aborted: changeOrderInk.subtle,
@@ -230,11 +231,11 @@ function reviewChipText(
   summary: StageReviewSummary,
   readiness: PromoteReadiness | undefined,
   words: { waiting: string; rejected: string },
-): { tone: 'bad' | 'accent' | 'ok' | 'warn'; text: string } {
+): { tone: 'bad' | 'progress' | 'ok' | 'warn'; text: string } {
   if (summary.state === 'rejected') return { tone: 'bad', text: words.rejected };
   const kind = summary.gate.kind;
   if (summary.open) {
-    if (kind === 'entry' && readiness?.kind === 'ready') return { tone: 'accent', text: reviewCopy.summaryChip.ready };
+    if (kind === 'entry' && readiness?.kind === 'ready') return { tone: 'progress', text: reviewCopy.summaryChip.ready };
     return { tone: 'ok', text: reviewCopy.summaryChip.reviewsComplete };
   }
   if (kind === 'release') return { tone: 'warn', text: reviewCopy.summaryChip.releaseWaiting };
@@ -411,7 +412,7 @@ function ScopeSpaces({ spaces, stages }: { spaces: ChangeOrderSpace[]; stages: C
           textDecorationColor: changeOrderBorder.strong,
           textUnderlineOffset: '3px',
           '&:focus-visible': {
-            outline: `2px solid ${changeOrderStatus.accent}`,
+            outline: `2px solid ${changeOrderAction.focus}`,
             outlineOffset: 2,
             borderRadius: `${changeOrderShape.radius.xs}px`,
           },
@@ -528,13 +529,11 @@ function CompleteStepDetail({
           stage's OWN Spaces.
         */}
         <Box sx={{ fontSize: changeOrderType.size.prose, color: changeOrderInk.muted, marginBottom: '12px' }}>
-          The ChangeWorkflow&rsquo;s final prerequisites, checked over the last stage&rsquo;s
-          own Spaces. They decide whether this ChangeOrder is finished. Nothing is promoted after this
-          step.
+          Checked over the last stage&rsquo;s Spaces.
         </Box>
         {gates.length === 0 ? (
           <Box sx={{ fontSize: changeOrderType.size.prose, color: changeOrderInk.muted }}>
-            No ChangeWorkflow governs this ChangeOrder, so there is no final checklist to report.
+            No ChangeWorkflow.
           </Box>
         ) : (
           <Box
@@ -575,8 +574,19 @@ function CompleteStepDetail({
 export default function ChangeOrdersPage() {
   const { space, slug, stage } = useParams<{ space?: string; slug?: string; stage?: string }>();
   const navigate = useNavigate();
-  const { search, hash } = useLocation();
+  const { search, hash, state: navigationState } = useLocation();
   const detail = useChangeOrderDetail({ space, slug, stage });
+  // Arriving from the draft that created it: the title takes the keyboard once, when it is drawn.
+  const focusTitle = (navigationState as Record<string, unknown> | null)?.[FOCUS_TITLE_STATE] === true;
+  const titleFocused = useRef(false);
+  const titleRef = useCallback(
+    (title: HTMLElement | null) => {
+      if (title === null || !focusTitle || titleFocused.current) return;
+      titleFocused.current = true;
+      title.focus({ preventScroll: true });
+    },
+    [focusTitle],
+  );
   const { address } = detail;
   /** Whether the URL addresses a ChangeOrder at all, rather than the console. */
   const addressed = address?.kind !== 'none';
@@ -1246,9 +1256,7 @@ export default function ChangeOrdersPage() {
       */}
       {!addressed ? (
         <ChangeOrdersConsole
-          onOpenChangeOrder={(row) => {
-            navigate(changeOrderPath(row.spaceSlug, row.slug));
-          }}
+          changeOrderHref={(row) => changeOrderPath(row.spaceSlug, row.slug)}
           /*
             ONE LIVE REGION ON THIS PAGE, AND IT IS THE ONE ABOVE.
             Passing this makes the console render none of its own and hand its
@@ -1297,7 +1305,7 @@ export default function ChangeOrdersPage() {
             {address.candidates.length} ChangeOrders are named “{address.slug}”
           </Box>
           <Box sx={{ color: changeOrderInk.muted, marginBottom: '8px' }}>
-            A ChangeOrder slug is unique only within its Space. Pick the Space:
+            Pick the Space:
           </Box>
           <Box component="ul" sx={{ margin: 0, paddingLeft: '20px' }} data-testid="change-order-candidates">
             {address.candidates.map((candidate) => (
@@ -1324,9 +1332,6 @@ export default function ChangeOrdersPage() {
             }}
           >
             No ChangeOrder matches “{address?.kind === 'notFound' ? address.label : [space, slug].filter(Boolean).join('/')}”
-          </Box>
-          <Box sx={{ color: changeOrderInk.muted }}>
-            It may have been deleted, or the address may be wrong.
           </Box>
         </Box>
       ) : null}
@@ -1364,7 +1369,11 @@ export default function ChangeOrdersPage() {
               <Box sx={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <Box
                   component="h1"
+                  ref={titleRef}
+                  tabIndex={-1}
+                  data-testid="change-order-title"
                   sx={{
+                    outline: 'none',
                     fontSize: changeOrderType.size.display,
                     lineHeight: changeOrderType.lineHeight.tight,
                     fontWeight: changeOrderType.weight.strong,
@@ -1758,7 +1767,7 @@ export default function ChangeOrdersPage() {
                     */}
                     {visibleSourceUnits.length === 0 ? (
                       <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted }}>
-                        Every resource here was passed over — see "Passed over" below.
+                        Every resource was passed over.
                       </Box>
                     ) : (
                       <>
@@ -1835,7 +1844,7 @@ export default function ChangeOrdersPage() {
             ) : detail.sequence.stages.length === 0 ? (
               <Box sx={{ fontSize: changeOrderType.size.prose, color: changeOrderInk.muted }}>
                 {detail.scopedSpaces === null
-                  ? 'The server did not report which Spaces this ChangeOrder targets, so no sequence can be built.'
+                  ? 'The server did not report the target Spaces.'
                   : changeOrderCopy.emptyNoStages.title}
               </Box>
             ) : (

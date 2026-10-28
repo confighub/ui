@@ -8,6 +8,7 @@
  */
 
 import type { ReactNode } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
 import Tooltip from '@mui/material/Tooltip';
@@ -69,20 +70,21 @@ export function StateChip({ label, tone }: { label: string; tone: string }) {
 }
 
 /**
- * A fact's value, as a link to somewhere else in the product. New tab,
- * deliberately: a detail page is a stopping point in its own right (a URL
- * people come back to, poll, share), and navigating away in place would
- * discard it, as `ChangeOrderUnitHeader`'s unit-detail link also reasons.
+ * A fact's value, as a link to somewhere else in the product. A ChangeOrder page
+ * holds work in progress, so there it opens a new tab. A read-only summary, as
+ * on a ChangeSet or a Channel, passes `newTab={false}`.
  */
-export function FactLink({ href, children }: { href: string; children: ReactNode }) {
+export function FactLink({ href, children, newTab = true }: { href: string; children: ReactNode; newTab?: boolean }) {
+  const sx = { color: 'inherit', textDecoration: 'underline', textDecorationColor: changeOrderBorder.strong };
+  if (!newTab) {
+    return (
+      <Box component={RouterLink} to={href} sx={sx}>
+        {children}
+      </Box>
+    );
+  }
   return (
-    <Box
-      component="a"
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      sx={{ color: 'inherit', textDecoration: 'underline', textDecorationColor: changeOrderBorder.strong }}
-    >
+    <Box component="a" href={href} target="_blank" rel="noopener noreferrer" sx={sx}>
       {children}
     </Box>
   );

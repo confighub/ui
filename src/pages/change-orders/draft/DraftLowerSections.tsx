@@ -19,7 +19,6 @@ import { memo, useCallback, useImperativeHandle, useMemo, useRef, useState, type
 import Box from '@mui/material/Box';
 import Skeleton from '@mui/material/Skeleton';
 import BlockIcon from '@mui/icons-material/Block';
-import ScienceOutlinedIcon from '@mui/icons-material/ScienceOutlined';
 
 import { TreeDiffSection } from '../../x/apps/TreeDiffSection';
 import { SOURCE_STAGE_ID } from '../../x/apps/change-order/changeOrderStages';
@@ -42,14 +41,12 @@ import { UnitDiffRow } from '../components/UnitDiffRow';
 import { useSharedDiffColumns } from '../useSharedDiffColumns';
 import { CouldNotEstablish } from './CouldNotEstablish';
 import { draftCopy } from './draftCopy';
-import { FOCUS_RING } from './draftLook';
 import { draftFinalGates, draftGatesForStage } from './draftGates';
 import { draftStageIdOf } from './draftDecisions';
 import { draftCarriedCardCount, draftCompleteGateCount, draftRailStages, resolveDraftStageId } from './draftPath';
-import { DraftPeek } from './DraftPeek';
 import { DraftCompleteCard, DraftSourceCard, DraftStageCard, LeaveOutButton } from './DraftStageCard';
 import { retryKeepingFocus } from './draftRetryFocus';
-import type { DraftUpdateType, DraftVariant, DraftWorkflow } from './draftTypes';
+import type { DraftVariant, DraftWorkflow } from './draftTypes';
 import type { DraftChangeCards } from './useDraftChangeCards';
 import type { DraftContext } from './useDraftContext';
 import { DRAFT_SCOPE_STAGE_ID, type DraftPreview } from './useDraftPreview';
@@ -283,7 +280,14 @@ export interface DraftLowerSectionsProps {
   workflow: DraftWorkflow | undefined;
   /** The in-scope variants' Space ids, in scope order. */
   scope: readonly string[];
-  updateType: DraftUpdateType;
+  /** `Invoke` for an Invoke draft; a fan-out type for Transform paths. */
+  updateType: string;
+  /**
+   * What the rail's source node says for a kind that carries no base changes: an Invoke draft's
+   * Invocation or function, with "Change defined" as the detail view says it; a Transform paths
+   * kind's source Spaces, with how much it carries.
+   */
+  source?: { summary: string; verdict?: string };
   /** The selected node, `decisions.stage`: a stage name, or the source's or Complete's id. Absent: the page's choice. */
   stage: string | undefined;
   /** A rail click, with the node's id: pass it to `draft.update({ stage })`, which writes the URL's word. */
@@ -309,32 +313,11 @@ export interface DraftLowerSectionsHandle {
   stageCard: () => HTMLElement | null;
 }
 
-/** "Promotion path", with the dry run's peek on its icon. */
+/** "Promotion path". */
 function PathHeading() {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 12px' }}>
-      <Box component="h2" id={PATH_HEADING_ID} tabIndex={-1} sx={{ ...H3_SX, margin: 0, ...FOCUS_TARGET_SX }}>
-        {draftCopy.path.heading}
-      </Box>
-      <DraftPeek
-        spec={{ eyebrow: draftCopy.path.dryRun, icon: <ScienceOutlinedIcon />, lines: [draftCopy.path.dryRunPeek] }}
-      >
-        <Box
-          component="span"
-          tabIndex={0}
-          role="img"
-          aria-label={`${draftCopy.path.dryRun}. ${draftCopy.path.dryRunPeek}`}
-          sx={{
-            display: 'inline-grid',
-            placeItems: 'center',
-            color: changeOrderInk.subtle,
-            borderRadius: `${changeOrderShape.radius.sm}px`,
-            '&:focus-visible': FOCUS_RING,
-          }}
-        >
-          <ScienceOutlinedIcon sx={{ fontSize: 15 }} />
-        </Box>
-      </DraftPeek>
+    <Box component="h2" id={PATH_HEADING_ID} tabIndex={-1} sx={{ ...H3_SX, margin: '0 0 12px', ...FOCUS_TARGET_SX }}>
+      {draftCopy.path.heading}
     </Box>
   );
 }
@@ -416,6 +399,7 @@ export const DraftLowerSections = memo(function DraftLowerSections({
   workflow,
   scope,
   updateType,
+  source,
   stage,
   onSelectStage,
   shownSpaceId,
@@ -450,7 +434,9 @@ export const DraftLowerSections = memo(function DraftLowerSections({
   const regionBySpaceId = useMemo(() => new Map(variants.map((variant) => [variant.spaceId, variant.region])), [variants]);
   const slugBySpaceId = useMemo(() => new Map(variants.map((variant) => [variant.spaceId, variant.slug])), [variants]);
   const carried = cards.status === 'resolved' ? draftCarriedCardCount(cards.cards) : undefined;
-  const sourceSummary = carried === undefined ? '' : draftCopy.path.sourceSummary(carried);
+  let sourceSummary = carried === undefined ? '' : draftCopy.path.sourceSummary(carried);
+  if (source !== undefined) sourceSummary = source.summary;
+  const sourceVerdict = source?.verdict;
 
   const common = {
     preview,
@@ -481,6 +467,7 @@ export const DraftLowerSections = memo(function DraftLowerSections({
             stages={[{ stageId: SOURCE_STAGE_ID, isSource: true, variantCount: 0, gateCount: 0 }]}
             selectedStageId={undefined}
             sourceSummary={sourceSummary}
+            sourceVerdict={sourceVerdict}
             complete={null}
           />
         </Box>
@@ -539,6 +526,7 @@ export const DraftLowerSections = memo(function DraftLowerSections({
           stages={railStages}
           selectedStageId={selectedId}
           sourceSummary={sourceSummary}
+          sourceVerdict={sourceVerdict}
           complete={{ gateCount: draftCompleteGateCount(workflow.spec, base) }}
           onSelectStage={onSelectStage}
         />
@@ -559,7 +547,7 @@ export const DraftLowerSections = memo(function DraftLowerSections({
             onLeaveOut={onLeaveOut}
           />
         ) : null}
-        {/* With nothing in scope every stage selects nothing; the Where row says that once. */}
+        {/* With nothing in scope every stage selects nothing; the problem under the outcome says that once. */}
         {scope.length > 0 ? <SequenceProblems problems={sequence.problems} /> : null}
       </Box>
       <div ref={cardSlot}>{card}</div>

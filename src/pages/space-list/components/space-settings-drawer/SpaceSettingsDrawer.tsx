@@ -1,7 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 import { FullDetailsLink, SettingsDrawer } from '@/components/settings-drawer/SettingsDrawer';
 import {
@@ -19,7 +18,6 @@ export interface SpaceSettingsDrawerProps {
 
 /** Edits a Space's settings from the Space list, with a link to the Space's page. */
 export const SpaceSettingsDrawer = ({ spaceId, onClose }: SpaceSettingsDrawerProps) => {
-  const navigate = useNavigate();
   const [serverError, setServerError] = useState('');
 
   const { data, isFetching } = useGetSpaceQuery(
@@ -50,7 +48,7 @@ export const SpaceSettingsDrawer = ({ spaceId, onClose }: SpaceSettingsDrawerPro
           extendedSpace={data}
           setServerError={setServerError}
           onSpaceUpdated={handleClose}
-          onShowAppliedTriggers={() => navigate(`/spaces/${spaceId}?tab=1&triggers=applied`)}
+          appliedTriggersTo={`/spaces/${spaceId}?tab=1&triggers=applied`}
           actions={<FullDetailsLink to={`/spaces/${spaceId}`} />}
         />
       ) : (

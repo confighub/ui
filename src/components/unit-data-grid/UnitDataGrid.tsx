@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { DATE_TIME_GRID_SLOTS } from '@/components/data-grid/cells';
 import {
@@ -19,6 +19,7 @@ import {
 } from '@/utility/column-delta-functions';
 import { VIEW_URL_PARAMS } from '@/utility/constants/url-params';
 import {
+  GridEventListener,
   GridRowSelectionModel,
   GridSortModel,
   useGridApiRef,
@@ -299,10 +300,28 @@ export const UnitDataGrid = ({
     };
   }, [showResultColumn, checkResultMap, isResultPending]);
 
+  // Callers pass inline handlers that close over the current rows. Calling the
+  // latest one through a ref keeps the columns from being rebuilt on each refetch.
+  const onRowItemEditRef = useRef(onRowItemEdit);
+  onRowItemEditRef.current = onRowItemEdit;
+  const handleRowItemEdit = useCallback((id: string) => onRowItemEditRef.current?.(id), []);
+
+  // Widths the user dragged, by field. The grid re-applies the width and flex of
+  // each column def it is given, so a rebuild (a new label key, or a URL change
+  // that changes where Unit names link) would otherwise put every resized column
+  // back to its default.
+  const resizedWidthsRef = useRef<Record<string, number>>({});
+  const handleColumnWidthChange = useCallback<GridEventListener<'columnWidthChange'>>(
+    (params) => {
+      resizedWidthsRef.current[params.colDef.field] = params.width;
+    },
+    [],
+  );
+
   const allColumns = useMemo(() => {
     const labelColumns = Array.from(availableLabelKeys).map(createLabelColumn);
     const valueColumns = Array.from(availableValueKeys).map(createValueColumn);
-    const columnsWithGrouping = createColumnsWithGrouping(rows, onRowItemEdit);
+    const columnsWithGrouping = createColumnsWithGrouping(handleRowItemEdit);
 
     // Combine: static columns first, then dynamic labels and values
     const aggregatedColumns = [...columnsWithGrouping, ...labelColumns, ...valueColumns];
@@ -312,8 +331,19 @@ export const UnitDataGrid = ({
       aggregatedColumns.unshift(testResultColumn);
     }
 
-    return aggregatedColumns;
-  }, [availableLabelKeys, availableValueKeys, createLabelColumn, createValueColumn, rows, testResultColumn, slugLinkTo]);
+    return aggregatedColumns.map((column) => {
+      const resizedWidth = resizedWidthsRef.current[column.field];
+      return resizedWidth === undefined ? column : { ...column, width: resizedWidth, flex: 0 };
+    });
+  }, [
+    availableLabelKeys,
+    availableValueKeys,
+    createLabelColumn,
+    createValueColumn,
+    createColumnsWithGrouping,
+    handleRowItemEdit,
+    testResultColumn,
+  ]);
 
   // Track which dynamic columns have been initialized in this mount cycle (resets on unmount)
   const [initializedDynamicColumns, setInitializedDynamicColumns] = useState<Set<string>>(
@@ -546,6 +576,7 @@ export const UnitDataGrid = ({
       columnGroups={UNIT_COLUMN_GROUPS}
       dynamicGroups={UNIT_DYNAMIC_GROUPS}
       slots={DATE_TIME_GRID_SLOTS}
+      onColumnWidthChange={handleColumnWidthChange}
       onColumnVisibilityModelChange={(newModel) => {
         isManualColumnChangeRef.current = true;
 

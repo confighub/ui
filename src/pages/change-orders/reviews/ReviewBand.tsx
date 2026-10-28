@@ -130,7 +130,7 @@ interface Cta {
   action: ReviewBandAction;
 }
 
-/** "Go to promote" and "Go to release" lead to the page's actions, so they share their colour. */
+/** "Go to promote" and "Go to release" lead to Promote and Release, so they share their purple. */
 function leadsToAction(cta: Cta): boolean {
   return cta.action === 'promote' || cta.action === 'release';
 }

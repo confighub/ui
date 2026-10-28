@@ -24,7 +24,6 @@ import BoltIcon from '@mui/icons-material/Bolt';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import FilterAltOffOutlinedIcon from '@mui/icons-material/FilterAltOffOutlined';
 import FormatListBulletedIcon from '@mui/icons-material/FormatListBulleted';
-import HistoryIcon from '@mui/icons-material/History';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import KeyboardDoubleArrowRightIcon from '@mui/icons-material/KeyboardDoubleArrowRight';
 import RateReviewOutlinedIcon from '@mui/icons-material/RateReviewOutlined';
@@ -57,6 +56,7 @@ import {
   type HistoryKindFilter,
 } from '../changeOrderHistory';
 import {
+  changeOrderAction,
   changeOrderBorder,
   changeOrderCardTokens,
   changeOrderInk,
@@ -82,7 +82,7 @@ const KIND_BUTTONS: { kind: HistoryKindFilter; label: string; Icon: SvgIconCompo
   { kind: 'releases', label: 'Releases published', Icon: Inventory2OutlinedIcon },
 ];
 
-const focusRing = { '&:focus-visible': { outline: `2px solid ${changeOrderStatus.accent}`, outlineOffset: 2 } } as const;
+const focusRing = { '&:focus-visible': { outline: `2px solid ${changeOrderAction.focus}`, outlineOffset: 2 } } as const;
 
 function FilterLabel({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) {
   return (
@@ -120,16 +120,16 @@ function Pill({
         fontSize: changeOrderType.size.small,
         padding: '3px 9px',
         borderRadius: `${changeOrderShape.radius.pill}px`,
-        border: `1px solid ${pressed ? changeOrderStatus.accentLine : changeOrderBorder.strong}`,
-        color: pressed ? changeOrderStatus.accent : changeOrderInk.muted,
-        background: pressed ? changeOrderStatus.accentSoft : changeOrderSurface.card,
+        border: `1px solid ${pressed ? changeOrderAction.line : changeOrderBorder.strong}`,
+        color: pressed ? changeOrderAction.ink : changeOrderInk.muted,
+        background: pressed ? changeOrderAction.soft : changeOrderSurface.card,
         fontWeight: pressed ? changeOrderType.weight.semibold : changeOrderType.weight.regular,
         ...focusRing,
       }}
     >
       <span>{children}</span>
       {count !== undefined ? (
-        <Box component="span" sx={{ fontFamily: 'ui-monospace, monospace', fontSize: changeOrderType.size.micro, color: pressed ? changeOrderStatus.accent : changeOrderInk.subtle }}>
+        <Box component="span" sx={{ fontFamily: 'ui-monospace, monospace', fontSize: changeOrderType.size.micro, color: pressed ? changeOrderAction.ink : changeOrderInk.subtle }}>
           {count}
         </Box>
       ) : null}
@@ -143,50 +143,14 @@ function ClearFilters({ onClear }: { onClear: () => void }) {
 
 function EmptyState() {
   return (
-    <Box
-      data-history-empty
-      sx={{
-        padding: '34px 20px 38px',
-        display: 'grid',
-        gridTemplateColumns: '44px minmax(0, 560px)',
-        gap: '14px',
-        justifyContent: 'center',
-      }}
-    >
-      <Box
-        aria-hidden
-        sx={{
-          width: 44,
-          height: 44,
-          borderRadius: `${changeOrderCardTokens.radius}px`,
-          display: 'grid',
-          placeItems: 'center',
-          background: changeOrderSurface.sunk,
-          border: `1px solid ${changeOrderBorder.default}`,
-          color: changeOrderInk.subtle,
-        }}
-      >
-        <HistoryIcon sx={{ fontSize: 24 }} />
-      </Box>
-      <Box>
-        <Box component="h3" sx={{ margin: '2px 0 4px', fontSize: changeOrderType.size.lead, fontWeight: changeOrderType.weight.semibold }}>
-          No promotions yet
-        </Box>
-        <Box component="p" sx={{ margin: '0 0 8px', color: changeOrderInk.muted, fontSize: changeOrderType.size.prose, maxWidth: '62ch' }}>
-          When someone promotes Spaces into a Stage of this ChangeOrder, it is recorded here with who did it and when.
-        </Box>
-        <Box component="ul" sx={{ margin: '6px 0 0', paddingLeft: '18px', color: changeOrderInk.muted, fontSize: changeOrderType.size.body }}>
-          <li>Forced promotions past failing gates appear here as overrides, with their reason.</li>
-          <li>Promotions that fail or are blocked appear here with the Space, Unit and Link errors.</li>
-          <li>Each Release published for this ChangeOrder appears here with its publisher.</li>
-        </Box>
-      </Box>
+    <Box data-history-empty sx={{ padding: '26px 20px', color: changeOrderInk.muted, fontSize: changeOrderType.size.prose }}>
+      No promotions yet
     </Box>
   );
 }
 
 export function ChangeOrderHistory({ history }: { history: ChangeOrderHistoryData }) {
-  const { entries, recordCount, workflowStages, spaceSlugById, now, createdAt } = history;
+  const { entries, workflowStages, spaceSlugById, now, createdAt } = history;
   const [filters, setFilters] = useState<HistoryFilters>(NO_FILTERS);
   const [openDays, setOpenDays] = useState<ReadonlySet<string>>(() => new Set());
   const [daysShown, setDaysShown] = useState(HISTORY_INITIAL_DAYS);
@@ -217,7 +181,7 @@ export function ChangeOrderHistory({ history }: { history: ChangeOrderHistoryDat
   if (history.isLoading) {
     body = (
       <Box sx={{ padding: '26px 20px', color: changeOrderInk.muted, fontSize: changeOrderType.size.prose }}>
-        Reading the history of this ChangeOrder…
+        Loading…
       </Box>
     );
   } else if (entries.length === 0) {
@@ -228,7 +192,7 @@ export function ChangeOrderHistory({ history }: { history: ChangeOrderHistoryDat
         sx={{ padding: '26px 20px', color: changeOrderInk.muted, fontSize: changeOrderType.size.prose, display: 'flex', gap: '10px', alignItems: 'center' }}
       >
         <FilterAltOffOutlinedIcon aria-hidden sx={{ fontSize: 18, color: changeOrderInk.subtle }} />
-        <span>No entries match these filters.</span>
+        <span>No matches</span>
         <ClearFilters onClear={clear} />
       </Box>
     );
@@ -293,7 +257,7 @@ export function ChangeOrderHistory({ history }: { history: ChangeOrderHistoryDat
                   {foldable && open ? (
                     <Box sx={{ marginLeft: 'auto' }}>
                       <LinkButton onClick={() => toggleDay(day.key)} expanded>
-                        Summarise day
+                        Collapse
                       </LinkButton>
                     </Box>
                   ) : null}
@@ -323,14 +287,13 @@ export function ChangeOrderHistory({ history }: { history: ChangeOrderHistoryDat
                       >
                         <UnfoldMoreIcon aria-hidden sx={{ fontSize: 16, color: changeOrderInk.subtle }} />
                         <span>
-                          {plural(routineCount, 'routine entry', 'routine entries')} folded
+                          {plural(routineCount, 'routine entry', 'routine entries')}
                           {names.length > 0
                             ? ` (by ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` and ${names.length - 3} more` : ''})`
                             : ''}
-                          .
                         </span>
                         <LinkButton onClick={() => toggleDay(day.key)} expanded={false}>
-                          Show them
+                          Show
                         </LinkButton>
                       </Box>
                     </>
@@ -369,12 +332,6 @@ export function ChangeOrderHistory({ history }: { history: ChangeOrderHistoryDat
               Show {plural(Math.min(HISTORY_MORE_DAYS, hiddenDays.length), 'earlier day')}
             </ButtonBase>
             <Box component="span" sx={{ color: changeOrderInk.subtle, fontSize: changeOrderType.size.small }}>
-              {plural(
-                hiddenDays.reduce((n, d) => n + d.entries.length, 0),
-                'older entry',
-                'older entries',
-              )}{' '}
-              over {plural(hiddenDays.length, 'day')}.{' '}
               <Box component="span" data-history-hidden-exceptions sx={{ color: changeOrderInk.muted, fontWeight: changeOrderType.weight.semibold }}>
                 {hiddenExceptionsText(hiddenDays)}
               </Box>
@@ -411,18 +368,13 @@ export function ChangeOrderHistory({ history }: { history: ChangeOrderHistoryDat
           </Box>
           {entries.length > 0 && !history.isLoading ? (
             <Box component="span" data-history-count sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.subtle }}>
-              {plural(entries.length, 'entry', 'entries')} from {plural(recordCount, 'record')}, newest first
+              {plural(entries.length, 'entry', 'entries')}
             </Box>
           ) : null}
         </Box>
-        {recordCount > entries.length && !history.isLoading ? (
-          <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.subtle, marginTop: '4px' }}>
-            Records of one promote action are matched by person, Stage and time, as they carry no shared ID.
-          </Box>
-        ) : null}
         {history.error !== undefined ? (
           <Box role="alert" sx={{ fontSize: changeOrderType.size.small, color: changeOrderStatus.danger, marginTop: '6px' }}>
-            Some of this history could not be read. Names or Releases can be missing.
+            Some history could not be read. Names or Releases may be missing.
           </Box>
         ) : null}
 
@@ -450,17 +402,17 @@ export function ChangeOrderHistory({ history }: { history: ChangeOrderHistoryDat
                       alignItems: 'center',
                       gap: '6px',
                       fontFamily: 'inherit',
-                      border: `1px solid ${pressed ? changeOrderStatus.accent : changeOrderBorder.default}`,
+                      border: `1px solid ${pressed ? changeOrderAction.ink : changeOrderBorder.default}`,
                       boxShadow: pressed ? changeOrderSelectedRing : 'none',
                       background: changeOrderSurface.card,
                       borderRadius: `${changeOrderShape.radius.md}px`,
                       padding: '5px 10px',
                       fontSize: changeOrderType.size.small,
-                      color: pressed ? changeOrderStatus.accent : changeOrderInk.muted,
+                      color: pressed ? changeOrderAction.ink : changeOrderInk.muted,
                       ...focusRing,
                     }}
                   >
-                    <Icon aria-hidden sx={{ fontSize: 15, color: pressed ? changeOrderStatus.accent : iconColor }} />
+                    <Icon aria-hidden sx={{ fontSize: 15, color: pressed ? changeOrderAction.ink : iconColor }} />
                     <Box component="b" sx={{ fontFamily: 'ui-monospace, monospace', fontWeight: changeOrderType.weight.semibold, color: changeOrderInk.default, fontSize: changeOrderType.size.body }}>
                       {n}
                     </Box>

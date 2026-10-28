@@ -180,6 +180,8 @@ export const PerUnitResultCard = ({
           <Link
             component={RouterLink}
             to={`/units/${spaceId}/${unitId}`}
+            target="_blank"
+            rel="noopener noreferrer"
             underline="hover"
             color="text.primary"
             sx={{

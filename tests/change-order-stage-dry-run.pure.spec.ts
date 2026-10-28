@@ -165,7 +165,7 @@ test.describe('dryRunLine', () => {
   test('unavailable keeps Promote offered and says the confirm runs it', () => {
     expect(dryRunLine({ view: { mode: 'unavailable' }, targetCount: 2, nameOf })).toEqual({
       mode: 'unavailable',
-      text: 'Dry run unavailable. It runs when you confirm.',
+      text: 'Dry run unavailable.',
       icon: 'warn',
     });
   });
@@ -184,7 +184,7 @@ test.describe('dryRunLine', () => {
 
   test('the release line counts Spaces that have a Target', () => {
     const targets: Record<string, string | undefined> = { s1: 't1', s2: undefined, s3: 't3' };
-    expect(releaseLine(['s1', 's2', 's3'], (id) => targets[id])).toBe('Release publishes the change in 2 Spaces to their Targets.');
+    expect(releaseLine(['s1', 's2', 's3'], (id) => targets[id])).toBe('Releases 2 Spaces.');
   });
 });
 

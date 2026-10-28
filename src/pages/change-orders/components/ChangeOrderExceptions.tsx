@@ -84,7 +84,6 @@ export function ChangeOrderExceptions({
       cards={CONSOLE_GROUPS.map((group) => ({
         key: group,
         label: changeOrdersConsoleCopy.groups[group].label,
-        hint: changeOrdersConsoleCopy.groups[group].hint,
         count: counts[group],
         status: groupCardStatus(selection, group),
         tone: tones[group],

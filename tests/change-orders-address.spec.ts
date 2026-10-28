@@ -114,7 +114,7 @@ test('a console row opens its own ChangeOrder, not the first with its slug', asy
   await page.goto('/change-orders');
   const rows = page.locator(`[data-change-order-slug="${SHARED}"]`);
   await expect(rows).toHaveCount(2, { timeout: 30_000 });
-  await rows.filter({ hasText: 'fanui2-base' }).click();
+  await rows.filter({ hasText: 'fanui2-base' }).getByRole('link', { name: `Open ChangeOrder ${SHARED}`, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/change-orders/fanui2-base/${SHARED}$`));
   await expect(summary(page)).toContainText('Second Space');
 });

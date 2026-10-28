@@ -91,7 +91,7 @@ test.describe('ChangeSet page', () => {
     await expect(row.getByTestId('change-sets-row-reviews')).toHaveText('No reviews yet');
     await expect(row.getByTestId('change-sets-row-reviewers')).toHaveCount(0);
     await expect(row.getByTestId('change-sets-row-action')).toHaveText('Open');
-    await row.click();
+    await row.getByRole('link', { name: `Open ChangeSet ${slug}`, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/change-sets/${spaceSlug}/${slug}$`));
     await expect(page.getByRole('heading', { level: 1, name: slug, exact: true })).toBeVisible({ timeout: 30000 });
   });

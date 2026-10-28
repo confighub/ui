@@ -25,7 +25,7 @@ import TextField from '@mui/material/TextField';
 
 import { useListAllChangeWorkflowsQuery, type ChangeSetRead } from '@confighub/rtk-query';
 
-import { changeOrderFontMono, changeOrderInk, changeOrderStatus, changeOrderType } from '../change-orders/changeOrdersTokens';
+import { changeOrderAction, changeOrderFontMono, changeOrderInk, changeOrderStatus, changeOrderType } from '../change-orders/changeOrdersTokens';
 import type { ReviewPerson } from '../change-orders/reviews/changeOrderReviewTypes';
 import { ChangeOrderGateList, type ChangeOrderGateExtra } from '../x/apps/change-order/ChangeOrderGateList';
 import { closeGateRows, type ChangeSetCloseGates, type CloseGate } from './changeSetCloseGates';
@@ -129,7 +129,7 @@ export function ChangeSetGatesSection({
           component={RouterLink}
           to={`/change-workflows/${workflowId ?? ''}`}
           data-testid="change-set-gates-workflow"
-          sx={{ fontFamily: changeOrderFontMono, color: changeOrderStatus.accent }}
+          sx={{ fontFamily: changeOrderFontMono, color: changeOrderAction.ink }}
         >
           {workflowSlug ?? workflowId}
         </Box>

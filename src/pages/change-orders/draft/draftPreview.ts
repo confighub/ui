@@ -109,7 +109,7 @@ export function lastFieldOf(path: string): string {
 }
 
 /** A value the variant keeps, as the outlier chip and its popover state it. */
-function draftKeptValueOf(unitId: string, conflict: MutationConflict): DraftKeptValue {
+export function draftKeptValueOf(unitId: string, conflict: MutationConflict): DraftKeptValue {
   const path = conflict.Path ?? '';
   return {
     unitId,
@@ -217,7 +217,11 @@ export interface DraftStagePreview {
 /** The facts a variant's outlier chip states. */
 export type DraftOutlierFact =
   | { kind: 'adds'; baseUnitId: string; slug: string }
-  | ({ kind: 'kept' } & DraftKeptValue);
+  | ({ kind: 'kept' } & DraftKeptValue)
+  /** An Invoke change runs here and finds nothing to change. */
+  | { kind: 'nothing' }
+  /** An Invoke change runs in other variants' resource of this slug, which this variant does not have. */
+  | { kind: 'lacks'; slug: string };
 
 export interface DraftOutlier {
   spaceId: string;
@@ -386,7 +390,11 @@ export function outlierText(facts: readonly DraftOutlierFact[]): string {
     .map((fact) =>
       fact.kind === 'adds'
         ? draftCopy.outlier.adds(fact.slug)
-        : draftCopy.outlier.keeps(fact.field, fact.value),
+        : fact.kind === 'kept'
+          ? draftCopy.outlier.keeps(fact.field, fact.value)
+          : fact.kind === 'lacks'
+            ? draftCopy.outlier.lacks(fact.slug)
+            : draftCopy.outlier.nothingHere,
     )
     .join(draftCopy.outlier.separator);
 }
@@ -541,6 +549,8 @@ export interface DraftPreviewTotals {
   differs: number;
   adds: number;
   unknown: number;
+  /** Variants an Invoke change runs in and finds nothing to change. */
+  nothing: number;
   /** In scope and in no stage: nothing previews them, so they are counted in no outcome. */
   unstagedSpaceIds: string[];
 }
@@ -563,6 +573,7 @@ export function totalsOf(
     differs: 0,
     adds: 0,
     unknown: 0,
+    nothing: 0,
     unstagedSpaceIds: [],
   };
   // A variant no stage selects is never promoted to: it is no part of "N of M".

@@ -119,3 +119,40 @@ test('Created narrows to whole days, either end open, and combines with Update t
   await expect(to).toHaveValue('');
   await expect(page.getByLabel('Update type')).toHaveValue('all');
 });
+
+test('A column head sorts the list, and a third click gives back the newest-first order', async ({ page }) => {
+  await openConsole(page);
+  const newestFirst = ['rotate-certs', 'restart-pods', 'merge-base', 'bump-image'];
+  const slugs = () => shownSlugs(page).evaluateAll((rows) => rows.map((row) => row.getAttribute('data-change-order-slug')));
+  await expect.poll(slugs).toEqual(newestFirst);
+
+  const nameHead = page.getByRole('columnheader', { name: 'ChangeOrder', exact: true });
+  await nameHead.getByRole('button').click();
+  await expect(nameHead).toHaveAttribute('aria-sort', 'ascending');
+  await expect.poll(slugs).toEqual(['bump-image', 'merge-base', 'restart-pods', 'rotate-certs']);
+
+  await nameHead.getByRole('button').click();
+  await expect(nameHead).toHaveAttribute('aria-sort', 'descending');
+  await expect.poll(slugs).toEqual(['rotate-certs', 'restart-pods', 'merge-base', 'bump-image']);
+
+  await nameHead.getByRole('button').click();
+  await expect(nameHead).toHaveAttribute('aria-sort', 'none');
+  await expect.poll(slugs).toEqual(newestFirst);
+
+  // Age ascending is the youngest first; descending, the oldest.
+  const ageHead = page.getByRole('columnheader', { name: 'Age', exact: true });
+  await expect(ageHead).toHaveAttribute('aria-sort', 'none');
+  await ageHead.getByRole('button').click();
+  await expect(ageHead).toHaveAttribute('aria-sort', 'ascending');
+  await expect.poll(slugs).toEqual(newestFirst);
+  await ageHead.getByRole('button').click();
+  await expect(ageHead).toHaveAttribute('aria-sort', 'descending');
+  await expect.poll(slugs).toEqual([...newestFirst].reverse());
+
+  // The sort holds while a filter narrows the list.
+  await page.getByLabel('Update type').selectOption('Invoke');
+  await expect.poll(slugs).toEqual(['restart-pods', 'rotate-certs']);
+
+  // Image change reads its tags per row, so it has no sort.
+  await expect(page.getByRole('columnheader', { name: 'Image change', exact: true }).getByRole('button')).toHaveCount(0);
+});

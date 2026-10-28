@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -24,6 +24,12 @@ import {
 import { Alert, Box, CircularProgress, styled } from '@mui/material';
 
 import { UnitTreeNode } from './UnitTreeNode';
+import {
+  flowLayoutKey,
+  isNewLayout,
+  withNodeData,
+  type ShownLayout,
+} from './flowLayoutState';
 
 const FlowContainer = styled(Box)`
   width: 100%;
@@ -47,6 +53,12 @@ interface TreeNode {
   children: TreeNode[];
 }
 
+interface BuiltTree {
+  tree: TreeNode[];
+  // False when a Link fetch failed, so the tree is missing edges it should have.
+  linksComplete: boolean;
+}
+
 // Dagre layout configuration
 const NODE_WIDTH = 250;
 const NODE_HEIGHT = 80;
@@ -67,14 +79,17 @@ function UnitTreeViewInner({
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [error, setError] = useState<string | null>(null);
   const { fitView } = useReactFlow();
+  // The key of the layout on screen. A refetch whose layout has the same key only
+  // changes what the nodes show, so it must not reset the viewport or selection.
+  const shownLayoutRef = useRef<ShownLayout | null>(null);
 
   const [fetchLinks] = useLazySearchListLinksQuery();
 
   // Build tree structure based on edge type
   const buildTree = useCallback(
-    async (units: ExtendedUnitRead[]): Promise<TreeNode[]> => {
+    async (units: ExtendedUnitRead[]): Promise<BuiltTree> => {
       if (edgeType === 'clone') {
-        return buildCloneTree(units);
+        return { tree: buildCloneTree(units), linksComplete: true };
       } else {
         return buildLinkTree(units);
       }
@@ -124,7 +139,7 @@ function UnitTreeViewInner({
   };
 
   // Build link tree (based on Link relationships)
-  const buildLinkTree = async (units: ExtendedUnitRead[]): Promise<TreeNode[]> => {
+  const buildLinkTree = async (units: ExtendedUnitRead[]): Promise<BuiltTree> => {
     const unitMap = new Map<string, TreeNode>();
     const unitIDs = units
       .map((u) => u.Unit?.UnitID)
@@ -141,8 +156,10 @@ function UnitTreeViewInner({
     });
 
     if (unitIDs.length === 0) {
-      return [];
+      return { tree: [], linksComplete: true };
     }
+
+    let linksComplete = true;
 
     try {
       // Fetch links where units are FromUnit
@@ -158,6 +175,8 @@ function UnitTreeViewInner({
         where: toWhere,
         include: 'FromUnitID,ToUnitID',
       });
+
+      linksComplete = !fromLinksResult.isError && !toLinksResult.isError;
 
       // Combine and deduplicate links
       const linkMap = new Map<string, ExtendedLinkRead>();
@@ -188,7 +207,7 @@ function UnitTreeViewInner({
       setError(
         `Failed to fetch links: ${err instanceof Error ? err.message : 'Unknown error'}`,
       );
-      return [];
+      return { tree: [], linksComplete: false };
     }
 
     // Find root nodes (nodes with no parents)
@@ -211,7 +230,7 @@ function UnitTreeViewInner({
       }
     });
 
-    return rootNodes;
+    return { tree: rootNodes, linksComplete };
   };
 
   // Convert tree to React Flow nodes and edges
@@ -346,7 +365,6 @@ function UnitTreeViewInner({
       const edges: Edge[] = [];
       const visited = new Set<string>();
 
-      let nodeId = 0;
       const processNode = (
         treeNode: TreeNode,
         x: number,
@@ -357,7 +375,8 @@ function UnitTreeViewInner({
         if (!unitId || visited.has(unitId)) return;
 
         visited.add(unitId);
-        const currentNodeId = `node-${nodeId++}`;
+        // Keyed on the Unit, so a refetch can match each node to the node it replaces.
+        const currentNodeId = `unit-${unitId}`;
 
         nodes.push({
           id: currentNodeId,
@@ -412,11 +431,23 @@ function UnitTreeViewInner({
 
   // Build and layout the tree
   useEffect(() => {
+    // A slower, older build must not overwrite the result of a newer one.
+    let cancelled = false;
     const layoutTree = async () => {
       setError(null);
       try {
-        const tree = await buildTree(units);
+        const { tree, linksComplete } = await buildTree(units);
+        if (cancelled) return;
         const { nodes: flowNodes, edges: flowEdges } = convertTreeToFlow(tree);
+        const layout: ShownLayout = {
+          view: `${edgeType}/${nodeType}`,
+          key: flowLayoutKey(flowNodes, flowEdges),
+        };
+        if (!isNewLayout(shownLayoutRef.current, layout, linksComplete)) {
+          setNodes((current) => withNodeData(current, flowNodes));
+          return;
+        }
+        shownLayoutRef.current = layout;
         setNodes(flowNodes);
         setEdges(flowEdges);
 
@@ -432,7 +463,10 @@ function UnitTreeViewInner({
     };
 
     layoutTree();
-  }, [units, buildTree, convertTreeToFlow, setNodes, setEdges, fitView]);
+    return () => {
+      cancelled = true;
+    };
+  }, [units, edgeType, nodeType, buildTree, convertTreeToFlow, setNodes, setEdges, fitView]);
 
   if (error) {
     return (

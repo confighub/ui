@@ -332,7 +332,6 @@ export function ReviewConfirmDialog({
         </Box>
         <Box component="p" data-testid="review-confirm-effect" sx={{ margin: '12px 0 0', fontSize: changeOrderType.size.body, color: changeOrderInk.muted, lineHeight: 1.5 }}>
           <WithMonoName text={effect.lead} names={summary.requirements.map((r) => r.name)} />
-          {copy.cannotEdit}
         </Box>
         {effect.gates.map((line) => (
           <Box

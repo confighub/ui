@@ -1,7 +1,9 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { useCallback, useMemo, useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useLocation } from 'react-router-dom';
+
+import { NavLink } from '@/components/nav-link/NavLink';
 
 import { useComponentSlugs } from '@/hooks/useComponentSlugs';
 import type { ExtendedSpaceRead } from '@confighub/rtk-query';
@@ -21,7 +23,7 @@ import Typography from '@mui/material/Typography';
 import { alpha, useTheme } from '@mui/material/styles';
 
 import { ComponentActivityFeed } from './ComponentActivityFeed';
-import { type SelectedApp } from './appTypes';
+import { type SelectedApp, selectComponentHref } from './appTypes';
 import { buildOverviewData, type ComponentKpiRow, type OrgKpiSummary } from './componentOverview';
 import { useOutstandingChangeOrderBaseSpaceIds } from './change-order/useOutstandingChangeOrdersBulk';
 import { useOpenChangeSets } from './useOpenChangeSets';
@@ -321,6 +323,7 @@ const SectionLabel = ({ title, hint, mt = 0 }: SectionLabelProps) => (
 // ============================================================================
 
 export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: ComponentOverviewMatrixProps) => {
+  const location = useLocation();
   const theme = useTheme();
   const [activeFilter, setActiveFilter] = useState<FilterKey | null>(null);
   const [sortBy, setSortBy] = useState<SortKey>('health');
@@ -698,44 +701,55 @@ export const ComponentOverviewMatrix = ({ spaces, onComponentSelect }: Component
                         '&:last-child td': { border: 0 },
                       }}
                     >
-                      {/* Component name cell */}
+                      {/* Component name cell. A plain click opens the Component in place,
+                          the same as a click elsewhere on the row; the browser handles the rest. */}
                       <TableCell sx={{ p: 0, height: 50, borderBottom: `1px solid ${theme.palette.divider}` }}>
-                        <Box
-                          sx={{
-                            display: 'flex', alignItems: 'center', gap: '11px',
-                            px: '14px', pl: '18px', height: '100%',
-                            '&:hover .comp-name-text': {
-                              color: 'error.main',
-                              textDecoration: 'underline',
-                              textUnderlineOffset: 2,
-                            },
+                        <NavLink
+                          to={selectComponentHref(location.search, row.componentName)}
+                          style={{ display: 'block', height: '100%' }}
+                          onClick={(e: React.MouseEvent) => {
+                            if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                            e.preventDefault();
+                            onComponentSelect({ name: row.componentName, owner: row.owner });
                           }}
                         >
-                          {/* Health dot with ring */}
                           <Box
                             sx={{
-                              width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
-                              bgcolor: dotColor,
-                              boxShadow: `0 0 0 3px ${alpha(dotColor, 0.15)}`,
+                              display: 'flex', alignItems: 'center', gap: '11px',
+                              px: '14px', pl: '18px', height: '100%',
+                              '&:hover .comp-name-text': {
+                                color: 'error.main',
+                                textDecoration: 'underline',
+                                textUnderlineOffset: 2,
+                              },
                             }}
-                          />
-                          {/* Text */}
-                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 }}>
-                            <Typography
-                              className='comp-name-text'
-                              noWrap
-                              sx={{ fontWeight: 600, fontSize: 13.5, color: 'text.primary', letterSpacing: '-0.01em', lineHeight: 1.2 }}
-                            >
-                              {row.componentName}
-                            </Typography>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 11, color: 'text.secondary' }}>
-                              <Box component='span' sx={{ width: 6, height: 6, borderRadius: '2px', bgcolor: 'secondary.main', display: 'inline-block', flexShrink: 0 }} />
-                              <Typography component='span' sx={{ fontSize: 11 }}>{row.owner}</Typography>
-                              <Typography component='span' sx={{ fontSize: 11, color: 'text.disabled' }}>·</Typography>
-                              <Typography component='span' sx={{ fontSize: 11 }}>{row.totalSpaces} spaces</Typography>
+                          >
+                            {/* Health dot with ring */}
+                            <Box
+                              sx={{
+                                width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
+                                bgcolor: dotColor,
+                                boxShadow: `0 0 0 3px ${alpha(dotColor, 0.15)}`,
+                              }}
+                            />
+                            {/* Text */}
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 }}>
+                              <Typography
+                                className='comp-name-text'
+                                noWrap
+                                sx={{ fontWeight: 600, fontSize: 13.5, color: 'text.primary', letterSpacing: '-0.01em', lineHeight: 1.2 }}
+                              >
+                                {row.componentName}
+                              </Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 11, color: 'text.secondary' }}>
+                                <Box component='span' sx={{ width: 6, height: 6, borderRadius: '2px', bgcolor: 'secondary.main', display: 'inline-block', flexShrink: 0 }} />
+                                <Typography component='span' sx={{ fontSize: 11 }}>{row.owner}</Typography>
+                                <Typography component='span' sx={{ fontSize: 11, color: 'text.disabled' }}>·</Typography>
+                                <Typography component='span' sx={{ fontSize: 11 }}>{row.totalSpaces} spaces</Typography>
+                              </Box>
                             </Box>
                           </Box>
-                        </Box>
+                        </NavLink>
                       </TableCell>
 
                       {/* KPI data cells */}

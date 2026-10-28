@@ -158,7 +158,13 @@ function SpaceLinks({ spaceIds, nameOf }: { spaceIds: readonly string[]; nameOf:
       {spaceIds.map((spaceId, i) => (
         <Fragment key={spaceId}>
           {i > 0 ? ', ' : null}
-          <Link component={RouterLink} to={spaceHref(spaceId)} sx={{ ...LIST_LINK_SX, font: 'inherit', overflowWrap: 'anywhere' }}>
+          <Link
+            component={RouterLink}
+            to={spaceHref(spaceId)}
+            target="_blank"
+            rel="noopener noreferrer"
+            sx={{ ...LIST_LINK_SX, font: 'inherit', overflowWrap: 'anywhere' }}
+          >
             {nameOf(spaceId)}
           </Link>
         </Fragment>
@@ -260,6 +266,8 @@ const TILE_TONE: Record<ChangeOrderOutcomeKind, { bgcolor: string; color: string
   differs: { bgcolor: 'var(--amber-bg)', color: 'warning.dark' },
   adds: { bgcolor: 'var(--bg-hover)', color: 'text.secondary' },
   unknown: { bgcolor: 'var(--bg-hover)', color: 'text.secondary' },
+  // A draft's own outcome, never a stage's; neutral wherever it is drawn.
+  nothing: { bgcolor: 'var(--bg-hover)', color: 'text.secondary' },
 };
 
 /** The bar's segment colours. `adds` stays neutral: holding nothing yet is not a failure. */
@@ -268,6 +276,7 @@ const BAR_TONE: Record<ChangeOrderOutcomeKind, string> = {
   differs: 'warning.main',
   adds: 'var(--t3)',
   unknown: 'var(--bd2)',
+  nothing: 'var(--bd2)',
 };
 
 /** How the stage's Spaces divide between the outcomes, with a legend that says it in words. */
@@ -379,9 +388,6 @@ function OutcomeBox({
             </Typography>
             <Chip size="small" label={stageDiffCopy.spaceCount(section.spaceIds.length)} />
           </Box>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            {stageDiffCopy.hint(section.kind)}
-          </Typography>
           {/* The Spaces, by name, before the box is opened: one or two read at a glance. */}
           {open || section.spaceIds.length > 2 ? null : (
             <Typography variant="body2" sx={{ color: 'text.secondary', fontFamily: 'var(--font-mono)', fontSize: '11.5px', overflowWrap: 'anywhere' }}>

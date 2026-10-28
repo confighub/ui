@@ -123,11 +123,12 @@ test.describe('view explorer row selection', () => {
     await expect(row(page, 'alpha').getByTestId('vx-row-slot')).toHaveText('A');
     await expect(row(page, 'gamma').getByTestId('vx-row-slot')).toHaveText('B');
 
-    await nameCell(page, 'beta').click({ modifiers: ['ControlOrMeta'] });
+    // On the row, not its name link: ⌘-click on the link opens the Unit in a new tab.
+    await nameCell(page, 'beta').click({ modifiers: ['ControlOrMeta'], position: { x: 3, y: 3 } });
     expect(await pickedSlugs(page)).toEqual(['alpha', 'beta', 'gamma']);
     await expect(row(page, 'beta').getByTestId('vx-row-slot')).toHaveText('B');
     await expect(row(page, 'gamma').getByTestId('vx-row-slot')).toHaveText('C');
-    await nameCell(page, 'alpha').click({ modifiers: ['ControlOrMeta'] });
+    await nameCell(page, 'alpha').click({ modifiers: ['ControlOrMeta'], position: { x: 3, y: 3 } });
     expect(await pickedSlugs(page)).toEqual(['beta', 'gamma']);
     await expect(row(page, 'beta').getByTestId('vx-row-slot')).toHaveText('A');
 

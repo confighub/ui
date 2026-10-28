@@ -46,7 +46,7 @@ import { Toolbar } from './Toolbar';
  * The right side of the view: the toolbar, then the rows in the chosen
  * layout. A row opens in the drawer, which starts below the toolbar so Save
  * stays in reach; ⌘-click opens the row's own page instead, except in a Units
- * Table, where ⌘-click picks the row and ⌘↵ opens its page.
+ * Table, where ⌘-click outside the name link picks the row and ⌘↵ opens its page.
  *
  * In compare mode the comparison takes the whole area. The toolbar, the rows
  * and the drawer stay mounted under it, hidden (not `display: none`, which

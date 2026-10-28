@@ -22,7 +22,7 @@ import Tooltip from '@mui/material/Tooltip';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import InsertLinkIcon from '@mui/icons-material/InsertLink';
 
-import { changeOrderBorder, changeOrderFontMono, changeOrderInk, changeOrderShape, changeOrderStatus, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
+import { changeOrderAction, changeOrderBorder, changeOrderFontMono, changeOrderInk, changeOrderShape, changeOrderStatus, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
 import { reviewTextButtonSx } from './reviewButtons';
 import {
   agoText,
@@ -662,7 +662,7 @@ export function ReviewPanel({
                 color: changeOrderInk.subtle,
                 borderRadius: `${changeOrderShape.radius.md}px`,
                 '&:hover': { color: changeOrderInk.default, backgroundColor: changeOrderSurface.inset },
-                '&:focus-visible': { outline: `2px solid ${changeOrderStatus.accent}`, outlineOffset: 2 },
+                '&:focus-visible': { outline: `2px solid ${changeOrderAction.focus}`, outlineOffset: 2 },
               }}
             >
               <InsertLinkIcon sx={{ fontSize: 18 }} />

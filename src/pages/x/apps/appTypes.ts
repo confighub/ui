@@ -60,6 +60,43 @@ export interface ViewParamsPatch {
   graphGroup?: string | null;
 }
 
+/** Writes `patch` onto `params` in place, as `ViewParamsPatch` describes, and returns it. */
+export function applyViewParamsPatch(params: URLSearchParams, patch: ViewParamsPatch): URLSearchParams {
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
+    if (value === null) {
+      params.delete(key);
+    } else if (Array.isArray(value)) {
+      params.delete(key);
+      for (const v of value) {
+        if (v) params.append(key, v);
+      }
+    } else {
+      params.set(key, value);
+    }
+  }
+  return params;
+}
+
+/**
+ * Opening a different Component. `space`/`compare`/`group`/`graphGroup` are
+ * cleared: it starts a fresh graph selection, and a `?group=` node graph is no
+ * longer what's on screen. Every `view*` / `filter*` / `type` param is left
+ * untouched. `display` is deliberately OMITTED (not reset): the Graph/Dashboard
+ * choice is sticky across node clicks until the user picks Auto/Custom
+ * themselves (`FlowViewControl`, which does clear it) or returns to Overview
+ * (`handleOverviewSelect`, which also clears it).
+ */
+export function selectComponentPatch(name: string): ViewParamsPatch {
+  return { app: name, space: null, compare: null, group: null, graphGroup: null };
+}
+
+/** The address `selectComponentPatch` leads to from `search`, for a link that opens the Component. */
+export function selectComponentHref(search: string, name: string): string {
+  const params = applyViewParamsPatch(new URLSearchParams(search), selectComponentPatch(name));
+  return `${ROUTE_COMPONENTS}?${params.toString()}`;
+}
+
 export const AUTOMATED_USER_ID = '00000000-0000-0000-0000-000000000000';
 
 export const ROUTE_COMPONENTS = '/components';

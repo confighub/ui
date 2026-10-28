@@ -3,15 +3,15 @@
 
 /**
  * The draft page's shared styles: the detail view's tokens, composed into the few shapes
- * the summary card repeats (chips, popovers, the ledger's grid). Every colour and size is a
- * token from `changeOrdersTokens` or `componentTheme`; the shapes are named here once so the
- * ledger, the sticky bar and the popovers cannot drift apart.
+ * the summary card repeats (chips, the facts you can change, popovers). Every colour and size
+ * is a token from `changeOrdersTokens`; the shapes are named here once so
+ * the facts, the sticky bar and the popovers cannot drift apart.
  */
 
 import type { SxProps, Theme } from '@mui/material/styles';
 
-import { componentTheme } from '../../x/apps/componentTheme';
 import {
+  changeOrderAction,
   changeOrderBorder,
   changeOrderCardTokens,
   changeOrderFontMono,
@@ -19,11 +19,9 @@ import {
   changeOrderInk,
   changeOrderSelectedRing,
   changeOrderShape,
-  changeOrderStatus,
   changeOrderSurface,
   changeOrderType,
 } from '../changeOrdersTokens';
-import type { DraftDecisionOrigin } from './draftTypes';
 
 /** One easing for every state change on the page: quick out, no bounce. */
 export const DRAFT_EASE = 'cubic-bezier(.32,.72,0,1)';
@@ -33,19 +31,22 @@ export const DRAFT_TRANSITION = ['background-color', 'border-color', 'color', 'b
   .map((property) => `${property} .18s ${DRAFT_EASE}`)
   .join(',');
 
-/** A control's keyboard ring: the accent line, outside the control. */
+/** A control's keyboard ring: 2px solid rust, outside the control. 5.59:1 on white. */
 export const FOCUS_RING = {
-  outline: `2px solid ${changeOrderStatus.accent}`,
+  outline: `2px solid ${changeOrderAction.focus}`,
   outlineOffset: 2,
 } as const;
 
 /** A control whose popover is open reads as pressed. */
 export const OPEN_PRESSED = { '&[aria-expanded="true"]': { background: changeOrderSurface.inset } } as const;
 
+/** The media query of those who ask for less motion. */
+export const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
+
 /** Press feedback, held back for those who ask for less motion. */
 export const PRESS = {
   '&:active': { transform: 'scale(.98)' },
-  '@media (prefers-reduced-motion: reduce)': { transition: 'none', '&:active': { transform: 'none' } },
+  [`@media ${REDUCED_MOTION}`]: { transition: 'none', '&:active': { transform: 'none' } },
 } as const;
 
 /** A `<button>` with the browser's own look taken off, for controls drawn as chips and rows. */
@@ -61,12 +62,6 @@ export const BARE_BUTTON = {
   cursor: 'pointer',
 } as const;
 
-/**
- * The ledger's columns: the decision's name, last time, the arrow, this time, and the revert.
- * The right side is wider because it holds the controls.
- */
-export const LEDGER_COLUMNS = '96px minmax(0,1fr) 22px minmax(0,1.6fr) 34px';
-
 /** Inline code: a container or field name inside running text. */
 export const CODE_SX = {
   fontFamily: changeOrderFontMono,
@@ -77,78 +72,61 @@ export const CODE_SX = {
   whiteSpace: 'nowrap',
 } as const;
 
-/** A value from last time that this draft changes: struck, quiet. */
-export const STRUCK_QUIET_SX = {
-  fontFamily: componentTheme.fontMono,
-  fontSize: changeOrderType.size.body,
-  color: changeOrderInk.subtle,
-  textDecoration: 'line-through',
-  textDecorationColor: changeOrderBorder.strong,
-} as const;
+/** The class of a fact slot's value: the text that sits on the slot's dashed rule. */
+export const FACT_SLOT_VALUE = 'draft-fact-slot-value';
 
-/** A value from last time that this draft changes, in a row that marks its difference. */
-export const STRUCK_SX = {
-  fontFamily: componentTheme.fontMono,
-  fontSize: changeOrderType.size.body,
-  color: componentTheme.danger,
-  textDecoration: 'line-through',
-  textDecorationColor: componentTheme.dangerEdge,
-} as const;
-
-/** A value as last time, unchanged. */
-export const SAME_VALUE_SX = {
-  fontFamily: componentTheme.fontMono,
-  fontSize: changeOrderType.size.body,
-  color: changeOrderInk.muted,
-} as const;
-
-/** A value this draft sets. */
-export const NOW_VALUE_SX = {
-  fontFamily: componentTheme.fontMono,
-  fontSize: 13,
-  fontWeight: changeOrderType.weight.strong,
-  color: changeOrderInk.default,
-} as const;
-
-/** The pill-shaped control of the Same row and the template picker. */
-export const PILL_SX = {
-  ...BARE_BUTTON,
-  boxSizing: 'border-box',
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '5px',
-  height: 24,
-  padding: '0 6px 0 7px',
-  borderRadius: `${changeOrderShape.radius.pill}px`,
-  border: `1px solid ${changeOrderBorder.default}`,
-  background: changeOrderSurface.card,
-  fontSize: 12,
-  color: changeOrderInk.muted,
-  whiteSpace: 'nowrap',
-  transition: DRAFT_TRANSITION,
-  '&:hover': { borderColor: changeOrderBorder.strong },
-  '&:focus-visible': FOCUS_RING,
-  '& .MuiSvgIcon-root': { fontSize: 14, color: changeOrderInk.subtle },
-  ...OPEN_PRESSED,
-  ...PRESS,
-} as const;
-
-/** An inline control that reads as the value it edits: dotted underline, no box. */
-export const FIELD_BUTTON_SX = {
+/**
+ * A fact the draft can change: the detail view's fact value on a dashed rule, a chevron, and a
+ * popover under it. A value this draft changes from last time has its rule in rust; the chevron
+ * turns over while the popover is open.
+ */
+export const FACT_SLOT_SX = {
   ...BARE_BUTTON,
   display: 'inline-flex',
   alignItems: 'center',
-  gap: '3px',
+  gap: '1px',
+  maxWidth: '100%',
+  minWidth: 0,
+  margin: 0,
+  padding: '0 1px 0 3px',
   borderRadius: '4px',
-  padding: '0 2px',
-  marginLeft: '-2px',
-  textDecoration: `underline dotted ${changeOrderBorder.strong}`,
-  textUnderlineOffset: '3px',
-  whiteSpace: 'nowrap',
+  touchAction: 'manipulation',
+  WebkitTapHighlightColor: 'transparent',
   transition: DRAFT_TRANSITION,
+  [`& .${FACT_SLOT_VALUE}`]: {
+    whiteSpace: 'nowrap',
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    // Room under the text for the rule, which `overflow` would otherwise clip.
+    paddingBottom: '5px',
+    marginBottom: '-5px',
+    textDecoration: `underline dashed ${changeOrderBorder.strong}`,
+    textDecorationThickness: '1px',
+    textUnderlineOffset: '4px',
+    transition: `text-decoration-color .18s ${DRAFT_EASE}`,
+  },
+  '& > .MuiSvgIcon-root': { fontSize: 16, flex: 'none', color: changeOrderInk.subtle, transition: `transform .18s ${DRAFT_EASE}` },
   '&:hover': { background: changeOrderSurface.sunk },
-  '&:focus-visible': FOCUS_RING,
-  ...OPEN_PRESSED,
+  [`&:hover .${FACT_SLOT_VALUE}`]: { textDecorationColor: changeOrderInk.subtle },
+  // One pixel off, not two: the ring clears the term above it.
+  '&:focus-visible': { ...FOCUS_RING, outlineOffset: 1 },
+  '&[aria-expanded="true"]': { background: changeOrderSurface.inset },
+  '&[aria-expanded="true"] > .MuiSvgIcon-root': { transform: 'rotate(180deg)' },
+  [`&[data-changed] .${FACT_SLOT_VALUE}`]: { textDecorationColor: changeOrderAction.line },
+  ...PRESS,
+  [`@media ${REDUCED_MOTION}`]: {
+    transition: 'none',
+    '&:active': { transform: 'none' },
+    '& > .MuiSvgIcon-root': { transition: 'none' },
+  },
+} as const;
+
+/** A slug or a code word as a fact's value: the detail view's mono, a size under the prose around it. */
+export const FACT_MONO_SX = {
+  fontFamily: changeOrderFontMono,
+  fontSize: changeOrderType.size.body,
+  letterSpacing: '-.01em',
 } as const;
 
 /** The popover's own chrome: a light card over the page. */
@@ -178,23 +156,39 @@ export const OPTION_SX = {
   borderRadius: `${changeOrderShape.radius.md}px`,
   transition: DRAFT_TRANSITION,
   '&:hover, &:focus-visible': { background: changeOrderSurface.sunk },
-  '&:focus-visible': { outline: `2px solid ${changeOrderStatus.accent}`, outlineOffset: -2 },
-  '&[aria-checked="true"]': { boxShadow: changeOrderSelectedRing, background: changeOrderStatus.accentSoft },
+  '&:focus-visible': { outline: `2px solid ${changeOrderAction.focus}`, outlineOffset: -2 },
+  '&[aria-checked="true"]': { boxShadow: changeOrderSelectedRing, background: changeOrderAction.soft },
   '& > .MuiSvgIcon-root': { fontSize: 17, color: changeOrderInk.subtle, marginTop: '1px' },
 } as const;
 
-/** Where a decision's value came from: icon tile colours. */
-export const PROVENANCE_TONE: Record<DraftDecisionOrigin, { bg: string; fg: string }> = {
-  last: { bg: changeOrderSurface.inset, fg: changeOrderInk.muted },
-  policy: { bg: changeOrderStatus.accentSoft, fg: changeOrderStatus.accent },
-  you: { bg: changeOrderStatus.successGround, fg: changeOrderStatus.success },
-};
+/** How far a problem's edge hangs left of its column, so the words stay on the column's line. */
+const PROBLEM_EDGE_HANG = 11;
 
-/** A row's two sides when it differs from last time. */
-export const WAS_GROUND = componentTheme.dangerFaint;
-export const NOW_GROUND = componentTheme.successFaint;
+/**
+ * Words about a problem, hung so that the one the blocker beside Create names (`next`) can carry
+ * the rust leading edge: a shape, so it never rests on rust vs amber. The words do not move when
+ * it comes and goes.
+ */
+export function problemEdgeSx(next: boolean) {
+  return {
+    marginLeft: `-${PROBLEM_EDGE_HANG}px`,
+    paddingLeft: `${PROBLEM_EDGE_HANG}px`,
+    boxShadow: next ? `inset ${changeOrderShape.leadingEdge}px 0 0 ${changeOrderAction.ink}` : 'none',
+    transition: 'box-shadow .18s',
+  } as const;
+}
 
-/** The figure in the Where row: the loudest number on the page. */
+/**
+ * A part of the summary card the keyboard is sent to when what fixes its problem is not drawn:
+ * no ring of its own until then.
+ */
+export const PLACE_SX = {
+  outline: 'none',
+  borderRadius: '4px',
+  '&:focus-visible': { ...FOCUS_RING, outlineOffset: 4 },
+} as const;
+
+/** The dry run's figure, "6 of 8 same": the loudest number on the page. */
 export const FIGURE_SX = {
   fontSize: 26,
   fontWeight: changeOrderType.weight.bold,

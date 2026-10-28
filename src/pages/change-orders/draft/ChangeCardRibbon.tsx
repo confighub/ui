@@ -15,17 +15,17 @@ import AddIcon from '@mui/icons-material/Add';
 
 import { PersonAvatar } from '../components/ChangeOrderHistoryEntry';
 import {
+  changeOrderAction,
   changeOrderBorder,
   changeOrderFontMono,
   changeOrderInk,
   changeOrderShape,
-  changeOrderStatus,
   changeOrderSurface,
   changeOrderType,
 } from '../changeOrdersTokens';
 import { cardsAffectedBy, type DraftChangeSet, type DraftEndOption, type DraftSummaryPart } from './draftChangeCards';
 import { draftCopy } from './draftCopy';
-import { focusWhenDrawn, ledgerRowId } from './draftFocus';
+import { draftPlaceId, focusWhenDrawn } from './draftFocus';
 import { BARE_BUTTON, CODE_SX, DRAFT_TRANSITION, FOCUS_RING, PRESS } from './draftLook';
 import { DraftPeek, PeekCode } from './DraftPeek';
 import { CouldNotEstablish } from './CouldNotEstablish';
@@ -43,6 +43,16 @@ const BELOW = 19;
 
 /** The id the blocker focuses when How much holds the first problem, and focus lands on after an end is picked. */
 export const DRAFT_END_ID = 'draft-end';
+
+/**
+ * Change the end. The control that did it gives way to its opposite (the bracket's "End here"
+ * to "End at latest", one end chip to the other): the keyboard lands on the end chip, and waits
+ * on What and How much while it is redrawn, never at the page top.
+ */
+function endAndFollow(onEnd: (end: string | null) => void, end: string | null) {
+  onEnd(end);
+  focusWhenDrawn(DRAFT_END_ID, { fresh: true, holdAt: draftPlaceId('change') });
+}
 
 /**
  * A card's summary, split into its changes (`·` between them). In each change the names it
@@ -277,15 +287,15 @@ function ChangeCard({ card, isEnd, tabbable, summaryFailed, onFocus, onEndDrawn 
           flexDirection: 'column',
           gap: '4px',
           padding: '8px 10px 9px',
-          border: `1px ${out ? 'dashed' : 'solid'} ${isEnd ? changeOrderStatus.accentLine : changeOrderBorder.default}`,
+          border: `1px ${out ? 'dashed' : 'solid'} ${isEnd ? changeOrderAction.line : changeOrderBorder.default}`,
           borderRadius: `${changeOrderShape.radius.lg}px`,
           background: out ? changeOrderSurface.sunk : changeOrderSurface.card,
-          boxShadow: isEnd ? `inset -3px 0 0 ${changeOrderStatus.accent}` : 'none',
+          boxShadow: isEnd ? `inset -3px 0 0 ${changeOrderAction.ink}` : 'none',
           minWidth: 0,
           position: 'relative',
           transition: DRAFT_TRANSITION,
-          '&:hover': { borderColor: isEnd ? changeOrderStatus.accentLine : changeOrderBorder.strong },
-          '&:focus-visible': { outline: `2px solid ${changeOrderStatus.accent}`, outlineOffset: 1 },
+          '&:hover': { borderColor: isEnd ? changeOrderAction.line : changeOrderBorder.strong },
+          '&:focus-visible': { outline: `2px solid ${changeOrderAction.focus}`, outlineOffset: 1 },
           '& > .draft-card-body': { opacity: out ? 0.55 : 1 },
         }}
       >
@@ -323,7 +333,7 @@ function ChangeCard({ card, isEnd, tabbable, summaryFailed, onFocus, onEndDrawn 
               gap: '2px',
               fontSize: changeOrderType.size.micro,
               fontWeight: changeOrderType.weight.semibold,
-              color: changeOrderStatus.accent,
+              color: changeOrderAction.ink,
               whiteSpace: 'nowrap',
             }}
           >
@@ -368,7 +378,7 @@ function ChangeSetBracket({ changeSet, first, count, total, isEnd, onEnd }: Chan
           right: 4,
           top: 12,
           height: 8,
-          border: `1px solid ${isEnd ? changeOrderStatus.accentLine : changeOrderBorder.strong}`,
+          border: `1px solid ${isEnd ? changeOrderAction.line : changeOrderBorder.strong}`,
           borderBottom: 0,
           borderRadius: '4px 4px 0 0',
         }}
@@ -378,7 +388,7 @@ function ChangeSetBracket({ changeSet, first, count, total, isEnd, onEnd }: Chan
           eyebrow: copy.changeSet,
           icon: <Inventory2OutlinedIcon aria-hidden />,
           title: <span translate="no">{changeSet.slug}</span>,
-          lines: [changeSet.description, copy.changeSetEnd].filter((line) => line !== ''),
+          lines: changeSet.description === '' ? [] : [changeSet.description],
           action: interactive && !isEnd ? copy.endHere : undefined,
         }}
       >
@@ -401,11 +411,11 @@ function ChangeSetBracket({ changeSet, first, count, total, isEnd, onEnd }: Chan
             fontSize: 11,
             lineHeight: '18px',
             whiteSpace: 'nowrap',
-            color: isEnd ? changeOrderStatus.accent : changeOrderInk.muted,
+            color: isEnd ? changeOrderAction.ink : changeOrderInk.muted,
             borderRadius: '4px',
             cursor: interactive ? 'pointer' : 'default',
             transition: DRAFT_TRANSITION,
-            '&:hover': { color: changeOrderStatus.accent },
+            '&:hover': { color: changeOrderAction.ink },
             '&:focus-visible': FOCUS_RING,
           }}
         >
@@ -426,7 +436,7 @@ interface EndSuggestionProps {
   onEnd: () => void;
 }
 
-/** The one-click end beside the ribbon: the finished ChangeSet, or back to the latest change. */
+/** The one-click end over the ribbon's end: the finished ChangeSet, or back to the latest change. */
 function EndSuggestion({ option, affected, onEnd }: EndSuggestionProps) {
   const toChangeSet = option.kind === 'changeSet';
   return (
@@ -452,14 +462,14 @@ function EndSuggestion({ option, affected, onEnd }: EndSuggestionProps) {
           height: 24,
           padding: '0 9px 0 7px',
           borderRadius: `${changeOrderShape.radius.pill}px`,
-          border: `1px solid ${toChangeSet ? changeOrderStatus.accentLine : changeOrderBorder.default}`,
-          background: toChangeSet ? changeOrderStatus.accentSoft : changeOrderSurface.card,
-          color: toChangeSet ? changeOrderStatus.accent : changeOrderInk.muted,
+          border: `1px solid ${toChangeSet ? changeOrderAction.line : changeOrderBorder.default}`,
+          background: toChangeSet ? changeOrderAction.soft : changeOrderSurface.card,
+          color: toChangeSet ? changeOrderAction.ink : changeOrderInk.muted,
           fontSize: changeOrderType.size.small,
           fontWeight: changeOrderType.weight.semibold,
           whiteSpace: 'nowrap',
           transition: DRAFT_TRANSITION,
-          '&:hover': { borderColor: toChangeSet ? changeOrderStatus.accent : changeOrderBorder.strong },
+          '&:hover': { borderColor: toChangeSet ? changeOrderAction.ink : changeOrderBorder.strong },
           '&:focus-visible': FOCUS_RING,
           ...PRESS,
         }}
@@ -499,7 +509,7 @@ function StartFlag({ label }: StartFlagProps) {
     >
       <Box aria-hidden="true" sx={{ position: 'absolute', top: -16, bottom: 0, left: '50%', borderLeft: `1px dashed ${changeOrderBorder.strong}` }} />
       {label === undefined ? null : (
-        <DraftPeek spec={{ eyebrow: copy.startEyebrow, icon: <HistoryIcon aria-hidden />, title: <span translate="no">{label}</span>, lines: [copy.startLine] }}>
+        <DraftPeek spec={{ eyebrow: copy.startEyebrow, icon: <HistoryIcon aria-hidden />, title: <span translate="no">{label}</span> }}>
           <Box
             component="span"
             sx={{
@@ -536,27 +546,27 @@ export interface ChangeCardRibbonProps {
   onEnd: (end: string | null) => void;
   /** Ask again for what could not be read. */
   onRetry?: () => void;
+  /** A problem above already says nothing is waiting, so the empty ribbon draws nothing. */
+  emptySaid?: boolean;
 }
 
 /**
  * How much of the base's waiting change the ChangeOrder takes: the changes since the last
  * ChangeOrder as cards, oldest first, from the start flag (where every variant now is) to the end
- * flag. A closed ChangeSet's bracket and the latest change are the ends a draft can take; cards
- * after the end are greyed, not hidden. The cards are one tab stop; the arrow keys move between
- * them. When they do not fit, the ribbon scrolls sideways and opens on the end.
+ * flag. A closed ChangeSet's bracket and the latest change are the ends a draft can take (the
+ * one-click end is `ChangeCardEnd`, on What's line); cards after the end are greyed, not
+ * hidden. The cards are one tab stop; the arrow keys move between them. When they do not fit,
+ * the ribbon scrolls sideways and opens on the end.
  */
-export const ChangeCardRibbon = memo(function ChangeCardRibbon({ cards, startLabel, onEnd, onRetry }: ChangeCardRibbonProps) {
+export const ChangeCardRibbon = memo(function ChangeCardRibbon({
+  cards,
+  startLabel,
+  onEnd,
+  onRetry,
+  emptySaid = false,
+}: ChangeCardRibbonProps) {
   const [focusIndex, setFocusIndex] = useState<number | undefined>(undefined);
   const sideways = useSidewaysScroll();
-
-  const pickEnd = useCallback(
-    (end: string | null) => {
-      onEnd(end);
-      // The chip that did it gives way to its opposite; the keyboard lands there, not at the page top.
-      focusWhenDrawn(DRAFT_END_ID, { fresh: true, holdAt: ledgerRowId('howMuch') });
-    },
-    [onEnd],
-  );
 
   if (cards.status === 'loading') {
     return (
@@ -568,11 +578,12 @@ export const ChangeCardRibbon = memo(function ChangeCardRibbon({ cards, startLab
     );
   }
   if (cards.status === 'failed') return (
-      <CouldNotEstablish onRetry={onRetry} retryWhat={draftCopy.page.retryWhat.howMuch} focusAfterRetry={ledgerRowId('howMuch')} reason={cards.reason} />
+      <CouldNotEstablish onRetry={onRetry} retryWhat={draftCopy.page.retryWhat.howMuch} focusAfterRetry={draftPlaceId('change')} reason={cards.reason} />
     );
   // Undetermined: asking again gives the same answer, so there is no retry.
   if (cards.status === 'undetermined' && cards.cards.length === 0) return <CouldNotEstablish reason={cards.reason} />;
   if (cards.cards.length === 0) {
+    if (emptySaid) return null;
     return <Box sx={{ color: changeOrderInk.subtle, fontSize: changeOrderType.size.body }}>{copy.nothing}</Box>;
   }
 
@@ -586,7 +597,6 @@ export const ChangeCardRibbon = memo(function ChangeCardRibbon({ cards, startLab
   const currentEnd = cards.end.status === 'resolved' ? cards.end.end : undefined;
   const endChangeSetId = currentEnd?.kind === 'tag' ? currentEnd.changeSet.changeSetId : undefined;
   const closedIds = new Set(cards.ends.flatMap((option) => (option.kind === 'changeSet' ? [option.changeSet.changeSetId] : [])));
-  const suggestion = cards.suggestedEnd;
   const summariesFailed = list.some((card) => card.summary.status === 'failed');
   const tabStop = focusIndex ?? (lastIncluded >= 0 ? lastIncluded : total - 1);
 
@@ -639,7 +649,7 @@ export const ChangeCardRibbon = memo(function ChangeCardRibbon({ cards, startLab
                   count={Math.max(...positions) - first + 1}
                   total={total}
                   isEnd={endChangeSetId === changeSet.changeSetId}
-                  onEnd={closedIds.has(changeSet.changeSetId) ? () => pickEnd(changeSet.slug) : undefined}
+                  onEnd={closedIds.has(changeSet.changeSetId) ? () => endAndFollow(onEnd, changeSet.slug) : undefined}
                 />
               );
             })}
@@ -662,20 +672,34 @@ export const ChangeCardRibbon = memo(function ChangeCardRibbon({ cards, startLab
           <CouldNotEstablish
             onRetry={cards.status === 'undetermined' ? undefined : onRetry}
             retryWhat={draftCopy.page.retryWhat.howMuch}
-            focusAfterRetry={ledgerRowId('howMuch')}
+            focusAfterRetry={draftPlaceId('change')}
             reason={cards.reason}
           />
         </Box>
       ) : null}
-      {suggestion === undefined ? null : (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: summariesFailed || cards.status === 'undetermined' ? '6px' : `${ABOVE}px`, flexWrap: 'wrap' }}>
-          <EndSuggestion
-            option={suggestion}
-            affected={cardsAffectedBy(suggestion, list)}
-            onEnd={() => pickEnd(suggestion.kind === 'changeSet' ? suggestion.changeSet.slug : null)}
-          />
-        </Box>
-      )}
     </Box>
+  );
+});
+
+export interface ChangeCardEndProps {
+  cards: DraftChangeCards;
+  /** Change the end: a ChangeSet slug, or `null` for the latest change. */
+  onEnd: (end: string | null) => void;
+}
+
+/**
+ * The one-click end, on What's line over the ribbon's end: "End at <ChangeSet>" while the change
+ * runs past a finished ChangeSet, "End at latest" once it ends there. Drawn whenever the ribbon
+ * draws its cards, and only then.
+ */
+export const ChangeCardEnd = memo(function ChangeCardEnd({ cards, onEnd }: ChangeCardEndProps) {
+  const suggestion = cards.suggestedEnd;
+  if (cards.status === 'loading' || cards.status === 'failed' || cards.cards.length === 0 || suggestion === undefined) return null;
+  return (
+    <EndSuggestion
+      option={suggestion}
+      affected={cardsAffectedBy(suggestion, cards.cards)}
+      onEnd={() => endAndFollow(onEnd, suggestion.kind === 'changeSet' ? suggestion.changeSet.slug : null)}
+    />
   );
 });

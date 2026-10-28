@@ -342,7 +342,7 @@ test.describe('ChangeOrder mode — the Promote button', () => {
     // 4. And it does not send them round a loop that cannot help: these Spaces
     //    are outside the change order's scope and every run skips them, so the
     //    failed box offers no retry and no Promote.
-    await expect(error).not.toContainText('Run the promote again to finish it');
+    await expect(error).not.toContainText('Promote again to finish');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'failed');
     await expect(statusBox(page).getByRole('button', { name: /^Retry/ })).toHaveCount(0);
     await expect(page.locator('[data-testid="stage-merge"]')).toHaveCount(0);
@@ -411,8 +411,8 @@ test.describe('ChangeOrder mode — the Promote button', () => {
 
     // AND THE ADVICE IS THE ONE THAT WORKS. Fix the conflict, run it again,
     // and the blocked variant follows.
-    await expect(error).toContainText('Run the promote again to finish it');
-    await expect(error).not.toContainText('passes them over in the same way');
+    await expect(error).toContainText('Promote again to finish');
+    await expect(error).not.toContainText('Fix this before you promote again');
     // Nothing here is about the change order's scope, so it must not say so.
     await expect(error).not.toContainText('InScopeSpaceIDs');
     // A shape a retry can finish: the failed box offers one, or a re-check first.
@@ -590,7 +590,7 @@ test.describe('ChangeOrder mode — the Promote button', () => {
     await expect(coverage).toBeVisible({ timeout: 30000 });
     await expect(coverage).toContainText('Previewed 0 of 1');
     // It names the reason, so a short preview does not read as a fault.
-    await expect(coverage).toContainText('earlier in this promotion');
+    await expect(coverage).toContainText(/takes? from (an )?earlier variants?/);
     await expect(coverage).not.toContainText(/fail|error/i);
 
     // And the promotion is still offered: nothing here is a refusal.

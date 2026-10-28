@@ -1,7 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink } from 'react-router-dom';
 
 import { HoverCard } from '@/components/styled';
 import { functionListArgs } from '@/hooks/useFunctionChannels';
@@ -76,7 +76,6 @@ export const ValidationGateCard = ({
   spaceId,
   onRunClick,
 }: ValidationGateCardProps) => {
-  const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
   // Which of the Trigger's results is this gate's: a numbered gate names its function's position.
   const resultIndex = (parseGateName(gateName).functionIndex ?? 1) - 1;
@@ -200,12 +199,10 @@ export const ValidationGateCard = ({
         <Stack direction='column' spacing={0.5} alignItems='start' sx={{ flex: 1 }}>
           {spaceId ? (
             <Link
-              href={`/spaces/${spaceId}?tab=1`}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                navigate(`/spaces/${spaceId}?tab=1`);
-              }}
+              component={RouterLink}
+              to={`/spaces/${spaceId}?tab=1`}
+              // RouterLink takes only a plain left click; the browser keeps every modified click.
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
               sx={{
                 textDecoration: 'underline',
                 color: 'text.primary',

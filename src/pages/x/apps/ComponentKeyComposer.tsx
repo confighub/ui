@@ -132,7 +132,7 @@ export function ComposerRow({ desc, allPaths, onCommit, onCancel }: ComposerRowP
             onKeyDown={handleKeyDown}
             disabled={isCommitting}
             placeholder="key"
-            inputProps={{ 'data-testid': 'composer-key-input', ref: keyRef }}
+            inputProps={{ 'data-testid': 'composer-key-input', ref: keyRef, 'aria-invalid': validationError !== null }}
             sx={{
               fontSize: 11,
               fontFamily: componentTheme.fontMono,
@@ -148,7 +148,7 @@ export function ComposerRow({ desc, allPaths, onCommit, onCancel }: ComposerRowP
                 background: componentTheme.bgDefault,
                 boxShadow: validationError
                   ? `0 0 0 2px rgba(220,38,38,.12)`
-                  : `0 0 0 2px rgba(9,105,218,.08)`,
+                  : `0 0 0 2px ${componentTheme.accentFocusRing}`,
                 boxSizing: 'border-box',
                 outline: 'none',
               },
@@ -194,7 +194,7 @@ export function ComposerRow({ desc, allPaths, onCommit, onCancel }: ComposerRowP
                   outline: 'none',
                   '&:focus': {
                     borderColor: componentTheme.accent,
-                    boxShadow: `0 0 0 2px rgba(9,105,218,.08)`,
+                    boxShadow: `0 0 0 2px ${componentTheme.accentFocusRing}`,
                   },
                 },
               }}

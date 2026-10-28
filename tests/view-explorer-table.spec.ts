@@ -160,7 +160,7 @@ test.describe('view explorer table', () => {
     await expect(groupRows(page)).toHaveCount(5);
   });
 
-  test('a row opens the drawer below the toolbar, ⌘-click picks it, and ⌘↵ opens the Unit page', async ({ page, context }) => {
+  test('a row opens the drawer below the toolbar, ⌘-click on its name link opens the Unit in a new tab without picking it, and ⌘↵ opens the Unit page', async ({ page, context }) => {
     await openExplorer(page, `/x/view-explorer?view=${viewId}`);
     await nameCell(page, 'alpha').click();
     const drawer = page.getByTestId('vx-row-panel');
@@ -190,20 +190,22 @@ test.describe('view explorer table', () => {
     await expect(drawer).toBeHidden();
     await expect(rows(page).filter({ hasText: 'alpha' })).toBeFocused();
 
-    // In a Units table ⌘-click picks the row, and opens neither the drawer nor a page.
+    // Even in a Units table, where ⌘-click on the rest of the row picks it, ⌘-click on the name
+    // link is the browser's: it opens the Unit page in a new tab, and the row stays unpicked.
     const beta = rows(page).filter({ hasText: 'beta' });
-    const popup = context.waitForEvent('page', { timeout: 1500 }).then(
-      () => true,
-      () => false,
-    );
-    await nameCell(page, 'beta').click({ modifiers: ['ControlOrMeta'] });
-    await expect(beta).toHaveAttribute('data-picked', 'true');
-    await expect(drawer).toBeHidden();
-    expect(await popup, 'no page opened for the ⌘-click').toBe(false);
-    await nameCell(page, 'beta').click({ modifiers: ['ControlOrMeta'] });
-    await expect(beta).toHaveAttribute('data-picked', 'false');
-
     const unit = seed.units.find((u) => u.slug === 'beta')!;
+    const link = nameCell(page, 'beta').getByRole('link', { name: 'beta' });
+    await expect(link).toHaveAttribute('href', new RegExp(unit.id));
+    const tab = context.waitForEvent('page');
+    await link.click({ modifiers: ['ControlOrMeta'] });
+    const newTab = await tab;
+    await expect.poll(() => newTab.url()).toContain(unit.id);
+    await newTab.close();
+    await expect(beta).toHaveAttribute('data-picked', 'false');
+    await expect(page.getByTestId('vx-selection-bar')).toHaveCount(0);
+    await expect(drawer).toBeHidden();
+    expect(new URL(page.url()).pathname).toBe('/x/view-explorer');
+
     const opened = context.waitForEvent('page');
     await beta.focus();
     await page.keyboard.press('ControlOrMeta+Enter');
@@ -217,6 +219,48 @@ test.describe('view explorer table', () => {
     expect(new URL(detail.url()).searchParams.get('view')).toBe(viewId);
     await expect(detail.locator('[data-testid="vx-tab"][data-active="true"]')).toContainText(name);
     await detail.close();
+  });
+
+  test('⌘/Ctrl+Enter on a row opens the Unit page; a ⌘/Ctrl-click on the row outside its name link picks it, and opens the page of a Space', async ({ page, context }) => {
+    await openExplorer(page, `/x/view-explorer?view=${viewId}`);
+    const unit = seed.units.find((u) => u.slug === 'beta')!;
+    const row = rows(page).filter({ hasText: 'beta' });
+    const expectUnitPage = async (opened: Promise<Page>) => {
+      const detail = await opened;
+      await expect.poll(() => detail.url()).toContain(unit.id);
+      // Same URL as the name link: it carries the way back to this explorer tab.
+      expect(new URL(detail.url()).searchParams.has('explorer')).toBe(true);
+      await detail.close();
+    };
+
+    await row.focus();
+    let opened = context.waitForEvent('page');
+    await page.keyboard.press('ControlOrMeta+Enter');
+    await expectUnitPage(opened);
+
+    // The padding of a cell other than the name: the row's own area, not the link or a value.
+    // In a Units table that ⌘-click picks the row.
+    const otherCell = row.locator('[role="cell"][data-column]:not([data-column="Slug"])').first();
+    await otherCell.click({ modifiers: ['ControlOrMeta'], position: { x: 3, y: 3 } });
+    await expect(row).toHaveAttribute('data-picked', 'true');
+    await expect(page.getByTestId('vx-row-panel')).toBeHidden();
+    await otherCell.click({ modifiers: ['ControlOrMeta'], position: { x: 3, y: 3 } });
+    await expect(row).toHaveAttribute('data-picked', 'false');
+
+    // A Spaces table has no picking, so there the same ⌘-click opens the row's page.
+    await page.getByTestId('vx-entity').click();
+    await page.getByRole('menuitem', { name: 'Spaces' }).click();
+    const spaceRow = rows(page).first();
+    await expect(spaceRow).toBeVisible();
+    const spaceHref = await spaceRow.getByRole('link').first().getAttribute('href');
+    expect(spaceHref).toBeTruthy();
+    const spaceCell = spaceRow.locator('[role="cell"][data-column]').nth(1);
+    opened = context.waitForEvent('page');
+    await spaceCell.click({ modifiers: ['ControlOrMeta'], position: { x: 3, y: 3 } });
+    const spacePage = await opened;
+    await expect.poll(() => new URL(spacePage.url()).pathname).toBe(new URL(spaceHref!, 'http://x').pathname);
+    await spacePage.close();
+    await expect(page.getByTestId('vx-row-panel')).toBeHidden();
   });
 
   test('Save stays usable while the drawer is open, and the drawer closes on another entity', async ({ page }) => {
@@ -300,6 +344,15 @@ test.describe('view explorer table', () => {
     const list = page.getByTestId('vx-add-column-list');
     expect((await list.boundingBox())!.height).toBeLessThanOrEqual(360);
     expect(await list.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    // The headings of the Units page's Columns panel, in its order, each field under its own.
+    await expect(list.getByTestId('vx-add-column-heading')).toContainText(['Core Identity', 'Status & Health', 'Revisions', 'Timestamps']);
+    await expect(list.getByRole('menuitem', { name: 'Target', exact: true })).toHaveAttribute('data-group', 'Core Identity');
+    await expect(list.getByRole('menuitem', { name: 'Released revision', exact: true })).toHaveAttribute('data-group', 'Revisions');
+    await expect(list.getByRole('menuitem', { name: 'Created', exact: true })).toHaveAttribute('data-group', 'Timestamps');
+    // A search leaves only the headings with a match.
+    await page.getByPlaceholder('Find a field').fill('released revision');
+    await expect(list.getByTestId('vx-add-column-heading')).toHaveText(['Revisions']);
+    await page.getByPlaceholder('Find a field').fill('');
     await page.getByRole('menuitem', { name: 'Status', exact: true }).click();
     await page.getByTestId('vx-add-column').click();
     await page.getByRole('menuitem', { name: 'Released revision', exact: true }).click();
@@ -322,6 +375,14 @@ test.describe('view explorer table', () => {
     const anyComponent = await hubApi.get('/api/space', { params: { where: 'ComponentID IS NOT NULL', select: 'SpaceID' } });
     const someHaveOne = ((await anyComponent.json()) as unknown[]).length > 0;
     await expect(header(page, 'Component')).toHaveCount(someHaveOne ? 1 : 0);
+
+    // The headings of the Spaces page's Columns panel.
+    await page.getByTestId('vx-add-column').click();
+    const fieldList = page.getByTestId('vx-add-column-list');
+    await expect(fieldList.getByTestId('vx-add-column-heading')).toContainText(['Core Identity', 'Units', 'Timestamps']);
+    await expect(fieldList.getByRole('menuitem', { name: 'Unlinked units', exact: true })).toHaveAttribute('data-group', 'Units');
+    await page.keyboard.press('Escape');
+    await expect(fieldList).toBeHidden();
     test.skip(someHaveOne, 'a Space on this server has a Component, so the column is shown');
 
     // The left-out column is still part of the view: "+" does not offer it again.

@@ -57,7 +57,8 @@ test.describe.configure({ mode: 'serial' });
 const SHOT_DIR = 'test-results/change-order-stage-card';
 /** The rail's id for the stage the change was made in. */
 const SOURCE_STAGE = '__change_order_source__';
-const PRIMARY = 'rgb(186, 61, 3)';
+/** `componentTheme.promote`, the theme's secondary: Promote and Release are purple, not the rust primary. */
+const PURPLE = 'rgb(104, 36, 196)';
 const IMAGE_BEFORE = 'ghcr.io/confighubai/confighub:v0.2.19';
 const IMAGE_AFTER = 'ghcr.io/confighubai/confighub:v0.2.20';
 
@@ -541,7 +542,6 @@ test.describe('ChangeOrder stage card — a gate failing', () => {
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'gateFailed', { timeout: 45000 });
     await expect(heading(page)).toContainText(CUSTOM_PREREQUISITE.Name);
     await expect(heading(page)).toContainText('failed');
-    await expect(statusBox(page)).toContainText('You can promote once it passes.');
     // Where it failed is part of the sentence, not a fragment after its full stop.
     await expect(statusBox(page)).toContainText(fx.spaces.dev.slug);
     expect(await statusBox(page).innerText()).not.toMatch(/\.\s+in\s/);
@@ -683,8 +683,8 @@ test.describe('ChangeOrder stage card', () => {
     const main = promoteMain(page, 'dev');
     await expect(main).toHaveText(stageCardCopy.merge.label('pr', 'dev', false), { useInnerText: true });
     await expect(main).toHaveAttribute('data-method', 'pr');
-    // Promote is the page's one action colour.
-    await expect(main).toHaveCSS('background-color', PRIMARY);
+    // Promote is purple, the colour of every surface that promotes or releases.
+    await expect(main).toHaveCSS('background-color', PURPLE);
     await shoot(page, '1');
 
     // "Promote only" beside it, on the same row, in the neutral outlined look.
@@ -692,8 +692,8 @@ test.describe('ChangeOrder stage card', () => {
     await expect(other).toHaveCount(1);
     await expect(other).toHaveText(stageCardCopy.merge.otherLabel('p', false), { useInnerText: true });
     await expect(other).toHaveAttribute('data-method', 'p');
-    await expect(other).not.toHaveCSS('background-color', PRIMARY);
-    await expect(other).not.toHaveCSS('color', PRIMARY);
+    await expect(other).not.toHaveCSS('background-color', PURPLE);
+    await expect(other).not.toHaveCSS('color', PURPLE);
     {
       const [m, o] = [await boxOf(main), await boxOf(other)];
       expect(o.x > m.x && near(o.y, m.y), `Promote only at ${o.x},${o.y}; main at ${m.x},${m.y}`).toBe(true);
@@ -748,6 +748,7 @@ test.describe('ChangeOrder stage card', () => {
     const release = releaseMain(page, 'staging');
     await expect(release).toBeFocused();
     await expect(release).toHaveText(stageCardCopy.merge.label('r', 'staging', false), { useInnerText: true });
+    await expect(release).toHaveCSS('background-color', PURPLE);
     // One method left, so one button.
     await expect(otherButton(page)).toHaveCount(0);
     await expect(statusBox(page)).toContainText(stageCardCopy.dryRun.release(2));
@@ -805,6 +806,9 @@ test.describe('ChangeOrder stage card', () => {
     await promoteMain(page, 'prod').click();
     await expect(confirmButton(page)).toBeFocused();
     await expect(confirmButton(page)).toHaveText(stageCardCopy.merge.confirm('pr', false));
+    // Purple like the button it replaces; the pointer is still over it, so look with it moved off.
+    await page.mouse.move(0, 0);
+    await expect(confirmButton(page)).toHaveCSS('background-color', PURPLE);
     await expect(cancelButton(page)).toHaveText(stageCardCopy.merge.cancel);
     const after = await boxOf(confirmButton(page));
     expect(near(after.x, before.x) && near(after.y, before.y), `confirm at ${after.x},${after.y}; button was at ${before.x},${before.y}`).toBe(true);
@@ -901,7 +905,7 @@ test.describe('ChangeOrder stage card', () => {
 
     await statusBox(page).getByRole('button', { name: stageCardCopy.review.requestReview }).click();
     const picker = statusBox(page).getByTestId('review-request-picker');
-    await expect(picker).toContainText(stageCardCopy.review.requestHint);
+    await expect(picker).toContainText(stageCardCopy.review.requestFrom);
     await picker.getByRole('checkbox', { name: PEOPLE.priya.name }).check();
     await picker.getByRole('button', { name: stageCardCopy.review.requestSubmit, exact: true }).click();
     await expect.poll(() => mocks.patches.length, { timeout: 15000 }).toBe(1);
@@ -955,6 +959,10 @@ test.describe('ChangeOrder stage card', () => {
     await expect(problem(page)).toContainText(odd.slug);
     const main = promoteMain(page, 'prod');
     await expect(main).toHaveText(stageCardCopy.merge.label('pr', 'prod', true), { useInnerText: true });
+    // "…anyway" is outlined, still in Promote's purple.
+    await expect(main).toHaveCSS('color', PURPLE);
+    await expect(main).toHaveCSS('border-top-color', PURPLE);
+    await expect(main).toHaveCSS('background-color', 'rgb(255, 255, 255)');
     // Two outcomes: a bar says how the Spaces divide, then a box for each.
     const changeCard = page.getByTestId('stage-change-card');
     await expect(changeCard.getByTestId('stage-change-scope')).toContainText('3 Spaces');
@@ -1091,7 +1099,7 @@ test.describe('ChangeOrder stage card', () => {
     await expect(problem(page)).toHaveCount(0);
     // Said calmly, in the change card's notes, which show with the boxes closed.
     const changeCard = page.getByTestId('stage-change-card');
-    await expect(changeCard).toContainText('earlier in this promotion');
+    await expect(changeCard).toContainText(/takes? from (an )?earlier variants?/);
     await expect(changeCard.getByTestId('stage-change-notes')).not.toContainText(/fail|error/i);
 
     stubs.forced = (result) =>

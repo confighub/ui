@@ -669,8 +669,8 @@ test.describe('copy', () => {
     expect(segmentsText(stageCardCopy.problem.differs(space, 'replicas', ref, '1', '3', '', ''))).toBe('prod-eu: replicas goes 1 → 3 here only.');
   });
 
-  test('the request hint does not promise a notification', () => {
-    expect(stageCardCopy.review.requestHint).toBe('They see the request when they open this ChangeOrder.');
+  test('the request picker carries no hint line', () => {
+    expect('requestHint' in stageCardCopy.review).toBe(false);
   });
 
   test('an approval needs no reason; a rejection does', () => {
@@ -680,15 +680,14 @@ test.describe('copy', () => {
   });
 
   test('the copy fixes', () => {
-    expect(stageCardCopy.body.gateWait(undefined, 2)).toBe('You can promote once they pass.');
-    expect(stageCardCopy.body.gateWait(undefined)).toBe('You can promote once it passes.');
+    expect(stageCardCopy.body.gateWait(new Date(2026, 0, 1, 10, 48).getTime())).toMatch(/^Checked .+\.$/);
     expect(segmentsText(stageCardCopy.headline.gateWaiting('released', 'staging', 'check/released'))).toBe('Waiting for staging to be released');
     expect(segmentsText(stageCardCopy.headline.gateWaiting('promoted', 'staging', 'check/promoted'))).toBe('Waiting for staging to be promoted');
     expect(segmentsText(stageCardCopy.headline.gateWaiting('healthy', 'staging', 'check/healthy'))).toBe('Waiting on check/healthy');
     expect(stageCardCopy.body.failedRest(0, 3, 'prod-eu')).toBe('None of the 3 Spaces were written, because prod-eu failed.');
     expect(stageCardCopy.body.failedRest(2, 3, 'prod-eu')).toBe('The other 2 hold the change, not released.');
-    expect(stageCardCopy.body.inProgress).toBe('Promote again to finish. Spaces that already have it are skipped.');
-    expect(stageCardCopy.review.coverageHelp(undefined)).toBe('Everyone on this ChangeOrder sees the note.');
+    expect(stageCardCopy.body.inProgress).toBe('Promote again to finish.');
+    expect(stageCardCopy.review.coverageHelp('2 Units')).toBe('Covers 2 Units.');
     expect(
       segmentsText(stageCardCopy.review.needsEach([{ name: 'release-ok', need: 1 }, { name: 'security-review', need: 2 }], 'staging', 'release')),
     ).toBe('release-ok needs 1 approval and security-review needs 2 approvals before staging can be released.');

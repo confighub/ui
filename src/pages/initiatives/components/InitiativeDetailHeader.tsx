@@ -1,6 +1,8 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
+import { Link as RouterLink } from 'react-router-dom';
+
 import type { Initiative } from '@/types/initiative';
 import { PRIORITY_COLORS } from '@/types/initiative';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -18,27 +20,27 @@ interface InitiativeDetailHeaderProps {
   initiative: Initiative;
   isRunningCheck: boolean;
   canRunCheck: boolean;
-  onBack: () => void;
-  onEdit: () => void;
+  backTo: string;
+  editTo: string;
   onRunCheck: () => void;
   checkedAt?: string;
   unitCount?: number;
   toolchain?: string;
-  /** Open the initiative's compliance check Trigger, when it has one */
-  onOpenTrigger?: () => void;
+  /** The initiative's compliance check Trigger, when it has one */
+  triggerTo?: string;
 }
 
 export const InitiativeDetailHeader = ({
   initiative,
   isRunningCheck,
   canRunCheck,
-  onBack,
-  onEdit,
+  backTo,
+  editTo,
   onRunCheck,
   checkedAt,
   unitCount,
   toolchain,
-  onOpenTrigger,
+  triggerTo,
 }: InitiativeDetailHeaderProps) => {
   const priorityStyle = PRIORITY_COLORS[initiative.priority];
   const deadlineLabel = initiative.deadline ? `Due ${dayjs(initiative.deadline).format('MMM D')}` : null;
@@ -69,7 +71,8 @@ export const InitiativeDetailHeader = ({
       <Button
         size='small'
         startIcon={<ArrowBackIcon />}
-        onClick={onBack}
+        component={RouterLink}
+        to={backTo}
         sx={{ textTransform: 'none', color: 'primary.main', flexShrink: 0 }}
       >
         Back
@@ -128,12 +131,13 @@ export const InitiativeDetailHeader = ({
           {deadlineLabel}
         </Typography>
       )}
-      {onOpenTrigger && (
+      {triggerTo && (
         <Button
           size='small'
           variant='outlined'
           startIcon={<BoltIcon />}
-          onClick={onOpenTrigger}
+          component={RouterLink}
+          to={triggerTo}
           title='The Trigger that runs the compliance check'
           sx={{ textTransform: 'none', flexShrink: 0 }}
         >
@@ -144,7 +148,8 @@ export const InitiativeDetailHeader = ({
         size='small'
         variant='outlined'
         startIcon={<EditIcon />}
-        onClick={onEdit}
+        component={RouterLink}
+        to={editTo}
         sx={{ textTransform: 'none', flexShrink: 0 }}
       >
         Edit

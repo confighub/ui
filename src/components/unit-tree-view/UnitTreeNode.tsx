@@ -3,6 +3,7 @@
 import { memo } from 'react';
 import { Handle, Position } from 'reactflow';
 
+import { NavLink } from '@/components/nav-link/NavLink';
 import { ExtendedUnitRead } from '@confighub/rtk-query';
 import { Box, Chip, Typography, styled } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -61,13 +62,9 @@ interface UnitTreeNodeProps {
 export const UnitTreeNode = memo(({ data }: UnitTreeNodeProps) => {
   const { label, sublabel, unit, nodeType } = data;
 
-  const handleClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const path = nodeType === 'space'
-      ? `/spaces/${unit.Unit?.SpaceID}`
-      : `/units/${unit.Unit?.SpaceID}/${unit.Unit?.UnitID}`;
-    window.open(path, '_blank', 'noopener,noreferrer');
-  };
+  const path = nodeType === 'space'
+    ? `/spaces/${unit.Unit?.SpaceID}`
+    : `/units/${unit.Unit?.SpaceID}/${unit.Unit?.UnitID}`;
 
   // Determine status indicators
   const unreleased = hasUnreleasedChanges(unit.Unit);
@@ -94,43 +91,47 @@ export const UnitTreeNode = memo(({ data }: UnitTreeNodeProps) => {
   return (
     <>
       <Handle type="target" position={Position.Top} />
-      <NodeContainer onClick={handleClick}>
-        <Box display="flex" alignItems="center" gap={1}>
-          <StatusIcon
-            sx={{ fontSize: 16 }}
-            color={statusColor}
-          />
-          <NodeLabel>{label}</NodeLabel>
-        </Box>
-        <NodeSublabel>{sublabel}</NodeSublabel>
+      {/* nodrag/nopan: a press on the link is a click, not a pan of the canvas.
+          draggable={false} stops the browser's own link drag. */}
+      <NavLink to={path} className='nodrag nopan' draggable={false} style={{ display: 'block' }}>
+        <NodeContainer>
+          <Box display="flex" alignItems="center" gap={1}>
+            <StatusIcon
+              sx={{ fontSize: 16 }}
+              color={statusColor}
+            />
+            <NodeLabel>{label}</NodeLabel>
+          </Box>
+          <NodeSublabel>{sublabel}</NodeSublabel>
 
-        <StatusContainer>
-          {unreleased && (
-            <Chip
-              label="Unapplied"
-              size="small"
-              color="warning"
-              sx={{ height: 20, fontSize: '0.65rem' }}
-            />
-          )}
-          {needsUpgrade && (
-            <Chip
-              label="Upgrade"
-              size="small"
-              color="warning"
-              sx={{ height: 20, fontSize: '0.65rem' }}
-            />
-          )}
-          {hasValidationErrors && (
-            <Chip
-              label="Gated"
-              size="small"
-              color="error"
-              sx={{ height: 20, fontSize: '0.65rem' }}
-            />
-          )}
-        </StatusContainer>
-      </NodeContainer>
+          <StatusContainer>
+            {unreleased && (
+              <Chip
+                label="Unapplied"
+                size="small"
+                color="warning"
+                sx={{ height: 20, fontSize: '0.65rem' }}
+              />
+            )}
+            {needsUpgrade && (
+              <Chip
+                label="Upgrade"
+                size="small"
+                color="warning"
+                sx={{ height: 20, fontSize: '0.65rem' }}
+              />
+            )}
+            {hasValidationErrors && (
+              <Chip
+                label="Gated"
+                size="small"
+                color="error"
+                sx={{ height: 20, fontSize: '0.65rem' }}
+              />
+            )}
+          </StatusContainer>
+        </NodeContainer>
+      </NavLink>
       <Handle type="source" position={Position.Bottom} />
     </>
   );

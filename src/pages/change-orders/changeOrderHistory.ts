@@ -340,27 +340,6 @@ export function mergeReleases(...lists: ReadonlyArray<readonly HistoryReleaseInp
   return [...byId.values(), ...withoutId];
 }
 
-/**
- * How an entry was matched from its records, naming the rule that applied, or
- * `null` for an entry of one record.
- */
-export function matchedFromText(action: HistoryActionEntry): string | null {
-  const writes = [action.promotion ? 'promotion' : null, action.failure ? 'failure' : null].filter(
-    (k): k is string => k !== null,
-  );
-  const kinds = [...(action.override ? ['override'] : []), ...writes];
-  if (kinds.length < 2) return null;
-  const head = `Matched from ${kinds.length} records (${kinds.join(', ')}) by person and Stage`;
-  const sameWrite = `${HISTORY_SAME_WRITE_MS / 1000} s`;
-  const window = `${HISTORY_JOIN_WINDOW_MS / 1000} s`;
-  let rule: string;
-  if (!action.override) rule = `the promotion and the failure were written within ${sameWrite} of each other`;
-  else if (writes.length === 2) {
-    rule = `the promotion and the failure were written within ${sameWrite} of each other, at most ${window} after the override`;
-  } else rule = `the ${writes[0]} was written at most ${window} after the override`;
-  return `${head}: ${rule}. The records carry no shared ID.`;
-}
-
 // ---------------------------------------------------------------------------
 // Override reach
 // ---------------------------------------------------------------------------

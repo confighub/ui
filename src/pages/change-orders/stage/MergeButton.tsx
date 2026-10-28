@@ -2,8 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The stage's action: the main method as the one rust button, and beside it the
+ * The stage's action: the main method as the one purple button, and beside it the
  * other method ("Promote only") as a neutral outlined button.
+ *
+ * PROMOTE AND RELEASE ARE PURPLE, not the rust primary: the theme's `secondary`
+ * (`componentTheme.promote`, hover `promoteEmphasis`), the colour every surface
+ * that promotes or releases uses. Focus stays rust, like every focus ring.
  *
  * ONE CLICK WHEN NOTHING IS WRONG (`oneClick`). The box already shows the dry
  * run's answer, so a click acts at once and the button it was says "Working…".
@@ -33,6 +37,7 @@ import Typography from '@mui/material/Typography';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { alpha, type Theme } from '@mui/material/styles';
 
+import { componentTheme } from '../../x/apps/componentTheme';
 import { stageCardCopy } from './stageCardCopy';
 import type { MergeMethod, MergeMethodOption } from './stageTypes';
 
@@ -53,7 +58,7 @@ export interface MergeButtonProps {
    * "…anyway", an acknowledgement and a retry, which always confirm.
    */
   oneClick?: boolean;
-  /** The change reaches some Space differently: outlined primary, and the label ends "anyway…". */
+  /** The change reaches some Space differently: outlined purple, and the label ends "anyway…". */
   anyway?: boolean;
   /** Labels for the retry and "release again" flows, which say more than the method does. */
   labels?: { main?: string; short?: string; confirm?: string };
@@ -106,6 +111,18 @@ const unavailableSx = {
 const busySx = { '&[aria-disabled="true"]': { cursor: 'progress' } } as const;
 
 const focusSx = { '&.Mui-focusVisible, &:focus-visible': { outline: '2px solid var(--rust)', outlineOffset: '2px' } } as const;
+
+/**
+ * The "…anyway" button: outlined in Promote's purple. `color="secondary"` gives a
+ * contained button its purple fill and hover, but the theme's `outlined` override
+ * draws every outlined button in neutral ink, so the outline is set here.
+ */
+const anywaySx = {
+  bgcolor: 'background.paper',
+  color: componentTheme.promote,
+  borderColor: componentTheme.promote,
+  '&:hover': { bgcolor: componentTheme.upgradeMuted, borderColor: componentTheme.promoteEmphasis, color: componentTheme.promoteEmphasis },
+} as const;
 
 const touchSx = { [NARROW]: { height: 38, fontSize: '13.5px', px: '18px' } } as const;
 
@@ -293,7 +310,7 @@ export function MergeButton({
         <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', mt: '12px' }}>
           <Button
             variant="contained"
-            color="primary"
+            color="secondary"
             ref={focusOnMount('confirm')}
             aria-disabled={busy || blocked ? true : undefined}
             aria-describedby={blocked && !busy && !confirmWaiting ? hintId : undefined}
@@ -338,14 +355,14 @@ export function MergeButton({
     <Box sx={{ mt: '12px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', maxWidth: '100%' }}>
       <Button
         variant={anyway ? 'outlined' : 'contained'}
-        color="primary"
+        color="secondary"
         ref={setMain}
         onClick={() => press(method)}
         aria-disabled={working !== null ? true : undefined}
         startIcon={working === method ? <CircularProgress size={14} color="inherit" aria-hidden /> : undefined}
         {...mainData}
         {...mainName}
-        sx={{ bgcolor: anyway ? 'background.paper' : undefined, ...(working !== null && working !== method ? unavailableSx : busySx), ...focusSx, ...touchSx, [NARROW]: { ...touchSx[NARROW], whiteSpace: 'normal', textAlign: 'left', lineHeight: 1.3 } }}
+        sx={{ ...(anyway ? anywaySx : {}), ...(working !== null && working !== method ? unavailableSx : busySx), ...focusSx, ...touchSx, [NARROW]: { ...touchSx[NARROW], whiteSpace: 'normal', textAlign: 'left', lineHeight: 1.3 } }}
       >
         {working === method ? copy.working : mainText}
       </Button>

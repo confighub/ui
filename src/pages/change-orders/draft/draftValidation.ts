@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The create dry run's answer, read for the draft: each refusal on the ledger row it belongs
+ * The create dry run's answer, read for the draft: each refusal on the decision it belongs
  * to, and the Units the ChangeOrder would pass over.
  *
  * A refusal is matched by what the server says, in its own words. Those words are the server's

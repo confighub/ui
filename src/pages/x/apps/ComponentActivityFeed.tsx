@@ -1,7 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink } from 'react-router-dom';
 
 import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
 import { buildUnitDiff } from '@/components/invoker/utils/diff-from-revisions';
@@ -378,7 +378,6 @@ const FeedEntryRow = ({
   onFieldChangeCount,
 }: FeedEntryRowProps) => {
   const theme = useTheme();
-  const navigate = useNavigate();
   const { componentName, isAutomated, autoDisplayName, autoSubLabel } = entry;
 
   // Resolve display user: human revision → entry.revisionUser (absent for automated revisions).
@@ -410,6 +409,8 @@ const FeedEntryRow = ({
         tabIndex={0}
         onClick={onToggle}
         onKeyDown={(e) => {
+          // A key on the Component link inside the row is the link's, not the row's.
+          if (e.target !== e.currentTarget) return;
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             onToggle();
@@ -505,15 +506,13 @@ const FeedEntryRow = ({
             <Typography component='span' sx={{ fontSize: 13, color: 'text.secondary' }}>
               {'on '}
               <Link
-                component='button'
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate(
-                    entry.spaceId
-                      ? `${ROUTE_COMPONENTS}?app=${encodeURIComponent(componentName)}&space=${encodeURIComponent(entry.spaceId)}`
-                      : `${ROUTE_COMPONENTS}?app=${encodeURIComponent(componentName)}`
-                  );
-                }}
+                component={RouterLink}
+                to={
+                  entry.spaceId
+                    ? `${ROUTE_COMPONENTS}?app=${encodeURIComponent(componentName)}&space=${encodeURIComponent(entry.spaceId)}`
+                    : `${ROUTE_COMPONENTS}?app=${encodeURIComponent(componentName)}`
+                }
+                onClick={(e: React.MouseEvent) => e.stopPropagation()}
                 sx={{
                   fontSize: 13,
                   fontWeight: 700,

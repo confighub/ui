@@ -445,7 +445,7 @@ test('a targetless Space is not judged on the status it still reports', () => {
   // one gate standing between a change and production.
   expect(green?.ok).toBe(false);
   expect(green?.evaluated).toBe(false);
-  expect(green?.reason).toContain('health cannot be determined');
+  expect(green?.reason).toContain('has no release target');
 
   const degraded = buildGatesForStage({
     stage: stage({ prerequisites: ['Healthy'] }),
@@ -578,7 +578,7 @@ test('a targetless Space that never took the change is still unevaluated for hea
     changeOrderSlug: 'co-1',
   }).find((g) => g.id === 'check/healthy');
   expect(healthy?.evaluated).toBe(false);
-  expect(healthy?.reason).toContain('health cannot be determined');
+  expect(healthy?.reason).toContain('has no release target');
 });
 
 /*

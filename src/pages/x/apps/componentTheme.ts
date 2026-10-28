@@ -46,6 +46,12 @@ export const componentTheme = {
   upgradeEmphasis: '#4e1a96',
   upgradeMuted: '#f4f0ff',
 
+  // ── Promote — the filled Promote / Release / Create button ──
+  // The theme's `secondary` purple. White text is 7.96:1 on `promote` and
+  // 10.98:1 on `promoteEmphasis` (hover); `done` (#9951f4) is only 4.34:1.
+  promote: '#6824c4',
+  promoteEmphasis: '#4e1a96',
+
   // ── Semantic — apply/in-progress ──
   variation: '#4467dc',
   variationEmphasis: '#133a91',
@@ -126,7 +132,10 @@ export const componentTheme = {
   upgradeSkeleton: 'rgba(153,81,244,0.133)',
   /** The quieter Upgrade skeleton blocks beneath it. */
   upgradeSkeletonQuiet: 'rgba(153,81,244,0.067)',
-  /** The focus ring around an editable value cell. */
+  /**
+   * A soft halo around a focused control whose rust border is the indicator.
+   * 1.36:1 on white, so never the only focus outline: that is a 2px solid `accent`.
+   */
   accentFocusRing: 'rgba(186,61,3,0.2)',
   /**
    * The hairline around a value that diverges from a comparison's baseline.

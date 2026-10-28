@@ -5,11 +5,12 @@ import type { ReactElement, ReactNode } from 'react';
 
 import Box from '@mui/material/Box';
 import Tooltip from '@mui/material/Tooltip';
+import useMediaQuery from '@mui/material/useMediaQuery';
 
 import { INFO_PEEK_TOOLTIP_SX } from '@/components/info-peek/InfoPeek';
 
-import { changeOrderFontSans, changeOrderInk, changeOrderStatus, changeOrderType } from '../changeOrdersTokens';
-import { CODE_SX } from './draftLook';
+import { changeOrderAction, changeOrderFontSans, changeOrderInk, changeOrderType } from '../changeOrdersTokens';
+import { CODE_SX, REDUCED_MOTION } from './draftLook';
 
 export interface DraftPeekSpec {
   /** A short label in sentence case: what this is. Never data. */
@@ -19,7 +20,7 @@ export interface DraftPeekSpec {
   title?: ReactNode;
   /** Supporting lines, plain text; code in `PeekCode`. */
   lines?: ReactNode[];
-  /** What a click on the control does, in the accent. */
+  /** What a click on the control does, in the action rust. */
   action?: string;
 }
 
@@ -78,7 +79,7 @@ function PeekCard({ spec }: PeekCardProps) {
         </Box>
       ))}
       {spec.action === undefined ? null : (
-        <Box sx={{ marginTop: '6px', color: changeOrderStatus.accent, fontWeight: changeOrderType.weight.semibold, fontSize: changeOrderType.size.small }}>
+        <Box sx={{ marginTop: '6px', color: changeOrderAction.ink, fontWeight: changeOrderType.weight.semibold, fontSize: changeOrderType.size.small }}>
           {spec.action}
         </Box>
       )}
@@ -93,9 +94,11 @@ export interface DraftPeekProps {
 
 /**
  * The page's hover and focus peek: a light card in the shared peek chrome, never a dark bubble
- * with structure in it. A pure preview: no controls, closed the moment the pointer leaves.
+ * with structure in it. A pure preview: no controls, closed the moment the pointer leaves. It
+ * fades in, except for those who ask for less motion.
  */
 export function DraftPeek({ spec, children }: DraftPeekProps) {
+  const reduceMotion = useMediaQuery(REDUCED_MOTION);
   return (
     <Tooltip
       placement="bottom-start"
@@ -103,7 +106,7 @@ export function DraftPeek({ spec, children }: DraftPeekProps) {
       leaveDelay={0}
       disableInteractive
       describeChild
-      slotProps={{ tooltip: { sx: { ...INFO_PEEK_TOOLTIP_SX, maxWidth: 300 } }, transition: { timeout: { enter: 120, exit: 0 } } }}
+      slotProps={{ tooltip: { sx: { ...INFO_PEEK_TOOLTIP_SX, maxWidth: 300 } }, transition: { timeout: { enter: reduceMotion ? 0 : 120, exit: 0 } } }}
       title={<PeekCard spec={spec} />}
     >
       {children}

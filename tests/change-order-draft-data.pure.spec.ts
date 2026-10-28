@@ -56,7 +56,8 @@ import {
   suggestDraftName,
   withDescriptionSuggestion,
 } from '../src/pages/change-orders/draft/draftDecisions';
-import { dryRunSentence } from '../src/pages/change-orders/draft/draftPageModel';
+import { DRAFT_PLACE_OF_ROW } from '../src/pages/change-orders/draft/draftFocus';
+import { dryRunSentence, factSlotLabel } from '../src/pages/change-orders/draft/draftPageModel';
 import {
   type DraftPreviewUnit,
   assembleDraftPreview,
@@ -66,8 +67,14 @@ import {
   readUpgradePreview,
 } from '../src/pages/change-orders/draft/draftPreview';
 import { retryFailedReads } from '../src/pages/change-orders/draft/draftRetry';
+import {
+  defaultUpdateType,
+  linkedSpacesOf,
+  updateTypeAvailability,
+} from '../src/pages/change-orders/draft/draftUpdateTypes';
 import type {
   DraftPastChangeOrder,
+  DraftRow,
   DraftVariant,
   DraftWorkflow,
 } from '../src/pages/change-orders/draft/draftTypes';
@@ -1368,28 +1375,29 @@ test.describe('the decisions', () => {
     expect(decisions.template).toEqual({ kind: 'changeOrder', changeOrder: LAST });
     expect(decisions.name).toMatchObject({
       value: 'payments-2026-10-18',
-      origin: 'last',
       last: 'payments-2026-10-09',
+      differsFromLast: true,
     });
-    // The Component names its workflows, so the path is the policy's even when it matches last time.
     expect(decisions.workflow).toMatchObject({
       value: { kind: 'workflow', workflow: MAIN_LINE },
-      origin: 'policy',
+      last: { kind: 'workflow', workflow: MAIN_LINE },
       differsFromLast: false,
     });
     expect(decisions.scope).toMatchObject({
       value: VARIANTS,
-      origin: 'last',
+      last: VARIANTS,
       differsFromLast: false,
     });
-    expect(decisions.updateType).toMatchObject({ value: 'UpgradeUnit', origin: 'last' });
+    expect(decisions.updateType).toMatchObject({ value: 'UpgradeUnit', last: 'UpgradeUnit', differsFromLast: false });
     expect(decisions.end.value).toEqual({ kind: 'head' });
     expect(decisions.problems).toEqual([]);
   });
 
-  test('leaving a variant out is a decision of yours, and the rest stay as last time', () => {
+  test('leaving a variant out differs from last time, and the rest stay as last time', () => {
     const decisions = decide('space=payments-base&out=payments-apac');
-    expect(decisions.scope).toMatchObject({ origin: 'you', differsFromLast: true });
+    expect(decisions.scope).toMatchObject({ last: VARIANTS, differsFromLast: true });
+    expect(decisions.workflow.differsFromLast).toBe(false);
+    expect(decisions.updateType.differsFromLast).toBe(false);
     expect(decisions.scope.value).not.toContain('apac');
     expect(decisions.leftOut).toEqual(['payments-apac']);
   });
@@ -1399,9 +1407,11 @@ test.describe('the decisions', () => {
       workflows: [HOTFIX],
       policy: { allowedWorkflowIds: ['wf-hotfix'], required: true },
     });
+    // Last time's workflow is not one this draft can go back to: there is nothing to compare.
     expect(decisions.workflow).toMatchObject({
       value: { kind: 'workflow', workflow: HOTFIX },
-      origin: 'policy',
+      last: undefined,
+      differsFromLast: false,
     });
   });
 
@@ -1454,20 +1464,20 @@ test.describe('the decisions', () => {
     expect(fixes('space=payments-base&from=nope')).toContainEqual([
       'template-not-found',
       false,
-      'Start from the last ChangeOrder',
+      'Use the last ChangeOrder',
       { from: null },
     ]);
     expect(fixes('space=payments-base&wf=nope')).toEqual([
-      ['workflow-not-allowed', true, 'Use the default workflow', { wf: null }],
+      ['workflow-not-allowed', true, 'Default workflow', { wf: null }],
     ]);
     expect(fixes('space=payments-base&out=payments-apac,nope')).toEqual([
       ['variant-not-found', false, 'Forget nope', { out: ['payments-apac'] }],
     ]);
     expect(fixes('space=payments-base&update=Nope')).toEqual([
-      ['update-type-unknown', false, 'Use the default update type', { update: null }],
+      ['update-type-unknown', false, 'Default update type', { update: null }],
     ]);
     expect(fixes('space=payments-base&stage=qa')).toEqual([
-      ['stage-not-found', false, 'Show the default stage', { stage: null }],
+      ['stage-not-found', false, 'Default stage', { stage: null }],
     ]);
     expect(decide('space=payments-base&stage=qa').stage).toBeUndefined();
   });
@@ -1730,5 +1740,101 @@ test.describe('the create dry run, read', () => {
       { unitId: 'hpa', reason: 'NotMarked' },
       { unitId: 'service', reason: 'AlreadyTaken' },
     ]);
+  });
+});
+
+test.describe('where the summary card says a problem', () => {
+  const placeOf = (problem: { row: DraftRow }) => DRAFT_PLACE_OF_ROW[problem.row];
+
+  test("each problem is said under the part of the card it is about, and a refusal of Create only beside Create", () => {
+    const at = (query: string) => decide(query).problems.map((problem) => [problem.code, placeOf(problem)]);
+    expect(at('space=payments-base&from=nope')).toContainEqual(['template-not-found', 'title']);
+    expect(at('space=payments-base&wf=nope')).toContainEqual(['workflow-not-allowed', 'facts']);
+    expect(at('space=payments-base&update=nope')).toContainEqual(['update-type-unknown', 'change']);
+    expect(at('space=payments-base&out=nope')).toContainEqual(['variant-not-found', 'outcome']);
+    expect(at('space=payments-base&name=')).toContainEqual(['name-empty', 'title']);
+    // The server's refusals land beside the decision they refuse; one nobody recognises, beside Create.
+    expect(placeOf({ row: refusalRow(400, 'component payments requires a ChangeWorkflow') })).toBe('facts');
+    expect(placeOf({ row: refusalRow(409, 'A Tag with the same value already exists.') })).toBe('title');
+    expect(placeOf({ row: refusalRow(400, 'Variants have taken different revisions of it') })).toBe('change');
+    expect(placeOf({ row: refusalRow(400, 'something nobody planned for') })).toBeUndefined();
+  });
+
+  test("a changed fact's name says what it was; an unchanged one, only what it is", () => {
+    expect(factSlotLabel('Update type', 'MergeUnits', 'UpgradeUnit')).toBe('Update type: MergeUnits, was UpgradeUnit');
+    expect(factSlotLabel('Scope', '2 variants', '3 variants')).toBe('Scope: 2 variants, was 3 variants');
+    expect(factSlotLabel('Workflow', 'main-line', undefined)).toBe('Workflow: main-line');
+  });
+});
+
+test.describe('which update types a draft can propagate by', () => {
+  // UpgradeUnit Links (the clones) reach every variant; one MergeUnits Link reaches apac.
+  const linked = linkedSpacesOf([
+    ...VARIANTS.map((spaceId) => ({ spaceId, updateType: 'UpgradeUnit' })),
+    { spaceId: 'apac', updateType: 'MergeUnits' },
+    // Not a type a draft propagates by, and a row the select left incomplete: neither counts.
+    { spaceId: 'dev', updateType: 'NeedsProvides' },
+    { spaceId: undefined, updateType: 'MergeUnits' },
+  ]);
+
+  test("MergeUnits is available when one of its Links reaches the scope; UpgradeUnit also when a variant has no Link, as it is cloned into", () => {
+    expect(updateTypeAvailability(linked, VARIANTS)).toEqual({ UpgradeUnit: 'available', MergeUnits: 'available' });
+    expect(updateTypeAvailability(linked, ['apac'])).toEqual({ UpgradeUnit: 'available', MergeUnits: 'available' });
+    expect(updateTypeAvailability(linked, ['dev', 'us-west'])).toEqual({ UpgradeUnit: 'available', MergeUnits: 'unavailable' });
+    // apac follows the base by MergeUnits only: nothing there for UpgradeUnit.
+    const mergeOnly = linkedSpacesOf([{ spaceId: 'apac', updateType: 'MergeUnits' }]);
+    expect(updateTypeAvailability(mergeOnly, ['apac'])).toEqual({ UpgradeUnit: 'unavailable', MergeUnits: 'available' });
+    // dev has no Link from the base at all: UpgradeUnit clones the base's Units into it.
+    expect(updateTypeAvailability(mergeOnly, ['dev'])).toEqual({ UpgradeUnit: 'available', MergeUnits: 'unavailable' });
+    expect(updateTypeAvailability(mergeOnly, ['apac', 'dev'])).toEqual({ UpgradeUnit: 'available', MergeUnits: 'available' });
+    expect(updateTypeAvailability(linkedSpacesOf([]), ['dev'])).toEqual({ UpgradeUnit: 'available', MergeUnits: 'unavailable' });
+    // No variant in scope: neither.
+    expect(updateTypeAvailability(linked, [])).toEqual({ UpgradeUnit: 'unavailable', MergeUnits: 'unavailable' });
+  });
+
+  test('while the Links are not known, nothing is claimed of either type', () => {
+    expect(updateTypeAvailability(undefined, VARIANTS)).toEqual({ UpgradeUnit: 'unknown', MergeUnits: 'unknown' });
+  });
+
+  test("the default is last time's type while its Links reach the scope, else the one whose Links do", () => {
+    const both = { UpgradeUnit: 'available', MergeUnits: 'available' } as const;
+    const mergeOnly = { UpgradeUnit: 'unavailable', MergeUnits: 'available' } as const;
+    const neither = { UpgradeUnit: 'unavailable', MergeUnits: 'unavailable' } as const;
+    const unknown = { UpgradeUnit: 'unknown', MergeUnits: 'unknown' } as const;
+    expect(defaultUpdateType('MergeUnits', both)).toBe('MergeUnits');
+    expect(defaultUpdateType('UpgradeUnit', mergeOnly)).toBe('MergeUnits');
+    expect(defaultUpdateType(undefined, mergeOnly)).toBe('MergeUnits');
+    expect(defaultUpdateType('MergeUnits', unknown)).toBe('MergeUnits');
+    expect(defaultUpdateType('MergeUnits', neither)).toBe('MergeUnits');
+    expect(defaultUpdateType(undefined, neither)).toBe('UpgradeUnit');
+  });
+
+  test('a type the URL names whose Links reach no variant in scope blocks Create, and the fix takes the one that can', () => {
+    const decided = decide('space=payments-base&update=MergeUnits&out=payments-apac', { linkedSpaces: linked });
+    expect(decided.updateType.value).toBe('MergeUnits');
+    expect(decided.updateTypes).toEqual({ UpgradeUnit: 'available', MergeUnits: 'unavailable' });
+    const problem = decided.problems.find((item) => item.code === 'update-type-no-link');
+    expect(problem).toMatchObject({ row: 'same', blocks: true, message: 'No MergeUnits Link to these variants' });
+    // Last time's UpgradeUnit is the default, so the fix clears the URL's choice.
+    expect(problem?.fix).toEqual({ label: 'Use UpgradeUnit', patch: { update: null } });
+    // With apac in scope, MergeUnits is a choice like any other.
+    expect(decide('space=payments-base&update=MergeUnits', { linkedSpaces: linked }).problems.map((item) => item.code)).not.toContain('update-type-no-link');
+    // Nobody knows the Links yet: nothing is said.
+    expect(decide('space=payments-base&update=MergeUnits&out=payments-apac').problems.map((item) => item.code)).not.toContain('update-type-no-link');
+  });
+
+  test('with no variant in scope neither type is available, and only the scope says so', () => {
+    const decided = decide('space=payments-base&update=MergeUnits&out=' + VARIANT_LIST.map((v) => v.slug).join(','), { linkedSpaces: linked });
+    expect(decided.updateTypes).toEqual({ UpgradeUnit: 'unavailable', MergeUnits: 'unavailable' });
+    expect(decided.problems.map((item) => item.code)).toContain('scope-empty');
+    expect(decided.problems.map((item) => item.code)).not.toContain('update-type-no-link');
+  });
+
+  test('a variant with no Link from the base keeps UpgradeUnit on offer, as last time had it', () => {
+    const mergeOnly = linkedSpacesOf([{ spaceId: 'apac', updateType: 'MergeUnits' }]);
+    const decided = decide('space=payments-base&out=payments-apac', { linkedSpaces: mergeOnly });
+    expect(decided.updateTypes).toEqual({ UpgradeUnit: 'available', MergeUnits: 'unavailable' });
+    expect(decided.updateType.value).toBe('UpgradeUnit');
+    expect(decided.problems.map((item) => item.code)).not.toContain('update-type-no-link');
   });
 });

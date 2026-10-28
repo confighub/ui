@@ -7,10 +7,10 @@ import type { BoxProps } from '@mui/material/Box';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 import {
+  changeOrderAction,
   changeOrderBorder,
   changeOrderInk,
   changeOrderShape,
-  changeOrderStatus,
   changeOrderSurface,
   changeOrderType,
 } from '../changeOrdersTokens';
@@ -68,7 +68,7 @@ export function CollapsibleUnitGroup({
           borderRadius: `${changeOrderShape.radius.md}px`,
           border: `1px solid ${changeOrderBorder.default}`,
           background: changeOrderSurface.sunk,
-          '&:focus-visible': { outline: `2px solid ${changeOrderStatus.accent}`, outlineOffset: '2px' },
+          '&:focus-visible': { outline: `2px solid ${changeOrderAction.focus}`, outlineOffset: '2px' },
         }}
       >
         <Box

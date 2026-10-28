@@ -22,7 +22,10 @@ import {
 } from '@/components/query-builder';
 import { Main, Section as SectionSlider } from '@/components/styled';
 import { UnitDataGrid } from '@/components/unit-data-grid/UnitDataGrid';
-import { createUnitListRow } from '@/components/unit-data-grid/utils/data-grid-helpers';
+import {
+  createUnitListRow,
+  type UnitRowItem,
+} from '@/components/unit-data-grid/utils/data-grid-helpers';
 import {
   EdgeType,
   NodeDisplayType,
@@ -112,6 +115,15 @@ const Container = styled('div')`
   width: 100%;
 `;
 
+/** `?display=tree` shows the canvas (tree) view; absent, the list. */
+const TREE_VIEW_PARAM = 'display';
+const TREE_VIEW_VALUE = 'tree';
+/** The tree view's edge and node types; each is left out of the URL at its default. */
+const TREE_EDGES_PARAM = 'edges';
+const TREE_NODES_PARAM = 'nodes';
+const DEFAULT_TREE_EDGE_TYPE: EdgeType = 'clone';
+const DEFAULT_TREE_NODE_TYPE: NodeDisplayType = 'unit';
+
 const Section = styled('section')`
   width: 100%;
 `;
@@ -190,9 +202,44 @@ export const UnitListPage = () => {
   // ============================================================================
   // STATE - TREE VIEW
   // ============================================================================
-  const [isTreeViewMode, setIsTreeViewMode] = useState(false);
-  const [treeEdgeType, setTreeEdgeType] = useState<EdgeType>('clone');
-  const [treeNodeType, setTreeNodeType] = useState<NodeDisplayType>('unit');
+  // In the URL, so Back from a Unit opened from the canvas returns to the canvas.
+  const isTreeViewMode = searchParams.get(TREE_VIEW_PARAM) === TREE_VIEW_VALUE;
+  const setIsTreeViewMode = useCallback(
+    (tree: boolean) =>
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (tree) next.set(TREE_VIEW_PARAM, TREE_VIEW_VALUE);
+          else next.delete(TREE_VIEW_PARAM);
+          return next;
+        },
+        { replace: true },
+      ),
+    [setSearchParams],
+  );
+  const treeEdgeType: EdgeType = searchParams.get(TREE_EDGES_PARAM) === 'link' ? 'link' : DEFAULT_TREE_EDGE_TYPE;
+  const treeNodeType: NodeDisplayType = searchParams.get(TREE_NODES_PARAM) === 'space' ? 'space' : DEFAULT_TREE_NODE_TYPE;
+  const setTreeParam = useCallback(
+    (param: string, value: string, defaultValue: string) =>
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (value === defaultValue) next.delete(param);
+          else next.set(param, value);
+          return next;
+        },
+        { replace: true },
+      ),
+    [setSearchParams],
+  );
+  const setTreeEdgeType = useCallback(
+    (edgeType: EdgeType) => setTreeParam(TREE_EDGES_PARAM, edgeType, DEFAULT_TREE_EDGE_TYPE),
+    [setTreeParam],
+  );
+  const setTreeNodeType = useCallback(
+    (nodeType: NodeDisplayType) => setTreeParam(TREE_NODES_PARAM, nodeType, DEFAULT_TREE_NODE_TYPE),
+    [setTreeParam],
+  );
 
   // ============================================================================
   // STATE - LINK WORKFLOW
@@ -1032,6 +1079,8 @@ export const UnitListPage = () => {
     [isTreeViewMode, setIsTreeViewMode, setSelectedUnits, setDefaultRowSelection],
   );
 
+  const slugLinkTo = useCallback((row: UnitRowItem) => getEditUrl(row.id), [getEditUrl]);
+
   const Tabs = useMemo(
     () => (
       <UnitDataGridTab
@@ -1044,7 +1093,7 @@ export const UnitListPage = () => {
         filterElement={QueryBuilderElement}
         customToolbarActions={viewSwitcher}
         noRowsOverlay={undefined}
-        slugLinkTo={(row) => getEditUrl(row.id)}
+        slugLinkTo={slugLinkTo}
         onRowItemEdit={(id) => {
           const target = displayedUnits.find((unit) => unit?.Unit?.TargetID === id)?.Target;
           if (target) {
@@ -1062,7 +1111,7 @@ export const UnitListPage = () => {
       QueryBuilderElement,
       viewSwitcher,
       getTargetByIdAsync,
-      getEditUrl,
+      slugLinkTo,
     ],
   );
 

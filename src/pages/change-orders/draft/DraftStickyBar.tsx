@@ -89,7 +89,7 @@ export const DraftStickyBar = memo(function DraftStickyBar({
         >
           <Box sx={{ padding: '10px 22px', display: 'flex', alignItems: 'center', gap: '16px', minWidth: 0 }}>
             <Box component="span" translate="no" sx={{ fontFamily: changeOrderFontMono, fontWeight: changeOrderType.weight.strong, fontSize: 14, whiteSpace: 'nowrap' }}>
-              {name || draftCopy.page.ledger.none}
+              {name || draftCopy.page.facts.none}
             </Box>
             <Box sx={{ display: 'flex', gap: '12px', fontSize: 12, color: changeOrderInk.muted, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
               {preview.status === 'failed' ? <CouldNotEstablish /> : null}
@@ -98,7 +98,7 @@ export const DraftStickyBar = memo(function DraftStickyBar({
                   <Box component="b" sx={{ color: changeOrderInk.default, marginRight: '3px' }}>
                     {preview.totals.same}
                   </Box>
-                  {draftCopy.page.ledger.ofSame(preview.totals.variants)}
+                  {draftCopy.page.facts.ofSame(preview.totals.variants)}
                 </Box>
               ) : null}
               {named.map((item, index) => (

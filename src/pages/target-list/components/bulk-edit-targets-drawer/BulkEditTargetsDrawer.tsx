@@ -427,11 +427,6 @@ export const BulkEditTargetsDrawer = ({
             onClick={handleSubmit(onSubmit)}
             sx={{
               flexGrow: 1,
-              transition: 'all 0.2s ease-in-out',
-              '&:hover': {
-                transform: 'translateY(-1px)',
-                boxShadow: '0 8px 25px rgba(25, 118, 210, 0.3)',
-              },
             }}
           >
             {isSubmitting ? 'Updating Targets...' : 'Update Targets'}

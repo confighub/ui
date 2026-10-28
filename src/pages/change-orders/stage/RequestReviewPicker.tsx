@@ -123,9 +123,6 @@ export function RequestReviewPicker({ candidates, preselected = [], submitting, 
           </Box>
         ))}
       </Box>
-      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-        {copy.requestHint}
-      </Typography>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
         <Button
           variant="contained"

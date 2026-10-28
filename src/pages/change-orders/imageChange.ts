@@ -623,6 +623,14 @@ export const IMAGE_CHANGES_LOADING: ImageChanges = Object.freeze({
   unitCount: 0,
 }) as ImageChanges;
 
+/** A change known to carry nothing: no image or field changes, without asking the server. */
+export const IMAGE_CHANGES_NONE: ImageChanges = Object.freeze({
+  status: 'none',
+  images: [],
+  fieldChanges: EMPTY_FIELD_CHANGES,
+  unitCount: 0,
+}) as ImageChanges;
+
 /** A read that failed, or one with nothing it can read. */
 export const IMAGE_CHANGES_UNAVAILABLE: ImageChanges = Object.freeze({
   status: 'unavailable',

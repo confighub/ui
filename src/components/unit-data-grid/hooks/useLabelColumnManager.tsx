@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 
 import { DateTimeCell } from '@/components/data-grid/cells';
 import { HighlightedCell, KeyValueListCell } from '@/components/entity-data-grid';
@@ -54,7 +54,6 @@ const createAttentionChip = (
 // previous group-aggregation branches were unreachable. The wrapper is kept
 // so call-site signatures stay unchanged.
 const createIntelligentGroupRenderer = <T,>(
-  rows: UnitRowItem[],
   valueExtractor: (row: UnitRowItem) => T,
   singularLabel: string,
   pluralLabel: string,
@@ -63,12 +62,22 @@ const createIntelligentGroupRenderer = <T,>(
 ) => {
   // The signature is preserved for call-site compatibility; only fallbackRenderer
   // is still meaningful. Discard the others so static analysis stays clean.
-  void rows;
   void valueExtractor;
   void singularLabel;
   void pluralLabel;
   void customRenderer;
   return (params: GridRenderCellParams<UnitRowItem>) => fallbackRenderer(params);
+};
+
+/**
+ * Returns the same array until the set of keys in it changes. The occurrence
+ * counts change with nearly every refetch, but nothing that builds columns reads
+ * them, so a new array for the same keys would only rebuild the columns.
+ */
+const useStableKeyList = (labels: Label[]): Label[] => {
+  const signature = labels.map((label) => label.key).join('\n');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => labels, [signature]);
 };
 
 /**
@@ -91,7 +100,7 @@ export const useLabelColumnManager = (
    * Extract and count unique label keys from all rows
    * Returns sorted array of labels with their occurrence counts
    */
-  const availableLabelKeys = useMemo(() => {
+  const labelKeyCounts = useMemo(() => {
     const allowSet = allowedLabelColumns ? new Set(allowedLabelColumns) : null;
     const labelCounts = rows.reduce<Record<string, number>>((acc, row) => {
       const labels = row?.Labels;
@@ -108,12 +117,13 @@ export const useLabelColumnManager = (
       .map(([key, total]) => ({ key, total }))
       .sort((a, b) => a.key.localeCompare(b.key));
   }, [rows, allowedLabelColumns]);
+  const availableLabelKeys = useStableKeyList(labelKeyCounts);
 
   /**
    * Extract and count unique value keys from all rows
    * Returns sorted array of values with their occurrence counts
    */
-  const availableValueKeys = useMemo(() => {
+  const valueKeyCounts = useMemo(() => {
     const valueCounts = rows.reduce<Record<string, number>>((acc, row) => {
       const values = row?.Values;
       if (!values) return acc;
@@ -128,11 +138,18 @@ export const useLabelColumnManager = (
       .map(([key, total]) => ({ key, total }))
       .sort((a, b) => a.key.localeCompare(b.key));
   }, [rows]);
+  const availableValueKeys = useStableKeyList(valueKeyCounts);
+
+  // The group-row branches below read rows through a ref so the column factories
+  // do not depend on row data. A new column def for an existing field makes the
+  // grid re-apply its width and flex, which discards a width the user dragged.
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
 
   /**
    * Create a data grid column definition for a specific label with attention aggregation
    */
-  const createLabelColumn = (label: Label): GridColDef<UnitRowItem> => ({
+  const createLabelColumn = useCallback((label: Label): GridColDef<UnitRowItem> => ({
     field: `Labels.${label.key}`,
     headerName: label.key,
     ...LABEL_COLUMN_CONFIG,
@@ -142,7 +159,7 @@ export const useLabelColumnManager = (
       // Handle group rows - show label values and their counts
       if (params.rowNode.type === 'group') {
         const groupIds = params.rowNode.children || [];
-        const filteredRows = rows.filter((row) => groupIds.includes(row.id));
+        const filteredRows = rowsRef.current.filter((row) => groupIds.includes(row.id));
 
         // Get all label values for this specific label key from the filtered rows
         const labelValues = filteredRows.map((row) => row.Labels?.[label.key]).filter(Boolean);
@@ -231,12 +248,12 @@ export const useLabelColumnManager = (
         </CenteredTableCell>
       );
     },
-  });
+  }), []);
 
   /**
    * Create a data grid column definition for a specific value with attention aggregation
    */
-  const createValueColumn = (valueKey: Label): GridColDef<UnitRowItem> => {
+  const createValueColumn = useCallback((valueKey: Label): GridColDef<UnitRowItem> => {
     // A Values key is "<space slug>/<trigger slug>/<attribute name>", or "<trigger slug>/<attribute
     // name>" on a Unit not resolved since the Space slug was added. The header is the Trigger slug,
     // the segment before the attribute, in either.
@@ -253,7 +270,7 @@ export const useLabelColumnManager = (
         // Handle group rows - show values and their counts
         if (params.rowNode.type === 'group') {
           const groupIds = params.rowNode.children || [];
-          const filteredRows = rows.filter((row) => groupIds.includes(row.id));
+          const filteredRows = rowsRef.current.filter((row) => groupIds.includes(row.id));
 
           // Get all values for this specific value key from the filtered rows
           const values = filteredRows.map((row) => row.Values?.[valueKey.key]).filter(Boolean);
@@ -324,11 +341,10 @@ export const useLabelColumnManager = (
         );
       },
     };
-  };
+  }, []);
 
   // Function to create columns with group row support
-  const createColumnsWithGrouping = (
-    rows: UnitRowItem[],
+  const createColumnsWithGrouping = useCallback((
     onRowItemEdit?: (id: string) => void,
   ): GridColDef<UnitRowItem>[] => [
     {
@@ -339,7 +355,6 @@ export const useLabelColumnManager = (
       valueGetter: (_, row) => row.Slug,
       groupable: true,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row.Slug,
         'Slug',
         'Slug',
@@ -381,7 +396,6 @@ export const useLabelColumnManager = (
       valueGetter: (_, row) => row.id || '',
       groupable: false,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row.id,
         'ID',
         'ID',
@@ -402,7 +416,6 @@ export const useLabelColumnManager = (
       valueGetter: (_, row) => row.Space,
       groupable: true,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row.Space,
         'Spaces',
         'Spaces',
@@ -432,7 +445,6 @@ export const useLabelColumnManager = (
       valueGetter: (_, row) => row.SpaceID || '',
       groupable: false,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row.SpaceID,
         'SpaceID',
         'SpaceID',
@@ -453,7 +465,6 @@ export const useLabelColumnManager = (
       valueGetter: (_, row) => row.Target,
       groupable: true,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row.Target,
         'Targets',
         'Targets',
@@ -480,7 +491,6 @@ export const useLabelColumnManager = (
       valueGetter: (_, row) => row.TargetID || '',
       groupable: false,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row.TargetID,
         'TargetID',
         'TargetID',
@@ -501,7 +511,6 @@ export const useLabelColumnManager = (
       valueGetter: (_, row) => row.ToolchainType || '',
       groupable: true,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row.ToolchainType,
         'Types',
         'Types',
@@ -522,7 +531,6 @@ export const useLabelColumnManager = (
       },
       groupable: true,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row.LastChangeDescription,
         'Changes',
         'Changes',
@@ -548,7 +556,6 @@ export const useLabelColumnManager = (
       },
       groupable: true,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row?.HeadRevisionNum || 0,
         'Revisions',
         'Revisions',
@@ -574,7 +581,6 @@ export const useLabelColumnManager = (
       },
       groupable: true,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row?.LastReleasedRevisionNum || 0,
         'Revisions',
         'Revisions',
@@ -599,7 +605,7 @@ export const useLabelColumnManager = (
         // For group rows, show the aggregated sum
         if (params.rowNode.type === 'group') {
           const groupIds = params.rowNode.children || [];
-          const filteredRows = rows.filter((row) => groupIds.includes(row.id));
+          const filteredRows = rowsRef.current.filter((row) => groupIds.includes(row.id));
 
           // Calculate total validation errors count
           const totalCount = filteredRows.reduce(
@@ -669,7 +675,7 @@ export const useLabelColumnManager = (
         // For group rows, show the aggregated sum
         if (params.rowNode.type === 'group') {
           const groupIds = params.rowNode.children || [];
-          const filteredRows = rows.filter((row) => groupIds.includes(row.id));
+          const filteredRows = rowsRef.current.filter((row) => groupIds.includes(row.id));
 
           // Calculate total validation warnings count
           const totalCount = filteredRows.reduce(
@@ -733,7 +739,6 @@ export const useLabelColumnManager = (
       valueGetter: (_, row) => row.UpgradeNeeded || '',
       groupable: true,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row.UpgradeNeeded,
         'Upgrades needed',
         'Upgrades needed',
@@ -765,7 +770,6 @@ export const useLabelColumnManager = (
       valueGetter: (_, row) => row.UnreleasedChanges || '',
       groupable: true,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row.UnreleasedChanges,
         'Unreleased Changes',
         'Unreleased Changes',
@@ -819,7 +823,6 @@ export const useLabelColumnManager = (
       valueGetter: (_, row) => row?.HeadMutationNum || 0,
       groupable: true,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row?.HeadMutationNum || 0,
         'Mutations',
         'Mutations',
@@ -839,7 +842,6 @@ export const useLabelColumnManager = (
       valueGetter: (_, row) => row.UpstreamUnitSlug || '',
       groupable: true,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row.UpstreamUnitSlug,
         'Units',
         'Units',
@@ -860,7 +862,6 @@ export const useLabelColumnManager = (
       valueGetter: (_, row) => row.UpstreamUnitID || '',
       groupable: false,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row.UpstreamUnitID,
         'UpstreamUnitID',
         'UpstreamUnitID',
@@ -881,7 +882,6 @@ export const useLabelColumnManager = (
       valueGetter: (_, row) => row.UpstreamSpaceSlug || '',
       groupable: true,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row.UpstreamSpaceSlug,
         'Spaces',
         'Spaces',
@@ -902,7 +902,6 @@ export const useLabelColumnManager = (
       valueGetter: (_, row) => row.UpstreamSpaceID || '',
       groupable: false,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row.UpstreamSpaceID,
         'UpstreamSpaceID',
         'UpstreamSpaceID',
@@ -927,7 +926,7 @@ export const useLabelColumnManager = (
       renderCell: (params) => {
         if (params.rowNode.type === 'group') {
           const groupIds = params.rowNode.children || [];
-          const filteredRows = rows.filter((row) => groupIds.includes(row.id));
+          const filteredRows = rowsRef.current.filter((row) => groupIds.includes(row.id));
           const totalCount = filteredRows.reduce(
             (sum, row) => sum + Object.keys(row.DestroyGates || {}).length,
             0,
@@ -964,7 +963,7 @@ export const useLabelColumnManager = (
       renderCell: (params) => {
         if (params.rowNode.type === 'group') {
           const groupIds = params.rowNode.children || [];
-          const filteredRows = rows.filter((row) => groupIds.includes(row.id));
+          const filteredRows = rowsRef.current.filter((row) => groupIds.includes(row.id));
           const totalCount = filteredRows.reduce(
             (sum, row) => sum + Object.keys(row.DeleteGates || {}).length,
             0,
@@ -998,7 +997,6 @@ export const useLabelColumnManager = (
       valueGetter: (_, row) => row.ChangeSetID || '',
       groupable: true,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row.ChangeSetID,
         'ChangeSets',
         'ChangeSets',
@@ -1019,7 +1017,6 @@ export const useLabelColumnManager = (
       valueGetter: (_, row) => row.ChangeSetSlug || '',
       groupable: true,
       renderCell: createIntelligentGroupRenderer(
-        rows,
         (row) => row.ChangeSetSlug,
         'ChangeSets',
         'ChangeSets',
@@ -1042,7 +1039,7 @@ export const useLabelColumnManager = (
         // Handle group rows
         if (params.rowNode.type === 'group') {
           const groupIds = params.rowNode.children || [];
-          const filteredRows = rows.filter((row) => groupIds.includes(row.id));
+          const filteredRows = rowsRef.current.filter((row) => groupIds.includes(row.id));
 
           // Collect all unique annotation keys from the group
           const allAnnotations = filteredRows.reduce<Record<string, Set<string>>>(
@@ -1124,7 +1121,7 @@ export const useLabelColumnManager = (
         );
       },
     },
-  ];
+  ], [slugLinkTo, openLinksInNewTab]);
 
   return {
     availableLabelKeys,

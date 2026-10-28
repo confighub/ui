@@ -156,7 +156,7 @@ export function isCompleteStepAbandoned(row: CompleteStepRow): boolean {
  *    state `deriveConsoleState` answers above every other derivation, from
  *    `AbortedReason` or from a restored stage. It has reached the last stage
  *    and will never satisfy `Final`, because nothing will ever be promoted
- *    again. Left to the catch-all it read `blocked`, which is the accent
+ *    again. Left to the catch-all it read `blocked`, which is the progress
  *    treatment for "there is something to do here" — and for a ChangeOrder nobody
  *    can act on that is simply untrue. It takes the terminal, unactionable
  *    treatment instead, and `completeStepLabel` keeps its words its own.

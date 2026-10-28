@@ -8,8 +8,9 @@
 ## What the user can do
 
 - **Select.** A Units view in the Table layout has a checkbox track before the first column. Click
-  a checkbox to pick a row. ⇧-click picks a range. ⌘/Ctrl-click picks one row. `x` picks the
-  focused row, or the row open in the drawer. The header checkbox picks every shown row.
+  a checkbox to pick a row. ⇧-click picks a range. ⌘/Ctrl-click on a row picks it, except on the
+  Unit name link, which opens the Unit in a new tab. `x` picks the focused row, or the row open in
+  the drawer. The header checkbox picks every shown row.
 - **Compare.** The selection bar in the toolbar shows Clear (✕), "N of M selected", a primary button and Functions.
   With 2 to 5 rows, the button is **Compare**. With more than 5, it is **Compare first 5**. With
   1 row, it is **Compare with…**, which opens the picker with that row in slot A. The drawer of a
@@ -187,8 +188,8 @@ The drawer handles its own Esc in its `onKeyDown`, and stops it there.
 | `f` | Every page | Opens or closes the Functions panel, which lists the picked Units. The panel handles it. With focus in the row panel, `f` is the panel's Run a Function instead: it picks the open Unit and opens the panel, never closes it ([`view-explorer-row-panel.md`](view-explorer-row-panel.md)). |
 | `c` | Units view | In compare mode: opens the picker for the next empty slot (nothing when all 5 are full). Focus in the drawer: opens the picker with the drawer's Unit in A. 2 or more rows picked: compares them (the first 5). 1 row picked: opens the picker with it in A. Else, with a row open in the drawer: opens the picker with it in A. (`CompareController`) |
 | ⇧-click | Units Table row or checkbox | Picks or unpicks a range. Every row in it takes the new state of the clicked row. The anchor stays, so a second ⇧-click resizes the same range. ⇧-click on a value (`data-vx-value`) keeps its cell-popover meaning. |
-| ⌘/Ctrl-click | Units Table row | Picks or unpicks the row. In Board and Matrix, and in tables of Spaces or Resources, it still opens the row's page. |
-| ⌘/Ctrl+Enter | Focused Units Table row | Opens the Unit page. This replaces ⌘-click there. |
+| ⌘/Ctrl-click | Units Table row | Picks or unpicks the row. On the Unit name link, it opens the Unit in a new tab. In Board and Matrix, and in tables of Spaces or Resources, it still opens the row's page. |
+| ⌘/Ctrl+Enter | Focused Units Table row | Opens the Unit page, as ⌘-click on the Unit name link does. |
 | ↑/↓, Home, End | Picker | Move the highlight across the sections. Focus stays in the field. |
 | ↵ | Picker | Takes the highlighted Unit and closes. In `start` mode, it opens compare mode. |
 | ⇧↵ | Picker | Takes the highlighted Unit and stays open for the next slot. The field shows that slot's letter. The picker closes when slot E is full. In `start` mode, compare mode opens only on ↵ or when E is full. |

@@ -14,7 +14,7 @@
 import { clockTime, plural } from '../changeOrderHistory';
 import { agoText, listText, reviewCopy, reviewTime } from '../reviews/reviewCopy';
 import { changeOrderCopy } from '../../x/apps/change-order/changeOrderCopy';
-import { APPROVAL_NOTE_REQUIRED, approvals, differsTail, listSegments, seg, spaceLink, type NamedSpace } from './stageCopyParts';
+import { approvals, differsTail, listSegments, seg, spaceLink, type NamedSpace } from './stageCopyParts';
 import type { CopySegment, MergeMethod, ReviewAction } from './stageTypes';
 
 export {
@@ -84,18 +84,15 @@ export const stageCardCopy = {
 
   // ── Bodies ───────────────────────────────────────────────────────────────
   body: {
-    source: 'Source stage. The change was made here.',
-    invocationSource: 'Source stage. The Invocation runs in each stage as it is promoted.',
-    noSpaces: 'Its selector matches none of the Spaces this ChangeOrder is headed for.',
-    promotedNoTargets: (stage: string) => `No Space of ${stage} has a Target, so there is nothing to release.`,
-    inProgress: 'Promote again to finish. Spaces that already have it are skipped.',
+    source: 'The change was made here.',
+    invocationSource: 'Runs in each stage on promote.',
+    noSpaces: 'Its selector matches no Space.',
+    promotedNoTargets: (stage: string) => `No Space of ${stage} has a Target.`,
+    inProgress: 'Promote again to finish.',
     progressUnknown: changeOrderCopy.progressUnavailableDetail,
     restored: (stage: string) => `The change was taken back out of ${stage}.`,
-    noPermission: 'You do not have permission to promote here.',
-    gateWait: (checkedAt: number | undefined, gateCount = 1) => {
-      const lead = gateCount > 1 ? 'You can promote once they pass.' : 'You can promote once it passes.';
-      return checkedAt === undefined ? lead : `${lead} Last checked at ${clockTime(checkedAt)}.`;
-    },
+    noPermission: 'No permission to promote.',
+    gateWait: (checkedAt: number) => `Checked ${clockTime(checkedAt)}.`,
     goToPrevious: (stage: string) => `Go to ${stage}`,
     gateIn: (spaces: readonly NamedSpace[]) => [seg.text('in '), ...listSegments(spaces.map((s) => [spaceLink(s)]))],
     /**
@@ -137,7 +134,7 @@ export const stageCardCopy = {
       seg.link(unit.name, { to: 'unit', spaceId: space.spaceId, unitId: unit.unitId, tab: 'links' }),
       seg.text(' keeps '),
       seg.link(label, { to: 'field', spaceId: space.spaceId, unitId: unit.unitId, path }, true, path),
-      seg.text(` at ${value}. The other changes still apply.`),
+      seg.text(` at ${value}.`),
     ],
     refused: (space: NamedSpace, unit: { unitId: string; name: string }, why: string): CopySegment[] => [
       spaceLink(space),
@@ -203,12 +200,12 @@ export const stageCardCopy = {
     countsPrefixed: (units: number, spaces: number) => `Dry run: ${plural(units, 'Unit')} in ${plural(spaces, 'Space')} would change.`,
     passed: 'Dry run passed.',
     running: 'Checking what would change…',
-    unavailable: 'Dry run unavailable. It runs when you confirm.',
+    unavailable: 'Dry run unavailable.',
     rerunning: 'Running the dry run…',
     fails: (spaces: string) => `Dry run fails for ${spaces}.`,
     didNotFinish: 'The dry run did not finish.',
     checking: (spaces: string) => `Checking ${spaces}…`,
-    release: (spaces: number) => `Release publishes the change in ${plural(spaces, 'Space')} to their Targets.`,
+    release: (spaces: number) => `Releases ${plural(spaces, 'Space')}.`,
     releaseDiffers: (space: NamedSpace, field: string, from: string, to: string): CopySegment[] => [
       spaceLink(space),
       seg.text(' got '),
@@ -235,11 +232,11 @@ export const stageCardCopy = {
       return anyway ? `${base} anyway…` : base;
     },
     item: {
-      pr: { label: 'Promote and release', description: (stage: string) => `Write the change into ${stage} and publish it.` },
-      p: { label: 'Promote only', description: (stage: string) => `Write the change into ${stage}. Release it later.` },
+      pr: { label: 'Promote and release', description: (stage: string) => `Write and publish ${stage}` },
+      p: { label: 'Promote only', description: (stage: string) => `Write ${stage}, release later` },
       r: {
         label: 'Release only',
-        description: (stage: string) => `Publish what ${stage} holds to its Targets.`,
+        description: (stage: string) => `Publish ${stage}`,
       },
     },
     confirm: (method: MergeMethod, anyway: boolean) => {
@@ -349,14 +346,7 @@ export const stageCardCopy = {
     reasonLabel: (required: boolean) => (required ? 'Reason (required)' : 'Note (optional)'),
     placeholderPass: reviewCopy.form.placeholderPass,
     placeholderFail: reviewCopy.form.placeholderFail,
-    coverageHelp: (coverage: string | undefined) => {
-      const sees = `Everyone on this ChangeOrder sees the ${APPROVAL_NOTE_REQUIRED ? 'reason' : 'note'}.`;
-      return coverage === undefined ? sees : `Your approval covers ${coverage}. ${sees}`;
-    },
-    coverageHelpFail: (coverage: string | undefined) =>
-      coverage === undefined
-        ? 'Everyone on this ChangeOrder sees the reason.'
-        : `Your rejection covers ${coverage}. Everyone on this ChangeOrder sees the reason.`,
+    coverageHelp: (coverage: string) => `Covers ${coverage}.`,
     coverageSummary: reviewCopy.panel.coverageSummary,
     counter: reviewCopy.form.counter,
     reasonMissing: 'Add a reason first.',
@@ -365,8 +355,7 @@ export const stageCardCopy = {
     submitting: 'Submitting…',
     nothingRecordable: reviewCopy.coverage.nothingRecordable,
     // The request picker
-    requestFrom: 'Request a review from',
-    requestHint: 'They see the request when they open this ChangeOrder.',
+    requestFrom: 'Request from',
     requestSubmit: 'Request review',
     requestedFrom: (names: string) => `Requested from ${names}, just now.`,
     requested: reviewCopy.requests.requested,
@@ -406,7 +395,6 @@ export const stageCardCopy = {
     checkingGates: 'Checking gates…',
     definedIn: 'Defined in',
     noWorkflow: 'No workflow',
-    frozenCopy: 'This ChangeOrder keeps the copy it started with.',
     reviewsOfChange: 'Reviews of this change',
     entryGate: 'Entry gate',
     releaseGate: 'Release gate',
@@ -418,7 +406,7 @@ export const stageCardCopy = {
     targetCount: (n: number) => plural(n, 'Target'),
     targetsEarlier: (n: number) => `${plural(n, 'Target')} still ${n === 1 ? 'runs' : 'run'} the earlier revision.`,
     targetsRun: (n: number) => `${plural(n, 'Target')} ${n === 1 ? 'runs' : 'run'} this change.`,
-    targetsNone: 'None. This stage is never released.',
+    targetsNone: 'None',
   },
 
   /** The chip a Space carries in the sidebar. */
@@ -442,9 +430,9 @@ export const stageCardCopy = {
     scopeSpaces: (n: number) => plural(n, 'Space'),
     scopeSameEverywhere: (n: number) => `Same in all ${plural(n, 'Space')}`,
     scopeWritten: (written: number, total: number) => `Written to ${written} of ${plural(total, 'Space')}`,
-    nothing: 'This change writes no field here.',
+    nothing: 'No field changes here.',
     reading: 'Reading the change…',
-    unreadable: 'The change could not be read here.',
+    unreadable: 'Could not read the change.',
     /** A stage the change has not reached: what it will take is shown once the stage before has it. */
     notReached: (previous: { stageId: string; name: string }, sourceFieldCount?: number): CopySegment[] => [
       seg.text('Shown once '),
@@ -452,22 +440,22 @@ export const stageCardCopy = {
       seg.text(' has the change.'),
       ...(sourceFieldCount === undefined || sourceFieldCount === 0
         ? []
-        : [seg.text(` At the source it changes ${plural(sourceFieldCount, 'field')}.`)]),
+        : [seg.text(` ${plural(sourceFieldCount, 'field')} at the source.`)]),
     ],
   },
 
   // ── The diff card ───────────────────────────────────────────────────────
   diff: {
-    partial: (stage: string) => `Some Spaces in ${stage} hold no resources yet, so more may change than shown.`,
+    partial: (stage: string) => `Some Spaces in ${stage} hold no resources yet.`,
     omitted: (n: number) =>
       n === 1
-        ? '1 resource is not in this comparison, so the diff does not cover it.'
-        : `${n} resources are not in this comparison, so the diff does not cover them.`,
+        ? '1 resource not compared.'
+        : `${n} resources not compared.`,
     undecided: (n: number) =>
       n === 1
-        ? '1 resource is held under more than one namespace in a Space, so the variants could not be compared for it.'
-        : `${n} resources are held under more than one namespace in a Space, so the variants could not be compared for them.`,
+        ? '1 resource is in more than one namespace; not compared.'
+        : `${n} resources are in more than one namespace; not compared.`,
     shortfall: (n: number) =>
-      `The groups do not account for every Space (${n} unaccounted). This is a defect in the grouping, not a state of the ChangeOrder.`,
+      `${n} unaccounted for in the groups (UI defect).`,
   },
 } as const;

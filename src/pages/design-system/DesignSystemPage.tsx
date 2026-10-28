@@ -474,7 +474,7 @@ function ColorsSection() {
     <Box id='colors' sx={{ mb: 8 }}>
       <SectionHeader
         title='Color System'
-        desc='Seven semantic color families, each with foreground, tinted background, and border alpha. Rust is the brand action color — never for status.'
+        desc='Seven semantic color families, each with foreground, tinted background, and border alpha. Rust is the action, selection and focus color — never for status; blue is a status color only.'
       />
 
       <SubLabel>Brand — rust</SubLabel>
@@ -482,7 +482,38 @@ function ColorsSection() {
         <Swatch bg='#ba3d03' token='--rust' hex='#ba3d03' />
         <Swatch bg='#8c2c00' token='--rust-dark' hex='#8c2c00' />
         <Swatch bg='rgba(186,61,3,0.055)' token='--rust-bg' hex='rgba(186,61,3,.055)' border='1px solid rgba(186,61,3,0.18)' />
+        <Swatch bg='#fdece3' token='--rust-soft' hex='#fdece3' border='1px solid #f0b99a' />
+        <Swatch bg='#f0b99a' token='--rust-line' hex='#f0b99a' />
+        <Swatch bg='#ba3d03' token='--rust-focus' hex='#ba3d03 · 2px' />
       </Box>
+
+      <SubLabel>Action, selection and focus — rust · status — blue</SubLabel>
+      <Canvas>
+        <Button variant='contained'>Primary action</Button>
+        <Button variant='contained' sx={{ outline: '2px solid var(--rust-focus)', outlineOffset: '2px' }}>
+          Focused
+        </Button>
+        <Box
+          component='span'
+          sx={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            height: 26,
+            px: 1.25,
+            borderRadius: 'var(--r-sm)',
+            border: '1px solid var(--rust)',
+            boxShadow: 'var(--sh-sel-inset)',
+            bgcolor: 'var(--rust-soft)',
+            color: 'var(--rust)',
+            fontSize: 12,
+            fontWeight: 600,
+          }}
+        >
+          Selected
+        </Box>
+        <Chip label='▶▶ In progress' color='info' size='small' />
+        <Button variant='contained' color='secondary'>Promote to prod</Button>
+      </Canvas>
 
       <SubLabel>Semantic — success · info · upgrade · warning · error</SubLabel>
       <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 4 }}>
@@ -534,7 +565,7 @@ function ColorsSection() {
           Brand rule:
         </Typography>
         <Typography variant='body2' color='text.secondary'>
-          Rust is the action color — CTAs, active nav, and selection rings only. Never use it for status indicators.
+          Rust is the action, selection and focus color — CTAs, link-styled actions, active nav, selected and pressed items, and every focus ring. Never use it for status indicators. Blue is a status color only.
         </Typography>
       </Paper>
     </Box>
@@ -618,6 +649,7 @@ function ShadowsSection() {
     { label: 'md', sublabel: 'Dropdowns, menus', elevation: 4 },
     { label: 'lg', sublabel: 'Modals, drawers', elevation: 8 },
     { label: 'sel', sublabel: 'Selection ring', sx: { boxShadow: 'var(--sh-sel)' } },
+    { label: 'sel-inset', sublabel: 'Selected / pressed item', sx: { boxShadow: 'var(--sh-sel-inset)' } },
   ];
 
   return (
@@ -739,7 +771,7 @@ function ButtonsSection() {
     <Box id='buttons' sx={{ mb: 8 }}>
       <SectionHeader
         title='Buttons'
-        desc='No uppercase. 32px default height. 600 weight. Primary uses rust — secondary and ghost are neutral.'
+        desc='No uppercase. 32px default height. 600 weight. Primary uses rust — secondary and ghost are neutral. Promote, Release and Create ChangeOrder use the secondary purple.'
       />
 
       <SubLabel>Variants</SubLabel>
@@ -748,6 +780,7 @@ function ButtonsSection() {
         <Button variant='outlined'>Secondary</Button>
         <Button variant='text'>Ghost</Button>
         <Button variant='contained' color='error'>Delete Space</Button>
+        <Button variant='contained' color='secondary'>Promote</Button>
       </Canvas>
 
       <SubLabel>Sizes</SubLabel>
@@ -991,7 +1024,7 @@ function CardsSection() {
           name='payments-api'
           space='production'
           icon='⬡'
-          iconBg='var(--blue-bg)'
+          iconBg='var(--bg-hover)'
           statusLabel='● Ready'
           statusColor='success'
           upgradeCount={3}
@@ -1000,7 +1033,7 @@ function CardsSection() {
           name='auth-service'
           space='staging'
           icon='⬡'
-          iconBg='var(--blue-bg)'
+          iconBg='var(--bg-hover)'
           statusLabel='▶▶ Applying'
           statusColor='info'
         />
@@ -3260,7 +3293,7 @@ const DATAGRID_COLUMNS: GridColDef<DataRow>[] = [
             width: 16,
             height: 16,
             borderRadius: 'var(--r-sm)',
-            bgcolor: 'var(--blue-bg)',
+            bgcolor: 'var(--bg-hover)',
             border: '1px solid var(--bd0)',
             fontSize: 9,
             display: 'flex',
@@ -3445,7 +3478,7 @@ function AppCardsSection() {
                     width: 28,
                     height: 28,
                     borderRadius: 'var(--r-sm)',
-                    bgcolor: 'var(--blue-bg)',
+                    bgcolor: 'var(--bg-hover)',
                     border: '1px solid var(--bd0)',
                     display: 'flex',
                     alignItems: 'center',
@@ -3530,7 +3563,7 @@ function DetailPaneSection() {
           {/* PaneHeader */}
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1.5, borderBottom: '1px solid var(--bd0)', gap: 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-              <Box sx={{ width: 22, height: 22, borderRadius: 'var(--r-sm)', bgcolor: 'var(--blue-bg)', border: '1px solid var(--bd0)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, flexShrink: 0 }}>⬡</Box>
+              <Box sx={{ width: 22, height: 22, borderRadius: 'var(--r-sm)', bgcolor: 'var(--bg-hover)', border: '1px solid var(--bd0)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, flexShrink: 0 }}>⬡</Box>
               <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 payments-api
               </Typography>
@@ -3717,7 +3750,7 @@ function TreeViewSection() {
 
 function StatRowSection() {
   const stats = [
-    { label: 'Units', value: 47, color: 'var(--blue)' },
+    { label: 'Units', value: 47, color: 'var(--t1)' },
     { label: 'Spaces', value: 6, color: 'var(--purple)' },
     { label: 'Targets', value: 12, color: 'var(--green)' },
     { label: 'Workers', value: 3, color: 'var(--amber)' },
@@ -3752,7 +3785,7 @@ function StatRowSection() {
       <SubLabel>With status breakdown chips</SubLabel>
       <Paper elevation={1} sx={{ borderRadius: 'var(--r-md)', p: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <Typography sx={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--blue)' }}>47</Typography>
+          <Typography sx={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--t1)' }}>47</Typography>
           <Typography sx={{ fontSize: 11, color: 'text.disabled', fontWeight: 600 }}>units</Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>

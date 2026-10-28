@@ -665,6 +665,8 @@ export const FunctionListScreen = ({
         <Link
           component={RouterLink}
           to="/function-browser"
+          target="_blank"
+          rel="noopener noreferrer"
           underline="hover"
           data-testid="invoker-browse-functions"
           sx={{ fontFamily: componentTheme.fontSans, fontSize: 11, color: brandAccent }}

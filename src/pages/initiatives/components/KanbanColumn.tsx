@@ -36,8 +36,6 @@ interface KanbanColumnProps {
   selectedId: string | null;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
-  onSelect: (id: string) => void;
-  onEdit: (id: string) => void;
   onDelete: (initiative: Initiative) => void;
   onStatusChange: (id: string, status: InitiativeStatus) => void;
 }
@@ -48,8 +46,6 @@ export const KanbanColumn = ({
   selectedId,
   isCollapsed,
   onToggleCollapse,
-  onSelect,
-  onEdit,
   onDelete,
   onStatusChange,
 }: KanbanColumnProps) => {
@@ -259,8 +255,6 @@ export const KanbanColumn = ({
               key={c.id}
               initiative={c}
               isSelected={c.id === selectedId}
-              onSelect={() => onSelect(c.id)}
-              onEdit={() => onEdit(c.id)}
               onDelete={() => onDelete(c)}
               onStatusChange={(newStatus) => onStatusChange(c.id, newStatus)}
             />

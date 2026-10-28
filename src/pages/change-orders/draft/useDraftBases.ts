@@ -13,6 +13,7 @@ import {
   type PickerVariantUnit,
   draftBases,
   groupBySpace,
+  lastBaseChangeOrderBySpace,
   lastChangeOrderBySpace,
   upstreamOfSpace,
   waitingOf,
@@ -117,11 +118,11 @@ export function usePickerRows(bases: readonly DraftBase[], open: boolean): Picke
   const variantUnitsRead = useListPickerVariantUnitsQuery({ spaceIds: variantIds }, { skip });
 
   const rows = useMemo(() => {
-    const last = lastChangeOrderBySpace(
-      (ordersRead.currentData ?? []).flatMap((entry) =>
-        entry.ChangeOrder === undefined ? [] : [entry.ChangeOrder],
-      ),
+    const orders = (ordersRead.currentData ?? []).flatMap((entry) =>
+      entry.ChangeOrder === undefined ? [] : [entry.ChangeOrder],
     );
+    const last = lastChangeOrderBySpace(orders);
+    const lastBase = lastBaseChangeOrderBySpace(orders);
     const baseUnits: PickerBaseUnit[] | undefined = baseUnitsRead.currentData?.flatMap(
       (entry) => {
         const unit = entry.Unit;
@@ -159,7 +160,7 @@ export function usePickerRows(bases: readonly DraftBase[], open: boolean): Picke
         waiting:
           baseUnitsBySpace === undefined || variantUnitsBySpace === undefined
             ? undefined
-            : waitingOf(base, lastOrder, baseUnitsBySpace, variantUnitsBySpace),
+            : waitingOf(base, lastBase.get(base.spaceId), baseUnitsBySpace, variantUnitsBySpace),
       };
     });
   }, [bases, ordersRead.currentData, baseUnitsRead.currentData, variantUnitsRead.currentData]);

@@ -35,7 +35,7 @@ import type { DraftReadStatus, DraftUpdateType } from './draftTypes';
 export const DRAFT_SAME_CHANGE_MS = 60_000;
 
 /** The fields each read selects. */
-export const DRAFT_BASE_UNIT_SELECT = 'UnitID,Slug,SpaceID,HeadRevisionNum';
+export const DRAFT_BASE_UNIT_SELECT = 'UnitID,Slug,SpaceID,HeadRevisionNum,ToolchainType';
 export const DRAFT_VARIANT_UNIT_SELECT =
   'UnitID,Slug,SpaceID,UpstreamUnitID,UpstreamRevisionNum';
 export const DRAFT_START_REVISION_SELECT = 'RevisionID,UnitID,RevisionNum,CreatedAt,Tags';
@@ -59,6 +59,8 @@ export interface DraftBaseUnit {
   unitId: string;
   slug: string;
   headRevisionNum: number;
+  /** The toolchain its configuration is in: what an Invoke change's functions are listed under. */
+  toolchainType?: string;
 }
 
 export interface DraftVariantUnit {

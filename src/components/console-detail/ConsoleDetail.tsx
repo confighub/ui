@@ -202,11 +202,11 @@ export function RowAction({ onClick, children, danger = false, disabled = false,
         cursor: disabled ? 'not-allowed' : 'pointer',
         fontSize: 12,
         fontWeight: 600,
-        color: disabled ? T.ink3 : danger ? T.bad : T.accentInk,
+        color: disabled ? T.ink3 : danger ? T.bad : T.action,
         padding: '2px 4px',
         borderRadius: R_MICRO,
         '&:hover': disabled ? undefined : { textDecoration: 'underline' },
-        '&:focus-visible': { outline: `2px solid ${T.accent}`, outlineOffset: 1 },
+        '&:focus-visible': { outline: `2px solid ${T.focus}`, outlineOffset: 1 },
       }}
     >
       {children}

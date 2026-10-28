@@ -19,8 +19,10 @@ import {
 import type { EntityRow } from '../model/fields';
 
 /**
- * The table's columns: order, widths and resizing. This is the only file that
- * imports `@tanstack/react-table`, so a change of its major version stays here.
+ * The table's columns: order, widths and resizing. This is the View Explorer's
+ * only import of `@tanstack/react-table`; the list consoles' sortable table
+ * (`components/console-table/`) is the other. A change of its major version
+ * stays in those two places.
  *
  * TanStack lays out the columns only. Rows and group headers come from the
  * view's derived rows and `model/grouping.ts` (shared with the other layouts)

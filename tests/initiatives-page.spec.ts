@@ -76,4 +76,38 @@ test.describe('initiatives page', () => {
       await initiativesPage.deleteInitiativeViaAPI(originalName);
     }
   });
+
+  test('a card dragged out and dropped back on itself stays on the board; a plain click opens it', async ({ page }) => {
+    test.setTimeout(90000);
+    const initiativesPage = new InitiativesPage(page);
+    const name = `Drag ${RandomSlugGenerator.randomSlugName()}`;
+
+    await initiativesPage.goto();
+    try {
+      await initiativesPage.createInitiativeViaUI({ name, description: 'E2E drag test', priority: 'LOW' });
+      await page.goto('/x/initiatives');
+      const card = page.locator('[class*="MuiCard-root"]').filter({ hasText: name }).first();
+      await expect(card).toBeVisible();
+
+      // The card's link is stretched over it, so the press lands on the link.
+      const box = (await card.boundingBox())!;
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      // Past the pointer sensor's 8px activation distance, then back.
+      for (let i = 1; i <= 6; i++) await page.mouse.move(x + i * 6, y + i * 3);
+      for (let i = 5; i >= 0; i--) await page.mouse.move(x + i * 6, y + i * 3);
+      await page.mouse.up();
+      // The click that follows the drop must not follow the link.
+      await page.waitForTimeout(500);
+      await expect(page).toHaveURL(/\/x\/initiatives$/);
+      await expect(card).toBeVisible();
+
+      await page.mouse.click(x, y);
+      await page.waitForURL(/\/x\/initiatives\/[^/]+$/);
+    } finally {
+      await initiativesPage.deleteInitiativeViaAPI(name);
+    }
+  });
 });
