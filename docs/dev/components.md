@@ -103,6 +103,7 @@ you can cite them in review.
 | **Protected / Kept on merge** | A path whose `MutationSources.PathMutationMap[path].Protected` is `true` (or inherited from the closest protected ancestor, or the resource-level default) — a merge from upstream must not overwrite it. Committed via the `SetUnitProtection` endpoint (`SourceTypeSetProtection`), a **separate revision** from any value write. Read ladder: `protectedPaths.ts`'s `buildProtectedPathLookup` (exact path → ancestor → resource-level default → `false`). Toggled per-row via the leaf/folder kebab (`Keep on merge` / `Let merges update this`); staged the same way as everything else (`stagedProtection`, below) before commit. Array-indexed paths (`spec.containers.0.image`) are excluded from both read and write — `MutationSources` keys array elements associatively (`ResolvedPath`, e.g. `spec.containers.?name=nginx;@0.image`) and there is no parser in `src` to translate the tree's positional notation into it, so guessing would risk silently mismatching the merge engine's own lookup. |
 | **Value treeview** | The default diff UI: field-level tree, one row per dot-path key, with colored state checkboxes. NOT a text diff. `ComponentValuesSection.tsx`. |
 | **Source view** | Monaco editor of the full raw decoded `unit.Data` (`ComponentSourceSection.tsx`). Opt-in alternative to the treeview (shipped #4538). |
+| **Units row** | The toolbar row above Scope (`ComponentToolbar.tsx`), in every view: **Releasable** (the default) lists the units a Release of their Space publishes, by the server's `Unit.Releasable`; **All units** lists every unit; **Include hidden** adds the units with a `HiddenReason`, such as the ConfigHub/YAML units behind entities. `PaneUnitScope` and `includeHiddenUnits` live in `AppComponentView`, so they survive a node switch, and filter `mergedUnits`, so the counts and the lone-unit rule follow them. Hidden units are read only when asked for, only in the selected Spaces (`include_hidden=*`, `HiddenReason != ''`), and go into `unitsByDeployment` alone, never into `allUnits`: the graph, its counts and the upgrade machinery do not see them. |
 | **Overview** | Each unit's resources in the friendly view the resource explorer, View explorer and Unit Resources tab show (`ComponentOverviewSection.tsx` → `ResourceOverview`). Read-only and not searchable: the search box is cleared and disabled, and the filter tabs and Scope row are hidden. Kubernetes only; other toolchains fall back to the Source view, as the Resources tab does. `viewMode: PaneViewMode` (`'diff' \| 'overview' \| 'source'`, `ComponentToolbar.tsx`). |
 | **Staged change** | A pending change queued for batch commit. A checkbox for an upgrade OR a manual inline edit. Type: `StagedChange {path, type: StagedChangeType, before, after}` (`ComponentValuesSection.tsx`). A staged **protection** change (`stagedProtection`, below) is a DIFFERENT kind of pending change — it never joins this set, and commits through a different endpoint. |
 | **`stagedProtection`** | `Map<stageKey, boolean>` — the target `Protected` value the user picked for a path via the kebab, staged (not written) until commit. Keyed the same document-scoped way as `stagedEditedValues`. Deliberately separate from `stagedPaths`: a protection change is never a value change, so it never adds to the "N staged" count. Collapses to a no-op (deleted from the map) when the target equals the path's current *committed* protection — clicking `Keep on merge` then `Let merges update this` on the same unmodified row is a true no-op, and "protect 6 where 4 already are" stages exactly 2. Sticky across `clearStagedSignal`; cleared only by `discardAllSignal` or a successful protection commit. |
@@ -284,9 +285,9 @@ has no place here (a node is a real deployment, not something a keypress should 
   `useListExtendedRevisionsQuery` (InspectPanel).
 - **Mutations:** `useBulkPatchUnitsMutation` (used 3×: real upgrade via `onCommitStaged`, dry-run
   preview, field/data PATCH). Apply removed from the build — no `useBulkApplyUnitsMutation` here.
-- **Units query is hand-narrowed** (`AppComponentView.tsx`): `select=UnitID,Slug,SpaceID,TargetID,
-  UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ToolchainType,
-  Data`, `where = SpaceID IN (...)`. Uses **`currentData`, not `data`** to avoid rendering new spaces
+- **Units query is hand-narrowed** (`AppComponentView.tsx`): `select` is `UNITS_QUERY_SELECT` (the unit
+  metadata, `Releasable` among it, plus the head and last-released Revision ids the
+  data and mutation-source reads are keyed by), `where = SpaceID IN (...)`. Uses **`currentData`, not `data`** to avoid rendering new spaces
   against stale units. Adding a field the UI reads means editing that select string (`UNITS_QUERY_SELECT`/
   `UNITS_QUERY_INCLUDE`, shared by every batch below). **Batched** at `ID_BATCH_SIZE` (50) Spaces per
   request (a node graph's Space count is unbounded — it can span every Deployment under a tree node,
@@ -555,8 +556,7 @@ tree and the detail pane show `QueryErrorState` with Retry, not a skeleton.
   something not there). "Not even the Overview root" required widening `GroupNavPanel`'s
   `selectedGroups` prop from `string[]` to `string[] | null` — `[]` still
   means "Overview/All is selected" (the Unit list's only case), `null` means
-  nothing is (MUI's `SimpleTreeView` accepts `null` for "no item selected"
-  natively). The Unit list never passes `null`, so this is additive, not a
+  nothing is. The Unit list never passes `null`, so this is additive, not a
   behavior change there.
 - **Counts.** A group node counts Components (its number of leaves). A
   leaf counts the Component's variants (its Spaces on the page; `0` for a
@@ -664,16 +664,15 @@ call that sets `viewId` (in `syncFilterStateToUrl`/`clearFilterStateFromUrl`,
 shared by every call site that switches, creates, or clears the active view).
 Components passes `['group']`; the Unit list passes nothing.
 
-**Gotcha: `expansionTrigger='iconContainer'` alone does not stop a chevron
-click from also opening a graph.** MUI's own content-click handler
-(`useTreeItem`) calls `handleSelection` UNCONDITIONALLY — it only gates
-`handleExpansion` on `expansionTrigger`. A click on the icon container, with
-no `stopPropagation`, bubbles up (native DOM event bubbling; the icon is a
-child of the content div) to that same content handler and selects the row
-regardless of which element triggers expansion. `GroupNavPanel` passes
-`slotProps={{ iconContainer: { onClick: stopPropagation } }}` on each
-`TreeItem`, but only when `expansionTrigger === 'iconContainer'` — the Unit
-list stays on the `'content'` default and is unaffected.
+**The tree is flat and virtualized.** `GroupNavPanel` draws its rows with
+`GroupNavTree` (`@tanstack/react-virtual`), not MUI's tree view: only the rows
+in view are in the DOM once there are more than 200, so a node's children are
+not inside its element. A spec finds a node's children by `aria-level` and
+order (`role='treeitem'` rows carry `aria-level`, `aria-setsize` and
+`aria-posinset`), and the count badge by the testid `group-nav-node-count`.
+With `expansionTrigger='iconContainer'` a chevron click stops at the chevron,
+so it never selects the row (never opens a graph). A caller's `getItemProps`
+`onClick` runs after the row's own select/toggle.
 
 ### No Space filter on this page
 

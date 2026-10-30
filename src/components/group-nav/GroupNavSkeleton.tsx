@@ -4,6 +4,8 @@
 import Box from '@mui/material/Box';
 import Skeleton from '@mui/material/Skeleton';
 
+import { TREE_LAYOUT } from './groupTree';
+
 /**
  * Widths of the placeholder label bars for the group rows, as a percentage of
  * the row's label track. Deliberately uneven so the stack reads as a list of
@@ -11,7 +13,7 @@ import Skeleton from '@mui/material/Skeleton';
  */
 const GROUP_LABEL_WIDTHS = ['62%', '48%', '70%', '54%'] as const;
 
-/** Width of the `iconContainer` slot in `StyledTreeItem` (holds the chevron). */
+/** Width of the chevron slot of a `GroupNavTree` row. */
 const ICON_CONTAINER_WIDTH = 20;
 
 /** Size of the leading `SelectAllIcon` on the real "All" row (`fontSize='small'`). */
@@ -28,15 +30,24 @@ interface SkeletonRowProps {
 }
 
 /**
- * One placeholder row shaped like a `StyledTreeItem`. The geometry is copied
- * from `GroupNavPanel`'s `StyledTreeItem`/`ItemLabel`/`CountBadge` styles —
- * `theme.spacing(0.75, 1)` content padding, a 20px icon container, a 4px label
+ * One placeholder row shaped like a `GroupNavTree` row. The geometry is copied
+ * from its row styles (`TREE_LAYOUT` in `groupTree.ts`) — the row height and
+ * gap, 8px side padding, a 20px icon container, a 4px label
  * inset, a 6px gap, and `body2` typography for the label track — so real rows
  * drop in at exactly the same height with no layout shift.
  */
 function SkeletonRow({ iconSize, labelWidth }: SkeletonRowProps) {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', px: 1, py: 0.75, mb: '2px' }}>
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        boxSizing: 'border-box',
+        height: TREE_LAYOUT.rowHeight,
+        px: 1,
+        mb: `${TREE_LAYOUT.rowGap}px`,
+      }}
+    >
       {/* Chevron slot — left empty; it reads as indentation. */}
       <Box sx={{ width: ICON_CONTAINER_WIDTH, flexShrink: 0 }} />
       <Box

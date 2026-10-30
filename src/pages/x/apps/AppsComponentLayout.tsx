@@ -385,7 +385,7 @@ export const AppsComponentLayout = ({
       }
       // Re-clicking the node that already drives the open group graph is a
       // no-op — matches `handleAppSelect`'s own "same app" guard above, and
-      // reads the live URL for the same reason. MUI's tree calls this on a
+      // reads the live URL for the same reason. The tree calls this on a
       // re-click of the selected row, and can call it from an uncommitted
       // render (e.g. a Component graph that Back superseded before it
       // committed); a render-time `selectedApp` there would push a duplicate

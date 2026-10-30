@@ -31,6 +31,7 @@ import CodeIcon from '@mui/icons-material/Code';
 import SearchIcon from '@mui/icons-material/Search';
 import ViewAgendaOutlinedIcon from '@mui/icons-material/ViewAgendaOutlined';
 import Box from '@mui/material/Box';
+import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 import TextField from '@mui/material/TextField';
@@ -50,6 +51,15 @@ export type PaneFilterMode = 'incoming' | 'all' | 'changeset';
  * source as written.
  */
 export type PaneViewMode = 'diff' | 'overview' | 'source';
+
+/**
+ * Which units the pane lists: those a Release of their Space publishes
+ * (`Unit.Releasable`), or every unit.
+ */
+export type PaneUnitScope = 'releasable' | 'all';
+
+/** Whether the hidden units were asked for, and where their read is. */
+export type HiddenUnitsState = 'off' | 'loading' | 'error' | 'ready';
 
 export interface ComponentToolbarProps {
   /** Distinguishes this mount's testids (`${testIdPrefix}-filter-all`, etc.) so auto and ChangeOrder mode never collide. */
@@ -113,7 +123,46 @@ export interface ComponentToolbarProps {
   /** Every live-diverged path, arrays included — the tooltip's "M of L" denominator. */
   totalLiveL?: number;
   hasProtectionData?: boolean;
+
+  /**
+   * The Units row: whether the pane lists only the units a Release publishes
+   * or all of them, and whether hidden units are among them. Shown when
+   * `onUnitScopeChange` is given.
+   */
+  unitScope?: PaneUnitScope;
+  onUnitScopeChange?: (scope: PaneUnitScope) => void;
+  includeHiddenUnits?: boolean;
+  onIncludeHiddenUnitsChange?: (include: boolean) => void;
+  hiddenUnitsState?: HiddenUnitsState;
+  /** Why the hidden units could not be read. */
+  hiddenUnitsError?: string;
 }
+
+/** A pressable chip of the toolbar's filter rows. */
+const chipSx = (active: boolean) => ({
+  display: 'inline-flex', alignItems: 'center', gap: '5px',
+  fontSize: 11, fontWeight: 600, lineHeight: '18px',
+  padding: '1px 10px', borderRadius: '10px',
+  border: `1px solid ${active ? componentTheme.accent : componentTheme.borderMuted}`,
+  background: active ? componentTheme.accentMuted : 'transparent',
+  color: active ? componentTheme.accent : componentTheme.fgSubtle,
+  cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: componentTheme.fontSans,
+  transition: 'all .12s',
+  '&:hover': { borderColor: !active ? componentTheme.accent : undefined },
+  '&:focus-visible': { outline: `2px solid ${componentTheme.accent}`, outlineOffset: '2px' },
+});
+
+/** The label at the start of a filter row. */
+const rowLabelSx = {
+  fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
+  color: componentTheme.fgSubtle, mr: '2px', fontFamily: componentTheme.fontSans,
+} as const;
+
+/** What each Units choice lists, for its tooltip. */
+const UNIT_SCOPE_CHOICES: { scope: PaneUnitScope; label: string; tooltip: string }[] = [
+  { scope: 'releasable', label: 'Releasable', tooltip: 'The units a release of the space publishes' },
+  { scope: 'all', label: 'All units', tooltip: 'Every unit, including AppConfig units and units bound to no target' },
+];
 
 export function ComponentToolbar({
   testIdPrefix,
@@ -143,6 +192,12 @@ export function ComponentToolbar({
   totalKeptOnMergeN,
   totalLiveL,
   hasProtectionData = false,
+  unitScope = 'releasable',
+  onUnitScopeChange,
+  includeHiddenUnits = false,
+  onIncludeHiddenUnitsChange,
+  hiddenUnitsState = 'off',
+  hiddenUnitsError,
 }: ComponentToolbarProps) {
   // Scope narrows the treeview's rows; the other views have none to narrow.
   const showScopeRow = onScopeFilterChange !== undefined && filterMode === 'all' && viewMode === 'diff';
@@ -345,6 +400,63 @@ export function ComponentToolbar({
               );
             })()}
           </Box>
+        </Box>
+      )}
+
+      {onUnitScopeChange !== undefined && (
+        <Box
+          role="group"
+          aria-label="Units"
+          sx={{
+            display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap',
+            px: '10px', py: '7px',
+            borderTop: `1px dashed ${componentTheme.borderMuted}`,
+            borderBottom: showScopeRow ? undefined : `1px solid ${componentTheme.borderSubtle}`,
+            background: componentTheme.bgDefault,
+          }}
+        >
+          <Box component="span" sx={rowLabelSx}>
+            Units
+          </Box>
+          {UNIT_SCOPE_CHOICES.map(({ scope, label, tooltip }) => (
+            <Tooltip key={scope} title={tooltip} placement='top'>
+              <Box
+                component="button"
+                aria-pressed={unitScope === scope}
+                data-testid={`${testIdPrefix}-units-${scope}`}
+                onClick={() => onUnitScopeChange(scope)}
+                sx={chipSx(unitScope === scope)}
+              >
+                {label}
+              </Box>
+            </Tooltip>
+          ))}
+          {onIncludeHiddenUnitsChange && (
+            <Tooltip title='Also list hidden units, such as the units that hold the configuration of ConfigHub entities' placement='top'>
+              <Box
+                component="button"
+                aria-pressed={includeHiddenUnits}
+                data-testid={`${testIdPrefix}-units-include-hidden`}
+                onClick={() => onIncludeHiddenUnitsChange(!includeHiddenUnits)}
+                sx={chipSx(includeHiddenUnits)}
+              >
+                Include hidden
+                {hiddenUnitsState === 'loading' && (
+                  <CircularProgress size={9} thickness={6} color='inherit' aria-label='Loading hidden units' />
+                )}
+              </Box>
+            </Tooltip>
+          )}
+          {hiddenUnitsState === 'error' && (
+            <Box
+              component="span"
+              role="alert"
+              data-testid={`${testIdPrefix}-units-hidden-error`}
+              sx={{ fontSize: 11, color: componentTheme.danger, fontFamily: componentTheme.fontSans }}
+            >
+              {hiddenUnitsError ?? 'Failed to load hidden units.'}
+            </Box>
+          )}
         </Box>
       )}
 

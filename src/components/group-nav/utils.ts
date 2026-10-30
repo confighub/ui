@@ -4,21 +4,21 @@
 import { ExtendedUnitRead } from '@confighub/rtk-query';
 import { formatAbsolute } from '@/utility/date-format';
 
+import { TREE_LAYOUT } from './groupTree';
 import { LABEL_PREFIX, SPACE_LABEL_PREFIX } from './types';
 import { hasUnreleasedChanges } from '@/utility/unit-release-functions';
 
-// Pixel constants mirror the styled components in GroupNavPanel.tsx and the
-// MUI x-tree-view layout. Keep in sync with GroupNavPanel.tsx if its styling
-// changes — the measurement is what lets the pane auto-fit its content
-// instead of using a fixed 200px default.
-const PANEL_BODY_PADDING = 16; // PanelBody padding 8px each side
-const TREE_ITEM_PADDING = 16; // TreeItem content padding 8px each side
-const TREE_ITEM_INDENT = 29; // groupTransition marginLeft 16 + paddingLeft 12 + 1 border
-const ICON_CONTAINER = 28; // MUI expand/collapse slot (20px) + 8px gap to label
-const FOLDER_ICON = 20; // FolderOutlinedIcon (rendered ~20px wide in label)
-const ICON_LABEL_GAP = 6; // ItemLabel gap between FolderIcon and label
-const LABEL_PADDING_LEFT = 4; // treeItemClasses.label paddingLeft
-const COUNT_LEFT_PADDING = 8; // CountBadge paddingLeft theme.spacing(1)
+// Row geometry comes from the tree itself (`TREE_LAYOUT`, used by
+// `GroupNavTree`), so the measurement that lets the pane auto-fit its content
+// cannot drift from what is drawn.
+const PANEL_BODY_PADDING = TREE_LAYOUT.bodyPaddingX * 2;
+const TREE_ITEM_PADDING = TREE_LAYOUT.rowPaddingX * 2;
+const TREE_ITEM_INDENT = TREE_LAYOUT.indent;
+const ICON_CONTAINER = TREE_LAYOUT.chevronWidth + TREE_LAYOUT.chevronGap;
+const FOLDER_ICON = TREE_LAYOUT.iconWidth;
+const ICON_LABEL_GAP = TREE_LAYOUT.iconGap;
+const LABEL_PADDING_LEFT = TREE_LAYOUT.labelPaddingLeft;
+const COUNT_LEFT_PADDING = TREE_LAYOUT.countPaddingLeft;
 const HEADER_PADDING = 24; // PanelHeader padding 1.5/1.5 horizontal
 const PANEL_BORDER = 1; // Panel right border
 const SAFETY_MARGIN = 8; // small buffer for scrollbar / sub-pixel rounding

@@ -100,7 +100,7 @@ import type {
 } from './componentTypes';
 import type { ReleaseActions } from './useReleaseActions';
 import type { ChangeSetEntry } from './useChangeSetEntries';
-import type { PaneFilterMode, PaneViewMode } from './ComponentToolbar';
+import type { HiddenUnitsState, PaneFilterMode, PaneUnitScope, PaneViewMode } from './ComponentToolbar';
 import { changeSetLabel, isChangeSetOpenHere } from './changeSets';
 import { ChangeSetCloseBar, ChangeSetWaitNotice } from './ChangeSetPaneNotices';
 
@@ -394,8 +394,18 @@ export interface ComponentSidePaneProps {
       validationErrors?: { [key: string]: boolean };
       /** Unit.TargetID — scopes a unit to the Space's Release target set (task #60). */
       targetId?: string;
+      /** Unit.Releasable: a Release of the Space publishes the unit. */
+      releasable: boolean;
     }[]
   >;
+  /** Which units the pane lists: those a Release publishes, or all of them. */
+  unitScope: PaneUnitScope;
+  onUnitScopeChange: (scope: PaneUnitScope) => void;
+  /** Whether hidden units are listed too; `unitsByDeployment` holds them when they are. */
+  includeHiddenUnits: boolean;
+  onIncludeHiddenUnitsChange: (include: boolean) => void;
+  hiddenUnitsState: HiddenUnitsState;
+  hiddenUnitsError?: string;
   selectedDeploymentIds: Set<string>;
   /**
    * A deep-link request from a status-chip peek to focus a specific tab
@@ -584,6 +594,12 @@ export const ComponentSidePane = memo(
     deployments,
     targets,
     unitsByDeployment,
+    unitScope,
+    onUnitScopeChange,
+    includeHiddenUnits,
+    onIncludeHiddenUnitsChange,
+    hiddenUnitsState,
+    hiddenUnitsError,
     selectedDeploymentIds,
     tabFocus,
     width,
@@ -1042,6 +1058,7 @@ export const ComponentSidePane = memo(
       for (const [did, deploymentUnits] of unitsByDeployment) {
         if (!selectedDeploymentIds.has(did)) continue;
         for (const u of deploymentUnits) {
+          if (unitScope === 'releasable' && !u.releasable) continue;
           const ue = upgradeByUnit.get(u.unitId);
           const ae = applyByUnit.get(u.unitId);
           const ve = variationByUnit.get(u.unitId);
@@ -1071,11 +1088,22 @@ export const ComponentSidePane = memo(
       allApplyEntries,
       variationEntries,
       unitsByDeployment,
+      unitScope,
       selectedDeploymentIds,
       dryRunPendingIds,
       upgradeErrorByUnitId,
       variationErrorByUnitId,
     ]);
+
+    // Whether the Releasable scope is what leaves the pane with no units, so the
+    // empty pane says so rather than reading as a deployment with none.
+    const hasUnreleasableUnitsOnly = useMemo(() => {
+      if (unitScope !== 'releasable' || mergedUnits.length > 0) return false;
+      for (const [did, deploymentUnits] of unitsByDeployment) {
+        if (selectedDeploymentIds.has(did) && deploymentUnits.length > 0) return true;
+      }
+      return false;
+    }, [unitScope, mergedUnits.length, unitsByDeployment, selectedDeploymentIds]);
 
     // The ChangeSet filter's view of the same units: a unit a ChangeSet covers
     // shows what the ChangeSet changed, drawn as Incoming draws an upgrade --
@@ -2400,6 +2428,12 @@ export const ComponentSidePane = memo(
           totalKeptOnMergeN={totalKeptOnMergeN}
           totalLiveL={totalLiveL}
           hasProtectionData={hasProtectionData}
+          unitScope={unitScope}
+          onUnitScopeChange={onUnitScopeChange}
+          includeHiddenUnits={includeHiddenUnits}
+          onIncludeHiddenUnitsChange={onIncludeHiddenUnitsChange}
+          hiddenUnitsState={hiddenUnitsState}
+          hiddenUnitsError={hiddenUnitsError}
         />
 
         {/* Kept-on-merge flatnote — page-specific explanatory text for the
@@ -2493,6 +2527,27 @@ export const ComponentSidePane = memo(
                   <line x1='10' y1='2' x2='2' y2='10' />
                 </svg>
               </Box>
+            </Box>
+          )}
+          {hasUnreleasableUnitsOnly && (
+            <Box
+              data-testid='component-units-none-releasable'
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                py: 6,
+                px: 3,
+                gap: 1,
+                fontFamily: componentTheme.fontSans,
+              }}
+            >
+              <Typography sx={{ fontSize: 13, fontFamily: componentTheme.fontSans, color: componentTheme.fgMuted }}>
+                No releasable units
+              </Typography>
+              <Button size='small' onClick={() => onUnitScopeChange('all')}>
+                Show all units
+              </Button>
             </Box>
           )}
           {filteredUnits.length === 0 && filterText && (

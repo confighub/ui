@@ -42,8 +42,10 @@ import { chunkIds, inClause } from './inClauseChunks';
 /** At most this many chunk requests are in flight for one query. */
 export const MAX_PARALLEL_CHUNKS = 4;
 
-export interface ListAllUnitsChunkedArg extends Pick<ListAllUnitsApiArg, 'select' | 'include'> {
+export interface ListAllUnitsChunkedArg extends Pick<ListAllUnitsApiArg, 'select' | 'include' | 'includeHidden'> {
   spaceIds: string[];
+  /** ANDed with each chunk's `SpaceID IN (...)`. */
+  where?: string;
 }
 
 export interface SpaceIdsArg {
@@ -229,7 +231,12 @@ const chunkedQueriesApi = confighubApi.injectEndpoints({
           idSet(arg.spaceIds),
           (where) => ({
             url: `/unit`,
-            params: { where, select: arg.select, include: arg.include },
+            params: {
+              where: arg.where ? `${where} AND ${arg.where}` : where,
+              select: arg.select,
+              include: arg.include,
+              include_hidden: arg.includeHidden,
+            },
           }),
           baseQuery,
         ),

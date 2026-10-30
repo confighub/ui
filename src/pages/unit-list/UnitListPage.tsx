@@ -643,22 +643,23 @@ export const UnitListPage = () => {
     [trackEntityCreated],
   );
 
-  const handleSelectGroups = useCallback(
-    (groups: string[]) => {
-      setSelectedGroups(groups);
-      // Sync to URL — replace all `group` entries with the new path.
-      const next = new URLSearchParams(searchParams);
-      next.delete('group');
-      for (const g of groups) {
-        if (g && g !== ALL_GROUPS) {
-          next.append('group', g);
-        }
+  // No dependencies, so a URL change alone does not give `GroupNavPanel`
+  // (memoized) a new callback. It reads the URL when it is called:
+  // `window.location` is always current, while `searchParams` does not see
+  // the `group` entries this writes with `replaceState`.
+  const handleSelectGroups = useCallback((groups: string[]) => {
+    setSelectedGroups(groups);
+    // Sync to URL — replace all `group` entries with the new path.
+    const next = new URLSearchParams(window.location.search);
+    next.delete('group');
+    for (const g of groups) {
+      if (g && g !== ALL_GROUPS) {
+        next.append('group', g);
       }
-      // Use replace so back/forward isn't littered with intermediate selections.
-      window.history.replaceState({}, '', `${window.location.pathname}?${next.toString()}`);
-    },
-    [searchParams],
-  );
+    }
+    // Use replace so back/forward isn't littered with intermediate selections.
+    window.history.replaceState({}, '', `${window.location.pathname}?${next.toString()}`);
+  }, []);
 
   // Apply group-pane filtering on top of client-side filters.
   // localGroupByColumns is always non-empty (falls back to ['Space']).

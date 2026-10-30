@@ -40,6 +40,7 @@ import type { NodeUnitSummary } from './flow-graph/DeploymentFlowNode';
 import { componentTheme } from './componentTheme';
 import { ComponentFlowGraphSkeleton } from './ComponentFlowGraphSkeleton';
 import { ComponentSidePane } from './ComponentSidePane';
+import type { HiddenUnitsState, PaneUnitScope } from './ComponentToolbar';
 import { usePreviewUnitUpgradeMutation } from './upgradePreviewApi';
 import type { StagedCommitPayload } from './ComponentValuesSection';
 import { useUnitDataMap, useUploadUnitData } from '@/hooks/useUnitData';
@@ -152,7 +153,7 @@ const RUNNING_RELEASE_POLL_MS = 5_000;
 // was made in (see changeSets.ts). Shared by every units-fetching batch
 // (the chunked SpaceID read and the upstream-outside-set UnitID lookup) so they all narrow the payload identically.
 const UNITS_QUERY_SELECT =
-  'UnitID,Slug,SpaceID,TargetID,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ToolchainType,DataHash,DataSize,ChangeSetID,'
+  'UnitID,Slug,SpaceID,TargetID,Releasable,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ToolchainType,DataHash,DataSize,ChangeSetID,'
   + 'HeadRevision.RevisionID,HeadRevision.CreatedAt,HeadRevision.Description,HeadRevision.ChangeSetID,LastReleasedRevision.RevisionID';
 const UNITS_QUERY_INCLUDE = 'SpaceID,TargetID,UpstreamUnitID,HeadRevisionNum,LastReleasedRevisionNum';
 
@@ -383,6 +384,43 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
 
   const unitsPollingInterval = (hasPendingGatesRef.current || upgradingDeploymentIds.size > 0) ? 2000 : 0;
 
+  // Which of the selected Spaces' units the side pane lists. The pane remounts on
+  // a node switch, so the choice is kept here to survive one.
+  const [unitScope, setUnitScope] = useState<PaneUnitScope>('releasable');
+  const [includeHiddenUnits, setIncludeHiddenUnits] = useState(false);
+  // Hidden units are read only when asked for, and only in the selected Spaces:
+  // the graph, its counts and the upgrade machinery work from the units a list
+  // returns without include_hidden.
+  const selectedSpaceIds = useMemo(() => Array.from(selectedDeploymentIds), [selectedDeploymentIds]);
+  const {
+    currentData: currentHiddenUnits,
+    isError: hiddenUnitsIsError,
+    error: hiddenUnitsQueryError,
+  } = useListAllUnitsChunkedQuery(
+    {
+      spaceIds: selectedSpaceIds,
+      select: UNITS_QUERY_SELECT,
+      include: UNITS_QUERY_INCLUDE,
+      includeHidden: '*',
+      where: "HiddenReason != ''",
+    },
+    {
+      skip: !includeHiddenUnits || selectedSpaceIds.length === 0,
+      pollingInterval: unitsPollingInterval,
+    },
+  );
+  const hiddenUnits = useMemo(
+    () => (includeHiddenUnits ? (currentHiddenUnits ?? EMPTY_UNITS) : EMPTY_UNITS),
+    [includeHiddenUnits, currentHiddenUnits],
+  );
+  const hiddenUnitsState: HiddenUnitsState = !includeHiddenUnits
+    ? 'off'
+    : hiddenUnitsIsError
+      ? 'error'
+      : currentHiddenUnits === undefined
+        ? 'loading'
+        : 'ready';
+
   /**
    * Memoised so the `?? []` fallback does not hand every downstream `useMemo` a
    * brand-new array identity on each render — the project's standard fix for
@@ -399,7 +437,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   // string, which is also what a unit with no configuration returns — so an
   // empty unit waits forever.
   const { dataFor: unitDataFor, isFetching: isUnitDataFetching } = useUnitDataMap(
-    allUnits.map((u) => u.Unit?.UnitID),
+    [...allUnits, ...hiddenUnits].map((u) => u.Unit?.UnitID),
   );
   const dataAccessors = useMemo(() => ({ unitData: unitDataFor }), [unitDataFor]);
   // What each Unit with unreleased changes changes since its last release, so the search
@@ -576,8 +614,8 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
 
   // Map deployment ID (== SpaceID) → sorted list of units with link info (for side pane display)
   const unitsByDeployment = useMemo(() => {
-    const m = new Map<string, { slug: string; spaceId: string; unitId: string; hasUpstream: boolean; toolchainType?: string; data?: string; validationErrors?: { [key: string]: boolean }; targetId?: string }[]>();
-    for (const u of allUnits) {
+    const m = new Map<string, { slug: string; spaceId: string; unitId: string; hasUpstream: boolean; toolchainType?: string; data?: string; validationErrors?: { [key: string]: boolean }; targetId?: string; releasable: boolean }[]>();
+    for (const u of [...allUnits, ...hiddenUnits]) {
       const sid = u.Unit?.SpaceID;
       const slug = u.Unit?.Slug;
       const unitId = u.Unit?.UnitID;
@@ -593,6 +631,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
       const item = {
         slug, spaceId: sid, unitId,
         hasUpstream: !!u.Unit?.UpstreamUnitID,
+        releasable: !!u.Unit?.Releasable,
         ...(toolchainType ? { toolchainType } : {}),
         ...(data ? { data } : {}),
         ...(validationErrors ? { validationErrors } : {}),
@@ -608,7 +647,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   // it resolves after the unit list does. Depending only on allUnits pins this to the
   // first pass, when every unit's data is still undefined, and no later arrival brings
   // it back -- the side pane just reads "No configuration data" forever.
-  }, [allUnits, unitDataFor]);
+  }, [allUnits, hiddenUnits, unitDataFor]);
 
   // Cross-store sync: propagate the currently-selected deployment's units into Redux
   // so the global InvokerSidebar (which reads Redux selectedUnits) reflects this view's
@@ -1938,6 +1977,12 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
                 deployments={deployments}
                 targets={targets}
                 unitsByDeployment={unitsByDeployment}
+                unitScope={unitScope}
+                onUnitScopeChange={setUnitScope}
+                includeHiddenUnits={includeHiddenUnits}
+                onIncludeHiddenUnitsChange={setIncludeHiddenUnits}
+                hiddenUnitsState={hiddenUnitsState}
+                hiddenUnitsError={hiddenUnitsState === 'error' ? getApiErrorMessage(hiddenUnitsQueryError) || 'Failed to load hidden units.' : undefined}
                 selectedDeploymentIds={selectedDeploymentIds}
                 compareDeploymentIds={compareDeploymentIds}
                 onCompareSelectionChange={onCompareSelectionChange}

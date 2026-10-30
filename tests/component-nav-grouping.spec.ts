@@ -44,9 +44,34 @@ function treeNode(page: Page, label: string) {
   return page.getByRole('treeitem', { name: new RegExp(label) });
 }
 
-/** The count badge of a tree node: the last text of its own row. */
+/** The count badge of a tree node. */
 function nodeCount(node: ReturnType<Page['locator']>) {
-  return node.locator('.MuiTreeItem-content').first().locator('p').last();
+  return node.getByTestId('group-nav-node-count');
+}
+
+/**
+ * The testids of the rows directly under the node labelled `label`. The tree
+ * is flat (a node's children are not inside its element): they are the rows
+ * after it one `aria-level` deeper, up to the next row at its own level or
+ * above.
+ */
+async function childTestIds(page: Page, label: string): Promise<string[]> {
+  const parentId = await treeNode(page, label).getAttribute('id');
+  return page
+    .getByRole('tree', { name: 'Groups' })
+    .getByRole('treeitem')
+    .evaluateAll((rows, id) => {
+      const level = (row: Element) => Number(row.getAttribute('aria-level'));
+      const start = rows.findIndex((row) => row.id === id);
+      if (start < 0) return [];
+      const children: string[] = [];
+      for (let i = start + 1; i < rows.length && level(rows[i]) > level(rows[start]); i++) {
+        if (level(rows[i]) === level(rows[start]) + 1) {
+          children.push(rows[i].getAttribute('data-testid') ?? '');
+        }
+      }
+      return children;
+    }, parentId);
 }
 
 async function waitForTreeLoaded(page: Page) {
@@ -64,14 +89,8 @@ async function addStaticGroupingLevel(page: Page, field: string, expectedUrlPatt
 }
 
 /**
- * Clicks a tree node by its label text. A `role=treeitem` locator is
- * unreliable here: the browser's accessible-name-from-content computation
- * includes NESTED descendant treeitems' text too, so a parent with children
- * can match its own child's name, and `.click()` on the resulting (large)
- * element can land on a child row instead of the parent's own header. The
- * label `Typography` is a leaf node with no nested treeitems, so clicking
- * its own text is unambiguous — the same pattern `component-deeplink.spec.ts`
- * uses for tree clicks.
+ * Clicks a tree node by its label text — the same pattern
+ * `component-deeplink.spec.ts` uses for tree clicks.
  *
  * Scoped to `[role="tree"]`: a node click can leave a graph open alongside
  * the nav tree, and a Deployment node in that graph can carry the SAME text
@@ -161,9 +180,12 @@ test.describe('Components nav grouping + saved views', () => {
     await expect(ownerA).toBeVisible();
     await expect(treeNode(page, OWNER_B)).toBeVisible();
     // The leaves are under their Owner node.
-    await expect(ownerA.getByTestId(`app-tree-item-${COMPONENT_CHECKOUT}`)).toBeVisible();
-    await expect(ownerA.getByTestId(`app-tree-item-${COMPONENT_BILLING}`)).toBeVisible();
-    await expect(treeNode(page, OWNER_B).getByTestId(`app-tree-item-${COMPONENT_SEARCH}`)).toBeVisible();
+    await expect
+      .poll(() => childTestIds(page, OWNER_A))
+      .toEqual([`app-tree-item-${COMPONENT_BILLING}`, `app-tree-item-${COMPONENT_CHECKOUT}`]);
+    await expect
+      .poll(() => childTestIds(page, OWNER_B))
+      .toEqual([`app-tree-item-${COMPONENT_SEARCH}`]);
 
     // A group node counts Components; a leaf counts its variants (Spaces).
     await expect(nodeCount(ownerA)).toHaveText('2');
@@ -183,9 +205,11 @@ test.describe('Components nav grouping + saved views', () => {
 
     // The (empty) group (Orphan has no owner) is the last
     // top-level group, after every real Owner.
-    const topLevelGroups = page.locator('[role="tree"] > [data-testid="components-tree-node"]');
-    await expect(topLevelGroups.last().locator('.MuiTreeItem-content').first()).toContainText('(empty)');
-    await expect(topLevelGroups.first().locator('.MuiTreeItem-content').first()).not.toContainText('(empty)');
+    const topLevelGroups = page.locator(
+      '[role="tree"] [role="treeitem"][aria-level="1"][data-testid="components-tree-node"]',
+    );
+    await expect(topLevelGroups.last()).toContainText('(empty)');
+    await expect(topLevelGroups.first()).not.toContainText('(empty)');
   });
 
   test('2. the picker offers only Component fields; adding a status level appends it and updates ?viewGroupBy=', async ({ page }) => {
@@ -203,10 +227,7 @@ test.describe('Components nav grouping + saved views', () => {
     await expect(page).toHaveURL(/viewGroupBy=Labels\.Owner%2CGated/, { timeout: 5000 });
     await expect(page.getByRole('button', { name: /Change Gated grouping/i })).toBeVisible();
     // Owner A now holds Gated group nodes; the leaves are one level lower.
-    await expect(treeNode(page, OWNER_A).getByRole('treeitem').first()).toHaveAttribute(
-      'data-testid',
-      'components-tree-node',
-    );
+    await expect.poll(async () => (await childTestIds(page, OWNER_A))[0]).toBe('components-tree-node');
   });
 
   test('3. a leaf opens the Component graph (?app=); an Owner click opens a node graph of every Space under it, not the overview', async ({ page }) => {
@@ -234,7 +255,7 @@ test.describe('Components nav grouping + saved views', () => {
     await waitForTreeLoaded(page);
 
     const leaf = page.getByTestId(`app-tree-item-${COMPONENT_EMPTY}`);
-    await expect(treeNode(page, OWNER_E).getByTestId(`app-tree-item-${COMPONENT_EMPTY}`)).toBeVisible();
+    await expect.poll(() => childTestIds(page, OWNER_E)).toEqual([`app-tree-item-${COMPONENT_EMPTY}`]);
     await expect(nodeCount(leaf)).toHaveText('0');
 
     await leaf.click();
@@ -256,6 +277,25 @@ test.describe('Components nav grouping + saved views', () => {
     await clickTreeNode(page, OWNER_E);
     await expect(page).toHaveURL(new RegExp(`app=${COMPONENT_EMPTY}`));
     await expect(page.getByTestId('component-no-variants')).toBeVisible();
+  });
+
+  test('3c. a click on Overview, even when it is selected, returns to the overview and clears the URL', async ({ page }) => {
+    // Overview is selected with no ?app= or ?group=; a click still clears what
+    // the URL holds besides (here the Dashboard display).
+    await page.goto('/components?display=dashboard');
+    await waitForTreeLoaded(page);
+    const overview = page.getByRole('treeitem', { name: /Overview/ });
+    await expect(overview).toHaveAttribute('aria-selected', 'true');
+    await overview.click();
+    await expect(page).not.toHaveURL(/display=/);
+
+    // A ?app= that names no Component opens nothing, so Overview is the
+    // selected row; a click on it clears the stale ?app=.
+    await page.goto(`/components?app=e2e-nav-missing-${RUN}`);
+    await waitForTreeLoaded(page);
+    await expect(page.getByRole('treeitem', { name: /Overview/ })).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('treeitem', { name: /Overview/ }).click();
+    await expect(page).not.toHaveURL(/app=/);
   });
 
   test('4-5. saving a view (grouping only) persists across reload; the Unit list never sees it', async ({ page }) => {
