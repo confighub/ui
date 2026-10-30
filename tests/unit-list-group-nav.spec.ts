@@ -147,7 +147,7 @@ test.describe('Unit list grouping panel', () => {
     await serveUnits(page, SMALL);
     await new UnitListPage(page).goto();
 
-    await expect(treeRow(page, 'All')).toContainText('4');
+    await expect(treeRow(page, 'All')).toContainText('4', READY);
     await expect(treeRow(page, 'alpha')).toContainText('2');
     await expect(treeRow(page, 'All')).toHaveAttribute('aria-selected', 'true', READY);
     await expect(gridCell(page, 'alpha-web')).toBeVisible();
@@ -167,7 +167,7 @@ test.describe('Unit list grouping panel', () => {
   test('collapsing the panel and expanding it again shows the rows', async ({ page }) => {
     await serveUnits(page, SMALL);
     await new UnitListPage(page).goto();
-    await expect(treeRow(page, 'alpha')).toBeVisible();
+    await expect(treeRow(page, 'alpha')).toBeVisible(READY);
 
     await page.getByRole('button', { name: 'Collapse grouping panel' }).click();
     await expect(tree(page)).toHaveCount(0, READY);
@@ -182,7 +182,7 @@ test.describe('Unit list grouping panel', () => {
   test('coming back to the page with the Units cached shows the rows', async ({ page }) => {
     await serveUnits(page, SMALL);
     await new UnitListPage(page).goto();
-    await expect(treeRow(page, 'alpha')).toBeVisible();
+    await expect(treeRow(page, 'alpha')).toBeVisible(READY);
 
     await navigateInApp(page, '/spaces');
     await expect(tree(page)).toHaveCount(0, READY);
@@ -216,7 +216,7 @@ test.describe('Unit list grouping panel', () => {
     await page.goto('/units?viewGroupBy=Space%2CLabels.tier');
 
     const alpha = treeRow(page, 'alpha');
-    await expect(alpha).toHaveAttribute('aria-expanded', 'true');
+    await expect(alpha).toHaveAttribute('aria-expanded', 'true', READY);
     await expect(alpha).toHaveAttribute('aria-level', '1');
     await expect(treeRow(page, 'db')).toHaveAttribute('aria-level', '2');
     await expect(treeRow(page, 'web')).toBeVisible();
