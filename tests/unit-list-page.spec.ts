@@ -6,7 +6,6 @@ import { test, expect } from './fixtures/test';
 
 import { ApiHelper } from './fixtures/api-helper';
 import { SpaceListPage } from './fixtures/space-list-page';
-import { TargetListPage } from './fixtures/target-list-page';
 import { UnitListPage } from './fixtures/unit-list-page';
 import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
 
@@ -122,33 +121,35 @@ test.describe('unit list page', () => {
     await unitListPage.expectToBeVisibleByText('Add-context is required');
   });
 
-  test('should bulk assign a target and labels to the selected units', async ({
+  test('should bulk mark the selected units Unreleasable and label them', async ({
     page,
   }) => {
     test.setTimeout(90000);
 
     const basicDeploymentYml = 'basic-deployment';
     const unitName = RandomSlugGenerator.randomSlugName();
-    const targetName = RandomSlugGenerator.randomSlugName();
 
     const unitListPage = new UnitListPage(page);
-    const targetListPage = new TargetListPage(page);
-
-    await targetListPage.goto();
-    await targetListPage.addTarget({ targetName });
 
     await unitListPage.createUnitViaAPI({ unitType: basicDeploymentYml, slug: unitName });
 
     await unitListPage.bulkUpdateUnitsByName({
       names: [unitName],
-      targetName,
+      unreleasable: true,
       labels: {
         env: 'prod',
         team: 'dev',
       },
     });
 
-    await unitListPage.expectToBeVisibleByText(targetName);
+    const api = new ApiHelper(page);
+    await expect
+      .poll(async () => {
+        const units = await api.listUnits({ where: `Slug = '${unitName}'`, select: 'UnitID,Unreleasable,Labels' });
+        const unit = units[0]?.Unit;
+        return { unreleasable: !!unit?.Unreleasable, env: unit?.Labels?.env };
+      })
+      .toEqual({ unreleasable: true, env: 'prod' });
   });
 
   test('should add delete gates to units and prevent deletion', async ({ page }) => {

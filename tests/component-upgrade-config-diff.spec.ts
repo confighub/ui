@@ -65,14 +65,17 @@ async function createUpgradableChain(page: Page, appLabel: string, v1: string, v
       data: { Slug: `${slug}-tgt`, Labels: { TargetRole: role, TargetRegion: 'US' } },
     });
     if (!targetResp.ok()) throw new Error(`${role} target: ${targetResp.status()} ${await targetResp.text()}`);
-    return { spaceId, targetId: ((await targetResp.json()) as { TargetID: string }).TargetID };
+    const targetId = ((await targetResp.json()) as { TargetID: string }).TargetID;
+    // A Unit is released to its Space's release Target.
+    await api.updateSpace({ spaceId, space: { ReleaseTargetID: targetId } });
+    return { spaceId, targetId };
   };
   const dev = await createSpaceWithTarget(devSlug, 'Dev');
   const prod = await createSpaceWithTarget(prodSlug, 'Prod');
 
   const devUnitResp = await hubApi.post(`/api/space/${dev.spaceId}/unit`, {
     params: { allow_exists: 'true' },
-    data: { Slug: UNIT_SLUG, ToolchainType: 'Kubernetes/YAML', TargetID: dev.targetId },
+    data: { Slug: UNIT_SLUG, ToolchainType: 'Kubernetes/YAML' },
   });
   if (!devUnitResp.ok()) throw new Error(`dev unit: ${devUnitResp.status()} ${await devUnitResp.text()}`);
   const devUnitId = ((await devUnitResp.json()) as { Unit: { UnitID: string } }).Unit.UnitID;
@@ -80,7 +83,7 @@ async function createUpgradableChain(page: Page, appLabel: string, v1: string, v
 
   const prodUnitResp = await hubApi.post(`/api/space/${prod.spaceId}/unit`, {
     params: { allow_exists: 'true', upstream_space_id: dev.spaceId, upstream_unit_id: devUnitId },
-    data: { Slug: UNIT_SLUG, ToolchainType: 'Kubernetes/YAML', TargetID: prod.targetId },
+    data: { Slug: UNIT_SLUG, ToolchainType: 'Kubernetes/YAML' },
   });
   if (!prodUnitResp.ok()) throw new Error(`prod unit: ${prodUnitResp.status()} ${await prodUnitResp.text()}`);
   const prodUnitId = ((await prodUnitResp.json()) as { Unit: { UnitID: string } }).Unit.UnitID;

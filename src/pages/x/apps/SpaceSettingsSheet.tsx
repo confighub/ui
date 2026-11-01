@@ -21,13 +21,10 @@
  * immediately, never batched with anything else.
  *
  * === Release target ===
- * Spike 2 proved `WHERE TargetID = previousSpace.ReleaseTargetID` renders the
- * literal SQL `target_id = NULL` when the Space has no release target yet —
- * matches ZERO rows (three-valued SQL logic) in EITHER direction: setting
- * from unset touches no unit, INCLUDING units with no target of their own.
- * Changing or clearing an ALREADY-SET release target is the opposite: a
- * retroactive bulk repoint of every unit on the OLD target, no per-unit
- * validation, no per-item result. `space-settings/ReleaseTargetRow.tsx` is
+ * A Unit's TargetID is its Space's release target unless the Unit is
+ * Unreleasable, so setting, changing or clearing the release target moves
+ * every releasable unit in the Space at once, with no per-item result.
+ * `space-settings/ReleaseTargetRow.tsx` is
  * one always-editable picker (every Target, with "None" standing in for
  * clear) that shows a single compact consequence line only when a staged
  * pick would actually move units — `releaseTargetAffectedUnitCount` below is
@@ -171,7 +168,7 @@ export const SpaceSettingsSheet = forwardRef<SpaceSettingsSheetHandle, SpaceSett
   // row is gone; this query exists solely to COUNT units currently sitting
   // on the release target, for `ReleaseTargetRow`'s consequence line.
   const { data: unitsData } = useListAllUnitsQuery(
-    { where: `SpaceID = '${spaceId}'`, select: 'UnitID,TargetID' },
+    { where: `SpaceID = '${spaceId}'`, select: 'UnitID,Unreleasable' },
     { skip: !spaceId },
   );
   const [patchSpace, { isLoading: isSaving }] = usePatchSpaceMutation();
@@ -229,22 +226,15 @@ export const SpaceSettingsSheet = forwardRef<SpaceSettingsSheetHandle, SpaceSett
     [targets],
   );
 
-  // Count of units currently sitting on the release target — the ONLY thing
-  // `ReleaseTargetRow`'s consequence line needs. Guarded on `!= null` so a
-  // null `currentReleaseTargetId` can never accidentally match a unit whose
-  // own `TargetID` is also null (JS `===` would; the backend's SQL `x = NULL`
-  // never matches per spike 2, and this mirrors that).
-  const releaseTargetAffectedUnitCount = useMemo(
-    () => (unitsData ?? []).filter((u) => u.Unit?.TargetID != null && u.Unit.TargetID === currentReleaseTargetId).length,
-    [unitsData, currentReleaseTargetId],
-  );
+  // Count of the Space's units that are not Unreleasable, which follow the
+  // release target wherever it goes — the ONLY thing `ReleaseTargetRow`'s
+  // consequence line needs.
+  const releaseTargetAffectedUnitCount = useMemo(() => (unitsData ?? []).filter((u) => !u.Unit?.Unreleasable).length, [unitsData]);
 
   // The release-target consequence must be re-stated at Save, not only at
   // selection (BUILD-PLAN step 14) — gated on the SAME condition
-  // `ReleaseTargetRow` uses for its own inline consequence line, including
-  // the unset → set case, which is safe (spike 2: `x = NULL` never matches)
-  // and carries nothing to restate.
-  const hasStagedRetarget = isReleaseTargetDirty && currentReleaseTargetId != null && releaseTargetAffectedUnitCount > 0;
+  // `ReleaseTargetRow` uses for its own inline consequence line.
+  const hasStagedRetarget = isReleaseTargetDirty && releaseTargetAffectedUnitCount > 0;
 
   // useCallback (not a plain function) because both are now also read by
   // `useImperativeHandle` below — the pane's BottomBar buttons live outside

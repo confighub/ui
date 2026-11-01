@@ -1,10 +1,10 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
-// The settings of one Unit: its name, Target, toolchain and metadata. The Unit page shows it in
+// The settings of one Unit: its name, toolchain, whether it is released, and metadata. The Unit page shows it in
 // its Settings tab and the Unit list in a drawer, so both edit a Unit the same way.
 
-import { type ReactNode, useEffect, useMemo, useRef } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Link as RouterLink } from 'react-router-dom';
 
@@ -16,35 +16,29 @@ import { DEFAULT_TOOLCHAIN_TYPES } from '@/components/query-builder';
 import { SettingsFormFooter } from '@/components/settings-form-footer/SettingsFormFooter';
 import { SectionCard } from '@/components/styled';
 import { useAppDispatch } from '@/hooks/useApp';
-import {
-  ExtendedUnitRead,
-  UnitRead,
-  useListAllTargetsQuery,
-  useUpdateUnitMutation,
-} from '@confighub/rtk-query';
+import { SpaceReleaseTargetField } from '@/components/unit-form';
+import { ExtendedUnitRead, UnitRead, useUpdateUnitMutation } from '@confighub/rtk-query';
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
 import { setAlert } from '@/state/slices/alert';
 import { formatRelative } from '@/utility/date-format';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import { isIDInvalid } from '@/utility/validation-functions';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
-import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Chip from '@mui/material/Chip';
+import Checkbox from '@mui/material/Checkbox';
 import FormControl from '@mui/material/FormControl';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
 import Grid from '@mui/material/Grid2';
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
-import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
-import Typography from '@mui/material/Typography';
 
 interface UnitFormData {
   Slug: string;
-  TargetID?: string;
+  Unreleasable: boolean;
   ToolchainType: string;
   Labels: MapRow[];
   Annotations: MapRow[];
@@ -54,7 +48,7 @@ interface UnitFormData {
 
 const unitFormValues = (unit: UnitRead | undefined): UnitFormData => ({
   Slug: unit?.Slug || '',
-  TargetID: unit?.TargetID,
+  Unreleasable: !!unit?.Unreleasable,
   ToolchainType: unit?.ToolchainType || '',
   Labels: mapToRows(unit?.Labels),
   Annotations: mapToRows(unit?.Annotations),
@@ -103,28 +97,11 @@ export const UnitSettingsForm = ({
   const [updateUnit, { isLoading: isSaving }] = useUpdateUnitMutation();
 
   const {
-    data: extendedTargets = [],
-    isError: isTargetsError,
-    isLoading: isTargetsLoading,
-  } = useListAllTargetsQuery({ include: 'SpaceID' });
-
-  // The Unit's own Space's Targets come first.
-  const sortedTargets = useMemo(() => {
-    return [...extendedTargets].sort((a, b) => {
-      const aIsOwn = a.Space?.SpaceID === unit?.SpaceID;
-      const bIsOwn = b.Space?.SpaceID === unit?.SpaceID;
-      if (aIsOwn !== bIsOwn) return aIsOwn ? -1 : 1;
-      const spaceCmp = (a.Space?.DisplayName ?? '').localeCompare(b.Space?.DisplayName ?? '');
-      if (spaceCmp !== 0) return spaceCmp;
-      return (a.Target?.Slug ?? '').localeCompare(b.Target?.Slug ?? '');
-    });
-  }, [extendedTargets, unit?.SpaceID]);
-
-  const {
     control,
     handleSubmit,
     formState: { errors },
     reset,
+    watch,
   } = useForm<UnitFormData>({
     defaultValues: unitFormValues(unit),
   });
@@ -148,7 +125,7 @@ export const UnitSettingsForm = ({
         Annotations: rowsToMap(data.Annotations),
         DeleteGates: rowsToGates(data.DeleteGates),
         DestroyGates: rowsToGates(data.DestroyGates),
-        TargetID: data.TargetID,
+        Unreleasable: data.Unreleasable,
         ToolchainType: data.ToolchainType,
       },
       spaceId: unit?.SpaceID ?? '',
@@ -269,67 +246,23 @@ export const UnitSettingsForm = ({
               )}
             />
           </Grid>
-          <Grid size={{ xs: 12 }}>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <SpaceReleaseTargetField spaceId={unit?.SpaceID} unreleasable={watch('Unreleasable')} />
+          </Grid>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Controller
-              name='TargetID'
+              name='Unreleasable'
               control={control}
-              render={({ field: { onChange, value, ref, ...field } }) => (
-                <Autocomplete
-                  {...field}
-                  options={sortedTargets}
-                  loading={isTargetsLoading}
-                  loadingText='Loading targets...'
-                  noOptionsText={
-                    isTargetsError ? 'Failed to load targets' : 'No targets available'
+              render={({ field }) => (
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={!!field.value}
+                      onChange={(event) => field.onChange(event.target.checked)}
+                      data-testid='unit-unreleasable-checkbox'
+                    />
                   }
-                  disabled={isTargetsError}
-                  groupBy={(option) => option.Space?.DisplayName ?? 'Unknown Space'}
-                  getOptionLabel={(option) =>
-                    option.Target?.Slug || option.Target?.TargetID || '(unnamed target)'
-                  }
-                  filterOptions={(options, state) => {
-                    const input = state.inputValue.toLowerCase();
-                    if (!input) return options;
-                    return options.filter((option) => {
-                      const name = (option.Target?.Slug ?? '').toLowerCase();
-                      if (name.includes(input)) return true;
-                      return Object.entries(option.Target?.Labels ?? {}).some(
-                        ([key, val]) =>
-                          key.toLowerCase().includes(input) || val.toLowerCase().includes(input),
-                      );
-                    });
-                  }}
-                  value={sortedTargets.find((t) => t.Target?.TargetID === value) ?? null}
-                  onChange={(_event, newValue) => onChange(newValue?.Target?.TargetID ?? undefined)}
-                  isOptionEqualToValue={(option, val) =>
-                    option.Target?.TargetID === val.Target?.TargetID
-                  }
-                  size='small'
-                  fullWidth
-                  renderOption={(props, option) => {
-                    const labels = Object.entries(option.Target?.Labels ?? {});
-                    return (
-                      <li {...props} key={option.Target?.TargetID}>
-                        <Stack>
-                          <Typography variant='body2'>{option.Target?.Slug}</Typography>
-                          {labels.length > 0 && (
-                            <Stack direction='row' spacing={0.5} flexWrap='wrap'>
-                              {labels.map(([key, val]) => (
-                                <Chip
-                                  key={key}
-                                  label={`${key}: ${val}`}
-                                  size='small'
-                                  variant='outlined'
-                                  sx={{ height: 18, fontSize: '0.7rem' }}
-                                />
-                              ))}
-                            </Stack>
-                          )}
-                        </Stack>
-                      </li>
-                    );
-                  }}
-                  renderInput={(params) => <TextField {...params} label='Target' inputRef={ref} />}
+                  label='Leave out of releases (Unreleasable)'
                 />
               )}
             />

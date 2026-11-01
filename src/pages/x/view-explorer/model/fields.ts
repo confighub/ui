@@ -104,8 +104,8 @@ function resolveUnitAttribute(attr: string, eu: ExtendedUnitRead): AttrResult {
       return orNull(u.DisplayName);
     case 'ToolchainType':
       return u.ToolchainType ?? null;
-    case 'ProviderType':
-      return orNull(u.ProviderType);
+    case 'Unreleasable':
+      return !!u.Unreleasable;
     case 'LastChangeDescription':
       return orNull(u.LastChangeDescription);
     case 'HeadRevisionNum':
@@ -356,12 +356,13 @@ const UNIT_FIELDS: readonly FieldDef[] = [
     where: 'ToolchainType',
     token: 'toolchain',
   }),
+  // Shown, grouped and sorted on, like the other Yes/No fields; filtered on in Custom WHERE
+  // (`Unreleasable = true`).
   define('Unit', {
-    id: 'ProviderType',
-    label: 'Provider',
-    type: 'string',
-    where: 'ProviderType',
-    token: 'provider',
+    id: 'Unreleasable',
+    label: 'Unreleasable',
+    type: 'bool',
+    value: (row) => (unitOf(row).Unit?.Unreleasable ? 'Yes' : 'No'),
   }),
   define('Unit', {
     id: 'DisplayName',

@@ -61,10 +61,12 @@ async function createChangeSetUnit(page: Page, appLabel: string, v1: string, v2:
   });
   if (!targetResp.ok()) throw new Error(`target: ${targetResp.status()} ${await targetResp.text()}`);
   const targetId = ((await targetResp.json()) as { TargetID: string }).TargetID;
+  // A Unit is released to its Space's release Target.
+  await api.updateSpace({ spaceId, space: { ReleaseTargetID: targetId } });
 
   const unitResp = await hubApi.post(`/api/space/${spaceId}/unit`, {
     params: { allow_exists: 'true' },
-    data: { Slug: 'web', ToolchainType: 'Kubernetes/YAML', TargetID: targetId },
+    data: { Slug: 'web', ToolchainType: 'Kubernetes/YAML' },
   });
   if (!unitResp.ok()) throw new Error(`unit: ${unitResp.status()} ${await unitResp.text()}`);
   const unitId = ((await unitResp.json()) as { Unit: { UnitID: string } }).Unit.UnitID;

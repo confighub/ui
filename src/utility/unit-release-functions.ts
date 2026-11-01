@@ -3,8 +3,8 @@
 
 // A Unit has unreleased changes when its head revision is past the one last published in a
 // Release, and only a Unit with a Target can have any: one with no Target has nowhere to be
-// released. A Unit whose ProviderType takes no Target cannot have one. The server's per-Space
-// UnreleasedUnitCount counts the same Units.
+// released. A Unit's Target is its Space's release Target, and an Unreleasable Unit has none.
+// The server's per-Space UnreleasedUnitCount counts the same Units.
 
 /** The fields of a Unit that decide whether it has unreleased changes. */
 export interface UnitReleaseFields {

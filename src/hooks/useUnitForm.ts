@@ -4,8 +4,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import type { MapRow } from '@/components/map-field-editor/map-rows';
-import { TargetRead, Unit } from '@confighub/rtk-query';
-import { useListAllTargetsQuery } from '@confighub/rtk-query';
+import { Unit } from '@confighub/rtk-query';
 import { SelectChangeEvent } from '@mui/material/Select';
 
 // The form edits the Unit's maps as rows, so an entry can be changed in place.
@@ -34,7 +33,7 @@ export const useUnitForm = ({
     DeleteGates: [],
     DestroyGates: [],
     SpaceID: '',
-    TargetID: '',
+    Unreleasable: false,
     ToolchainType: 'Kubernetes/YAML',
   };
 
@@ -60,16 +59,6 @@ export const useUnitForm = ({
     mode,
   });
 
-  const { targets = [] } = useListAllTargetsQuery(
-    {},
-    {
-      selectFromResult: ({ data }) => ({
-        targets:
-          data?.map((et) => et.Target).filter((t): t is TargetRead => t !== undefined) || [],
-      }),
-    }
-  );
-
   const onSpaceSelected = (event: SelectChangeEvent<string>) => {
     const {
       target: { value },
@@ -93,7 +82,6 @@ export const useUnitForm = ({
 
   return {
     form,
-    targets,
     selectedSpaceID,
     selectedToolchainType,
     unitData,

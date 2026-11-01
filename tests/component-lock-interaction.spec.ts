@@ -117,10 +117,13 @@ async function setupLockFixture(
   });
   if (!prodTargetResp.ok()) throw new Error(`prod target: ${prodTargetResp.status()} ${await prodTargetResp.text()}`);
   const prodTargetData = (await prodTargetResp.json()) as { TargetID: string };
+  // A Unit is released to its Space's release Target.
+  await api.updateSpace({ spaceId: devSpaceId, space: { ReleaseTargetID: devTargetData.TargetID } });
+  await api.updateSpace({ spaceId: prodSpaceId, space: { ReleaseTargetID: prodTargetData.TargetID } });
 
   const devUnitResp = await hubApi.post(`/api/space/${devSpaceId}/unit`, {
     params: { allow_exists: 'true' },
-    data: { Slug: slug, ToolchainType: 'Kubernetes/YAML', TargetID: devTargetData.TargetID },
+    data: { Slug: slug, ToolchainType: 'Kubernetes/YAML' },
   });
   if (!devUnitResp.ok()) throw new Error(`dev unit: ${devUnitResp.status()} ${await devUnitResp.text()}`);
   const devUnitData = ((await devUnitResp.json()) as { Unit: { UnitID: string } }).Unit;
@@ -131,7 +134,7 @@ async function setupLockFixture(
 
   const prodUnitResp = await hubApi.post(`/api/space/${prodSpaceId}/unit`, {
     params: { allow_exists: 'true', upstream_space_id: devSpaceId, upstream_unit_id: devUnitData.UnitID },
-    data: { Slug: slug, ToolchainType: 'Kubernetes/YAML', TargetID: prodTargetData.TargetID },
+    data: { Slug: slug, ToolchainType: 'Kubernetes/YAML' },
   });
   if (!prodUnitResp.ok()) throw new Error(`prod unit: ${prodUnitResp.status()} ${await prodUnitResp.text()}`);
   const prodUnitData = ((await prodUnitResp.json()) as { Unit: { UnitID: string } }).Unit;

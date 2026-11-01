@@ -87,7 +87,7 @@ export const UNIT_EXTRA_FIELDS = [
   'DisplayName',
   'ToolchainType',
   'TargetSlug',
-  'ProviderType',
+  'Unreleasable',
   'HeadRevisionNum',
   'LastReleasedRevisionNum',
   'UpstreamRevisionNum',

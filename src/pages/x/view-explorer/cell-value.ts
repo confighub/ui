@@ -163,8 +163,8 @@ function getResourceCellValue(row: ResourceViewRow, column: string): string {
         return row.UnitDisplayName ?? '';
       case 'ToolchainType':
         return row.UnitToolchainType ?? '';
-      case 'ProviderType':
-        return row.UnitProviderType ?? '';
+      case 'Unreleasable':
+        return row.UnitUnreleasable == null ? '' : row.UnitUnreleasable ? 'Yes' : 'No';
       case 'HeadRevisionNum':
         return row.UnitHeadRevisionNum != null ? String(row.UnitHeadRevisionNum) : '';
       case 'LastReleasedRevisionNum':

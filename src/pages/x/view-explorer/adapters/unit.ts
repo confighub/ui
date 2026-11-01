@@ -20,7 +20,7 @@ const UNIT_FILTER_FIELDS = [
   'UpstreamSpaceID',
   'UpstreamRevisionNum',
   'ChangeSetID',
-  'ProviderType',
+  'Unreleasable',
 ];
 
 const ALL_UNIT_COLUMNS = [
@@ -36,7 +36,7 @@ const ALL_UNIT_COLUMNS = [
   'ChangeSetSlug',
   'UpstreamUnitSlug',
   'UpstreamSpaceSlug',
-  'ProviderType',
+  'Unreleasable',
   'DisplayName',
   'HeadRevisionCreatedAt',
   'UnreleasedChanges',

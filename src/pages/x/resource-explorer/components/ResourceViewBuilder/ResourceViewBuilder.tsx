@@ -51,7 +51,7 @@ const RESOURCE_WHERE_FIELDS = [
   'Unit.DisplayName',
   'Unit.Labels',
   'Unit.ToolchainType',
-  'Unit.ProviderType',
+  'Unit.Unreleasable',
   'Unit.HeadRevisionNum',
   'Unit.LastReleasedRevisionNum',
   'Unit.UpstreamRevisionNum',

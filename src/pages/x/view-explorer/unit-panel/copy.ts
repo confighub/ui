@@ -68,7 +68,7 @@ export const DETAIL = {
     if (description) return `Last change${at}${by}: "${description}".`;
     return source ? `Last change${at}${by} (${source}).` : `Last changed${at}${by}.`;
   },
-  untargeted: 'Give it a Target to release it.',
+  untargeted: "Give its Space a release Target, or include it in releases, to release it.",
   unconfirmed: 'The row shows no problem, but conflicts and events could not be checked.',
   conflicts: 'Each one waits for someone to apply or dismiss it.',
   /** The failure's own message is on its cause line, just below. */

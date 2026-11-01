@@ -153,6 +153,8 @@ export function useCreateDownstreamsMutation(): UseCreateDownstreamsMutationResu
               UpstreamSpaceID: upstreamSpaceId,
               TargetID: targetId,
             },
+            // The clone's Units are released to their Space's release Target.
+            ReleaseTargetID: targetId,
           },
         }).unwrap();
       } catch (err) {
@@ -178,7 +180,7 @@ export function useCreateDownstreamsMutation(): UseCreateDownstreamsMutationResu
         unitResponse = await bulkCreateUnits({
           where: upstreamUnitWhere,
           whereSpace: `SpaceID='${newSpaceId}'`,
-          body: { TargetID: targetId },
+          body: {},
         }).unwrap();
       } catch (err) {
         // The space exists but has no units — report the slug so the user can

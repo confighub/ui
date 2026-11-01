@@ -6,7 +6,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Invocation,
   SpaceRead,
-  TargetRead,
   ExtendedLinkRead,
   ExtendedUnitRead,
   UnitRead,
@@ -15,7 +14,6 @@ import {
   useGetTargetQuery,
   useGetUnitQuery,
   useListAllInvocationsQuery,
-  useListAllTargetsQuery,
   useListAllTriggersQuery,
   useListAllUnitsQuery,
   useListExtendedRevisionsQuery,
@@ -147,16 +145,6 @@ export const useUnitDetailData = ({ id, spaceID, refresh }: IUseUnitDetailDataPr
     },
     {
       skip: isIDInvalid(id),
-    },
-  );
-
-  const { targets = [] } = useListAllTargetsQuery(
-    {},
-    {
-      selectFromResult: ({ data }) => ({
-        targets:
-          data?.map((et) => et.Target).filter((t): t is TargetRead => t !== undefined) || [],
-      }),
     },
   );
 
@@ -305,7 +293,6 @@ export const useUnitDetailData = ({ id, spaceID, refresh }: IUseUnitDetailDataPr
     currentUnit,
     currentUnitExtended,
     currentSpace,
-    targets,
     upstreamUnit,
     isFetchingUnit,
     isEditInvocationCancelled,

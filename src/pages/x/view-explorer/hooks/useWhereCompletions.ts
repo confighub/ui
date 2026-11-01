@@ -271,8 +271,6 @@ export function useWhereCompletions(
               values.add(unit.TargetID);
             } else if (field === 'DisplayName' && unit.DisplayName) {
               values.add(unit.DisplayName);
-            } else if (field === 'ProviderType' && unit.ProviderType) {
-              values.add(unit.ProviderType);
             } else if (field === 'LastChangeDescription' && unit.LastChangeDescription) {
               values.add(unit.LastChangeDescription);
             }

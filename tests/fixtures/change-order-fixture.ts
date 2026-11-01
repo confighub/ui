@@ -62,10 +62,11 @@
 //    Promotion then names the ChangeOrder explicitly:
 //      PATCH /api/unit?where=SpaceID IN (...)&upgrade=true&change_order=<id>
 //
-// A Space is also a Deployment rather than a Base only if a Unit in it carries a
-// TargetID — `buildComponentData` drops live status entirely for a Base. The
-// same Target is what `publishRelease` needs, so each deployment Space gets one
-// up front and it serves both purposes.
+// A Space is also a Deployment rather than a Base only if a Unit in it has a
+// release Target — `buildComponentData` drops live status entirely for a Base.
+// A Unit's release Target is its Space's ReleaseTargetID, which is also what
+// `publishRelease` needs, so each deployment Space gets one up front and it
+// serves both purposes.
 //
 // ── Server requirement ──────────────────────────────────────────────────
 //
@@ -958,18 +959,7 @@ export async function buildChangeOrderFixture(
           }
           await page.waitForTimeout(200);
         }
-
-        // Units must carry the Space's release Target, or releaseBundleFiles
-        // bundles nothing and the Space never counts as released.
-        if (space.targetId) {
-          for (const unitId of Object.values(space.units)) {
-            await api.updateUnit({
-              spaceId: space.spaceId,
-              unitId,
-              unit: { TargetID: space.targetId },
-            } as never);
-          }
-        }
+        // The clones are released to the Space's release Target: nothing to set on them.
       }
     }
 

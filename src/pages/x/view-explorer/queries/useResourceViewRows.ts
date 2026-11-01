@@ -50,7 +50,7 @@ const RESOURCE_SELECT =
   'ResourceID,ResourceType,ResourceName,UnitID,SpaceID,SpaceSlug,UnitSlug,TargetID';
 
 const UNIT_SELECT =
-  'UnitID,Slug,DisplayName,SpaceID,TargetID,ToolchainType,ProviderType,Labels,' +
+  'UnitID,Slug,DisplayName,SpaceID,TargetID,ToolchainType,Unreleasable,Labels,' +
   'HeadRevisionNum,LastReleasedRevisionNum,UpstreamRevisionNum,' +
   'CreatedAt,UpdatedAt,LastChangeDescription';
 
@@ -149,7 +149,7 @@ export function useResourceViewRows({
           UnitSlug: resource.UnitSlug ?? unit?.Slug ?? '',
           UnitDisplayName: unit?.DisplayName,
           UnitToolchainType: unit?.ToolchainType,
-          UnitProviderType: unit?.ProviderType,
+          UnitUnreleasable: unit ? !!unit.Unreleasable : undefined,
           UnitHeadRevisionNum: unit?.HeadRevisionNum,
           UnitLastReleasedRevisionNum: unit?.LastReleasedRevisionNum,
           UnitUpstreamRevisionNum: unit?.UpstreamRevisionNum,

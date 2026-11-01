@@ -15,17 +15,14 @@
  * a separate mode, not a separate control.
  * Stages like every other row; nothing writes until Save.
  *
- * The one piece of ceremony kept from the old design, deliberately: changing
- * an ALREADY-SET release target bulk-repoints every unit whose TargetID
- * matches the OLD target (space.go:522-559), with no per-unit validation and
- * no per-item result — a single bulk SQL UPDATE, not the 207 the unit
- * -targets row gets. A user picking a new value here deserves to know that
- * in advance. So a single compact line appears under the picker, but ONLY
- * when the pick would actually move something — i.e. only when units are
- * currently sitting on the target being replaced. Spike 2 proved `x = NULL`
- * never matches, so the common unset → set case provably touches zero units;
- * that case shows nothing at all, matching the instruction that this stay a
- * sentence, not a workflow.
+ * The one piece of ceremony kept from the old design, deliberately: a Unit's
+ * TargetID is its Space's release Target unless the Unit is Unreleasable, so
+ * setting, changing or clearing the release target moves every releasable
+ * unit in the Space at once, with no per-item result. A user picking a new
+ * value here deserves to know that in advance. So a single compact line
+ * appears under the picker, but ONLY when the pick would actually move
+ * something — i.e. only when the Space has releasable units — matching the
+ * instruction that this stay a sentence, not a workflow.
  *
  * The unit-targets row this control's affected-unit count once shared visual DNA with (`UnitTargetsRow.tsx`, the enumerated
  * affected-units surface, the partial-failure strip) was cut from the
@@ -54,10 +51,8 @@ export interface ReleaseTargetRowProps {
   currentTargetName: string | null;
   targetOptions: ReleaseTargetOption[];
   /**
-   * Count of units currently sitting on `currentTargetId` — sizes the
-   * consequence line only. Always 0 when `currentTargetId` is null: per
-   * spike 2, `TargetID = NULL` never matches in SQL three-valued logic, so
-   * nothing can be "sitting on" an unset release target.
+   * Count of the Space's units that are not Unreleasable, which follow the
+   * release target wherever it goes — sizes the consequence line only.
    */
   affectedUnitCount: number;
   /** `undefined` = unstaged, follow `currentTargetId`. `null` = staged to clear. `string` = staged to this target's ID. */
@@ -77,7 +72,7 @@ export function ReleaseTargetRow({
 }: ReleaseTargetRowProps) {
   const effectiveTargetId = draftTargetId !== undefined ? draftTargetId : currentTargetId;
   const isDirty = draftTargetId !== undefined && draftTargetId !== currentTargetId;
-  const movesUnits = isDirty && currentTargetId != null && affectedUnitCount > 0;
+  const movesUnits = isDirty && affectedUnitCount > 0;
   const newTargetName = effectiveTargetId == null ? null : (targetOptions.find((t) => t.targetId === effectiveTargetId)?.name ?? effectiveTargetId);
 
   return (
@@ -129,8 +124,8 @@ export function ReleaseTargetRow({
           </Select>
           {movesUnits && (
             <Typography data-testid='space-settings-release-target-consequence' sx={{ fontSize: 11, color: componentTheme.attention, lineHeight: 1.5, mt: 0.6 }}>
-              Moves {affectedUnitCount} unit{affectedUnitCount === 1 ? '' : 's'} off {currentTargetName ?? 'the current target'} to{' '}
-              {newTargetName ?? 'no target'} the instant this saves — no per-unit validation, no per-unit result.
+              Moves {affectedUnitCount} unit{affectedUnitCount === 1 ? '' : 's'} from {currentTargetId == null ? 'no target' : (currentTargetName ?? 'the current target')} to{' '}
+              {newTargetName ?? 'no target'} the instant this saves — no per-unit result.
             </Typography>
           )}
         </>

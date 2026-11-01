@@ -9,7 +9,7 @@ import { rowsToGates, rowsToMap } from '@/components/map-field-editor/map-rows';
 import { SectionCard } from '@/components/styled';
 import { ServerErrorBox } from '@/components/styled';
 import { FullScreenDialog } from '@/components/styled';
-import { ToolchainSelector } from '@/components/unit-form';
+import { SpaceReleaseTargetField, ToolchainSelector } from '@/components/unit-form';
 import { Wizard } from '@/components/wizard/Wizard';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
@@ -26,6 +26,7 @@ import Checkbox from '@mui/material/Checkbox';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import FormControl from '@mui/material/FormControl';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import Grid from '@mui/material/Grid2';
 import IconButton from '@mui/material/IconButton';
 import InputLabel from '@mui/material/InputLabel';
@@ -37,6 +38,8 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
 import { useUploadUnitData } from '@/hooks/useUnitData';
+
+const KUBERNETES_YAML = 'Kubernetes/YAML';
 
 const Form = styled('form')`
   width: 80%;
@@ -56,7 +59,6 @@ export const AddUnitModal = ({
   const [errorMessage, setErrorMessage] = useState<string>('');
   const {
     form,
-    targets,
     selectedSpaceID,
     selectedToolchainType,
     unitData,
@@ -73,7 +75,6 @@ export const AddUnitModal = ({
     handleSubmit,
     formState: { errors, isValid },
     watch,
-    setValue,
     trigger,
   } = form;
   const [createUnit, { error, isSuccess, data: createdUnit }] = useCreateUnitMutation();
@@ -84,6 +85,10 @@ export const AddUnitModal = ({
   const [checkUnitsQuery] = useLazyListUnitsQuery();
 
   const formToolchainType = watch('ToolchainType');
+  // Only Kubernetes Units can be released: the server creates a Unit of any other toolchain
+  // Unreleasable.
+  const alwaysUnreleasable = !!formToolchainType && formToolchainType !== KUBERNETES_YAML;
+  const formUnreleasable = watch('Unreleasable') || alwaysUnreleasable;
 
   const {
     handleSubmit: handleConfigSubmit,
@@ -152,7 +157,7 @@ export const AddUnitModal = ({
         Labels: rowsToMap(unitData.Labels),
         Annotations: rowsToMap(unitData.Annotations),
         ToolchainType: unitData.ToolchainType,
-        ...(unitData.TargetID ? { TargetID: unitData.TargetID } : {}),
+        ...(unitData.Unreleasable ? { Unreleasable: true } : {}),
         ...(Object.keys(currentDeleteGates).length > 0 ? { DeleteGates: currentDeleteGates } : {}),
         ...(Object.keys(currentDestroyGates).length > 0 ? { DestroyGates: currentDestroyGates } : {}),
       },
@@ -340,39 +345,32 @@ export const AddUnitModal = ({
                       </Grid>
 
                       <Grid size={{ xs: 6 }}>
+                        <SpaceReleaseTargetField
+                          spaceId={selectedSpaceID}
+                          unreleasable={formUnreleasable}
+                        />
+                      </Grid>
+
+                      <Grid size={{ xs: 12 }}>
                         <Controller
-                          name='TargetID'
+                          name='Unreleasable'
                           control={control}
                           render={({ field }) => (
-                            <FormControl
-                              title={!formToolchainType ? 'Select a toolchain type first' : ''}
-                              fullWidth
-                              size='small'
-                              disabled={!formToolchainType}
-                            >
-                              <InputLabel>Target</InputLabel>
-                              <Select
-                                label='Target'
-                                size='small'
-                                input={<OutlinedInput label='Target' />}
-                                {...field}
-                                onChange={(event) => {
-                                  setValue('TargetID', event.target.value);
-                                }}
-                              >
-                                {targets?.length > 0 ? (
-                                  targets.map((target) => (
-                                    <MenuItem key={target?.TargetID} value={target?.TargetID}>
-                                      {target?.Slug}
-                                    </MenuItem>
-                                  ))
-                                ) : (
-                                  <MenuItem value=''>
-                                    <em>No targets available for this toolchain type</em>
-                                  </MenuItem>
-                                )}
-                              </Select>
-                            </FormControl>
+                            <FormControlLabel
+                              control={
+                                <Checkbox
+                                  checked={formUnreleasable}
+                                  disabled={alwaysUnreleasable}
+                                  onChange={(event) => field.onChange(event.target.checked)}
+                                  data-testid='unit-unreleasable-checkbox'
+                                />
+                              }
+                              label={
+                                alwaysUnreleasable
+                                  ? 'Leave out of releases (Unreleasable): only Kubernetes units are released'
+                                  : 'Leave out of releases (Unreleasable)'
+                              }
+                            />
                           )}
                         />
                       </Grid>

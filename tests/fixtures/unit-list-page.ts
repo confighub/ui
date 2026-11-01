@@ -248,14 +248,14 @@ export class UnitListPage extends EntityGridFixture {
 
   async bulkUpdateUnitsByName({
     names,
-    targetName,
+    unreleasable,
     labels,
     deleteGates,
     destroyGates,
     skipUpdate = false,
   }: {
     names: string[];
-    targetName?: string;
+    unreleasable?: boolean;
     labels?: Record<string, string>;
     deleteGates?: string[];
     destroyGates?: string[];
@@ -267,11 +267,13 @@ export class UnitListPage extends EntityGridFixture {
 
     await this.selectMoreItemsOptionByName('Update');
 
-    // Select target if provided
-    if (targetName) {
-      await this.page.getByTestId('target-select').click();
+    // Include the Units in their Space's Releases, or leave them out, if asked
+    if (unreleasable !== undefined) {
+      await this.page.getByTestId('unreleasable-select').click();
       await this.page.waitForSelector('[role="listbox"]');
-      await this.page.getByRole('option', { name: targetName, exact: true }).click();
+      await this.page
+        .getByRole('option', { name: unreleasable ? 'Leave out of releases (Unreleasable)' : 'Include in releases', exact: true })
+        .click();
     }
 
     // Add labels if provided

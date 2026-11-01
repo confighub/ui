@@ -41,7 +41,7 @@ const UNIT_SELECT = [
   'SpaceID',
   'TargetID',
   'ToolchainType',
-  'ProviderType',
+  'Unreleasable',
   'Labels',
   'HeadRevisionNum',
   'LastReleasedRevisionNum',

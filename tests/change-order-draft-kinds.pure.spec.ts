@@ -332,7 +332,6 @@ test.describe('the Invocation Create saves for an inline call', () => {
       { ...stored, calls: [{ ...call, WhereResource: "ResourceType = 'apps/v1/Deployment'" }] },
       { ...stored, calls: [{ ...call, Clearance: [{ Key: 'team', Operator: 'In', Values: ['a'] }] }] },
       { ...stored, calls: [{ ...call, Guards: { team: 'a' } }] },
-      { ...stored, bridgeWorkerId: 'worker-1' },
       { ...stored, toolchainType: 'AppConfig/Properties' },
       { ...stored, parameters: [...stored.parameters].reverse() },
     ];

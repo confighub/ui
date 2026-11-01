@@ -18,6 +18,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import Skeleton from '@mui/material/Skeleton';
+import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 
 import {
@@ -563,7 +564,8 @@ export const UnitDetailsPane = memo(({
             {/* Target: show slug when the /targets fetch resolves; while loading or when
                 the slug is absent, fall back to a truncated UUID + copy button so users
                 can still identify the target without seeing a raw full UUID. (FIX #2)
-                Provider is always shown — "None" if the unit has no ProviderType. (FIX #6) */}
+                The Target is the Space's release Target; whether the Unit is left out of
+                the Space's Releases (Unreleasable) is set here. */}
             <DetailsSection title='Configuration'>
               <Box
                 sx={{
@@ -595,13 +597,21 @@ export const UnitDetailsPane = memo(({
                 )}
 
                 <Typography sx={{ fontSize: 11, fontWeight: 600, color: componentTheme.fgSubtle, lineHeight: '20px' }}>
-                  Provider
+                  Unreleasable
                 </Typography>
-                {unit?.ProviderType ? (
-                  <TagBadge sx={{ justifySelf: 'start' }}>{unit.ProviderType}</TagBadge>
-                ) : (
-                  <Typography sx={{ fontSize: 12, color: componentTheme.fgSubtle, fontStyle: 'italic' }}>None</Typography>
-                )}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Switch
+                    size='small'
+                    checked={!!unit?.Unreleasable}
+                    onChange={(e) => { void onUpdateUnitMeta(unitId, spaceId, { Unreleasable: e.target.checked }); }}
+                    disabled={!unit}
+                    slotProps={{ input: { 'aria-label': 'Leave out of releases (Unreleasable)' } }}
+                    data-testid='unit-details-unreleasable'
+                  />
+                  <Typography sx={{ fontSize: 12, color: componentTheme.fgSubtle }}>
+                    {unit?.Unreleasable ? 'Left out of releases' : 'In releases'}
+                  </Typography>
+                </Box>
               </Box>
             </DetailsSection>
 

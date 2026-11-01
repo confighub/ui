@@ -54,7 +54,7 @@ export type PaneViewMode = 'diff' | 'overview' | 'source';
 
 /**
  * Which units the pane lists: those a Release of their Space publishes
- * (`Unit.Releasable`), or every unit.
+ * (those that are not `Unit.Unreleasable`), or every unit.
  */
 export type PaneUnitScope = 'releasable' | 'all';
 

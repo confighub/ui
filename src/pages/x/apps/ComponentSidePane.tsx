@@ -394,7 +394,7 @@ export interface ComponentSidePaneProps {
       validationErrors?: { [key: string]: boolean };
       /** Unit.TargetID — scopes a unit to the Space's Release target set (task #60). */
       targetId?: string;
-      /** Unit.Releasable: a Release of the Space publishes the unit. */
+      /** Not Unit.Unreleasable: a Release of the Space publishes the unit. */
       releasable: boolean;
     }[]
   >;

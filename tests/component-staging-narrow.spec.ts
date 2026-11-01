@@ -96,11 +96,14 @@ test.describe('component staging keeps the Upgradable narrowed view', () => {
     });
     if (!prodTargetResp.ok()) throw new Error(`prod target: ${prodTargetResp.status()} ${await prodTargetResp.text()}`);
     const prodTargetData = (await prodTargetResp.json()) as { TargetID: string };
+    // A Unit is released to its Space's release Target.
+    await api.updateSpace({ spaceId: devSpaceId, space: { ReleaseTargetID: devTargetData.TargetID } });
+    await api.updateSpace({ spaceId: prodSpaceId, space: { ReleaseTargetID: prodTargetData.TargetID } });
 
     // Dev unit
     const devUnitResp = await hubApi.post(`/api/space/${devSpaceId}/unit`, {
       params: { allow_exists: 'true' },
-      data: { Slug: 'narrow-config', ToolchainType: 'Kubernetes/YAML', TargetID: devTargetData.TargetID },
+      data: { Slug: 'narrow-config', ToolchainType: 'Kubernetes/YAML' },
     });
     if (!devUnitResp.ok()) throw new Error(`dev unit: ${devUnitResp.status()} ${await devUnitResp.text()}`);
     // POST /api/space/{spaceId}/unit returns UnitCreateOrUpdateResponseRead (config
@@ -115,7 +118,7 @@ test.describe('component staging keeps the Upgradable narrowed view', () => {
     // Clone dev → prod (upstream link) while dev is at rev1
     const prodUnitResp = await hubApi.post(`/api/space/${prodSpaceId}/unit`, {
       params: { allow_exists: 'true', upstream_space_id: devSpaceId, upstream_unit_id: devUnitData.UnitID },
-      data: { Slug: 'narrow-config', ToolchainType: 'Kubernetes/YAML', TargetID: prodTargetData.TargetID },
+      data: { Slug: 'narrow-config', ToolchainType: 'Kubernetes/YAML' },
     });
     if (!prodUnitResp.ok()) throw new Error(`prod unit: ${prodUnitResp.status()} ${await prodUnitResp.text()}`);
     // Same wrapper-unwrap fix as devUnitData above.
@@ -326,7 +329,10 @@ test.describe('component staging in a multi-document Unit', () => {
         data: { Slug: `${slug}-tgt`, Labels: { TargetRole: role, TargetRegion: 'US' } },
       });
       if (!targetResp.ok()) throw new Error(`${role} target: ${targetResp.status()} ${await targetResp.text()}`);
-      return { spaceId, targetId: ((await targetResp.json()) as { TargetID: string }).TargetID };
+      const targetId = ((await targetResp.json()) as { TargetID: string }).TargetID;
+      // A Unit is released to its Space's release Target.
+      await api.updateSpace({ spaceId, space: { ReleaseTargetID: targetId } });
+      return { spaceId, targetId };
     };
     const dev = await createSpaceWithTarget(devSlug, 'Dev');
     const prod = await createSpaceWithTarget(prodSlug, 'Prod');
@@ -335,7 +341,7 @@ test.describe('component staging in a multi-document Unit', () => {
 
     const devUnitResp = await hubApi.post(`/api/space/${devSpaceId}/unit`, {
       params: { allow_exists: 'true' },
-      data: { Slug: 'multidoc-config', ToolchainType: 'Kubernetes/YAML', TargetID: dev.targetId },
+      data: { Slug: 'multidoc-config', ToolchainType: 'Kubernetes/YAML' },
     });
     if (!devUnitResp.ok()) throw new Error(`dev unit: ${devUnitResp.status()} ${await devUnitResp.text()}`);
     const devUnitId = ((await devUnitResp.json()) as { Unit: { UnitID: string } }).Unit.UnitID;
@@ -343,7 +349,7 @@ test.describe('component staging in a multi-document Unit', () => {
 
     const prodUnitResp = await hubApi.post(`/api/space/${prodSpaceId}/unit`, {
       params: { allow_exists: 'true', upstream_space_id: devSpaceId, upstream_unit_id: devUnitId },
-      data: { Slug: 'multidoc-config', ToolchainType: 'Kubernetes/YAML', TargetID: prod.targetId },
+      data: { Slug: 'multidoc-config', ToolchainType: 'Kubernetes/YAML' },
     });
     if (!prodUnitResp.ok()) throw new Error(`prod unit: ${prodUnitResp.status()} ${await prodUnitResp.text()}`);
     prodUnitId = ((await prodUnitResp.json()) as { Unit: { UnitID: string } }).Unit.UnitID;

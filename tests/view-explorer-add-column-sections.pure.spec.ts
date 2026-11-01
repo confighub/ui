@@ -60,7 +60,7 @@ test('the explorer’s own fields go where they belong', () => {
   const unit = fieldCatalog('Unit');
   expect(sectionOf('Unit', unit, 'Slug')).toBe('Core Identity');
   expect(sectionOf('Unit', unit, 'DisplayName')).toBe('Core Identity');
-  expect(sectionOf('Unit', unit, 'ProviderType')).toBe('Core Identity');
+  expect(sectionOf('Unit', unit, 'Unreleasable')).toBe('Core Identity');
   expect(sectionOf('Unit', unit, 'Status')).toBe('Status & Health');
   expect(sectionOf('Unit', unit, 'LastReleasedRevisionNum')).toBe('Revisions');
   expect(sectionOf('Unit', unit, 'UpstreamRevisionNum')).toBe('Clone/Upstream');

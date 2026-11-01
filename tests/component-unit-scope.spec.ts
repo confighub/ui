@@ -10,7 +10,7 @@ import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
 // Component pane: the Units row
 //
 // The pane lists the units a Release of the variant's Space publishes
-// (Unit.Releasable) unless All units is chosen, and hidden units only when
+// (those not Unit.Unreleasable) unless All units is chosen, and hidden units only when
 // Include hidden is.
 //
 // Fixture: a Space with no release Target holding a Kubernetes unit, which a

@@ -98,8 +98,6 @@ export interface DraftSavedInvocation {
   calls: FunctionInvocation[];
   /** Its declared parameters: what a ChangeOrder that runs it gives values for. */
   parameters: FunctionParameter[];
-  /** The Bridge Worker it runs on; absent for the built-in executor. */
-  bridgeWorkerId?: string;
   /** When it was saved: how recent it is, for the function slot's short list. */
   createdAt?: string;
 }
@@ -114,7 +112,6 @@ export function savedInvocationOf(invocation: InvocationRead | undefined): Draft
     toolchainType: invocation.ToolchainType,
     calls: invocation.FunctionInvocations ?? [],
     parameters: invocation.Parameters ?? [],
-    bridgeWorkerId: invocation.BridgeWorkerID || undefined,
     createdAt: invocation.CreatedAt || undefined,
   };
 }
@@ -494,11 +491,10 @@ const isEmptyMap = (value: unknown) => value === undefined || value === null || 
  * taken for the call typed.
  */
 export function sameInvocationShape(
-  saved: Pick<DraftSavedInvocation, 'calls' | 'parameters' | 'toolchainType' | 'bridgeWorkerId'>,
-  wanted: Pick<Invocation, 'FunctionInvocations' | 'Parameters' | 'ToolchainType' | 'BridgeWorkerID'>,
+  saved: Pick<DraftSavedInvocation, 'calls' | 'parameters' | 'toolchainType'>,
+  wanted: Pick<Invocation, 'FunctionInvocations' | 'Parameters' | 'ToolchainType'>,
 ): boolean {
   if (saved.toolchainType !== wanted.ToolchainType) return false;
-  if ((saved.bridgeWorkerId ?? '') !== (wanted.BridgeWorkerID ?? '')) return false;
   const calls = wanted.FunctionInvocations ?? [];
   if (saved.calls.length !== calls.length) return false;
   for (let i = 0; i < calls.length; i += 1) {

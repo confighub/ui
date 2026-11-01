@@ -41,7 +41,7 @@ export interface ResourceViewRow {
   UnitSlug: string;
   UnitDisplayName?: string;
   UnitToolchainType?: string;
-  UnitProviderType?: string;
+  UnitUnreleasable?: boolean;
   UnitHeadRevisionNum?: number;
   UnitLastReleasedRevisionNum?: number;
   UnitUpstreamRevisionNum?: number;

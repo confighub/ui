@@ -10,11 +10,9 @@ import { useAnalytics } from '@/hooks/useAnalytics';
 import { useBulkApiErrorMessage } from '@/hooks/useBulkApiErrorMessages';
 import {
   SpaceRead,
-  TargetRead,
   UnitRead,
   useBulkCreateUnitsMutation,
   useCreateUnitMutation,
-  useListAllTargetsQuery,
 } from '@confighub/rtk-query';
 import { IUnitMutationModalProps } from '@/types';
 import { ENTITY_TYPES } from '@/utility/analytics-constants';
@@ -30,13 +28,7 @@ import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Collapse from '@mui/material/Collapse';
 import Drawer from '@mui/material/Drawer';
-import FormControl from '@mui/material/FormControl';
-import FormHelperText from '@mui/material/FormHelperText';
 import Grid from '@mui/material/Grid2';
-import InputLabel from '@mui/material/InputLabel';
-import MenuItem from '@mui/material/MenuItem';
-import OutlinedInput from '@mui/material/OutlinedInput';
-import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
@@ -59,14 +51,12 @@ interface SingleUnitFormData extends UnitMetadata {
   cloneName: string;
   sourceSpaceId: string;
   newSpaceName: string;
-  targetId: string;
 }
 
 interface MultiUnitFormData extends UnitMetadata {
   targetSpaceId: string;
   sourceSpaceId: string;
   newSpaceName: string;
-  targetId: string;
 }
 
 /**
@@ -454,7 +444,6 @@ const SingleUnitCloneForm = ({
   errors,
   watch,
   setValue,
-  targets,
 }: {
   selectedUnit: UnitRead;
   spaces: SpaceRead[];
@@ -462,7 +451,6 @@ const SingleUnitCloneForm = ({
   errors: ReturnType<typeof useForm<SingleUnitFormData>>['formState']['errors'];
   watch: ReturnType<typeof useForm<SingleUnitFormData>>['watch'];
   setValue: ReturnType<typeof useForm<SingleUnitFormData>>['setValue'];
-  targets: TargetRead[];
 }) => {
   return (
     <Stack spacing={3}>
@@ -528,41 +516,6 @@ const SingleUnitCloneForm = ({
             )}
           />
 
-          {/* Target Section (Optional) */}
-          <Box>
-            <Controller
-              name='targetId'
-              control={control}
-              render={({ field }) => (
-                <FormControl fullWidth error={!!errors.targetId} size='small'>
-                  <InputLabel>Target (Optional)</InputLabel>
-                  <Select
-                    {...field}
-                    label='Target (Optional)'
-                    size='small'
-                    input={<OutlinedInput label='Target (Optional)' />}
-                    data-testid='target-select'
-                  >
-                    <MenuItem value=''>
-                      <em>No target assignment</em>
-                    </MenuItem>
-                    {targets.map((target) => (
-                      <MenuItem key={target.TargetID} value={target.TargetID}>
-                        <Stack spacing={0.5}>
-                          <Typography variant='body2' sx={{ fontWeight: 500 }}>
-                            {target.Slug}
-                          </Typography>
-                        </Stack>
-                      </MenuItem>
-                    ))}
-                  </Select>
-                  {errors.targetId && (
-                    <FormHelperText>{errors.targetId.message}</FormHelperText>
-                  )}
-                </FormControl>
-              )}
-            />
-          </Box>
         </Stack>
       </SectionCard>
       <UnitMetadataManagementCard
@@ -594,7 +547,6 @@ const MultiUnitCloneForm = ({
   errors,
   watch,
   setValue,
-  targets,
 }: {
   selectedUnits: UnitRead[];
   spaces: SpaceRead[];
@@ -602,7 +554,6 @@ const MultiUnitCloneForm = ({
   errors: ReturnType<typeof useForm<MultiUnitFormData>>['formState']['errors'];
   watch: ReturnType<typeof useForm<MultiUnitFormData>>['watch'];
   setValue: ReturnType<typeof useForm<MultiUnitFormData>>['setValue'];
-  targets: TargetRead[];
 }) => {
   return (
     <Stack spacing={3}>
@@ -650,39 +601,6 @@ const MultiUnitCloneForm = ({
           </Grid>
         </Box>
 
-        {/* Target Section (Optional) */}
-        <Box sx={{ mt: 2 }}>
-          <Controller
-            name='targetId'
-            control={control}
-            render={({ field }) => (
-              <FormControl fullWidth error={!!errors.targetId} size='small'>
-                <InputLabel>Target (Optional)</InputLabel>
-                <Select
-                  {...field}
-                  label='Target (Optional)'
-                  size='small'
-                  input={<OutlinedInput label='Target (Optional)' />}
-                  data-testid='target-select'
-                >
-                  <MenuItem value=''>
-                    <em>No target assignment</em>
-                  </MenuItem>
-                  {targets.map((target) => (
-                    <MenuItem key={target.TargetID} value={target.TargetID}>
-                      <Stack spacing={0.5}>
-                        <Typography variant='body2' sx={{ fontWeight: 500 }}>
-                          {target.Slug}
-                        </Typography>
-                      </Stack>
-                    </MenuItem>
-                  ))}
-                </Select>
-                {errors.targetId && <FormHelperText>{errors.targetId.message}</FormHelperText>}
-              </FormControl>
-            )}
-          />
-        </Box>
       </SectionCard>
       <UnitMetadataManagementCard
         labels={watch('labels')}
@@ -739,17 +657,6 @@ export const CloneUnitsDrawer = ({
   const [createUnit] = useCreateUnitMutation();
   const { trackEntityBulkCreated, trackEntityCreated } = useAnalytics();
 
-  // Fetch targets for metadata card
-  const { targets = [] } = useListAllTargetsQuery(
-    {},
-    {
-      selectFromResult: (result) => ({
-        targets:
-          result?.data?.map((t) => t.Target).filter((t): t is TargetRead => t !== undefined) ||
-          [],
-      }),
-    },
-  );
 
   // Handle bulk create success/error (for multi-unit clone)
   useBulkApiErrorMessage(bulkError, bulkIsSuccess, bulkData, setErrorMessage, {
@@ -785,7 +692,6 @@ export const CloneUnitsDrawer = ({
       cloneName: '',
       sourceSpaceId: '',
       newSpaceName: '',
-      targetId: '',
       labels: [],
       deleteGates: [],
       destroyGates: [],
@@ -800,7 +706,6 @@ export const CloneUnitsDrawer = ({
       targetSpaceId: '',
       sourceSpaceId: '',
       newSpaceName: '',
-      targetId: '',
       labels: [],
       deleteGates: [],
       destroyGates: [],
@@ -816,8 +721,7 @@ export const CloneUnitsDrawer = ({
         cloneName: '',
         sourceSpaceId: '',
         newSpaceName: '',
-        targetId: '',
-        labels: [],
+          labels: [],
         deleteGates: [],
         destroyGates: [],
         annotations: [],
@@ -826,8 +730,7 @@ export const CloneUnitsDrawer = ({
         targetSpaceId: '',
         sourceSpaceId: '',
         newSpaceName: '',
-        targetId: '',
-        labels: [],
+          labels: [],
         deleteGates: [],
         destroyGates: [],
         annotations: [],
@@ -841,7 +744,6 @@ export const CloneUnitsDrawer = ({
       cloneName: '',
       sourceSpaceId: '',
       newSpaceName: '',
-      targetId: '',
       labels: [],
       deleteGates: [],
       destroyGates: [],
@@ -851,7 +753,6 @@ export const CloneUnitsDrawer = ({
       targetSpaceId: '',
       sourceSpaceId: '',
       newSpaceName: '',
-      targetId: '',
       labels: [],
       deleteGates: [],
       destroyGates: [],
@@ -908,7 +809,6 @@ export const CloneUnitsDrawer = ({
         unit: {
           Slug: data.cloneName,
           ToolchainType: unit.ToolchainType || '',
-          ...(data.targetId && { TargetID: data.targetId }),
           ...(Object.keys(labels).length > 0 && { Labels: labels }),
           ...(Object.keys(annotations).length > 0 && { Annotations: annotations }),
           ...(Object.keys(deleteGates).length > 0 && { DeleteGates: deleteGates }),
@@ -983,7 +883,6 @@ export const CloneUnitsDrawer = ({
       );
 
       const bodyData = {
-        ...(data.targetId && { TargetID: data.targetId }),
         ...(Object.keys(labels).length > 0 && { Labels: labels }),
         ...(Object.keys(annotations).length > 0 && { Annotations: annotations }),
         ...(Object.keys(deleteGates).length > 0 && { DeleteGates: deleteGates }),
@@ -1095,7 +994,6 @@ export const CloneUnitsDrawer = ({
                 errors={singleUnitForm.formState.errors}
                 watch={singleUnitForm.watch}
                 setValue={singleUnitForm.setValue}
-                targets={targets}
               />
             ) : (
               <MultiUnitCloneForm
@@ -1105,7 +1003,6 @@ export const CloneUnitsDrawer = ({
                 errors={multiUnitForm.formState.errors}
                 watch={multiUnitForm.watch}
                 setValue={multiUnitForm.setValue}
-                targets={targets}
               />
             )}
           </Form>

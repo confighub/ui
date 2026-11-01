@@ -121,12 +121,13 @@ test.describe('a Component with 10 or more Deployments folds', () => {
           const target = await post<{ TargetID: string }>(`/api/space/${spaceId}/target`, {
             Slug: `${slug}-tgt`,
           });
+          // A Unit is released to its Space's release Target.
+          await api.updateSpace({ spaceId, space: { ReleaseTargetID: target.TargetID } });
           await post(
             `/api/space/${spaceId}/unit`,
             {
               Slug: 'fold-config',
               ToolchainType: 'Kubernetes/YAML',
-              TargetID: target.TargetID,
             },
             { upstream_space_id: baseSpaceId, upstream_unit_id: baseUnit.Unit.UnitID },
           );

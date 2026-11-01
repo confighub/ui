@@ -31,7 +31,8 @@ export interface ResourceRow {
   DisplayName?: string;
   ToolchainType?: string;
   TargetSlug?: string;
-  ProviderType?: string;
+  /** 'Yes' when the Unit is left out of its Space's Releases, else 'No'. */
+  Unreleasable?: string;
   /**
    * Globally-unique ID of the Unit's Target (the cluster the resource is
    * delivered to). TargetSlug is only unique within a Space, so any grouping
@@ -95,7 +96,7 @@ const RESOURCE_SELECT =
  * the resources have already been extracted from it server-side.
  */
 const UNIT_SELECT =
-  'UnitID,Slug,DisplayName,SpaceID,TargetID,ToolchainType,ProviderType,Labels,' +
+  'UnitID,Slug,DisplayName,SpaceID,TargetID,ToolchainType,Unreleasable,Labels,' +
   'HeadRevisionNum,LastReleasedRevisionNum,UpstreamRevisionNum,' +
   'CreatedAt,UpdatedAt,LastChangeDescription';
 
@@ -200,7 +201,7 @@ export function useResourceRows(): UseResourceRowsResult {
             DisplayName: unit?.DisplayName,
             ToolchainType: unit?.ToolchainType,
             TargetSlug: eu?.Target?.Slug,
-            ProviderType: unit?.ProviderType,
+            Unreleasable: unit ? (unit.Unreleasable ? 'Yes' : 'No') : undefined,
             // The Unit's (globally-unique) Target. A Unit with no Target still
             // serializes the zero UUID (uuid.UUID can't be omitempty'd), which
             // realTargetID() maps to '' so it buckets as "no target".

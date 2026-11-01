@@ -128,17 +128,18 @@ async function seed(
   const upstream = (await api.createSpace({ space: { Slug: `${base}-u` } })).SpaceID!;
   spaces.push(upstream);
 
-  const unit = async (spaceId: string, slug: string, replicas: number, targetId?: string) => {
-    const created = await api.createUnit({ spaceId, unit: { Slug: slug, ToolchainType: 'Kubernetes/YAML', TargetID: targetId } });
+  // A Unit is released to its Space's release Target, which A and B have and the upstream Space has not.
+  const unit = async (spaceId: string, slug: string, replicas: number) => {
+    const created = await api.createUnit({ spaceId, unit: { Slug: slug, ToolchainType: 'Kubernetes/YAML' } });
     await api.uploadUnitData({ spaceId, unitId: created.UnitID!, body: deployment(slug, replicas) });
     unitIds[slug] = created.UnitID!;
     return created.UnitID!;
   };
 
-  await unit(a.id, 'ok', 5, a.targetId);
-  await unit(a.id, 'unrel', 5, a.targetId);
-  await unit(b.id, 'b-ok', 3, b.targetId);
-  await unit(b.id, 'b-unrel', 3, b.targetId);
+  await unit(a.id, 'ok', 5);
+  await unit(a.id, 'unrel', 5);
+  await unit(b.id, 'b-ok', 3);
+  await unit(b.id, 'b-unrel', 3);
 
   // An upstream Unit, cloned into A with the bulk route: one request names the Units to clone (`where`)
   // and the Spaces to clone them into (`where_space`).
@@ -155,7 +156,6 @@ async function seed(
   const upId = cloned[0]?.Unit?.UnitID;
   expect(upId, 'the clone of up').toBeTruthy();
   unitIds.up = upId!;
-  await api.updateUnit({ spaceId: a.id, unitId: upId!, unit: { TargetID: a.targetId } });
 
   // A write leaves `awaiting/triggers` on the Unit for a moment, and a Release refuses a Unit with any gate.
   for (const [spaceId, slugs] of [[a.id, ['ok', 'unrel', 'up']], [b.id, ['b-ok', 'b-unrel']]] as const)
@@ -183,7 +183,7 @@ async function seed(
     },
   });
   expect(trigger.ok(), await trigger.text()).toBeTruthy();
-  await unit(a.id, 'gated', 2, a.targetId);
+  await unit(a.id, 'gated', 2);
   const errors = await waitForGates(a.id, unitIds.gated);
   const gates = Object.keys(errors);
   expect(gates, 'the gated Unit has a failing gate').toHaveLength(1);

@@ -153,7 +153,7 @@ const RUNNING_RELEASE_POLL_MS = 5_000;
 // was made in (see changeSets.ts). Shared by every units-fetching batch
 // (the chunked SpaceID read and the upstream-outside-set UnitID lookup) so they all narrow the payload identically.
 const UNITS_QUERY_SELECT =
-  'UnitID,Slug,SpaceID,TargetID,Releasable,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ToolchainType,DataHash,DataSize,ChangeSetID,'
+  'UnitID,Slug,SpaceID,TargetID,Unreleasable,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ToolchainType,DataHash,DataSize,ChangeSetID,'
   + 'HeadRevision.RevisionID,HeadRevision.CreatedAt,HeadRevision.Description,HeadRevision.ChangeSetID,LastReleasedRevision.RevisionID';
 const UNITS_QUERY_INCLUDE = 'SpaceID,TargetID,UpstreamUnitID,HeadRevisionNum,LastReleasedRevisionNum';
 
@@ -631,7 +631,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
       const item = {
         slug, spaceId: sid, unitId,
         hasUpstream: !!u.Unit?.UpstreamUnitID,
-        releasable: !!u.Unit?.Releasable,
+        releasable: !u.Unit?.Unreleasable,
         ...(toolchainType ? { toolchainType } : {}),
         ...(data ? { data } : {}),
         ...(validationErrors ? { validationErrors } : {}),
@@ -1763,7 +1763,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     await applyFieldPatch(unitId, spaceId, { ok: true as const, data: newEncodedData }, 'Save failed');
   }, [applyFieldPatch]);
 
-  // Persist a unit's Labels/Annotations from the inline unit details pane. Uses
+  // Persist a unit's Labels/Annotations, or whether it is Unreleasable, from the inline unit details pane. Uses
   // useUpdateUnitMutation with the full Unit body + Version (the canonical
   // metadata edit path, as on the unit dashboard) so the supplied maps fully
   // REPLACE the stored ones — this supports removing keys, which a JSON
@@ -1782,6 +1782,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
             ...currentUnit,
             ...(patch.Labels !== undefined ? { Labels: patch.Labels } : {}),
             ...(patch.Annotations !== undefined ? { Annotations: patch.Annotations } : {}),
+            ...(patch.Unreleasable !== undefined ? { Unreleasable: patch.Unreleasable } : {}),
           },
         }).unwrap();
         setDeploymentErrors((prev) => {

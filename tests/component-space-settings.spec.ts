@@ -50,10 +50,12 @@ test.describe('space settings sheet', () => {
     });
     if (!targetResp.ok()) throw new Error(`Failed to create target: ${targetResp.status()} ${await targetResp.text()}`);
     const targetId = ((await targetResp.json()) as { TargetID: string }).TargetID;
+    // A Unit is released to its Space's release Target.
+    await api.updateSpace({ spaceId, space: { ReleaseTargetID: targetId } });
 
     const unitResp = await hubApi.post(`/api/space/${spaceId}/unit`, {
       params: { allow_exists: 'true' },
-      data: { Slug: 'unit-1', ToolchainType: 'Kubernetes/YAML', TargetID: targetId },
+      data: { Slug: 'unit-1', ToolchainType: 'Kubernetes/YAML' },
     });
     if (!unitResp.ok()) throw new Error(`Failed to create unit: ${unitResp.status()} ${await unitResp.text()}`);
 

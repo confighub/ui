@@ -23,7 +23,7 @@ export interface AddColumnSection {
 type ExtraColumns = Partial<Record<string, readonly string[]>>;
 
 const UNIT_EXTRA: ExtraColumns = {
-  'Core Identity': ['DisplayName', 'ProviderType'],
+  'Core Identity': ['DisplayName', 'Unreleasable'],
   'Status & Health': ['Status'],
   // The upstream Unit's revision this Unit was last merged from: only a clone has one.
   'Clone/Upstream': ['UpstreamRevisionNum'],

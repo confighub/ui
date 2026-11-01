@@ -7,12 +7,7 @@ import { UseFormSetValue } from 'react-hook-form';
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { FixedSubmitContainer, SectionCard } from '@/components/styled';
 import { useBulkApiErrorMessage } from '@/hooks/useBulkApiErrorMessages';
-import {
-  TargetRead,
-  UnitRead,
-  useBulkPatchUnitsMutation,
-  useListAllTargetsQuery,
-} from '@confighub/rtk-query';
+import { UnitRead, useBulkPatchUnitsMutation } from '@confighub/rtk-query';
 import { IUnitMutationModalProps } from '@/types';
 import Add from '@mui/icons-material/Add';
 import ArrowBack from '@mui/icons-material/ArrowBack';
@@ -33,8 +28,11 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 
 // Types
+/** How the edit changes whether the Units are in their Space's Releases; '' leaves it as it is. */
+export type BulkEditReleases = '' | 'include' | 'leaveOut';
+
 export interface BulkEditFormData {
-  targetId: string;
+  releases: BulkEditReleases;
   labels: Array<{ key: string; value: string; id: string }>;
   removeLabels: Array<string>;
   deleteGates: Array<{ key: string; id: string }>;
@@ -52,48 +50,40 @@ export interface LabelInputProps {
 }
 
 /**
- * TargetSelectionCard
+ * ReleasesCard
  *
- * Allows users to select a target for bulk assignment to units.
+ * Sets Unreleasable on every Unit being edited. A Unit's release Target is its Space's, so the
+ * Units' Target is changed on the Space, not here.
  */
-const TargetSelectionCard = ({
+const ReleasesCard = ({
   control,
   errors,
-  targets,
 }: {
   control: Control<BulkEditFormData>;
   errors: FieldErrors<BulkEditFormData>;
-  targets: Array<TargetRead>;
 }) => {
   return (
-    <SectionCard title='Target'>
+    <SectionCard title='Releases'>
       <Controller
-        name='targetId'
+        name='releases'
         control={control}
         render={({ field }) => (
-          <FormControl fullWidth error={!!errors.targetId} size='small'>
-            <InputLabel>Select Target</InputLabel>
+          <FormControl fullWidth error={!!errors.releases} size='small'>
+            <InputLabel>Releases</InputLabel>
             <Select
               {...field}
-              label='Select Target'
+              label='Releases'
               size='small'
-              input={<OutlinedInput label='Select Target' />}
-              data-testid='target-select'
+              input={<OutlinedInput label='Releases' />}
+              data-testid='unreleasable-select'
             >
               <MenuItem value=''>
                 <em>No change</em>
               </MenuItem>
-              {targets.map((target) => (
-                <MenuItem key={target.TargetID} value={target.TargetID}>
-                  <Stack spacing={0.5}>
-                    <Typography variant='body2' sx={{ fontWeight: 500 }}>
-                      {target.Slug}
-                    </Typography>
-                  </Stack>
-                </MenuItem>
-              ))}
+              <MenuItem value='include'>Include in releases</MenuItem>
+              <MenuItem value='leaveOut'>Leave out of releases (Unreleasable)</MenuItem>
             </Select>
-            {errors.targetId && <FormHelperText>{errors.targetId.message}</FormHelperText>}
+            {errors.releases && <FormHelperText>{errors.releases.message}</FormHelperText>}
           </FormControl>
         )}
       />
@@ -423,14 +413,6 @@ export const BulkEditUnitsDrawer = ({
   const [errorMessage, setErrorMessage] = useState<string[]>([]);
   const [bulkPatchUnits, { error, isSuccess, data }] = useBulkPatchUnitsMutation();
 
-  const { targets = [] } = useListAllTargetsQuery(
-    {},
-    {
-      selectFromResult: (result) => ({
-        targets: result?.data?.map((t) => t.Target) || [],
-      }),
-    },
-  );
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -444,7 +426,7 @@ export const BulkEditUnitsDrawer = ({
   } = useForm<BulkEditFormData>({
     mode: 'onChange',
     defaultValues: {
-      targetId: '',
+      releases: '',
       labels: [],
       removeLabels: [],
       deleteGates: [],
@@ -476,7 +458,7 @@ export const BulkEditUnitsDrawer = ({
       const where = `UnitID IN (${unitIds})`;
 
       const updateData = {
-        ...(data.targetId && { TargetID: data.targetId }), // Conditionally add TargetID if it exists
+        ...(data.releases && { Unreleasable: data.releases === 'leaveOut' }),
         Labels: data.labels.reduce(
           (acc, label) => {
             acc[label.key] = label.value;
@@ -533,7 +515,7 @@ export const BulkEditUnitsDrawer = ({
   };
 
   const hasChanges =
-    watchedValues.targetId !== '' ||
+    watchedValues.releases !== '' ||
     (watchedValues.labels && watchedValues.labels.length > 0) ||
     (watchedValues.removeLabels && watchedValues.removeLabels.length > 0) ||
     (watchedValues.deleteGates && watchedValues.deleteGates.length > 0) ||
@@ -592,11 +574,7 @@ export const BulkEditUnitsDrawer = ({
         >
           <ErrorList errors={errorMessage} onClose={() => setErrorMessage([])} />
           <Box>
-            <TargetSelectionCard
-              control={control}
-              errors={errors}
-              targets={targets.filter((t): t is TargetRead => t !== undefined)}
-            />
+            <ReleasesCard control={control} errors={errors} />
 
             <UnifiedMetadataManagementCard
               control={control}

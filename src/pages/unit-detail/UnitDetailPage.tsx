@@ -7,7 +7,6 @@ import { ActionButton } from '@/components/action-button/ActionButton';
 import { DiffDrawer } from '@/components/diff-drawer/DiffDrawer';
 import { ErrorBox } from '@/components/error-box/ErrorBox';
 import { Header } from '@/components/header/Header';
-import { SelectTargetModal } from '@/components/select-targets-modal/SelectTargetsModal';
 import { SettingsTabs } from '@/components/settings-tabs/SettingsTabs';
 import { Section } from '@/components/styled';
 import { Main } from '@/components/styled';
@@ -88,7 +87,6 @@ export const UnitDetailPage = () => {
   const [isCloneModalOpen, setIsCloneModalOpen] = useState(false);
   const [isDeleteUnitModalOpen, setIsDeleteUnitModalOpen] = useState(false);
   const [isAddTargetModalOpen, setIsAddTargetModalOpen] = useState(false);
-  const [isSelectedTargetModalOpen, setIsSelectTargetModalOpen] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
   const [showDiffOnUpgradeDrawer, setShowDiffOnUpgradeDrawer] = useState(false);
 
@@ -107,7 +105,6 @@ export const UnitDetailPage = () => {
     currentUnit,
     currentUnitExtended,
     currentSpace,
-    targets,
     upstreamUnit,
     isFetchingUnit,
     setIsEditInvocationCancelled,
@@ -523,15 +520,6 @@ export const UnitDetailPage = () => {
           diffToMessage={`revision number ${postUpgradeRevisionNum}`}
           diffFromMessagePrefix='Upgrade changes'
           defaultShowConfirmation={false}
-        />
-        <SelectTargetModal
-          isSelectTargetModalOpen={isSelectedTargetModalOpen}
-          onSelectTargetModalClosed={() => {
-            setIsSelectTargetModalOpen(false);
-          }}
-          targets={targets}
-          unit={currentUnit}
-          refresh={() => setRefresh(!refresh)}
         />
       </Main>
     </Container>

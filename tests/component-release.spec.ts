@@ -169,15 +169,13 @@ test.describe('component release flow', () => {
       space: { ReleaseTargetID: ociTargetId },
     });
 
-    // A Unit assigned to the release Target — releaseBundleFiles only
-    // bundles Units whose TargetID matches the Space's ReleaseTargetID
-    // (internal/views/release_core.go).
+    // A Unit that is not Unreleasable is released to its Space's release
+    // Target, so a Release bundles it.
     const releaseUnitResp = await hubApi.post(`/api/space/${releaseSpaceId}/unit`, {
       params: { allow_exists: 'true' },
       data: {
         Slug: 'test-config',
         ToolchainType: 'Kubernetes/YAML',
-        TargetID: ociTargetId,
       },
     });
     if (!releaseUnitResp.ok()) {
@@ -402,7 +400,7 @@ test.describe('component release — height-encoded lane (v7)', () => {
 
     const unitResp = await hubApi.post(`/api/space/${historySpaceId}/unit`, {
       params: { allow_exists: 'true' },
-      data: { Slug: 'hist-config', ToolchainType: 'Kubernetes/YAML', TargetID: targetId },
+      data: { Slug: 'hist-config', ToolchainType: 'Kubernetes/YAML' },
     });
     if (!unitResp.ok()) throw new Error(`Failed to create unit: ${unitResp.status()} ${await unitResp.text()}`);
     // POST /api/space/{spaceId}/unit returns UnitCreateOrUpdateResponseRead (config
@@ -832,7 +830,7 @@ test.describe('component release — container image rows', () => {
 
     const unitResp = await hubApi.post(`/api/space/${imageSpaceId}/unit`, {
       params: { allow_exists: 'true' },
-      data: { Slug: 'image-config', ToolchainType: 'Kubernetes/YAML', TargetID: targetId },
+      data: { Slug: 'image-config', ToolchainType: 'Kubernetes/YAML' },
     });
     if (!unitResp.ok()) throw new Error(`unit: ${unitResp.status()} ${await unitResp.text()}`);
     const unitId = ((await unitResp.json()) as { Unit: { UnitID: string } }).Unit.UnitID;
@@ -948,7 +946,7 @@ test.describe('component release — resources that share a path', () => {
 
     const unitResp = await hubApi.post(`/api/space/${sharedSpaceId}/unit`, {
       params: { allow_exists: 'true' },
-      data: { Slug: 'shared-config', ToolchainType: 'Kubernetes/YAML', TargetID: targetId },
+      data: { Slug: 'shared-config', ToolchainType: 'Kubernetes/YAML' },
     });
     if (!unitResp.ok()) throw new Error(`unit: ${unitResp.status()} ${await unitResp.text()}`);
     sharedUnitId = ((await unitResp.json()) as { Unit: { UnitID: string } }).Unit.UnitID;

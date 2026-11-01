@@ -311,6 +311,8 @@ export function useCreateVariantMutation(): UseCreateVariantMutationResult {
               UpstreamSpaceID: upstreamSpaceId,
               ...(targetId ? { TargetID: targetId } : {}),
             },
+            // The clones' Units are released to their Space's release Target.
+            ...(targetId ? { ReleaseTargetID: targetId } : {}),
             ...(Object.keys(filteredLabels).length > 0 ? { Labels: filteredLabels } : {}),
           },
         }).unwrap();
@@ -406,9 +408,7 @@ export function useCreateVariantMutation(): UseCreateVariantMutationResult {
           // IS [NOT] NULL (internal/views/filter_parser.go:839) — Slug is a
           // String column, and String explicitly supports IN.
           whereSpace: `Slug IN (${succeededSlugs.map((s) => `'${s}'`).join(',')})`,
-          body: {
-            ...(targetId ? { TargetID: targetId } : {}),
-          },
+          body: {},
         }).unwrap();
       } catch (err) {
         // Total Step-2 failure: every succeeded space is unit-clone-failed.
