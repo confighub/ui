@@ -1,10 +1,13 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import { ProgressRefreshButton } from '@/components/progress-refresh-button/ProgressRefreshButton';
 import { HoverCard } from '@/components/styled';
 import { findTriggerForGate, useGateTriggers } from '@/hooks/useGateTriggers';
+import { getApiErrorMessage } from '@/utility/error-functions';
+import { parseGateName } from '@/utility/name-format-functions';
 import {
   ExtendedTriggerRead,
   ExtendedUnitRead,
@@ -17,8 +20,6 @@ import {
   useLazyListAllTriggersQuery,
   useLazyListTriggersQuery,
 } from '@confighub/rtk-query';
-import { getApiErrorMessage } from '@/utility/error-functions';
-import { parseGateName } from '@/utility/name-format-functions';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
@@ -27,7 +28,9 @@ import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import { styled } from '@mui/material/styles';
 
+import { readOverviewGate, unitBlameHref } from '../../unitDetailHrefs';
 import { ValidationGateCard } from './ValidationGateCard';
+import type { FieldFinding } from './validationFindings';
 
 export interface IActionSideBarProps {
   unit: ExtendedUnitRead;
@@ -67,6 +70,19 @@ export const ActionSidebar = ({
   const [triggers, setTriggers] = useState<ExtendedTriggerRead[]>([]);
   const gateTriggers = useGateTriggers(unit?.Unit);
   const [validationResults, setValidationResults] = useState<ValidationResult[]>([]);
+  // A failed path opens the Blame tab at that field, where it can be acted on.
+  const spaceId = unit?.Unit?.SpaceID;
+  const unitId = unit?.Unit?.UnitID;
+  const fieldHref = useCallback(
+    (finding: FieldFinding) =>
+      spaceId && unitId && finding.path
+        ? unitBlameHref(spaceId, unitId, finding.path)
+        : undefined,
+    [spaceId, unitId],
+  );
+  // The gate a validation flag on the Blame tab opened the page to.
+  const [searchParams] = useSearchParams();
+  const focusedGate = readOverviewGate(searchParams);
   const [helpExpanded, setHelpExpanded] = useState(false);
   const autoFetchTriggeredRef = useRef<Set<string>>(new Set());
 
@@ -401,6 +417,9 @@ export const ActionSidebar = ({
               selectedFunction={selectedFunction}
               isValidating={isValidating || false}
               spaceId={unit?.Unit?.SpaceID}
+              storedResults={unit?.Unit?.ValidationResults?.[gate.name]}
+              fieldHref={fieldHref}
+              focused={gate.name === focusedGate}
               onRunClick={() => {
                 if (isValidating && trigger) {
                   handleGateClick(gate.name || '', trigger);
@@ -445,6 +464,9 @@ export const ActionSidebar = ({
                   isValidating={isValidating || false}
                   isWarning
                   spaceId={unit?.Unit?.SpaceID}
+                  storedResults={unit?.Unit?.ValidationResults?.[warning.name]}
+                  fieldHref={fieldHref}
+                  focused={warning.name === focusedGate}
                   onRunClick={() => {
                     if (isValidating && trigger) {
                       handleGateClick(warning.name || '', trigger);

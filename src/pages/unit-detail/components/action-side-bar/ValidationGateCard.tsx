@@ -1,18 +1,20 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 
 import { HoverCard } from '@/components/styled';
 import { functionListArgs } from '@/hooks/useFunctionChannels';
+import { parseGateName } from '@/utility/name-format-functions';
+import { parseValidationResult } from '@/utility/object-functions';
+import { decodeBase64 } from '@/utility/string-functions';
+import { isIDInvalid } from '@/utility/validation-functions';
 import {
   ExtendedTriggerRead,
   FunctionSignature,
+  ValidationResult as GateValidationResult,
   useListFunctionsQuery,
 } from '@confighub/rtk-query';
-import { parseGateName } from '@/utility/name-format-functions';
-import { parseValidationResult } from '@/utility/object-functions';
-import { isIDInvalid } from '@/utility/validation-functions';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
@@ -29,9 +31,31 @@ import {
 } from '@mui/material';
 
 import { ValidationResult } from './ActionSideBar';
+import { ValidationFindingsList } from './ValidationFindingsList';
+import { FieldFinding, selectLiveResult, validationFindings } from './validationFindings';
 
 const formatGateName = (name: string) => {
   return name.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+};
+
+// The live run's result for a gate, decoded from the run's ValidationResult output. Undefined
+// when the run has no such output, or it cannot be read.
+const liveGateResult = (
+  validation: ValidationResult | undefined,
+  index: number,
+): GateValidationResult | undefined => {
+  const output =
+    validation?.result?.Outputs?.['ValidationResult'] ||
+    validation?.result?.Outputs?.['ValidationResultList'];
+  if (!output) return undefined;
+  try {
+    const decoded = decodeBase64(output);
+    return decoded
+      ? selectLiveResult(JSON.parse(decoded) as GateValidationResult[], index)
+      : undefined;
+  } catch {
+    return undefined;
+  }
 };
 
 const formatRelativeTime = (timestamp: number): string => {
@@ -63,6 +87,15 @@ interface ValidationGateCardProps {
   isValidating: boolean;
   isWarning?: boolean;
   spaceId: string | undefined;
+  /**
+   * The gate's failed results as the Unit records them: what the Trigger found when it last ran
+   * on the Unit's configuration. Shown until a live run of the gate replaces them.
+   */
+  storedResults?: GateValidationResult[];
+  /** Where a failed field links to; without it, failed paths are shown as text. */
+  fieldHref?: (finding: FieldFinding) => string | undefined;
+  /** The page was opened to this gate, as from a validation flag on the Blame tab: open and show it. */
+  focused?: boolean;
   onRunClick: () => void;
 }
 
@@ -74,9 +107,20 @@ export const ValidationGateCard = ({
   isValidating,
   isWarning = false,
   spaceId,
+  storedResults,
+  fieldHref,
+  focused = false,
   onRunClick,
 }: ValidationGateCardProps) => {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(focused);
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focused) {
+      setExpanded(true);
+      cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [focused]);
+  const description = trigger?.Trigger?.Description?.trim();
   // Which of the Trigger's results is this gate's: a numbered gate names its function's position.
   const resultIndex = (parseGateName(gateName).functionIndex ?? 1) - 1;
 
@@ -128,6 +172,14 @@ export const ValidationGateCard = ({
 
   const validationState = getValidationState();
 
+  // What the findings are read from: this session's run of the gate once it has a result, and
+  // otherwise the result the Unit recorded the last time the gate's Trigger ran.
+  const liveResult = liveGateResult(validation, resultIndex);
+  const showsStored = !liveResult && !validation?.error && !validation?.result?.Error;
+  const shownResults = liveResult ? [liveResult] : showsStored ? storedResults : undefined;
+  const findings = validationFindings(shownResults);
+  const hasFindings = findings.fields.length + findings.unit.length > 0;
+
   const handleRunClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     onRunClick();
@@ -161,6 +213,7 @@ export const ValidationGateCard = ({
 
   return (
     <HoverCard
+      ref={cardRef}
       variant='outlined'
       onClick={handleCardClick}
       sx={{
@@ -261,6 +314,19 @@ export const ValidationGateCard = ({
             />
             {validation?.loading && <CircularProgress color='primary' size={16} />}
           </Stack>
+          {description && (
+            <Typography
+              variant='body2'
+              sx={{
+                color: 'text.secondary',
+                fontSize: '0.75rem',
+                whiteSpace: 'pre-wrap',
+                pt: 0.5,
+              }}
+            >
+              {description}
+            </Typography>
+          )}
         </Stack>
         <Button
           variant='text'
@@ -291,7 +357,14 @@ export const ValidationGateCard = ({
               </Typography>
             </Stack>
           )}
-          {validationState === 'error' && (
+          {validationState === 'error' && liveResult && hasFindings && (
+            <ValidationFindingsList
+              results={shownResults}
+              isWarning={isWarning}
+              fieldHref={fieldHref}
+            />
+          )}
+          {validationState === 'error' && !(liveResult && hasFindings) && (
             <Alert severity={isWarning ? 'warning' : 'error'} sx={{ py: 0.25, px: 1 }}>
               <Typography
                 variant='caption'
@@ -323,6 +396,24 @@ export const ValidationGateCard = ({
               </Typography>
             </Alert>
           )}
+        </Box>
+      )}
+
+      {/* The recorded result, until a run of the gate replaces it. */}
+      {!expanded && showsStored && !liveResult && hasFindings && (
+        <Box sx={{ mt: 1 }}>
+          <Typography
+            variant='caption'
+            display='block'
+            sx={{ color: 'text.secondary', fontSize: '0.65rem', mb: 0.5 }}
+          >
+            Last recorded result
+          </Typography>
+          <ValidationFindingsList
+            results={shownResults}
+            isWarning={isWarning}
+            fieldHref={fieldHref}
+          />
         </Box>
       )}
 
@@ -454,6 +545,31 @@ export const ValidationGateCard = ({
             )}
 
             {/* Validation Results Section */}
+            {!(isValidating && validation && !validation.loading) && hasFindings && (
+              <Box>
+                <Typography
+                  variant='caption'
+                  sx={{
+                    color: 'text.secondary',
+                    textTransform: 'uppercase',
+                    fontSize: '0.65rem',
+                    fontWeight: 600,
+                    letterSpacing: '0.5px',
+                    mb: 1,
+                    display: 'block',
+                  }}
+                >
+                  Last Recorded Result
+                </Typography>
+                <ValidationFindingsList
+                  results={shownResults}
+                  isWarning={isWarning}
+                  fieldHref={fieldHref}
+                  showAll
+                />
+              </Box>
+            )}
+
             {isValidating && validation && !validation.loading && (
               <Box>
                 <Typography
@@ -496,6 +612,13 @@ export const ValidationGateCard = ({
                       </Typography>
                     ))}
                   </Alert>
+                ) : liveResult && hasFindings ? (
+                  <ValidationFindingsList
+                    results={shownResults}
+                    isWarning={isWarning}
+                    fieldHref={fieldHref}
+                    showAll
+                  />
                 ) : validation.result?.Outputs?.['ValidationResult'] ||
                   validation.result?.Outputs?.['ValidationResultList'] ? (
                   <Alert

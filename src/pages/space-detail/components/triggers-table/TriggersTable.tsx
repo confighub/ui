@@ -8,11 +8,11 @@ import { useAttributeColumnManager } from '@/components/entity-data-grid/hooks/u
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { FilteredEmptyState } from '@/components/filtered-empty-state';
 import { SkeletonTable } from '@/components/skeleton-table/SkeletonTable';
+import type { TriggerSelectionStatus } from '@/components/trigger-selection/useTriggerSelection';
 import { useGridPersistence } from '@/components/unit-data-grid/hooks/useGridPersistence';
 import { EmptyTriggers } from '@/pages/space-detail/components/empty-triggers/EmptyTriggers';
-import type { TriggerSelectionStatus } from '@/components/trigger-selection/useTriggerSelection';
-import { useListAllTriggersQuery } from '@confighub/rtk-query';
 import { getApiErrorMessage } from '@/utility/error-functions';
+import { useListAllTriggersQuery } from '@confighub/rtk-query';
 import { GridColDef, GridRowSelectionModel } from '@mui/x-data-grid';
 
 import {
@@ -47,12 +47,17 @@ export interface TriggersTableProps {
   persistenceKey?: string;
 }
 
+// The Pack label names the group of policies a Trigger belongs to, which a Space or Target opts
+// into by listing it in its WhereTrigger, so it is shown beside the Trigger's name.
+const PACK_LABEL_FIELD = 'Labels.Pack';
+
 const GRID_DEFAULTS = {
   sortModel: [{ field: 'Slug', sort: 'asc' as const }],
   columnVisibility: {
     Slug: true,
     TriggerID: false,
     Space: false,
+    [PACK_LABEL_FIELD]: true,
     SpaceID: false,
     Selection: false,
     FunctionName: true,
@@ -109,7 +114,10 @@ export const TriggersTable = ({
     }
   }, [filterError, dismissedError]);
 
-  const triggers = useMemo(() => (skip ? [] : extendedTriggers || []), [skip, extendedTriggers]);
+  const triggers = useMemo(
+    () => (skip ? [] : extendedTriggers || []),
+    [skip, extendedTriggers],
+  );
 
   // Convert triggers to row items
   const rows = useMemo<TriggerRowItem[]>(() => {
@@ -177,11 +185,18 @@ export const TriggersTable = ({
   // Create static columns
   const staticColumns = useMemo(() => createTriggerStaticColumns(), []);
 
-  // Combine all columns
-  const baseColumns = useMemo(
-    () => [...staticColumns, ...labelColumns],
-    [labelColumns, staticColumns],
-  );
+  // Combine all columns, the Pack label's after the Space's
+  const baseColumns = useMemo(() => {
+    const pack = labelColumns.filter((col) => col.field === PACK_LABEL_FIELD);
+    const otherLabels = labelColumns.filter((col) => col.field !== PACK_LABEL_FIELD);
+    const afterSpace = staticColumns.findIndex((col) => col.field === 'Space') + 1;
+    return [
+      ...staticColumns.slice(0, afterSpace),
+      ...pack,
+      ...staticColumns.slice(afterSpace),
+      ...otherLabels,
+    ];
+  }, [labelColumns, staticColumns]);
 
   const {
     handleColumnResize,
@@ -191,7 +206,10 @@ export const TriggersTable = ({
     onColumnVisibilityModelChange,
     clearStoredState,
     hasStateChanged,
-  } = useGridPersistence(persistenceKey, selectionStatusById ? SELECTION_GRID_DEFAULTS : GRID_DEFAULTS);
+  } = useGridPersistence(
+    persistenceKey,
+    selectionStatusById ? SELECTION_GRID_DEFAULTS : GRID_DEFAULTS,
+  );
 
   // Apply stored widths to columns
   const allColumns = useMemo(

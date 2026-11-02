@@ -8,8 +8,7 @@ import type { RevisionRead, UserRead } from '@confighub/rtk-query';
  *
  * This used to also own merging two independently-fetched sources (automated UnitEvents and
  * Revisions) into one ordered stream — see git history if you need that. UnitAction/UnitEvent are
- * no longer used here (bgrant0607: they're legacy machinery kept alive only for the function
- * worker, not something to build UI on top of — #4905/#4916), so the feed is Revision-only and
+ * no longer used here (bgrant0607: they're legacy machinery from the removed workers, not something to build UI on top of — #4905/#4916), so the feed is Revision-only and
  * there is nothing left to merge.
  *
  * `filterEntriesByTab`/`countEntriesByTab` live outside ComponentActivityFeed.tsx so the tab split

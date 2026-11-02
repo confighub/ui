@@ -69,6 +69,11 @@ export interface ComponentDeployment {
    * deploys this Space. Undefined when no cluster controller deploys it.
    */
   clusterUnitId?: string;
+  /**
+   * Space.Annotations.Readme: Markdown about this Space that the side pane's
+   * Readme tab shows, above the Space's README.md Unit when it has one.
+   */
+  readme?: string;
   parentDeploymentId: string | null;
   stage: number;
   upgradeableCount: number;

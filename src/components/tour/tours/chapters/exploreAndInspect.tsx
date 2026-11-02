@@ -85,8 +85,8 @@ export const exploreAndInspectSteps: TourStep[] = [
     // — false for a target-less base) — it shows the Configuration content
     // directly. `component-pane-tab-config` DOES exist in ComponentSidePane.tsx
     // (verified), but only for a release-enabled deployment, which "cubbychat"
-    // deliberately never is per chapter 1's own design (a target with no live
-    // worker leaves an unclearable warning) — so this step does not anchor on
+    // deliberately never is per chapter 1's own design (a target with no cluster
+    // pulling from it leaves an unclearable warning) — so this step does not anchor on
     // it. It anchors on the tree content itself, which is what's actually on
     // screen for this component.
     // The whole values list, NOT `component-leaf-row`: that testid is stamped

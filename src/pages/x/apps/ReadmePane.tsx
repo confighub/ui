@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * ReadmePane — the body of the component side pane's Readme tab: the Markdown
- * of the Space's README.md Unit, an AppConfig/Text Unit that `cub variant
- * upload` makes of a bundle's README.md.
+ * ReadmePane — the body of the component side pane's Readme tab: the Space's
+ * Readme annotation, and the Markdown of its README.md Unit, an AppConfig/Text
+ * Unit that `cub variant upload` makes of a bundle's README.md. The annotation
+ * comes first: it is written about this one Space, while the Unit usually
+ * comes from a bundle every variant shares.
  */
 
 import { type ReactNode } from 'react';
@@ -92,28 +94,42 @@ function Notice({ children }: { children: ReactNode }) {
   );
 }
 
+function MarkdownBody({ markdown, testId }: { markdown: string; testId: string }) {
+  return (
+    <Box sx={markdownSx} data-testid={testId}>
+      <Markdown remarkPlugins={[remarkGfm]} components={components}>
+        {markdown}
+      </Markdown>
+    </Box>
+  );
+}
+
 export interface ReadmePaneProps {
-  /** The README.md Unit's configuration, frontmatter included. */
-  data: string;
+  /** The Space's Readme annotation, when it has one. */
+  spaceReadme?: string;
+  /** The README.md Unit's configuration, frontmatter included; undefined when the Space has no such Unit. */
+  data?: string;
   /** Whether that configuration is still being read: until it is, `data` is empty. */
   loading: boolean;
 }
 
-export function ReadmePane({ data, loading }: ReadmePaneProps) {
-  if (!data && loading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', padding: '24px' }}>
-        <CircularProgress size={20} />
-      </Box>
-    );
-  }
-  const body = readmeBody(data);
-  if (body.trim() === '') return <Notice>README.md is empty.</Notice>;
+export function ReadmePane({ spaceReadme, data, loading }: ReadmePaneProps) {
+  const hasUnit = data !== undefined;
+  const unitLoading = hasUnit && !data && loading;
+  const body = hasUnit && !unitLoading ? readmeBody(data) : '';
   return (
-    <Box sx={markdownSx} data-testid='component-readme'>
-      <Markdown remarkPlugins={[remarkGfm]} components={components}>
-        {body}
-      </Markdown>
-    </Box>
+    <>
+      {spaceReadme && <MarkdownBody markdown={spaceReadme} testId='component-space-readme' />}
+      {spaceReadme && hasUnit && <Box sx={{ borderTop: `1px solid ${componentTheme.borderDefault}`, margin: '0 20px' }} />}
+      {unitLoading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', padding: '24px' }}>
+          <CircularProgress size={20} />
+        </Box>
+      ) : hasUnit && body.trim() === '' ? (
+        <Notice>README.md is empty.</Notice>
+      ) : (
+        hasUnit && <MarkdownBody markdown={body} testId='component-readme' />
+      )}
+    </>
   );
 }

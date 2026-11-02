@@ -486,8 +486,8 @@ const isEmptyMap = (value: unknown) => value === undefined || value === null || 
 /**
  * Whether a saved Invocation runs exactly what an inline call would save, field by field as the
  * server tells two Invocations apart (`ComputeInvocationHash`): the toolchain, each call's function,
- * resource filter, arguments, clearance and guards in order, the declared parameters in order, and
- * the worker it runs on. A saved one that differs in any of them runs something else, and is never
+ * resource filter, arguments, clearance and guards in order, and the declared parameters in order.
+ * A saved one that differs in any of them runs something else, and is never
  * taken for the call typed.
  */
 export function sameInvocationShape(

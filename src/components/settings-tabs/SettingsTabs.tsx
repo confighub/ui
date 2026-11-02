@@ -10,12 +10,19 @@ import Tabs from '@mui/material/Tabs';
 export interface ISettingsTabProps extends CmpProps {
   defaultValue?: number;
   tabs: Array<string | React.ReactNode>;
+  /**
+   * The value of each tab, which `defaultValue` and `onTabSelected` speak in. Absent, a tab's
+   * value is its position; a page that inserts a tab between others gives the values so that a
+   * tab keeps the value saved links use.
+   */
+  tabValues?: readonly number[];
   onTabSelected?: (newValue: number) => void;
 }
 
 export const SettingsTabs = ({
   onTabSelected,
   tabs,
+  tabValues,
   defaultValue = 0,
   className,
 }: ISettingsTabProps) => {
@@ -45,7 +52,7 @@ export const SettingsTabs = ({
         onChange={handleTabSelected}
       >
         {tabs.map((tab, index) => (
-          <Tab key={index} label={tab} />
+          <Tab key={tabValues?.[index] ?? index} label={tab} value={tabValues?.[index] ?? index} />
         ))}
       </Tabs>
     </Box>

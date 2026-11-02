@@ -56,8 +56,8 @@ export const DEPLOY_AND_RELEASE_TOUR_ID = 'deploy-and-release';
  * ── Never attach a Target ──
  * `composer-target-select`'s Select is unfiltered — nothing stops a step
  * from picking a real Target, which would leave the new variant's units with
- * a permanently-unresolvable "unapplied changes" badge (no live worker
- * behind it). This chapter never clicks that Select at all; the instructional
+ * a permanently-unresolvable "unapplied changes" badge (nothing pulls
+ * its Releases). This chapter never clicks that Select at all; the instructional
  * step only explains that its default is what to keep. That default renders as
  * an EMPTY field: the Select has no `displayEmpty`, so its `value=''` shows
  * nothing, and the "No target" MenuItem label is visible only once the
@@ -97,7 +97,7 @@ const VARIANT_NAME = 'dev';
 export const deployAndReleaseSteps: TourStep[] = [
   // ── Chapter 4 — create the dev variant ──
   {
-    // A real Target needs a real cluster/worker behind it, and there is no
+    // A real Target needs a real cluster pulling from it, and there is no
     // in-browser way to create one — same product reality
     // `release-explain-gap` documents for release targets, one step earlier
     // in the journey. Anchorless for the same reason that step is: a pure
@@ -172,7 +172,7 @@ export const deployAndReleaseSteps: TourStep[] = [
     body: (
       <>
         Leave <TourCue>Target (optional)</TourCue> empty — this tour has none
-        connected, and a target with no live worker behind it leaves a warning
+        connected, and a target with no cluster pulling from it leaves a warning
         you cannot clear. <TourCommand>Click</TourCommand>{' '}
         <TourCue>Create variant</TourCue>.
         ConfigHub clones the base's space and units into the new dev variant.

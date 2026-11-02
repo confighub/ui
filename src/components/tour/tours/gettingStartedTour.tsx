@@ -22,7 +22,7 @@ const inWizard = (css: string) => ({ kind: 'inModal', container: wizard, css }) 
  * Chapter 1 — make the cubbychat component from a sample manifest.
  *
  * The tour deliberately never touches the deployment-variant picker. A variant
- * attaches a target, and a target with no live worker leaves the new component
+ * attaches a target, and a target with no cluster pulling from it leaves the new component
  * with an "unapplied changes" badge that nothing can clear.
  */
 export const gettingStartedTour = defineTour({

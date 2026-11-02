@@ -36,10 +36,11 @@ import { useUnitComputedData } from './hooks/useUnitComputedData';
 import { useUnitDetailData } from './hooks/useUnitDetailData';
 import { ModalType } from './rules';
 import { ConfigTab } from './tabs/ConfigTab';
+import { BlameTab } from './tabs/BlameTab';
 import { MutationsTab } from './tabs/MutationsTab';
 import { ResourcesTab } from './tabs/ResourcesTab';
 import { UnitSettingsForm } from './components/unit-settings/UnitSettingsForm';
-import { UNIT_DETAIL_TAB } from './unitDetailHrefs';
+import { UNIT_DETAIL_TAB, UNIT_DETAIL_TAB_ORDER } from './unitDetailHrefs';
 import { useRevisionDataMap } from '@/hooks/useUnitData';
 
 const Container = styled('div')`
@@ -432,9 +433,11 @@ export const UnitDetailPage = () => {
                 `Revisions (${currentUnit?.HeadRevisionNum || 0})`,
                 `Links (${links?.length || 0})`,
                 `Mutations (${currentUnit?.HeadMutationNum || 0})`,
+                'Blame',
                 'Resources',
                 'Settings',
               ]}
+              tabValues={UNIT_DETAIL_TAB_ORDER}
               onTabSelected={onTabSelected}
               defaultValue={selectedTab}
             />
@@ -470,7 +473,7 @@ export const UnitDetailPage = () => {
           )}
         </Section>
         <ConfigTab
-          key={currentUnit.UnitID}
+          key={`config-${currentUnit.UnitID}`}
           unit={currentUnit}
           onConfigUpdated={() => setRefresh(!refresh)}
           selectedTab={selectedTab}
@@ -495,7 +498,8 @@ export const UnitDetailPage = () => {
           unitExtended={currentUnitExtended}
           onTabSelected={onTabSelected}
         />
-        <ResourcesTab key={currentUnit.UnitID} unit={currentUnit} selectedTab={selectedTab} />
+        <BlameTab spaceId={spaceID} unitId={id} selectedTab={selectedTab} />
+        <ResourcesTab key={`resources-${currentUnit.UnitID}`} unit={currentUnit} selectedTab={selectedTab} />
         <Section $display={selectedTab === UNIT_DETAIL_TAB.settings} $direction={Direction.FadeIn}>
           {currentUnitExtended?.Unit && (
             <UnitSettingsForm

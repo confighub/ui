@@ -99,7 +99,7 @@ const SYNC_PRESENTATION: Record<'Synced' | 'OutOfSync' | 'Progressing' | 'Unknow
   Synced: { tone: 'ok', desc: 'Cluster matches the released config' },
   OutOfSync: { tone: 'attention', desc: 'Cluster has drifted from the released config' },
   Progressing: { tone: 'progress', desc: 'Reconcile in flight' },
-  Unknown: { tone: 'neutral', desc: 'Not reported by the worker' },
+  Unknown: { tone: 'neutral', desc: 'Not reported by the cluster' },
 };
 
 const HEALTH_PRESENTATION: Record<
@@ -111,7 +111,7 @@ const HEALTH_PRESENTATION: Record<
   Degraded: { tone: 'danger', desc: 'Workloads failing' },
   Missing: { tone: 'danger', desc: 'Expected workloads absent' },
   Suspended: { tone: 'neutral', desc: 'Reconciliation paused' },
-  Unknown: { tone: 'neutral', desc: 'Not reported by the worker' },
+  Unknown: { tone: 'neutral', desc: 'Not reported by the cluster' },
 };
 
 /**

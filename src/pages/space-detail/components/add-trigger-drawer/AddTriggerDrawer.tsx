@@ -1,9 +1,14 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { useEffect, useMemo, useState } from 'react';
-import { Control, Controller, FieldErrors, useForm } from 'react-hook-form';
+import { Control, Controller, FieldErrors, useFieldArray, useForm, useWatch } from 'react-hook-form';
 
 import { CopyToClipboard } from '@/components/copy-to-clipboard/CopyToClipboard';
+import { EntityRefSelect, type EntityRefOption } from '@/components/entity-ref-select/EntityRefSelect';
+import {
+  useFilterRefOptions,
+  useTriggerInvocationRefOptions,
+} from '@/components/entity-ref-select/useEntityRefOptions';
 import { DEFAULT_TOOLCHAIN_TYPES } from '@/components/query-builder';
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { FunctionParametersField } from '@/components/function-parameters-field/FunctionParametersField';
@@ -13,6 +18,7 @@ import {
   type SimpleFunctionOption,
 } from '@/components/simple-function-picker/SimpleFunctionPicker';
 import { FixedSubmitContainer, SectionCard } from '@/components/styled';
+import { CLEARANCE_OPERATORS, defaultTriggerFormInput } from '@/hooks/triggerFormBody';
 import { IAddTriggerFormInput, useAddTrigger } from '@/hooks/useAddTrigger';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
 import {
@@ -27,7 +33,9 @@ import {
   useListFunctionsQuery,
 } from '@confighub/rtk-query';
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
+import Add from '@mui/icons-material/Add';
 import ArrowBack from '@mui/icons-material/ArrowBack';
+import DeleteOutline from '@mui/icons-material/DeleteOutline';
 import CheckCircle from '@mui/icons-material/CheckCircle';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
@@ -37,13 +45,16 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Drawer from '@mui/material/Drawer';
 import FormControl from '@mui/material/FormControl';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import FormHelperText from '@mui/material/FormHelperText';
 import Grid from '@mui/material/Grid2';
+import IconButton from '@mui/material/IconButton';
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
 import OutlinedInput from '@mui/material/OutlinedInput';
 import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
+import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
@@ -51,23 +62,6 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 
 // Types
-export interface AddTriggerFormData {
-  slug: string;
-  displayName: string;
-  toolchainType: string;
-  eventType: string;
-  functionName: string;
-  disabled: boolean;
-  warn: boolean;
-  arguments: Array<{
-    parameterName: string;
-    value: string | number | boolean;
-    dataType: string;
-  }>;
-  labels: Array<{ key: string; value: string; id: string }>;
-  annotations: Array<{ key: string; value: string; id: string }>;
-}
-
 export interface AddTriggerDrawerProps {
   isOpen: boolean;
   onClose: () => void;
@@ -113,6 +107,22 @@ const BasicInfoCard = ({
                 error={!!errors.Slug}
                 helperText={errors.Slug?.message}
                 placeholder='my-trigger-name'
+              />
+            )}
+          />
+        </Grid>
+
+        <Grid size={{ xs: 6 }}>
+          <Controller
+            name='DisplayName'
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                value={field.value ?? ''}
+                label='Display Name (Optional)'
+                fullWidth
+                size='small'
               />
             )}
           />
@@ -166,6 +176,26 @@ const BasicInfoCard = ({
             )}
           />
         </Grid>
+
+        <Grid size={{ xs: 12 }}>
+          <Controller
+            name='Description'
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                value={field.value ?? ''}
+                label='Description (Optional)'
+                fullWidth
+                size='small'
+                multiline
+                minRows={2}
+                helperText='What the Trigger is for, what it detects, and how to fix what it finds. Shown with its results.'
+                data-testid='trigger-description'
+              />
+            )}
+          />
+        </Grid>
       </Grid>
     </SectionCard>
   );
@@ -185,9 +215,15 @@ const StatusAndFunctionCard = ({
   selectedFunctionOption,
   handleFunctionSelect,
   updateArgumentValue,
+  runsInvocation,
+  invocations,
+  invocationsLoading,
 }: {
   control: Control<IAddTriggerFormInput>;
   errors: FieldErrors<IAddTriggerFormInput>;
+  runsInvocation: boolean;
+  invocations: EntityRefOption[];
+  invocationsLoading: boolean;
   selectedFunction: FunctionSignature;
   selectedFunctionOption: SimpleFunctionOption | null;
   functions: ListFunctionsApiResponse | undefined;
@@ -258,7 +294,64 @@ const StatusAndFunctionCard = ({
       }
     >
       <Grid container spacing={2}>
-        {/* Function Selection */}
+        {/* What the Trigger runs */}
+        <Grid size={{ xs: 12 }}>
+          <Controller
+            name='Source'
+            control={control}
+            render={({ field }) => (
+              <ToggleButtonGroup
+                value={field.value}
+                color='primary'
+                exclusive
+                size='small'
+                onChange={(_event, value) => {
+                  if (value !== null) {
+                    field.onChange(value);
+                  }
+                }}
+                sx={{ '& .MuiToggleButton-root': { px: 1.5, py: 0.5, textTransform: 'none' } }}
+              >
+                <Tooltip title='Run a function with the arguments given here' arrow>
+                  <ToggleButton value='Function'>Function</ToggleButton>
+                </Tooltip>
+                <Tooltip title='Run a stored Invocation, which names its functions and where they run' arrow>
+                  <ToggleButton value='Invocation'>Invocation</ToggleButton>
+                </Tooltip>
+              </ToggleButtonGroup>
+            )}
+          />
+        </Grid>
+
+        {runsInvocation ? (
+          <Grid size={{ xs: 6 }}>
+            <Typography variant='subtitle2' sx={{ fontWeight: 600, mb: 1 }}>
+              Invocation
+            </Typography>
+            <Controller
+              name='InvocationID'
+              control={control}
+              rules={{
+                validate: (value, values) =>
+                  values.Source !== 'Invocation' || !!value || 'Invocation is required',
+              }}
+              render={({ field }) => (
+                <EntityRefSelect
+                  label='Invocation'
+                  value={field.value ?? ''}
+                  onChange={field.onChange}
+                  options={invocations}
+                  loading={invocationsLoading}
+                  helperText={
+                    errors.InvocationID?.message ||
+                    'Invocations of this toolchain that declare no parameters, since a Trigger has no caller to supply them'
+                  }
+                  testId='trigger-invocation'
+                />
+              )}
+            />
+          </Grid>
+        ) : (
         <Grid size={{ xs: 6 }}>
           <Typography variant='subtitle2' sx={{ fontWeight: 600, mb: 1 }}>
             Function
@@ -266,7 +359,10 @@ const StatusAndFunctionCard = ({
           <Controller
             name='FunctionName'
             control={control}
-            rules={{ required: 'Function is required' }}
+            rules={{
+              validate: (value, values) =>
+                values.Source === 'Invocation' || !!value || 'Function is required',
+            }}
             render={() => (
               <Box>
                 <SimpleFunctionPicker
@@ -287,6 +383,8 @@ const StatusAndFunctionCard = ({
           />
         </Grid>
 
+        )}
+
         {/* Channel */}
         <Grid size={{ xs: 6 }}>
           <Typography variant='subtitle2' sx={{ fontWeight: 600, mb: 1 }}>
@@ -300,7 +398,8 @@ const StatusAndFunctionCard = ({
                 <InputLabel>Channel (Optional)</InputLabel>
                 <Select
                   {...field}
-                  value={field.value ?? ''}
+                  value={runsInvocation ? '' : (field.value ?? '')}
+                  disabled={runsInvocation}
                   label='Channel (Optional)'
                   input={<OutlinedInput label='Channel (Optional)' />}
                 >
@@ -312,7 +411,9 @@ const StatusAndFunctionCard = ({
                   ))}
                 </Select>
                 <FormHelperText>
-                  A Trigger on a Channel holds changes until the Channel&apos;s client runs it.
+                  {runsInvocation
+                    ? 'A Trigger that runs an Invocation runs it where the Invocation says.'
+                    : 'A Trigger on a Channel holds changes until the Channel\u2019s client runs it.'}
                 </FormHelperText>
               </FormControl>
             )}
@@ -357,8 +458,30 @@ const StatusAndFunctionCard = ({
           />
         </Grid>
 
+        {/* Other data source */}
+        <Grid size={{ xs: 6 }}>
+          <Typography variant='subtitle2' sx={{ fontWeight: 600, mb: 1 }}>
+            Other Data Source
+          </Typography>
+          <Controller
+            name='OtherDataSource'
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                value={field.value ?? ''}
+                label='Revision (Optional)'
+                fullWidth
+                size='small'
+                placeholder='LastReleasedRevisionNum'
+                helperText='Another revision of the Unit to pass to the function, for one that compares against a baseline, such as vet-immutable. Takes what restore takes, such as Before:HeadRevisionNum. Empty uses what the function expects.'
+              />
+            )}
+          />
+        </Grid>
+
         {/* Function Parameters */}
-        {selectedFunction.Parameters?.map((param) => (
+        {!runsInvocation && selectedFunction.Parameters?.map((param) => (
           <Grid size={{ xs: 6 }} key={param.ParameterName}>
             <FunctionParametersField
               param={param}
@@ -374,7 +497,7 @@ const StatusAndFunctionCard = ({
       </Grid>
 
       {/* Function Info - Expandable */}
-      {selectedFunction && selectedFunction.FunctionName && (
+      {!runsInvocation && selectedFunction && selectedFunction.FunctionName && (
         <Box sx={{ mt: 2 }}>
           <Button
             size='small'
@@ -416,6 +539,202 @@ const StatusAndFunctionCard = ({
 };
 
 /**
+ * AppliesToCard
+ *
+ * Which Units the Trigger applies to, and which resources in them its function operates on.
+ */
+const AppliesToCard = ({
+  control,
+  unitFilters,
+  unitFiltersLoading,
+}: {
+  control: Control<IAddTriggerFormInput>;
+  unitFilters: EntityRefOption[];
+  unitFiltersLoading: boolean;
+}) => (
+  <SectionCard title='Applies To'>
+    <Grid container spacing={2}>
+      <Grid size={{ xs: 6 }}>
+        <Controller
+          name='WhereUnit'
+          control={control}
+          render={({ field }) => (
+            <TextField
+              {...field}
+              value={field.value ?? ''}
+              label='Where Unit (Optional)'
+              fullWidth
+              size='small'
+              placeholder="Space.Labels.Environment = 'prod'"
+              helperText='Only the Units this expression selects. It takes what a Unit list takes, attributes of what a Unit refers to included.'
+              data-testid='trigger-where-unit'
+            />
+          )}
+        />
+      </Grid>
+      <Grid size={{ xs: 6 }}>
+        <Controller
+          name='UnitFilterID'
+          control={control}
+          render={({ field }) => (
+            <EntityRefSelect
+              label='Unit Filter (Optional)'
+              value={field.value ?? ''}
+              onChange={field.onChange}
+              options={unitFilters}
+              loading={unitFiltersLoading}
+              helperText='Only the Units a Filter of Units selects. With Where Unit, both apply.'
+              testId='trigger-unit-filter'
+            />
+          )}
+        />
+      </Grid>
+      <Grid size={{ xs: 12 }}>
+        <Controller
+          name='WhereResource'
+          control={control}
+          render={({ field }) => (
+            <TextField
+              {...field}
+              value={field.value ?? ''}
+              label='Where Resource (Optional)'
+              fullWidth
+              size='small'
+              placeholder="ConfigHub.ResourceType = 'apps/v1/Deployment'"
+              helperText="Only the resources in each Unit's configuration this expression selects."
+            />
+          )}
+        />
+      </Grid>
+    </Grid>
+  </SectionCard>
+);
+
+/**
+ * WritesCard
+ *
+ * What the Trigger says about the paths its function writes: whether a merge from upstream leaves
+ * them alone, the guards it records on them, and the guards it is cleared to write over.
+ */
+const WritesCard = ({
+  control,
+  validating,
+}: {
+  control: Control<IAddTriggerFormInput>;
+  validating: boolean;
+}) => {
+  const { fields, append, remove } = useFieldArray({ control, name: 'Clearance' });
+  const clearance = useWatch({ control, name: 'Clearance' });
+  return (
+    <SectionCard title='Writes'>
+      <Stack spacing={2}>
+        <Controller
+          name='Protect'
+          control={control}
+          render={({ field }) => (
+            <Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={!validating && !!field.value}
+                    disabled={validating}
+                    onChange={(_, checked) => field.onChange(checked)}
+                  />
+                }
+                label='Keep on merge'
+              />
+              <FormHelperText sx={{ mt: 0 }}>
+                {validating
+                  ? 'A validating function writes nothing to keep.'
+                  : 'Record the paths the function writes as kept on merge, so a merge from upstream does not overwrite them. For a Trigger that decides a value once, such as a Post-Clone Trigger customizing a variant.'}
+              </FormHelperText>
+            </Box>
+          )}
+        />
+        <MapFieldSection
+          control={control}
+          name='Guards'
+          title='Guards'
+          description='Reasons to record on the paths the function writes, so a later change has to be cleared for them before overwriting.'
+          itemLabel='guard'
+          validation='label'
+          keyPlaceholder='owner'
+          valuePlaceholder='platform'
+          disabled={validating}
+          testId='trigger-guards'
+        />
+        <Box>
+          <Typography variant='subtitle2' sx={{ fontWeight: 600 }}>
+            Clearance
+          </Typography>
+          <Typography variant='body2' color='text.secondary' sx={{ mb: 1 }}>
+            The guards the function may write over. A path whose guards it is not cleared for is
+            left as it is, and the change it would have made is recorded as a conflict.
+          </Typography>
+          <Stack spacing={1}>
+            {fields.map((row, index) => (
+              <Stack key={row.id} direction='row' spacing={1} alignItems='flex-start'>
+                <Controller
+                  name={`Clearance.${index}.Key`}
+                  control={control}
+                  render={({ field }) => (
+                    <TextField {...field} label='Guard key' size='small' sx={{ flex: 1 }} />
+                  )}
+                />
+                <Controller
+                  name={`Clearance.${index}.Operator`}
+                  control={control}
+                  render={({ field }) => (
+                    <FormControl size='small' sx={{ minWidth: 150 }}>
+                      <InputLabel>Operator</InputLabel>
+                      <Select {...field} label='Operator' input={<OutlinedInput label='Operator' />}>
+                        {CLEARANCE_OPERATORS.map((operator) => (
+                          <MenuItem key={operator} value={operator}>
+                            {operator}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  )}
+                />
+                <Controller
+                  name={`Clearance.${index}.Values`}
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      label='Values'
+                      size='small'
+                      placeholder='a, b'
+                      disabled={!['In', 'NotIn'].includes(clearance?.[index]?.Operator ?? '')}
+                      helperText='For In and NotIn, comma-separated'
+                      sx={{ flex: 1 }}
+                    />
+                  )}
+                />
+                <IconButton aria-label={`Remove clearance ${index + 1}`} onClick={() => remove(index)}>
+                  <DeleteOutline fontSize='small' />
+                </IconButton>
+              </Stack>
+            ))}
+            <Box>
+              <Button
+                size='small'
+                startIcon={<Add />}
+                onClick={() => append({ Key: '', Operator: 'Exists', Values: '' })}
+                data-testid='trigger-clearance-add'
+              >
+                Add clearance
+              </Button>
+            </Box>
+          </Stack>
+        </Box>
+      </Stack>
+    </SectionCard>
+  );
+};
+
+/**
  * AddTriggerDrawer
  *
  * Main component for adding triggers with a drawer interface.
@@ -434,18 +753,7 @@ export const AddTriggerDrawer = ({
 
   const { channels } = useFunctionChannels();
 
-  const defaultValues: IAddTriggerFormInput = {
-    ChannelID: '',
-    Slug: '',
-    Labels: [],
-    Annotations: [],
-    DeleteGates: [],
-    EventType: 'Mutation',
-    FunctionName: '',
-    ToolchainType: 'Kubernetes/YAML',
-    Disabled: false,
-    Warn: false,
-  };
+  const defaultValues = useMemo(() => defaultTriggerFormInput(), []);
 
   const {
     control,
@@ -473,6 +781,20 @@ export const AddTriggerDrawer = ({
 
   const watchedToolchainType = watch('ToolchainType');
   const watchedChannelId = watch('ChannelID');
+  const runsInvocation = watch('Source') === 'Invocation';
+
+  const { options: invocationOptions, isFetching: invocationsLoading } = useTriggerInvocationRefOptions(
+    watchedToolchainType,
+    !isOpen || !runsInvocation,
+  );
+  const { options: unitFilterOptions, isFetching: unitFiltersLoading } = useFilterRefOptions(
+    'Unit',
+    !isOpen,
+  );
+  // Keep on merge and guards are about what a function writes; a validating function writes
+  // nothing. A Trigger that runs an Invocation is checked by the server, which reads its functions.
+  const validatingFunction =
+    !runsInvocation && !!selectedFunction.Validating && !selectedFunction.Mutating;
 
   // The function picker offers what the chosen executor serves, which the server checks the
   // Trigger's function against when it is stored.
@@ -573,7 +895,7 @@ export const AddTriggerDrawer = ({
     !!watchedValues.Slug &&
     !!watchedValues.ToolchainType &&
     !!watchedValues.EventType &&
-    !!watchedValues.FunctionName;
+    (runsInvocation ? !!watchedValues.InvocationID : !!watchedValues.FunctionName);
 
   return (
     <Drawer
@@ -641,7 +963,16 @@ export const AddTriggerDrawer = ({
               selectedFunctionOption={selectedFunctionOption}
               channels={channels}
               updateArgumentValue={updateArgumentValue}
+              runsInvocation={runsInvocation}
+              invocations={invocationOptions}
+              invocationsLoading={invocationsLoading}
             />
+            <AppliesToCard
+              control={control}
+              unitFilters={unitFilterOptions}
+              unitFiltersLoading={unitFiltersLoading}
+            />
+            <WritesCard control={control} validating={validatingFunction} />
             <MapFieldSection
               control={control}
               name='Labels'

@@ -318,6 +318,7 @@ export function buildComponentData(
           ? targetNameById.get(s.Space.ReleaseTargetID)
           : undefined,
         clusterUnitId: s.Space?.Annotations?.ClusterUnitID || undefined,
+        readme: s.Space?.Annotations?.Readme?.trim() || undefined,
         parentDeploymentId: parentOf.get(sid) ?? null,
         stage: getDepth(sid),
         upgradeableCount: upgradeableBySpace.get(sid) ?? 0,

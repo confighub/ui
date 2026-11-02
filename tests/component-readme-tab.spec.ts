@@ -1,9 +1,10 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 //
-// A Space with a README.md Unit gets a Readme tab in the Component view's side
-// pane, which renders the Unit's Markdown without its frontmatter. A Space
-// without one, and without a release target, has no tab bar at all.
+// A Space with a README.md Unit or a Readme annotation gets a Readme tab in the
+// Component view's side pane, which renders the annotation's Markdown and the
+// Unit's without its frontmatter. A Space with neither, and without a release
+// target, has no tab bar at all.
 
 import { readFileSync } from 'fs';
 import path from 'path';
@@ -20,6 +21,9 @@ const RUN = RandomSlugGenerator.randomSlugName();
 const COMPONENT_SLUG = `e2e-readme-app-${RUN}`;
 const BASE_SLUG = `e2e-readme-base-${RUN}`;
 const PLAIN_SLUG = `e2e-readme-plain-${RUN}`;
+const NOTE_SLUG = `e2e-readme-note-${RUN}`;
+
+const SPACE_README = 'Note that the **namespace** lives in another Space: see https://docs.confighub.com.';
 
 const README = `---
 configHub:
@@ -47,8 +51,10 @@ test.beforeAll(async ({ browser }) => {
     const api = new ApiHelper(page);
     componentId = (await api.createComponent(COMPONENT_SLUG)).ComponentID as string;
     const yaml = readFileSync(path.resolve(__dirname, 'test-data/basic-deployment.yml'), 'utf-8');
-    for (const slug of [BASE_SLUG, PLAIN_SLUG]) {
-      const spaceId = (await api.createSpace({ space: { Slug: slug, ComponentID: componentId } })).SpaceID as string;
+    for (const slug of [BASE_SLUG, PLAIN_SLUG, NOTE_SLUG]) {
+      const annotations = slug === PLAIN_SLUG ? undefined : { Readme: SPACE_README };
+      const spaceId = (await api.createSpace({ space: { Slug: slug, ComponentID: componentId, Annotations: annotations } }))
+        .SpaceID as string;
       spaceIds.push(spaceId);
       const unit = await api.createUnit({ spaceId, unit: { Slug: 'web', ToolchainType: 'Kubernetes/YAML' } });
       await api.uploadUnitData({ spaceId, unitId: unit.UnitID as string, body: yaml });
@@ -93,12 +99,34 @@ test('a Space with a README.md Unit shows its Markdown in a Readme tab', async (
   await expect(readme.getByText('relative link')).toBeVisible();
   await expect(readme.getByRole('link', { name: 'relative link' })).toHaveCount(0);
   await expect(readme).not.toContainText('configName');
+  // The Space's own Readme annotation comes first.
+  await expect(page.getByTestId('component-space-readme').locator('strong')).toHaveText('namespace');
 
   await page.getByTestId('component-pane-tab-config').click();
   await expect(readme).toHaveCount(0);
 });
 
-test('a Space with neither a README.md Unit nor a release target has no tab bar', async ({ page }) => {
+test('a Space with only a Readme annotation shows it in a Readme tab', async ({ page }) => {
+  await page.goto(`/components?app=${COMPONENT_SLUG}`);
+  const node = page.getByTestId(`rf__node-${spaceIds[2]}`);
+  await expect(node).toBeVisible({ timeout: 20000 });
+  await node.click();
+
+  const readmeTab = page.getByTestId('component-pane-tab-readme');
+  await expect(readmeTab).toBeVisible({ timeout: 10000 });
+  await readmeTab.click();
+
+  const note = page.getByTestId('component-space-readme');
+  await expect(note.locator('strong')).toHaveText('namespace');
+  await expect(note.getByRole('link', { name: 'https://docs.confighub.com' })).toHaveAttribute(
+    'href',
+    'https://docs.confighub.com',
+  );
+  await expect(page.getByTestId('component-readme')).toHaveCount(0);
+  await expect(page.getByText('README.md is empty.')).toHaveCount(0);
+});
+
+test('a Space with no README.md Unit, Readme annotation or release target has no tab bar', async ({ page }) => {
   await page.goto(`/components?app=${COMPONENT_SLUG}`);
   const node = page.getByTestId(`rf__node-${spaceIds[1]}`);
   await expect(node).toBeVisible({ timeout: 20000 });

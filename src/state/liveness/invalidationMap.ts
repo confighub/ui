@@ -139,6 +139,10 @@ export const EXTRA_INVALIDATIONS: Record<string, TagType[]> = {
   patchUnit: UNIT_WRITE,
   uploadUnitData: UNIT_WRITE,
   setUnitProtection: UNIT_WRITE,
+  // Both write a Revision: a guard edit changes PathAnnotations, and a conflict apply changes
+  // the configuration while a dismiss changes the Unit's outstanding Conflicts.
+  setUnitGuard: UNIT_WRITE,
+  resolveUnitConflicts: UNIT_WRITE,
   bulkCreateUnits: UNIT_WRITE,
   bulkPatchUnits: UNIT_WRITE,
   deleteUnit: UNIT_DELETE,

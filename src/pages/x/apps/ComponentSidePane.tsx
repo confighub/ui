@@ -146,12 +146,13 @@ const CONFIG_COMPARE_COLLAPSED_KEY = 'confighub.componentPane.config.compareColl
 
 /**
  * Only rendered when the selected deployment is release-enabled or has a
- * README.md Unit (a Space with neither has nothing to switch between — its
- * pane looks byte-identical to before this feature). Dense, componentTheme-
- * styled MUI Tabs — no existing Tabs usage in ui/src shares componentTheme
- * (ComponentActivityFeed/MutationDrawer/etc. use the default MUI palette),
- * so this is styled from scratch to match the pane's own rust-accent,
- * Manrope, dense idiom rather than inheriting a mismatched look.
+ * README.md Unit or Readme annotation (a Space with none of them has nothing
+ * to switch between — its pane looks byte-identical to before this feature).
+ * Dense, componentTheme-styled MUI Tabs — no existing Tabs usage in ui/src
+ * shares componentTheme (ComponentActivityFeed/MutationDrawer/etc. use the
+ * default MUI palette), so this is styled from scratch to match the pane's
+ * own rust-accent, Manrope, dense idiom rather than inheriting a mismatched
+ * look.
  */
 type PaneContentTab = 'config' | 'releases' | 'readme';
 
@@ -874,7 +875,7 @@ export const ComponentSidePane = memo(
     const multiComponent = useMemo(() => isMultiComponent(deployments), [deployments]);
     const headerComponent = multiComponent ? selectedDeployment?.componentName : undefined;
     const canRelease = !!selectedDeployment?.releaseTargetId;
-    // The Space's README.md Unit, which the Readme tab renders.
+    // The Space's README.md Unit and Readme annotation, which the Readme tab renders.
     const readmeUnit = useMemo(
       () =>
         selectedDeployment
@@ -882,6 +883,8 @@ export const ComponentSidePane = memo(
           : undefined,
       [selectedDeployment, unitsByDeployment],
     );
+    const spaceReadme = selectedDeployment?.readme;
+    const hasReadme = !!readmeUnit || !!spaceReadme;
     // also true for a same-Space upstream, which parentDeploymentId excludes
     const canUpgrade = selectedDeployment?.parentDeploymentId != null || !!hasUpgradableUnits;
 
@@ -1029,14 +1032,14 @@ export const ComponentSidePane = memo(
     // render a tab bar showing something else selected.
     useEffect(() => {
       if (activeTab === 'releases' && !(canRelease && release)) setActiveTab('config');
-      if (activeTab === 'readme' && !readmeUnit) setActiveTab('config');
+      if (activeTab === 'readme' && !hasReadme) setActiveTab('config');
       // Only the current node's own capabilities matter here — a node SWITCH
       // is what can invalidate the current tab, not activeTab itself
       // changing (that would fight a legitimate user click into a tab that
       // is about to be gated true a moment later, e.g. release data still
       // loading).
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedDeployment?.deploymentId, canRelease, release, readmeUnit]);
+    }, [selectedDeployment?.deploymentId, canRelease, release, hasReadme]);
 
     // "Just published" signal for the Releases tab's fresh-tint dot. It lives
     // HERE, not inside the Releases pane, because that pane unmounts while
@@ -2267,9 +2270,10 @@ export const ComponentSidePane = memo(
             rank whatever is used inside this band, never anything outside it. */}
         <Box sx={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', isolation: 'isolate' }}>
         {/* Only a Space with something besides plain config to switch between
-            renders a tab bar — release capability, or a README.md Unit.
+            renders a tab bar — release capability, or a README.md Unit or
+            Readme annotation.
             A plain Space's pane stays byte-identical to before this feature. */}
-        {((canRelease && release) || readmeUnit) && (
+        {((canRelease && release) || hasReadme) && (
           <PaneTabs
             value={activeTab}
             onChange={(_, v: PaneContentTab) => setActiveTab(v)}
@@ -2288,7 +2292,7 @@ export const ComponentSidePane = memo(
                 }
               />
             )}
-            {readmeUnit && <PaneTab label='Readme' value='readme' data-testid='component-pane-tab-readme' />}
+            {hasReadme && <PaneTab label='Readme' value='readme' data-testid='component-pane-tab-readme' />}
           </PaneTabs>
         )}
 
@@ -2363,9 +2367,13 @@ export const ComponentSidePane = memo(
           </PaneContent>
         )}
 
-        {activeTab === 'readme' && readmeUnit && (
+        {activeTab === 'readme' && hasReadme && (
           <PaneContent sx={{ padding: 0, gap: 0 }}>
-            <ReadmePane data={readmeUnit.data ?? ''} loading={!!isUnitDataFetching} />
+            <ReadmePane
+              spaceReadme={spaceReadme}
+              data={readmeUnit ? (readmeUnit.data ?? '') : undefined}
+              loading={!!isUnitDataFetching}
+            />
           </PaneContent>
         )}
 

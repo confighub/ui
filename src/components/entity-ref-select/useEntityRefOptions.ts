@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 
 import {
   useListAllFiltersQuery,
+  useListAllInvocationsQuery,
   useListAllTargetsQuery,
   useListComponentsQuery,
 } from '@confighub/rtk-query';
@@ -11,7 +12,7 @@ import {
 import type { EntityRefOption } from './EntityRefSelect';
 
 /** Filters of one kind (From) across the organization, named <space>/<filter>. */
-export const useFilterRefOptions = (from: 'Trigger' | 'Attribute', skip = false) => {
+export const useFilterRefOptions = (from: 'Trigger' | 'Attribute' | 'Unit', skip = false) => {
   const { data = [], isFetching } = useListAllFiltersQuery(
     { where: `From = '${from}'`, include: 'SpaceID' },
     { skip },
@@ -55,6 +56,30 @@ export const useComponentRefOptions = (skip = false) => {
       data
         .filter((c) => c.Component?.ComponentID)
         .map((c) => ({ id: c.Component!.ComponentID!, label: c.Component!.Slug }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [data],
+  );
+  return { options, isFetching };
+};
+
+/**
+ * Invocations of one toolchain across the organization, named <space>/<invocation>, that a Trigger
+ * can run: a Trigger fires with no caller to supply parameter values, so one that declares
+ * parameters is left out.
+ */
+export const useTriggerInvocationRefOptions = (toolchainType: string, skip = false) => {
+  const { data = [], isFetching } = useListAllInvocationsQuery(
+    { where: `ToolchainType = '${toolchainType}'`, include: 'SpaceID' },
+    { skip: skip || !toolchainType },
+  );
+  const options = useMemo<EntityRefOption[]>(
+    () =>
+      data
+        .filter((i) => i.Invocation?.InvocationID && !(i.Invocation.Parameters?.length))
+        .map((i) => ({
+          id: i.Invocation!.InvocationID!,
+          label: i.Space?.Slug ? `${i.Space.Slug}/${i.Invocation!.Slug}` : i.Invocation!.Slug,
+        }))
         .sort((a, b) => a.label.localeCompare(b.label)),
     [data],
   );

@@ -4,7 +4,11 @@
 import { useEffect, useState } from 'react';
 import type { UseFormReset, UseFormSetValue, UseFormWatch } from 'react-hook-form';
 
-import { type MapRow, mapToRows, rowsToGates, rowsToMap } from '@/components/map-field-editor/map-rows';
+import {
+  buildTriggerBody,
+  type IAddTriggerFormInput,
+  triggerToFormInput,
+} from '@/hooks/triggerFormBody';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import {
   TriggerRead,
@@ -14,19 +18,7 @@ import {
 import type { FunctionInvocation, FunctionSignature } from '@confighub/rtk-query';
 import { ENTITY_TYPES } from '@/utility/analytics-constants';
 
-// Form input interface - defines the structure of our form data
-export interface IAddTriggerFormInput {
-  ChannelID?: string;
-  Slug: string;
-  Labels?: MapRow[];
-  Annotations?: MapRow[];
-  DeleteGates?: MapRow[];
-  EventType: 'Mutation' | 'PostClone';
-  FunctionName: string;
-  ToolchainType: 'Kubernetes/YAML';
-  Disabled?: boolean;
-  Warn?: boolean;
-}
+export type { IAddTriggerFormInput } from '@/hooks/triggerFormBody';
 
 /**
  * Transforms the functions object into a flat array of options for the autocomplete
@@ -94,19 +86,7 @@ export const useAddTrigger = (
   // Initialize form with existing trigger data when in edit mode
   useEffect(() => {
     if (existingTrigger) {
-      // Initialize basic fields
-      const initialForm: IAddTriggerFormInput = {
-        Slug: existingTrigger.Slug || '',
-        EventType: (existingTrigger.Event as 'Mutation' | 'PostClone') || 'Mutation',
-        ChannelID: existingTrigger.ChannelID || '',
-        FunctionName: existingTrigger.FunctionName || '',
-        ToolchainType: (existingTrigger.ToolchainType as 'Kubernetes/YAML') || 'Kubernetes/YAML',
-        Disabled: existingTrigger.Disabled || false,
-        Warn: existingTrigger.Warn || false,
-        Labels: mapToRows(existingTrigger.Labels),
-        Annotations: mapToRows(existingTrigger.Annotations),
-        DeleteGates: mapToRows(existingTrigger.DeleteGates),
-      };
+      const initialForm = triggerToFormInput(existingTrigger);
 
       reset(initialForm);
 
@@ -151,27 +131,12 @@ export const useAddTrigger = (
   };
 
   const submitTrigger = async (data: IAddTriggerFormInput) => {
-    // Transform argumentValues object into API format
-    const args = Object.entries(argumentValues).map(([paramName, value]) => ({
-      ParameterName: paramName,
-      Value: value,
-    }));
-
-    const triggerData: TriggerRead = {
-      Slug: data.Slug,
-      ChannelID: data.ChannelID ? data.ChannelID : undefined,
-      FunctionName: data.FunctionName,
-      Disabled: data.Disabled || false,
-      Warn: data.Warn || false,
-      Labels: rowsToMap(data.Labels),
-      Annotations: rowsToMap(data.Annotations),
-      DeleteGates: rowsToGates(data.DeleteGates),
-      SpaceID: spaceId,
-      Arguments: args,
-      Event: data.EventType,
-      ToolchainType: data.ToolchainType,
-      OrganizationID: orgID,
-    };
+    const triggerData = buildTriggerBody(
+      data,
+      argumentValues,
+      { spaceId, orgID },
+      !!selectedFunction.Validating && !selectedFunction.Mutating,
+    );
 
     // Submit to API - create or update based on mode
     if (existingTrigger) {

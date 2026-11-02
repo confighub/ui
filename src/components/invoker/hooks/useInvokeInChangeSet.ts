@@ -106,7 +106,7 @@ export const useInvokeInChangeSet = () => {
         dispatch(confighubApi.util.invalidateTags(['Revision', 'ChangeSet', 'Unit']));
         // Signal completion/abort to the initiative page. The page is
         // responsible for waiting on the backend's resolve queue (which we
-        // can't observe directly without the trigger's worker context) before
+        // can't observe directly) before
         // firing its follow-up Recheck.
         dispatch(completed ? invocationCompleted({ unitIds }) : invocationAborted());
         setIsInvoking(false);

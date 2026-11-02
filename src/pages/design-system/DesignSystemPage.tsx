@@ -1279,7 +1279,7 @@ function TopNavSection() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1 }}>
             <Button variant='text' color='primary' size='small' sx={{ fontWeight: 600 }}>Spaces</Button>
             <Button variant='text' size='small'>Deploy</Button>
-            <Button variant='text' size='small'>Workers</Button>
+            <Button variant='text' size='small'>Channels</Button>
             <Button variant='text' size='small'>Settings</Button>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1364,7 +1364,7 @@ function SidebarShellDemo({ collapsed }: SidebarShellDemoProps) {
     { icon: <DataObjectIcon sx={{ fontSize: 20, color: 'white' }} />, text: 'Units' },
     { icon: <FolderCopyIcon sx={{ fontSize: 20, color: 'white' }} />, text: 'Spaces' },
     { icon: <StorageIcon sx={{ fontSize: 20, color: 'white' }} />, text: 'Targets' },
-    { icon: <EngineeringIcon sx={{ fontSize: 20, color: 'white' }} />, text: 'Workers' },
+    { icon: <EngineeringIcon sx={{ fontSize: 20, color: 'white' }} />, text: 'Channels' },
     { icon: <WorkspacesIcon sx={{ fontSize: 20, color: 'white' }} />, text: 'Tools' },
   ];
   const ACTIVE_IDX = 1;
@@ -1989,7 +1989,7 @@ function UnitStatusSection() {
     { status: 'Progressing', color: 'info', token: '--blue', desc: 'Apply or import currently running' },
     { status: 'NotLive', color: 'default', token: '--t4', desc: 'Unit exists but has never been applied' },
     { status: 'Detached', color: 'default', token: '--t4', desc: 'Unit removed from active space tracking' },
-    { status: 'Unknown', color: 'default', token: '--t4', desc: 'Status not yet reported by the worker' },
+    { status: 'Unknown', color: 'default', token: '--t4', desc: 'Status not yet reported by the cluster' },
   ];
 
   const syncStatuses: Array<{
@@ -3753,7 +3753,7 @@ function StatRowSection() {
     { label: 'Units', value: 47, color: 'var(--t1)' },
     { label: 'Spaces', value: 6, color: 'var(--purple)' },
     { label: 'Targets', value: 12, color: 'var(--green)' },
-    { label: 'Workers', value: 3, color: 'var(--amber)' },
+    { label: 'Channels', value: 3, color: 'var(--amber)' },
   ];
 
   return (

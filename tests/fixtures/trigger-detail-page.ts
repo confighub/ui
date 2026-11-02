@@ -22,7 +22,7 @@ export class TriggerDetailPage {
   async editTrigger(olderTriggerName: string, triggerName: string) {
     await this.triggerTab.click();
     await this.goToTriggerDetail(olderTriggerName);
-    await this.page.getByRole('textbox', { name: 'Name' }).fill(triggerName);
+    await this.page.getByRole('textbox', { name: 'Name', exact: true }).fill(triggerName);
 
     // Click save and wait for the update API call to complete
     await Promise.all([

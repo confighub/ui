@@ -35,7 +35,7 @@ export class SpaceDetailPage {
 
   async addCelTrigger(name: string) {
     await this.openTriggerForm();
-    await this.page.getByRole('textbox', { name: 'Name' }).fill(name);
+    await this.page.getByRole('textbox', { name: 'Name', exact: true }).fill(name);
 
     const combobox = await this.page.getByRole('combobox', { name: 'Function Name' });
     await combobox.click();
@@ -54,7 +54,7 @@ export class SpaceDetailPage {
   async addValidatedTrigger(name: string) {
     await this.openTriggerForm();
 
-    await this.page.getByRole('textbox', { name: 'Name' }).fill(name);
+    await this.page.getByRole('textbox', { name: 'Name', exact: true }).fill(name);
     await this.page.getByRole('combobox', { name: 'Function Name' }).click();
     await this.page.getByRole('option', { name: 'validate', exact: true }).click();
 
