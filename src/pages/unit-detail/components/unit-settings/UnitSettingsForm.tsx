@@ -1,39 +1,45 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-
 // The settings of one Unit: its name, toolchain, whether it is released, and metadata. The Unit page shows it in
 // its Settings tab and the Unit list in a drawer, so both edit a Unit the same way.
-
 import { type ReactNode, useEffect, useRef } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Link as RouterLink } from 'react-router-dom';
 
+import { BackedEntityLink } from '@/components/backing-unit/BackedEntityLink';
+import { ENTITY_TYPE_LABEL } from '@/components/backing-unit/useBackedEntity';
 import { CopyToClipboard } from '@/components/copy-to-clipboard/CopyToClipboard';
 import { LabelTextField } from '@/components/label-text-field/LabelTextField';
 import { MapFieldSection } from '@/components/map-field-editor/MapFieldSection';
-import { type MapRow, mapToRows, rowsToGates, rowsToMap } from '@/components/map-field-editor/map-rows';
+import {
+  type MapRow,
+  mapToRows,
+  rowsToGates,
+  rowsToMap,
+} from '@/components/map-field-editor/map-rows';
 import { DEFAULT_TOOLCHAIN_TYPES } from '@/components/query-builder';
 import { SettingsFormFooter } from '@/components/settings-form-footer/SettingsFormFooter';
 import { SectionCard } from '@/components/styled';
-import { useAppDispatch } from '@/hooks/useApp';
 import { SpaceReleaseTargetField } from '@/components/unit-form';
-import { ExtendedUnitRead, UnitRead, useUpdateUnitMutation } from '@confighub/rtk-query';
-import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
+import { useAppDispatch } from '@/hooks/useApp';
 import { setAlert } from '@/state/slices/alert';
 import { formatRelative } from '@/utility/date-format';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import { isIDInvalid } from '@/utility/validation-functions';
+import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
+import { ExtendedUnitRead, UnitRead, useUpdateUnitMutation } from '@confighub/rtk-query';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
 import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
-import IconButton from '@mui/material/IconButton';
 import Grid from '@mui/material/Grid2';
+import IconButton from '@mui/material/IconButton';
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
+import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 
 interface UnitFormData {
@@ -156,35 +162,52 @@ export const UnitSettingsForm = ({
     <Box component='form' onSubmit={handleSubmit(onSubmit)} data-testid='unit-settings-form'>
       <SectionCard title='Basic Information'>
         <Grid container spacing={2}>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <ReadOnlyField
-              label='Unit ID'
-              text={unit?.UnitID || ''}
-              endAdornment={<CopyToClipboard text={unit?.UnitID || ''} />}
-            />
+          <Grid size={{ xs: 6 }}>
+            <Stack spacing={2}>
+              <Box>
+                <ReadOnlyField
+                  label='Unit ID'
+                  text={unit?.UnitID || ''}
+                  endAdornment={<CopyToClipboard text={unit?.UnitID || ''} />}
+                />
+              </Box>
+              <Box>
+                <ReadOnlyField
+                  label='Upstream Unit'
+                  text={upstreamUnit?.Slug || unit?.UpstreamUnitID || ''}
+                  endAdornment={
+                    isIDInvalid(unit?.UpstreamUnitID) ? null : (
+                      <>
+                        <CopyToClipboard text={unit?.UpstreamUnitID || ''} />
+                        <IconButton
+                          size='small'
+                          component={RouterLink}
+                          to={`/units/${unit?.UpstreamSpaceID}/${unit?.UpstreamUnitID}`}
+                          aria-label='Open upstream Unit'
+                          title='Open upstream Unit'
+                        >
+                          <ArrowForwardIcon fontSize='small' />
+                        </IconButton>
+                      </>
+                    )
+                  }
+                />
+              </Box>
+            </Stack>
           </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <ReadOnlyField
-              label='Upstream Unit'
-              text={upstreamUnit?.Slug || unit?.UpstreamUnitID || ''}
-              endAdornment={
-                isIDInvalid(unit?.UpstreamUnitID) ? null : (
-                  <>
-                    <CopyToClipboard text={unit?.UpstreamUnitID || ''} />
-                    <IconButton
-                      size='small'
-                      component={RouterLink}
-                      to={`/units/${unit?.UpstreamSpaceID}/${unit?.UpstreamUnitID}`}
-                      aria-label='Open upstream Unit'
-                      title='Open upstream Unit'
-                    >
-                      <ArrowForwardIcon fontSize='small' />
-                    </IconButton>
-                  </>
-                )
-              }
-            />
-          </Grid>
+          {unit?.Labels?.[ENTITY_TYPE_LABEL] ? (
+            <Grid size={{ xs: 6 }}>
+              {/* A backing Unit holds the configuration of the entity it names. */}
+              <LabelTextField
+                label='Backs'
+                text={<BackedEntityLink unit={unit} />}
+                textColor='text.primary'
+                labelColor='text.secondary'
+                labelVariant='caption'
+                textVariant='body1'
+              />
+            </Grid>
+          ) : null}
           <Grid size={{ xs: 6 }}>
             <ReadOnlyField label='Created At' text={formatRelative(unit?.CreatedAt) || ''} />
           </Grid>
@@ -247,7 +270,10 @@ export const UnitSettingsForm = ({
             />
           </Grid>
           <Grid size={{ xs: 12, md: 6 }}>
-            <SpaceReleaseTargetField spaceId={unit?.SpaceID} unreleasable={watch('Unreleasable')} />
+            <SpaceReleaseTargetField
+              spaceId={unit?.SpaceID}
+              unreleasable={watch('Unreleasable')}
+            />
           </Grid>
           <Grid size={{ xs: 12, md: 6 }}>
             <Controller
@@ -314,7 +340,12 @@ export const UnitSettingsForm = ({
       />
 
       <SettingsFormFooter actions={actions}>
-        <Button variant='contained' type='submit' disabled={isSaving} data-testid='unit-settings-save'>
+        <Button
+          variant='contained'
+          type='submit'
+          disabled={isSaving}
+          data-testid='unit-settings-save'
+        >
           Save
         </Button>
       </SettingsFormFooter>

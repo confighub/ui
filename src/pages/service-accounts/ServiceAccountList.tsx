@@ -21,6 +21,9 @@ import { useListServiceAccountsQuery, type ServiceAccountRead } from '@confighub
 import { StatusDot, When } from '@/components/console-detail/ConsoleDetail';
 import { timeOf } from '@/components/console-detail/consoleDetailUtil';
 import { ConsoleTable, type ConsoleTableColumn } from '@/components/console-table/ConsoleTable';
+import { HiddenReasonTag } from '@/components/hidden-entities/HiddenReasonTag';
+import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
+import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { serviceAccountPath } from '@/hooks/usePrincipalNames';
 
 import {
@@ -138,6 +141,7 @@ const SERVICE_ACCOUNT_COLUMNS: ConsoleTableColumn<ServiceAccountItem>[] = [
               {subline}
             </Typography>
           ) : null}
+          <HiddenReasonTag reason={serviceAccount.HiddenReason} sx={ABOVE_ROW_LINK_SX} />
         </>
       );
     },
@@ -208,7 +212,10 @@ const serviceAccountRowAttributes = ({ serviceAccount, usage }: ServiceAccountIt
 
 export function ServiceAccountList() {
   const navigate = useNavigate();
-  const { data, isLoading, isFetching, isError, fulfilledTimeStamp, refetch } = useListServiceAccountsQuery({});
+  const { includeHidden, setIncludeHidden, includeHiddenParam } = useIncludeHidden();
+  const { data, isLoading, isFetching, isError, fulfilledTimeStamp, refetch } = useListServiceAccountsQuery({
+    includeHidden: includeHiddenParam,
+  });
   const serviceAccounts = useMemo(() => (data ?? []).flatMap((entry) => (entry.ServiceAccount ? [entry.ServiceAccount] : [])), [data]);
   const serviceAccountIds = useMemo(
     () => serviceAccounts.flatMap((sa) => (sa.ServiceAccountID ? [sa.ServiceAccountID] : [])).sort(),
@@ -325,6 +332,7 @@ export function ServiceAccountList() {
         <ConsoleSearch value={search} onChange={setSearch} placeholder='Search service accounts' />
         <ConsoleSelectFilter label='Status' value={activityFilter} onChange={setActivityFilter} allLabel='All' options={ACTIVITY_FILTERS} />
         <ConsoleSelectFilter label='Org role' value={roleFilter} onChange={setRoleFilter} allLabel='All roles' options={roles} />
+        <IncludeHiddenToggle includeHidden={includeHidden} onChange={setIncludeHidden} entities='service accounts' />
         <ConsoleClearButton onClick={clearFilters} disabled={!filtersActive}>
           Clear filters
         </ConsoleClearButton>

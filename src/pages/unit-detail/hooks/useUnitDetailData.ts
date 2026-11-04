@@ -2,6 +2,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 
 import {
   Invocation,
@@ -95,6 +96,7 @@ export const useUnitDetailData = ({ id, spaceID, refresh }: IUseUnitDetailDataPr
   const {
     data: freshExtendedUnit,
     isFetching: isFetchingUnit,
+    error: unitError,
     refetch: refetchUnit,
   } = useGetUnitQuery({
     unitId: id,
@@ -128,11 +130,14 @@ export const useUnitDetailData = ({ id, spaceID, refresh }: IUseUnitDetailDataPr
 
   // The Links from this Unit are in its Space; the Links to it can be in any Space, such as
   // the Links from the Units of every environment to a Unit that records facts for them all.
+  // The Links tab's toggle, in the URL, lists hidden Links too.
+  const { includeHiddenParam: includeHiddenLinks } = useIncludeHidden();
   const { data: linksFromData = EMPTY_LINKS, refetch: refetchLinksFrom } = useListLinksQuery(
     {
       spaceId: spaceID,
       where: `FromUnitID = '${id}'`,
       include: LINK_INCLUDE,
+      includeHidden: includeHiddenLinks,
     },
     {
       skip: isIDInvalid(spaceID) || isIDInvalid(id),
@@ -142,6 +147,7 @@ export const useUnitDetailData = ({ id, spaceID, refresh }: IUseUnitDetailDataPr
     {
       where: `ToUnitID = '${id}'`,
       include: LINK_INCLUDE,
+      includeHidden: includeHiddenLinks,
     },
     {
       skip: isIDInvalid(id),
@@ -295,6 +301,8 @@ export const useUnitDetailData = ({ id, spaceID, refresh }: IUseUnitDetailDataPr
     currentSpace,
     upstreamUnit,
     isFetchingUnit,
+    unitError,
+    refetchUnit,
     isEditInvocationCancelled,
     setIsEditInvocationCancelled,
     invocationToEdit,

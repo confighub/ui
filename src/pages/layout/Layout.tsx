@@ -22,6 +22,7 @@ import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import DataObjectIcon from '@mui/icons-material/DataObject';
 import DifferenceIcon from '@mui/icons-material/Difference';
 import ExploreIcon from '@mui/icons-material/Explore';
+import FlashOnOutlinedIcon from '@mui/icons-material/FlashOnOutlined';
 import FolderCopyIcon from '@mui/icons-material/FolderCopy';
 import LocalLibraryIcon from '@mui/icons-material/LocalLibrary';
 import PublishedWithChangesIcon from '@mui/icons-material/PublishedWithChanges';
@@ -366,6 +367,12 @@ const ConfigurationItems: INavItem[] = [
         text: 'Targets',
         component: <Storage sx={{ fontSize: 18 }} />,
         navigate: `/targets`,
+        disable: false,
+      },
+      {
+        text: 'Triggers',
+        component: <FlashOnOutlinedIcon sx={{ fontSize: 18 }} />,
+        navigate: `/triggers`,
         disable: false,
       },
       {

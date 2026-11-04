@@ -29,6 +29,8 @@ export interface InvocationSource {
   spaceId?: string;
   spaceSlug?: string;
   toolchainType?: string;
+  /** The Unit that holds the Invocation's configuration, if it has one. */
+  backingUnitId?: string;
   functionInvocations: FunctionInvocation[];
   /** `ChangeOrder.Parameters`: the values the Invocation's parameters take. */
   parameters: Record<string, unknown>;
@@ -79,6 +81,7 @@ export function useInvocationSource(args: {
       spaceId: invocation.SpaceID,
       spaceSlug: entry?.Space?.Slug ?? invocation.SpaceSlug,
       toolchainType: invocation.ToolchainType,
+      backingUnitId: invocation.BackingUnitID || undefined,
       functionInvocations: invocation.FunctionInvocations ?? [],
     };
   }, [skip, invocationId, parameters, whereUnit, unitFilterId, filters, invocations, isError]);

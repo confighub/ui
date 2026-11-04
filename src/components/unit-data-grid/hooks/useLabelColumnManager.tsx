@@ -522,6 +522,24 @@ export const useLabelColumnManager = (
       ),
     },
     {
+      field: 'HiddenReason',
+      headerName: 'Hidden Reason',
+      flex: 1,
+      minWidth: 140,
+      valueGetter: (_, row) => row.HiddenReason || '',
+      groupable: true,
+      renderCell: createIntelligentGroupRenderer(
+        (row) => row.HiddenReason,
+        'Reasons',
+        'Reasons',
+        (params) => (
+          <CenteredTableCell>
+            <Ellipses variant='body1'>{params.value}</Ellipses>
+          </CenteredTableCell>
+        ),
+      ),
+    },
+    {
       field: 'LastChangeDescription',
       headerName: 'Last Change',
       flex: 1,
@@ -593,7 +611,8 @@ export const useLabelColumnManager = (
     },
     {
       field: 'ValidationErrors',
-      headerName: 'Validation Errors',
+      headerName: 'Errors',
+      description: 'Validation errors: checks that did not pass and block Releases',
       flex: 0.5,
       minWidth: 100,
       groupable: false,
@@ -663,7 +682,8 @@ export const useLabelColumnManager = (
     },
     {
       field: 'ValidationWarnings',
-      headerName: 'Validation Warnings',
+      headerName: 'Warnings',
+      description: 'Validation warnings: checks that did not pass and block nothing',
       flex: 0.5,
       minWidth: 100,
       groupable: false,

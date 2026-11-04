@@ -62,7 +62,6 @@ import {
   ErrorCard,
   ErrorDetail,
   ErrorHeader,
-  GateBadge,
   PaneContainer,
   PaneContent,
   PaneHeader,
@@ -90,10 +89,12 @@ import { RELEASE_DIFF_HEAD, useReleaseDiff } from './useReleaseDiff';
 import type { ReleaseUnitRef } from './useReleaseMagnitudes';
 import { RELEASE_FRESH_SETTLE_MS, useFreshSignal } from './useFreshSignal';
 import { UnitDetailsPane } from './UnitDetailsPane';
+import { ValidationGateChip } from './ValidationGateChip';
 import type { UnitMetaPatch } from './unit-details/types';
 import type {
   ApplyEntryWithGates,
   MergedUnit,
+  PaneUnit,
   ComponentDeployment,
   UpgradeEntry,
   VariationEntry,
@@ -383,22 +384,7 @@ export interface ComponentSidePaneProps {
   deployments: ComponentDeployment[];
   /** Org-wide targets (from `useListAllTargetsQuery`) — the Space settings sheet filters these to OCI-provider ones for the release-target row (design-mockups/variant-settings/BUILD-PLAN.md commit 3). */
   targets: ExtendedTargetRead[];
-  unitsByDeployment: Map<
-    string,
-    {
-      slug: string;
-      spaceId: string;
-      unitId: string;
-      hasUpstream: boolean;
-      toolchainType?: string;
-      data?: string;
-      validationErrors?: { [key: string]: boolean };
-      /** Unit.TargetID — scopes a unit to the Space's Release target set (task #60). */
-      targetId?: string;
-      /** Not Unit.Unreleasable: a Release of the Space publishes the unit. */
-      releasable: boolean;
-    }[]
-  >;
+  unitsByDeployment: Map<string, PaneUnit[]>;
   /** Which units the pane lists: those a Release publishes, or all of them. */
   unitScope: PaneUnitScope;
   onUnitScopeChange: (scope: PaneUnitScope) => void;
@@ -1715,13 +1701,21 @@ export const ComponentSidePane = memo(
       prevTabFocusNonceRef.current = tabFocus.nonce;
       tabFocusWaitingOnRef.current = undefined;
       if (tabFocus.id !== selectedId) return;
-      // 'changeset' is the Configuration tab on the ChangeSet filter.
-      setActiveTab(tabFocus.tab === 'changeset' ? 'config' : tabFocus.tab);
+      // 'changeset' is the Configuration tab on the ChangeSet filter. A Deployment
+      // that cannot release has no Releases tab, so a request for it opens
+      // Configuration rather than an empty pane. Whether it can is known before
+      // its Releases have loaded, which a request often arrives ahead of.
+      const hasReleasesTab = canRelease;
+      setActiveTab(
+        tabFocus.tab === 'changeset' || (tabFocus.tab === 'releases' && !hasReleasesTab)
+          ? 'config'
+          : tabFocus.tab,
+      );
       if (tabFocus.tab === 'changeset') setFilterModeWithStaging('changeset');
-      if (tabFocus.releaseNum != null) {
+      if (tabFocus.releaseNum != null && hasReleasesTab) {
         setHighlightRelease({ num: tabFocus.releaseNum, nonce: tabFocus.nonce });
       }
-    }, [tabFocus, selectedDeploymentIds, setFilterModeWithStaging]);
+    }, [tabFocus, selectedDeploymentIds, setFilterModeWithStaging, canRelease]);
 
     // Initial mount: if we land already on the Incoming tab, no tab CHANGE fires,
     // so stage-all wouldn't trigger via the setter. Fire it once here. Minimal
@@ -2724,33 +2718,29 @@ export const ComponentSidePane = memo(
                     </Tooltip>
                   )}
                   <Fade
-                    in={!!unit.applyEntry?.isGated}
+                    in={Object.keys(unit.validationErrors ?? {}).length > 0}
                     timeout={300}
                     unmountOnExit
                   >
-                    <Tooltip
-                      title={unit.applyEntry?.gateKeys.join(', ') ?? ''}
-                      placement='left'
-                      arrow
-                    >
-                      <GateBadge
-                        label={
-                          unit.validationErrors?.['awaiting/triggers'] ? (
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              Gated
-                              <CircularProgress
-                                size={10}
-                                sx={{ color: componentTheme.attention }}
-                              />
-                            </Box>
-                          ) : (
-                            'Gated'
-                          )
-                        }
-                        size='small'
+                    <span>
+                      <ValidationGateChip
+                        kind='errors'
+                        gates={Object.keys(unit.validationErrors ?? {})}
+                        results={unit.validationResults}
+                        spaceId={unit.spaceId}
+                        unitId={unit.unitId}
                       />
-                    </Tooltip>
+                    </span>
                   </Fade>
+                  {Object.keys(unit.validationWarnings ?? {}).length > 0 && (
+                    <ValidationGateChip
+                      kind='warnings'
+                      gates={Object.keys(unit.validationWarnings ?? {})}
+                      results={unit.validationResults}
+                      spaceId={unit.spaceId}
+                      unitId={unit.unitId}
+                    />
+                  )}
                   <Box sx={{ display: 'flex', gap: '8px', alignItems: 'center', ml: 'auto' }}>
                     {revisionLabel && (
                       <Typography

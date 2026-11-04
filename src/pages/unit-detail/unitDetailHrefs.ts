@@ -178,6 +178,11 @@ export function unitOverviewHref(spaceId: string, unitId: string, gate = ''): st
   return `/units/${spaceId}/${unitId}?${params.toString()}`;
 }
 
+/** The Revisions tab of a Unit. */
+export function unitRevisionsHref(spaceId: string, unitId: string): string {
+  return `/units/${spaceId}/${unitId}?tab=${UNIT_DETAIL_TAB.revisions}`;
+}
+
 /** The Revisions tab of a Unit, with one Revision open in its viewer. */
 export function unitRevisionHref(
   spaceId: string,

@@ -1,6 +1,8 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
+import type { ValidationResult } from '@confighub/rtk-query';
+
 import type { LiveStatus, RunningRelease } from './liveStatus';
 import type { DeploymentChangeSet, WaitingChangeSet } from './changeSets';
 import type { ArrayInsertion, LeafValueType, ResourceInfo } from './configParser';
@@ -310,6 +312,25 @@ export interface VariationEntry {
   liveFieldDiffs: KeyedFieldDiff[];
 }
 
+/** A unit as the side pane lists it, before its entries are merged in. */
+export interface PaneUnit {
+  slug: string;
+  spaceId: string;
+  unitId: string;
+  hasUpstream: boolean;
+  toolchainType?: string;
+  data?: string;
+  validationErrors?: { [key: string]: boolean };
+  /** Unit.ValidationWarnings: the warning Triggers that did not pass, which block nothing. */
+  validationWarnings?: { [key: string]: boolean };
+  /** Unit.ValidationResults: what each error and warning gate found. */
+  validationResults?: { [gate: string]: ValidationResult[] };
+  /** Unit.TargetID — scopes a unit to the Space's Release target set (task #60). */
+  targetId?: string;
+  /** Not Unit.Unreleasable: a Release of the Space publishes the unit. */
+  releasable: boolean;
+}
+
 export interface MergedUnit {
   unitId: string;
   slug: string;
@@ -318,6 +339,8 @@ export interface MergedUnit {
   toolchainType?: string;
   data?: string;
   validationErrors?: { [key: string]: boolean };
+  validationWarnings?: { [key: string]: boolean };
+  validationResults?: { [gate: string]: ValidationResult[] };
   upgradeEntry?: UpgradeEntry;
   applyEntry?: ApplyEntryWithGates;
   variationEntry?: VariationEntry;

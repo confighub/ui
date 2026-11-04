@@ -130,7 +130,14 @@ export const useAddTrigger = (
     }));
   };
 
-  const submitTrigger = async (data: IAddTriggerFormInput) => {
+  /**
+   * Creates or updates the Trigger, and returns it when it was written. A create with
+   * `withBackingUnits` also gives the new Trigger a backing Unit.
+   */
+  const submitTrigger = async (
+    data: IAddTriggerFormInput,
+    withBackingUnits = false,
+  ): Promise<TriggerRead | undefined> => {
     const triggerData = buildTriggerBody(
       data,
       argumentValues,
@@ -140,7 +147,7 @@ export const useAddTrigger = (
 
     // Submit to API - create or update based on mode
     if (existingTrigger) {
-      await updateTrigger({
+      const result = await updateTrigger({
         triggerId: existingTrigger.TriggerID || '',
         spaceId,
         trigger: {
@@ -148,9 +155,11 @@ export const useAddTrigger = (
           ...triggerData,
         },
       });
+      return result.data;
     } else {
       const result = await addTrigger({
         spaceId,
+        withBackingUnits: withBackingUnits || undefined,
         trigger: triggerData,
       });
 
@@ -163,6 +172,7 @@ export const useAddTrigger = (
           toolchain_type: data.ToolchainType,
         });
       }
+      return result.data;
     }
   };
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { DATE_TIME_GRID_SLOTS } from '@/components/data-grid/cells';
 import { EntityDataGrid } from '@/components/entity-data-grid/EntityDataGrid';
+import { HIDDEN_REASON_FIELD, hiddenReasonColumn } from '@/components/hidden-entities/hiddenReasonColumn';
 import { useAttributeColumnManager } from '@/components/entity-data-grid/hooks/useAttributeColumnManager';
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { FilteredEmptyState } from '@/components/filtered-empty-state';
@@ -45,6 +46,14 @@ export interface TriggersTableProps {
   emptyState?: React.ReactNode;
   /** Key the column layout is stored under, so each list keeps its own */
   persistenceKey?: string;
+  /** Shows the Space column by default, for a list of Triggers from many Spaces */
+  showSpaceColumn?: boolean;
+  /** Every Trigger's name opens the edit drawer on this page, wherever the Trigger resides */
+  editInPlace?: boolean;
+  /** The list's include_hidden, naming the hidden Triggers to list too */
+  includeHidden?: string;
+  /** Controls for the grid's toolbar, before its Columns button */
+  customToolbarActions?: React.ReactNode;
 }
 
 // The Pack label names the group of policies a Trigger belongs to, which a Space or Target opts
@@ -68,9 +77,16 @@ const GRID_DEFAULTS = {
     Event: true,
     Validating: true,
     Disabled: true,
+    [HIDDEN_REASON_FIELD]: false,
     CreatedAt: false,
     UpdatedAt: true,
   } as Record<string, boolean>,
+};
+
+// A list of Triggers from across Spaces shows where each is.
+const ALL_SPACES_GRID_DEFAULTS = {
+  ...GRID_DEFAULTS,
+  columnVisibility: { ...GRID_DEFAULTS.columnVisibility, Space: true },
 };
 
 // A list of Triggers selected from across Spaces shows where each is and how it is selected.
@@ -92,13 +108,17 @@ export const TriggersTable = ({
   selectionStatusById,
   emptyState,
   persistenceKey = 'triggers-table',
+  showSpaceColumn = false,
+  editInPlace = false,
+  includeHidden,
+  customToolbarActions,
 }: TriggersTableProps) => {
   const {
     data: extendedTriggers,
     isLoading,
     error: queryError,
   } = useListAllTriggersQuery(
-    { where, include: 'SpaceID,ChannelID' },
+    { where: where || undefined, include: 'SpaceID,ChannelID', includeHidden },
     { skip, refetchOnMountOrArgChange: true, refetchOnFocus: true },
   );
 
@@ -135,7 +155,7 @@ export const TriggersTable = ({
         SpaceID: triggerSpaceID,
         Space: trigger?.Space?.Slug || '',
         EditLink:
-          triggerSpaceID === spaceID
+          editInPlace || triggerSpaceID === spaceID
             ? `?edit=${triggerID}`
             : `/spaces/${triggerSpaceID}?tab=1&edit=${triggerID}`,
         Selection: selectionStatusById?.[triggerID],
@@ -150,11 +170,12 @@ export const TriggersTable = ({
         Warn: trigger?.Trigger?.Warn || false,
         CreatedAt: trigger?.Trigger?.CreatedAt || '',
         UpdatedAt: trigger?.Trigger?.UpdatedAt || '',
+        HiddenReason: trigger?.Trigger?.HiddenReason || '',
         Labels: trigger?.Trigger?.Labels || {},
         _extendedTrigger: trigger, // Store original for edit callback
       };
     });
-  }, [triggers, spaceID, selectionStatusById]);
+  }, [triggers, spaceID, editInPlace, selectionStatusById]);
 
   // Use attribute column manager for Labels
   const { availableAttributeKeys, createAttributeColumn } = useAttributeColumnManager(rows, {
@@ -183,7 +204,10 @@ export const TriggersTable = ({
   }, [availableAttributeKeys, createAttributeColumn]);
 
   // Create static columns
-  const staticColumns = useMemo(() => createTriggerStaticColumns(), []);
+  const staticColumns = useMemo(
+    () => [...createTriggerStaticColumns(), hiddenReasonColumn<TriggerRowItem>((row) => row.HiddenReason)],
+    [],
+  );
 
   // Combine all columns, the Pack label's after the Space's
   const baseColumns = useMemo(() => {
@@ -208,7 +232,11 @@ export const TriggersTable = ({
     hasStateChanged,
   } = useGridPersistence(
     persistenceKey,
-    selectionStatusById ? SELECTION_GRID_DEFAULTS : GRID_DEFAULTS,
+    selectionStatusById
+      ? SELECTION_GRID_DEFAULTS
+      : showSpaceColumn
+        ? ALL_SPACES_GRID_DEFAULTS
+        : GRID_DEFAULTS,
   );
 
   // Apply stored widths to columns
@@ -282,6 +310,7 @@ export const TriggersTable = ({
         columnGroups={TRIGGER_COLUMN_GROUPS}
         dynamicGroups={TRIGGER_DYNAMIC_GROUPS}
         filterElement={filterElement}
+        customToolbarActions={customToolbarActions}
         slots={DATE_TIME_GRID_SLOTS}
       />
     </>

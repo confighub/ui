@@ -44,6 +44,7 @@ export interface UnitRowItem {
     [key: string]: string;
   };
   ToolchainType?: string;
+  HiddenReason?: string;
   // Revision Tracking columns
   LastReleasedRevisionNum?: number;
   HeadMutationNum?: number;
@@ -100,6 +101,7 @@ export const createUnitListRow = (unit: ExtendedUnitRead): UnitRowItem => {
     Labels: unit?.Unit?.Labels || {},
     Values: unit?.Unit?.Values || {},
     ToolchainType: unit?.Unit?.ToolchainType || '',
+    HiddenReason: unit?.Unit?.HiddenReason || '',
     // Revision Tracking columns
     LastReleasedRevisionNum: unit?.Unit?.LastReleasedRevisionNum || 0,
     HeadMutationNum: unit?.Unit?.HeadMutationNum || 0,

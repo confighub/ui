@@ -5,10 +5,18 @@
 // Triggers and Attributes. The Space page shows it in its Settings tab and the Space list in a
 // drawer, so both edit a Space the same way.
 
-import { type ReactNode, useEffect, useRef } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Link as RouterLink } from 'react-router-dom';
 
+import { BackingUnitLink } from '@/components/backing-unit/BackingUnitLink';
+import { EnableBackingUnitField } from '@/components/backing-unit/EnableBackingUnitField';
+import {
+  type BackingUnitChoice,
+  isBackingUnitChoiceComplete,
+  NO_BACKING_UNIT,
+} from '@/components/backing-unit/backingUnitChoice';
+import { backingUnitFailureMessage, enableBackingUnit } from '@/components/backing-unit/enableBackingUnit';
 import { CopyToClipboard } from '@/components/copy-to-clipboard/CopyToClipboard';
 import { EntityRefSelect } from '@/components/entity-ref-select/EntityRefSelect';
 import {
@@ -22,6 +30,7 @@ import { type MapRow, mapToRows, rowsToGates, rowsToMap } from '@/components/map
 import { SettingsFormFooter } from '@/components/settings-form-footer/SettingsFormFooter';
 import { SectionCard } from '@/components/styled';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
+import { useAppDispatch } from '@/hooks/useApp';
 import { ExtendedSpaceRead, SpaceRead, useUpdateSpaceMutation } from '@confighub/rtk-query';
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
 import { formatRelative } from '@/utility/date-format';
@@ -105,7 +114,11 @@ export const SpaceSettingsForm = ({
 }: SpaceSettingsFormProps) => {
   const space = extendedSpace.Space;
 
-  const [updateSpace, { isSuccess, error, isLoading: isSaving }] = useUpdateSpaceMutation();
+  const [updateSpace, { isSuccess, error, isLoading: isUpdating }] = useUpdateSpaceMutation();
+  const dispatch = useAppDispatch();
+  const [backingUnit, setBackingUnit] = useState<BackingUnitChoice>(NO_BACKING_UNIT);
+  const [isEnablingBackingUnit, setIsEnablingBackingUnit] = useState(false);
+  const isSaving = isUpdating || isEnablingBackingUnit;
 
   const { options: componentOptions, isFetching: isComponentsLoading } = useComponentRefOptions();
   const { options: targetOptions, isFetching: isTargetsLoading } = useTargetRefOptions();
@@ -136,6 +149,10 @@ export const SpaceSettingsForm = ({
   useApiErrorMessage(error, isSuccess, setServerError);
 
   const onSubmit = async (data: SpaceFormData) => {
+    if (!isBackingUnitChoiceComplete(backingUnit, true)) {
+      setServerError('Choose the Space to hold the backing Unit.');
+      return;
+    }
     const response = await updateSpace({
       spaceId: space?.SpaceID || '',
       space: {
@@ -155,9 +172,21 @@ export const SpaceSettingsForm = ({
       },
     });
 
-    if (response.data?.SpaceID) {
-      onSpaceUpdated();
+    if (!response.data?.SpaceID) return;
+    if (backingUnit.enabled) {
+      setIsEnablingBackingUnit(true);
+      try {
+        await enableBackingUnit(dispatch, 'Space', response.data.SpaceID, backingUnit.spaceId);
+        setBackingUnit(NO_BACKING_UNIT);
+      } catch (e) {
+        // Not onSpaceUpdated: in a drawer it closes the form, and with it this message.
+        setServerError(backingUnitFailureMessage('Space', e));
+        return;
+      } finally {
+        setIsEnablingBackingUnit(false);
+      }
     }
+    onSpaceUpdated();
   };
 
   const appliedTriggers = extendedSpace.Triggers || [];
@@ -178,6 +207,20 @@ export const SpaceSettingsForm = ({
           </Grid>
           <Grid size={{ xs: 6 }}>
             <ReadOnlyField label='Updated At' text={formatRelative(space?.UpdatedAt) || ''} />
+          </Grid>
+          <Grid size={{ xs: 12 }}>
+            {space?.BackingUnitID ? (
+              <LabelTextField
+                label='Backing Unit'
+                text={<BackingUnitLink backingUnitId={space.BackingUnitID} />}
+                textColor='text.primary'
+                labelColor='text.secondary'
+                labelVariant='caption'
+                textVariant='body1'
+              />
+            ) : (
+              <EnableBackingUnitField value={backingUnit} onChange={setBackingUnit} needsSpace disabled={isSaving} />
+            )}
           </Grid>
           <Grid size={{ xs: 12, md: 6 }}>
             <Controller

@@ -180,13 +180,10 @@ export const EXTRA_INVALIDATIONS: Record<string, TagType[]> = {
   invokeFunctionsOnOrg: FUNCTION_INVOKE,
 
   // ── Spaces ────────────────────────────────────────────────────────────────
-  // Deleting a Space is recursive. Updating one touches no other entity: a
-  // Release records the Target it was published for.
+  // Deleting a Space is recursive. Updating one touches nothing but its
+  // backing Unit (below): a Release records the Target it was published for.
   deleteSpace: SPACE_CONTENTS,
   bulkDeleteSpaces: SPACE_CONTENTS,
-  updateSpace: [],
-  patchSpace: [],
-  bulkPatchSpaces: [],
 
   // ── Triggers ──────────────────────────────────────────────────────────────
   // Triggers gate applies, so a Unit's ValidationErrors change with them.
@@ -224,6 +221,44 @@ export const EXTRA_INVALIDATIONS: Record<string, TagType[]> = {
 };
 
 /**
+ * The entity types that can have a backing Unit, which holds the entity's configuration. Every
+ * write of one also writes its backing Unit, if it has one, in the same transaction: a create
+ * or update with `with_backing_units` makes the Unit, an update records a Revision of it, and a
+ * delete or move takes the Unit with it. Views of the Unit, such as the unreleased-revisions
+ * marker on the entity's own details, are stale after any of them.
+ */
+const BACKED_ENTITY_TYPES = [
+  ['Attribute', 'Attributes'],
+  ['ChangeWorkflow', 'ChangeWorkflows'],
+  ['Channel', 'Channels'],
+  ['Component', 'Components'],
+  ['Filter', 'Filters'],
+  ['Invocation', 'Invocations'],
+  ['Link', 'Links'],
+  ['Space', 'Spaces'],
+  ['Target', 'Targets'],
+  ['Trigger', 'Triggers'],
+  ['View', 'Views'],
+] as const;
+
+const BACKED_ENTITY_WRITE: TagType[] = ['Unit', 'Revision'];
+
+for (const [singular, plural] of BACKED_ENTITY_TYPES) {
+  const names = [
+    ...['create', 'update', 'patch', 'delete'].map((verb) => `${verb}${singular}`),
+    `update${singular}Document`,
+    ...['bulkCreate', 'bulkPatch', 'bulkDelete', 'bulkMove'].map((verb) => `${verb}${plural}`),
+  ];
+  for (const name of names) {
+    // Names the generated client lacks (no bulk create of Components, no move of Spaces) are
+    // skipped at runtime by applyInvalidationMap.
+    EXTRA_INVALIDATIONS[name] = Array.from(
+      new Set([...(EXTRA_INVALIDATIONS[name] ?? []), ...BACKED_ENTITY_WRITE]),
+    );
+  }
+}
+
+/**
  * Mutations whose generated self-tag is the whole truth: they write one entity
  * and nothing else observes the result.
  *
@@ -231,36 +266,6 @@ export const EXTRA_INVALIDATIONS: Record<string, TagType[]> = {
  * "we decided this needs nothing" apart from "nobody has looked at this yet".
  */
 export const SELF_TAG_IS_SUFFICIENT: readonly string[] = [
-  'createSpace',
-  'bulkCreateSpaces',
-  'createAttribute',
-  'updateAttribute',
-  'patchAttribute',
-  'deleteAttribute',
-  'bulkCreateAttributes',
-  'bulkPatchAttributes',
-  'bulkDeleteAttributes',
-  'createFilter',
-  'updateFilter',
-  'patchFilter',
-  'deleteFilter',
-  'bulkCreateFilters',
-  'bulkPatchFilters',
-  'bulkDeleteFilters',
-  'createInvocation',
-  'updateInvocation',
-  'patchInvocation',
-  'deleteInvocation',
-  'bulkCreateInvocations',
-  'bulkPatchInvocations',
-  'bulkDeleteInvocations',
-  'createView',
-  'updateView',
-  'patchView',
-  'deleteView',
-  'bulkCreateViews',
-  'bulkPatchViews',
-  'bulkDeleteViews',
   'createOAuthClient',
   'deleteOAuthClient',
 ];

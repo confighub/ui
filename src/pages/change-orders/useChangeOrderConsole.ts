@@ -138,8 +138,9 @@ export interface ChangeOrderConsoleData {
   refetch: () => void;
 }
 
-export function useChangeOrderConsole(): ChangeOrderConsoleData {
-  const orders = useListAllChangeOrdersQuery({});
+/** `includeHidden` is the list's include_hidden, naming the hidden ChangeOrders to list too. */
+export function useChangeOrderConsole(includeHidden?: string): ChangeOrderConsoleData {
+  const orders = useListAllChangeOrdersQuery({ includeHidden });
   const spaces = useListSpacesQuery({});
   const { componentById } = useComponentSlugs();
 
@@ -184,6 +185,7 @@ export function useChangeOrderConsole(): ChangeOrderConsoleData {
         changeOrderId: order.ChangeOrderID,
         slug: order.Slug,
         displayName: order.DisplayName,
+        hiddenReason: order.HiddenReason || undefined,
         spaceId: order.SpaceID,
         // `SpaceSlug` comes from the ChangeOrder itself. The `Space` sibling on
         // `ExtendedChangeOrderRead` is declared in the generated types but is

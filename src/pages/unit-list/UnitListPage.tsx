@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom';
 
 import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
 import { ErrorList } from '@/components/error-list/ErrorList';
+import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
+import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import {
   ALL_GROUPS,
   GroupNavPanel,
@@ -320,6 +322,8 @@ export const UnitListPage = () => {
     [spaces],
   );
 
+  const { includeHidden, setIncludeHidden, includeHiddenParam } = useIncludeHidden();
+
   // API queries and mutations
   const {
     data: units = EMPTY_UNITS,
@@ -331,6 +335,7 @@ export const UnitListPage = () => {
     where,
     whereData,
     resourceType,
+    includeHidden: includeHiddenParam,
     // Include and select are dynamically computed based on visible columns
     include: includeParam,
     // This deliberately does not include Data or MutationSources. If you need them, refetch.
@@ -512,6 +517,8 @@ export const UnitListPage = () => {
             where: view.Filter?.Where || '',
             whereData: view.Filter?.WhereData || '',
             resourceType: view.Filter?.ResourceType || '',
+            // The same arguments as the active list's, so a tab switch reads this prefetch.
+            includeHidden: includeHiddenParam,
             include: buildIncludeParameter(visibleColumnNames, groupByLevels),
             select: buildSelectParameter(visibleColumnNames, groupByLevels),
           },
@@ -519,7 +526,7 @@ export const UnitListPage = () => {
         ),
       );
     }
-  }, [allViewsForEntity, openTabIds, activeView, dispatch]);
+  }, [allViewsForEntity, openTabIds, activeView, dispatch, includeHiddenParam]);
 
   const { trackEntityCreated } = useAnalytics();
 
@@ -1052,6 +1059,8 @@ export const UnitListPage = () => {
 
   const viewSwitcher = useMemo(
     () => (
+      <>
+      <IncludeHiddenToggle includeHidden={includeHidden} onChange={setIncludeHidden} entities='units' />
       <ToggleButtonGroup
         value={isTreeViewMode ? 'tree' : 'list'}
         exclusive
@@ -1076,8 +1085,9 @@ export const UnitListPage = () => {
           </ToggleButton>
         </Tooltip>
       </ToggleButtonGroup>
+      </>
     ),
-    [isTreeViewMode, setIsTreeViewMode, setSelectedUnits, setDefaultRowSelection],
+    [isTreeViewMode, setIsTreeViewMode, setSelectedUnits, setDefaultRowSelection, includeHidden, setIncludeHidden],
   );
 
   const slugLinkTo = useCallback((row: UnitRowItem) => getEditUrl(row.id), [getEditUrl]);

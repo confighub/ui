@@ -87,6 +87,10 @@ export type MappedWorkflow = Omit<Workflow, 'component' | 'governs'>;
 export interface MappedEntity {
   workflow: MappedWorkflow;
   identity: WorkflowIdentity;
+  /** Why the workflow is hidden; absent for one that is not. */
+  hiddenReason?: string;
+  /** The Unit that holds the workflow's configuration, if it has one. */
+  backingUnitId?: string;
 }
 
 /** Ids are unique within one workflow, never across, so position is enough to make one. */
@@ -237,6 +241,8 @@ export function fromWire(wire: ChangeWorkflowRead): MappedEntity {
       spaceId: wire.SpaceID ?? '',
       version: wire.Version ?? 0,
     },
+    hiddenReason: wire.HiddenReason || undefined,
+    backingUnitId: wire.BackingUnitID || undefined,
   };
 }
 

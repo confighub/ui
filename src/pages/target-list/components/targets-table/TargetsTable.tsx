@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 
 import { DATE_TIME_GRID_SLOTS } from '@/components/data-grid/cells';
 import { EntityDataGrid } from '@/components/entity-data-grid/EntityDataGrid';
+import { HIDDEN_REASON_FIELD, hiddenReasonColumn } from '@/components/hidden-entities/hiddenReasonColumn';
 import {
   AttributeColumnConfig,
   useAttributeColumnManager,
@@ -30,6 +31,8 @@ export interface TargetsTableProps {
   emptyState?: React.ReactNode;
   /** True when the unfiltered target list is empty */
   hasNoData?: boolean;
+  /** Controls for the grid's toolbar, before its Columns button */
+  customToolbarActions?: React.ReactNode;
 }
 
 const LABELS_CONFIG: AttributeColumnConfig<TargetRowItem> = {
@@ -80,6 +83,7 @@ const GRID_DEFAULTS = {
     WhereTrigger: false,
     TriggerFilter: false,
     AppliedTriggerCount: true,
+    [HIDDEN_REASON_FIELD]: false,
     CreatedAt: false,
     UpdatedAt: false,
   } as Record<string, boolean>,
@@ -94,6 +98,7 @@ export const TargetsTable = ({
   noRowsOverlay,
   emptyState,
   hasNoData = false,
+  customToolbarActions,
 }: TargetsTableProps) => {
   // Convert targets to row items
   const rows = useMemo<TargetRowItem[]>(() => {
@@ -109,6 +114,7 @@ export const TargetsTable = ({
       WhereTrigger: target.Target?.WhereTrigger || '',
       TriggerFilter: target.TriggerFilter?.Slug || '',
       AppliedTriggerCount: target.Target?.TriggerIDs?.length || 0,
+      HiddenReason: target.Target?.HiddenReason || '',
       CreatedAt: target.Target?.CreatedAt || '',
       UpdatedAt: target.Target?.UpdatedAt || '',
       _extendedTarget: target, // Store original for edit callback
@@ -148,7 +154,10 @@ export const TargetsTable = ({
   );
 
   // Create static columns
-  const staticColumns = useMemo(() => createTargetStaticColumns(), []);
+  const staticColumns = useMemo(
+    () => [...createTargetStaticColumns(), hiddenReasonColumn<TargetRowItem>((row) => row.HiddenReason)],
+    [],
+  );
 
   // The standard columns follow the name and Space, as in `cub target list`.
   const baseColumns = useMemo(
@@ -213,6 +222,7 @@ export const TargetsTable = ({
       columnGroups={TARGET_COLUMN_GROUPS}
       dynamicGroups={TARGET_DYNAMIC_GROUPS}
       filterElement={filterElement}
+      customToolbarActions={customToolbarActions}
       noRowsOverlay={noRowsOverlay}
       emptyState={emptyState}
       hasNoData={hasNoData}

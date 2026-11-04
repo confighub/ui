@@ -25,6 +25,9 @@ import { useListAllChangeSetsQuery, type ChangeSetRead } from '@confighub/rtk-qu
 
 import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
 import { ConsoleTable, ConsoleTableRow, type ConsoleTableColumn } from '@/components/console-table/ConsoleTable';
+import { HiddenReasonTag } from '@/components/hidden-entities/HiddenReasonTag';
+import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
+import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { useInViewport } from '@/hooks/useInViewport';
 import { useListUsersByIdChunkedQuery } from '@/hooks/chunkedQueriesApi';
 
@@ -212,6 +215,7 @@ const ChangeSetRow = memo(function ChangeSetRow({
         >
           {subline}
         </Typography>
+        <HiddenReasonTag reason={changeSet.HiddenReason} sx={ABOVE_ROW_LINK_SX} />
       </Box>
 
       <Box sx={IMAGE_CHANGE_CELL} data-testid="change-set-row-image-change" data-status={imageChanges.status}>
@@ -286,7 +290,10 @@ const ChangeSetRow = memo(function ChangeSetRow({
 export function ChangeSetList() {
   const { userInfo } = useUserInfo();
   const viewerUserId = userInfo?.UserID;
-  const { data, isLoading, isFetching, isError, fulfilledTimeStamp, refetch } = useListAllChangeSetsQuery({});
+  const { includeHidden, setIncludeHidden, includeHiddenParam } = useIncludeHidden();
+  const { data, isLoading, isFetching, isError, fulfilledTimeStamp, refetch } = useListAllChangeSetsQuery({
+    includeHidden: includeHiddenParam,
+  });
   const changeSets = useMemo(() => (data ?? []).flatMap((entry) => (entry.ChangeSet === undefined ? [] : [entry.ChangeSet])), [data]);
   const loadedAt = fulfilledTimeStamp ?? 0;
 
@@ -423,6 +430,7 @@ export function ChangeSetList() {
         <ConsoleSelectFilter label="State" value={stateFilter} onChange={setStateFilter} allLabel="All" options={STATES} />
         <ConsoleSelectFilter label="Space" value={spaceFilter} onChange={setSpaceFilter} allLabel="All Spaces" options={spaceSlugs} />
         <ConsoleDateRange fromLabel="Created from" toLabel="to" from={createdFrom} onFrom={setCreatedFrom} to={createdTo} onTo={setCreatedTo} />
+        <IncludeHiddenToggle includeHidden={includeHidden} onChange={setIncludeHidden} entities='ChangeSets' />
         <ConsoleClearButton onClick={clearFilters} disabled={!filtersActive}>
           Clear filters
         </ConsoleClearButton>

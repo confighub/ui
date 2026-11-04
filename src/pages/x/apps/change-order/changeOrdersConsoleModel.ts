@@ -222,6 +222,8 @@ export interface ConsoleChangeOrder {
   changeOrderId: string;
   slug: string;
   displayName?: string;
+  /** Why the ChangeOrder is hidden; absent for one that is not. */
+  hiddenReason?: string;
   spaceId?: string;
   spaceSlug?: string;
   createdAt?: string;
@@ -366,6 +368,8 @@ export interface ConsoleStage {
 export interface ConsoleRow {
   changeOrderId: string;
   slug: string;
+  /** Why the ChangeOrder is hidden; absent for one that is not. */
+  hiddenReason?: string;
   /**
    * The workflow this ChangeOrder was created under, or `undefined` when nothing
    * governs it. Provenance rather than a reference — no foreign key backs it —
@@ -1342,6 +1346,7 @@ function stagelessRow(
   return {
     changeOrderId: order.changeOrderId,
     slug: order.slug,
+    hiddenReason: order.hiddenReason,
     changeWorkflowId: governingWorkflowId(order),
     spaceId: order.spaceId,
     skippedSpaceId: promotionSkippedSpaceId(order.spaceId, order.updateType),
@@ -1601,6 +1606,7 @@ export function buildConsoleRow(
   return {
     changeOrderId: order.changeOrderId,
     slug: order.slug,
+    hiddenReason: order.hiddenReason,
     changeWorkflowId: governingWorkflowId(order),
     spaceId: order.spaceId,
     skippedSpaceId,

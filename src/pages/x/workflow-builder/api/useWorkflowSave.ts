@@ -18,6 +18,7 @@
 import { useCallback } from 'react';
 
 import {
+  useBulkPatchChangeWorkflowsMutation,
   useCreateChangeWorkflowMutation,
   useDeleteChangeWorkflowMutation,
   useUpdateChangeWorkflowMutation,
@@ -26,7 +27,7 @@ import { getApiErrorMessage } from '@/utility/error-functions';
 import { SerializedError } from '@reduxjs/toolkit';
 import { FetchBaseQueryError } from '@reduxjs/toolkit/query';
 
-import { applySaved, toWire, type MappedWorkflow, type WorkflowIdentity } from './mapping';
+import { applySaved, fromWire, toWire, type MappedWorkflow, type WorkflowIdentity } from './mapping';
 import { classifySaveError, type SaveOutcome } from './saveOutcome';
 
 /** What `unwrap()` rejects with. */
@@ -49,9 +50,19 @@ export interface WorkflowSave {
     workflow: MappedWorkflow,
     identity: WorkflowIdentity | undefined,
   ) => Promise<SaveOutcome>;
-  /** Write a workflow that does not exist yet, into `spaceId`. */
-  create: (workflow: MappedWorkflow, spaceId: string) => Promise<SaveOutcome>;
+  /**
+   * Write a workflow that does not exist yet, into `spaceId`; with `withBackingUnits`, it gets a
+   * backing Unit in the same write.
+   */
+  create: (workflow: MappedWorkflow, spaceId: string, withBackingUnits?: boolean) => Promise<SaveOutcome>;
   remove: (identity: WorkflowIdentity) => Promise<DeleteOutcome>;
+  /**
+   * Give a saved workflow a backing Unit. That writes the workflow, so on success it returns
+   * the identity with the Version the server now holds, which the next save must send.
+   */
+  enableBackingUnit: (
+    identity: WorkflowIdentity,
+  ) => Promise<{ ok: true; identity: WorkflowIdentity } | { ok: false; message: string }>;
   isSaving: boolean;
   isDeleting: boolean;
 }
@@ -60,6 +71,7 @@ export function useWorkflowSave(): WorkflowSave {
   const [createWorkflow, { isLoading: isCreating }] = useCreateChangeWorkflowMutation();
   const [updateWorkflow, { isLoading: isUpdating }] = useUpdateChangeWorkflowMutation();
   const [deleteWorkflow, { isLoading: isDeleting }] = useDeleteChangeWorkflowMutation();
+  const [bulkPatchWorkflows, { isLoading: isEnabling }] = useBulkPatchChangeWorkflowsMutation();
 
   const save = useCallback<WorkflowSave['save']>(
     async (workflow, identity) => {
@@ -97,12 +109,13 @@ export function useWorkflowSave(): WorkflowSave {
   );
 
   const create = useCallback<WorkflowSave['create']>(
-    async (workflow, spaceId) => {
+    async (workflow, spaceId, withBackingUnits = false) => {
       // A workflow that does not exist yet has no Version to defend and no id to send.
       const identity: WorkflowIdentity = { changeWorkflowId: '', spaceId, version: 0 };
       try {
         const saved = await createWorkflow({
           spaceId,
+          withBackingUnits: withBackingUnits || undefined,
           changeWorkflow: toWire(workflow, identity),
         }).unwrap();
         const next = applySaved(workflow, saved);
@@ -137,5 +150,36 @@ export function useWorkflowSave(): WorkflowSave {
     [deleteWorkflow],
   );
 
-  return { save, create, remove, isSaving: isCreating || isUpdating, isDeleting };
+  const enableBackingUnit = useCallback<WorkflowSave['enableBackingUnit']>(
+    async (identity) => {
+      // No update takes with_backing_units, so this is an empty bulk patch of the one workflow.
+      try {
+        const items = await bulkPatchWorkflows({
+          where: `ChangeWorkflowID = '${identity.changeWorkflowId}'`,
+          withBackingUnits: true,
+          body: {},
+        }).unwrap();
+        const item = items[0];
+        if (item?.Error) {
+          return { ok: false, message: item.Error.Message || 'The backing Unit was not created.' };
+        }
+        if (!item?.ChangeWorkflow) {
+          return { ok: false, message: 'The workflow was not found, so no backing Unit was created.' };
+        }
+        return { ok: true, identity: fromWire(item.ChangeWorkflow).identity };
+      } catch (error) {
+        return { ok: false, message: getApiErrorMessage(error, 'The backing Unit was not created.') };
+      }
+    },
+    [bulkPatchWorkflows],
+  );
+
+  return {
+    save,
+    create,
+    remove,
+    enableBackingUnit,
+    isSaving: isCreating || isUpdating || isEnabling,
+    isDeleting,
+  };
 }

@@ -26,9 +26,9 @@ const ATTENTION_HATCH_GAP = 'rgba(159,66,0,0.2)';
 
 /**
  * How one strip mark is painted. Each condition has its own SHAPE as well as
- * its colour: Gated is a ring and Progressing is hatched, because Out of
- * sync, Gated and Progressing share the attention tone, and status must not
- * depend on colour alone.
+ * its colour, because status must not depend on colour alone: Progressing is
+ * hatched, as Out of sync and Progressing share the attention tone, and Gated
+ * is a ring, as Degraded and Gated share the danger tone.
  */
 export function markStyle(kind: MarkKind): CSSProperties {
   switch (kind) {
@@ -39,7 +39,7 @@ export function markStyle(kind: MarkKind): CSSProperties {
     case 'gated':
       return {
         background: 'transparent',
-        boxShadow: `inset 0 0 0 1.5px ${componentTheme.attention}`,
+        boxShadow: `inset 0 0 0 1.5px ${componentTheme.danger}`,
         borderRadius: '50%',
       };
     case 'progressing':
@@ -61,21 +61,19 @@ export function markStyle(kind: MarkKind): CSSProperties {
 /** A wave chip on a fold header: the condition's word, tone and shape. */
 export const WAVE_CHIP: Record<
   WaveCondition,
-  { label: string; color: string; tint: string; ring: boolean }
+  { label: string; color: string; tint: string }
 > = {
   stale: {
     label: 'Stale',
     color: componentTheme.upgrade,
     tint: 'rgba(153,81,244,0.149)',
-    ring: false,
   },
   unreleased: {
     label: 'Unreleased changes',
     color: componentTheme.variation,
     tint: 'rgba(68,103,220,0.149)',
-    ring: false,
   },
-  gated: { label: 'Gated', color: componentTheme.attention, tint: 'transparent', ring: true },
+  gated: { label: 'Gated', color: componentTheme.danger, tint: 'rgba(154,0,5,0.149)' },
 };
 
 /** A one-line summary of a strip for assistive technology: "2 Degraded, 6 Quiet". */

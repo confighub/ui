@@ -68,6 +68,7 @@ import {
   type ExtendedTargetRead,
 } from '@confighub/rtk-query';
 import { getApiErrorMessage } from '@/utility/error-functions';
+import { BackingUnitLink } from '@/components/backing-unit/BackingUnitLink';
 
 import { LABEL_VARIANT } from './componentData';
 import { componentTheme } from './componentTheme';
@@ -393,6 +394,15 @@ export const SpaceSettingsSheet = forwardRef<SpaceSettingsSheetHandle, SpaceSett
             sx={{ '& .MuiInputBase-root': { height: 30, fontSize: 13 } }}
           />
         </Box>
+
+        {/* ── Backing Unit (Space.BackingUnitID), when the Space has one ── */}
+        {space?.BackingUnitID ? (
+          <Box sx={{ padding: '8px 16px', borderTop: `1px solid ${componentTheme.borderSubtle}` }} data-testid='space-settings-backing-unit'>
+            <Typography sx={{ fontSize: 12, fontWeight: 650, color: componentTheme.fgDefault, mb: 0.6 }}>Backing Unit</Typography>
+            {/* The side pane holds work in progress, so the Unit opens in a new tab. */}
+            <BackingUnitLink backingUnitId={space.BackingUnitID} newTab />
+          </Box>
+        ) : null}
 
         {/* ── Release target (Space.ReleaseTargetID) — always-editable picker ── */}
         <ReleaseTargetRow

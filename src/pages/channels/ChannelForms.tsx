@@ -32,6 +32,11 @@ import {
 
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
 
+import { EnableBackingUnitField } from '@/components/backing-unit/EnableBackingUnitField';
+import {
+  type BackingUnitChoice,
+  NO_BACKING_UNIT,
+} from '@/components/backing-unit/backingUnitChoice';
 import { DISPLAY_NAME_RULE } from '@/components/console-detail/consoleDetailUtil';
 import { getApiErrorMessage } from '@/utility/error-functions';
 
@@ -66,10 +71,12 @@ export function CreateChannelDialog({
     [serviceAccounts.data],
   );
   const [error, setError] = useState<string>();
+  const [backingUnit, setBackingUnit] = useState<BackingUnitChoice>(NO_BACKING_UNIT);
   const { control, handleSubmit, reset } = useForm<CreateForm>({ defaultValues: { SpaceID: '', Slug: '', DisplayName: '', ClaimUserID: NO_ACCOUNT } });
   const close = () => {
     reset();
     setError(undefined);
+    setBackingUnit(NO_BACKING_UNIT);
     onClose();
   };
   const submit = handleSubmit(async (form) => {
@@ -79,9 +86,11 @@ export function CreateChannelDialog({
     try {
       const created = await create({
         spaceId: form.SpaceID,
+        withBackingUnits: backingUnit.enabled || undefined,
         channel: { Slug: form.Slug.trim(), DisplayName: form.DisplayName.trim() || undefined, EventPosition: 0, Permissions: permissions },
       }).unwrap();
       reset();
+      setBackingUnit(NO_BACKING_UNIT);
       onCreated(created);
     } catch (e: unknown) {
       setError(getApiErrorMessage(e) || 'The Channel could not be created.');
@@ -159,6 +168,7 @@ export function CreateChannelDialog({
                 </TextField>
               )}
             />
+            <EnableBackingUnitField value={backingUnit} onChange={setBackingUnit} disabled={isLoading} />
           </Stack>
           {error ? (
             <Alert severity='error' sx={{ mt: 2 }}>

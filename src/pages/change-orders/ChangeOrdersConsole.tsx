@@ -55,7 +55,7 @@
  * not a control. Hidden rows are absent from the DOM here.
  */
 
-import { memo, useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { memo, type ReactNode, useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
@@ -102,6 +102,9 @@ import { changeOrdersConsoleCopy } from '../x/apps/change-order/changeOrdersCons
 import { changeOrderCopy, stageDisplayName } from '../x/apps/change-order/changeOrderCopy';
 import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
 import { ConsoleTable, ConsoleTableRow, type ConsoleTableColumn } from '@/components/console-table/ConsoleTable';
+import { HiddenReasonTag } from '@/components/hidden-entities/HiddenReasonTag';
+import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
+import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { LiveRegion } from '@/components/live-region/LiveRegion';
 import { useListUsersByIdChunkedQuery } from '@/hooks/chunkedQueriesApi';
 import { reviewPersonOf } from '../change-sets/changeSetReviewModel';
@@ -470,6 +473,7 @@ const ConsoleRowLine = memo(function ConsoleRowLine({
           {' · '}
           {workflowLabel}
         </Typography>
+        <HiddenReasonTag reason={row.hiddenReason} sx={ABOVE_ROW_LINK_SX} />
       </Box>
 
       <Box sx={IMAGE_CHANGE_CELL}>
@@ -967,6 +971,7 @@ function FilterBar({
   onCreatedTo,
   onClear,
   clearDisabled,
+  hiddenToggle,
 }: {
   search: string;
   onSearch: (v: string) => void;
@@ -989,6 +994,8 @@ function FilterBar({
   onCreatedTo: (v: string) => void;
   onClear: () => void;
   clearDisabled: boolean;
+  /** The toggle that lists hidden ChangeOrders too */
+  hiddenToggle?: ReactNode;
 }) {
   return (
     <ConsoleFilterBar>
@@ -1023,6 +1030,7 @@ function FilterBar({
         to={createdTo}
         onTo={onCreatedTo}
       />
+      {hiddenToggle}
       <ConsoleClearButton onClick={onClear} disabled={clearDisabled}>
         {changeOrdersConsoleCopy.filters.clear}
       </ConsoleClearButton>
@@ -1138,8 +1146,11 @@ export function ChangeOrdersConsoleView({
   onPromoteChangeOrder,
   onEndRequest,
   onAnnounce,
+  hiddenToggle,
 }: ChangeOrdersConsoleProps & {
   data: ChangeOrderConsoleData;
+  /** The filter bar's toggle that lists hidden ChangeOrders too */
+  hiddenToggle?: ReactNode;
   /**
    * Opens the promote confirmation for one row. Supplied by the fetching
    * wrapper below; absent leaves the row's action rendered and disabled rather
@@ -1427,6 +1438,7 @@ export function ChangeOrdersConsoleView({
         onCreatedTo={setCreatedTo}
         onClear={clearFilters}
         clearDisabled={!filtersActive}
+        hiddenToggle={hiddenToggle}
       />
       <Legend />
 
@@ -1528,7 +1540,8 @@ export function ChangeOrdersConsoleView({
  * that first, because a fleet-wide sweep cannot.
  */
 export function ChangeOrdersConsole(props: ChangeOrdersConsoleProps) {
-  const fetched = useChangeOrderConsole();
+  const { includeHidden, setIncludeHidden, includeHiddenParam } = useIncludeHidden();
+  const fetched = useChangeOrderConsole(includeHiddenParam);
   const data = props.data ?? fetched;
   const { onAnnounce } = props;
 
@@ -1626,6 +1639,9 @@ export function ChangeOrdersConsole(props: ChangeOrdersConsoleProps) {
         onPromoteChangeOrder={setPromoteRow}
         onEndRequest={requestEnd}
         onAnnounce={announce}
+        hiddenToggle={
+          <IncludeHiddenToggle includeHidden={includeHidden} onChange={setIncludeHidden} entities='ChangeOrders' />
+        }
       />
       <PromoteDialog
         open={promoteRow !== null}

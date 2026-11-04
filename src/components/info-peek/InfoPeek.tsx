@@ -1,6 +1,9 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
+import { type ReactElement, useState } from 'react';
+
 import Box from '@mui/material/Box';
+import Tooltip, { type TooltipProps } from '@mui/material/Tooltip';
 
 // ============================================================================
 // TOKENS
@@ -49,7 +52,11 @@ export interface InfoPeekSpec {
   metric?: { value: string; unit?: string };
   /** Muted supporting lines. */
   lines: string[];
-  /** Accent action label; the "→" is appended. Omit for a purely informational peek with no follow-up action. */
+  /**
+   * Accent action label; the "→" is appended. With `onAction` it is a link the pointer can move
+   * onto and click; without it, a hint at what clicking the peek's trigger does. Omit for a
+   * purely informational peek with no follow-up action.
+   */
   action?: string;
 }
 
@@ -59,12 +66,22 @@ export interface InfoPeekSpec {
 
 /**
  * The "metric hero" info-peek card: leads with a number (when given), lists
- * supporting detail, and optionally ends with an accent hint at what a click
- * elsewhere on the trigger would do. Pair with `INFO_PEEK_TOOLTIP_SX` on the
- * wrapping Tooltip (or Popover) so the card itself supplies the only
- * chrome — this component renders content only, no border/shadow of its own.
+ * supporting detail, and optionally ends with an accent action: a link when
+ * `onAction` is given, else a hint at what a click on the trigger does.
+ * Prefer `InfoPeekTooltip`, which wraps a trigger in this card; used directly,
+ * pair it with `INFO_PEEK_TOOLTIP_SX` on the wrapping Tooltip (or Popover) so
+ * the card itself supplies the only chrome — this component renders content
+ * only, no border/shadow of its own.
  */
-export const InfoPeekCard = ({ color, spec }: { color: string; spec: InfoPeekSpec }) => (
+export const InfoPeekCard = ({
+  color,
+  spec,
+  onAction,
+}: {
+  color: string;
+  spec: InfoPeekSpec;
+  onAction?: () => void;
+}) => (
   <Box sx={{ p: '11px 12px 10px', minWidth: 176, fontFamily: INFO_PEEK_FONT_MONO }}>
     <Box sx={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color }}>
       {spec.eyebrow}
@@ -90,17 +107,102 @@ export const InfoPeekCard = ({ color, spec }: { color: string; spec: InfoPeekSpe
           mt: '9px',
           pt: '8px',
           borderTop: `1px solid ${INFO_PEEK_BORDER_SUBTLE}`,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-          fontSize: 11,
-          fontWeight: 700,
-          color,
         }}
       >
-        {spec.action}
-        <Box component="span">→</Box>
+        <Box
+          {...(onAction
+            ? {
+                component: 'button' as const,
+                type: 'button' as const,
+                onClick: onAction,
+                'data-testid': 'info-peek-action',
+              }
+            : {})}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            p: 0,
+            border: 0,
+            background: 'none',
+            font: 'inherit',
+            fontSize: 11,
+            fontWeight: 700,
+            color,
+            ...(onAction && {
+              cursor: 'pointer',
+              '&:hover, &:focus-visible': { textDecoration: 'underline', textUnderlineOffset: '2px' },
+            }),
+          }}
+        >
+          {spec.action}
+          <Box component="span">→</Box>
+        </Box>
       </Box>
     )}
   </Box>
 );
+
+/**
+ * A trigger with its info-peek card on hover. With `onAction` (and an `action`
+ * in the spec) the card stays open while the pointer moves onto it, and its
+ * action is a link that does `onAction` and closes the card; without, the card
+ * is a pure hover preview, gone the instant the pointer leaves the trigger.
+ *
+ * Clicks and presses inside the card stop at it: it is portaled out of the
+ * page's DOM but not out of React's tree, so they would otherwise reach the
+ * trigger's ancestors, such as a graph node that selects itself on click.
+ */
+export const InfoPeekTooltip = ({
+  color,
+  spec,
+  onAction,
+  placement = 'bottom-start',
+  children,
+}: {
+  color: string;
+  spec: InfoPeekSpec;
+  onAction?: () => void;
+  placement?: TooltipProps['placement'];
+  children: ReactElement;
+}) => {
+  const [open, setOpen] = useState(false);
+  const interactive = !!spec.action && !!onAction;
+  return (
+    <Tooltip
+      open={open}
+      onOpen={() => setOpen(true)}
+      onClose={() => setOpen(false)}
+      placement={placement}
+      enterDelay={120}
+      // A short grace period lets the pointer cross from the trigger to the card.
+      leaveDelay={interactive ? 150 : 0}
+      disableInteractive={!interactive}
+      slotProps={{
+        tooltip: { sx: INFO_PEEK_TOOLTIP_SX },
+        transition: { timeout: { enter: 120, exit: interactive ? 100 : 0 } },
+      }}
+      title={
+        <Box
+          onClick={(e: React.MouseEvent) => e.stopPropagation()}
+          onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
+        >
+          <InfoPeekCard
+            color={color}
+            spec={spec}
+            onAction={
+              interactive
+                ? () => {
+                    setOpen(false);
+                    onAction();
+                  }
+                : undefined
+            }
+          />
+        </Box>
+      }
+    >
+      {children}
+    </Tooltip>
+  );
+};

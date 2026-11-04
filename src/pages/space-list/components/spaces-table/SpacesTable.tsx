@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 
 import { DATE_TIME_GRID_SLOTS } from '@/components/data-grid/cells';
 import { EntityDataGrid } from '@/components/entity-data-grid/EntityDataGrid';
+import { HIDDEN_REASON_FIELD, hiddenReasonColumn } from '@/components/hidden-entities/hiddenReasonColumn';
 import { useAttributeColumnManager } from '@/components/entity-data-grid/hooks/useAttributeColumnManager';
 import { useGridPersistence } from '@/components/unit-data-grid/hooks/useGridPersistence';
 import { ExtendedSpaceRead } from '@confighub/rtk-query';
@@ -30,6 +31,7 @@ export type SpaceRow = {
   TriggerFilter: string;
   AppliedTriggerCount: number;
   ReleaseTarget: string;
+  HiddenReason: string;
   /** The summary counts, by their ExtendedSpace field */
   Counts: Record<string, number>;
   _extendedSpace: ExtendedSpaceRead;
@@ -45,9 +47,11 @@ export interface SpacesTableProps extends CmpProps {
   /** True when the unfiltered space list is empty */
   hasNoData?: boolean;
   isLoading?: boolean;
+  /** Controls for the grid's toolbar, before its Columns button */
+  customToolbarActions?: React.ReactNode;
 }
 
-export const SpacesTable = ({ spaces = [], onRowSelected, filterElement, noRowsOverlay, emptyState, hasNoData = false, isLoading = false }: SpacesTableProps) => {
+export const SpacesTable = ({ spaces = [], onRowSelected, filterElement, noRowsOverlay, emptyState, hasNoData = false, isLoading = false, customToolbarActions }: SpacesTableProps) => {
   const gridDefaults = useMemo(() => ({
     sortModel: [
       { field: 'Component', sort: 'asc' as const },
@@ -63,6 +67,7 @@ export const SpacesTable = ({ spaces = [], onRowSelected, filterElement, noRowsO
       TriggerFilter: false,
       AppliedTriggerCount: false,
       ReleaseTarget: false,
+      [HIDDEN_REASON_FIELD]: false,
       CreatedAt: false,
       UpdatedAt: true,
     } as Record<string, boolean>,
@@ -82,6 +87,7 @@ export const SpacesTable = ({ spaces = [], onRowSelected, filterElement, noRowsO
       TriggerFilter: space.TriggerFilter?.Slug || '',
       AppliedTriggerCount: space.Space?.TriggerIDs?.length || 0,
       ReleaseTarget: space.ReleaseTarget?.Slug || '',
+      HiddenReason: space.Space?.HiddenReason || '',
       Counts: Object.fromEntries(SPACE_SUMMARY_COUNTS.map((c) => [c.field, c.getValue(space)])),
       _extendedSpace: space,
     }));
@@ -114,7 +120,10 @@ export const SpacesTable = ({ spaces = [], onRowSelected, filterElement, noRowsO
   }, [availableAttributeKeys, createAttributeColumn]);
 
   // Create static columns
-  const staticColumns = useMemo(() => createSpaceTableColumns(), []);
+  const staticColumns = useMemo(
+    () => [...createSpaceTableColumns(), hiddenReasonColumn<SpaceRow>((row) => row.HiddenReason)],
+    [],
+  );
 
   // Combine all columns - insert label columns after Slug and Component
   const baseColumns = useMemo(() => {
@@ -172,6 +181,7 @@ export const SpacesTable = ({ spaces = [], onRowSelected, filterElement, noRowsO
       dynamicGroups={SPACE_DYNAMIC_GROUPS}
       loading={isLoading}
       filterElement={filterElement}
+      customToolbarActions={customToolbarActions}
       noRowsOverlay={noRowsOverlay}
       emptyState={emptyState}
       hasNoData={hasNoData}

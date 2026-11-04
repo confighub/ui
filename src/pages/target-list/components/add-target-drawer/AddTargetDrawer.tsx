@@ -13,9 +13,15 @@
  * - Space selection
  * - Selecting the Triggers invoked on the Units attached to the target, and showing which are
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Control, Controller, FieldErrors, useForm } from 'react-hook-form';
 
+import { BackingUnitHeaderField } from '@/components/backing-unit/BackingUnitHeaderField';
+import {
+  type BackingUnitChoice,
+  NO_BACKING_UNIT,
+} from '@/components/backing-unit/backingUnitChoice';
+import { backingUnitFailureMessage, enableBackingUnit } from '@/components/backing-unit/enableBackingUnit';
 import { CopyToClipboard } from '@/components/copy-to-clipboard/CopyToClipboard';
 import { EntityRefSelect } from '@/components/entity-ref-select/EntityRefSelect';
 import { useFilterRefOptions } from '@/components/entity-ref-select/useEntityRefOptions';
@@ -29,6 +35,7 @@ import { TriggersTable } from '@/pages/space-detail/components/triggers-table/Tr
 import { getApiErrorMessage } from '@/utility/error-functions';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
+import { useAppDispatch } from '@/hooks/useApp';
 import {
   CreateTargetApiArg,
   SpaceRead,
@@ -333,6 +340,11 @@ export const AddTargetDrawer = ({
 }: AddTargetDrawerProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState('');
+  const dispatch = useAppDispatch();
+  const [backingUnit, setBackingUnit] = useState<BackingUnitChoice>(NO_BACKING_UNIT);
+  // While an update is followed by giving the Target a backing Unit, the drawer stays open until
+  // that is done too, so that a failure is shown rather than closed away.
+  const enablingAfterUpdate = useRef(false);
 
   const isEditMode = !!existingTarget;
 
@@ -377,6 +389,7 @@ export const AddTargetDrawer = ({
 
   useApiErrorMessage(updateError, isUpdateSuccess, setServerError, {
     onSuccess: () => {
+      if (enablingAfterUpdate.current) return;
       if (onTargetUpdated && updateData) {
         onTargetUpdated(updateData as TargetRead);
       }
@@ -387,6 +400,7 @@ export const AddTargetDrawer = ({
   const handleClose = () => {
     reset();
     setServerError('');
+    setBackingUnit(NO_BACKING_UNIT);
     onClose();
   };
 
@@ -408,7 +422,17 @@ export const AddTargetDrawer = ({
             DeleteGates: rowsToGates(data.DeleteGates),
           },
         };
-        await updateTarget(input);
+        enablingAfterUpdate.current = backingUnit.enabled;
+        const result = await updateTarget(input);
+        if (enablingAfterUpdate.current && result.data?.TargetID) {
+          try {
+            await enableBackingUnit(dispatch, 'Target', result.data.TargetID);
+            onTargetUpdated?.(result.data);
+            handleClose();
+          } catch (e) {
+            setServerError(backingUnitFailureMessage('Target', e));
+          }
+        }
       } else {
         // Create new target
         const space =
@@ -416,6 +440,7 @@ export const AddTargetDrawer = ({
 
         const input: CreateTargetApiArg = {
           spaceId: data.SpaceID || '',
+          withBackingUnits: backingUnit.enabled || undefined,
           target: {
             ...selectionFields(data),
             Slug: data.Slug,
@@ -429,6 +454,7 @@ export const AddTargetDrawer = ({
         await createTarget(input);
       }
     } finally {
+      enablingAfterUpdate.current = false;
       setIsSubmitting(false);
     }
   };
@@ -465,18 +491,26 @@ export const AddTargetDrawer = ({
               Back to Targets
             </Button>
           </Stack>
-          <Stack spacing={1}>
-            <Typography variant='h4' component='h1' sx={{ fontWeight: 600 }}>
-              {isEditMode ? 'Edit Target' : 'Add Target'}
-            </Typography>
-            {isEditMode && existingTarget?.TargetID && (
-              <Stack direction='row' spacing={1} alignItems='center'>
-                <Typography variant='body1' color='text.secondary'>
-                  UUID: {existingTarget.TargetID}
-                </Typography>
-                <CopyToClipboard text={existingTarget.TargetID} />
-              </Stack>
-            )}
+          <Stack direction='row' spacing={3} sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <Stack spacing={1}>
+              <Typography variant='h4' component='h1' sx={{ fontWeight: 600 }}>
+                {isEditMode ? 'Edit Target' : 'Add Target'}
+              </Typography>
+              {isEditMode && existingTarget?.TargetID && (
+                <Stack direction='row' spacing={1} alignItems='center'>
+                  <Typography variant='body1' color='text.secondary'>
+                    UUID: {existingTarget.TargetID}
+                  </Typography>
+                  <CopyToClipboard text={existingTarget.TargetID} />
+                </Stack>
+              )}
+            </Stack>
+            <BackingUnitHeaderField
+              backingUnitId={existingTarget?.BackingUnitID}
+              choice={backingUnit}
+              onChoiceChange={setBackingUnit}
+              disabled={isSubmitting}
+            />
           </Stack>
         </Box>
 

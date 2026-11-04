@@ -17,7 +17,7 @@
  * count nobody can act on is a worse affordance than plain text.
  */
 
-import { Fragment } from 'react';
+import { Fragment, type ReactNode } from 'react';
 
 import { ClonePanel } from './ClonePanel';
 import { SaveNotice } from './SaveNotice';
@@ -43,7 +43,10 @@ export function SummaryCard({
   neverSaved,
   pendingSpaceId,
   onPendingSpaceChange,
+  backingUnit,
 }: {
+  /** The workflow's backing Unit, or the way to give it one */
+  backingUnit?: ReactNode;
   api: LoadedBuilderApi;
   preview: Preview;
   /** Writes the draft. The button only decides whether to offer it. */
@@ -237,6 +240,12 @@ export function SummaryCard({
                 </button>
               </dd>
             </div>
+            {backingUnit ? (
+              <div data-testid='workflow-backing-unit'>
+                <dt>Backing Unit</dt>
+                <dd>{backingUnit}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>Labels</dt>
               <dd>

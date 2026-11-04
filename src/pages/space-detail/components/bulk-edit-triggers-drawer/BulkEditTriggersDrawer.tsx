@@ -5,7 +5,8 @@ import { Control, FieldErrors, UseFormWatch, UseFormSetValue, useForm } from 're
 
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { FixedSubmitContainer, SectionCard } from '@/components/styled';
-import { useBulkApiErrorMessage } from '@/hooks/useBulkApiErrorMessages';
+import { runChunkedBulkWrite } from '@/hooks/chunkedBulkWrite';
+import { getApiErrorMessage } from '@/utility/error-functions';
 import { TriggerRead, useBulkPatchTriggersMutation } from '@confighub/rtk-query';
 import Add from '@mui/icons-material/Add';
 import ArrowBack from '@mui/icons-material/ArrowBack';
@@ -17,6 +18,8 @@ import Drawer from '@mui/material/Drawer';
 import Grid from '@mui/material/Grid2';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 
 // Types
@@ -25,7 +28,87 @@ export interface BulkEditTriggersFormData {
   removeLabels: Array<string>;
   deleteGates: Array<{ key: string; id: string }>;
   removeDeleteGates: Array<string>;
+  /** What to set Disabled to on every selected Trigger; empty leaves each as it is */
+  disabled: '' | 'enabled' | 'disabled';
+  /** What to set Warn to on every selected Trigger; empty leaves each as it is */
+  warn: '' | 'blocking' | 'warn';
 }
+
+/** How many of the Triggers have a flag set, as "2 disabled, 3 enabled". */
+const flagCounts = (
+  triggers: TriggerRead[],
+  isSet: (trigger: TriggerRead) => boolean,
+  setLabel: string,
+  unsetLabel: string,
+): string => {
+  const set = triggers.filter(isSet).length;
+  const unset = triggers.length - set;
+  return [set > 0 ? `${set} ${setLabel}` : '', unset > 0 ? `${unset} ${unsetLabel}` : '']
+    .filter(Boolean)
+    .join(', ');
+};
+
+/**
+ * StatusCard
+ *
+ * Sets Disabled and Warn on every selected Trigger, or leaves each as it is.
+ */
+const StatusCard = ({ watch, setValue, triggersToEdit = [] }: TriggerMetadataInputProps) => {
+  const disabled = watch('disabled');
+  const warn = watch('warn');
+  return (
+    <SectionCard title='Status'>
+      <Stack spacing={2}>
+        <Box>
+          <Typography variant='subtitle2' sx={{ fontWeight: 600, mb: 1 }}>
+            Disabled
+          </Typography>
+          <ToggleButtonGroup
+            exclusive
+            size='small'
+            color='primary'
+            value={disabled}
+            onChange={(_, value: BulkEditTriggersFormData['disabled'] | null) =>
+              value !== null && setValue('disabled', value)
+            }
+            data-testid='bulk-trigger-disabled'
+          >
+            <ToggleButton value=''>Leave as is</ToggleButton>
+            <ToggleButton value='enabled'>Enabled</ToggleButton>
+            <ToggleButton value='disabled'>Disabled</ToggleButton>
+          </ToggleButtonGroup>
+          <Typography variant='body2' color='text.secondary' sx={{ mt: 0.5 }}>
+            Now: {flagCounts(triggersToEdit, (t) => !!t.Disabled, 'disabled', 'enabled')}
+          </Typography>
+        </Box>
+        <Box>
+          <Typography variant='subtitle2' sx={{ fontWeight: 600, mb: 1 }}>
+            Warn
+          </Typography>
+          <ToggleButtonGroup
+            exclusive
+            size='small'
+            color='primary'
+            value={warn}
+            onChange={(_, value: BulkEditTriggersFormData['warn'] | null) =>
+              value !== null && setValue('warn', value)
+            }
+            data-testid='bulk-trigger-warn'
+          >
+            <ToggleButton value=''>Leave as is</ToggleButton>
+            <ToggleButton value='blocking'>Blocking</ToggleButton>
+            <ToggleButton value='warn'>Warn</ToggleButton>
+          </ToggleButtonGroup>
+          <Typography variant='body2' color='text.secondary' sx={{ mt: 0.5 }}>
+            Now: {flagCounts(triggersToEdit, (t) => !!t.Warn, 'warn', 'blocking')}. A failed
+            validation by a Blocking Trigger is a validation error, which blocks Releases; by a
+            Warn Trigger, a validation warning, which blocks nothing.
+          </Typography>
+        </Box>
+      </Stack>
+    </SectionCard>
+  );
+};
 
 export interface TriggerMetadataInputProps {
   control: Control<BulkEditTriggersFormData>;
@@ -272,7 +355,7 @@ export const BulkEditTriggersDrawer = ({
   refresh,
 }: BulkEditTriggersDrawerProps) => {
   const [errorMessage, setErrorMessage] = useState<string[]>([]);
-  const [bulkPatchTriggers, { error, isSuccess, data }] = useBulkPatchTriggersMutation();
+  const [bulkPatchTriggers] = useBulkPatchTriggersMutation();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -290,20 +373,16 @@ export const BulkEditTriggersDrawer = ({
       removeLabels: [],
       deleteGates: [],
       removeDeleteGates: [],
+      disabled: '',
+      warn: '',
     },
   });
 
   const handleClose = () => {
     reset();
+    setErrorMessage([]);
     onClose();
   };
-
-  useBulkApiErrorMessage(error, isSuccess, data, setErrorMessage, {
-    onSuccess: () => {
-      refresh?.();
-      handleClose();
-    },
-  });
 
   const watchedValues = watch();
 
@@ -311,10 +390,9 @@ export const BulkEditTriggersDrawer = ({
     setIsSubmitting(true);
 
     try {
-      const triggerIds = triggersToEdit.map((trigger) => `'${trigger.TriggerID}'`).join(',');
-      const where = `TriggerID IN (${triggerIds})`;
-
       const updateData = {
+        ...(data.disabled ? { Disabled: data.disabled === 'disabled' } : {}),
+        ...(data.warn ? { Warn: data.warn === 'warn' } : {}),
         Labels: data.labels.reduce(
           (acc, label) => {
             acc[label.key] = label.value;
@@ -342,11 +420,24 @@ export const BulkEditTriggersDrawer = ({
         },
       };
 
-      await bulkPatchTriggers({
-        where,
-        // @ts-expect-error https://stackoverflow.com/questions/68283492/rtk-query-merge-patchjson-content-type-ruins-request-body
-        body: JSON.stringify(updateData),
-      });
+      // A selection can be every Trigger in the organization, so it is patched in chunks.
+      const failures = await runChunkedBulkWrite(
+        'TriggerID',
+        triggersToEdit.flatMap((trigger) => (trigger.TriggerID ? [trigger.TriggerID] : [])),
+        (where) =>
+          bulkPatchTriggers({
+            where,
+            // @ts-expect-error https://stackoverflow.com/questions/68283492/rtk-query-merge-patchjson-content-type-ruins-request-body
+            body: JSON.stringify(updateData),
+          }).unwrap(),
+        (error) => getApiErrorMessage(error, 'The Triggers could not be updated.'),
+      );
+      refresh?.();
+      if (failures.length > 0) {
+        setErrorMessage(failures);
+      } else {
+        handleClose();
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -356,7 +447,9 @@ export const BulkEditTriggersDrawer = ({
     (watchedValues.labels && watchedValues.labels.length > 0) ||
     (watchedValues.removeLabels && watchedValues.removeLabels.length > 0) ||
     (watchedValues.deleteGates && watchedValues.deleteGates.length > 0) ||
-    (watchedValues.removeDeleteGates && watchedValues.removeDeleteGates.length > 0);
+    (watchedValues.removeDeleteGates && watchedValues.removeDeleteGates.length > 0) ||
+    !!watchedValues.disabled ||
+    !!watchedValues.warn;
 
   return (
     <Drawer
@@ -392,7 +485,7 @@ export const BulkEditTriggersDrawer = ({
               Bulk Edit Triggers
             </Typography>
             <Typography variant='body1' color='text.secondary'>
-              Update labels and delete gates for {triggersToEdit.length} selected triggers
+              Update the status, labels and delete gates of {triggersToEdit.length} selected triggers
             </Typography>
           </Stack>
         </Box>
@@ -407,7 +500,14 @@ export const BulkEditTriggersDrawer = ({
           }}
         >
           <ErrorList errors={errorMessage} onClose={() => setErrorMessage([])} />
-          <Box>
+          <Stack spacing={1}>
+            <StatusCard
+              control={control}
+              errors={errors}
+              watch={watch}
+              setValue={setValue}
+              triggersToEdit={triggersToEdit}
+            />
             <UnifiedMetadataManagementCard
               control={control}
               errors={errors}
@@ -415,7 +515,7 @@ export const BulkEditTriggersDrawer = ({
               setValue={setValue}
               triggersToEdit={triggersToEdit}
             />
-          </Box>
+          </Stack>
         </Box>
 
         {/* Fixed Submit Button */}

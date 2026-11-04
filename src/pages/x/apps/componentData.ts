@@ -133,18 +133,17 @@ const NO_CONFIG_SIGNALS: ConfigSignals = Object.freeze({
 });
 
 /**
- * One unit's config-side conditions, by the rules the card's chips use
- * (`unitSummariesByDeployment` in AppComponentView.tsx feeds the card's
- * `upgrading` / `applyStatus`). The two must agree: a later view that lists
- * the Deployments needing attention from these counts would otherwise point
- * at a card that shows no chip.
+ * One unit's config-side conditions: the one statement of the rules that both
+ * a card's chips (`unitSummariesByDeployment` in AppComponentView.tsx) and the
+ * fold's counts read, so a fold never points at a card that shows no chip.
  *
  * - stale: the upstream unit is loaded and its head is past the revision this
  *   unit merged. An upstream outside the loaded units cannot be compared.
- * - release: a unit with no Target can never be released (the units of a
- *   Base), so it is neither unreleased nor gated; otherwise a head past the
- *   last released revision is 'gated' when validation errors block it and
- *   'unreleased' when nothing does.
+ * - release: 'gated' when the unit has validation errors, whether or not it
+ *   has a Target or anything unreleased, as the Components list's Blocking
+ *   Gates counts it; otherwise 'unreleased' when it has a Target and a head
+ *   past the last released revision. A unit with no Target can never be
+ *   released (the units of a Base), so it is never 'unreleased'.
  */
 export function unitConfigSignal(
   u: ExtendedUnitRead,
@@ -161,11 +160,12 @@ export function unitConfigSignal(
 
   const head = unit.HeadRevisionNum ?? 0;
   const released = unit.LastReleasedRevisionNum ?? 0;
-  const gates = unit.ValidationErrors;
-  const hasGates = !!gates && Object.keys(gates).length > 0;
-  const release = !unit.TargetID || !(head > 0 && released < head)
-    ? null
-    : hasGates ? 'gated' : 'unreleased';
+  const hasGates = Object.keys(unit.ValidationErrors ?? {}).length > 0;
+  const release = hasGates
+    ? 'gated'
+    : unit.TargetID && head > 0 && released < head
+      ? 'unreleased'
+      : null;
 
   return { stale, release };
 }

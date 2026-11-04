@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
+import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 
 import { Section } from '@/components/styled';
 import { EmptyLinks } from '@/pages/unit-detail/components/empty-links/EmptyLinks';
@@ -48,6 +50,7 @@ const DIRECTION_LABELS: Record<LinkDirectionFilter, string> = {
  */
 export const LinksTab = ({ selectedTab, linkRows, unitId, spaceId, onLinkAction }: ILinksTabProps) => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { includeHidden, setIncludeHidden } = useIncludeHidden();
   const filter = useMemo(() => readLinkFilter(searchParams), [searchParams]);
 
   const setFilter = (update: Partial<LinkFilter>) => {
@@ -81,7 +84,8 @@ export const LinksTab = ({ selectedTab, linkRows, unitId, spaceId, onLinkAction 
       $width='100%'
     >
       {selectedTab === LINKS_TAB_ID &&
-        (linkRows.length > 0 ? (
+        // With hidden Links listed, the filters stay so the toggle can be turned off.
+        (linkRows.length > 0 || includeHidden ? (
           <>
             <Stack direction='row' spacing={2} alignItems='center' sx={{ mb: 1 }} data-testid='links-filters'>
               <TextField
@@ -127,6 +131,7 @@ export const LinksTab = ({ selectedTab, linkRows, unitId, spaceId, onLinkAction 
                 }
                 label='Other spaces only'
               />
+              <IncludeHiddenToggle includeHidden={includeHidden} onChange={setIncludeHidden} entities='Links' />
             </Stack>
             <LinksTable rows={filteredRows} onLinkAction={onLinkAction} />
           </>

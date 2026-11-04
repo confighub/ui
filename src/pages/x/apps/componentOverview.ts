@@ -19,6 +19,8 @@ export interface ComponentKpiRow {
   unapplied: number;
   /** Sum of GatedUnitCount across this component's Spaces. */
   gatesPending: number;
+  /** Sum of WarnedUnitCount across this component's Spaces: units with validation warnings, which block nothing. */
+  warnings: number;
   /** Sum of UpgradableUnitCount across this component's Spaces. */
   upgrades: number;
   /**
@@ -61,6 +63,7 @@ export interface OrgKpiSummary {
   totalComponents: number;
   unapplied: number;
   gatesPending: number;
+  warnings: number;
   upgrades: number;
   /** Count of components (rows) with `hasOutstandingChangeOrder` true. */
   outstandingChangeOrders: number;
@@ -143,6 +146,7 @@ export function buildOverviewData(
     let totalSpaces = 0;
     let unapplied = 0;
     let gatesPending = 0;
+    let warnings = 0;
     let upgrades = 0;
 
     let hasOutstandingChangeOrder = false;
@@ -152,6 +156,7 @@ export function buildOverviewData(
       totalSpaces++;
       unapplied += space.UnreleasedUnitCount ?? 0;
       gatesPending += space.GatedUnitCount ?? 0;
+      warnings += space.WarnedUnitCount ?? 0;
       upgrades += space.UpgradableUnitCount ?? 0;
 
       const spaceId = space.Space?.SpaceID;
@@ -192,6 +197,7 @@ export function buildOverviewData(
       totalSpaces,
       unapplied,
       gatesPending,
+      warnings,
       upgrades,
       hasOutstandingChangeOrder,
       openChangeSets: componentChangeSets,
@@ -204,6 +210,7 @@ export function buildOverviewData(
     totalComponents: rows.length,
     unapplied: rows.reduce((s, r) => s + r.unapplied, 0),
     gatesPending: rows.reduce((s, r) => s + r.gatesPending, 0),
+    warnings: rows.reduce((s, r) => s + r.warnings, 0),
     upgrades: rows.reduce((s, r) => s + r.upgrades, 0),
     outstandingChangeOrders: rows.reduce((s, r) => s + (r.hasOutstandingChangeOrder ? 1 : 0), 0),
     openChangeSetComponents: rows.reduce((s, r) => s + (r.openChangeSets.length > 0 ? 1 : 0), 0),

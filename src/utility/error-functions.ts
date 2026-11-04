@@ -123,10 +123,12 @@ export interface QueryErrorDisplay extends QueryErrorClassification {
  *
  * @param error - The error from an RTK Query query, or `undefined` if none.
  * @param context - What failed to load, used in the fallback headline, e.g. `components`.
+ * @param notFoundHeadline - The headline for a 404, naming what was not found.
  */
 export function classifyQueryError(
   error: FetchBaseQueryError | SerializedError | undefined,
   context: string,
+  notFoundHeadline = 'This Space was not found',
 ): QueryErrorClassification {
   const fallback: QueryErrorClassification = {
     headline: `Could not load ${context}`,
@@ -159,7 +161,7 @@ export function classifyQueryError(
   }
   if (status === 404) {
     return {
-      headline: 'This Space was not found',
+      headline: notFoundHeadline,
       suggestion: 'It may be deleted or renamed. Check the URL.',
     };
   }

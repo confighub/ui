@@ -7,6 +7,8 @@ import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationM
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { FilteredEmptyState } from '@/components/filtered-empty-state';
 import { Header } from '@/components/header/Header';
+import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
+import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { extractLabelOptions, useQueryBuilder } from '@/components/query-builder';
 import { Main } from '@/components/styled';
 import { useBulkApiErrorMessage } from '@/hooks/useBulkApiErrorMessages';
@@ -36,8 +38,10 @@ export const SpaceListPage = () => {
   const [selectedSpaces, setSelectedSpaces] = useState<Array<string>>([]);
   const { editEntityId, closeEditDrawer } = useEditDrawerUrl();
 
+  const { includeHidden, setIncludeHidden, includeHiddenParam } = useIncludeHidden();
+
   // Fetch all spaces first (without filter) to get label options
-  const { data: allSpaces = [], isFetching: isFetchingAll, refetch: refetchAll } = useListSpacesQuery({ summary: true, include: SPACE_LIST_INCLUDE }, { refetchOnFocus: true });
+  const { data: allSpaces = [], isFetching: isFetchingAll, refetch: refetchAll } = useListSpacesQuery({ summary: true, include: SPACE_LIST_INCLUDE, includeHidden: includeHiddenParam }, { refetchOnFocus: true });
 
   // Extract label options from all spaces for the Labels filter dropdown
   const labelOptions = useMemo(() => {
@@ -77,6 +81,7 @@ export const SpaceListPage = () => {
       summary: true,
       include: SPACE_LIST_INCLUDE,
       where: whereClause,
+      includeHidden: includeHiddenParam,
     },
     { skip: !whereClause, refetchOnFocus: true },
   );
@@ -164,6 +169,9 @@ export const SpaceListPage = () => {
           spaces={displayedSpaces}
           isLoading={isLoading}
           filterElement={QueryBuilderElement}
+          customToolbarActions={
+            <IncludeHiddenToggle includeHidden={includeHidden} onChange={setIncludeHidden} entities='spaces' />
+          }
           noRowsOverlay={
             <FilteredEmptyState entityName='spaces' onClearFilters={clearFilters} />
           }

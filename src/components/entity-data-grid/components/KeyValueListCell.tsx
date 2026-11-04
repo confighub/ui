@@ -199,22 +199,29 @@ export const KeyValueListCell: React.FC<KeyValueListCellProps> = ({
 
   return (
     <>
-      {/* Hidden chips for measurement (only in auto mode) */}
+      {/* Hidden chips for measurement (only in auto mode). The zero-size clipping wrapper
+          keeps them out of the grid's scroll width: unclipped, a long value widened the
+          scroller while its row was rendered, so the end of a horizontal scroll moved as
+          rows virtualized in and out. */}
       {visibleCount === 'auto' && (
         <Box
-          ref={hiddenChipsRef}
           sx={{
             position: 'absolute',
+            width: 0,
+            height: 0,
+            overflow: 'hidden',
             visibility: 'hidden',
             pointerEvents: 'none',
-            display: 'flex',
-            gap: 0.5,
-            whiteSpace: 'nowrap',
           }}
         >
-          {sortedItems.map((item, index) => (
-            <Chip key={index} label={item} size='small' />
-          ))}
+          <Box
+            ref={hiddenChipsRef}
+            sx={{ display: 'flex', width: 'max-content', gap: 0.5, whiteSpace: 'nowrap' }}
+          >
+            {sortedItems.map((item, index) => (
+              <Chip key={index} label={item} size='small' />
+            ))}
+          </Box>
         </Box>
       )}
 

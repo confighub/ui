@@ -93,13 +93,18 @@ export interface WorkflowList {
   refetch: () => void;
 }
 
-export function useWorkflowList(skip = false, withGovernedCounts = false): WorkflowList {
+/** `includeHidden` is the list's include_hidden, naming the hidden workflows to list too. */
+export function useWorkflowList(
+  skip = false,
+  withGovernedCounts = false,
+  includeHidden?: string,
+): WorkflowList {
   const {
     data: workflowData,
     isLoading,
     error,
     refetch,
-  } = useListAllChangeWorkflowsQuery({}, { skip });
+  } = useListAllChangeWorkflowsQuery({ includeHidden }, { skip });
 
   const { data: changeOrderData, error: changeOrderError } = useListAllChangeOrdersQuery(
     { select: CHANGE_ORDER_SELECT },

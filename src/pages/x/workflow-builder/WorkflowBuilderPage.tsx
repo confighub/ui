@@ -32,6 +32,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { OrganizationRow } from '@/components/organization-switcher/OrganizationRow';
+import { BackingUnitLink } from '@/components/backing-unit/BackingUnitLink';
+import { EnableBackingUnitField } from '@/components/backing-unit/EnableBackingUnitField';
+import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
+import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 
 import './workflowBuilder.css';
 
@@ -226,6 +230,8 @@ export default function WorkflowBuilderPage() {
   const spaces = useWorkflowSpaces(api.workflow?.stages ?? [], component ?? undefined);
 
   const writer = useWorkflowSave();
+  // A new workflow's choice of a backing Unit, sent with its first save.
+  const [createWithBackingUnit, setCreateWithBackingUnit] = useState(false);
 
   /**
    * The one thing a create() success needs from outside itself: to stop being
@@ -269,7 +275,7 @@ export default function WorkflowBuilderPage() {
 
     const outcome = detail.identity
       ? await writer.save(draft, detail.identity)
-      : await writer.create(draft, pendingSpaceId);
+      : await writer.create(draft, pendingSpaceId, createWithBackingUnit);
 
     if (outcome.kind === 'saved') {
       if (detail.identity) {
@@ -283,7 +289,21 @@ export default function WorkflowBuilderPage() {
     }
     api.setSaveNotice({ kind: outcome.kind, message: outcome.message });
     api.setSaving(false);
-  }, [api, detail, writer, pendingSpaceId, onDraftCreated]);
+  }, [api, detail, writer, pendingSpaceId, onDraftCreated, createWithBackingUnit]);
+
+  // Giving a saved workflow a backing Unit writes it, so it waits for unsaved edits, as Clone
+  // does, and the next save sends the Version that write left.
+  const onEnableBackingUnit = useCallback(async () => {
+    if (!detail.identity || api.dirty) return;
+    api.setSaveNotice(null);
+    const outcome = await writer.enableBackingUnit(detail.identity);
+    if (outcome.ok) {
+      detail.noteSaved(outcome.identity);
+      detail.refetch();
+    } else {
+      api.setSaveNotice({ kind: 'failed', message: outcome.message });
+    }
+  }, [api, detail, writer]);
 
   /* Two different unknowns, kept as two names rather than one boolean: nobody
      having chosen a component is a question the reader can answer right here;
@@ -335,7 +355,8 @@ export default function WorkflowBuilderPage() {
      workflow and not started a blank one, so the three cannot disagree and
      the builder cannot be reached without one or the other. */
   const showingList = openId === null && !draftMode;
-  const list = useWorkflowList(!showingList);
+  const { includeHidden, setIncludeHidden, includeHiddenParam } = useIncludeHidden();
+  const list = useWorkflowList(!showingList, false, includeHiddenParam);
   // Needed by both clone destinations -- the console's "start a new workflow"
   // and the open workflow's "Clone to another Space" -- so it is not skipped in
   // either screen, unlike `list`, which only the console's own rows and source
@@ -405,6 +426,9 @@ export default function WorkflowBuilderPage() {
           destinationSpaces={writableSpaces.spaces}
           destinationSpacesStatus={writableSpaces.status}
           onNewBlank={onNewBlank}
+          hiddenToggle={
+            <IncludeHiddenToggle includeHidden={includeHidden} onChange={setIncludeHidden} entities='workflows' />
+          }
         />
       ) : !isLoaded(api) ? (
         <NoWorkflow status={status} onRetry={retry} />
@@ -429,6 +453,29 @@ export default function WorkflowBuilderPage() {
             neverSaved={openId === null}
             pendingSpaceId={pendingSpaceId}
             onPendingSpaceChange={setPendingSpaceId}
+            backingUnit={
+              detail.backingUnitId ? (
+                // The builder holds a draft, so the Unit opens in a new tab.
+                <BackingUnitLink backingUnitId={detail.backingUnitId} newTab />
+              ) : openId === null ? (
+                <EnableBackingUnitField
+                  value={{ enabled: createWithBackingUnit, spaceId: '' }}
+                  onChange={(choice) => setCreateWithBackingUnit(choice.enabled)}
+                  disabled={api.saving}
+                />
+              ) : (
+                <button
+                  className='btn sm'
+                  type='button'
+                  data-act='enablebackingunit'
+                  disabled={api.dirty || writer.isSaving}
+                  title={api.dirty ? 'Save or discard your changes first' : undefined}
+                  onClick={() => void onEnableBackingUnit()}
+                >
+                  Keep its configuration in a backing Unit
+                </button>
+              )
+            }
           />
 
           <section className='card' role='region' aria-label='Stages'>

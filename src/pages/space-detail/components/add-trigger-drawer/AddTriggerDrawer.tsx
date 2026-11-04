@@ -1,8 +1,14 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Control, Controller, FieldErrors, useFieldArray, useForm, useWatch } from 'react-hook-form';
 
+import { BackingUnitHeaderField } from '@/components/backing-unit/BackingUnitHeaderField';
+import {
+  type BackingUnitChoice,
+  NO_BACKING_UNIT,
+} from '@/components/backing-unit/backingUnitChoice';
+import { backingUnitFailureMessage, enableBackingUnit } from '@/components/backing-unit/enableBackingUnit';
 import { CopyToClipboard } from '@/components/copy-to-clipboard/CopyToClipboard';
 import { EntityRefSelect, type EntityRefOption } from '@/components/entity-ref-select/EntityRefSelect';
 import {
@@ -21,6 +27,7 @@ import { FixedSubmitContainer, SectionCard } from '@/components/styled';
 import { CLEARANCE_OPERATORS, defaultTriggerFormInput } from '@/hooks/triggerFormBody';
 import { IAddTriggerFormInput, useAddTrigger } from '@/hooks/useAddTrigger';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
+import { useAppDispatch } from '@/hooks/useApp';
 import {
   FunctionChannelOption,
   functionListArgs,
@@ -29,6 +36,7 @@ import {
 import {
   FunctionSignature,
   ListFunctionsApiResponse,
+  SpaceRead,
   TriggerRead,
   useListFunctionsQuery,
 } from '@confighub/rtk-query';
@@ -41,6 +49,7 @@ import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
 import Lock from '@mui/icons-material/Lock';
 import Alert from '@mui/material/Alert';
+import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Drawer from '@mui/material/Drawer';
@@ -66,7 +75,10 @@ export interface AddTriggerDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   orgID: string;
+  /** The Space a new Trigger is created in; empty to have the user pick one of `spaces` */
   spaceId: string;
+  /** The Spaces a new Trigger can be created in, when `spaceId` is empty */
+  spaces?: SpaceRead[];
   onTriggerCreated?: (trigger: TriggerRead) => void;
   onTriggerUpdated?: (trigger: TriggerRead) => void;
   existingTrigger?: TriggerRead;
@@ -743,13 +755,27 @@ export const AddTriggerDrawer = ({
   isOpen,
   onClose,
   orgID,
-  spaceId,
+  spaceId: fixedSpaceId,
+  spaces,
   onTriggerCreated,
   onTriggerUpdated,
   existingTrigger,
 }: AddTriggerDrawerProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isEditMode = !!existingTrigger;
+  const dispatch = useAppDispatch();
+  const [backingUnit, setBackingUnit] = useState<BackingUnitChoice>(NO_BACKING_UNIT);
+  // While an update is followed by giving the Trigger a backing Unit, the drawer stays open until
+  // that is done too, so that a failure is shown rather than closed away.
+  const enablingAfterUpdate = useRef(false);
+
+  // A Trigger is changed where it resides; a new one is created in the page's Space, or, on a
+  // page of Triggers from all Spaces, in the one picked here.
+  const [pickedSpaceId, setPickedSpaceId] = useState('');
+  const picksSpace = !isEditMode && !fixedSpaceId;
+  const spaceId = existingTrigger?.SpaceID || fixedSpaceId || pickedSpaceId;
+  const pickedSpace = spaces?.find((space) => space.SpaceID === spaceId);
+  const organizationId = orgID || existingTrigger?.OrganizationID || pickedSpace?.OrganizationID || '';
 
   const { channels } = useFunctionChannels();
 
@@ -777,7 +803,7 @@ export const AddTriggerDrawer = ({
     serverError,
     setServerError,
     setSelectedFunction,
-  } = useAddTrigger(orgID, spaceId, existingTrigger, { setValue, watch, reset });
+  } = useAddTrigger(organizationId, spaceId, existingTrigger, { setValue, watch, reset });
 
   const watchedToolchainType = watch('ToolchainType');
   const watchedChannelId = watch('ChannelID');
@@ -798,10 +824,13 @@ export const AddTriggerDrawer = ({
 
   // The function picker offers what the chosen executor serves, which the server checks the
   // Trigger's function against when it is stored.
-  const { data: functions = {} } = useListFunctionsQuery({
-    spaceId,
-    ...functionListArgs(watchedChannelId),
-  });
+  const { data: functions = {} } = useListFunctionsQuery(
+    {
+      spaceId,
+      ...functionListArgs(watchedChannelId),
+    },
+    { skip: !spaceId },
+  );
 
   /**
    * Filtered subset of functions for the current toolchain, restricted to
@@ -862,6 +891,8 @@ export const AddTriggerDrawer = ({
 
   const handleClose = () => {
     reset(defaultValues);
+    setPickedSpaceId('');
+    setBackingUnit(NO_BACKING_UNIT);
     onClose();
     setServerError('');
     setSelectedFunction({});
@@ -869,6 +900,7 @@ export const AddTriggerDrawer = ({
 
   useApiErrorMessage(error, isSuccess, setServerError, {
     onSuccess: () => {
+      if (enablingAfterUpdate.current) return;
       if (isEditMode && onTriggerUpdated && data) {
         onTriggerUpdated(data);
         handleClose();
@@ -885,13 +917,29 @@ export const AddTriggerDrawer = ({
     setIsSubmitting(true);
 
     try {
-      await submitTrigger(formData);
+      if (!isEditMode) {
+        await submitTrigger(formData, backingUnit.enabled);
+        return;
+      }
+      enablingAfterUpdate.current = backingUnit.enabled;
+      const updated = await submitTrigger(formData);
+      if (enablingAfterUpdate.current && updated?.TriggerID) {
+        try {
+          await enableBackingUnit(dispatch, 'Trigger', updated.TriggerID);
+          onTriggerUpdated?.(updated);
+          handleClose();
+        } catch (e) {
+          setServerError(backingUnitFailureMessage('Trigger', e));
+        }
+      }
     } finally {
+      enablingAfterUpdate.current = false;
       setIsSubmitting(false);
     }
   };
 
   const isFormValid: boolean =
+    !!spaceId &&
     !!watchedValues.Slug &&
     !!watchedValues.ToolchainType &&
     !!watchedValues.EventType &&
@@ -926,18 +974,26 @@ export const AddTriggerDrawer = ({
               Back to Triggers
             </Button>
           </Stack>
-          <Stack spacing={1}>
-            <Typography variant='h4' component='h1' sx={{ fontWeight: 600 }}>
-              {isEditMode ? 'Edit Trigger' : 'Add Trigger'}
-            </Typography>
-            {isEditMode && existingTrigger?.TriggerID && (
-              <Stack direction='row' spacing={1} alignItems='center'>
-                <Typography variant='body1' color='text.secondary'>
-                  UUID: {existingTrigger.TriggerID}
-                </Typography>
-                <CopyToClipboard text={existingTrigger.TriggerID} />
-              </Stack>
-            )}
+          <Stack direction='row' spacing={3} sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <Stack spacing={1}>
+              <Typography variant='h4' component='h1' sx={{ fontWeight: 600 }}>
+                {isEditMode ? 'Edit Trigger' : 'Add Trigger'}
+              </Typography>
+              {isEditMode && existingTrigger?.TriggerID && (
+                <Stack direction='row' spacing={1} alignItems='center'>
+                  <Typography variant='body1' color='text.secondary'>
+                    UUID: {existingTrigger.TriggerID}
+                  </Typography>
+                  <CopyToClipboard text={existingTrigger.TriggerID} />
+                </Stack>
+              )}
+            </Stack>
+            <BackingUnitHeaderField
+              backingUnitId={existingTrigger?.BackingUnitID}
+              choice={backingUnit}
+              onChoiceChange={setBackingUnit}
+              disabled={isSubmitting}
+            />
           </Stack>
         </Box>
 
@@ -953,6 +1009,26 @@ export const AddTriggerDrawer = ({
           <ErrorList errors={[serverError]} onClose={() => setServerError('')} />
 
           <Stack spacing={1}>
+            {picksSpace && (
+              <SectionCard title='Space'>
+                <Autocomplete
+                  size='small'
+                  options={spaces ?? []}
+                  getOptionLabel={(space) => space.Slug || ''}
+                  value={pickedSpace ?? null}
+                  onChange={(_, space) => setPickedSpaceId(space?.SpaceID || '')}
+                  data-testid='trigger-space-select'
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label='Space'
+                      required
+                      helperText='The Space the Trigger resides in'
+                    />
+                  )}
+                />
+              </SectionCard>
+            )}
             <BasicInfoCard control={control} errors={errors} />
             <StatusAndFunctionCard
               control={control}

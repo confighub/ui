@@ -447,9 +447,9 @@ export const InvokerSidebar = ({
     onClose();
   }, [onClose]);
 
-  // A page asked for a Trigger to be created in its Space: the save panel opens as a Trigger in
-  // that Space once a function is picked. The request lasts until the invoker closes or a Trigger
-  // is saved.
+  // A page asked for a Trigger to be created, in its Space or in one the user picks: the save
+  // panel opens as a Trigger, in that Space when there is one, once a function is picked. The
+  // request lasts until the invoker closes or a Trigger is saved.
   const dispatch = useAppDispatch();
   const createTriggerInSpaceId = useAppSelector(selectCreateTriggerInSpaceId);
   const invokerRequestSeq = useAppSelector(selectInvokerRequestSeq);
@@ -459,14 +459,14 @@ export const InvokerSidebar = ({
   );
   const wasOpenRef = useRef(isOpen);
   useEffect(() => {
-    if (wasOpenRef.current && !isOpen && createTriggerInSpaceId) {
+    if (wasOpenRef.current && !isOpen && createTriggerInSpaceId !== null) {
       dispatch(clearInvokerRequest());
     }
     wasOpenRef.current = isOpen;
   }, [isOpen, createTriggerInSpaceId, dispatch]);
   const saveAsTrigger = useMemo(
     () =>
-      createTriggerInSpaceId
+      createTriggerInSpaceId !== null
         ? {
             requestSeq: invokerRequestSeq,
             spaceId: createTriggerInSpaceId,

@@ -390,41 +390,35 @@ tooltip — for anything beyond a one-line label.
 ### Informational Popouts (Peek Cards)
 
 ```tsx
-import Tooltip from '@mui/material/Tooltip';
-import { INFO_PEEK_TOOLTIP_SX, InfoPeekCard } from '@/components/info-peek/InfoPeek';
+import { InfoPeekTooltip } from '@/components/info-peek/InfoPeek';
 
-<Tooltip
-  placement="bottom-start"
-  enterDelay={120}
-  leaveDelay={0}
-  disableInteractive
-  slotProps={{ tooltip: { sx: INFO_PEEK_TOOLTIP_SX }, transition: { timeout: { enter: 120, exit: 0 } } }}
-  title={
-    <InfoPeekCard
-      color={theme.palette.primary.main}
-      spec={{
-        eyebrow: 'Stale · behind upstream',
-        metric: { value: '3', unit: 'revisions behind' },
-        lines: ['Last changed 2 days ago'],
-        action: 'Review & upgrade', // optional — omit for a purely informational peek
-      }}
-    />
-  }
+<InfoPeekTooltip
+  color={theme.palette.primary.main}
+  spec={{
+    eyebrow: 'Stale · behind upstream',
+    metric: { value: '3', unit: 'revisions behind' },
+    lines: ['Last changed 2 days ago'],
+    action: 'Review & upgrade', // optional — omit for a purely informational peek
+  }}
+  onAction={openUpgrade} // makes the action a link; pass it whenever there is an action
 >
   <StatusChip>...</StatusChip>
-</Tooltip>
+</InfoPeekTooltip>
 ```
 
 A light, bordered card (white background, 1px border, 9px radius, soft shadow) that replaces MUI's
 dark Tooltip bubble whenever the hover content needs real structure: an eyebrow label, an optional
-hero metric, one or more supporting lines, and an optional accent action hint. It renders content
-only — `INFO_PEEK_TOOLTIP_SX` on the wrapping `Tooltip`'s `slotProps.tooltip` supplies the card's
-own chrome, so don't add another border/shadow around it.
+hero metric, one or more supporting lines, and an optional accent action. `InfoPeekTooltip` wraps
+the trigger in it; `InfoPeekCard` is the card alone, with `INFO_PEEK_TOOLTIP_SX` for a `Tooltip`
+whose own props have to differ.
 
-This is a pure hover preview: `disableInteractive` + a 0ms exit means it disappears the instant the
-pointer leaves — it is not a menu, has no interactive children of its own, and never traps focus. If
-the content needs to stay open for a click or hold interactive controls (a switch, a button), that's
-a `Popover`, not a peek — see the promotion-edge auto-upgrade menu
+An action is drawn as a link ("Review & upgrade →"), so it has to be one: give `onAction` with
+every `action`, normally doing what a click on the trigger does. The card then stays open while the
+pointer crosses onto it, and clicking the action does `onAction` and closes it. A peek with no
+action is a pure hover preview: it disappears the instant the pointer leaves the trigger. Either
+way it is not a menu, never traps focus, and stops clicks inside it from reaching the trigger's
+ancestors. Content that has to hold interactive controls (a switch, several buttons) is a
+`Popover`, not a peek — see the promotion-edge auto-upgrade menu
 (`src/pages/x/apps/flow-graph/PromotionEdge.tsx`) for that pattern, which borrows the same header/
 row visual language (icon chip, eyebrow, muted supporting text) without literally reusing this
 component.

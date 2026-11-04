@@ -11,15 +11,17 @@ import {
 import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { Header } from '@/components/header/Header';
+import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
+import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { useQueryBuilder, extractLabelOptions } from '@/components/query-builder';
 import { SettingsTabs } from '@/components/settings-tabs/SettingsTabs';
 import { Main } from '@/components/styled';
 import { DetailsContainer, Section } from '@/components/styled/index.tsx';
 import { TriggerSelectionBar } from '@/components/trigger-selection/TriggerSelectionBar';
 import { useTriggerSelection } from '@/components/trigger-selection/useTriggerSelection';
+import { runChunkedBulkWrite } from '@/hooks/chunkedBulkWrite';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
 import { useAppDispatch } from '@/hooks/useApp';
-import { useBulkApiErrorMessage } from '@/hooks/useBulkApiErrorMessages';
 import { useEditDrawerUrl } from '@/hooks/useEditDrawerUrl';
 import { useTabWithUrl } from '@/hooks/useTabWithUrl';
 import { AddTriggerDrawer } from '@/pages/space-detail/components/add-trigger-drawer/AddTriggerDrawer';
@@ -38,12 +40,8 @@ import {
   usePatchSpaceMutation,
 } from '@confighub/rtk-query';
 import { Direction } from '@/types/enums';
-import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import ButtonGroup from '@mui/material/ButtonGroup';
-import Menu from '@mui/material/Menu';
-import MenuItem from '@mui/material/MenuItem';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
@@ -57,6 +55,7 @@ import {
   SPACE_SETTINGS_INCLUDE,
   SpaceSettingsForm,
 } from './components/space-settings/SpaceSettingsForm';
+import { CreateTriggerButton } from './components/create-trigger-button/CreateTriggerButton';
 import { TriggersTable } from './components/triggers-table/TriggersTable';
 import { useModalStates } from './hooks/useModalStates';
 
@@ -102,8 +101,6 @@ export const SpaceDetailPage = () => {
   // State
   const navigate = useNavigate();
   const [selectedTriggers, setSelectedTriggers] = useState<Array<string>>([]);
-  const [createMenuOpen, setCreateMenuOpen] = useState(false);
-  const createMenuAnchor = useRef<HTMLDivElement>(null);
 
   // URL-controlled edit drawer state
   const { editEntityId, isDrawerOpen, closeEditDrawer } = useEditDrawerUrl();
@@ -112,14 +109,7 @@ export const SpaceDetailPage = () => {
   const [isUnitAddOpen, setIsUnitAddOpen] = useState(false);
 
   // Api
-  const [
-    bulkDeleteTrigger,
-    {
-      isSuccess: isBulkDeleteTriggerSuccess,
-      error: bulkDeleteTriggerError,
-      data: bulkDeleteTriggerData,
-    },
-  ] = useBulkDeleteTriggersMutation();
+  const [bulkDeleteTrigger] = useBulkDeleteTriggersMutation();
   const [deleteSpace, { isSuccess: isDeleteSuccess, error: deleteError }] =
     useDeleteSpaceMutation();
   const [patchSpace, { isLoading: isRefreshingTriggers, error: refreshTriggersError }] =
@@ -135,25 +125,23 @@ export const SpaceDetailPage = () => {
   const formatError = (message: string) => setServerError([message]);
 
   // Error handlers
-  useBulkApiErrorMessage(
-    bulkDeleteTriggerError,
-    isBulkDeleteTriggerSuccess,
-    bulkDeleteTriggerData,
-    setServerError,
-  );
   useApiErrorMessage(deleteError, isDeleteSuccess, formatError, {
     onSuccess: () => navigate('/spaces'),
     onError: () => updateModalState('isDeleteSpaceModalOpen', false),
   });
 
+  // Deleted in chunks, as on the page of every Trigger. When any fails the selection stays, so
+  // Delete can be tried again.
   const onTriggerDeleted = async () => {
-    bulkDeleteTrigger({
-      where: `TriggerID IN (${selectedTriggers.map((id) => `'${id}'`).join(',')})`,
-    });
-
-    // Clear selection after successful deletion
-    setSelectedTriggers([]);
+    const failures = await runChunkedBulkWrite(
+      'TriggerID',
+      selectedTriggers,
+      (where) => bulkDeleteTrigger({ where }).unwrap(),
+      (error) => getApiErrorMessage(error, 'The Triggers could not be deleted.'),
+    );
     updateModalState('isTriggerDeleteModalOpen', false);
+    setServerError(failures);
+    if (failures.length === 0) setSelectedTriggers([]);
   };
 
   const onSpaceDeleted = () => {
@@ -163,9 +151,11 @@ export const SpaceDetailPage = () => {
   };
 
   // The Triggers that reside in the Space, for the edit drawers and the filter's options
+  const { includeHidden, setIncludeHidden, includeHiddenParam } = useIncludeHidden();
   const { data: allTriggersData, refetch: refetchTriggers } = useListAllTriggersQuery({
     where: `SpaceID = '${id}'`,
     include: 'SpaceID',
+    includeHidden: includeHiddenParam,
   });
 
   // Creating, changing or deleting a Trigger in the Space re-lists the Triggers the Space applies,
@@ -318,42 +308,10 @@ export const SpaceDetailPage = () => {
   const isTriggersTab = selectedTab === TRIGGERS_TAB;
 
   const createTriggerButton = (
-    <>
-      <ButtonGroup variant='contained' size='small' ref={createMenuAnchor}>
-        <Button onClick={openInvokerToCreateTrigger} data-testid='create-trigger-button'>
-          Create
-        </Button>
-        <Button
-          size='small'
-          aria-label='More ways to create a Trigger'
-          onClick={() => setCreateMenuOpen(true)}
-        >
-          <ArrowDropDownIcon />
-        </Button>
-      </ButtonGroup>
-      <Menu
-        anchorEl={createMenuAnchor.current}
-        open={createMenuOpen}
-        onClose={() => setCreateMenuOpen(false)}
-      >
-        <MenuItem
-          onClick={() => {
-            setCreateMenuOpen(false);
-            openInvokerToCreateTrigger();
-          }}
-        >
-          From a function, in the function invoker
-        </MenuItem>
-        <MenuItem
-          onClick={() => {
-            setCreateMenuOpen(false);
-            updateModalState('isAddTriggerModalOpen', true);
-          }}
-        >
-          With the Trigger form
-        </MenuItem>
-      </Menu>
-    </>
+    <CreateTriggerButton
+      onCreateInInvoker={openInvokerToCreateTrigger}
+      onCreateWithForm={() => updateModalState('isAddTriggerModalOpen', true)}
+    />
   );
 
   const triggerCountInSpace = allTriggersData?.length ?? sumMap(data?.TriggerCountByEventType);
@@ -472,6 +430,13 @@ export const SpaceDetailPage = () => {
             filterElement={QueryBuilderElement}
             selectionStatusById={triggerView === 'applied' ? triggerSelection.statusById : undefined}
             persistenceKey={triggerView === 'applied' ? 'applied-triggers-table' : 'triggers-table'}
+            // The applied Triggers are named by ID, which lists hidden ones anyway.
+            includeHidden={triggerView === 'space' ? includeHiddenParam : undefined}
+            customToolbarActions={
+              triggerView === 'space' ? (
+                <IncludeHiddenToggle includeHidden={includeHidden} onChange={setIncludeHidden} entities='triggers' />
+              ) : undefined
+            }
             emptyState={
               triggerView === 'applied' ? (
                 <Typography variant='body2' color='text.secondary' sx={{ px: 1.5, py: 1 }}>

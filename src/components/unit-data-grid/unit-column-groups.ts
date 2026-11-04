@@ -37,7 +37,7 @@ export const UNIT_COLUMN_GROUPS: ColumnGroup[] = [
   },
   {
     header: 'Other Details',
-    columns: ['Annotations'],
+    columns: ['Annotations', 'HiddenReason'],
   },
 ];
 

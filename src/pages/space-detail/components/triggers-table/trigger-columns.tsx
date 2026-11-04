@@ -16,7 +16,7 @@ import Tooltip from '@mui/material/Tooltip';
 export const TRIGGER_COLUMN_GROUPS: ColumnGroup[] = [
   {
     header: 'Core Identity',
-    columns: ['Slug', 'TriggerID', 'Space', 'SpaceID'],
+    columns: ['Slug', 'TriggerID', 'Space', 'SpaceID', 'HiddenReason'],
   },
   {
     header: 'Selection',
@@ -70,6 +70,7 @@ export interface TriggerRowItem {
   Validating: boolean;
   Disabled: boolean;
   Warn: boolean;
+  HiddenReason: string;
   CreatedAt: string;
   UpdatedAt: string;
   Labels: {

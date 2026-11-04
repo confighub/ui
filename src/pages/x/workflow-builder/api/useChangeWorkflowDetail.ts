@@ -55,6 +55,8 @@ export interface WorkflowDetail {
    * and is not true.
    */
   workflow: MappedWorkflow | undefined;
+  /** The Unit that holds the workflow's configuration, as last read; absent for none. */
+  backingUnitId: string | undefined;
   /** What a save needs, latched at the start of this edit. */
   identity: WorkflowIdentity | undefined;
   /** Begins the next edit session with the Version a successful save returned. */
@@ -107,8 +109,9 @@ export function useChangeWorkflowDetail(
    */
   const asked: string | undefined = changeWorkflowId || undefined;
 
+  // Named by ID, so a hidden workflow is read too.
   const { data, isLoading, error, refetch } = useListAllChangeWorkflowsQuery(
-    {},
+    { where: `ChangeWorkflowID = '${asked}'` },
     { skip: asked === undefined },
   );
 
@@ -180,6 +183,7 @@ export function useChangeWorkflowDetail(
 
   return {
     workflow: found?.workflow,
+    backingUnitId: found?.backingUnitId,
     identity: latched?.identity,
     noteSaved,
     isLoading,

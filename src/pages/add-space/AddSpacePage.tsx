@@ -3,6 +3,12 @@
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 
+import { EnableBackingUnitField } from '@/components/backing-unit/EnableBackingUnitField';
+import {
+  type BackingUnitChoice,
+  isBackingUnitChoiceComplete,
+  NO_BACKING_UNIT,
+} from '@/components/backing-unit/backingUnitChoice';
 import { MapFieldSection } from '@/components/map-field-editor/MapFieldSection';
 import { type MapRow, rowsToMap } from '@/components/map-field-editor/map-rows';
 import { ServerErrorBox } from '@/components/styled';
@@ -50,6 +56,7 @@ export const AddSpacePage = ({ open, onClose }: { open: boolean; onClose: () => 
   const [createSpace, { isLoading, isSuccess, error, data }] = useCreateSpaceMutation();
   const { trackEntityCreated } = useAnalytics();
   const [serverError, setServerError] = useState<string>('');
+  const [backingUnit, setBackingUnit] = useState<BackingUnitChoice>(NO_BACKING_UNIT);
 
   useEffect(() => {
     if (isSuccess && data) {
@@ -59,6 +66,7 @@ export const AddSpacePage = ({ open, onClose }: { open: boolean; onClose: () => 
         entity_id: data.SpaceID || '',
       });
       reset();
+      setBackingUnit(NO_BACKING_UNIT);
       onClose?.();
     } else if (error) {
       // @ts-expect-error TODO:
@@ -68,11 +76,17 @@ export const AddSpacePage = ({ open, onClose }: { open: boolean; onClose: () => 
 
   const handleClose = () => {
     reset();
+    setBackingUnit(NO_BACKING_UNIT);
     onClose();
   };
 
   const onSubmit = (data: AddSpaceFormData) => {
+    if (!isBackingUnitChoiceComplete(backingUnit, true)) {
+      setServerError('Choose the Space to hold the backing Unit.');
+      return;
+    }
     const body = {
+      ...(backingUnit.enabled ? { withBackingUnits: true, backingUnitSpace: backingUnit.spaceId } : {}),
       space: {
         Slug: data.Slug,
         Labels: rowsToMap(data.Labels),
@@ -145,6 +159,9 @@ export const AddSpacePage = ({ open, onClose }: { open: boolean; onClose: () => 
                   />
                 )}
               />
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <EnableBackingUnitField value={backingUnit} onChange={setBackingUnit} needsSpace disabled={isLoading} />
             </Grid>
             <Grid size={{ xs: 12 }}>
               <MapFieldSection

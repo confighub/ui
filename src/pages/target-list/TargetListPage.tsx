@@ -11,6 +11,8 @@ import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationM
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { FilteredEmptyState } from '@/components/filtered-empty-state';
 import { Header } from '@/components/header/Header';
+import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
+import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { extractLabelOptions, useQueryBuilder } from '@/components/query-builder';
 import { Main } from '@/components/styled';
 import { useBulkApiErrorMessage } from '@/hooks/useBulkApiErrorMessages';
@@ -77,9 +79,12 @@ export const TargetListPage = () => {
     [spacesData],
   );
 
+  const { includeHidden, setIncludeHidden, includeHiddenParam } = useIncludeHidden();
+
   // Fetch all targets first (without filter) to get label options
   const { data: allTargets = [], isFetching: isFetchingAll, refetch: refetchAll } = useListAllTargetsQuery({
     include: TARGET_LIST_INCLUDE,
+    includeHidden: includeHiddenParam,
   }, { refetchOnFocus: true });
 
   // Extract label options from all targets for the Labels filter dropdown
@@ -114,7 +119,7 @@ export const TargetListPage = () => {
     refetch: refetchFiltered,
     error: filterError,
   } = useListAllTargetsQuery(
-    { where: whereClause, include: TARGET_LIST_INCLUDE },
+    { where: whereClause, include: TARGET_LIST_INCLUDE, includeHidden: includeHiddenParam },
     { skip: !whereClause, refetchOnFocus: true },
   );
 
@@ -246,6 +251,9 @@ export const TargetListPage = () => {
           selectedRows={selectedTargetIds}
           isLoading={isLoading}
           filterElement={QueryBuilderElement}
+          customToolbarActions={
+            <IncludeHiddenToggle includeHidden={includeHidden} onChange={setIncludeHidden} entities='targets' />
+          }
           noRowsOverlay={
             <FilteredEmptyState entityName='targets' onClearFilters={clearFilters} />
           }

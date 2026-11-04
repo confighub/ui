@@ -24,6 +24,8 @@ export interface QueryErrorStateProps {
   endpoint: string;
   /** Which of several concurrent queries produced `error`, e.g. `live spaces`. Falls back to `context` when absent. */
   failedQuery?: string;
+  /** The headline for a 404, naming what was not found. Defaults to a Space. */
+  notFoundHeadline?: string;
 }
 
 /**
@@ -35,10 +37,17 @@ export interface QueryErrorStateProps {
  * This is not a replacement for `ErrorBox`: `ErrorBox` is a dismissible
  * banner for a failed mutation; this fills the panel for a failed query.
  */
-export const QueryErrorState = ({ error, onRetry, context, endpoint, failedQuery }: QueryErrorStateProps) => {
+export const QueryErrorState = ({
+  error,
+  onRetry,
+  context,
+  endpoint,
+  failedQuery,
+  notFoundHeadline,
+}: QueryErrorStateProps) => {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
-  const { headline, suggestion } = classifyQueryError(error, context);
+  const { headline, suggestion } = classifyQueryError(error, context, notFoundHeadline);
   const serverMessage = getApiErrorMessage(error, '—');
   const status = error && 'status' in error ? String(error.status) : '—';
   const detailLabel = failedQuery ?? context;

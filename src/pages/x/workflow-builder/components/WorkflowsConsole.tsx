@@ -22,8 +22,9 @@
  * now -- `ProblemsBand` on the builder lists every fault in full.
  */
 
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { HiddenReasonTag } from '@/components/hidden-entities/HiddenReasonTag';
 
 import { RefreshIcon } from '../icons';
 import { definitionFaults, plural } from '../model';
@@ -77,6 +78,8 @@ function StageStrip({ row }: { row: Row }) {
 
 interface WorkflowsConsoleProps {
   api: BuilderApi;
+  /** The filter bar's toggle that lists hidden workflows too */
+  hiddenToggle?: ReactNode;
   entities: readonly MappedEntity[];
   isLoading: boolean;
   failed: boolean;
@@ -122,6 +125,7 @@ export function WorkflowsConsole({
   destinationSpaces,
   destinationSpacesStatus,
   onNewBlank,
+  hiddenToggle,
 }: WorkflowsConsoleProps) {
   /* Which of the two ways to start counts as "starting" is not decided until
      one is picked, so the button opens a choice rather than a flow -- neither
@@ -228,6 +232,7 @@ export function WorkflowsConsole({
           <span>
             <span className='rname'>{wf.displayName}</span>
             <span className='rslug'>{`${wf.slug} · ${wf.space}`}</span>
+            <HiddenReasonTag reason={r.entity.hiddenReason} />
           </span>
           <StageStrip row={r} />
           <span className='rage hide1150'>{wf.age}</span>
@@ -302,6 +307,7 @@ export function WorkflowsConsole({
             </option>
           ))}
         </select>
+        {hiddenToggle}
         <button
           className='btn'
           type='button'

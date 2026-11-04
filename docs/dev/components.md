@@ -155,7 +155,7 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
 | `AppComponentView.tsx` | **Core orchestrator.** Fetches units, computes entries, owns upgrade/dry-run/`onCommitStaged` handlers, renders the graph + side pane, or the Dashboard (`displayMode`), plus the `FlowViewControl` overlay either way. |
 | `flow-graph/ComponentFlowGraph.tsx` | `reactflow` DAG by stage; fit-to-view; click selects a deployment. No view-mode/Dashboard knowledge — that's `AppComponentView`'s. |
 | `flow-graph/FlowViewControl.tsx` | Graph / Dashboard segmented control. |
-| `flow-graph/DeploymentFlowNode.tsx` | One node per deployment/Space. Exports `NodeUnitSummary {slug, upgrading, applyStatus:'gated'\|'pending'\|null}`. |
+| `flow-graph/DeploymentFlowNode.tsx` | One node per deployment/Space. Exports `NodeUnitSummary {slug, upgrading, applyStatus:'gated'\|'pending'\|null, gates, warnings}`. A unit with validation errors is `gated` whether or not it has a Target or unreleased changes, as the Components list's Blocking Gates counts it; the Gated and Warnings peeks name each unit's gates. |
 | `flow-graph/flowLayout.ts` | Stage-based node positioning. Exports `NODE_WIDTH`/`NODE_HEIGHT`/`STAGE_GAP`. |
 | `ComponentSidePane.tsx` | View toggle (Tree/Source/Overview), filter tabs, per-unit rows, footer Upgrade/Release/Discard buttons (Apply removed from the build — the "unapplied changes" diff/gate display remains); staging signal state (`stageAllSignal`, `clearStagedSignal`, `discardAllSignal`, `commitStagedSignal`); merges entries into `MergedUnit[]`. |
 | `ReadmePane.tsx` / `readme.ts` | The Readme tab, right of Releases: the Markdown of the Space's `README.md` Unit (AppConfig/Text, which `cub variant upload` makes of a bundle's README.md), frontmatter stripped, via `react-markdown` + `remark-gfm`. Only web and mail links are links; relative links and images name files in the source repository and render as text. The tab bar shows when a Space has a release target or a README. |
@@ -322,7 +322,8 @@ has no place here (a node is a real deployment, not something a keypress should 
 (`KeyedFieldDiff` when `key` is set) · `WholeResourceChange {key, wholeResource, resource}` ·
 `UpgradeEntry` (incl. `wholeResourceChanges?`, `blockedDeleteKeys?` and `allPaths`) · `ApplyEntry` /
 `ApplyEntryWithGates {isGated, gateKeys}` · `VariationEntry` · **`MergedUnit`** (the unified per-unit
-row carrying optional `upgradeEntry` / `applyEntry` / `variationEntry` + `validationErrors`).
+row carrying optional `upgradeEntry` / `applyEntry` / `variationEntry` + `validationErrors`,
+`validationWarnings` and `validationResults`) · `PaneUnit` (a unit as `unitsByDeployment` lists it).
 
 Exported from `ComponentValuesSection.tsx`: `StagedChange`, `StagedChangeType`, `StagedCommitPayload`.
 

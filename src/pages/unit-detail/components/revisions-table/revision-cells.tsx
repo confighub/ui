@@ -1,8 +1,8 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 
-import { INFO_PEEK_TOOLTIP_SX, InfoPeekCard } from '@/components/info-peek/InfoPeek';
+import { InfoPeekTooltip } from '@/components/info-peek/InfoPeek';
 import { changeSetPath } from '@/pages/change-sets/changeSetAddress';
 import { CenteredTableCell } from '@/components/styled';
 import { ChangeSetRead } from '@confighub/rtk-query';
@@ -50,28 +50,21 @@ export const CountChip = ({
 /** The ChangeSet a Revision was made in, with its description in a peek. It opens the ChangeSet's page. */
 export const ChangeSetCell = ({ changeSet }: { changeSet: ChangeSetRead | undefined }) => {
   const theme = useTheme();
+  const navigate = useNavigate();
   if (!changeSet) return <CenteredTableCell />;
   const open = changeSet.State === 'Open';
   const href = changeSet.SpaceSlug ? changeSetPath(changeSet.SpaceSlug, changeSet.Slug) : undefined;
   return (
     <CenteredTableCell>
-      <Tooltip
-        placement='bottom-start'
-        enterDelay={120}
-        leaveDelay={0}
-        disableInteractive
-        slotProps={{ tooltip: { sx: INFO_PEEK_TOOLTIP_SX }, transition: { timeout: { enter: 120, exit: 0 } } }}
-        title={
-          <InfoPeekCard
-            color={open ? theme.palette.info.main : theme.palette.text.secondary}
-            spec={{
-              eyebrow: `ChangeSet · ${changeSet.State ?? ''}`,
-              metric: { value: changeSet.Slug },
-              lines: changeSet.Description ? [changeSet.Description] : [],
-              ...(href !== undefined ? { action: 'Open the ChangeSet' } : {}),
-            }}
-          />
-        }
+      <InfoPeekTooltip
+        color={open ? theme.palette.info.main : theme.palette.text.secondary}
+        spec={{
+          eyebrow: `ChangeSet · ${changeSet.State ?? ''}`,
+          metric: { value: changeSet.Slug },
+          lines: changeSet.Description ? [changeSet.Description] : [],
+          ...(href !== undefined ? { action: 'Open the ChangeSet' } : {}),
+        }}
+        onAction={href !== undefined ? () => navigate(href) : undefined}
       >
         {href !== undefined ? (
           <Chip
@@ -88,7 +81,7 @@ export const ChangeSetCell = ({ changeSet }: { changeSet: ChangeSetRead | undefi
         ) : (
           <Chip size='small' color={open ? 'info' : 'default'} label={changeSet.Slug} />
         )}
-      </Tooltip>
+      </InfoPeekTooltip>
     </CenteredTableCell>
   );
 };

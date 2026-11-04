@@ -4,6 +4,7 @@ import { ReactNode } from 'react';
 
 import { DetailsFields, DetailsSection } from '@/components/details-drawer/DetailsFields';
 import { detailsMono, mapFields } from '@/components/details-drawer/detailsFormat';
+import { BackingUnitLink } from '@/components/backing-unit/BackingUnitLink';
 import { NavLink } from '@/components/nav-link/NavLink';
 import {
   Binding,
@@ -151,6 +152,7 @@ export const LinkDetailsDrawer = ({ link: extendedLink, onClose }: LinkDetailsDr
                 ['Upstream last merged revision', link.UpstreamLastMergedRevisionNum || ''],
                 ['Downstream last merged revision', link.DownstreamLastMergedRevisionNum || ''],
                 ['Hidden', link.HiddenReason],
+                ['Backing Unit', link.BackingUnitID ? <BackingUnitLink backingUnitId={link.BackingUnitID} /> : ''],
                 ['Created', formatTime(link.CreatedAt)],
                 ['Updated', formatTime(link.UpdatedAt)],
                 ['Link ID', link.LinkID],

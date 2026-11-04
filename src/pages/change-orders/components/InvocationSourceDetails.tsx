@@ -11,6 +11,7 @@
  */
 
 import Box from '@mui/material/Box';
+import { BackingUnitLink } from '@/components/backing-unit/BackingUnitLink';
 
 import type { FunctionArgument } from '@confighub/rtk-query';
 
@@ -112,6 +113,12 @@ export function InvocationSourceDetails({ source }: InvocationSourceDetailsProps
           </>
         )}
       </Row>
+      {source.backingUnitId !== undefined ? (
+        <Row term="Backing Unit">
+          {/* A ChangeOrder page holds work in progress, so the Unit opens in a new tab. */}
+          <BackingUnitLink backingUnitId={source.backingUnitId} newTab />
+        </Row>
+      ) : null}
       <Row term="Parameters">
         {parameters.length === 0 ? (
           <Box component="span" sx={{ color: changeOrderInk.muted }}>None</Box>

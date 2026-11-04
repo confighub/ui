@@ -8,7 +8,7 @@ import { ExtendedTargetRead } from '@confighub/rtk-query';
 export const TARGET_COLUMN_GROUPS: ColumnGroup[] = [
   {
     header: 'Core Identity',
-    columns: ['Slug', 'TargetID', 'Space', 'SpaceID'],
+    columns: ['Slug', 'TargetID', 'Space', 'SpaceID', 'HiddenReason'],
   },
   {
     header: 'Triggers',
@@ -53,6 +53,7 @@ export interface TargetRowItem {
   WhereTrigger: string;
   TriggerFilter: string;
   AppliedTriggerCount: number;
+  HiddenReason: string;
   CreatedAt: string;
   UpdatedAt: string;
   _extendedTarget?: ExtendedTargetRead; // Store original ExtendedTargetRead for callbacks

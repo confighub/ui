@@ -26,6 +26,7 @@ import Typography from '@mui/material/Typography';
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
+import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import LanOutlinedIcon from '@mui/icons-material/LanOutlined';
 import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined';
 
@@ -39,6 +40,7 @@ import {
   type CommandRunRead,
 } from '@confighub/rtk-query';
 
+import { BackingUnitLink } from '@/components/backing-unit/BackingUnitLink';
 import { CodeEditor } from '@/components/code-editor/CodeEditor';
 import { Cell, DetailRow, DetailTable, SectionCard, StatusDot, When } from '@/components/console-detail/ConsoleDetail';
 import { isSetTime, permissionSubjects, timeOf, type DetailColumn } from '@/components/console-detail/consoleDetailUtil';
@@ -193,6 +195,11 @@ export function ChannelDetailView({ channel, now }: { channel: ChannelRead; now:
               <Fact term='Created' icon={CalendarTodayOutlinedIcon}>
                 <OpenedAt value={channel.CreatedAt} />
               </Fact>
+              {channel.BackingUnitID ? (
+                <Fact term='Backing Unit' icon={Inventory2OutlinedIcon}>
+                  <BackingUnitLink backingUnitId={channel.BackingUnitID} />
+                </Fact>
+              ) : null}
             </Box>
             {channel.LastMessage ? (
               <Box sx={{ marginTop: '14px', padding: '8px 12px', background: T.surfaceSunk, border: `1px solid ${T.line}`, borderRadius: '8px' }}>

@@ -36,7 +36,7 @@ import { UpdateLinksModal } from '../update-links-modal/UpdateLinksModal';
 export type LinkRow = { id: string } & ExtendedLinkRead;
 
 // Define all possible column fields for type safety
-type LinkColumnFields = 'slug' | 'from' | 'fromSpace' | 'to' | 'toSpace' | 'updateType' | 'autoUpdate' | 'stale' | 'useLiveState' | 'whereMutation' | 'whereResource' | 'upstreamLastMergedRev' | 'downstreamLastMergedRev' | 'createdAt' | 'updatedAt' | 'actions';
+type LinkColumnFields = 'slug' | 'from' | 'fromSpace' | 'to' | 'toSpace' | 'updateType' | 'autoUpdate' | 'stale' | 'useLiveState' | 'whereMutation' | 'whereResource' | 'upstreamLastMergedRev' | 'downstreamLastMergedRev' | 'hiddenReason' | 'createdAt' | 'updatedAt' | 'actions';
 
 // Create a type that requires all columns to be specified
 type LinkColumnVisibility = Record<LinkColumnFields, boolean>;
@@ -80,6 +80,7 @@ export const LinksTable = (props: LinksTableProps) => {
       whereResource: false,
       upstreamLastMergedRev: false,
       downstreamLastMergedRev: false,
+      hiddenReason: false,
       createdAt: false,
       updatedAt: false,
       actions: true,
@@ -246,6 +247,13 @@ export const LinksTable = (props: LinksTableProps) => {
           <Typography variant='body1'>{params.row.Link?.UpdateType}</Typography>
         </CenteredTableCell>
       ),
+    },
+    {
+      field: 'hiddenReason',
+      headerName: 'Hidden Reason',
+      minWidth: 120,
+      flex: 0.5,
+      valueGetter: (_, row) => row.Link?.HiddenReason || '',
     },
     {
       field: 'autoUpdate',

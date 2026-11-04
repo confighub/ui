@@ -96,7 +96,13 @@ export const StripedDataGrid = styled(DataGrid)(({ theme }) => ({
     textTransform: 'uppercase' as const,
     letterSpacing: '0.08em',
     color: theme.palette.text.disabled,
-    lineHeight: 'normal',
+    lineHeight: 1.25,
+    // A two-word title wraps to a second line rather than ending in an ellipsis, so a
+    // column need not be widened to name it; past two lines it still ends in one.
+    whiteSpace: 'normal',
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical' as const,
   },
   [`& .${gridClasses.columnSeparator}`]: {
     color: theme.palette.divider,

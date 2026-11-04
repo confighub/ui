@@ -7,6 +7,7 @@ import { ActionButton } from '@/components/action-button/ActionButton';
 import { DiffDrawer } from '@/components/diff-drawer/DiffDrawer';
 import { ErrorBox } from '@/components/error-box/ErrorBox';
 import { Header } from '@/components/header/Header';
+import { QueryErrorState } from '@/components/query-error-state/QueryErrorState';
 import { SettingsTabs } from '@/components/settings-tabs/SettingsTabs';
 import { Section } from '@/components/styled';
 import { Main } from '@/components/styled';
@@ -45,6 +46,12 @@ import { useRevisionDataMap } from '@/hooks/useUnitData';
 
 const Container = styled('div')`
   width: 100%;
+`;
+
+const ErrorContainer = styled('div')`
+  display: flex;
+  justify-content: center;
+  padding-top: 48px;
 `;
 
 const TabsContainer = styled('div')`
@@ -108,6 +115,8 @@ export const UnitDetailPage = () => {
     currentSpace,
     upstreamUnit,
     isFetchingUnit,
+    unitError,
+    refetchUnit,
     setIsEditInvocationCancelled,
     invocationToEdit,
     setInvocationToEdit,
@@ -325,6 +334,24 @@ export const UnitDetailPage = () => {
       modal.setOpen(true);
     }
   };
+
+  // Without this, a Unit that failed to load leaves the page empty.
+  if (unitError && !currentUnit?.UnitID) {
+    return (
+      <Container>
+        <Header breadCrumbs={[{ name: 'Units', isLink: true, link: '/units' }]} />
+        <ErrorContainer>
+          <QueryErrorState
+            error={unitError}
+            onRetry={refetchUnit}
+            context='this Unit'
+            endpoint='GET /space/{space_id}/unit/{unit_id}'
+            notFoundHeadline='This Unit was not found'
+          />
+        </ErrorContainer>
+      </Container>
+    );
+  }
 
   return (
     <Container>

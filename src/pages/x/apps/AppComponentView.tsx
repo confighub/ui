@@ -37,6 +37,7 @@ import { FlowViewControl, type FlowViewControlValue } from './flow-graph/FlowVie
 import type { ComponentDisplayMode, SelectedApp, ViewParamsPatch } from './appTypes';
 import { ComponentOverviewMatrix } from './ComponentOverviewMatrix';
 import type { NodeUnitSummary } from './flow-graph/DeploymentFlowNode';
+import type { PaneUnit } from './componentTypes';
 import { componentTheme } from './componentTheme';
 import { ComponentFlowGraphSkeleton } from './ComponentFlowGraphSkeleton';
 import { ComponentSidePane } from './ComponentSidePane';
@@ -47,7 +48,7 @@ import { useUnitDataMap, useUploadUnitData } from '@/hooks/useUnitData';
 import { useListAllUnitsChunkedQuery } from '@/hooks/chunkedQueriesApi';
 import { buildAllApplyEntries, buildUpgradeEntries, buildVariationEntries, splitDryRunItems } from './entryBuilders';
 import { type SetValueResult } from './configParser';
-import { arrowKey, buildComponentData } from './componentData';
+import { arrowKey, buildComponentData, unitConfigSignal } from './componentData';
 import { buildChangeSetsBySpace, changeSetIdsOf, openChangeSetIdOf, upstreamChangeSetBlocking, type WaitingChangeSet } from './changeSets';
 import { useChangeSetEntries } from './useChangeSetEntries';
 import { useUnreleasedDiffs } from './useUnreleasedDiffs';
@@ -153,7 +154,7 @@ const RUNNING_RELEASE_POLL_MS = 5_000;
 // was made in (see changeSets.ts). Shared by every units-fetching batch
 // (the chunked SpaceID read and the upstream-outside-set UnitID lookup) so they all narrow the payload identically.
 const UNITS_QUERY_SELECT =
-  'UnitID,Slug,SpaceID,TargetID,Unreleasable,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ToolchainType,DataHash,DataSize,ChangeSetID,'
+  'UnitID,Slug,SpaceID,TargetID,Unreleasable,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ValidationWarnings,ValidationResults,ToolchainType,DataHash,DataSize,ChangeSetID,'
   + 'HeadRevision.RevisionID,HeadRevision.CreatedAt,HeadRevision.Description,HeadRevision.ChangeSetID,LastReleasedRevision.RevisionID';
 const UNITS_QUERY_INCLUDE = 'SpaceID,TargetID,UpstreamUnitID,HeadRevisionNum,LastReleasedRevisionNum';
 
@@ -614,7 +615,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
 
   // Map deployment ID (== SpaceID) → sorted list of units with link info (for side pane display)
   const unitsByDeployment = useMemo(() => {
-    const m = new Map<string, { slug: string; spaceId: string; unitId: string; hasUpstream: boolean; toolchainType?: string; data?: string; validationErrors?: { [key: string]: boolean }; targetId?: string; releasable: boolean }[]>();
+    const m = new Map<string, PaneUnit[]>();
     for (const u of [...allUnits, ...hiddenUnits]) {
       const sid = u.Unit?.SpaceID;
       const slug = u.Unit?.Slug;
@@ -623,6 +624,8 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
       const toolchainType = u.Unit?.ToolchainType;
       const data = unitDataFor(u.Unit?.UnitID);
       const validationErrors = u.Unit?.ValidationErrors as { [key: string]: boolean } | undefined;
+      const validationWarnings = u.Unit?.ValidationWarnings;
+      const validationResults = u.Unit?.ValidationResults;
       // TargetID scopes a unit to the Space's Release target set (task #60:
       // release_core.go only bundles Units whose TargetID equals the Space's
       // ReleaseTargetID — this is the same filter the "Unreleased changes"
@@ -635,6 +638,8 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
         ...(toolchainType ? { toolchainType } : {}),
         ...(data ? { data } : {}),
         ...(validationErrors ? { validationErrors } : {}),
+        ...(validationWarnings ? { validationWarnings } : {}),
+        ...(validationResults ? { validationResults } : {}),
         ...(targetId ? { targetId } : {}),
       };
       const list = m.get(sid);
@@ -688,27 +693,19 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
       const slug = unit?.Slug;
       if (!sid || !slug || !unit) continue;
 
-      const upstreamId = unit.UpstreamUnitID;
-      const upstream = upstreamId ? unitById.get(upstreamId) : undefined;
-      const upgrading = upstream
-        ? (unit.UpstreamRevisionNum ?? 0) < (upstream.Unit?.HeadRevisionNum ?? 0)
-        : false;
-
-      const head = unit.HeadRevisionNum ?? 0;
-      const applied = unit.LastReleasedRevisionNum ?? 0;
-      const gates = unit.ValidationErrors;
-      const hasGates = !!gates && Object.keys(gates).length > 0;
-      const unapplied = head > 0 && applied < head;
-      // Units with no target can't be applied (e.g. units in bases)
-      const applyStatus: NodeUnitSummary['applyStatus'] = !unit.TargetID
-        ? null
-        : unapplied
-          ? hasGates ? 'gated' : 'pending'
-          : null;
+      // The fold counts conditions by the same call, so a card and its fold agree.
+      const signal = unitConfigSignal(u, unitById);
+      const summary: NodeUnitSummary = {
+        slug,
+        upgrading: signal.stale,
+        applyStatus: signal.release === 'unreleased' ? 'pending' : signal.release,
+        gates: signal.release === 'gated' ? Object.keys(unit.ValidationErrors ?? {}) : [],
+        warnings: Object.keys(unit.ValidationWarnings ?? {}),
+      };
 
       const list = m.get(sid);
-      if (list) list.push({ slug, upgrading, applyStatus });
-      else m.set(sid, [{ slug, upgrading, applyStatus }]);
+      if (list) list.push(summary);
+      else m.set(sid, [summary]);
     }
     for (const list of m.values()) list.sort((a, b) => a.slug.localeCompare(b.slug));
     return m;

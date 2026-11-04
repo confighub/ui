@@ -20,6 +20,9 @@ import { useListAllChannelsQuery, type ChannelRead } from '@confighub/rtk-query'
 
 import { StatusDot, When } from '@/components/console-detail/ConsoleDetail';
 import { ConsoleTable, type ConsoleTableColumn } from '@/components/console-table/ConsoleTable';
+import { HiddenReasonTag } from '@/components/hidden-entities/HiddenReasonTag';
+import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
+import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { usePrincipalNames } from '@/hooks/usePrincipalNames';
 
 import {
@@ -132,6 +135,7 @@ const CHANNEL_COLUMNS: ConsoleTableColumn<ChannelItem>[] = [
         <Typography component='span' sx={{ fontSize: 11.5, lineHeight: T.lh, color: T.ink3, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {channel.SpaceSlug}
         </Typography>
+        <HiddenReasonTag reason={channel.HiddenReason} sx={ABOVE_ROW_LINK_SX} />
       </>
     ),
   },
@@ -207,7 +211,11 @@ const channelRowAttributes = ({ channel, connection }: ChannelItem) => ({
 
 export function ChannelList() {
   const navigate = useNavigate();
-  const { data, isLoading, isFetching, isError, fulfilledTimeStamp, refetch } = useListAllChannelsQuery({}, { pollingInterval: POLL_MS });
+  const { includeHidden, setIncludeHidden, includeHiddenParam } = useIncludeHidden();
+  const { data, isLoading, isFetching, isError, fulfilledTimeStamp, refetch } = useListAllChannelsQuery(
+    { includeHidden: includeHiddenParam },
+    { pollingInterval: POLL_MS },
+  );
   const channels = useMemo(() => (data ?? []).flatMap((entry) => (entry.Channel ? [entry.Channel] : [])), [data]);
 
   const [now, setNow] = useState(() => Date.now());
@@ -302,6 +310,7 @@ export function ChannelList() {
         <ConsoleSearch value={search} onChange={setSearch} placeholder='Search Channels' />
         <ConsoleSelectFilter label='Connection' value={connectionFilter} onChange={setConnectionFilter} allLabel='All' options={CONNECTION_FILTERS} />
         <ConsoleSelectFilter label='Space' value={spaceFilter} onChange={setSpaceFilter} allLabel='All Spaces' options={spaceSlugs} />
+        <IncludeHiddenToggle includeHidden={includeHidden} onChange={setIncludeHidden} entities='Channels' />
         <ConsoleClearButton onClick={clearFilters} disabled={!filtersActive}>
           Clear filters
         </ConsoleClearButton>

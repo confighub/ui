@@ -16,7 +16,10 @@ export interface InvokerRequestState {
    * which the Trigger request's save panel reads: a plain open must not bring a Trigger request back
    */
   openSeq: number;
-  /** Save the function call as a Trigger in this Space */
+  /**
+   * Save the function call as a Trigger in this Space. Empty for a Trigger in a Space the user
+   * picks in the save panel; null when no Trigger was asked for.
+   */
   createTriggerInSpaceId: string | null;
 }
 
@@ -30,9 +33,9 @@ export const invokerRequestSlice = createSlice({
   name: 'invokerRequest',
   initialState,
   reducers: {
-    requestTriggerCreation(state, action: PayloadAction<{ spaceId: string }>) {
+    requestTriggerCreation(state, action: PayloadAction<{ spaceId?: string }>) {
       state.seq += 1;
-      state.createTriggerInSpaceId = action.payload.spaceId;
+      state.createTriggerInSpaceId = action.payload.spaceId ?? '';
     },
     /** Open the invoker as it is, for the Units the page put in the selectedUnits slice */
     requestInvokerOpen(state) {

@@ -42,6 +42,7 @@ interface ComponentOverviewMatrixProps {
 type FilterKey =
   | 'unapplied'
   | 'gatesPending'
+  | 'warnings'
   | 'liveProblems'
   | 'upgrades'
   | 'outstandingChangeOrder'
@@ -71,7 +72,7 @@ interface HeatStyle {
 
 const MONO_FONT = '"JetBrains Mono", ui-monospace, monospace';
 
-type NumericKpiKey = 'unapplied' | 'gatesPending' | 'upgrades';
+type NumericKpiKey = 'unapplied' | 'gatesPending' | 'warnings' | 'upgrades';
 
 /** Width of each KPI column, which leaves the rest of the row to the Component column. */
 const KPI_COL_WIDTH = 112;
@@ -85,6 +86,7 @@ const RUNNING_RELEASE_POLL_MS = 30_000;
 /** The KPI columns, left to right. */
 const COL_DEFS: ColDef[] = [
   { key: 'gatesPending',           label: 'Blocking Gates',           subLabel: 'blocked',       sevColor: 'error.main',   orgField: 'gatesPending'            },
+  { key: 'warnings',               label: 'Warnings',                 subLabel: 'advisory',      sevColor: 'warning.main', orgField: 'warnings'                },
   { key: 'unapplied',              label: 'Unreleased Changes',       subLabel: 'pending',       sevColor: 'warning.main', orgField: 'unapplied'               },
   { key: 'liveProblems',           label: 'Release Problems',         subLabel: 'sync / health', sevColor: 'error.main',   orgField: 'liveProblems'            },
   { key: 'upgrades',               label: 'Upgrades Available',       subLabel: 'available',     sevColor: 'info.main',    orgField: 'upgrades'                },
@@ -95,6 +97,7 @@ const COL_DEFS: ColDef[] = [
 const FILTER_LABELS: Record<FilterKey, string> = {
   unapplied:          'Unreleased Changes',
   gatesPending:       'Blocking Gates',
+  warnings:           'Warnings',
   liveProblems:       'Release Problems',
   upgrades:           'Upgrades Available',
   outstandingChangeOrder: 'Outstanding ChangeOrders',
@@ -104,6 +107,7 @@ const FILTER_LABELS: Record<FilterKey, string> = {
 const KPI_SORT_FIELDS: Partial<Record<SortKey, keyof ComponentKpiRow>> = {
   unapplied:          'unapplied',
   gatesPending:       'gatesPending',
+  warnings:           'warnings',
   upgrades:           'upgrades',
   outstandingChangeOrder: 'hasOutstandingChangeOrder',
 };
@@ -164,6 +168,9 @@ function getHeatSx(
     case 'gatesPending': {
       const hot = value >= 2;
       return { bgcolor: alpha(palette.error.main, hot ? 0.16 : 0.08), color: palette.error.main, fontWeight: hot ? 700 : 600 };
+    }
+    case 'warnings': {
+      return { bgcolor: alpha(palette.warning.main, 0.08), color: palette.warning.main, fontWeight: 600 };
     }
     case 'unapplied': {
       const hot = share >= 0.4;

@@ -22,7 +22,7 @@ export const BASE_COLUMNS = {
 
   // === Timestamps === (Hidden by default)
   CreatedAt: false,
-  UpdatedAt: true,
+  UpdatedAt: false,
 
   // === Changes === (Hidden by default)
   ChangeSetID: false,
@@ -37,7 +37,7 @@ export const BASE_COLUMNS = {
 
   // === Gates & Operations ===
   ValidationErrors: true,
-  ValidationWarnings: false,
+  ValidationWarnings: true,
   DestroyGates: false,
   DeleteGates: false,
 
@@ -46,6 +46,7 @@ export const BASE_COLUMNS = {
 
   // === Other Details === (Hidden by default)
   Annotations: false,
+  HiddenReason: false,
 };
 
 /**
@@ -262,7 +263,8 @@ const COLUMN_TO_FIELD_MAP: Record<BaseColumnKeys, string | string[]> = {
   DestroyGates: 'DestroyGates',
   DeleteGates: 'DeleteGates',
   // Other Details columns
-  Annotations: 'Annotations'
+  Annotations: 'Annotations',
+  HiddenReason: 'HiddenReason',
 };
 
 /**

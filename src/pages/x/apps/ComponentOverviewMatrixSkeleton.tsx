@@ -16,10 +16,10 @@ import { useTheme } from '@mui/material/styles';
 // ============================================================================
 
 /**
- * Component, then the KPI columns: Blocking Gates, Unreleased Changes, Release
- * Problems, Upgrades Available, Outstanding ChangeOrders, Open ChangeSets.
+ * Component, then the KPI columns: Blocking Gates, Warnings, Unreleased Changes,
+ * Release Problems, Upgrades Available, Outstanding ChangeOrders, Open ChangeSets.
  */
-const COLUMN_COUNT = 7;
+const COLUMN_COUNT = 8;
 const KPI_TILE_COUNT = 6;
 /** Matches `KPI_COL_WIDTH` in ComponentOverviewMatrix.tsx. */
 const KPI_COL_WIDTH = 112;

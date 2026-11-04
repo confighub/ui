@@ -84,8 +84,8 @@ const WavePill = styled('span')({
 });
 
 const WaveChip = styled('span', {
-  shouldForwardProp: (p) => p !== '$color' && p !== '$tint' && p !== '$ring',
-})<{ $color: string; $tint: string; $ring: boolean }>(({ $color, $tint, $ring }) => ({
+  shouldForwardProp: (p) => p !== '$color' && p !== '$tint',
+})<{ $color: string; $tint: string }>(({ $color, $tint }) => ({
   display: 'inline-flex',
   alignItems: 'center',
   gap: 4,
@@ -97,8 +97,6 @@ const WaveChip = styled('span', {
   fontWeight: 600,
   color: $color,
   background: $tint,
-  // Gated is a ring here too, so a wave reads the same as its chip on a card.
-  boxShadow: $ring ? `inset 0 0 0 1.5px ${$color}` : undefined,
   '& svg': { width: 11, height: 11 },
 }));
 
@@ -328,7 +326,7 @@ export const FoldFrameNode = memo(({ data }: NodeProps<FoldFrameNodeData>) => {
               const Icon = WAVE_ICON[condition];
               return (
                 <WavePill key={condition} data-testid={`flow-fold-wave-${condition}`}>
-                  <WaveChip $color={chip.color} $tint={chip.tint} $ring={chip.ring}>
+                  <WaveChip $color={chip.color} $tint={chip.tint}>
                     {Icon && <Icon />}
                     {chip.label} · {count}
                   </WaveChip>

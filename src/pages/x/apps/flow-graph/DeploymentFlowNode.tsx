@@ -15,6 +15,7 @@ import type { ComponentDeployment } from '../componentTypes';
 import { changeSetLabel, changeSetUnitIds, isChangeSetOpenHere } from '../changeSets';
 import { componentTheme, LIVE_TONE_COLOR } from '../componentTheme';
 import { formatRelative } from '@/utility/date-format';
+import { parseGateName } from '@/utility/name-format-functions';
 import {
   deriveHealthPresentation,
   deriveSyncPresentation,
@@ -26,13 +27,13 @@ import {
 } from '../liveStatus';
 import type { ConditionKind, WaveCondition } from './fold/deploymentCondition';
 import { MARK_LABEL, markStyle } from './fold/markStyle';
-import { INFO_PEEK_TOOLTIP_SX, InfoPeekCard, type InfoPeekSpec } from '@/components/info-peek/InfoPeek';
+import { InfoPeekTooltip, type InfoPeekSpec } from '@/components/info-peek/InfoPeek';
 
 /**
  * Every tone a status chip can take — the live status tones plus the three
  * config-side ones that are not live readings at all.
  */
-type ChipTone = VitalTone | 'stale' | 'unreleased' | 'gated';
+type ChipTone = VitalTone | 'stale' | 'unreleased' | 'gated' | 'warned';
 
 /**
  * A chip's ink and its two backgrounds, chosen together.
@@ -71,8 +72,14 @@ const CHIP_TONE: Record<ChipTone, { color: string; tint: string; tintHover: stri
   stale: { color: componentTheme.upgrade, tint: 'rgba(153,81,244,0.149)', tintHover: 'rgba(153,81,244,0.259)' },
   /** Config-side: promoted, but not released where it landed. */
   unreleased: { color: componentTheme.variation, tint: 'rgba(68,103,220,0.149)', tintHover: 'rgba(68,103,220,0.259)' },
-  /** Config-side: a prerequisite is holding this stage. */
-  gated: { color: componentTheme.attention, tint: 'rgba(159,66,0,0.149)', tintHover: 'rgba(159,66,0,0.259)' },
+  /**
+   * Config-side: validation errors are holding this stage. In the danger tone, as errors are on
+   * the Components list and the unit list, so it is told from Warnings by colour as well as by
+   * its icon and word.
+   */
+  gated: { color: componentTheme.danger, tint: 'rgba(154,0,5,0.149)', tintHover: 'rgba(154,0,5,0.259)' },
+  /** Config-side: a warning Trigger did not pass. It blocks nothing. */
+  warned: { color: componentTheme.attention, tint: 'rgba(159,66,0,0.149)', tintHover: 'rgba(159,66,0,0.259)' },
 };
 
 // ============================================================================
@@ -81,11 +88,36 @@ const CHIP_TONE: Record<ChipTone, { color: string; tint: string; tintHover: stri
 
 export interface NodeUnitSummary {
   slug: string;
-  /** Left column: pending (not yet applied), gated, or neither */
+  /** Left column: gated (has validation errors), pending (not yet applied), or neither */
   applyStatus: 'pending' | 'gated' | null;
   /** Right column: has upstream upgrade available */
   upgrading: boolean;
+  /** Its validation errors, which block its release; non-empty exactly when `applyStatus` is 'gated'. */
+  gates: string[];
+  /** Its validation warnings, which block nothing. */
+  warnings: string[];
 }
+
+/** How many units the Gated and Warnings peeks name before saying how many more there are. */
+const PEEK_UNIT_LIMIT = 4;
+/** How many of a unit's gates its peek line names. */
+const PEEK_GATE_LIMIT = 2;
+
+/**
+ * Peek lines naming each unit with the Triggers of its gates, a unit to a line. A gate is
+ * named by its Trigger alone: the Space and function make the line too long to read, and
+ * the unit's Overview, a click away, has them.
+ */
+const unitGateLines = (units: NodeUnitSummary[], gatesOf: (u: NodeUnitSummary) => string[]): string[] => {
+  const named = units.filter((u) => gatesOf(u).length > 0);
+  const lines = named.slice(0, PEEK_UNIT_LIMIT).map((u) => {
+    const triggers = gatesOf(u).map((gate) => parseGateName(gate).triggerSlug);
+    const more = triggers.length > PEEK_GATE_LIMIT ? ` +${triggers.length - PEEK_GATE_LIMIT}` : '';
+    return `${u.slug}: ${triggers.slice(0, PEEK_GATE_LIMIT).join(', ')}${more}`;
+  });
+  if (named.length > PEEK_UNIT_LIMIT) lines.push(`and ${named.length - PEEK_UNIT_LIMIT} more units`);
+  return lines;
+};
 
 export interface DeploymentFlowNodeData {
   deployment: ComponentDeployment;
@@ -183,8 +215,8 @@ export type ChipTab = 'config' | 'releases' | 'changeset';
 // ============================================================================
 //
 //   • Config / ConfigHub (DESIRED)  → the signals row: Stale, Unreleased
-//     changes, Gated. Fixed order, Gated pinned to the right edge. STATUS BY
-//     EXCEPTION: renders nothing when none are active.
+//     changes, Warnings, Gated. Fixed order, left-aligned like the rest of
+//     the card. STATUS BY EXCEPTION: renders nothing when none are active.
 //   • Live-infra / cluster (ACTUAL) → two always-visible status tags (see
 //     `LiveStateChip`): "Live" for health ("are the workloads up") and
 //     "Synced" for sync ("does the cluster match what was released"), kept
@@ -482,13 +514,9 @@ const NodeBody = styled(Box)({
 });
 
 /**
- * Desired-side (config) row: Stale / Unreleased changes / Gated, fixed order.
- * Wraps to a new line when it runs out of width. Gated is right-anchored
- * (`$autoRight` → margin-left: auto on that one chip), which left-anchors
- * Stale for free and holds Gated's x-position invariant no matter which other
- * signals are lit — measured 0.0px drift vs 145.9px unanchored. Because
- * `flowLayout.ts` gives every node in a stage the same x, that fixed position
- * is genuinely scannable down a column. Costs nothing: the card stays 240px.
+ * Desired-side (config) row: Stale / Unreleased changes / Warnings / Gated,
+ * fixed order, left-aligned like the card's other rows. Wraps to a new line
+ * when it runs out of width.
  */
 const ChipRow = styled(Box)({
   display: 'flex',
@@ -504,26 +532,23 @@ const ChipRow = styled(Box)({
  * the outline lost almost nothing. See RECOMMENDATION.md.
  */
 /**
- * A chip's shape, so status never depends on colour alone: Out of sync, Gated
- * and Progressing can share one tone. Gated is a ring (nothing is filled in
- * yet: it waits on a gate) and Progressing is hatched (it is on its way).
+ * A chip's shape, so status never depends on colour alone: Out of sync and
+ * Progressing can share one tone. Progressing is hatched (it is on its way).
  */
-type ChipShape = 'solid' | 'hatch' | 'ring';
+type ChipShape = 'solid' | 'hatch';
 
 const chipBackground = (shape: ChipShape, tint: string): string => {
-  if (shape === 'ring') return 'transparent';
   if (shape === 'hatch') return `repeating-linear-gradient(135deg, ${tint} 0 3px, transparent 3px 6px)`;
   return tint;
 };
 
 const StatusChip = styled(Box, {
   shouldForwardProp: (p) =>
-    p !== '$color' && p !== '$autoRight' && p !== '$tint' && p !== '$tintHover' && p !== '$shape',
-})<{ $color: string; $tint: string; $tintHover: string; $autoRight?: boolean; $shape: ChipShape }>(({
+    p !== '$color' && p !== '$tint' && p !== '$tintHover' && p !== '$shape',
+})<{ $color: string; $tint: string; $tintHover: string; $shape: ChipShape }>(({
   $color,
   $tint,
   $tintHover,
-  $autoRight,
   $shape,
 }) => ({
   display: 'inline-flex',
@@ -540,16 +565,12 @@ const StatusChip = styled(Box, {
   // by tone (see CHIP_TONE) rather than built by appending hex to `$color`.
   background: chipBackground($shape, $tint),
   border: 0,
-  // An inset ring draws the outline without a border, so a ring chip is the
-  // same size as a filled one and no row reflows.
-  boxShadow: $shape === 'ring' ? `inset 0 0 0 1.5px ${$color}` : undefined,
-  borderRadius: $shape === 'ring' ? 999 : 3,
+  borderRadius: 3,
   padding: '2px 7px',
   cursor: 'pointer',
-  marginLeft: $autoRight ? 'auto' : undefined,
   transition: 'background-color 0.15s',
   '&:hover': {
-    background: $shape === 'ring' ? $tint : chipBackground($shape, $tintHover),
+    background: chipBackground($shape, $tintHover),
   },
   '& svg': { width: 11, height: 11, flexShrink: 0 },
 }));
@@ -608,7 +629,6 @@ interface PeekSpec extends InfoPeekSpec {
 const StatusChipWithPeek = ({
   tone,
   shape = 'solid',
-  autoRight,
   textColor,
   leading,
   label,
@@ -619,8 +639,6 @@ const StatusChipWithPeek = ({
   /** The tone, not a colour — see `CHIP_TONE` for why the difference matters. */
   tone: ChipTone;
   shape?: ChipShape;
-  /** Pins this chip to the right edge of its row (used for Gated only). */
-  autoRight?: boolean;
   /** Overrides the label's text color — the one earned exception to neutral
    *  chip text, used for an actually-failing live-cluster state. */
   textColor?: string;
@@ -637,22 +655,11 @@ const StatusChipWithPeek = ({
     onGo?.(spec.tab);
   };
   return (
-    <Tooltip
-      placement="bottom-start"
-      enterDelay={120}
-      leaveDelay={0}
-      // Hide aggressively: not interactive (no grace period keeping it open as
-      // the cursor drifts toward it) and an instant fade-out, so the peek is gone
-      // the moment the pointer leaves the chip.
-      disableInteractive
-      slotProps={{ tooltip: { sx: INFO_PEEK_TOOLTIP_SX }, transition: { timeout: { enter: 120, exit: 0 } } }}
-      title={<InfoPeekCard color={color} spec={spec} />}
-    >
+    <InfoPeekTooltip color={color} spec={spec} onAction={onGo ? () => onGo(spec.tab) : undefined}>
       <StatusChip
         $color={color}
         $tint={tint}
         $tintHover={tintHover}
-        $autoRight={autoRight}
         $shape={shape}
         className="nodrag nopan"
         onClick={handleGo}
@@ -663,7 +670,7 @@ const StatusChipWithPeek = ({
         <Box component="span">{label}</Box>
         {meta && <ChipMeta>· {meta}</ChipMeta>}
       </StatusChip>
-    </Tooltip>
+    </InfoPeekTooltip>
   );
 };
 
@@ -854,6 +861,14 @@ const GatedIcon = () => (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
     <rect x="4" y="7" width="8" height="6" rx="1" />
     <path d="M6 7V5a2 2 0 014 0v2" />
+  </svg>
+);
+
+const WarningIcon = () => (
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round">
+    <path d="M8 2.5l6 11H2z" />
+    <path d="M8 7v2.5" />
+    <path d="M8 11.5v.01" />
   </svg>
 );
 
@@ -1180,10 +1195,12 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
 
   let pendingCount = 0;
   let gatedCount = 0;
+  let warnedCount = 0;
   let upgradingCount = 0;
   for (const u of units) {
     if (u.applyStatus === 'pending') pendingCount++;
     if (u.applyStatus === 'gated') gatedCount++;
+    if (u.warnings.length > 0) warnedCount++;
     if (u.upgrading) upgradingCount++;
   }
 
@@ -1198,6 +1215,7 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
   const isStale = showConfig && upgradingCount > 0;
   const isUnreleased = showConfig && pendingCount > 0;
   const isGated = showConfig && gatedCount > 0;
+  const isWarned = showConfig && warnedCount > 0;
   // Exception to the additive rule above: Stale is specifically what an
   // in-flight upgrade resolves, so showing "upgrading…" and "Stale" at once
   // reads as the card unsure whether it's stale. Suppress just the Stale
@@ -1208,6 +1226,7 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
   const showStaleChip = isStale && !isTransient && !suppressed('stale');
   const showUnreleasedChip = isUnreleased && !suppressed('unreleased');
   const showGatedChip = isGated && !suppressed('gated');
+  const showWarningsChip = isWarned;
 
   // Vitals — "is it synced" and "is it healthy" as two independent, always-on
   // facts (per the CTO's ask), never collapsed into one severity (see the
@@ -1267,11 +1286,21 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
     lines: ['Local edits not yet released'],
     action: 'Review & release',
   };
+  // Configuration, where each unit with validation errors has its Gated chip
+  // and what the errors found.
   const gatedSpec: PeekSpec = {
-    tab: 'releases',
-    eyebrow: 'Gated',
-    lines: ['Release blocked by a release-gate'],
+    tab: 'config',
+    eyebrow: 'Gated · validation errors',
+    metric: { value: String(gatedCount), unit: gatedCount === 1 ? 'unit blocked' : 'units blocked' },
+    lines: unitGateLines(units, (u) => u.gates),
     action: 'Review the gate',
+  };
+  const warningsSpec: PeekSpec = {
+    tab: 'config',
+    eyebrow: 'Warnings · validation warnings',
+    metric: { value: String(warnedCount), unit: warnedCount === 1 ? 'unit' : 'units' },
+    lines: [...unitGateLines(units, (u) => u.warnings), 'Advisory: they block no Release'],
+    action: 'Review the warnings',
   };
 
   // ChangeSets: open on a unit here, or closed with nothing changed here since.
@@ -1326,9 +1355,10 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
     isStale ||
     isUnreleased ||
     isGated ||
+    isWarned ||
     showChangeSetChip;
 
-  const renderConfigChips = (pinGatedRight: boolean) => (
+  const renderConfigChips = () => (
     <>
       {showChangeSetChip && (
         <StatusChipWithPeek
@@ -1359,28 +1389,32 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
           onGo={openTab}
         />
       )}
+      {showWarningsChip && (
+        <StatusChipWithPeek
+          tone="warned"
+          leading={<WarningIcon />}
+          label="Warnings"
+          spec={warningsSpec}
+          onGo={openTab}
+        />
+      )}
       {showGatedChip && (
         <StatusChipWithPeek
           tone="gated"
-          shape="ring"
           leading={<GatedIcon />}
           label="Gated"
           spec={gatedSpec}
           onGo={openTab}
-          autoRight={pinGatedRight}
         />
       )}
     </>
   );
 
   const releaseChip = deployment.releaseTargetId && latestRelease && releaseSpec && (
-    <Tooltip
-      placement="bottom-start"
-      enterDelay={120}
-      leaveDelay={0}
-      disableInteractive
-      slotProps={{ tooltip: { sx: INFO_PEEK_TOOLTIP_SX }, transition: { timeout: { enter: 120, exit: 0 } } }}
-      title={<InfoPeekCard color={componentTheme.fgMuted} spec={releaseSpec} />}
+    <InfoPeekTooltip
+      color={componentTheme.fgMuted}
+      spec={releaseSpec}
+      onAction={onOpenTab ? () => onOpenTab(deployment.deploymentId, 'releases', latestRelease.num) : undefined}
     >
       <ReleaseChip
         $fresh={!!localSuccess}
@@ -1391,7 +1425,7 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
         <ReleaseChipDot $fresh={!!localSuccess} />
         rel-{latestRelease.num}
       </ReleaseChip>
-    </Tooltip>
+    </InfoPeekTooltip>
   );
 
   // A compact card is narrow, so its release chip moves to the status row
@@ -1449,7 +1483,8 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
     !localSuccess &&
     !showStaleChip &&
     !showUnreleasedChip &&
-    !showGatedChip;
+    !showGatedChip &&
+    !showWarningsChip;
 
   const compactBody = (
     <>
@@ -1467,7 +1502,7 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
               <TickIcon /> {localSuccess.msg}
             </SuccessTick>
           )}
-          {renderConfigChips(false)}
+          {renderConfigChips()}
           {recoveredUntil !== undefined && <RecoveredMark until={recoveredUntil} />}
           {recoveredUntil === undefined && keptSelected && compactIsQuiet && (
             <KeptMark>Kept as a card: selected</KeptMark>
@@ -1671,11 +1706,11 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
           )}
 
           {/* Desired-side (config) signals — tinted, borderless, fixed order
-              ChangeSet → Stale → Unreleased changes → Gated, with Gated right-anchored.
+              ChangeSet → Stale → Unreleased changes → Warnings → Gated.
               Status by exception: every all-clear signal shows nothing, so a
               healthy card has no chips at all. */}
-          {(showChangeSetChip || showStaleChip || showUnreleasedChip || showGatedChip) && (
-            <ChipRow>{renderConfigChips(true)}</ChipRow>
+          {(showChangeSetChip || showStaleChip || showUnreleasedChip || showGatedChip || showWarningsChip) && (
+            <ChipRow>{renderConfigChips()}</ChipRow>
           )}
         </NodeBody>
         )}
