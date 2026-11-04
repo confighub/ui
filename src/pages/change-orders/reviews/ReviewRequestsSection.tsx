@@ -22,7 +22,7 @@ import TextField from '@mui/material/TextField';
 
 import { changeOrderInk, changeOrderType } from '../changeOrdersTokens';
 import { reviewQuietButtonSx, reviewTextButtonSx } from './reviewButtons';
-import { agoText, reviewCopy } from './reviewCopy';
+import { agoText, logTime, reviewCopy } from './reviewCopy';
 import { Monogram, ReviewTag, SectionLabel } from './reviewParts';
 import type { ReviewPerson, ReviewRequestOutcome, ReviewRequestView } from './changeOrderReviewTypes';
 
@@ -41,6 +41,11 @@ interface ReviewRequestsSectionProps {
   onNotice: (message: string) => void;
   /** The section's header is drawn by the panel (a collapsible section). */
   hideLabel?: boolean;
+  /**
+   * In the Stage log's Review details (H7): the requests alone, no "Request review from…" picker (the
+   * log has its own Request review), times as the clock, and "you" for the viewer.
+   */
+  inLog?: boolean;
 }
 
 export function ReviewRequestsSection({
@@ -52,7 +57,9 @@ export function ReviewRequestsSection({
   onWithdraw,
   onNotice,
   hideLabel = false,
+  inLog = false,
 }: ReviewRequestsSectionProps) {
+  const when = (iso: string) => (inLog ? logTime(iso, now) : agoText(iso, now));
   const [chosen, setChosen] = useState<ReviewPerson[]>([]);
   const [busy, setBusy] = useState(false);
   const requested = new Set(requests.map((r) => r.user.userId));
@@ -106,8 +113,8 @@ export function ReviewRequestsSection({
                 </Box>
                 <Box sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.subtle }}>
                   {r.requestedBy === undefined
-                    ? copy.requestedAt(agoText(r.requestedAt, now))
-                    : copy.requestedBy(r.requestedBy.name, agoText(r.requestedAt, now))}
+                    ? copy.requestedAt(when(r.requestedAt))
+                    : copy.requestedBy(inLog && r.requestedBy.isYou ? 'you' : r.requestedBy.name, when(r.requestedAt))}
                 </Box>
               </Box>
               {canRequest ? (
@@ -126,7 +133,7 @@ export function ReviewRequestsSection({
           ))}
         </Box>
       )}
-      {canRequest && options.length > 0 ? (
+      {canRequest && options.length > 0 && !inLog ? (
         <Box sx={{ marginTop: '10px', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
           <Autocomplete
             multiple

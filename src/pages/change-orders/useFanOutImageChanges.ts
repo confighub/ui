@@ -5,12 +5,12 @@ import { useMemo } from 'react';
 
 import type { LinkRead } from '@confighub/rtk-query';
 
-import { fanOutLinkWhere, fanOutRevisionWhere } from '../x/apps/change-order/useFanOutSource';
+import { useGetTaggedRevisionsQuery } from '../x/apps/change-order/taggedRevisionsApi';
+import { fanOutLinkWhere, fanOutRevisionWheres } from '../x/apps/change-order/useFanOutSource';
 import { linkedSourcePaths } from '../x/apps/change-order/linkedSourcePaths';
 import {
   useGetFanOutSourceDiffQuery,
   useGetFanOutSourceLinksQuery,
-  useGetFanOutSourceRevisionsQuery,
 } from './changeOrderImageDiffApi';
 import {
   IMAGE_CHANGES_LOADING,
@@ -53,10 +53,13 @@ export function useFanOutImageChanges({
   skip = false,
 }: UseFanOutImageChangesArgs): ImageChanges {
   const inScope = useMemo(() => [...(inScopeSpaceIds ?? [])].sort(), [inScopeSpaceIds]);
-  const revisionWhere = useMemo(() => fanOutRevisionWhere(startTagId, endTagId, inScope), [startTagId, endTagId, inScope]);
-  const named = changeOrderId !== undefined && changeOrderId !== '' && revisionWhere !== undefined;
+  const revisionWheres = useMemo(() => fanOutRevisionWheres(startTagId, endTagId, inScope), [startTagId, endTagId, inScope]);
+  const named = changeOrderId !== undefined && changeOrderId !== '' && revisionWheres !== undefined;
 
-  const revisions = useGetFanOutSourceRevisionsQuery({ where: revisionWhere ?? '' }, { skip: skip || !named });
+  const revisions = useGetTaggedRevisionsQuery(
+    { wheres: revisionWheres ?? [], select: 'RevisionID,UnitID,SpaceID,RevisionNum,Tags' },
+    { skip: skip || !named },
+  );
   const unitIds = useMemo(
     () => [...new Set((revisions.currentData ?? []).map((r) => r.Revision?.UnitID).filter((id): id is string => id !== undefined))].sort(),
     [revisions.currentData],

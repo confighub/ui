@@ -11,7 +11,7 @@
  * ChangeOrder from bracketing more than one ChangeSet, or none.
  *
  * The source is the base Space for a ChangeOrder made there, and the Spaces outside its scope
- * for a fan-out one -- the same split `fanOutRevisionWhere` makes. Promotions stamp the Revisions
+ * for a fan-out one -- the same split `fanOutRevisionWheres` makes. Promotions stamp the Revisions
  * they write in the Spaces in scope too, so the Space has to be constrained either way. An Invoke
  * ChangeOrder has made no change anywhere yet, so there is nothing to look for.
  */

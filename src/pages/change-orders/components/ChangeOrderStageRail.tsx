@@ -281,6 +281,8 @@ function railNodeSx(selected: boolean, minWidth: number) {
     position: 'relative',
     border: `${changeOrderShape.borderWidth}px solid ${selected ? changeOrderAction.ink : changeOrderBorder.default}`,
     boxShadow: selected ? changeOrderSelectedRing : 'none',
+    // While the page's marker travels to this node (`stageMove.ts`), the marker is its open edge.
+    '&[data-marker-arriving]': { borderColor: changeOrderBorder.default, boxShadow: 'none' },
     borderRadius: `${changeOrderShape.radius.lg}px`,
     padding: '10px 12px',
     background: changeOrderSurface.page,

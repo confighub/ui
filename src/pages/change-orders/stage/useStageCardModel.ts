@@ -4,13 +4,13 @@
 /**
  * Everything the selected stage's card shows and does, composed from what the
  * page already reads: the state of its status box, its one action, the reviews it
- * hosts, how the change reaches each Space, the quiet dry run, and the sidebar.
+ * hosts, how the change reaches each Space, and the quiet dry run.
  *
  * The derivations are the pure `stage/*.ts` functions; this hook gathers their
  * inputs. The writes are `useStageConfirm`, and focus after them `useOutcomeFocus`.
  */
 
-import { useCallback, useMemo, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
 import type { ChangeOrderDetail } from '../useChangeOrderDetail';
 import type { ChangeOrderHistory } from '../useChangeOrderHistory';
@@ -26,33 +26,26 @@ import { useGateReviews } from '../reviews/useStageReviews';
 import { partitionBlockingGates } from '../../x/apps/change-order/changeOrderGates';
 import { gatesBlockPromotion } from '../../x/apps/change-order/changeOrderFooterModel';
 import { stageDisplayName } from '../../x/apps/change-order/changeOrderCopy';
-import { promotionTargets } from '../../x/apps/change-order/changeOrderStages';
+import { promotionTargets, stageHasReleasePrerequisites } from '../../x/apps/change-order/changeOrderStages';
+import { stageReleaseSpaceIds } from '../../x/apps/change-order/changeOrdersConsoleModel';
 import type { ChangeOrderStageState } from '../../x/apps/change-order/changeOrderTypes';
 import { useChangeOrderActions } from '../../x/apps/change-order/useChangeOrderActions';
 import {
-  actionStageOf,
   cardDryRunView,
   dryRunRefreshKey,
   changeCardModel,
-  gateDetailsOf,
   gateSpacesFor,
-  isReviewRequirementGate,
   nextStepOf,
   previousStageOf,
-  sidebarGateFlags,
   otherGatesHolding as otherGatesHoldingOf,
   sidebarMarks,
-  sidebarSpaces,
   stageGatesAnswered,
-  sidebarReviewsOf,
-  sidebarTargets,
 } from './stageCardParts';
 import { stageCardCopy } from './stageCardCopy';
 import {
   defaultMethod,
   deriveStageCardState,
   dryRunWanted,
-  isReviewState,
   methodsFor,
   stageBoxLook,
   stageBylines,
@@ -63,13 +56,15 @@ import {
 import { stageDiffSections } from './stageDiffSections';
 import { classifyDryRunAnswer, dryRunLine, releaseLine } from './stageDryRun';
 import { outcomeByMajority, stagePropagation } from './stagePropagation';
-import { stageSectionGates, subjectReviews, viewerFlow } from './stageReviewModel';
-import type { MergeControl, StageLinks } from './StageStatusBox';
+import { stageSectionGates, viewerFlow } from './stageReviewModel';
+import type { MergeControl } from './MergeButton';
+import type { StageLinks } from './StageBoxParts';
 import type { StageCardState } from './stageTypes';
 import { useOutcomeFocus } from './useOutcomeFocus';
 import { useStageConfirm } from './useStageConfirm';
 import { useStageDiff } from './useStageDiff';
 import { useStageDryRun } from './useStageDryRun';
+import { useStagePreload } from './useStagePreload';
 
 type Changes = ReturnType<typeof useChangeOrderConsoleChanges>;
 type Recorded = (outcome: Extract<SubmitReviewOutcome, { ok: true }>, summary: GateReviewSummary, result: ReviewChoice) => void;
@@ -112,10 +107,8 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     [changes.spaceNameBySpaceId, detail.scopedSpaces],
   );
   const nameOfUnit = useCallback((unitId: string) => changes.slugByUnitId.get(unitId) ?? unitId, [changes.slugByUnitId]);
-  const releaseTargetOf = useCallback(
-    (spaceId: string) => detail.scopedSpaces?.find((s) => s.spaceId === spaceId)?.releaseTargetId,
-    [detail.scopedSpaces],
-  );
+  // Every listed Space, as the rail reads it: a Space the scoped list leaves out (`Stage=None`) still has its Target.
+  const releaseTargetOf = detail.releaseTargetOf;
 
   // ── What the actions write into ─────────────────────────────────────────
   /*
@@ -130,7 +123,10 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
    * publishes those with a Target. A stage where no Space has one is never released,
    * and once promoted it is done.
    */
-  const releaseSpaceIds = useMemo(() => targets.filter((id) => releaseTargetOf(id) !== undefined), [targets, releaseTargetOf]);
+  const releaseSpaceIds = useMemo(
+    () => stageReleaseSpaceIds(memberSpaceIds, detail.skippedSpaceId, releaseTargetOf),
+    [memberSpaceIds, detail.skippedSpaceId, releaseTargetOf],
+  );
   const stageHasTargets = releaseSpaceIds.length > 0;
 
   /*
@@ -168,8 +164,6 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     reviewSummary !== undefined && flow !== undefined ? { summary: reviewSummary, flow } : undefined;
   const hostsRelease = hosted.some((s) => s.gate.kind === 'release');
   const hostsOwnEntry = hosted.some((s) => s.gate.kind === 'entry' && s.gate.stageId === stageId);
-  /** This stage's own entry review when another card (or none yet) hosts it. */
-  const ownEntryElsewhere = hostsOwnEntry ? undefined : coReviews.byGateKey[`entry:${stageId}`];
   const hostedEntry = hosted.find((s) => s.gate.kind === 'entry');
   const otherGatesHolding =
     hostedEntry === undefined
@@ -199,7 +193,7 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
       }),
     [outcome, changes.matrix, changes.groupsByUnitId, changes.spaceIdByUnitId, carriedResourceKeys, changes.unplannedReasonBySpaceId, stageName, previousLanded],
   );
-  const diffModel = useMemo(
+  const diffModelRaw = useMemo(
     () =>
       stageDiffSections({
         stageId,
@@ -213,6 +207,22 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
       }),
     [stageId, outcome, propagation, changes.units, changes.groupsByUnitId, detail.skippedUnits, changes.matrix],
   );
+  /*
+   * The change read again (after an action, a poll) keeps the boxes it showed: "Reading the change…" in
+   * their place would shrink the card by the boxes' height and move everything under it. The first
+   * read of a stage still says it is reading. A ref, so keeping it is not a render; it is written after
+   * a commit, so a render reads the model of the last committed read.
+   */
+  // Keyed by ChangeOrder and stage: the same stage id of another ChangeOrder never shows this diff.
+  const diffKey = `${detail.changeOrderId ?? ''}|${stageId}`;
+  const lastDiffModel = useRef<{ key: string; model: typeof diffModelRaw } | undefined>(undefined);
+  const keptDiffModel = lastDiffModel.current;
+  const reReadingChange =
+    changes.stageChangesStatus === 'loading' && keptDiffModel !== undefined && keptDiffModel.key === diffKey;
+  const diffModel = reReadingChange ? keptDiffModel.model : diffModelRaw;
+  useEffect(() => {
+    if (changes.stageChangesStatus !== 'loading') lastDiffModel.current = { key: diffKey, model: diffModelRaw };
+  }, [changes.stageChangesStatus, diffKey, diffModelRaw]);
   const diff = useStageDiff(diffModel);
   // Another stage selected: its diff starts closed. Adjusted during render, not in an effect.
   const [diffStageId, setDiffStageId] = useState(stageId);
@@ -221,8 +231,12 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     if (diff.open) diff.toggle();
   }
   // The stages whose change has been read once, so "could not be read" is never said during a first read.
+  // Written after a commit; a render counts its own read too, as a ref written later does not render again.
   const settledStages = useRef(new Set<string>());
-  if (changes.stageChangesStatus !== 'loading') settledStages.current.add(stageId);
+  useEffect(() => {
+    if (changes.stageChangesStatus !== 'loading') settledStages.current.add(stageId);
+  }, [changes.stageChangesStatus, stageId]);
+  const settledOnce = changes.stageChangesStatus !== 'loading' || settledStages.current.has(stageId);
   const groupKindOf = useCallback(
     (spaceId: string) => outcome.groups.find((g) => g.spaceIds.includes(spaceId))?.kind,
     [outcome.groups],
@@ -274,7 +288,6 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     (id: string | null) => setRunningAction(id === null ? null : { stageId: id, shown: shownState.current }),
     [],
   );
-  const [askedAgain, setAskedAgain] = useState<{ stageId: string; userId: string } | null>(null);
 
   // ── The state ───────────────────────────────────────────────────────────
   const emptyInFlight = useMemo(() => new Set<string>(), []);
@@ -327,6 +340,16 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     [dryRun.answer, detail.baseSpaceId],
   );
   const wanted = dryRunWanted(before);
+  /** The stage's own reads and quiet dry run have answered: the page reads ahead after it. */
+  const settled =
+    changes.stageChangesStatus !== 'loading' && !reviews.isLoading && (!wanted || (dryRun.answer !== undefined && !dryRun.stale && !dryRun.running));
+  useStagePreload({
+    detail,
+    stageId,
+    activeSettled: settled,
+    summaries,
+    verdictOf,
+  });
   const dryRunView = useMemo(
     () => cardDryRunView({ wanted, last: classified, running: dryRun.running, targetCount: targets.length }),
     [wanted, classified, dryRun.running, targets.length],
@@ -364,7 +387,7 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     setRunning,
   });
 
-  const methods = methodsFor(state, stageHasTargets, stageName);
+  const methods = methodsFor(state, stageHasTargets, stageName, stageHasReleasePrerequisites(detail.workflow, stageId));
   /*
    * A dry run that fails now offers no Promote: the box says which Spaces fail
    * and offers Check again, as a return to the window does.
@@ -392,7 +415,7 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
         }
       : undefined;
 
-  // ── Reviews: what the box and the sidebar need ──────────────────────────
+  // ── Reviews: what the review line needs ─────────────────────────────────
   const onRecorded: Recorded = useCallback(
     (outcomeOfSubmit, summary, result) => {
       onReviewRecorded(outcomeOfSubmit, summary, result);
@@ -400,26 +423,6 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     },
     [onReviewRecorded, focusAfter],
   );
-  const onAskedAgain = useCallback((userId: string) => setAskedAgain({ stageId, userId }), [stageId]);
-
-  const sidebarReviews = sidebarReviewsOf({
-    ...(reviewSummary === undefined
-      ? {}
-      : {
-          hosted: {
-            summary: reviewSummary,
-            reviews,
-            ...(state.kind === 'reviewRejected' && state.rejection !== undefined ? { quotedRejecterId: state.rejection.rejecter.userId } : {}),
-            ...(askedAgain?.stageId === stageId ? { askedAgainUserId: askedAgain.userId } : {}),
-          },
-        }),
-    ...(ownEntryElsewhere === undefined ? {} : { ownEntryElsewhere }),
-    verdictOf,
-  });
-  const sidebarSubjectReviews = subjectReviews(summaries, stageId, verdictOf).map(({ summary, actionStageId }) => {
-    const actionStage = actionStageOf(detail.stageStates, actionStageId);
-    return { summary, ...(actionStage === undefined ? {} : { actionStage }) };
-  });
   const base =
     detail.baseSpaceId === undefined ? undefined : { spaceId: detail.baseSpaceId, name: detail.baseSpaceSlug ?? nameOfSpace(detail.baseSpaceId) };
   const failureHere = state.kind === 'failed' ? state.failure : undefined;
@@ -447,20 +450,9 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
       reviews,
       otherGatesHolding,
       onRecorded,
-      onAskedAgain,
     },
-    sidebar: {
-      gates: stage.gates.filter((gate) => !isReviewRequirementGate(gate, sidebarReviews.map((r) => r.summary))),
-      gateDetails: gateDetailsOf(previousSeq?.spaceIds, nameOfSpace),
-      ...sidebarGateFlags(state),
-      // The box hosts no review now, so the first review row is where a review link lands.
-      reviewAnchor: !isReviewState(state.kind),
-      reviews: sidebarReviews,
-      subjectReviews: sidebarSubjectReviews,
-      spaces: sidebarSpaces(memberSpaceIds, nameOfSpace),
-      marks: sidebarMarks(propagation.marks, failureHere, targets, resolvedSpaceIds, nameOfSpace),
-      targets: sidebarTargets(targets, releaseTargetOf, stage.verdict),
-    },
+    /** How each Space takes the change, for "{Space} already has the change". */
+    marks: sidebarMarks(propagation.marks, failureHere, targets, resolvedSpaceIds, nameOfSpace),
     change: changeCardModel({
       isSource,
       verdict: stage.verdict,
@@ -472,16 +464,34 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
       targets,
       fieldCount: diffModel.fieldCount,
       sameEverywhere: diffModel.sameEverywhere,
-      status: changes.stageChangesStatus,
+      // Read again: said as the read it keeps showing, not as a read in flight.
+      status: reReadingChange ? 'resolved' : changes.stageChangesStatus,
       groups: changes.groupsByUnitId.values(),
       ...(previousLanded || previousStage === undefined ? {} : { notReachedFrom: { stageId: previousStage.stageId, name: previousStage.name } }),
       sourceFieldCount: [...changes.sourceGroupsByUnitId.values()].reduce((n, g) => n + g.fieldDiffs.length, 0),
-      settledOnce: settledStages.current.has(stageId),
+      settledOnce,
       propagation,
     }),
     diff,
     diffModel,
     spaceCount: targets.length,
+    /** How the change reaches each Space differently, whichever state the card is in. */
+    problems: propagation.problems,
+    /**
+     * Spaces of the stage that already hold the change while the stage is not promoted as a whole:
+     * the server's resolved Spaces. The card's forced dry run leaves them out, so the propagation
+     * cannot mark them itself.
+     */
+    takenSpaceIds:
+      stage.verdict === 'promoted' || stage.verdict === 'released'
+        ? []
+        : targets.filter((id) => resolvedSpaceIds.has(id) && !(failureHere?.failedSpaces.some((f) => f.spaceId === id) ?? false)),
+    /** The Spaces a release publishes: those with a release Target. */
+    releaseTargetCount: releaseSpaceIds.length,
+    stageHasTargets,
+    /** The quiet dry run's HTTP status, when it answered. */
+    dryRunStatus: dryRun.answer?.status,
+    previousStage,
   };
 }
 

@@ -62,7 +62,7 @@ type ChipTone = VitalTone | 'stale' | 'unreleased' | 'gated' | 'warned';
  * 0x26 = 38/255 = 0.149, 0x42 = 66/255 = 0.259 — verified against the browser's
  * own colour parser, so no chip may change appearance.
  */
-const CHIP_TONE: Record<ChipTone, { color: string; tint: string; tintHover: string }> = {
+export const CHIP_TONE: Record<ChipTone, { color: string; tint: string; tintHover: string }> = {
   ok: { color: componentTheme.success, tint: 'rgba(21,128,61,0.149)', tintHover: 'rgba(21,128,61,0.259)' },
   neutral: { color: componentTheme.fgSubtle, tint: 'rgba(142,154,170,0.149)', tintHover: 'rgba(142,154,170,0.259)' },
   progress: { color: componentTheme.variation, tint: 'rgba(68,103,220,0.149)', tintHover: 'rgba(68,103,220,0.259)' },
@@ -155,7 +155,7 @@ export interface DeploymentFlowNodeData {
    * the Releases tab to scroll to and highlight that specific release rather
    * than just land on the tab and leave the user to hunt for it.
    */
-  onOpenTab?: (deploymentId: string, tab: 'config' | 'releases' | 'changeset', releaseNum?: number) => void;
+  onOpenTab?: (deploymentId: string, tab: 'config' | 'releases' | 'changeset' | 'gates', releaseNum?: number) => void;
   /**
    * Opens the inline variant composer anchored to this node as parent —
    * fired by the node's own "+" affordance or the 'V' key while hovering
@@ -208,7 +208,7 @@ export interface DeploymentFlowNodeData {
 }
 
 /** Which side-pane tab a status chip's peek deep-links to. */
-export type ChipTab = 'config' | 'releases' | 'changeset';
+export type ChipTab = 'config' | 'releases' | 'changeset' | 'gates';
 
 // ============================================================================
 // STATUS MODEL
@@ -635,6 +635,7 @@ const StatusChipWithPeek = ({
   meta,
   spec,
   onGo,
+  testId,
 }: {
   /** The tone, not a colour — see `CHIP_TONE` for why the difference matters. */
   tone: ChipTone;
@@ -647,6 +648,8 @@ const StatusChipWithPeek = ({
   meta?: string;
   spec: PeekSpec;
   onGo?: (tab: ChipTab) => void;
+  /** `data-testid` of the chip. */
+  testId?: string;
 }) => {
   const { color, tint, tintHover } = CHIP_TONE[tone];
   const handleGo = (e: React.MouseEvent) => {
@@ -655,8 +658,14 @@ const StatusChipWithPeek = ({
     onGo?.(spec.tab);
   };
   return (
-    <InfoPeekTooltip color={color} spec={spec} onAction={onGo ? () => onGo(spec.tab) : undefined}>
+    <InfoPeekTooltip
+      color={color}
+      spec={spec}
+      testId={testId === 'gated-chip' ? 'gate-peek' : undefined}
+      onAction={onGo ? () => onGo(spec.tab) : undefined}
+    >
       <StatusChip
+        data-testid={testId}
         $color={color}
         $tint={tint}
         $tintHover={tintHover}
@@ -1289,7 +1298,8 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
   // Configuration, where each unit with validation errors has its Gated chip
   // and what the errors found.
   const gatedSpec: PeekSpec = {
-    tab: 'config',
+    // The Gates tab, where the Variant has one; else Configuration, where each Unit's Gated chip is.
+    tab: deployment.releaseTargetId ? 'gates' : 'config',
     eyebrow: 'Gated · validation errors',
     metric: { value: String(gatedCount), unit: gatedCount === 1 ? 'unit blocked' : 'units blocked' },
     lines: unitGateLines(units, (u) => u.gates),
@@ -1403,6 +1413,7 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
           tone="gated"
           leading={<GatedIcon />}
           label="Gated"
+          testId="gated-chip"
           spec={gatedSpec}
           onGo={openTab}
         />

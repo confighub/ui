@@ -29,6 +29,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link as RouterLink, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
+import Collapse from '@mui/material/Collapse';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import Tooltip from '@mui/material/Tooltip';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
@@ -82,6 +84,7 @@ import {
 } from './changeOrdersTokens';
 import { ChangeOrderBlockedResources, ChangeOrderRefusals } from './changeOrderRefusals';
 import { FOCUS_TITLE_STATE, changeOrderPath } from './changeOrderAddress';
+import { defaultOpenStageId, railReleaseTargets } from './changeOrderOpenStage';
 import { useSharedDiffColumns } from './useSharedDiffColumns';
 import { UnitDiffRow } from './components/UnitDiffRow';
 import { Fact, FactLink, OpenedAt, StateChip, SummaryCard } from './components/SummaryFacts';
@@ -92,7 +95,8 @@ import { ChangeOrderChangeSets } from './components/ChangeOrderChangeSets';
 import { OrganizationRow } from '@/components/organization-switcher/OrganizationRow';
 import { FullDiffDisclosure, ImageChangeSummary } from './components/ImageChangeHero';
 import { onlyChangesHint } from './imageChangeCopy';
-import { imageChangesForSource } from './imageChange';
+import { imageChangesForSource, type ImageChanges } from './imageChange';
+import { StageSlide } from './StageSlide';
 import Snackbar from '@mui/material/Snackbar';
 import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
 import { ReviewBand, type ReviewBandAction } from './reviews/ReviewBand';
@@ -488,6 +492,8 @@ function CompleteStepDetail({
       >
         <Box
           component="h2"
+          // Focus lands here when the page moves on to Complete (`StageSlide`).
+          tabIndex={-1}
           sx={{
             fontSize: changeOrderType.size.heading,
             lineHeight: changeOrderType.lineHeight.heading,
@@ -572,6 +578,9 @@ function CompleteStepDetail({
   );
 }
 
+/** How long the review band takes to open or close: short, so it eases the card instead of slowing it. */
+const BAND_MOTION_MS = 180;
+
 export default function ChangeOrdersPage() {
   const { space, slug, stage } = useParams<{ space?: string; slug?: string; stage?: string }>();
   const navigate = useNavigate();
@@ -647,8 +656,27 @@ export default function ChangeOrdersPage() {
       const match = detail.stageStates.find((s) => s.stageId === stageParam);
       if (match !== undefined) return match;
     }
-    return detail.stageStates.find((s) => s.stageId === detail.nextStageId);
-  }, [detail.stageStates, detail.nextStageId, stageParam]);
+    // A last stage that is promoted and not released still has its Release to do: open it, not Complete.
+    const openStageId = defaultOpenStageId({
+      nextStageId: detail.nextStageId,
+      stageStates: detail.stageStates,
+      // The rail's own answer, so the card and the rail agree on which stage still has a Release to do.
+      stageHasReleaseTargets: railReleaseTargets(detail.consoleRow?.stages),
+    });
+    return detail.stageStates.find((s) => s.stageId === openStageId);
+  }, [detail.stageStates, detail.nextStageId, detail.consoleRow?.stages, stageParam]);
+  /*
+   * Complete is the open step when the address names it, and also when the bare address has no stage
+   * left to open: every stage done, so the page moves on to Complete after the last release.
+   */
+  // Not while the page still reads: a release Target not read yet would make a stage look done.
+  const completeShown =
+    completeSelected || (stageParam === undefined && !detail.isLoading && detail.stageStates.length > 0 && selectedStage === undefined);
+  // Which step is open, and its place on the path: the slide's key and direction.
+  const slideKey = selectedStage?.stageId ?? (completeShown ? COMPLETE_STAGE_ID : '');
+  const slideOrder = selectedStage === undefined
+    ? detail.sequence.stages.length
+    : Math.max(0, detail.sequence.stages.findIndex((s) => s.id === selectedStage.stageId));
   /*
    * REVIEWS: attestation prerequisites (`reviews/`). The selected stage's card
    * hosts its own reviews (`StageSection`); the page keeps the Complete step's
@@ -664,8 +692,8 @@ export default function ChangeOrdersPage() {
   );
   /** The Final sign-off, which only the Complete step hosts. */
   const signOffGates: ReviewGateRef[] = useMemo(
-    () => (completeSelected ? Object.values(coReviews.byGateKey).filter((g) => g.gate.kind === 'final').map((g) => g.gate) : []),
-    [coReviews.byGateKey, completeSelected],
+    () => (completeShown ? Object.values(coReviews.byGateKey).filter((g) => g.gate.kind === 'final').map((g) => g.gate) : []),
+    [coReviews.byGateKey, completeShown],
   );
   const reviews = useGateReviews(detail, signOffGates);
   const reviewSummary = reviews.summary;
@@ -680,6 +708,13 @@ export default function ChangeOrdersPage() {
       : detail.nextStageId === null
         ? undefined
         : coReviews.byGateKey[`entry:${detail.nextStageId}`];
+  // The band's last summary, so it can close with its words rather than empty (a ref: no extra render).
+  const lastBandSummary = useRef<StageReviewSummary | undefined>(undefined);
+  useEffect(() => {
+    if (bandSummary !== undefined) lastBandSummary.current = bandSummary;
+  }, [bandSummary]);
+  const shownBandSummary = bandSummary ?? lastBandSummary.current;
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const readinessOf = (summary: StageReviewSummary | undefined): PromoteReadiness | undefined =>
     summary === undefined || summary.gate.kind !== 'entry' ? undefined : coReviews.readinessByStageId[summary.gate.stageId];
   const reviewNow = Date.now();
@@ -687,7 +722,7 @@ export default function ChangeOrdersPage() {
   const [toast, setToast] = useState<string | null>(null);
   /** The decision last recorded here, until its toast closes. */
   const [recorded, setRecorded] = useState<{ gateKeys: string[]; subject: string; result: ReviewChoice; refreshed: boolean } | null>(null);
-  const signOffSelected = completeSelected && reviewSummary !== undefined && reviewSummary.gate.kind === 'final';
+  const signOffSelected = completeShown && reviewSummary !== undefined && reviewSummary.gate.kind === 'final';
 
   /**
    * The console row, when it has a promotion path. The rail, its pips and the
@@ -856,7 +891,21 @@ export default function ChangeOrdersPage() {
         : imageChangesForSource(sourceDataStatus, [...changes.sourceGroupsByUnitId.values()]),
     [sourceDataStatus, changes.sourceGroupsByUnitId],
   );
-  const imageChanges = sourceDataImageChanges ?? ownSpaceImageChanges;
+  const readImageChanges = sourceDataImageChanges ?? ownSpaceImageChanges;
+  /*
+   * A re-read (after an action, a poll) keeps the image changes on screen: a hero that goes to
+   * "loading" collapses the summary card and moves everything under it. A ref, so keeping it does
+   * not render again; for this ChangeOrder only.
+   */
+  const lastImageChanges = useRef<{ changeOrderId: string | undefined; value: ImageChanges } | undefined>(undefined);
+  const keptImageChanges = lastImageChanges.current;
+  const imageChanges =
+    readImageChanges.status === 'loading' && keptImageChanges !== undefined && keptImageChanges.changeOrderId === detail.changeOrderId
+      ? keptImageChanges.value
+      : readImageChanges;
+  useEffect(() => {
+    if (readImageChanges.status !== 'loading') lastImageChanges.current = { changeOrderId: detail.changeOrderId, value: readImageChanges };
+  }, [readImageChanges, detail.changeOrderId]);
   const heroStageNames = useMemo(
     () => detail.sequence.stages.filter((stage) => !stage.isSource).map((stage) => stage.id),
     [detail.sequence.stages],
@@ -1344,10 +1393,12 @@ export default function ChangeOrdersPage() {
       {detail.found ? (
         <>
           <SummaryCard label="ChangeOrder summary">
-            {bandSummary !== undefined ? (
+            {/* The band opens and closes rather than pushing the card down at once; while it closes it keeps its last words. */}
+            <Collapse in={bandSummary !== undefined} timeout={reducedMotion ? 0 : BAND_MOTION_MS} appear={false} unmountOnExit>
+            {shownBandSummary !== undefined ? (
               <ReviewBand
-                summary={bandSummary}
-                readiness={readinessOf(bandSummary)}
+                summary={shownBandSummary}
+                readiness={readinessOf(shownBandSummary)}
                 now={reviewNow}
                 reviewable={bandFormStep !== undefined}
                 onAction={onReviewBandAction}
@@ -1355,12 +1406,13 @@ export default function ChangeOrdersPage() {
                   bandFormStep === undefined ||
                   bandFormStep === COMPLETE_STAGE_ID ||
                   bandFormStep === selectedStage?.stageId ||
-                  bandSummary.attestTarget.TargetStage === undefined
+                  shownBandSummary.attestTarget.TargetStage === undefined
                     ? undefined
                     : () => goToReview('panel', bandFormStep)
                 }
               />
             ) : null}
+            </Collapse>
             <Box
               sx={{
                 padding: '18px 20px',
@@ -1821,8 +1873,11 @@ export default function ChangeOrdersPage() {
           <Box
             component="section"
             role="region"
-            aria-label="Promotion path"
+            aria-label={changeOrderCopy.promotionStages}
+            data-testid="promotion-path"
             sx={{
+              // The marker that moves between nodes (`stageMove.ts`) is placed in the rail's own box.
+              position: 'relative',
               /* Same `.rail-block` card treatment as the head above it. */
               marginTop: '20px',
               background: changeOrderSurface.card,
@@ -1841,7 +1896,7 @@ export default function ChangeOrdersPage() {
                 margin: '0 0 12px',
               }}
             >
-              Promotion path
+              {changeOrderCopy.promotionStages}
             </Box>
             {detail.consoleRow !== undefined && pathRow === undefined ? (
               <Box sx={{ fontSize: changeOrderType.size.prose, color: changeOrderInk.muted }}>
@@ -1863,7 +1918,7 @@ export default function ChangeOrdersPage() {
                 completeTone={completeTone}
                 completeAbandoned={completeAbandoned}
                 completeLabel={completeLabel}
-                completeSelected={completeSelected}
+                completeSelected={completeShown}
                 finalGates={finalGates}
                 sourceSummary={sourceSummary}
                 reviewRail={coReviews.railByStageId}
@@ -1874,9 +1929,11 @@ export default function ChangeOrdersPage() {
                 }
               />
             )}
-            <SequenceProblems problems={detail.sequence.problems} />
+            <SequenceProblems problems={detail.sequence.problems} stageNames={heroStageNames} />
           </Box>
 
+          {/* The open step slides when it changes: after an action moves the page on, or a rail click. */}
+          <StageSlide slideKey={slideKey} order={slideOrder}>
           {selectedStage ? (
             <StageSection
               ref={stageRef}
@@ -1908,7 +1965,7 @@ export default function ChangeOrdersPage() {
             step of its own on the rail, and `selectedStage` resolves to
             `undefined` for it, so no stage panel is stacked above this one.
           */}
-          {completeSelected && completeStage !== null ? (
+          {completeShown && completeStage !== null ? (
             <CompleteStepDetail
               label={completeLabel}
               gates={finalGates}
@@ -1934,6 +1991,7 @@ export default function ChangeOrdersPage() {
               }
             />
           ) : null}
+          </StageSlide>
 
           <ReviewConversation slugOf={(unitId) => changes.slugByUnitId.get(unitId)} revealDiffs={revealStageDiff} />
 

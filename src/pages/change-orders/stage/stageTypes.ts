@@ -78,7 +78,13 @@ export type StageCardState =
   /** `took`: the differences the written change carries, said after the fact. */
   | { kind: 'released'; took: readonly PropagationProblem[] }
   /** Offered only where the stage could otherwise be promoted; `problems` as for `problem`. */
-  | { kind: 'restored'; verdict: 'restored' | 'restore-released'; problems: readonly PropagationProblem[] }
+  | {
+      kind: 'restored';
+      verdict: 'restored' | 'restore-released';
+      problems: readonly PropagationProblem[];
+      /** The server restores only an aborted ChangeOrder, so a restored stage carries the abort's reason. */
+      abortedReason?: string;
+    }
   | { kind: 'promotedNoTargets' }
   | { kind: 'promoted'; took: readonly PropagationProblem[] }
   | ({ kind: 'reviewRejected'; rejection: ReviewRejection | undefined; failedGates: readonly ChangeOrderGate[] } & StageReviewStateBase)
@@ -355,11 +361,16 @@ export interface ReviewFlowBase {
    */
   ownNotCounted: string[];
   /**
-   * Where the viewer wrote part of the change, and whether that matters: "does
-   * not count there", or, where the requirements accept authors, that they can
-   * review it. Absent when the viewer wrote none of it.
+   * Where the viewer wrote part of the change and their decision does not count
+   * there. Said on the line, since it changes what the viewer can do. Absent
+   * when the viewer wrote none of it, or where the requirements accept authors.
    */
   authorNote?: string;
+  /**
+   * The viewer wrote part of the change, and the requirements accept authors.
+   * Nothing to act on, so it is behind the review line's (i), not on the line.
+   */
+  authorInfo?: string;
 }
 
 /**

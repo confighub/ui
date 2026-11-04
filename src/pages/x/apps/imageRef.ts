@@ -244,7 +244,9 @@ export interface ImageRowModel {
   /**
    * True when the image did not move. Such a row is CONTEXT — it is shown
    * because a container that stayed behind while its neighbours moved is worth
-   * seeing, and it is deliberately not a change.
+   * seeing, and it is deliberately not a change. It exists only beside a
+   * change in the same resource: where no container moved, the rows would
+   * be noise around a diff that is about something else.
    */
   unchanged: boolean;
 }
@@ -269,6 +271,10 @@ const CONTAINER_LIST_ORDER: Record<ContainerImagePath['list'], number> = {
  * fabricates a no-op change to make a row appear: an entry in `fieldDiffs`
  * always means a real change, and every count derived from it stays true.
  *
+ * Unchanged rows are kept only when a container of this list moved, or when
+ * `containerChangedElsewhere` says one was added or deleted whole, which makes
+ * no row of its own here.
+ *
  * Completeness is bounded by what the panel received. A unit over
  * `HEAVY_UNIT_BYTES` is skipped upstream and never reaches this view at all, so
  * this list is every container in the units SHOWN, not every container in the
@@ -277,6 +283,7 @@ const CONTAINER_LIST_ORDER: Record<ContainerImagePath['list'], number> = {
 export function buildImageRows(
   fieldDiffs: readonly { path: string; oldValue: string; newValue: string }[],
   allPaths: readonly { path: string; value: string }[],
+  containerChangedElsewhere = false,
 ): ImageRowModel[] {
   const NAME_SUFFIX = '.name';
   const names = new Map<string, string>();
@@ -328,7 +335,9 @@ export function buildImageRows(
     // normalise a deleted key to an empty string rather than the dash.
     push(parsed, isRemovalSentinel(d.oldValue) ? null : d.oldValue, isRemovalSentinel(d.newValue) ? null : d.newValue, false);
   }
-  for (const { parsed, value } of unchangedImages) push(parsed, value, value, true);
+  if (rows.length > 0 || containerChangedElsewhere) {
+    for (const { parsed, value } of unchangedImages) push(parsed, value, value, true);
+  }
 
   rows.sort((a, b) => a.listOrder - b.listOrder || a.index - b.index);
   return rows.map((r) => r.row);
@@ -369,6 +378,7 @@ export function imageRowsOfResource(resource: ResourceDiff): { rows: ImageRowMod
   const fieldDiffs: { path: string; oldValue: string; newValue: string }[] = [];
   const allPaths: { path: string; value: string }[] = [];
   const others: PathChange[] = [];
+  let containerBlockChanged = false;
   for (const change of resource.Changes ?? []) {
     const path = dotPathOfSegments(change.Segments);
     if (change.ChangeType === 'None') {
@@ -382,6 +392,7 @@ export function imageRowsOfResource(resource: ResourceDiff): { rows: ImageRowMod
       }
       continue;
     }
+    if (CONTAINER_ELEMENT_PATH.test(path)) containerBlockChanged = true;
     const scalar = !change.Comment && (change.ChangeType === 'Add' || change.ChangeType === 'Delete' || change.ChangeType === 'Update');
     const entry = {
       path,
@@ -397,5 +408,5 @@ export function imageRowsOfResource(resource: ResourceDiff): { rows: ImageRowMod
     if (scalar && path.endsWith('.name')) fieldDiffs.push(entry);
     others.push(change);
   }
-  return { rows: buildImageRows(fieldDiffs, allPaths), others };
+  return { rows: buildImageRows(fieldDiffs, allPaths, containerBlockChanged), others };
 }

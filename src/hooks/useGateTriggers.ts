@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 
 import {
   ExtendedTriggerRead,
+  FunctionInvocationsRequest,
   UnitRead,
   useListAllTriggersQuery,
 } from '@confighub/rtk-query';
@@ -55,3 +56,19 @@ export const findTriggerForGate = (
       trigger.Trigger?.DisplayName?.toLowerCase().includes(triggerSlug.toLowerCase()),
   );
 };
+
+/**
+ * The request that runs one validating Trigger again on a Unit: the Re-check of a gate. With
+ * `updateValidationResults`, the result is recorded on the Unit, so the gate clears or stays.
+ */
+export const validatingTriggerRequest = (
+  toolchainType: string | undefined,
+  triggerID: string,
+  { updateValidationResults = false }: { updateValidationResults?: boolean } = {},
+): FunctionInvocationsRequest => ({
+  ToolchainType: toolchainType || 'Kubernetes/YAML',
+  Triggers: [triggerID],
+  StopOnError: false,
+  FunctionInvocations: null,
+  ...(updateValidationResults ? { UpdateValidationResults: true } : {}),
+});

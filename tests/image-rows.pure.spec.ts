@@ -187,6 +187,54 @@ test.describe('container image row model', () => {
      * The path appears in BOTH lists when it changed. It must be taken from the
      * change list once, not counted again as unchanged from the old side.
      */
+    test('an unchanged container beside a re-tagged one, a registry move, or a digest move is kept', () => {
+      const sidecar = [path(`${CONTAINERS}.1.name`, 'sidecar'), path(`${CONTAINERS}.1.image`, 'acme/sidecar:3')];
+      const moves: [string, string][] = [
+        ['acme/api:1', 'acme/api:2'],
+        ['ghcr.io/acme/api:1', 'quay.io/acme/api:1'],
+        ['acme/api:1@sha256:aaaaaaa', 'acme/api:1@sha256:bbbbbbb'],
+      ];
+      for (const [from, to] of moves) {
+        const rows = buildImageRows(
+          [diff(`${CONTAINERS}.0.image`, from, to)],
+          [path(`${CONTAINERS}.0.name`, 'api'), path(`${CONTAINERS}.0.image`, from), ...sidecar],
+        );
+        expect(rows.map((r) => [r.containerName, r.unchanged]), `${from} -> ${to}`).toEqual([
+          ['api', false],
+          ['sidecar', true],
+        ]);
+      }
+    });
+
+    test('an unchanged container is dropped when no container image changed', () => {
+      const rows = buildImageRows(
+        [],
+        [
+          path(`${CONTAINERS}.0.name`, 'api'),
+          path(`${CONTAINERS}.0.image`, 'acme/api:1'),
+          path(`${CONTAINERS}.1.name`, 'sidecar'),
+          path(`${CONTAINERS}.1.image`, 'acme/sidecar:3'),
+        ],
+      );
+      expect(rows).toEqual([]);
+    });
+
+    test('an unchanged container is kept beside one removed, and one added whole', () => {
+      const old = [
+        path(`${CONTAINERS}.0.name`, 'api'),
+        path(`${CONTAINERS}.0.image`, 'acme/api:1'),
+        path(`${CONTAINERS}.1.name`, 'gone'),
+        path(`${CONTAINERS}.1.image`, 'acme/gone:1'),
+      ];
+      const removed = buildImageRows([diff(`${CONTAINERS}.1.image`, 'acme/gone:1', '-')], old);
+      expect(removed.map((r) => [r.containerName, r.unchanged])).toEqual([
+        ['api', true],
+        ['gone', false],
+      ]);
+      // A container added whole makes no row here; the caller says it happened.
+      expect(buildImageRows([], old.slice(0, 2), true).map((r) => r.unchanged)).toEqual([true]);
+    });
+
     test('a changed image is never also emitted as an unchanged row', () => {
       const rows = buildImageRows(
         [diff(`${CONTAINERS}.0.image`, 'redis:7.0', 'redis:7.2')],
@@ -351,6 +399,28 @@ test.describe('container image rows from a server diff', () => {
       ['api', false, 'acme/api:2'],
       ['sidecar', true, 'acme/sidecar:3'],
     ]);
+  });
+
+  test('an unchanged container is dropped when only metadata changed', () => {
+    const { rows, others } = imageRowsOfResource(
+      resourceOf([
+        pathChange([field('metadata'), field('labels'), field('team')], { ChangeType: 'Update', FromValue: 'a', ToValue: 'b' }),
+        pathChange(containerAt('api', 0), { ChangeType: 'None', ToValue: 'name: api\nimage: "acme/api:1"', ToDataType: 'YAML' }),
+        pathChange(containerAt('sidecar', 1), { ChangeType: 'None', ToValue: 'name: sidecar\nimage: "acme/sidecar:3"', ToDataType: 'YAML' }),
+      ]),
+    );
+    expect(rows).toEqual([]);
+    expect(others).toHaveLength(3);
+  });
+
+  test('an unchanged container is kept beside one added whole', () => {
+    const { rows } = imageRowsOfResource(
+      resourceOf([
+        pathChange(containerAt('api', 0), { ChangeType: 'None', ToValue: 'name: api\nimage: "acme/api:1"', ToDataType: 'YAML' }),
+        pathChange(containerAt('cache', 1), { ChangeType: 'Add', ToValue: 'name: cache\nimage: redis:7', ToDataType: 'YAML' }),
+      ]),
+    );
+    expect(rows.map((r) => [r.containerName, r.unchanged])).toEqual([['api', true]]);
   });
 
   test('a container added whole stays in the tree and makes no row', () => {

@@ -26,17 +26,61 @@ import type { RequirementProgress } from './changeOrderReviewTypes';
 
 const copy = reviewCopy.requirements;
 
-function Rule({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+function Rule({ icon, children, testId }: { icon: ReactNode; children: ReactNode; testId?: string }) {
   return (
-    <Box component="li" sx={{ display: 'flex', alignItems: 'center', gap: '4px', '& svg': { fontSize: 11 } }}>
+    <Box component="li" data-testid={testId} sx={{ display: 'flex', alignItems: 'center', gap: '4px', '& svg': { fontSize: 11 } }}>
       {icon}
       <span>{children}</span>
     </Box>
   );
 }
 
-function RequirementRow({ req, showGate }: { req: RequirementProgress; showGate: boolean }) {
+/**
+ * What a caller adds to the default row (the Stage log's Review details, H7): a status icon before
+ * the name, which review it is said inline after the tag, the reviewers under the pips, and where
+ * it was reviewed under the rules. Absent, the row is drawn as before.
+ */
+export interface RequirementRowSlots {
+  leading?: (req: RequirementProgress) => ReactNode;
+  gateLabel?: (req: RequirementProgress) => string;
+  reviewers?: (req: RequirementProgress) => ReactNode;
+  reviewedIn?: (req: RequirementProgress) => ReactNode;
+}
+
+function RequirementRow({
+  req,
+  showGate,
+  approversTestId,
+  notReached = false,
+  slots = {},
+}: {
+  req: RequirementProgress;
+  showGate: boolean;
+  approversTestId?: string;
+  /** A review of a step not reached yet (a release review before the promote): one line. */
+  notReached?: boolean;
+  slots?: RequirementRowSlots;
+}) {
   const { rules } = req;
+  const gateLabel = slots.gateLabel?.(req);
+  if (notReached) {
+    return (
+      <Box data-testid={`review-requirement-${req.name}`} data-gate-kind={req.gate.kind} data-evaluated="false" title={req.description}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {slots.leading?.(req)}
+          <Box component="code" sx={{ fontFamily: changeOrderFontMono, fontSize: changeOrderType.size.body, fontWeight: changeOrderType.weight.strong }}>
+            {req.name}
+          </Box>
+          <ReviewTag tone="idle">{reviewCopy.notEvaluatedShort.notReached ?? reviewCopy.notEvaluated.short}</ReviewTag>
+          {gateLabel !== undefined ? (
+            <Box component="span" data-testid="review-requirement-gate" sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.muted }}>
+              {gateLabel}
+            </Box>
+          ) : null}
+        </Box>
+      </Box>
+    );
+  }
   // No server rows for the viewer: no count, no pips, one line saying why (#5788).
   const evaluated = req.evaluated;
   let tag: ReactNode = <ReviewTag tone="warn">{req.need === 0 ? copy.held : copy.needed(req.need)}</ReviewTag>;
@@ -46,10 +90,16 @@ function RequirementRow({ req, showGate }: { req: RequirementProgress; showGate:
   return (
     <Box data-testid={`review-requirement-${req.name}`} data-gate-kind={req.gate.kind} data-evaluated={evaluated ? 'true' : 'false'} title={req.description}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {slots.leading?.(req)}
         <Box component="code" sx={{ fontFamily: changeOrderFontMono, fontSize: changeOrderType.size.body, fontWeight: changeOrderType.weight.strong }}>
           {req.name}
         </Box>
         {tag}
+        {gateLabel !== undefined ? (
+          <Box component="span" data-testid="review-requirement-gate" sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.muted }}>
+            {gateLabel}
+          </Box>
+        ) : null}
         {evaluated ? (
           <Box component="span" sx={{ marginLeft: 'auto', fontFamily: changeOrderFontMono, fontSize: changeOrderType.size.body, fontWeight: changeOrderType.weight.bold }}>
             {req.passes}
@@ -59,7 +109,12 @@ function RequirementRow({ req, showGate }: { req: RequirementProgress; showGate:
           </Box>
         ) : null}
       </Box>
-      {showGate ? (
+      {req.heldFor !== undefined ? (
+        <Box data-testid="review-requirement-held" sx={{ marginTop: '2px', fontSize: changeOrderType.size.small, color: changeOrderInk.muted }}>
+          {req.heldFor.text}
+        </Box>
+      ) : null}
+      {showGate && gateLabel === undefined ? (
         <Box data-testid="review-requirement-gate" sx={{ marginTop: '2px', fontSize: changeOrderType.size.small, color: changeOrderInk.muted }}>
           {copy.forGate(gateThing(req.gate))}
         </Box>
@@ -73,6 +128,7 @@ function RequirementRow({ req, showGate }: { req: RequirementProgress; showGate:
           {reviewCopy.notEvaluated[req.notEvaluated ?? 'error']}
         </Box>
       )}
+      {slots.reviewers?.(req)}
       <Box
         component="ul"
         sx={{
@@ -86,7 +142,7 @@ function RequirementRow({ req, showGate }: { req: RequirementProgress; showGate:
           color: changeOrderInk.subtle,
         }}
       >
-        <Rule icon={<PersonOutlineOutlinedIcon />}>
+        <Rule icon={<PersonOutlineOutlinedIcon />} testId={approversTestId}>
           {copy.from}{' '}
           <Box component="span" title={fromTitle(rules)} sx={{ color: changeOrderInk.muted }}>
             {fromText(rules)}
@@ -97,6 +153,7 @@ function RequirementRow({ req, showGate }: { req: RequirementProgress; showGate:
         <Rule icon={<WarningAmberOutlinedIcon />}>{rules.ignoreFail ? copy.rejectionsIgnored : copy.oneRejectionBlocks}</Rule>
         {rules.distinctGroups ? <Rule icon={<GroupsOutlinedIcon />}>{copy.oneFromEachGroup}</Rule> : null}
       </Box>
+      {slots.reviewedIn?.(req)}
     </Box>
   );
 }
@@ -111,13 +168,48 @@ function blockingFirst(requirements: RequirementProgress[]): RequirementProgress
   return [...requirements].sort((a, b) => rank(a) - rank(b));
 }
 
-/** `showGate`: the requirements hold more than one gate, so each says which. */
-export function ReviewRequirementList({ requirements, showGate = false }: { requirements: RequirementProgress[]; showGate?: boolean }) {
+/**
+ * `showGate`: the requirements hold more than one gate, so each says which.
+ * `itemTestId`: a design id for each row, in the order drawn (the Stage log's Review details).
+ * `notReachedGateKeys`: the gates not reached yet, matched by gate key, never by name (an entry
+ * and a release review can share one).
+ */
+export function ReviewRequirementList({
+  requirements,
+  showGate = false,
+  itemTestId,
+  notReachedGateKeys = [],
+  slots,
+  keepOrder = false,
+}: {
+  requirements: RequirementProgress[];
+  showGate?: boolean;
+  itemTestId?: (index: number) => string;
+  notReachedGateKeys?: readonly string[];
+  slots?: RequirementRowSlots;
+  /** Draw them in the order given (entry review, then release review) rather than blocking first. */
+  keepOrder?: boolean;
+}) {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-      {blockingFirst(requirements).map((req) => (
-        <RequirementRow key={req.gate.key + req.name} req={req} showGate={showGate} />
-      ))}
+      {(keepOrder ? requirements : blockingFirst(requirements)).map((req, i) => {
+        const row = (
+          <RequirementRow
+            req={req}
+            showGate={showGate}
+            notReached={notReachedGateKeys.includes(req.gate.key)}
+            {...(itemTestId === undefined ? {} : { approversTestId: `${itemTestId(i)}-approvers` })}
+            {...(slots === undefined ? {} : { slots })}
+          />
+        );
+        return itemTestId === undefined ? (
+          <Box key={req.gate.key + req.name}>{row}</Box>
+        ) : (
+          <Box key={req.gate.key + req.name} data-testid={itemTestId(i)}>
+            {row}
+          </Box>
+        );
+      })}
     </Box>
   );
 }

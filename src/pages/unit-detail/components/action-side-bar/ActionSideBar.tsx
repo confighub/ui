@@ -5,13 +5,12 @@ import { useSearchParams } from 'react-router-dom';
 
 import { ProgressRefreshButton } from '@/components/progress-refresh-button/ProgressRefreshButton';
 import { HoverCard } from '@/components/styled';
-import { findTriggerForGate, useGateTriggers } from '@/hooks/useGateTriggers';
+import { findTriggerForGate, useGateTriggers, validatingTriggerRequest } from '@/hooks/useGateTriggers';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import { parseGateName } from '@/utility/name-format-functions';
 import {
   ExtendedTriggerRead,
   ExtendedUnitRead,
-  FunctionInvocationsRequest,
   FunctionInvocationsResponse,
   ListFunctionsApiResponse,
   useInvokeFunctionsOnOrgMutation,
@@ -123,12 +122,7 @@ export const ActionSidebar = ({
           throw new Error(`Could not find trigger for gate: ${gateName}`);
         }
 
-        const request: FunctionInvocationsRequest = {
-          ToolchainType: unit.Unit.ToolchainType || 'Kubernetes/YAML',
-          Triggers: [trigger.Trigger.TriggerID], // Use the Triggers parameter with actual trigger ID
-          StopOnError: false,
-          FunctionInvocations: null,
-        };
+        const request = validatingTriggerRequest(unit.Unit.ToolchainType, trigger.Trigger.TriggerID);
 
         const result = await invokeFunctions({
           executorSpace: unit.Unit.SpaceID,

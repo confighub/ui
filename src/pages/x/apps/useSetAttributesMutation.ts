@@ -24,7 +24,12 @@ import { openChangeSetIdOf } from './changeSets';
 // TYPES
 // ============================================================================
 
-type AttributeValueType = 'int' | 'bool' | 'string';
+/**
+ * A set-attributes DataType. `YAML` writes the value as YAML text and replaces the whole node at
+ * the path: a restored map, a quoted string, or null.
+ */
+export type SetAttributeDataType = 'int' | 'bool' | 'string' | 'YAML';
+type AttributeValueType = SetAttributeDataType;
 
 export interface UseSetAttributesMutationArgs {
   allUnits: ExtendedUnitRead[];

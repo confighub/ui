@@ -177,19 +177,9 @@ const changeOrderImageDiffApi = confighubApi.injectEndpoints({
     getChangeOrderUnitDiff: build.query<SearchUnitDiffApiResponse, ChangeOrderUnitDiffArgs>({
       query: ({ changeOrderId, unitIds }) => changeOrderDiffQuery(unitIdsWhere(unitIds), changeOrderId),
     }),
-    // The two reads that find the source Units and the paths the Links carry, as `useFanOutSource` makes them, but
-    // untagged: a Revision or a Link written elsewhere must not refetch what a ChangeOrder's list row shows.
-    getFanOutSourceRevisions: build.query<ListAllRevisionsApiResponse, { where: string }>({
-      query: ({ where }) => ({
-        url: '/revision',
-        params: {
-          where,
-          distinct_on: 'Off',
-          limit: SOURCE_REVISION_LIMIT,
-          select: 'RevisionID,UnitID,SpaceID,RevisionNum,Tags',
-        },
-      }),
-    }),
+    // The paths the Links carry from the source Units, as `useFanOutSource` reads them, but untagged: a Link
+    // written elsewhere must not refetch what a ChangeOrder's list row shows. The source Revisions are read with
+    // `useGetTaggedRevisionsQuery` (taggedRevisionsApi.ts), which follows every page.
     getFanOutSourceLinks: build.query<SearchListLinksApiResponse, { where: string }>({
       query: ({ where }) => ({ url: '/link', params: { where } }),
     }),
@@ -269,7 +259,6 @@ export const {
   useGetChangeOrderSourceDiffQuery,
   useGetChangeOrderUnitDiffQuery,
   useGetFanOutSourceDiffQuery,
-  useGetFanOutSourceRevisionsQuery,
   useGetFanOutSourceLinksQuery,
   useGetChangeOrderChangeSetRevisionsQuery,
 } = changeOrderImageDiffApi;

@@ -651,18 +651,15 @@ test.describe('component release — height-encoded lane (v7)', () => {
 
     // The SAME unit block, a genuinely different comparison: the whole unit
     // reads as added. rel-1 has no predecessor, so its ConfigMap is one resource
-    // added whole, drawn as the document it bundled — replicas 1, rel-1's value,
-    // not rel-2's 2 — and there are no old-side cells at all, because there was
-    // no old side to remove anything from.
+    // added whole, drawn as a tree of the document it bundled -- replicas 1,
+    // rel-1's value, not rel-2's 2 -- and not as that document's YAML.
     await expect(unitBlock.getByTestId('unreleased-unit-badge')).toHaveText(
       `added in rel-${rel1Num}`,
       { timeout: 10000 },
     );
-    const addedDocument = unitBlock.getByTestId('config-diff-resource-document');
-    await expect(addedDocument).toHaveCount(1);
-    await expect(addedDocument).toContainText('replicas: "1"');
-    await expect(addedDocument).not.toContainText('replicas: "2"');
-    await expect(oldVals).toHaveCount(0);
+    await expect(unitBlock.getByTestId('config-diff-resource-document')).toHaveCount(0);
+    await expect(newVals.filter({ hasText: 'added: 1' })).toHaveCount(1);
+    await expect(newVals.filter({ hasText: 'added: 2' })).toHaveCount(0);
 
     // The per-unit header names the unit. It renders as an anchor whose
     // accessible text ends with a visually-hidden " (opens unit details in a new

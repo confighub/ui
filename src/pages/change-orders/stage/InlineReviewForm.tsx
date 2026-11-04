@@ -47,6 +47,11 @@ export interface InlineReviewFormProps {
   /** The last attempt failed. */
   error?: string;
   cancelLabel?: string;
+  /**
+   * Inside a Stage log line: a one-line field under "Approve: reason (required)",
+   * Enter submits, and the hint says who sees the reason.
+   */
+  compact?: boolean;
   onSubmit: (note: string) => void;
   onCancel: () => void;
 }
@@ -80,11 +85,13 @@ export function InlineReviewForm({
   lead,
   error,
   cancelLabel,
+  compact = false,
   onSubmit,
   onCancel,
 }: InlineReviewFormProps) {
   const pass = choice === 'Pass';
-  const required = requiredProp ?? noteRequired(choice);
+  // In the Stage log every decision carries its reason: the line's reader sees it beside the decision.
+  const required = requiredProp ?? (compact || noteRequired(choice));
   const fieldId = useId();
   const helpId = useId();
   const errorId = useId();
@@ -102,7 +109,7 @@ export function InlineReviewForm({
     if (event.key === 'Escape' && !submitting) {
       event.stopPropagation();
       onCancel();
-    } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+    } else if (event.key === 'Enter' && (compact || event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       void submit();
     }
@@ -111,7 +118,8 @@ export function InlineReviewForm({
   const focusOnce = (target: 'field' | 'submit') => (el: HTMLElement | null) => {
     if (el === null || focused.current || (target === 'field') !== required) return;
     focused.current = true;
-    el.focus();
+    // The form opens under the button just clicked: focus must not scroll the page.
+    el.focus({ preventScroll: true });
   };
 
   return (
@@ -127,10 +135,10 @@ export function InlineReviewForm({
       {...(promotionInto === undefined ? { 'aria-label': reviewCopy.form.submit(choice, subjectName) } : { 'aria-labelledby': subjectId })}
       data-testid="review-form"
       data-choice={choice}
-      sx={{ mt: '12px', display: 'grid', gap: '12px', maxWidth: 560 }}
+      sx={compact ? { mt: '10px', display: 'grid', gap: '8px', maxWidth: 620 } : { mt: '12px', display: 'grid', gap: '12px', maxWidth: 560 }}
     >
       {lead}
-      {promotionInto !== undefined ? (
+      {promotionInto !== undefined && !compact ? (
         <Typography variant="body2" data-testid="review-form-subject" sx={{ color: 'text.secondary' }}>
           <span id={subjectId}>{reviewCopy.form.submit(choice, subjectName, promotionInto)}</span>. {reviewCopy.form.promotionCovers(subjectName)}
         </Typography>
@@ -143,7 +151,7 @@ export function InlineReviewForm({
           <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: '6px' }}>
               <Typography component="label" htmlFor={fieldId} variant="subtitle1" sx={{ color: 'text.primary' }}>
-                {copy.reasonLabel(required)}
+                {compact ? copy.compactLabel(pass, required) : copy.reasonLabel(required)}
               </Typography>
               {note.length > NOTE_COUNTER_FROM ? (
                 <Box component="span" data-testid="review-note-count" sx={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'text.secondary' }}>
@@ -158,8 +166,8 @@ export function InlineReviewForm({
                 focusOnce('field')(el);
               }}
               id={fieldId}
-              multiline
-              minRows={2}
+              multiline={!compact}
+              {...(compact ? {} : { minRows: 2 })}
               fullWidth
               size="small"
               placeholder={pass ? copy.placeholderPass : copy.placeholderFail(subjectName)}
@@ -168,25 +176,34 @@ export function InlineReviewForm({
               slotProps={{
                 htmlInput: {
                   maxLength: REVIEW_NOTE_MAX,
-                  'aria-describedby': [fieldState.error !== undefined ? errorId : '', coverageText !== undefined ? helpId : ''].filter(Boolean).join(' ') || undefined,
+                  'aria-describedby': [fieldState.error !== undefined ? errorId : '', compact || coverageText !== undefined ? helpId : ''].filter(Boolean).join(' ') || undefined,
                   'aria-invalid': fieldState.error !== undefined,
                   'data-testid': 'review-reason',
                 },
               }}
-              sx={{
-                '& .MuiOutlinedInput-root': { minHeight: 64, alignItems: 'flex-start' },
-                // The multiline root already pads 8px 12px; the input's own side padding would double it.
-                '& .MuiOutlinedInput-input': { px: 0 },
-                '& textarea': { resize: 'vertical' },
-                '& textarea::placeholder': { color: 'text.disabled', opacity: 1 },
-              }}
+              sx={
+                compact
+                  ? { '& .MuiOutlinedInput-root': { height: 36, bgcolor: 'background.paper' }, '& input::placeholder': { color: 'text.disabled', opacity: 1 } }
+                  : {
+                      '& .MuiOutlinedInput-root': { minHeight: 64, alignItems: 'flex-start' },
+                      // The multiline root already pads 8px 12px; the input's own side padding would double it.
+                      '& .MuiOutlinedInput-input': { px: 0 },
+                      '& textarea': { resize: 'vertical' },
+                      '& textarea::placeholder': { color: 'text.disabled', opacity: 1 },
+                    }
+              }
             />
             {fieldState.error !== undefined ? (
               <FormHelperText id={errorId} error sx={helperSx}>
                 {fieldState.error.message}
               </FormHelperText>
             ) : null}
-            {coverageText !== undefined ? (
+            {compact && fieldState.error === undefined ? (
+              <FormHelperText id={helpId} sx={{ ...helperSx, mt: '8px', fontSize: '12px', color: 'text.secondary' }}>
+                {copy.compactHint}
+              </FormHelperText>
+            ) : null}
+            {coverageText !== undefined && !compact ? (
               <FormHelperText id={helpId} sx={{ ...helperSx, color: 'text.secondary' }}>
                 {copy.coverageHelp(coverageText)}
               </FormHelperText>
@@ -207,7 +224,8 @@ export function InlineReviewForm({
           {blockedReason}
         </Typography>
       ) : null}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: compact ? '6px' : '8px', flexWrap: 'wrap' }}>
+        <Box component="span" data-testid={compact ? 'act-submit' : undefined} sx={{ display: 'inline-flex' }}>
         <Button
           type="submit"
           variant={pass ? 'contained' : 'outlined'}
@@ -220,8 +238,9 @@ export function InlineReviewForm({
           data-choice={choice}
           sx={{ ...unavailableSx, ...focusSx }}
         >
-          {submitting ? copy.submitting : pass ? copy.submitApproval : copy.submitRejection}
+          {submitting ? copy.submitting : compact ? copy.compactSubmit(pass) : pass ? copy.submitApproval : copy.submitRejection}
         </Button>
+        </Box>
         <Button variant="text" onClick={() => !submitting && onCancel()} aria-disabled={submitting ? true : undefined} data-testid="review-cancel" sx={{ px: '10px', ...unavailableSx, ...focusSx }}>
           {cancelLabel ?? copy.cancel}
         </Button>

@@ -22,10 +22,12 @@
 
 import { useMemo } from 'react';
 
-import { useListAllRevisionsQuery, useSearchListLinksQuery, type LinkRead } from '@confighub/rtk-query';
+import { useSearchListLinksQuery, type LinkRead } from '@confighub/rtk-query';
 import { useRevisionDataMap } from '@/hooks/useUnitData';
 
 import { linkedSourcePaths } from './linkedSourcePaths';
+import { taggedRevisionWheres } from './taggedRevisionReads';
+import { useGetTaggedRevisionsQuery } from './taggedRevisionsApi';
 
 /** One source Unit of a fan-out ChangeOrder. */
 export interface FanOutSourceUnit {
@@ -62,16 +64,14 @@ export const SOURCE_REVISION_LIMIT = 1000;
 
 /**
  * The Revisions the ChangeOrder's two Tags mark outside its scope: the source Units, at the start and at the end.
- * `undefined` until both Tags are known. `inScope` is sorted, so equal scopes read equal.
+ * One clause per Tag, read to the last page (`taggedRevisionReads.ts`). `undefined` until both Tags are known.
  */
-export function fanOutRevisionWhere(
+export function fanOutRevisionWheres(
   startTagId: string | undefined,
   endTagId: string | undefined,
   inScope: readonly string[],
-): string | undefined {
-  if (startTagId === undefined || endTagId === undefined) return undefined;
-  const tags = `Tags.*.TagID IN ('${startTagId}', '${endTagId}')`;
-  return inScope.length === 0 ? tags : `${tags} AND SpaceID NOT IN (${inScope.map((id) => `'${id}'`).join(', ')})`;
+): string[] | undefined {
+  return taggedRevisionWheres(startTagId, endTagId, { notIn: inScope });
 }
 
 /**
@@ -104,17 +104,16 @@ export function useFanOutSource(args: {
 
   const inScope = useMemo(() => [...(inScopeSpaceIds ?? [])].sort(), [inScopeSpaceIds]);
 
-  const where = useMemo(() => fanOutRevisionWhere(startTagId, endTagId, inScope), [startTagId, endTagId, inScope]);
+  const wheres = useMemo(() => fanOutRevisionWheres(startTagId, endTagId, inScope), [startTagId, endTagId, inScope]);
 
-  const { data: revisions, isError } = useListAllRevisionsQuery(
+  const { data: revisions, isError } = useGetTaggedRevisionsQuery(
     {
-      where,
-      distinctOn: 'Off',
-      limit: SOURCE_REVISION_LIMIT,
+      wheres: wheres ?? [],
       select: 'RevisionID,UnitID,SpaceID,RevisionNum,Tags',
       include: 'UnitID,SpaceID',
+      live: true,
     },
-    { skip: skip || where === undefined },
+    { skip: skip || wheres === undefined },
   );
 
   const { dataFor, ready } = useRevisionDataMap((revisions ?? []).map((r) => r.Revision?.RevisionID));
@@ -130,7 +129,7 @@ export function useFanOutSource(args: {
   );
 
   return useMemo((): FanOutSource => {
-    if (skip || where === undefined) return EMPTY;
+    if (skip || wheres === undefined) return EMPTY;
     if (isError) return { ...EMPTY, status: 'failed' };
     if (revisions === undefined || !ready) return EMPTY;
     // Without the Links every source Unit is shown whole, so a failure to read them is not
@@ -186,5 +185,5 @@ export function useFanOutSource(args: {
       });
     }
     return { status: 'resolved', units, spaceIds, spaceNameBySpaceId };
-  }, [skip, where, isError, revisions, ready, dataFor, startTagId, endTagId, linkWhere, links, linksFailed]);
+  }, [skip, wheres, isError, revisions, ready, dataFor, startTagId, endTagId, linkWhere, links, linksFailed]);
 }

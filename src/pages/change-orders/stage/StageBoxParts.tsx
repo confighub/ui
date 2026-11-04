@@ -2,44 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The parts every status box is built from: the frame (tile, headline, body),
- * sentences with links, the dry-run line, "Go to …", and a failed promotion's
- * items.
- *
- * A problem is the loudest card on the page: a solid amber or red tile with a
- * white glyph, the headline in the palette's dark tone at 700, and the box tinted
- * with a full 1px border. Never a coloured left edge. Calm states keep the white
- * card and a tinted tile.
+ * The parts the Stage log's sentences are built from: sentences with links and
+ * code, a sentence under a line, a tinted note, a quote, and a row of buttons.
  */
 
-import { createContext, useContext, type ReactNode, type Ref } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
+import ButtonBase from '@mui/material/ButtonBase';
 import Link from '@mui/material/Link';
-import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
-import AutorenewIcon from '@mui/icons-material/Autorenew';
-import BlockIcon from '@mui/icons-material/Block';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import ErrorIcon from '@mui/icons-material/Error';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
-import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
-import PublishIcon from '@mui/icons-material/Publish';
-import ScheduleIcon from '@mui/icons-material/Schedule';
-import UndoIcon from '@mui/icons-material/Undo';
-import WarningIcon from '@mui/icons-material/Warning';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 
 import { stageCardCopy } from './stageCardCopy';
 import { hrefOfRef, type LinkResolvers } from './stageLinks';
-import type { CopyLinkRef, CopySegment, DryRunLine, StageBoxLook, StageCardStateKind, StageIconKey, StageTone } from './stageTypes';
-
-/** Under this width the box tightens and its tile shrinks. */
-const NARROW = '@media (max-width: 759.98px)';
+import type { CopyLinkRef, CopySegment, StageTone } from './stageTypes';
 
 // ---------------------------------------------------------------------------
 // Links inside sentences
@@ -96,7 +73,7 @@ function SegmentLink({ part, links }: { part: Extract<CopySegment, { kind: 'link
   // A stage link stays on this ChangeOrder; a Space or Unit opens in a new tab, so the review here is kept.
   const newTab = ref.to === 'space' || ref.to === 'unit' ? { target: '_blank', rel: 'noopener noreferrer' } : {};
   return (
-    <Link component={RouterLink} to={href} title={part.title} sx={sx} {...newTab}>
+    <Link component={RouterLink} to={href} title={part.title} sx={sx} data-link={ref.to} {...newTab}>
       {text}
     </Link>
   );
@@ -126,27 +103,9 @@ export function CopyText({ parts, links, codeInherit = false }: { parts: readonl
   );
 }
 
-/** A link to an app route inside a sentence. It leaves the ChangeOrder, so it opens a new tab. */
-export function ProseLink({ href, children, code = false, weight = 500 }: { href: string; children: ReactNode; code?: boolean; weight?: 400 | 500 }) {
-  return (
-    <Link
-      component={RouterLink}
-      to={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      sx={{ ...proseLinkSx, ...(code ? { ...codeSx, fontWeight: weight } : {}) }}
-    >
-      {children}
-    </Link>
-  );
-}
-
 // ---------------------------------------------------------------------------
-// The box
+// Notes, quotes and actions
 // ---------------------------------------------------------------------------
-
-/** A loud box tints its body and sets its text in ink; a calm one in secondary text. */
-const LoudContext = createContext(false);
 
 const TONE_VARS: Record<StageTone, { bg: string; bd: string; fg: string }> = {
   success: { bg: 'var(--green-bg)', bd: 'var(--green-bd)', fg: 'success.main' },
@@ -154,99 +113,6 @@ const TONE_VARS: Record<StageTone, { bg: string; bd: string; fg: string }> = {
   error: { bg: 'var(--red-bg)', bd: 'var(--red-bd)', fg: 'error.main' },
   neutral: { bg: 'var(--bg-hover)', bd: 'var(--bd0)', fg: 'text.secondary' },
 };
-
-/** Each glyph as [calm, solid]: a problem tile carries the filled variant, in white. */
-const GLYPHS: Record<StageIconKey, [typeof CheckCircleIcon, typeof CheckCircleIcon]> = {
-  check: [CheckCircleIcon, CheckCircleIcon],
-  person: [PersonOutlineIcon, PersonOutlineIcon],
-  upload: [PublishIcon, PublishIcon],
-  error: [ErrorOutlineIcon, ErrorIcon],
-  warning: [WarningAmberIcon, WarningIcon],
-  block: [BlockIcon, BlockIcon],
-  undo: [UndoIcon, UndoIcon],
-  progress: [AutorenewIcon, AutorenewIcon],
-  help: [HelpOutlineIcon, HelpOutlineIcon],
-};
-
-export interface StageStatusBoxProps {
-  look: StageBoxLook;
-  headline: ReactNode;
-  /** `data-stage-state`. */
-  stateKind: StageCardStateKind;
-  /** The box hosts review actions: it is what "Review now" and a copied review link scroll to. */
-  reviewAnchorId?: string;
-  /** The headline, focused after an action that changes the state. */
-  headingRef?: Ref<HTMLHeadingElement>;
-  /** A clock instead of the look's glyph: the stage is waiting, not wrong. */
-  glyph?: 'clock';
-  children?: ReactNode;
-}
-
-/** The frame: a 36px tile, the headline, and the body. */
-export function StageStatusBox({ look, headline, stateKind, reviewAnchorId, headingRef, glyph, children }: StageStatusBoxProps) {
-  const solid = look.tile === 'solid' && (look.tone === 'warning' || look.tone === 'error');
-  const tone = TONE_VARS[look.tone];
-  const Glyph = glyph === 'clock' ? ScheduleIcon : GLYPHS[look.icon][solid ? 1 : 0];
-  return (
-    <Paper
-      elevation={2}
-      component="section"
-      aria-labelledby="stage-status-heading"
-      id={reviewAnchorId}
-      data-testid="stage-status"
-      data-stage-state={stateKind}
-      sx={{
-        minWidth: 0,
-        display: 'grid',
-        gridTemplateColumns: '36px minmax(0, 1fr)',
-        gap: '12px',
-        p: '16px',
-        scrollMarginTop: '16px',
-        ...(solid ? { bgcolor: tone.bg, borderColor: tone.bd } : {}),
-        [NARROW]: { gridTemplateColumns: '28px minmax(0, 1fr)', gap: '10px', p: '14px' },
-        '& button:focus-visible, & summary:focus-visible': { outline: '2px solid var(--rust)', outlineOffset: '2px' },
-      }}
-    >
-      <Box
-        aria-hidden
-        sx={{
-          width: 36,
-          height: 36,
-          boxSizing: 'border-box',
-          borderRadius: 'var(--r-sm)',
-          display: 'grid',
-          placeItems: 'center',
-          border: '1px solid',
-          ...(solid
-            ? { bgcolor: tone.fg, borderColor: tone.fg, color: 'common.white' }
-            : { bgcolor: tone.bg, borderColor: tone.bd, color: tone.fg }),
-          [NARROW]: { width: 28, height: 28 },
-        }}
-      >
-        <Glyph sx={{ fontSize: 20, [NARROW]: { fontSize: 16 } }} />
-      </Box>
-      <Box sx={{ minWidth: 0, overflowWrap: 'anywhere', color: solid ? 'text.primary' : 'text.secondary' }}>
-        <Typography
-          variant="h2"
-          component="h3"
-          id="stage-status-heading"
-          tabIndex={-1}
-          ref={headingRef}
-          sx={{
-            mt: '7px',
-            color: solid ? `${look.tone}.dark` : 'text.primary',
-            fontWeight: solid ? 700 : 600,
-            '&:focus': { outline: 'none' },
-            [NARROW]: { mt: '3px' },
-          }}
-        >
-          {headline}
-        </Typography>
-        <LoudContext.Provider value={solid}>{children}</LoudContext.Provider>
-      </Box>
-    </Paper>
-  );
-}
 
 /** A sentence of the box's body. */
 export function StatusText({ children, testId, held, sx }: { children: ReactNode; testId?: string; held?: boolean; sx?: object }) {
@@ -303,111 +169,38 @@ export function QuoteBlock({ byline, children, testId }: { byline: ReactNode; ch
   );
 }
 
-/** The dry-run line (`data-testid="stage-dry-run"`). An icon only when it fails or cannot tell. */
-export function DryRunLineView({ line, children }: { line: Pick<DryRunLine, 'mode' | 'text' | 'icon' | 'fidelity'>; children?: ReactNode }) {
-  const loud = useContext(LoudContext);
-  if (line.text === null && children === undefined) return null;
-  return (
-    <Typography
-      component="p"
-      variant="body2"
-      data-testid="stage-dry-run"
-      data-dry-run={line.mode}
-      data-fidelity={line.fidelity}
-      sx={{ display: 'flex', gap: '6px', alignItems: 'flex-start', mt: loud ? '12px' : '4px', color: 'inherit' }}
-    >
-      {line.icon === 'fail' ? <ErrorOutlineIcon aria-hidden sx={{ fontSize: 14, mt: '2px', color: 'error.main' }} /> : null}
-      {line.icon === 'warn' ? <WarningAmberIcon aria-hidden sx={{ fontSize: 14, mt: '2px', color: 'warning.main' }} /> : null}
-      <Box component="span" sx={{ minWidth: 0 }}>
-        {line.text}
-        {children}
-      </Box>
-    </Typography>
-  );
-}
-
-/**
- * The dry-run line, with a way to run it again. When the dry run could not
- * answer, the line stays plain and ends in a "Check again" link, so the main
- * button below it does not move. When it failed, Promote is withheld and
- * "Check again" is the box's action.
- */
-export function DryRunCheck({ line, onCheckAgain }: { line: DryRunLine; onCheckAgain?: () => void }) {
-  if (line.mode === 'unavailable' && onCheckAgain !== undefined) {
-    return (
-      <DryRunLineView line={{ ...line, icon: 'none' }}>
-        {' '}
-        <Link component="button" type="button" onClick={onCheckAgain} data-testid="stage-check-again" sx={{ ...proseLinkSx, verticalAlign: 'baseline' }}>
-          {stageCardCopy.merge.checkAgain}
-        </Link>
-      </DryRunLineView>
-    );
-  }
-  return (
-    <>
-      <DryRunLineView line={line} />
-      {line.mode === 'fails' && onCheckAgain !== undefined ? (
-        <StatusActions>
-          <Button variant="outlined" color="inherit" onClick={onCheckAgain} data-testid="stage-check-again" sx={{ bgcolor: 'background.paper' }}>
-            {stageCardCopy.merge.checkAgain}
-          </Button>
-        </StatusActions>
-      ) : null}
-    </>
-  );
-}
-
-/** Spaces as links, in a sentence: "a", "a and b", "a, b and c". */
-export function SpaceList({ spaces, links }: { spaces: readonly { spaceId: string; name: string }[]; links?: StageLinks }) {
-  const parts: CopySegment[] = [];
-  spaces.forEach((space, i) => {
-    if (i > 0) parts.push({ kind: 'text', text: i === spaces.length - 1 ? ' and ' : ', ' });
-    parts.push({ kind: 'link', text: space.name, ref: { to: 'space', spaceId: space.spaceId } });
-  });
-  return <CopyText parts={parts} links={links} />;
-}
-
-/** Where "Go to …" leads. */
-export interface NextStep {
-  /** A stage name, or `null` for the Complete step. */
-  name: string | null;
-  href: string;
-}
-
-/** "Go to Test →": a text button that is a link. `label` says it another way ("Go to {previous}"). */
-export function GoToNext({ next, label, testId = 'stage-go-next' }: { next: NextStep; label?: string; testId?: string }) {
-  return (
-    <Button
-      component={RouterLink}
-      to={next.href}
-      variant="text"
-      endIcon={<ArrowForwardIcon sx={{ fontSize: '16px !important' }} />}
-      data-testid={testId}
-      sx={{ ml: '-10px', px: '10px', color: 'text.primary', '&:hover': { bgcolor: 'var(--bg-hover)' }, '&:focus-visible': { outline: '2px solid var(--rust)', outlineOffset: '2px' } }}
-    >
-      {label ?? (next.name === null ? stageCardCopy.goToComplete : stageCardCopy.goTo(next.name))}
-    </Button>
-  );
-}
-
 /** A row of buttons under the body. */
 export function StatusActions({ children }: { children: ReactNode }) {
   return <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', mt: '12px' }}>{children}</Box>;
 }
 
-/** The source stage says so in one line at the card's edge, with no box: there is nothing to do there. */
-export function StageSourceLine({ invocation, next }: { invocation: boolean; next: NextStep | null }) {
+/**
+ * "a, b and c": Spaces as links. With `limit`, the first `limit` and then "and N more", which
+ * shows the rest: a review can read 50 Spaces.
+ */
+export function SpaceList({ spaces, links, limit }: { spaces: readonly { spaceId: string; name: string }[]; links?: StageLinks; limit?: number }) {
+  const [all, setAll] = useState(false);
+  const cut = limit !== undefined && !all && spaces.length > limit;
+  const shown = cut ? spaces.slice(0, limit) : spaces;
+  const parts: CopySegment[] = [];
+  shown.forEach((space, i) => {
+    if (i > 0) parts.push({ kind: 'text', text: !cut && i === shown.length - 1 ? ' and ' : ', ' });
+    parts.push({ kind: 'link', text: space.name, ref: { to: 'space', spaceId: space.spaceId } });
+  });
   return (
-    <Typography
-      component="p"
-      variant="body2"
-      data-testid="stage-status"
-      data-stage-state={invocation ? 'invocationSource' : 'source'}
-      sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', alignItems: 'center', color: 'text.secondary', pt: '2px', pl: '1px' }}
-    >
-      <span>{invocation ? stageCardCopy.body.invocationSource : stageCardCopy.body.source}</span>
-      {next !== null ? <GoToNext next={next} /> : null}
-    </Typography>
+    <>
+      <CopyText parts={parts} links={links} />
+      {cut ? (
+        <>
+          {' '}
+          <ButtonBase
+            onClick={() => setAll(true)}
+            sx={{ font: 'inherit', fontSize: '11.5px', fontWeight: 600, color: 'text.secondary', verticalAlign: 'baseline', borderRadius: '3px', '&:hover': { color: 'text.primary' }, '&.Mui-focusVisible': { outline: '2px solid var(--rust)', outlineOffset: '2px' } }}
+          >
+            {stageCardCopy.reviewRow.andMore(spaces.length - shown.length)}
+          </ButtonBase>
+        </>
+      ) : null}
+    </>
   );
 }
-

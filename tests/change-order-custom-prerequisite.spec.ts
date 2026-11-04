@@ -26,7 +26,6 @@ import {
   type ChangeOrderFixture,
   buildChangeOrderFixture,
 } from './fixtures/change-order-fixture';
-import { changeOrderCopy } from '../src/pages/x/apps/change-order/changeOrderCopy';
 
 /** The stage whose only prerequisite is the declared check. */
 const GATED_STAGE = 'prod';
@@ -63,8 +62,6 @@ test.describe('a stage gating on a declared custom prerequisite', () => {
     }
   });
 
-  const gateTestId = `${GATED_STAGE}-custom-prerequisite:${CUSTOM_PREREQUISITE.Name}`;
-
   /*
    * HELD, THEN PROMOTED, on one ChangeOrder. The check is held by the server's
    * verdict while `dev` carries no sign-off, and once it is signed off the
@@ -81,24 +78,18 @@ test.describe('a stage gating on a declared custom prerequisite', () => {
     const box = page.getByTestId('stage-status');
 
     // `dev` carries no sign-off annotation, so the server finds the check
-    // unsatisfied, and the stage is HELD by that verdict: the box says which
-    // gate failed and offers no Promote, not even a disabled one.
-    await expect(page.getByTestId(`change-order-gate-tag-${gateTestId}`)).toHaveText(
-      changeOrderCopy.gateTag.unsatisfied,
-      { timeout: 30_000 },
-    );
+    // unsatisfied, and the stage is HELD by that verdict: its line in the log is
+    // red, the pill names it, and Promote is locked, waiting for it.
+    const red = page.locator('[data-testid^="log-gate-"][data-tone="bad"]');
+    await expect(red).toContainText(`${CUSTOM_PREREQUISITE.Name} Failed`, { timeout: 30_000 });
     await expect(box).toHaveAttribute('data-stage-state', 'gateFailed');
     await expect(page.locator('#stage-status-heading')).toContainText(CUSTOM_PREREQUISITE.Name);
     await expect(page.locator(`[data-promote-stage="${GATED_STAGE}"]`)).toHaveCount(0);
+    await expect(page.getByTestId('open-promote')).toContainText(`Waiting for ${CUSTOM_PREREQUISITE.Name}`);
 
-    // Named, so a reader can match the row to the line in the workflow, and
-    // carrying the author's own description, which the server's message lacks.
-    // The box gives the reason, so the row opens on a click rather than repeating it.
-    await expect(page.getByText(`check/${CUSTOM_PREREQUISITE.Name}`).first()).toBeVisible();
-    const gateRow = page.getByTestId(`change-order-gate-${gateTestId}`);
-    const toggle = gateRow.locator('[aria-expanded]').first();
-    if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
-    await expect(gateRow.getByText(CUSTOM_PREREQUISITE.Description).first()).toBeVisible();
+    // Named as the workflow names it, and carrying the author's own description,
+    // which the server's message lacks, as what it needs.
+    await expect(red).toContainText(`Needs ${CUSTOM_PREREQUISITE.Description}`);
     expect(consoleErrors, 'a declared check must not crash the page').toEqual([]);
 
     // The prod Spaces take from `staging`, which this workflow has no stage
@@ -113,17 +104,13 @@ test.describe('a stage gating on a declared custom prerequisite', () => {
     }
 
     await page.goto(`${fx.changeOrderPath}/${GATED_STAGE}`);
-    // Every gate holding: the mandatory `check/promoted` and the declared check,
-    // both satisfied by the server's answer, each a row of its own.
-    const gates = page.getByTestId('stage-gates');
-    await expect(page.getByTestId(`change-order-gate-tag-${gateTestId}`)).toHaveText(
-      changeOrderCopy.gateTag.satisfied,
-      { timeout: 30_000 },
-    );
-    await expect(gates.locator(`[data-testid^="change-order-gate-tag-${GATED_STAGE}-"]`)).toHaveText([
-      changeOrderCopy.gateTag.satisfied,
-      changeOrderCopy.gateTag.satisfied,
-    ]);
+    // The declared check is satisfied by the server's answer: a passed line, by
+    // "auto", with what it checks. (The mandatory `check/promoted` is the arrival line.)
+    const passed = page.locator('[data-testid^="log-gate-"]');
+    await expect(passed).toHaveCount(1);
+    await expect(passed).toHaveAttribute('data-tone', 'okDone', { timeout: 30_000 });
+    await expect(passed).toContainText(`${CUSTOM_PREREQUISITE.Name} Passed — ${CUSTOM_PREREQUISITE.Description}`);
+    await expect(passed).toContainText('auto');
     await expect(box).toHaveAttribute('data-stage-state', 'ready');
 
     // No Space here has a Target (`releasable: false`), so Promote is a plain

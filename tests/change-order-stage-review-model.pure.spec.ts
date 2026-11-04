@@ -19,6 +19,8 @@
  */
 import { expect, test } from '@playwright/test';
 
+import { logTime } from '../src/pages/change-orders/reviews/reviewCopy';
+
 import { COMPLETE_STAGE_ID } from '../src/pages/change-orders/changeOrderCompleteStep';
 import type {
   GateReviewSummary,
@@ -31,6 +33,9 @@ import type {
 } from '../src/pages/change-orders/reviews/changeOrderReviewTypes';
 import {
   decisionCountsFor,
+  decisionsSummary,
+  needOutsideHeld,
+  detailsReviews,
   flowNeedsConfirmDialog,
   flowShowsForm,
   rejection,
@@ -39,7 +44,6 @@ import {
   reviewerRows,
   reviewerStatusText,
   stageSectionGates,
-  subjectReviews,
   viewerFlow,
 } from '../src/pages/change-orders/stage/stageReviewModel';
 import { reviewTime } from '../src/pages/change-orders/reviews/reviewCopy';
@@ -206,15 +210,6 @@ test.describe('stageSectionGates: one form per gate, over a whole promotion', ()
     expect(stageSectionGates(summaries, 'staging', verdictOf).map((s) => s.gate.key)).toEqual(['release:staging']);
     expect(stageSectionGates(summaries, 'prod', verdictOf).map((s) => s.gate.key)).toEqual(['entry:prod']);
   });
-
-  test('the subject stage lists the review hosted elsewhere, read-only, with where it is', () => {
-    const verdictOf = (id: string) => ({ dev: 'released', staging: 'released', prod: 'waiting' })[id] as ChangeOrderStageVerdict;
-    const listed = subjectReviews(summaries, 'staging', verdictOf);
-    expect(listed.map((x) => [x.summary.gate.key, x.actionStageId])).toEqual([['entry:prod', 'prod']]);
-    // While the subject has not landed, no card hosts it yet.
-    const early = subjectReviews(summaries, 'staging', () => 'waiting');
-    expect(early.map((x) => x.actionStageId)).toEqual([undefined]);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -321,7 +316,15 @@ test.describe('a requirement lists only the decisions that count toward it', () 
   test('a decision of another Type goes under that Type’s row', () => {
     const other = decision({ type: 'Security', countsToward: [], byRequirement: {} });
     expect(decisionCountsFor(other, security)).toBe(false);
-    expect(decisionCountsFor(other, requirement({ rules: { ...security.rules, type: 'Security' } }))).toBe(true);
+    // The server has not evaluated that row: nothing says the decision does not count, so it is listed.
+    expect(decisionCountsFor(other, requirement({ rules: { ...security.rules, type: 'Security' }, evaluated: false }))).toBe(true);
+  });
+
+  test('a row the server evaluated, with no entry for the decision, does not list it as Approved', () => {
+    const unnamed = decision({ countsToward: [], byRequirement: {} });
+    expect(decisionCountsFor(unnamed, requirement({ evaluated: true }))).toBe(false);
+    const s = gateSummary('entry', 'prod', 'staging', { requirements: [requirement({ evaluated: true })], decisions: [unnamed] });
+    expect(reviewerRows(s, 3, s.requirements[0]).rows.filter((r) => r.status === 'approved')).toEqual([]);
   });
 
   test('a rejection is listed where it blocks', () => {
@@ -365,20 +368,22 @@ test.describe('viewerFlow: decisions that do not count, and authors', () => {
     expect(flow.ownNotCounted).toEqual([]);
   });
 
-  test('where the requirement accepts authors, an author is told they can review it', () => {
+  test('where the requirement accepts authors, the author fact is behind the (i), not a line of its own', () => {
     const allowed = withEligibility(
       { kind: 'counts', types: ['Approval'], requirementNames: ['prod-approval'] },
       { requirements: [requirement({ rules: { ...requirement().rules, allowAuthors: true } })] },
     );
     const flow = viewerFlow(allowed, { Approval: coverage([{ authored: true }]) });
     expect(flow).toMatchObject({ kind: 'form', authorsMayApprove: true });
-    expect(flow.authorNote).toBe('You wrote part of this change in s. Authors may approve here, so you can review it.');
-    expect(flow.authorNote).not.toContain('does not count');
+    // Nothing to act on: no line under the review, only the (i)'s short text.
+    expect(flow.authorNote).toBeUndefined();
+    expect(flow.authorInfo).toBe('You wrote part of this change. Authors may approve here.');
   });
 
   test('a viewer who wrote none of it gets no author note', () => {
     const flow = viewerFlow(withEligibility({ kind: 'counts', types: ['Approval'], requirementNames: ['prod-approval'] }), { Approval: coverage([{ authored: false }]) });
     expect(flow.authorNote).toBeUndefined();
+    expect(flow.authorInfo).toBeUndefined();
   });
 });
 
@@ -428,3 +433,100 @@ test.describe('reviewer rows and asides', () => {
     expect(rejection(gateSummary('entry', 'prod', 'staging'))).toBeUndefined();
   });
 });
+
+test.describe('detailsReviews', () => {
+  // The entry and the release review of Public can carry the same name (prod-approval on both, as in prod).
+  const entry = gateSummary('entry', 'prod', 'staging', { requirements: [requirement()] });
+  const release = gateSummary('release', 'prod', 'prod', {
+    requirements: [
+      requirement({
+        gate: { kind: 'release', stageId: 'prod', stageName: 'prod', key: 'release:prod' },
+        evaluated: false,
+      }),
+    ],
+  });
+
+  test('both reviews are listed, entry first, and only the release review is not reached before the promote, matched by gate not by name', () => {
+    const { requirements, notReachedGateKeys } = detailsReviews(entry, entry, release, true);
+    expect(requirements.map((r) => [r.gate.key, r.name])).toEqual([
+      ['entry:prod', 'prod-approval'],
+      ['release:prod', 'prod-approval'],
+    ]);
+    expect(notReachedGateKeys).toEqual(['release:prod']);
+    expect(
+      requirements
+        .filter((r) => notReachedGateKeys.includes(r.gate.key))
+        .map((r) => r.gate.key),
+    ).toEqual(['release:prod']);
+  });
+
+  test('after the promote the card hosts the release review: the entry review is still listed first, nothing is not-reached', () => {
+    const { summaries, notReachedGateKeys } = detailsReviews(release, entry, release, false);
+    expect(summaries.map((s) => s.gate.key)).toEqual(['entry:prod', 'release:prod']);
+    expect(notReachedGateKeys).toEqual([]);
+  });
+
+  test('a stage with one review lists it once', () => {
+    expect(
+      detailsReviews(entry, entry, undefined, true).summaries.map((s) => s.gate.key),
+    ).toEqual(['entry:prod']);
+  });
+});
+
+test('the Decisions bar counts decisions the server counts, not live records', () => {
+  const counted = decision({ id: 'a', countsToward: ['prod-approval'] });
+  const namedNowhere = decision({ id: 'b', countsToward: [], byRequirement: {} });
+  const rejection = decision({ id: 'c', result: 'Fail', countsToward: ['prod-approval'] });
+  const withdrawn = decision({ id: 'd', live: false, countsToward: [] });
+  expect(decisionsSummary([counted, namedNowhere])).toBe('1 approved · 1 not counted');
+  expect(decisionsSummary([counted, rejection, withdrawn])).toBe('1 approved · 1 rejected · 1 not counted');
+  expect(decisionsSummary([namedNowhere])).toBe('1 not counted');
+});
+
+test('the viewer who may decide is listed first among the reviewers, though no rule names them (H7)', () => {
+  const jesper = person('jesper');
+  const s = gateSummary('entry', 'prod', 'staging', { whoCanStillApprove: [{ person: jesper }] as GateReviewSummary['whoCanStillApprove'] });
+  expect(reviewerRows(s, 3, s.requirements[0]).rows.map((r) => r.person.userId)).toEqual(['jesper']);
+  const rows = reviewerRows(s, 3, s.requirements[0], YOU).rows;
+  expect(rows.map((r) => [r.person.userId, r.status])).toEqual([
+    [YOU.userId, 'notReviewed'],
+    ['jesper', 'notReviewed'],
+  ]);
+  // Once the viewer decided, the decision row is theirs, not a second "not reviewed" row.
+  const decided = gateSummary('entry', 'prod', 'staging', { decisions: [decision({ person: YOU })] });
+  expect(reviewerRows(decided, 3, decided.requirements[0], YOU).rows.filter((r) => r.person.userId === YOU.userId)).toHaveLength(1);
+});
+
+test('Review details times: the clock today, the date and the clock on another day', () => {
+  // Built in local time, so the dates are the same under any timezone.
+  const now = new Date(2026, 10, 2, 15, 0).getTime();
+  const today = logTime(new Date(2026, 10, 2, 14, 20).toISOString(), now);
+  expect(today).toMatch(/^\d{2}:\d{2}$/);
+  const earlier = logTime(new Date(2026, 9, 26, 14, 20).toISOString(), now);
+  expect(earlier).toMatch(/^\d{1,2} [A-Z][a-z]{2}, \d{2}:\d{2}$/);
+  expect(logTime(undefined, now)).toBe('');
+});
+
+test('a Space held with nothing to approve drops out of "more needed", another Space that needs approvals still counts', () => {
+  const space = (spaceSlug: string, counted: number) => ({
+    spaceId: spaceSlug,
+    spaceSlug,
+    evaluated: true,
+    satisfied: false,
+    required: 1,
+    counted,
+    revisions: 1,
+    satisfiedRevisions: 0,
+    unsatisfied: [],
+    truncated: false,
+    authors: [],
+  });
+  const heldFor = { spaceSlug: 'staging-a', spaceSlugs: ['staging-a'], text: 'Nothing in staging-a to approve for this change.' };
+  // staging-a is held (nothing to read); staging-b still needs 1 approval.
+  expect(needOutsideHeld(requirement({ need: 1, heldFor, perSpace: [space('staging-a', 0), space('staging-b', 0)] }))).toBe(1);
+  // Only the held Space is short: nothing an approval can change is needed.
+  expect(needOutsideHeld(requirement({ need: 1, heldFor, perSpace: [space('staging-a', 0), space('staging-b', 1)] }))).toBe(0);
+  // No held Space: the requirement's own count.
+  expect(needOutsideHeld(requirement({ need: 2 }))).toBe(2);
+});
+

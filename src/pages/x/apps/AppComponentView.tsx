@@ -154,7 +154,7 @@ const RUNNING_RELEASE_POLL_MS = 5_000;
 // was made in (see changeSets.ts). Shared by every units-fetching batch
 // (the chunked SpaceID read and the upstream-outside-set UnitID lookup) so they all narrow the payload identically.
 const UNITS_QUERY_SELECT =
-  'UnitID,Slug,SpaceID,TargetID,Unreleasable,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ValidationWarnings,ValidationResults,ToolchainType,DataHash,DataSize,ChangeSetID,'
+  'UnitID,Slug,SpaceID,TargetID,Unreleasable,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ValidationWarnings,ValidationResults,ValidationTriggerIDs,ToolchainType,DataHash,DataSize,ChangeSetID,'
   + 'HeadRevision.RevisionID,HeadRevision.CreatedAt,HeadRevision.Description,HeadRevision.ChangeSetID,LastReleasedRevision.RevisionID';
 const UNITS_QUERY_INCLUDE = 'SpaceID,TargetID,UpstreamUnitID,HeadRevisionNum,LastReleasedRevisionNum';
 
@@ -237,7 +237,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   // tab and leave the user to find it.
   const [tabFocus, setTabFocus] = useState<{
     id: string;
-    tab: 'config' | 'releases' | 'changeset';
+    tab: 'config' | 'releases' | 'changeset' | 'gates';
     nonce: number;
     releaseNum?: number;
   } | null>(null);
@@ -1351,7 +1351,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   // peeks. Unlike handleDeploymentToggle, re-invoking on the already-open node
   // never closes it — it just (re)focuses the requested tab via the nonce.
   const handleOpenTab = useCallback(
-    (deploymentId: string, tab: 'config' | 'releases' | 'changeset', releaseNum?: number) => {
+    (deploymentId: string, tab: 'config' | 'releases' | 'changeset' | 'gates', releaseNum?: number) => {
       if (composerParentId != null) {
         const phase = composerPhaseRef.current;
         if (phase === 'inFlight') return;
@@ -1986,6 +1986,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
                 onCompareSelectionChange={onCompareSelectionChange}
                 isUnitDataFetching={isUnitDataFetching}
                 tabFocus={tabFocus}
+                onOpenTab={handleOpenTab}
                 width={sidePaneWidth}
                 defaultWidth={DEFAULT_SIDE_PANE_WIDTH}
                 onWidthChange={setSidePaneWidth}

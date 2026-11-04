@@ -2,16 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The selected stage's card: the stage name, then two columns. The main column is
- * the change and the one box that says the stage's state and holds its action;
- * the sidebar holds the stage's facts (gates and reviews, Spaces, Targets).
+ * The selected stage's card, in one column: the stage name with its status pill,
+ * the change ("What this promotion writes" and the Full diff), then the Stage log
+ * (what happened, Now, what still has to happen, each with its own button).
  *
- * The state is said once, in the status box. Outcomes are announced through the
- * page's live region (`announce`); the card has none of its own, so a screen
- * reader never hears one event from two places.
+ * The state is said at a glance by the pill and in full by the log. Outcomes are
+ * announced through the page's live region (`announce`); the card has none of its
+ * own, so a screen reader never hears one event from two places.
  *
- * A done stage says so and offers nothing. A disabled Promote on a released
- * stage would need a reason beside it, and the box already is that reason.
+ * A done stage says so and offers nothing: the log ends with where to go next.
  */
 
 import { forwardRef, useImperativeHandle, type CSSProperties, type RefObject } from 'react';
@@ -34,13 +33,12 @@ import type {
 } from '../reviews/changeOrderReviewTypes';
 import type { ChangeOrderStageState } from '../../x/apps/change-order/changeOrderTypes';
 import { StageChangeCard } from './StageChangeCard';
+import { StageLog } from './StageLog';
+import { StageLogPill } from './StageLogPill';
 import { StageOutcomeBoxes } from './StageOutcomeBoxes';
-import { StageFailureBox, StageHeldBox, StageProblemBox } from './StageProblem';
-import { StageReviewBox } from './StageReviewActions';
-import { StageSidebar } from './StageSidebar';
-import { StageStateBox } from './StageStatusBox';
 import { stageCardCopy } from './stageCardCopy';
-import { useStageCardModel, type StageCardModel } from './useStageCardModel';
+import { useStageCardModel } from './useStageCardModel';
+import { useStageLog } from './useStageLog';
 
 /** What the page holds for drawing a Unit's diff, shared with its other diffs so their columns line up. */
 export interface StageSectionDiffDeps {
@@ -76,113 +74,6 @@ export interface StageSectionHandle {
   revealDiff: () => void;
 }
 
-/** Under this width the sidebar goes below the main column. */
-const ONE_COLUMN = '@media (max-width: 759.98px)';
-const NARROW_GAP = '@media (max-width: 1179.98px)';
-
-/** The status box for the card's state. Each review, problem and failure has a box of its own. */
-function StatusBox({ model, props }: { model: StageCardModel; props: StageSectionProps }) {
-  const { state, look, stage, links, nameOfSpace, nameOfUnit, headingRef, merge, dryRunLine } = model;
-  const checkAgain = () => void model.recheck();
-  switch (state.kind) {
-    case 'reviewNeeded':
-    case 'reviewWaiting':
-    case 'reviewApproved':
-    case 'reviewRejected': {
-      const summary = model.review.summary;
-      if (summary === undefined) return null;
-      return (
-        <StageReviewBox
-          state={state}
-          look={look}
-          stage={stage}
-          summary={summary}
-          reviews={model.review.reviews}
-          orderSlug={props.detail.slug}
-          now={props.now}
-          links={links}
-          nameOfSpace={nameOfSpace}
-          nameOfUnit={nameOfUnit}
-          otherGatesHolding={model.review.otherGatesHolding}
-          gateSpaces={model.gateSpaces}
-          approveRef={props.approveRef}
-          headingRef={headingRef}
-          announce={props.announce}
-          onAskedAgain={model.review.onAskedAgain}
-          onRecorded={model.review.onRecorded}
-        />
-      );
-    }
-    case 'gateFailed':
-    case 'serverHeld':
-      return (
-        <StageHeldBox
-          state={state}
-          look={look}
-          stage={stage}
-          links={links}
-          nameOfSpace={nameOfSpace}
-          gateCheckedAt={model.gateCheckedAt}
-          gateSpaces={model.gateSpaces}
-          headingRef={headingRef}
-        />
-      );
-    case 'problem':
-      return (
-        <StageProblemBox
-          problems={state.problems}
-          spaceCount={model.spaceCount}
-          look={look}
-          stage={stage}
-          links={links}
-          nameOfSpace={nameOfSpace}
-          nameOfUnit={nameOfUnit}
-          dryRun={dryRunLine}
-          onCheckAgain={checkAgain}
-          {...(merge === undefined ? {} : { merge })}
-          headingRef={headingRef}
-        />
-      );
-    case 'failed':
-      return (
-        <StageFailureBox
-          failure={state.failure}
-          canRetry={state.canRetry}
-          look={look}
-          stage={stage}
-          links={links}
-          nameOfSpace={nameOfSpace}
-          dryRun={dryRunLine}
-          onCheckAgain={checkAgain}
-          {...(merge === undefined ? {} : { merge })}
-          headingRef={headingRef}
-        />
-      );
-    default:
-      return (
-        <StageStateBox
-          state={state}
-          look={look}
-          stage={stage}
-          next={model.next}
-          links={links}
-          nameOfSpace={nameOfSpace}
-          bylines={model.bylines}
-          now={props.now}
-          dryRun={dryRunLine}
-          releaseText={model.releaseText}
-          progress={model.progress}
-          onCheckAgain={checkAgain}
-          nameOfUnit={nameOfUnit}
-          gateCheckedAt={model.gateCheckedAt}
-          gateSpaces={model.gateSpaces}
-          {...(merge === undefined ? {} : { merge })}
-          headingRef={headingRef}
-        />
-      );
-  }
-}
-
 export const StageSection = forwardRef<StageSectionHandle, StageSectionProps>(function StageSection(props, ref) {
   const { detail, stage, changes, diffDeps } = props;
   const model = useStageCardModel({
@@ -204,6 +95,7 @@ export const StageSection = forwardRef<StageSectionHandle, StageSectionProps>(fu
    */
   useImperativeHandle(ref, () => ({ revealDiff: () => window.setTimeout(diff.reveal, 0) }), [diff.reveal]);
 
+  const log = useStageLog({ model, detail, stage, history: props.history, coReviews: props.coReviews });
   const invocationSource = model.state.kind === 'invocationSource' && detail.invocationSource !== undefined;
   return (
     <Box
@@ -214,26 +106,24 @@ export const StageSection = forwardRef<StageSectionHandle, StageSectionProps>(fu
       data-stage={model.stage.id}
       sx={{ mt: '28px', fontFamily: 'var(--font-sans)', color: 'text.primary' }}
     >
-      {/* The stage name at the design's largest size; an h2, since the ChangeOrder's slug is the page's h1. */}
-      <Typography variant="h1" component="h2" sx={{ mb: '16px', overflowWrap: 'anywhere' }}>
-        {model.stage.name}
-      </Typography>
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 7fr) minmax(260px, 3fr)',
-          gap: '24px',
-          alignItems: 'start',
-          [NARROW_GAP]: { gap: '20px' },
-          [ONE_COLUMN]: { gridTemplateColumns: 'minmax(0, 1fr)' },
-        }}
-      >
-        {/* One track that may shrink: an auto track grows to its widest unbreakable line (a path, an image tag) and runs under the sidebar. */}
-        <Box sx={{ minWidth: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '16px' }}>
-          {/* An Invocation's source writes nothing itself: the card shows the Invocation each stage runs as it is promoted. */}
-          {invocationSource && detail.invocationSource !== undefined ? (
+      {/* "Stage: Test" at the design's largest size; an h2, since the ChangeOrder's slug is the page's h1. The word is quieter than the name. */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px', mb: '14px' }}>
+        <Typography variant="h1" component="h2" data-testid="stage-name" sx={{ m: 0, minWidth: 0, overflowWrap: 'anywhere' }}>
+          <Box component="span" sx={{ color: 'text.secondary', fontWeight: 'fontWeightRegular' }}>
+            {stageCardCopy.stageHeadingLead}
+          </Box>{' '}
+          {model.stage.name}
+        </Typography>
+        <StageLogPill pill={log.pill} headingRef={model.headingRef} />
+      </Box>
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '12px', mb: '16px', '&:empty': { display: 'none' } }}>
+        {/* An Invocation's source writes nothing itself: the card shows the Invocation each stage runs as it is promoted. */}
+        {invocationSource && detail.invocationSource !== undefined ? (
+          <Box data-testid="invocation-card">
             <InvocationSourceDetails source={detail.invocationSource} />
-          ) : (
+          </Box>
+        ) : log.view.hideChangeCard ? null : (
+          <Box data-testid="change-card">
             <StageChangeCard
               written={model.change.written}
               scope={model.change.scope}
@@ -262,29 +152,22 @@ export const StageSection = forwardRef<StageSectionHandle, StageSectionProps>(fu
                 onShowInDiff={diff.openAt}
               />
             </StageChangeCard>
-          )}
-          {/* Keyed by stage: a method chosen, a confirm or a form open on one stage never carries over to another. */}
-          <StatusBox key={model.stage.id} model={model} props={props} />
-        </Box>
-        <StageSidebar
-          stageId={model.stage.id}
-          gates={model.sidebar.gates}
-          gateDetails={model.sidebar.gateDetails}
-          waitingGateIds={model.sidebar.waitingGateIds}
-          gateIdsInBox={model.sidebar.gateIdsInBox}
-          reviewAnchor={model.sidebar.reviewAnchor}
-          gatesPending={model.sidebar.pending}
-          reviews={model.sidebar.reviews}
-          subjectReviews={model.sidebar.subjectReviews}
-          workflow={props.workflow}
-          spaces={model.sidebar.spaces}
-          marks={model.sidebar.marks}
-          targets={model.sidebar.targets}
-          links={model.links}
-          now={props.now}
-          onNotice={props.onNotice}
-        />
+          </Box>
+        )}
       </Box>
+      {/* Keyed by stage: a choice, a confirm or a form open on one stage never carries over to another. */}
+      <StageLog
+        key={model.stage.id}
+        view={log.view}
+        entryReview={log.entrySummary}
+        releaseReview={log.releaseSummary}
+        onNotice={props.onNotice}
+        model={model}
+        orderSlug={detail.slug}
+        now={props.now}
+        approveRef={props.approveRef}
+        announce={props.announce}
+      />
     </Box>
   );
 });

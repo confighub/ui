@@ -36,6 +36,7 @@ import {
   promoteAndReleaseResult,
   promoteFailureResult,
   promotePrecheck,
+  releaseGatesHolding,
   summarisePromote,
   whereSpaceOf,
 } from '../src/pages/x/apps/change-order/useChangeOrderActions';
@@ -752,4 +753,17 @@ test('a promote refused at its gates says so in gatesHolding', () => {
   const result = promotePrecheck('co-1', 'base-1', ['s1'], { failedGateCount: 1 });
   expect(result?.gatesHolding).toBe(changeOrderCopy.promoteHeld.refused);
   expect(promotePrecheck('co-1', 'base-1', [], { failedGateCount: 1 })?.gatesHolding).toBeUndefined();
+});
+
+test('a Release refused by a release prerequisite (422 with an unmet Gate) is a hold; other refusals are not (#6154)', () => {
+  const held = { status: 422, data: { Message: 'unable to publish', Gates: [{ Prerequisite: 'release-ok', Satisfied: false, Message: 'release-ok needs 1 approval' }] } };
+  expect(releaseGatesHolding(held)).toBe('release-ok needs 1 approval');
+  // A 422 whose gates all hold is not a prerequisite refusal.
+  expect(releaseGatesHolding({ status: 422, data: { Gates: [{ Prerequisite: 'release-ok', Satisfied: true }] } })).toBeNull();
+  // A 422 with no Gates, a 500 and a 409 stay failures.
+  expect(releaseGatesHolding({ status: 422, data: { message: 'bad request' } })).toBeNull();
+  expect(releaseGatesHolding({ status: 500, data: { Gates: [{ Satisfied: false, Message: 'x' }] } })).toBeNull();
+  expect(releaseGatesHolding({ status: 409, data: 'conflict' })).toBeNull();
+  // An unmet gate with no message is still named as a hold.
+  expect(releaseGatesHolding({ status: 422, data: { Gates: [{ Satisfied: false }] } })).toBe(changeOrderCopy.promoteHeld.generic);
 });

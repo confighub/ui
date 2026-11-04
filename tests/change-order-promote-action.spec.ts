@@ -104,17 +104,12 @@ async function openAtDev(page: Page, fx: ChangeOrderFixture): Promise<void> {
  *
  * A stage with nothing wrong promotes on the click (`data-one-click`); a retry,
  * an "…anyway" or a dry run that could not answer opens the confirm in place.
- *
- * `method: 'p'` presses "Promote only", the button beside the main one. Every
- * test whose stubbed promotion SUCCEEDS promotes only: "Promote and release" would
- * go on to a real release, which would leave `dev` released for the tests after it.
+ * Promote only promotes: Release is a line of its own in the Stage log, so no
+ * test here goes on to a real release.
  */
-async function promoteStage(page: Page, { stage = 'dev', method = 'pr' }: { stage?: string; method?: 'pr' | 'p' } = {}): Promise<void> {
+async function promoteStage(page: Page, { stage = 'dev' }: { stage?: string } = {}): Promise<void> {
   await expect(page.locator(`[data-promote-stage="${stage}"]`)).toBeVisible();
-  const button =
-    method === 'p'
-      ? page.locator('[data-testid="stage-merge-other"][data-method="p"]')
-      : page.locator(`[data-testid="stage-merge"][data-promote-stage="${stage}"]`);
+  const button = page.locator(`[data-testid="stage-merge"][data-promote-stage="${stage}"]`);
   // Read once the dry run has answered: before that, the stage cannot say it needs no confirm.
   const oneClick = await expect(button)
     .toHaveAttribute('data-one-click', 'true', { timeout: 20000 })
@@ -221,7 +216,7 @@ test.describe('ChangeOrder mode — the Promote button', () => {
 
     await openAtDev(page, fx);
 
-    await promoteStage(page, { method: 'p' });
+    await promoteStage(page);
 
     const error = page.getByTestId('change-order-foot-error');
     await expect(error).toBeVisible({ timeout: 30000 });
@@ -321,7 +316,7 @@ test.describe('ChangeOrder mode — the Promote button', () => {
     );
 
     await openAtDev(page, fx);
-    await promoteStage(page, { method: 'p' });
+    await promoteStage(page);
 
     const error = page.getByTestId('change-order-foot-error');
     await expect(error).toBeVisible({ timeout: 30000 });
@@ -400,7 +395,7 @@ test.describe('ChangeOrder mode — the Promote button', () => {
     );
 
     await openAtDev(page, fx);
-    await promoteStage(page, { method: 'p' });
+    await promoteStage(page);
 
     const error = page.getByTestId('change-order-foot-error');
     await expect(error).toBeVisible({ timeout: 30000 });
@@ -477,7 +472,7 @@ test.describe('ChangeOrder mode — the Promote button', () => {
     // THE PROMOTION REFUSED, after a preview the server accepted.
     refuse = 'promote';
     await openAtDev(page, fx);
-    await promoteStage(page, { method: 'p' });
+    await promoteStage(page);
 
     const error = page.getByTestId('change-order-foot-error');
     await expect(error).toBeVisible({ timeout: 30000 });
@@ -535,9 +530,9 @@ test.describe('ChangeOrder mode — the Promote button', () => {
       }
     );
 
-    // On the default method, "Promote and release", which every stage with Targets starts on.
+    // Promote, the one method the Stage log offers; Release is its own line.
     await openAtDev(page, fx);
-    await expect(page.locator('[data-testid="stage-merge"][data-promote-stage="dev"]')).toHaveAttribute('data-method', 'pr');
+    await expect(page.locator('[data-testid="stage-merge"][data-promote-stage="dev"]')).toHaveAttribute('data-method', 'p');
     await promoteStage(page);
 
     // The sentence `didNothing` exists to produce, and NOT the one a real
@@ -668,7 +663,7 @@ test.describe('ChangeOrder mode — the Promote button', () => {
 
     await openAtDev(page, fx);
     await expect.poll(() => plans.length, { timeout: 30000 }).toBeGreaterThanOrEqual(1);
-    await promoteStage(page, { method: 'p' });
+    await promoteStage(page);
 
     await expect.poll(() => appliedBody, { timeout: 30000 }).not.toBeNull();
 

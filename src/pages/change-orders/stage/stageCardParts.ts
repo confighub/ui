@@ -12,8 +12,7 @@
 import type { ChangeWorkflowSpec, PromoteGateResult } from '@confighub/rtk-query';
 
 import { COMPLETE_STAGE_ID } from '../changeOrderCompleteStep';
-import type { GateReviewSummary, UseGateReviewsResult } from '../reviews/changeOrderReviewTypes';
-import { listText } from '../reviews/reviewCopy';
+import type { GateReviewSummary } from '../reviews/changeOrderReviewTypes';
 import { stageChangeLanded } from '../reviews/stageReviewInputs';
 import { stageDisplayName } from '../../x/apps/change-order/changeOrderCopy';
 import { onlyTheServerEvaluates } from '../../x/apps/change-order/changeOrderGates';
@@ -24,8 +23,7 @@ import { healthPending, previousHasChange, type PreviousStageInput } from './sta
 import { stageCardCopy, type NamedSpace } from './stageCardCopy';
 import { changeCardNotice, type ChangeCardNoticeInput } from './stageChangeLines';
 import { dryRunViewOf } from './stageDryRun';
-import { stageTargetIds, targetsHref } from './stageLinks';
-import type { CopySegment, DryRunAnswer, SpaceMark, StageCardState, StageDryRunView, StageFailure, StagePropagation } from './stageTypes';
+import type { CopySegment, DryRunAnswer, SpaceMark, StageDryRunView, StageFailure, StagePropagation } from './stageTypes';
 
 // ---------------------------------------------------------------------------
 // Gates and reviews
@@ -41,12 +39,6 @@ export function isReviewRequirementGate(gate: ChangeOrderGate, summaries: readon
 /** The gates still holding a stage other than its review: completing the review does not open it while they hold. */
 export function otherGatesHolding(gates: readonly ChangeOrderGate[], review: GateReviewSummary): string[] {
   return gates.filter((g) => !isReviewRequirementGate(g, [review]) && !(g.evaluated && g.ok)).map((g) => g.name);
-}
-
-/** "Evaluated over {spaces}." for an entry gate, which reads the stage before. Undefined when it has no Space. */
-export function gateEvaluatedOver(previousSpaceIds: readonly string[] | undefined, nameOf: (spaceId: string) => string): string | undefined {
-  if (previousSpaceIds === undefined || previousSpaceIds.length === 0) return undefined;
-  return stageCardCopy.sidebar.evaluatedOver(listText(previousSpaceIds.map(nameOf)));
 }
 
 /**
@@ -67,13 +59,6 @@ export function gateSpacesOf(
   return ids.map((spaceId) => ({ spaceId, name: nameOf(spaceId) }));
 }
 
-/** A gate row's details: the Spaces of the stage before, which an entry gate reads. */
-export function gateDetailsOf(previousSpaceIds: readonly string[] | undefined, nameOf: (spaceId: string) => string) {
-  const evaluatedOver = gateEvaluatedOver(previousSpaceIds, nameOf);
-  const evaluatedOverSpaces = (previousSpaceIds ?? []).map((spaceId) => ({ spaceId, name: nameOf(spaceId) }));
-  return () => (evaluatedOver === undefined ? {} : { evaluatedOver, evaluatedOverSpaces });
-}
-
 /** `gateSpacesOf` for each of a stage's gates, by gate id. */
 export function gateSpacesFor(
   rows: readonly PromoteGateResult[] | undefined,
@@ -84,68 +69,6 @@ export function gateSpacesFor(
     const gate = gates.find((g) => g.id === gateId);
     return gate === undefined ? [] : gateSpacesOf(rows, gate, nameOf);
   };
-}
-
-export interface CardSidebarReview {
-  summary: GateReviewSummary;
-  reviews?: UseGateReviewsResult;
-  subjectNotLanded?: string;
-  quotedRejecterId?: string;
-  askedAgainUserId?: string;
-}
-
-/**
- * The review rows of the Gates section: the review this card hosts, then this
- * stage's own entry review when another card (or none yet) hosts it. The latter
- * says "Opens once {X} is promoted" while the change it reads has not landed.
- */
-export function sidebarReviewsOf(input: {
-  hosted?: { summary: GateReviewSummary; reviews: UseGateReviewsResult; quotedRejecterId?: string; askedAgainUserId?: string };
-  ownEntryElsewhere?: GateReviewSummary;
-  verdictOf: (stageId: string) => ChangeOrderStageVerdict | undefined;
-}): CardSidebarReview[] {
-  const rows: CardSidebarReview[] = [];
-  if (input.hosted !== undefined) rows.push(input.hosted);
-  const own = input.ownEntryElsewhere;
-  if (own !== undefined && own.requirements.length > 0) {
-    const subject = own.attestTarget.TargetStage;
-    const landed = subject === undefined || stageChangeLanded(input.verdictOf(subject));
-    rows.push({ summary: own, ...(landed ? {} : { subjectNotLanded: own.gateStageName }) });
-  }
-  return rows;
-}
-
-/** A stage by id with the name a reader sees, for "Review on {X}". */
-export function actionStageOf(
-  stageStates: readonly { stageId: string; verdict: ChangeOrderStageVerdict }[],
-  stageId: string | undefined,
-): { stageId: string; name: string } | undefined {
-  const stage = stageId === undefined ? undefined : stageStates.find((s) => s.stageId === stageId);
-  return stage === undefined ? undefined : { stageId: stage.stageId, name: stageDisplayName(stage.stageId, stage.verdict === 'source') };
-}
-
-/**
- * The sidebar's gate flags: gates that have not passed YET are drawn waiting, not
- * red, and a gate whose reason the status box already says starts closed. While
- * the card is still loading (`pending`), no gate has been answered: every row is
- * drawn neutral and closed, since a row built before the answer would be red about
- * a question nobody has asked yet.
- */
-export function sidebarGateFlags(state: StageCardState): { waitingGateIds: ReadonlySet<string>; gateIdsInBox: ReadonlySet<string>; pending: boolean } {
-  const reviewHeld = state.kind === 'reviewNeeded' || state.kind === 'reviewWaiting' || state.kind === 'reviewApproved';
-  const waiting =
-    state.kind === 'gateWaiting' ? state.gates : state.kind === 'gateFailed' ? state.waiting : reviewHeld ? state.waitingGates : [];
-  const inBox =
-    state.kind === 'gateFailed'
-      ? [...state.gates, ...state.waiting]
-      : state.kind === 'gateWaiting'
-        ? state.gates
-        : state.kind === 'reviewRejected'
-          ? state.failedGates
-          : reviewHeld
-            ? [...state.failedGates, ...state.waitingGates]
-            : [];
-  return { waitingGateIds: new Set(waiting.map((g) => g.id)), gateIdsInBox: new Set(inBox.map((g) => g.id)), pending: state.kind === 'loading' };
 }
 
 /**
@@ -250,32 +173,6 @@ export function sidebarMarks(
     else if (allOthersLanded || resolvedSpaceIds.has(id)) out.set(id, { kind: 'promoted' });
   }
   return out;
-}
-
-/** The Spaces list, by name, so it reads the same whichever order the server listed them in. */
-export function sidebarSpaces(spaceIds: readonly string[], nameOf: (spaceId: string) => string): NamedSpace[] {
-  return spaceIds
-    .map((spaceId) => ({ spaceId, name: nameOf(spaceId) }))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }) || a.spaceId.localeCompare(b.spaceId));
-}
-
-/**
- * The Targets section: how many distinct Targets the stage releases to (not
- * Spaces), the Targets list filtered to them, and whether they run the change.
- * `null` when no Space of the stage has a Target: the stage is never released.
- */
-export function sidebarTargets(
-  targets: readonly string[],
-  releaseTargetOf: (spaceId: string) => string | undefined,
-  verdict: ChangeOrderStageVerdict,
-): { count: number; href: string | null; phase: 'pending' | 'promoted' | 'released' } | null {
-  const ids = stageTargetIds(targets, releaseTargetOf);
-  if (ids.length === 0) return null;
-  return {
-    count: ids.length,
-    href: targetsHref(ids),
-    phase: verdict === 'released' ? 'released' : verdict === 'promoted' ? 'promoted' : 'pending',
-  };
 }
 
 // ---------------------------------------------------------------------------

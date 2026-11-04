@@ -8,7 +8,7 @@
  * ChangeOrder, and the hint says exactly that.
  */
 
-import { useId, useRef, useState, type KeyboardEvent } from 'react';
+import { Fragment, useId, useRef, useState, type KeyboardEvent } from 'react';
 
 import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
@@ -155,13 +155,16 @@ export interface RequestReviewControlProps {
   onRequest: (userIds: string[]) => Promise<ReviewRequestOutcome>;
   /** The page's live region. */
   announce: (text: string) => void;
+  /** In a Stage log line: a plain "Request review" button at the line's edge. */
+  compact?: boolean;
 }
 
 /**
  * Request review… and its picker, for the author of a change that waits on review.
  * After a request the box says who was asked, and focus goes back to the button.
  */
-export function RequestReviewControl({ candidates, canRequest, onRequest, announce }: RequestReviewControlProps) {
+export function RequestReviewControl({ candidates, canRequest, onRequest, announce, compact = false }: RequestReviewControlProps) {
+  const Actions = compact ? Fragment : StatusActions;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [requested, setRequested] = useState<string[]>([]);
@@ -200,11 +203,11 @@ export function RequestReviewControl({ candidates, canRequest, onRequest, announ
           }}
         />
       ) : canRequest && candidates.length > 0 ? (
-        <StatusActions>
+        <Actions>
           <Button
             variant="outlined"
             color="inherit"
-            startIcon={personIcon}
+            startIcon={compact ? undefined : personIcon}
             ref={(el: HTMLButtonElement | null) => {
               if (el !== null && refocus.current) {
                 refocus.current = false;
@@ -215,9 +218,9 @@ export function RequestReviewControl({ candidates, canRequest, onRequest, announ
             data-testid="review-request-open"
             sx={{ bgcolor: 'background.paper', ...focusSx }}
           >
-            {copy.requestReview}
+            {compact ? copy.compactRequest : copy.requestReview}
           </Button>
-        </StatusActions>
+        </Actions>
       ) : null}
       {error !== undefined ? (
         <InlineNotice tone="error" testId="review-error">
@@ -234,10 +237,13 @@ export interface AskAgainProps {
   onAsk: (userId: string) => Promise<ReviewRequestOutcome>;
   announce: (text: string) => void;
   onAsked?: (userId: string) => void;
+  /** In a Stage log line: a plain "Ask again" button at the line's edge. */
+  compact?: boolean;
 }
 
 /** "Ask {name} to review again": a later request time for the person who rejected. */
-export function AskAgain({ rejecter, canRequest, onAsk, announce, onAsked }: AskAgainProps) {
+export function AskAgain({ rejecter, canRequest, onAsk, announce, onAsked, compact = false }: AskAgainProps) {
+  const Actions = compact ? Fragment : StatusActions;
   const [busy, setBusy] = useState(false);
   const [asked, setAsked] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -261,19 +267,19 @@ export function AskAgain({ rejecter, canRequest, onAsk, announce, onAsked }: Ask
   };
   return (
     <>
-      <StatusActions>
+      <Actions>
         <Button
           variant="outlined"
           color="inherit"
-          startIcon={personIcon}
+          startIcon={compact ? undefined : personIcon}
           aria-disabled={busy ? true : undefined}
           onClick={() => void ask()}
           data-testid="review-ask-again"
           sx={{ bgcolor: 'background.paper', ...focusSx }}
         >
-          {copy.askAgain(rejecter.name)}
+          {compact ? copy.compactAskAgain : copy.askAgain(rejecter.name)}
         </Button>
-      </StatusActions>
+      </Actions>
       {error !== undefined ? (
         <InlineNotice tone="error" testId="review-error">
           {error}

@@ -186,6 +186,16 @@ export function promotionTargets(
   return spaceIds.filter((spaceId) => spaceId !== skippedSpaceId);
 }
 
+/**
+ * Whether the workflow names prerequisites a Release of this stage must meet
+ * (`ReleasePrerequisites`). Such a stage is promoted first and released as a
+ * separate step, once its release gates hold, so "Promote and release" is not
+ * offered there: its release leg would be refused.
+ */
+export function stageHasReleasePrerequisites(workflow: ChangeWorkflowSpec | undefined, stageId: string): boolean {
+  return (workflow?.Stages ?? []).some((stage) => stage.Name === stageId && (stage.ReleasePrerequisites ?? []).length > 0);
+}
+
 /** The stages that can actually be promoted into — everything but the source. */
 export function promotableStages(sequence: ChangeOrderSequence): ChangeOrderStage[] {
   return sequence.stages.filter((stage) => !stage.isSource);

@@ -40,7 +40,7 @@ import {
   type StageFailureInput,
 } from '../src/pages/change-orders/stage/stageCardState';
 import { noteRequired, segmentsText, stageCardCopy } from '../src/pages/change-orders/stage/stageCardCopy';
-import { changeCardModel, changeScope, previousStageOf, sidebarGateFlags, sidebarMarks, sidebarSpaces } from '../src/pages/change-orders/stage/stageCardParts';
+import { changeCardModel, changeScope, previousStageOf, sidebarMarks } from '../src/pages/change-orders/stage/stageCardParts';
 import { diffAnchorId, hrefOfRef, spaceHref, stageTargetIds, targetsHref, workflowLink } from '../src/pages/change-orders/stage/stageLinks';
 import { flowShowsForm } from '../src/pages/change-orders/stage/stageReviewModel';
 import type { ReviewViewerFlow, StageFailure } from '../src/pages/change-orders/stage/stageTypes';
@@ -164,6 +164,38 @@ test.describe('deriveStageCardState: one case per rule, in order', () => {
     expect(kindOf({ failure, verdict: 'in-progress' })).toBe('failed');
   });
 
+  test('aborted with no restore stays aborted; aborted then restored says restored, with the abort', () => {
+    // The server restores only an aborted ChangeOrder, so every restored stage also has an AbortedReason.
+    expect(deriveStageCardState(input({ abortedReason: 'UnitsRecreated', verdict: 'promoted' }))).toEqual({ kind: 'aborted', reason: 'UnitsRecreated' });
+    expect(deriveStageCardState(input({ abortedReason: 'UnitsRecreated', verdict: 'restored', failure }))).toEqual({
+      kind: 'restored',
+      verdict: 'restored',
+      problems: [],
+      abortedReason: 'UnitsRecreated',
+    });
+    expect(deriveStageCardState(input({ abortedReason: 'UnitsRecreated', verdict: 'restore-released' }))).toMatchObject({
+      kind: 'restored',
+      verdict: 'restore-released',
+      abortedReason: 'UnitsRecreated',
+    });
+  });
+
+  test('a restored stage asks for no dry run and offers no promote: the server refuses to promote an aborted ChangeOrder', () => {
+    const restored = deriveStageCardState(input({ abortedReason: 'UnitsRecreated', verdict: 'restored' }));
+    expect(restored.kind).toBe('restored');
+    expect(dryRunWanted(restored)).toBe(false);
+    expect(dryRunWanted('restored')).toBe(false);
+    expect(methodsFor(restored, true, 'Public')).toEqual([]);
+  });
+
+  test('restored on one stage only: that stage is restored, a stage not restored stays aborted', () => {
+    // Demoting only Public: Public's Spaces are all restored, Test's are not.
+    expect(kindOf({ abortedReason: 'UnitsRecreated', verdict: 'restored' })).toBe('restored');
+    expect(kindOf({ abortedReason: 'UnitsRecreated', verdict: 'released' })).toBe('aborted');
+    // Some Spaces of one stage restored is not "restored": the stage verdict is in-progress, and the abort says it.
+    expect(kindOf({ abortedReason: 'UnitsRecreated', verdict: 'in-progress' })).toBe('aborted');
+  });
+
   test('released, restored, promoted without Targets', () => {
     expect(kindOf({ verdict: 'released' })).toBe('released');
     expect(deriveStageCardState(input({ verdict: 'restored' }))).toEqual({ kind: 'restored', verdict: 'restored', problems: [] });
@@ -220,8 +252,6 @@ test.describe('deriveStageCardState: one case per rule, in order', () => {
     expect(state).toMatchObject({ kind: 'reviewNeeded', action: 'promote', failedGates: [custom], waitingGates: [healthy] });
     if (state.kind !== 'reviewNeeded') return;
     expect(flowShowsForm(state.flow)).toBe(true);
-    expect([...sidebarGateFlags(state).gateIdsInBox].sort()).toEqual([custom.id, healthy.id].sort());
-    expect([...sidebarGateFlags(state).waitingGateIds]).toEqual([healthy.id]);
     // A viewer who cannot act sees the same gates, under "Waiting on review".
     expect(deriveStageCardState(input({ entryReview: { summary: summary(), flow: flow('author') }, gates: [healthy], previousStage }))).toMatchObject({
       kind: 'reviewWaiting',
@@ -230,7 +260,6 @@ test.describe('deriveStageCardState: one case per rule, in order', () => {
     const approved = summary({ open: true, state: 'satisfied' });
     const held = deriveStageCardState(input({ entryReview: { summary: approved, flow: flow() }, gates: [healthy], previousStage }));
     expect(held).toMatchObject({ kind: 'reviewApproved', waitingGates: [healthy], failedGates: [], wait: { waitFor: 'healthy' } });
-    expect([...sidebarGateFlags(held).waitingGateIds]).toEqual([healthy.id]);
   });
 
   test('review states carry propagation problems, so a reviewer sees them first', () => {
@@ -272,6 +301,12 @@ test.describe('methodsFor: what the buttons offer', () => {
   test('no Targets: one Promote button', () => {
     const options = methodsFor({ kind: 'ready', approvedByYou: false }, false, 'prod');
     expect(options.map((o) => o.method)).toEqual(['p']);
+  });
+
+  test('a stage whose workflow names release prerequisites offers Promote alone, never Promote and release (#6154)', () => {
+    const options = methodsFor({ kind: 'ready', approvedByYou: false }, true, 'prod', true);
+    expect(options.map((o) => o.method)).toEqual(['p']);
+    expect(defaultMethod(options)).toBe('p');
   });
 
   test('promoted: Release is the one action left, never a re-promote', () => {
@@ -365,6 +400,16 @@ test.describe('stageFailure', () => {
   test('a refusal at the gates is a hold, not a failure', () => {
     expect(stageFailure(failureInput({ lastResult: { ok: false, message: 'Promote refused.', gatesHolding: 'staging is not healthy.' }, lastResultStageId: 'prod' }))).toBeNull();
     expect(stageFailure(failureInput({ lastResult: { ok: false, message: 'Promote refused.', gatesHolding: true }, lastResultStageId: 'prod' }))).toBeNull();
+  });
+
+  test('a release refused by a release prerequisite is a hold; any other release error stays a failure (#6154)', () => {
+    const release = { ok: false, message: 'Release failed in 1 of 1 Space', action: 'release' as const, failedSpaces: [{ spaceId: 's2', spaceSlug: 'prod-eu', message: 'release-ok not satisfied' }] };
+    // Held: the release review says it (Approve), not a failure.
+    expect(stageFailure(failureInput({ verdict: 'promoted', lastResult: { ...release, gatesHolding: 'release-ok not satisfied' }, lastResultStageId: 'prod' }))).toBeNull();
+    // The prerequisite was approved and the release failed for another reason (a 500): it stays visible.
+    const failed = stageFailure(failureInput({ verdict: 'promoted', lastResult: { ...release, failedSpaces: [{ spaceId: 's2', spaceSlug: 'prod-eu', message: 'internal error' }] }, lastResultStageId: 'prod' }));
+    expect(failed?.action).toBe('release');
+    expect(failed?.failedSpaces[0]?.items[0]?.message).toBe('internal error');
   });
 
   test('this browser’s failure is history once the stage is done', () => {
@@ -597,11 +642,6 @@ test.describe('before the first gate answer, the card is loading', () => {
     expect(kindOf({ gatesAnswered: false, isSource: true })).toBe('source');
     expect(kindOf({ gatesAnswered: false, abortedReason: 'x' })).toBe('aborted');
   });
-
-  test('while loading, every gate row is drawn pending', () => {
-    expect(sidebarGateFlags(deriveStageCardState(input({ gatesAnswered: false }))).pending).toBe(true);
-    expect(sidebarGateFlags(deriveStageCardState(input({}))).pending).toBe(false);
-  });
 });
 
 test.describe('whether the change has reached the stage before', () => {
@@ -643,18 +683,7 @@ test.describe('whether the change has reached the stage before', () => {
   });
 });
 
-test.describe('the Spaces list', () => {
-  test('sorted by name', () => {
-    const names: Record<string, string> = { s1: 'prod-us-east', s2: 'prod-ap-south', s3: 'prod-eu-west', s4: 'canary-2', s5: 'canary-10' };
-    expect(sidebarSpaces(['s1', 's2', 's3', 's5', 's4'], (id) => names[id]).map((s) => s.name)).toEqual([
-      'canary-2',
-      'canary-10',
-      'prod-ap-south',
-      'prod-eu-west',
-      'prod-us-east',
-    ]);
-  });
-
+test.describe('the Space marks', () => {
   test('Spaces that landed in a failed promotion are marked Promoted, from the same result', () => {
     const marks = sidebarMarks(new Map(), failure, ['s1', 's2'], new Set());
     expect([...marks]).toEqual([

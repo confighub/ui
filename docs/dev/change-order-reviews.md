@@ -11,10 +11,10 @@ second approval, on the Public Revisions. These Revisions exist only after the p
 
 1. **A promotion review is on the card of the stage it gates.** The Public entry review is on the
    Public card, although its approvals are recorded in the Test Spaces. The reviewer approves
-   where the promotion waits. The Test card shows the review read-only, with a link
-   (`subjectReviews`). When the gated stage is promoted or released, no card shows the promotion
-   review any more (`reviewActionStageId`, `PROMOTION_DONE`). One gate has one form on one card,
-   so one person cannot record two decisions on the same Revisions.
+   where the promotion waits. The review shows only on the stage it belongs to: the Test card
+   does not show it or point to it. When the gated stage is promoted or released, no card shows
+   the promotion review any more (`reviewActionStageId`, `PROMOTION_DONE`). One gate has one form
+   on one card, so one person cannot record two decisions on the same Revisions.
 2. **An open review comes before the other gates.** If a review is not yet satisfied, the card
    shows Approve and Reject before Healthy, Released or Promoted. The review box shows those
    other gates as context (`deriveStageCardState`). The server records an Attestation at any time,

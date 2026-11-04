@@ -58,9 +58,11 @@ interface RowOptions {
   baseInDev?: boolean;
   /** `ChangeOrder.Stage` as the server recorded it. Absent is no stage recorded. */
   stage?: string;
+  /** The governing workflow; `WORKFLOW` when absent. */
+  workflow?: ChangeWorkflowSpec;
 }
 
-function row({ resolved, withTargets, baseInDev = false, stage }: RowOptions) {
+function row({ resolved, withTargets, baseInDev = false, stage, workflow = WORKFLOW }: RowOptions) {
   const devSpaceIds = baseInDev ? [BASE, DEV] : [DEV];
   const stageSpaces: Record<string, ExtendedSpaceRead[]> = {
     [stageWhereSpace(WORKFLOW.Stages[0])]: devSpaceIds.map(
@@ -88,7 +90,7 @@ function row({ resolved, withTargets, baseInDev = false, stage }: RowOptions) {
       releasedSpaceIds: [],
       releases: carryingReleases([]),
       inScopeSpaceIds: [BASE, DEV, PROD],
-      governing: { state: 'governed', workflow: WORKFLOW, changeWorkflowId: 'wf-1' },
+      governing: { state: 'governed', workflow, changeWorkflowId: 'wf-1' },
       stage,
     },
     spaces,
@@ -129,6 +131,16 @@ test('a ChangeOrder with nowhere left to go offers no promotion at all', () => {
 
 test('a stage whose Spaces can publish offers the release path', () => {
   expect(promotionFor(row({ resolved: [BASE], withTargets: [DEV] }))?.canRelease).toBe(true);
+});
+
+test('a stage whose workflow names release prerequisites offers Promote only, never Promote and release (#6154)', () => {
+  const workflow: ChangeWorkflowSpec = {
+    Stages: [{ ...WORKFLOW.Stages[0], ReleasePrerequisites: ['release-ok'] }, WORKFLOW.Stages[1]],
+  };
+  const r = row({ resolved: [BASE], withTargets: [DEV], workflow });
+  expect(promotionFor(r)?.canRelease).toBe(false);
+  expect(r.stages.find((s) => s.stageId === 'dev')?.hasReleasePrerequisites).toBe(true);
+  expect(r.stages.find((s) => s.stageId === 'prod')?.hasReleasePrerequisites).toBe(false);
 });
 
 test('a stage no Space of which can publish does not', () => {

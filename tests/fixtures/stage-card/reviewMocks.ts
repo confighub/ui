@@ -194,7 +194,7 @@ function mockRequirements(options: MockOptions): MockRequirement[] {
     { name: 'security-review', type: 'Approval', required: 2, eligible: group, maxAgeHours: 72, allowAuthors: options.allowAuthors === true },
     { name: 'qa-signoff', type: 'QASignoff', required: 1, eligible: qa, maxAgeHours: 72 },
     { name: 'release-ok', type: 'Approval', required: 1, eligible: group },
-    { name: 'signoff', type: 'Approval', required: 2, eligible: group },
+    { name: 'signoff', type: 'Approval', required: 2, eligible: group, allowAuthors: options.allowAuthors === true },
     { name: 'first-look', type: 'Approval', required: 1, eligible: group },
   ];
 }
@@ -276,7 +276,9 @@ export interface MockOptions {
    * answers from its gate rows (`held`/`satisfied`), with a 200 that has no
    * Gates (`unchanged`, not evaluated), or refuses the viewer (`noPermission`, 403).
    */
-  release?: 'held' | 'satisfied' | 'unchanged' | 'noPermission';
+  release?: 'held' | 'satisfied' | 'unchanged' | 'noPermission' | 'pending';
+  /** The stage that gets the release review; `staging` when absent. `pending`: its release dry run never answers. */
+  releaseOn?: string;
   /** The promote dry run for prod refuses the viewer (403): no server rows, nothing evaluated. */
   entryNoPermission?: boolean;
   /** `ChangeOrder.ReviewRequests` (stage `staging` = the entry gate of prod). */
@@ -361,7 +363,13 @@ function withReviewPrerequisites(value: unknown, options: MockOptions, requests:
       definitions.push({ Name: 'release-ok', Description: 'Someone from security-reviewers approves the release.', Count: 1, FromGroupIDs: [SECURITY_GROUP] });
     }
     if (options.signOff === true) {
-      definitions.push({ Name: 'signoff', Description: 'Two reviewers sign the ChangeOrder off in production.', Count: 2, FromGroupIDs: [SECURITY_GROUP] });
+      definitions.push({
+        Name: 'signoff',
+        Description: 'Two reviewers sign the ChangeOrder off in production.',
+        Count: 2,
+        FromGroupIDs: [SECURITY_GROUP],
+        ...(options.allowAuthors === true ? { AllowAuthors: true } : {}),
+      });
     }
     if (options.firstStage === true) {
       definitions.push({ Name: 'first-look', Description: 'Someone from security-reviewers looks at the change first.', Count: 1, FromGroupIDs: [SECURITY_GROUP] });
@@ -371,7 +379,7 @@ function withReviewPrerequisites(value: unknown, options: MockOptions, requests:
       Stages: workflow.Stages.map((stage) => {
         if (stage.Name === PROD) return { ...stage, Prerequisites: [...(stage.Prerequisites ?? []), 'security-review', 'qa-signoff'] };
         if (stage.Name === 'dev' && options.firstStage === true) return { ...stage, Prerequisites: [...(stage.Prerequisites ?? []), 'first-look'] };
-        if (stage.Name === 'staging' && options.release !== undefined) {
+        if (stage.Name === (options.releaseOn ?? 'staging') && options.release !== undefined) {
           return { ...stage, ReleasePrerequisites: [...(stage.ReleasePrerequisites ?? []), 'release-ok'] };
         }
         return stage;
@@ -517,6 +525,8 @@ export async function mockReviews(
       async (route) => {
         const body = await postBody(route.request());
         if (body.DryRun !== true) return route.fallback();
+        // Not answered yet: the release check is still running.
+        if (options.release === 'pending') return undefined;
         if (options.release === 'noPermission') return route.fulfill(json({ message: 'You need Publish on this Space.' }, 403));
         if (options.release === 'unchanged') return route.fulfill(json({ Message: 'nothing new to release' }));
         const spaceId = new URL(route.request().url()).pathname.split('/')[3];
@@ -700,24 +710,30 @@ export async function mockReviews(
     const orderResponse = await hubApi.get(`/api/space/${fx.changeOrderSpaceId}/change_order/${fx.changeOrderId}`);
     const orderBody = (await orderResponse.json()) as { StartTagID?: string; ChangeOrder?: { StartTagID?: string } };
     const startTagId = orderBody.StartTagID ?? orderBody.ChangeOrder?.StartTagID ?? '';
+    // The review reads each Tag on its own (`Tags ? '<id>' AND SpaceID IN (...)`). Each answer picks the
+    // same Unit, the first by id: every Unit the change wrote has both a start and an end Revision.
+    const reviewTagRead = /^Tags \? '([^']+)' AND SpaceID IN \(/;
     await page.route(
-      (url) => url.pathname === '/api/revision' && (url.searchParams.get('where') ?? '').includes('Tags.*.TagID IN'),
+      (url) => url.pathname === '/api/revision' && reviewTagRead.test(url.searchParams.get('where') ?? ''),
       async (route) => {
         const response = await route.fetch();
         if (!response.ok()) return route.fulfill({ response });
         type Row = { Revision?: { UnitID?: string; RevisionNum?: number; Tags?: Record<string, string> } };
         const rows = (await response.json()) as Row[];
-        const ends = rows.filter((row) => Object.keys(row.Revision?.Tags ?? {}).some((tag) => tag !== startTagId));
-        const unitId = ends.map((row) => row.Revision?.UnitID ?? '').filter(Boolean).sort()[0];
+        const tagId = reviewTagRead.exec(new URL(route.request().url()).searchParams.get('where') ?? '')?.[1];
+        const unitId = rows.map((row) => row.Revision?.UnitID ?? '').filter(Boolean).sort()[0];
+        if (unitId === undefined) return route.fulfill({ response });
         mocks.unchangedUnitId = unitId;
-        // The unit's end Revision carries the start Tag too: the change left it as it was.
-        const changed = rows
-          .filter((row) => row.Revision?.UnitID !== unitId || !(startTagId in (row.Revision?.Tags ?? {})))
-          .map((row) =>
-            row.Revision?.UnitID === unitId && row.Revision !== undefined
-              ? { ...row, Revision: { ...row.Revision, Tags: { ...(row.Revision.Tags ?? {}), [startTagId]: '' } } }
-              : row,
-          );
+        // The unit's end Revision carries the start Tag too: the change left it as it was. So the start Tag's
+        // read finds no Revision of its own for the Unit, and the end Tag's read finds both Tags on one.
+        const changed =
+          tagId === startTagId
+            ? rows.filter((row) => row.Revision?.UnitID !== unitId)
+            : rows.map((row) =>
+                row.Revision?.UnitID === unitId && row.Revision !== undefined
+                  ? { ...row, Revision: { ...row.Revision, Tags: { ...(row.Revision.Tags ?? {}), [startTagId]: '' } } }
+                  : row,
+              );
         return route.fulfill({ response, body: JSON.stringify(changed) });
       },
     );

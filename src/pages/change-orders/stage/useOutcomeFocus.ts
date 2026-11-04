@@ -16,6 +16,11 @@ interface PendingFocus {
   landedAt?: number;
 }
 
+/**
+ * Focus moves for a screen reader and the keyboard, never the page: the outcome is drawn where the user
+ * already looks, and a scroll to an off-screen heading after every action would move the page.
+ */
+const FOCUS_OPTIONS: FocusOptions = { preventScroll: true };
 const FOCUS_WAIT_MS = 15_000;
 const FOCUS_HOLD_MS = 1_500;
 /** The Release button after Promote only: if the box does not offer it this soon, the headline. */
@@ -35,7 +40,7 @@ const REVIEW_FOCUS_FALLBACK_MS = 4_000;
  * focus that fell to the page is put back.
  */
 export function useOutcomeFocus(stateKind: StageCardStateKind, approveRef: RefObject<HTMLButtonElement>) {
-  const headingRef = useRef<HTMLHeadingElement>(null);
+  const headingRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLButtonElement>(null);
   const pending = useRef<PendingFocus | null>(null);
 
@@ -51,7 +56,7 @@ export function useOutcomeFocus(stateKind: StageCardStateKind, approveRef: RefOb
     const targetOf = (target: OutcomeFocusTarget) => (target === 'release' ? mainRef.current : headingRef.current);
     if (p.landedAt !== undefined) {
       if (now - p.landedAt > FOCUS_HOLD_MS) pending.current = null;
-      else if (document.activeElement === null || document.activeElement === document.body) targetOf(p.target)?.focus();
+      else if (document.activeElement === null || document.activeElement === document.body) targetOf(p.target)?.focus(FOCUS_OPTIONS);
       return;
     }
     const age = now - p.at;
@@ -70,7 +75,7 @@ export function useOutcomeFocus(stateKind: StageCardStateKind, approveRef: RefOb
     } else if (!isReviewState(stateKind) || stateKind === 'reviewApproved') el = mainRef.current ?? headingRef.current;
     else if (age > REVIEW_FOCUS_FALLBACK_MS) el = approveRef.current;
     if (el === null) return;
-    el.focus();
+    el.focus(FOCUS_OPTIONS);
     // A review's next action is wherever the box puts it, so only an outcome's own target is held.
     if (p.target === 'review') pending.current = null;
     else p.landedAt = now;

@@ -433,6 +433,26 @@ export function promoteGatesHolding(result: PromoteResult | undefined): string |
 }
 
 /**
+ * What holds a refused Release, in the server's words, or `null` when the
+ * refusal is not a prerequisite's. The publish answers 422 with its `Gates` when
+ * a release prerequisite does not hold (`ReleasePublishResponse`); that is a
+ * hold, said by the stage's release review, not a failed write. Anything else
+ * (a 500, a 409, a 422 with no unmet gate) stays a failure.
+ */
+export function releaseGatesHolding(error: unknown): string | null {
+  if (statusOf(error) !== 422) return null;
+  const data = (error as { data?: unknown }).data;
+  if (typeof data !== 'object' || data === null) return null;
+  const gates = (data as { Gates?: unknown }).Gates;
+  if (!Array.isArray(gates)) return null;
+  const holding = gates
+    .filter((gate): gate is { Satisfied?: boolean; Message?: unknown } => typeof gate === 'object' && gate !== null)
+    .filter((gate) => gate.Satisfied !== true)
+    .map((gate) => (typeof gate.Message === 'string' && gate.Message.length > 0 ? gate.Message : changeOrderCopy.promoteHeld.generic));
+  return holding.length === 0 ? null : holding.join(' ');
+}
+
+/**
  * What the caller must say about the stage it is promoting into.
  *
  * `failedGateCount` is the stage's own count of gates that were evaluated and
@@ -935,6 +955,9 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
         );
         const failedCount = failedSpaces.length;
         if (failedCount > 0) {
+          // Every failure a release prerequisite's refusal: a hold the review says, not a failed write.
+          const holds = settled.flatMap((outcome) => (outcome.status === 'rejected' ? [releaseGatesHolding(outcome.reason)] : []));
+          const gatesHolding = holds.every((hold) => hold !== null) ? holds.join(' ') : undefined;
           const result: ChangeOrderActionResult = {
             ok: false,
             message: changeOrderCopy.releaseFailed(
@@ -942,6 +965,7 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
             ),
             action: 'release',
             failedSpaces,
+            ...(gatesHolding === undefined ? {} : { gatesHolding }),
           };
           setLastResult(result, options.stageId);
           return result;

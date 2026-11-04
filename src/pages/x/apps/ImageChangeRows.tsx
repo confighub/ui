@@ -65,34 +65,43 @@ const SIDE_SX = {
 } as const;
 
 /**
- * The transition never wraps, and everything to its left gives up room first.
+ * The transition takes the room the name leaves, and when both tags will not fit
+ * beside each other it wraps: the old tag, the arrow and the new tag each sit on
+ * their own line rather than pushing the pane wider. A tag can be one unbreakable
+ * word (a 40-character commit SHA), so a side also breaks inside itself when it
+ * alone is wider than the pane. Nothing is cut, so the whole tag stays readable.
  *
- * It also never shrinks — except in the two cases where it cannot fit a narrow
- * pane by construction. A registry move must name both references in full
- * because they no longer share a prefix, and a digest-only move carries two
- * opaque hashes; either is wider than the pane at its narrowest. Both truncate
- * from the END, which keeps what distinguishes them: registries differ at the
- * host and two digests differ in their first characters.
+ * Two cases cannot be shown in full by construction. A registry move must name
+ * both references in full because they no longer share a prefix, and a
+ * digest-only move carries two opaque hashes. Both truncate from the END, which
+ * keeps what distinguishes them: registries differ at the host and two digests
+ * differ in their first characters.
  */
 const TRANSITION_SX = {
-  flex: 'none',
+  flex: '0 1 auto',
+  minWidth: 0,
+  maxWidth: '100%',
   display: 'inline-flex',
+  flexWrap: 'wrap',
   alignItems: 'center',
-  gap: '5px',
+  columnGap: '5px',
+  rowGap: '2px',
   fontFamily: componentTheme.fontMono,
   fontSize: 12,
-  whiteSpace: 'nowrap',
+  '& > span': { minWidth: 0, whiteSpace: 'normal', overflowWrap: 'anywhere' },
 } as const;
 
 const TRANSITION_SHRINKABLE_SX = {
   ...TRANSITION_SX,
-  flex: '0 1 auto',
-  minWidth: 0,
-  '& > span': { overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 },
+  flexWrap: 'nowrap',
+  whiteSpace: 'nowrap',
+  '& > span': { overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, whiteSpace: 'nowrap' },
 } as const;
 
+// Basis 0, so the name counts as only its minimum width when the row decides
+// whether the transition fits beside it; it then grows into whatever is left.
 const NAME_SX = {
-  flex: '1 1 auto',
+  flex: '1 1 0',
   minWidth: 36,
   display: 'flex',
   alignItems: 'baseline',
@@ -256,20 +265,23 @@ const ImageChangeRow = memo(({ row, testIdPrefix, srValuePrefix }: ImageChangeRo
   const transitionSx = cls === 'repo' || cls === 'digest' ? TRANSITION_SHRINKABLE_SX : TRANSITION_SX;
   const digestPrefix = cls === 'digest' ? splitDigest(to?.digest ?? from?.digest).prefix : '';
   const pair = getInlineDiffPair(before, after);
-  // The hidden before/after words say "removed" and "added". On a row where
-  // nothing moved they would describe a change that did not happen, so the
-  // reference is announced plainly instead.
-  const srPrefix = row.unchanged ? undefined : srValuePrefix;
+  const srPrefix = srValuePrefix;
+  // A reference that did not move is said once. Two chips and an arrow would
+  // draw a change that did not happen, and the hidden "removed"/"added" words
+  // would announce one.
+  const current = ref?.tag || splitDigest(ref?.digest).hex || row.to || '';
 
   return (
     <ReviewRow
       $plain
       data-testid={testIdPrefix ? `${testIdPrefix}-image-row` : undefined}
-      title={[row.from, row.to].filter(Boolean).join('\n')}
+      title={[...new Set([row.from, row.to].filter(Boolean))].join('\n')}
       sx={{
         containerType: 'inline-size',
         containerName: 'imagerow',
         gap: '8px',
+        // The transition drops under the name when both tags cannot sit beside it.
+        flexWrap: 'wrap',
         paddingLeft: '9px',
         paddingRight: '12px',
         minHeight: ROW_HEIGHT,
@@ -292,6 +304,11 @@ const ImageChangeRow = memo(({ row, testIdPrefix, srValuePrefix }: ImageChangeRo
           </Box>
         ) : null}
       </Box>
+      {row.unchanged ? (
+        <Box component="span" sx={TRANSITION_SX} data-testid={testIdPrefix ? `${testIdPrefix}-image-current` : undefined}>
+          <Box component="span" sx={{ color: componentTheme.fgSubtle }}>{current}</Box>
+        </Box>
+      ) : (
       <Box component="span" sx={transitionSx} data-testid={testIdPrefix ? `${testIdPrefix}-image-delta` : undefined}>
         {shared ? <Box component="span" sx={{ color: componentTheme.fgSubtle }}>{shared}</Box> : null}
         {row.from === null ? <Box component="span" sx={ABSENT_SX}>not set</Box> : (
@@ -310,6 +327,7 @@ const ImageChangeRow = memo(({ row, testIdPrefix, srValuePrefix }: ImageChangeRo
           </Box>
         )}
       </Box>
+      )}
       {word ? (
         <Box component="span" sx={WORD_SX} data-testid={testIdPrefix ? `${testIdPrefix}-image-word` : undefined}>{word}</Box>
       ) : null}

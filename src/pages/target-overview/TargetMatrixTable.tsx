@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 
 import { HoverCard, HoverCardBadge, HoverCardHeader, HoverCardTitle } from '@/components/hover-card/HoverCard';
+import { scrollbarStyles } from '@/components/styled/scrollbarStyles';
 import { formatRelative } from '@/utility/date-format';
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
@@ -198,7 +199,7 @@ export const TargetMatrixTable = ({ matrix, onReleaseOpen }: TargetMatrixTablePr
 
   return (
     <Paper variant='outlined' sx={{ borderRadius: '8px', overflow: 'hidden' }} data-testid='target-matrix'>
-      <TableContainer sx={{ maxHeight: 'calc(100vh - 220px)' }}>
+      <TableContainer sx={{ maxHeight: 'calc(100vh - 220px)', ...scrollbarStyles(theme) }}>
         <Table size='small' stickyHeader sx={{ borderCollapse: 'separate' }}>
           <TableHead>
             <TableRow>

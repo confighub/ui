@@ -231,9 +231,12 @@ export function CollapsibleSection({
   label,
   summary,
   children,
+  toggleTestId = 'review-section-toggle',
 }: {
   /** Names the section for tests and styling: `data-section`. */
   section: string;
+  /** The toggle's data-testid, when more than one bar is on a page and each needs its own. */
+  toggleTestId?: string;
   label: ReactNode;
   /** What the reader would find inside, shown beside the label while it is closed and open. */
   summary?: ReactNode;
@@ -249,7 +252,7 @@ export function CollapsibleSection({
         aria-expanded={open}
         aria-controls={contentId}
         onClick={() => setOpen((value) => !value)}
-        data-testid="review-section-toggle"
+        data-testid={toggleTestId}
         data-section={section}
         sx={{
           all: 'unset',

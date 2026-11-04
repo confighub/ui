@@ -315,6 +315,7 @@ function OutcomeBox({
   tinted,
   children,
   nameOf,
+  first = false,
 }: {
   section: StageDiffSection<MergedUnit>;
   open: boolean;
@@ -323,6 +324,8 @@ function OutcomeBox({
   tinted: boolean;
   children: ReactNode;
   nameOf: (spaceId: string) => string;
+  /** The first group: its header carries the design id of the card's diff toggle (unique). */
+  first?: boolean;
 }) {
   const bodyId = `${section.headingId}-body`;
   const tone = TILE_TONE[section.kind];
@@ -332,6 +335,7 @@ function OutcomeBox({
       data-kind={section.kind}
       sx={{ border: '1px solid var(--bd0)', borderRadius: 'var(--r-sm)', overflow: 'hidden', bgcolor: 'background.paper', scrollMarginTop: 24 }}
     >
+      <Box data-testid={first ? 'full-diff-toggle' : undefined}>
       <Box
         component="button"
         type="button"
@@ -400,6 +404,7 @@ function OutcomeBox({
           <ExpandMoreIcon aria-hidden sx={{ fontSize: 16, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s', '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }} />
         </Box>
       </Box>
+      </Box>
       {open ? (
         <Box id={bodyId}>
           {children}
@@ -421,6 +426,7 @@ function StageOutcomeBoxesView({ model, deps, open, onToggle, highlight, boxesRe
   const total = model.sections.reduce((n, section) => n + section.spaceIds.length, 0);
 
   return (
+    <Box data-testid="full-diff">
     <Box
       ref={boxesRef}
       id={STAGE_DIFF_ID}
@@ -434,12 +440,13 @@ function StageOutcomeBoxesView({ model, deps, open, onToggle, highlight, boxesRe
         </Typography>
       ) : null}
       {model.bar === null ? null : <OutcomeBar segments={model.bar} total={total} />}
-      {model.sections.map((section) => (
-        <OutcomeBox key={section.kind} section={section} open={open} onToggle={onToggle} tinted={groupJump === section.kind} nameOf={nameOf}>
+      {model.sections.map((section, i) => (
+        <OutcomeBox key={section.kind} section={section} open={open} onToggle={onToggle} tinted={groupJump === section.kind} nameOf={nameOf} first={i === 0}>
           <SpaceLinks spaceIds={section.spaceIds} nameOf={nameOf} />
           <SectionBody section={section} deps={deps} highlight={highlight} onShowInDiff={onShowInDiff} />
         </OutcomeBox>
       ))}
+    </Box>
     </Box>
   );
 }

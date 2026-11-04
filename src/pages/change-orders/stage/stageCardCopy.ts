@@ -33,7 +33,88 @@ export {
 // ---------------------------------------------------------------------------
 
 export const stageCardCopy = {
+  // ── The Stage log ────────────────────────────────────────────────────────
+  log: {
+    regionLabel: (stage: string) => `${stage} log`,
+    arrivedFrom: 'Arrived from ',
+    madeHere: 'Made here',
+    definedHere: 'Defined here',
+    passed: 'Passed',
+    failedIn: 'Failed in ',
+    failed: 'Failed',
+    needs: (description: string) => `Needs ${description}`,
+    notChecked: 'Not checked',
+    notYet: 'Not passed yet',
+    reviewDetails: 'Review details',
+    approved: 'Approved',
+    approvedRelease: 'Approved the release',
+    ofCount: (i: number, n: number) => `${i} of ${n}`,
+    rejected: 'Rejected',
+    quoted: (note: string) => `“${note}”`,
+    actionTo: (release: boolean, stage: string) => `${release ? 'Release' : 'Promote'} to ${stage}`,
+    failedInOf: (failed: number, total: number) => `Failed in ${failed} of ${plural(total, 'Space')}`,
+    promotedTo: (stage: string) => `Promoted to ${stage}`,
+    spaces: (n: number) => plural(n, 'Space'),
+    releasedTo: (stage: string) => `Released to ${stage}`,
+    targetsRanIt: (n: number) => `${plural(n, 'Target')} ran it`,
+    restored: 'Restored',
+    takenBackOut: (stage: string) => `The change was taken back out of ${stage}`,
+    restoreReleased: 'Released the restored Revisions',
+    targetsRunThem: (n: number) => `${plural(n, 'Target')} run them`,
+    aborted: 'Aborted',
+    abortedText: 'This ChangeOrder was aborted',
+    progressUnavailable: 'Progress unavailable',
+    progressUnavailableWhy: 'The server did not report which Stages are promoted',
+    held: (stage: string) => `${stage} is held`,
+    cantCheck: (stage: string) => `Can't check ${stage}`,
+    serverAnswered: (status: number | undefined) =>
+      status === undefined ? 'The server did not answer. Nothing was promoted.' : `The server answered ${status}. Nothing was promoted.`,
+    tryAgain: 'Try again',
+    noSpaceHere: (stage: string) => `No Space of this ChangeOrder is in ${stage}`,
+    nothingToPromote: 'Nothing to promote here.',
+    hasTheChange: (n: number) => (n === 1 ? ' already has the change' : ' already have the change'),
+    now: 'Now',
+    nowStill: 'Now · still to happen',
+    promoteTo: (stage: string) => `Promote to ${stage}`,
+    promoteAnywayTo: (stage: string) => `Promote to ${stage} anyway?`,
+    retryTo: (stage: string) => `Retry the promote to ${stage}`,
+    releaseTo: (stage: string) => `Release to ${stage}`,
+    releaseAgainTo: (stage: string) => `Release again to ${stage}`,
+    yourTurn: 'Your turn',
+    yourTurnSpaces: (n: number) => `Your turn · ${plural(n, 'Space')}`,
+    after: 'After ',
+    waitsFor: 'Waiting for ',
+    review: 'the review',
+    releaseReview: 'the release review',
+    thePromote: 'the promote',
+    /** A locked line names the gates that hold it; from this many on, it counts them. */
+    gatesCountFrom: 3,
+    gatesCount: (n: number) => (n === 1 ? '1 gate' : `${n} gates`),
+    cantPromoteInto: (stage: string) => `You can't promote into ${stage}`,
+    waitsForServer: (stage: string) => `Waiting for the server to stop holding ${stage}`,
+    retryCannotHelp: 'A retry passes the same Space over again',
+    targetsRunEarlier: (n: number) => `${plural(n, 'Target')} run the earlier revision.`,
+    promoting: (stage: string) => `Promoting to ${stage}…`,
+    releasing: (stage: string) => `Releasing to ${stage}…`,
+    releaseInfoLabel: 'About this release',
+    promote: 'Promote',
+    promoteAnyway: 'Promote anyway…',
+    confirmAnyway: 'Promote anyway',
+    retry: 'Retry',
+    release: 'Release',
+    nothingLeft: (stage: string) => `Nothing left in ${stage}.`,
+    noTargets: (stage: string) => `No Space of ${stage} has a Target, so there is nothing to release.`,
+    startsHere: 'The change starts here.',
+    goTo: (stage: string) => `Go to ${stage}`,
+    /** "Next: Complete." — the step's name is a link to it. */
+    next: 'Next: ',
+    nextEnd: '.',
+  },
+
   regionLabel: (stage: string) => `Stage ${stage}`,
+  /** The card's heading, "Stage: Test": the word is quieter than the name. */
+  stageHeadingLead: 'Stage:',
+  stageHeading: (stage: string) => `Stage: ${stage}`,
 
   /** Done and source lines that lead to the next step. The arrow is an icon. */
   goTo: (next: string) => `Go to ${next}`,
@@ -184,6 +265,34 @@ export const stageCardCopy = {
           ]),
       seg.text(message),
     ],
+    /**
+     * The server's sentence when it names the Space itself ("api-gateway keeps … in {Space}."): said once,
+     * with the Space a link and the Unit a link (or plain text when the record has no Unit id). A Unit
+     * name is a name, so never code font. Else `failedItem`.
+     */
+    failedMessage: (space: NamedSpace, unit: { unitId?: string; name?: string }, message: string): CopySegment[] => {
+      // Whole names only: `app` in "apply" or `web` in "webhook" stays text. A dot ends a name unless a word
+      // character follows it, so a name at the end of a sentence still matches.
+      const escape = (n: string) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const whole = (alternatives: string) => new RegExp(`(?<![\\w.-])(${alternatives})(?![\\w-]|\\.\\w)`);
+      const names = [space.name, ...(unit.name === undefined ? [] : [unit.name])]
+        .filter((n) => n !== '' && whole(escape(n)).test(message))
+        .sort((x, y) => y.length - x.length);
+      if (!names.includes(space.name)) return stageCardCopy.problem.failedItem(space, unit, message);
+      const pattern = whole(names.map(escape).join('|'));
+      return message
+        .split(pattern)
+        .filter((part) => part !== '')
+        .map((part): CopySegment => {
+          if (part === space.name) return spaceLink(space);
+          if (unit.name !== undefined && part === unit.name) {
+            return unit.unitId === undefined
+              ? seg.text(part)
+              : seg.link(part, { to: 'unit', spaceId: space.spaceId, unitId: unit.unitId, tab: 'config' });
+          }
+          return seg.text(part);
+        });
+    },
     passesNow: (space: NamedSpace): CopySegment[] => [spaceLink(space), seg.text(': the dry run passes now.')],
     andMore: (k: number) => `and ${k} more in the diff`,
   },
@@ -249,8 +358,9 @@ export const stageCardCopy = {
     working: 'Working…',
     tickFirst: 'Tick the box first.',
     ack: {
-      differs: (space: string, field: string, from: string, to: string) => `${space} should get ${field} ${from} → ${to}.`,
-      kept: (space: string, path: string, value: string) => `${space} should keep ${path}: ${value}.`,
+      /** Text at even places, a value (field, from, to) at odd places. */
+      differsParts: (space: string, field: string, from: string, to: string) => [`${space} should get `, field, ' ', from, ' → ', to, '.'],
+      keptParts: (space: string, path: string, value: string) => [`I understand that ${space} keeps `, path, ' at ', value, '.'],
       unknown: (n: number) => `Promote without knowing what changes in ${plural(n, 'Space')}.`,
       several: 'I checked the differences above.',
       noDryRun: 'Promote without a dry run.',
@@ -320,7 +430,6 @@ export const stageCardCopy = {
     countsToward: reviewCopy.panel.countsToward,
     notEvaluated: reviewCopy.notEvaluated,
     serverChecksOnSubmit: reviewCopy.you.serverChecksOnSubmit,
-    notEligible: reviewCopy.caller.notEligible,
     /** The viewer's own decision that the server does not count. */
     ownNotCounted: (choice: 'Pass' | 'Fail', at: string, type?: string, reasons: readonly string[] = []) => {
       const line = reviewCopy.you.ownNotCounted(choice, at);
@@ -330,11 +439,11 @@ export const stageCardCopy = {
     /** The viewer wrote part of the change, and the requirements do not accept authors. */
     authorDoesNotCount: reviewCopy.caller.author,
     /** The viewer wrote part of the change, and the requirements accept authors. */
-    authorCounts: (where: string) => `You wrote part of this change in ${where}. Authors may approve here, so you can review it.`,
+    authorMayApprove: reviewCopy.you.authorsMayApprove,
+    reviewInfoLabel: 'About this review',
     signedOut: reviewCopy.you.signedOut,
     wouldNotCount: `Your decision would not count here. You wrote the change on every Unit it covers, and these requirements do not accept approvals from authors.`,
     outOfDate: reviewCopy.you.outOfDate,
-    whoCanApprove: (names: string) => `Who can approve: ${names}.`,
     clearsWhen: (name: string) => `${reviewCopy.band.clearsWhen(name)}.`,
     clearsWhenAny: (name: string) => `${reviewCopy.band.clearsWhenAny(name)}.`,
     clearsWhenYou: 'Clears when you withdraw it, or the change is reviewed again.',
@@ -369,6 +478,24 @@ export const stageCardCopy = {
     requestSubmit: 'Request review',
     requestedFrom: (names: string) => `Requested from ${names}, just now.`,
     requested: reviewCopy.requests.requested,
+    // The review as a line of the Stage log
+    yourReview: 'Your review',
+    yourReleaseReview: 'Your release review',
+    needed: 'Needed',
+    canApproveToo: (names: string) => `${names} can approve too.`,
+    anyoneCanApproveToo: 'Anyone with Approve can approve too.',
+    needsMore: (n: number) => (n === 1 ? 'Needs 1 more approval.' : `Needs ${n} more approvals.`),
+    reviewName: 'Review',
+    waitingFor: (names: string) => `Waiting for ${names}`,
+    youWroteIt: 'You wrote this change.',
+    reviewAgain: 'Review again',
+    canWithdraw: (name: string) => `${name} can withdraw, or someone approves`,
+    youCanWithdraw: 'You can withdraw, or someone approves',
+    compactLabel: (approve: boolean, required: boolean) => `${approve ? 'Approve' : 'Reject'}: ${required ? 'reason (required)' : 'note (optional)'}`,
+    compactHint: 'Everyone on this ChangeOrder sees the reason.',
+    compactSubmit: (approve: boolean) => (approve ? 'Approve' : 'Reject'),
+    compactRequest: 'Request review',
+    compactAskAgain: 'Ask again',
   },
 
   // ── Reviews in the sidebar ──────────────────────────────────────────────
@@ -385,7 +512,6 @@ export const stageCardCopy = {
       seg.text('counts toward the gate into '),
       seg.link(stage.name, { to: 'stage', stageId: stage.stageId }),
     ],
-    reviewOn: (stage: string) => `Review on ${stage}`,
     quotedAbove: 'quoted above',
     askedAgainJustNow: 'Asked again just now',
     details: 'Review details',

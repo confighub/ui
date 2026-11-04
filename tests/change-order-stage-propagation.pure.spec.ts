@@ -297,7 +297,7 @@ test.describe('stagePropagation: the box names fields as the change lines do', (
     expect(p.marks.get('c')).toEqual({ kind: 'keeps', value: 'v0.1.9', title: 'ghcr.io/acme/api:v0.1.9' });
     const parts = problemSegments(p.problems[0], (spaceId) => ({ spaceId, name: spaceId }), (id) => id);
     expect(segmentsText(parts)).toBe('c: a protected field in c/api keeps image tag at v0.1.9.');
-    expect(acknowledgementText(p.problems, (id) => id)).toBe('c should keep image tag: v0.1.9.');
+    expect(acknowledgementText(p.problems, (id) => id)).toBe('I understand that c keeps image tag at v0.1.9.');
   });
 
   test('a plain value keeps its text and needs no title', () => {

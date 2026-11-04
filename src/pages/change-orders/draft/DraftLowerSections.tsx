@@ -313,7 +313,7 @@ export interface DraftLowerSectionsHandle {
   stageCard: () => HTMLElement | null;
 }
 
-/** "Promotion path". */
+/** "Promotion Stages". */
 function PathHeading() {
   return (
     <Box component="h2" id={PATH_HEADING_ID} tabIndex={-1} sx={{ ...H3_SX, margin: '0 0 12px', ...FOCUS_TARGET_SX }}>
@@ -548,7 +548,7 @@ export const DraftLowerSections = memo(function DraftLowerSections({
           />
         ) : null}
         {/* With nothing in scope every stage selects nothing; the problem under the outcome says that once. */}
-        {scope.length > 0 ? <SequenceProblems problems={sequence.problems} /> : null}
+        {scope.length > 0 ? <SequenceProblems problems={sequence.problems} stageNames={sequence.stages.filter((s) => !s.isSource).map((s) => s.id)} /> : null}
       </Box>
       <div ref={cardSlot}>{card}</div>
     </>

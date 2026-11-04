@@ -104,6 +104,11 @@ import type { ChangeSetEntry } from './useChangeSetEntries';
 import type { HiddenUnitsState, PaneFilterMode, PaneUnitScope, PaneViewMode } from './ComponentToolbar';
 import { changeSetLabel, isChangeSetOpenHere } from './changeSets';
 import { ChangeSetCloseBar, ChangeSetWaitNotice } from './ChangeSetPaneNotices';
+import { GateCountBadge } from './gates/GateCountBadge';
+import type { Gate } from './gates/gateModel';
+import type { FieldOrigin } from './gates/gateOrigin';
+import { GatesPane } from './gates/GatesPane';
+import { useComponentGates } from './gates/useComponentGates';
 
 // Lazy-loaded: pulls in CodeEditor -> @monaco-editor/react, monaco-editor, and
 // monaco-yaml (a multi-MB stack with a module-level initMonaco() side effect).
@@ -155,7 +160,7 @@ const CONFIG_COMPARE_COLLAPSED_KEY = 'confighub.componentPane.config.compareColl
  * own rust-accent, Manrope, dense idiom rather than inheriting a mismatched
  * look.
  */
-type PaneContentTab = 'config' | 'releases' | 'readme';
+type PaneContentTab = 'config' | 'releases' | 'readme' | 'gates';
 
 const PaneTabs = styled(Tabs)({
   minHeight: 34,
@@ -401,7 +406,9 @@ export interface ComponentSidePaneProps {
    * `releaseNum`, set only by the release-stamp peek, asks the Releases tab
    * to scroll to and highlight that specific release.
    */
-  tabFocus?: { id: string; tab: 'config' | 'releases' | 'changeset'; nonce: number; releaseNum?: number } | null;
+  tabFocus?: { id: string; tab: 'config' | 'releases' | 'changeset' | 'gates'; nonce: number; releaseNum?: number } | null;
+  /** Selects another node in the pane on one of its tabs: "Fix in <origin Space>" of the Gates tab. */
+  onOpenTab?: (deploymentId: string, tab: 'config' | 'gates') => void;
   width: number;
   defaultWidth: number;
   onWidthChange: (width: number) => void;
@@ -614,6 +621,7 @@ export const ComponentSidePane = memo(
     onCommitProtection,
     onUpdateUnitMeta,
     onFocusDeployment,
+    onOpenTab,
     onSettingsDirtyChange,
     release,
     compareDeploymentIds,
@@ -861,6 +869,50 @@ export const ComponentSidePane = memo(
     const multiComponent = useMemo(() => isMultiComponent(deployments), [deployments]);
     const headerComponent = multiComponent ? selectedDeployment?.componentName : undefined;
     const canRelease = !!selectedDeployment?.releaseTargetId;
+    // The Gates tab shows exactly where Releases shows. Its count is read for the tab badge even
+    // while another tab is showing.
+    const componentSpaceIds = useMemo(() => deployments.map((d) => d.deploymentId), [deployments]);
+    const componentGates = useComponentGates(
+      canRelease && release ? selectedDeployment?.deploymentId : undefined,
+      componentSpaceIds,
+    );
+    const componentGateUnits = useMemo(
+      () =>
+        deployments.flatMap((d) =>
+          (unitsByDeployment.get(d.deploymentId) ?? []).map((u) => ({
+            unitId: u.unitId,
+            spaceId: u.spaceId,
+            label: `${d.slug}/${u.slug}`,
+            gateNames: Object.keys(u.validationErrors ?? {}),
+          })),
+        ),
+      [deployments, unitsByDeployment],
+    );
+    const handleGateOpenConfiguration = useCallback(
+      (unitId: string) => {
+        const unit = componentGates.units.find((u) => u.UnitID === unitId);
+        setActiveTab('config');
+        if (unit?.SpaceID) setDetailsUnit({ unitId, spaceId: unit.SpaceID, slug: unit.Slug });
+      },
+      [componentGates.units],
+    );
+    const handleGateFixInOrigin = useCallback(
+      (origin: FieldOrigin, gate: Gate) => {
+        const target = deployments.find((d) => d.deploymentId === origin.from.SpaceID);
+        if (!target) return;
+        // The origin's Gates tab when the same finding gates it there, else its Configuration.
+        const blame = gate.warning ? componentGates.componentBlame.warnings : componentGates.componentBlame.errors;
+        const gatedThere =
+          !!target.releaseTargetId &&
+          (blame ?? []).some((u) =>
+            (u.Fields ?? []).some(
+              (f) => f.UnitID === origin.from.UnitID && (f.Validation ?? []).some((v) => v.Function === gate.functionName),
+            ),
+          );
+        onOpenTab?.(target.deploymentId, gatedThere ? 'gates' : 'config');
+      },
+      [deployments, componentGates.componentBlame, onOpenTab],
+    );
     // The Space's README.md Unit and Readme annotation, which the Readme tab renders.
     const readmeUnit = useMemo(
       () =>
@@ -1017,7 +1069,7 @@ export const ComponentSidePane = memo(
     // (e.g. from a release-enabled Space to a plain one) — reset rather than
     // render a tab bar showing something else selected.
     useEffect(() => {
-      if (activeTab === 'releases' && !(canRelease && release)) setActiveTab('config');
+      if ((activeTab === 'releases' || activeTab === 'gates') && !(canRelease && release)) setActiveTab('config');
       if (activeTab === 'readme' && !hasReadme) setActiveTab('config');
       // Only the current node's own capabilities matter here — a node SWITCH
       // is what can invalidate the current tab, not activeTab itself
@@ -1702,12 +1754,13 @@ export const ComponentSidePane = memo(
       tabFocusWaitingOnRef.current = undefined;
       if (tabFocus.id !== selectedId) return;
       // 'changeset' is the Configuration tab on the ChangeSet filter. A Deployment
-      // that cannot release has no Releases tab, so a request for it opens
-      // Configuration rather than an empty pane. Whether it can is known before
-      // its Releases have loaded, which a request often arrives ahead of.
+      // that cannot release has no Releases tab, and no Gates tab, so a request for
+      // either opens Configuration rather than an empty pane. Whether it can is known
+      // before its Releases have loaded, which a request often arrives ahead of.
       const hasReleasesTab = canRelease;
       setActiveTab(
-        tabFocus.tab === 'changeset' || (tabFocus.tab === 'releases' && !hasReleasesTab)
+        tabFocus.tab === 'changeset' ||
+          ((tabFocus.tab === 'releases' || tabFocus.tab === 'gates') && !hasReleasesTab)
           ? 'config'
           : tabFocus.tab,
       );
@@ -2081,6 +2134,7 @@ export const ComponentSidePane = memo(
               href={filterUrl}
               target='_blank'
               rel='noopener noreferrer'
+              data-testid='pane-title'
               sx={{
                 fontSize: 14,
                 fontWeight: 600,
@@ -2099,6 +2153,7 @@ export const ComponentSidePane = memo(
             </Link>
           ) : (
             <Typography
+              data-testid='pane-title'
               sx={{
                 fontSize: 14,
                 fontWeight: 600,
@@ -2287,6 +2342,18 @@ export const ComponentSidePane = memo(
               />
             )}
             {hasReadme && <PaneTab label='Readme' value='readme' data-testid='component-pane-tab-readme' />}
+            {canRelease && release && (
+              <PaneTab
+                value='gates'
+                data-testid='component-pane-tab-gates'
+                label={
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    Gates
+                    <GateCountBadge count={componentGates.count} />
+                  </Box>
+                }
+              />
+            )}
           </PaneTabs>
         )}
 
@@ -2357,6 +2424,20 @@ export const ComponentSidePane = memo(
               selection={effectiveReleaseSelection}
               selectionPending={releaseSelectionPending}
               onSelectionChange={setReleaseSelection}
+            />
+          </PaneContent>
+        )}
+
+        {canRelease && release && activeTab === 'gates' && selectedDeployment && (
+          <PaneContent sx={{ padding: 0, gap: 0 }}>
+            <GatesPane
+              key={selectedDeployment.deploymentId}
+              data={componentGates}
+              spaceSlug={selectedDeployment.slug}
+              onOpenConfiguration={handleGateOpenConfiguration}
+              onFixInOrigin={handleGateFixInOrigin}
+              componentUnits={componentGateUnits}
+              componentSpaceIds={componentSpaceIds}
             />
           </PaneContent>
         )}
@@ -2946,6 +3027,8 @@ export const ComponentSidePane = memo(
         )}
         </Box>
 
+        {/* The Gates tab saves from each gate's own footer, so the pane footer would be empty. */}
+        {(isSettingsOpen || activeTab !== 'gates') && (
         <BottomBar>
           {isSettingsOpen ? (
             <>
@@ -3359,6 +3442,7 @@ export const ComponentSidePane = memo(
             </>
           )}
         </BottomBar>
+        )}
       </PaneContainer>
     );
   },

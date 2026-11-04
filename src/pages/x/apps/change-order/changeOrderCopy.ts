@@ -155,6 +155,8 @@ export const changeOrderCopy = {
    * not judged. Same discipline as `gateSummary`.
    */
   laneGateTally: (satisfied: number, total: number) => `${satisfied}/${total}`,
+  /** The heading and region name of the rail: the source, each Stage, and Complete. */
+  promotionStages: 'Promotion Stages',
   /**
    * The gates into a stage of a ChangeOrder that does not exist yet, which no
    * one can have evaluated. Counted without a satisfied figure: "0/3" would

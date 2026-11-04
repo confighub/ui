@@ -29,6 +29,7 @@ import { problemSpaceIds } from './stageProblems';
 import type { PropagationProblem, PropagationProblemKind, SpaceMark, StagePropagation, UnknownCause } from './stageTypes';
 
 export {
+  acknowledgementSegments,
   acknowledgementText,
   differsValueTexts,
   needsAcknowledgement,

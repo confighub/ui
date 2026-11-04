@@ -77,12 +77,14 @@ export const InfoPeekCard = ({
   color,
   spec,
   onAction,
+  testId,
 }: {
   color: string;
   spec: InfoPeekSpec;
   onAction?: () => void;
+  testId?: string;
 }) => (
-  <Box sx={{ p: '11px 12px 10px', minWidth: 176, fontFamily: INFO_PEEK_FONT_MONO }}>
+  <Box data-testid={testId} sx={{ p: '11px 12px 10px', minWidth: 176, fontFamily: INFO_PEEK_FONT_MONO }}>
     <Box sx={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color }}>
       {spec.eyebrow}
     </Box>
@@ -158,12 +160,15 @@ export const InfoPeekTooltip = ({
   spec,
   onAction,
   placement = 'bottom-start',
+  testId,
   children,
 }: {
   color: string;
   spec: InfoPeekSpec;
   onAction?: () => void;
   placement?: TooltipProps['placement'];
+  /** `data-testid` of the card. */
+  testId?: string;
   children: ReactElement;
 }) => {
   const [open, setOpen] = useState(false);
@@ -190,6 +195,7 @@ export const InfoPeekTooltip = ({
           <InfoPeekCard
             color={color}
             spec={spec}
+            testId={testId}
             onAction={
               interactive
                 ? () => {

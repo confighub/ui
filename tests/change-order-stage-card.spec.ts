@@ -1,18 +1,18 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 /**
- * The selected stage's card on the ChangeOrder page: its status box, the two
- * Promote buttons confirmed in place, the dry run it runs on its own, the reviews it
- * hosts, propagation problems, a failed promotion, and the sidebar.
+ * The selected stage's card on the ChangeOrder page: its status pill and Stage log
+ * (what happened, Now, what still has to happen), Promote and Release confirmed in
+ * place, the dry run it runs on its own, the reviews it hosts, propagation
+ * problems, and a failed promotion.
  *
  * ONE REAL CHANGEORDER, WALKED FORWARD. The fixture is the three-stage
  * `no-health-check` workflow with release Targets and all four resources:
  *
  *     base ──▶ dev ──▶ staging, staging-canary ──▶ prod-us-east, prod-eu-west, prod-ap-south
  *
- * `dev` is promoted and released through the card for real, then `staging` is
- * promoted only and released, so `prod` is the stage everything after that is
- * tried on. Those tests stub what the server will not produce on demand:
+ * `dev` is promoted and then released through the card for real, then `staging`
+ * the same way, so `prod` is the stage everything after that is tried on. Those tests stub what the server will not produce on demand:
  *
  *   - the card's own dry run (`POST /api/promote?dry_run=true` with `WhereSpace`):
  *     counts, a failure, 409, 403, 500, a delay;
@@ -29,11 +29,11 @@
  *
  * Screenshots of each state the stubs reach, at 1440×900 and 1000×800, go to
  * `test-results/change-order-stage-card/<state>-<width>.png`, named by the design's
- * state numbers: 1 ready, 1-working, 1-confirm, 1-dry-running, 1-dry-unavailable,
- * 2 your review is needed, 2-approve, 3 the author waits, 4 rejected, 5 promoted
- * not released, 6 promotion failed, 6-recheck, 6-dry-running, 6-dry-unavailable,
- * 7 released, 8 source, 9 a Space takes the change differently, 10 a Space keeps
- * its own value, 10-jump, 11 can't tell, 12 a gate failing. They are for a person
+ * state numbers: 1 ready, 1-working, 1-dry-running, 1-dry-unavailable, 2 your review
+ * is needed, 2-approve, 3 the author waits, 4 rejected, 5 promoted not released,
+ * 6 promotion failed, 6-recheck, 6-dry-unavailable, 7 released, 8 source, 9 a Space
+ * takes the change differently, 10 a Space keeps its own value, 10-jump, 11 can't
+ * tell, 12 a gate failing. They are for a person
  * to compare with the design; nothing here compares pixels.
  */
 import { mkdirSync } from 'fs';
@@ -42,7 +42,7 @@ import { type Locator, type Page, type Request } from '@playwright/test';
 import { test, expect, newAuthorizedContext, hubApi } from './fixtures/test';
 
 import { changeOrderPath } from '../src/pages/change-orders/changeOrderAddress';
-import { noteRequired, segmentsText, stageCardCopy } from '../src/pages/change-orders/stage/stageCardCopy';
+import { stageCardCopy } from '../src/pages/change-orders/stage/stageCardCopy';
 import {
   CUSTOM_PREREQUISITE,
   type ChangeOrderFixture,
@@ -335,16 +335,17 @@ const keepsItsImage = (space: Json): Json => ({
 // ---------------------------------------------------------------------------
 
 const card = (page: Page) => page.getByTestId('stage-card');
+/** The Stage log, which carries the card's state as `data-stage-state`. */
 const statusBox = (page: Page) => page.getByTestId('stage-status');
+/** The status pill: the state in a few words, and where focus goes after an action. */
 const heading = (page: Page) => page.locator('#stage-status-heading');
-const sidebar = (page: Page) => page.getByTestId('stage-sidebar');
-const dryLine = (page: Page) => page.getByTestId('stage-dry-run');
+const logLine = (page: Page, id: string) => page.getByTestId(id);
 const problem = (page: Page) => page.getByTestId('stage-problem');
 const confirmButton = (page: Page) => page.locator('[data-confirm]');
 const cancelButton = (page: Page) => page.locator('[data-cancel]');
 const promoteMain = (page: Page, stage: string) => page.locator(`[data-testid="stage-merge"][data-promote-stage="${stage}"]`);
 const releaseMain = (page: Page, stage: string) => page.locator(`[data-release-stage="${stage}"]`);
-const otherButton = (page: Page) => statusBox(page).getByTestId('stage-merge-other');
+const copy = stageCardCopy.log;
 
 /**
  * A stage's Spaces in the order the server lists them for its selector, which is
@@ -382,10 +383,10 @@ interface CardFrame {
   /** A Promote or Release main button is on screen and can be pressed. */
   live: boolean;
   change: string;
-  /** From `recordFromLoad` only: each gate row's state, whether the gates are still being checked, the Spaces list. */
+  /** From `recordFromLoad` only: each prerequisite line's tone, whether the log is still being read, the log's text. */
   gates?: string[];
   checking?: boolean;
-  marks?: string;
+  log?: string;
 }
 
 /**
@@ -434,9 +435,9 @@ async function recordFromLoad(page: Page): Promise<void> {
             (b) => b.getAttribute('aria-disabled') !== 'true' && !(b as HTMLButtonElement).disabled,
           ),
           change: document.querySelector('[data-testid="stage-change-card"]')?.textContent ?? '',
-          gates: Array.from(document.querySelectorAll('[data-testid="stage-gates"] [data-gate-state]')).map((g) => g.getAttribute('data-gate-state') ?? ''),
-          checking: document.querySelector('[data-testid="stage-gates-checking"]') !== null,
-          marks: Array.from(document.querySelectorAll('[data-testid="stage-space"]')).map((s) => s.textContent ?? '').join('|'),
+          gates: Array.from(document.querySelectorAll('[data-testid^="log-gate-"]')).map((g) => g.getAttribute('data-tone') ?? ''),
+          checking: document.querySelector('[data-testid="log-skeleton-1"]') !== null,
+          log: document.querySelector('[data-testid="stage-log"]')?.textContent ?? '',
         };
         const last = w.__frames[w.__frames.length - 1];
         if (last === undefined || JSON.stringify(last) !== JSON.stringify(frame)) w.__frames.push(frame);
@@ -446,7 +447,7 @@ async function recordFromLoad(page: Page): Promise<void> {
         childList: true,
         characterData: true,
         attributes: true,
-        attributeFilter: ['data-stage-state', 'data-gate-state', 'aria-disabled', 'disabled'],
+        attributeFilter: ['data-stage-state', 'data-tone', 'aria-disabled', 'disabled'],
       });
     });
   });
@@ -490,9 +491,10 @@ async function boxOf(locator: Locator) {
 }
 
 /*
- * A GATE THAT FAILS holds the stage by itself, with nothing to press: the box
- * names the gate and its reason, and the failing gate's row in the sidebar is open.
- * The custom prerequisite is the one check a real server fails on demand.
+ * A PREREQUISITE THAT FAILS holds the stage by itself: its line in the log is the
+ * red band, naming where it failed and what it needs, the pill names it, and
+ * Promote is locked with what it waits for. The custom prerequisite is the one
+ * check a real server fails on demand.
  */
 test.describe('ChangeOrder stage card — a gate failing', () => {
   test.use({ storageState: 'authentication.json', viewport: { width: 1440, height: 900 } });
@@ -520,43 +522,40 @@ test.describe('ChangeOrder stage card — a gate failing', () => {
    * Here `prod` gates only on a custom check, and `dev` has not taken the change:
    * nothing is compared yet, so no Space "has it" and nothing "writes no field".
    */
-  test('a stage the change has not reached, held by a custom check: no "Has it", no "writes no field"', async ({ page }) => {
+  test('a stage the change has not reached, held by a custom check: no "already has the change", no "writes no field"', async ({ page }) => {
     await recordFromLoad(page);
     await page.goto(`${fx.changeOrderPath}/prod`);
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', /^gate/, { timeout: 45000 });
     const changeCard = page.getByTestId('stage-change-card');
     await expect(changeCard).toContainText('Shown once dev has the change.', { timeout: 30000 });
-    await expect(sidebar(page)).not.toContainText(stageCardCopy.mark.hasIt);
+    await expect(statusBox(page)).not.toContainText('already has the change');
     await page.waitForTimeout(1000);
     const frames = await timeline(page);
     const all = JSON.stringify(frames);
     expect(frames.filter((f) => f.change.includes(stageCardCopy.change.nothing)), all).toEqual([]);
-    expect(frames.filter((f) => (f.marks ?? '').includes(stageCardCopy.mark.hasIt)), all).toEqual([]);
+    expect(frames.filter((f) => (f.log ?? '').includes('already has the change')), all).toEqual([]);
   });
 
-  test('the box names the failing gate and offers no button; its row stays closed until opened', async ({ page }) => {
+  test('the failing prerequisite is a red line with where and what it needs; Promote is locked', async ({ page }) => {
     // `prod`'s mandatory `check/promoted` holds it until `dev` has the change; the
     // custom check is the hold this test is about.
     await fx.promoteStage('dev');
     await page.goto(`${fx.changeOrderPath}/prod`);
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'gateFailed', { timeout: 45000 });
-    await expect(heading(page)).toContainText(CUSTOM_PREREQUISITE.Name);
-    await expect(heading(page)).toContainText('failed');
-    // Where it failed is part of the sentence, not a fragment after its full stop.
-    await expect(statusBox(page)).toContainText(fx.spaces.dev.slug);
-    expect(await statusBox(page).innerText()).not.toMatch(/\.\s+in\s/);
+    await expect(heading(page)).toHaveText(`${CUSTOM_PREREQUISITE.Name} failed`);
+    const red = page.locator('[data-testid^="log-gate-"][data-tone="bad"]');
+    await expect(red).toHaveCount(1);
+    // Where it failed is part of the sentence, and the sub-line is the rule it needs.
+    await expect(red).toContainText(`${CUSTOM_PREREQUISITE.Name} Failed in ${fx.spaces.dev.slug}`);
+    await expect(red).toContainText(copy.needs(CUSTOM_PREREQUISITE.Description));
+    await expect(red).toContainText('auto');
     await expect(page.locator('[data-testid="stage-merge"], [data-promote-stage]')).toHaveCount(0);
-    const id = `change-order-gate-prod-custom-prerequisite:${CUSTOM_PREREQUISITE.Name}`;
-    const row = page.getByTestId(id);
-    await expect(row).toBeVisible();
-    // The box already gives the gate's reason, so the row does not say it a second time.
-    const toggle = page.locator(`[data-testid="${id}"][aria-expanded], [data-testid="${id}"] [aria-expanded]`).first();
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const promote = logLine(page, 'open-promote');
+    await expect(promote).toContainText(`${copy.promoteTo('prod')} ${copy.waitsFor}${CUSTOM_PREREQUISITE.Name}`);
+    await expect(promote.getByTestId('act-promote')).toHaveAttribute('aria-disabled', 'true');
+    // The pill is a link to the red line.
+    await expect(heading(page)).toHaveAttribute('href', `#${await red.getAttribute('id')}`);
     await shoot(page, '12');
-    // Opened, it carries the author's own description.
-    await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await expect(row).toContainText(CUSTOM_PREREQUISITE.Description);
   });
 });
 
@@ -593,33 +592,31 @@ test.describe('ChangeOrder stage card', () => {
 
   /*
    * A STAGE WAITING ON THE ONE BEFORE IT IS NOT A FAILURE. Nothing has gone wrong
-   * when `staging` waits for `dev` to take the change: the box says what it waits
-   * for, calmly, and leads there.
+   * when `staging` waits for `dev` to take the change: the pill says what it waits
+   * on, calmly, the arrival line leads there, and Promote waits for it.
    */
   test('a stage waiting on the stage before it is neutral, not red, and leads there', async ({ page }) => {
     await openStage(page, fx, 'staging');
     const box = statusBox(page);
     await expect(box).toHaveAttribute('data-stage-state', 'gateWaiting', { timeout: 45000 });
-    await expect(heading(page)).toHaveText(segmentsText(stageCardCopy.headline.gateWaiting('promoted', 'dev', '')));
-    // Neutral: the card's own surface, ink headline, no red anywhere.
-    await expect(box).toHaveCSS('background-color', 'rgb(255, 255, 255)');
-    expect(await heading(page).evaluate((el) => getComputedStyle(el).color)).toBe('rgb(17, 18, 20)');
-    await expect(box.getByRole('link', { name: new RegExp(stageCardCopy.body.goToPrevious('dev')) })).toHaveAttribute(
+    await expect(heading(page)).toHaveText('Waiting on dev');
+    await expect(heading(page)).toHaveAttribute('data-tone', 'neutral');
+    await expect(box.locator('[data-tone="bad"]')).toHaveCount(0);
+    await expect(logLine(page, 'log-arrival').getByRole('link', { name: 'dev', exact: true })).toHaveAttribute(
       'href',
       changeOrderPath(fx.spaces.base.slug, fx.changeOrderSlug, 'dev'),
     );
+    await expect(logLine(page, 'open-promote')).toContainText(`${copy.waitsFor}dev`);
     await expect(page.locator('[data-testid="stage-merge"]')).toHaveCount(0);
   });
 
   /*
    * A HELD STAGE NEVER LOOKS READY WHILE IT LOADS. Opened directly, the card reads
    * the stage, then says what it waits for. Until the first gate answer is in it
-   * offers no Promote, says nothing of "Ready", and draws no gate red: the sidebar
-   * says it is still checking.
+   * offers no Promote, says nothing of "Your turn", and draws no prerequisite red:
+   * the log shows its skeleton lines.
    */
-  test('a held stage opened directly: "Reading the stage…", then "Waiting…", never "Ready", no Promote, no red gate first', async ({
-    page,
-  }) => {
+  test('a held stage opened directly: "Checking…", then "Waiting on…", never "Your turn", no Promote, no red line first', async ({ page }) => {
     await recordFromLoad(page);
     await openStage(page, fx, 'staging');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'gateWaiting', { timeout: 45000 });
@@ -628,136 +625,126 @@ test.describe('ChangeOrder stage card', () => {
     const all = JSON.stringify(frames);
     const headings = frames.map((f) => f.heading).filter((h) => h !== '');
     const waiting = headings.findIndex((h) => h.startsWith('Waiting'));
-    expect(waiting, `the heading reached "Waiting": ${all}`).toBeGreaterThanOrEqual(0);
-    expect(headings.slice(0, waiting).filter((h) => h !== stageCardCopy.headline.loading), `only "Reading the stage…" before "Waiting": ${all}`).toEqual([]);
-    expect(headings.filter((h) => /Ready/.test(h)), `"Ready" while held: ${all}`).toEqual([]);
+    expect(waiting, `the pill reached "Waiting": ${all}`).toBeGreaterThanOrEqual(0);
+    expect(headings.slice(0, waiting).filter((h) => h !== 'Checking…'), `only "Checking…" before "Waiting": ${all}`).toEqual([]);
+    expect(headings.filter((h) => /Your turn/.test(h)), `"Your turn" while held: ${all}`).toEqual([]);
     expect(frames.filter((f) => f.live), `a Promote control while held: ${all}`).toEqual([]);
-    // Before the gates are answered: no red row, and the sidebar says it is checking.
-    const answered = frames.findIndex((f) => f.heading.startsWith('Waiting'));
-    const before = frames.slice(0, answered);
-    expect(before.filter((f) => (f.gates ?? []).includes('no')), `a red gate row before the first answer: ${all}`).toEqual([]);
-    expect(frames.some((f) => f.checking === true), `the sidebar said it was checking the gates: ${all}`).toBe(true);
-    // And once answered, waiting is not a failure either.
-    expect(frames.filter((f) => (f.gates ?? []).includes('no')), all).toEqual([]);
+    // Waiting is not a failure, before or after the gates answer.
+    expect(frames.filter((f) => (f.gates ?? []).includes('bad')), `a red prerequisite line: ${all}`).toEqual([]);
   });
 
   /*
    * A STAGE THE CHANGE HAS NOT REACHED has nothing to compare yet: no Space "has
    * it", and the change card says when it will show what the stage takes. The page
-   * never flashes "No Spaces" or "writes no field" while it reads.
+   * never flashes "Nothing to promote" or "writes no field" while it reads.
    */
-  test('a stage the change has not reached: no "Has it", the not-reached line, and no flash on load', async ({ page }) => {
+  test('a stage the change has not reached: no "already has the change", the not-reached line, and no flash on load', async ({ page }) => {
     await recordFromLoad(page);
     await openStage(page, fx, 'prod');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'gateWaiting', { timeout: 45000 });
     const changeCard = page.getByTestId('stage-change-card');
     await expect(changeCard).toContainText('Shown once staging has the change.', { timeout: 30000 });
-    await expect(sidebar(page)).not.toContainText(stageCardCopy.mark.hasIt);
+    await expect(statusBox(page)).not.toContainText('already has the change');
     await page.waitForTimeout(1000);
     const frames = await timeline(page);
     expect(frames.length, 'the timeline recorded the load').toBeGreaterThan(0);
-    expect(frames.filter((f) => f.heading === stageCardCopy.headline.noSpaces), JSON.stringify(frames)).toEqual([]);
+    expect(frames.filter((f) => f.heading === 'Nothing to promote'), JSON.stringify(frames)).toEqual([]);
     expect(frames.filter((f) => f.change.includes(stageCardCopy.change.nothing)), JSON.stringify(frames)).toEqual([]);
-    expect(frames.filter((f) => (f.marks ?? '').includes(stageCardCopy.mark.hasIt)), JSON.stringify(frames)).toEqual([]);
-    expect(frames.filter((f) => /Ready/.test(f.heading) || f.live), JSON.stringify(frames)).toEqual([]);
+    expect(frames.filter((f) => (f.log ?? '').includes('already has the change')), JSON.stringify(frames)).toEqual([]);
+    expect(frames.filter((f) => /Your turn/.test(f.heading) || f.live), JSON.stringify(frames)).toEqual([]);
   });
 
   /*
-   * THE ORDINARY PATH, FOR REAL. Every Space of `dev` has a Target, so the main
-   * button is "Promote and release" and "Promote only" sits beside it as a plain
-   * outlined button. Nothing is wrong and the box already says what the promotion
-   * writes, so one click does it: no confirm.
+   * THE ORDINARY PATH, FOR REAL. Nothing is wrong and the log already says what the
+   * promotion writes, so one click promotes: no confirm. Release is its own line,
+   * locked until the promote, then one click too.
    */
-  test('promote and release: the dry run, the two buttons, one click, busy, and Released', async ({ page }) => {
+  test('promote, then release: one click each, busy, and Released', async ({ page }) => {
     test.setTimeout(180_000);
     const { traffic } = await installStubs(page, fx, { applyDelayMs: 1500 });
     await openStage(page, fx, 'dev');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'ready', { timeout: 30000 });
-    await expect(heading(page)).toHaveText(stageCardCopy.headline.ready);
+    await expect(heading(page)).toHaveText('Your turn');
     // The stage name is the card's heading, at the page's h2 level.
-    await expect(card(page).getByRole('heading', { level: 2, name: 'dev' })).toBeVisible();
-    await expect(dryLine(page)).toHaveAttribute('data-dry-run', 'done', { timeout: 30000 });
-    await expect(dryLine(page)).toHaveText(/^\d+ Units? in 1 Space would change\./);
+    await expect(card(page).getByRole('heading', { level: 2, name: stageCardCopy.stageHeading('dev'), exact: true })).toBeVisible();
     expect(traffic.quiet.length, 'the card asks its dry run on load').toBeGreaterThanOrEqual(1);
 
+    const prompt = logLine(page, 'open-promote');
+    await expect(prompt).toHaveAttribute('data-tone', 'prompt');
+    await expect(prompt).toContainText(`${copy.promoteTo('dev')} ${copy.yourTurnSpaces(1)}`);
     const main = promoteMain(page, 'dev');
-    await expect(main).toHaveText(stageCardCopy.merge.label('pr', 'dev', false), { useInnerText: true });
-    await expect(main).toHaveAttribute('data-method', 'pr');
+    await expect(main).toHaveText(copy.promote, { useInnerText: true });
+    await expect(main).toHaveAttribute('data-method', 'p');
     // Promote is purple, the colour of every surface that promotes or releases.
     await expect(main).toHaveCSS('background-color', PURPLE);
+    // One method, so one button; Release waits for the promote, with a lock.
+    await expect(page.getByTestId('stage-merge-other')).toHaveCount(0);
+    const release = logLine(page, 'open-release');
+    await expect(release).toContainText(`${copy.releaseTo('dev')} ${copy.after}${copy.thePromote}`);
+    await expect(release.getByTestId('act-release')).toHaveAttribute('aria-disabled', 'true');
     await shoot(page, '1');
 
-    // "Promote only" beside it, on the same row, in the neutral outlined look.
-    const other = otherButton(page);
-    await expect(other).toHaveCount(1);
-    await expect(other).toHaveText(stageCardCopy.merge.otherLabel('p', false), { useInnerText: true });
-    await expect(other).toHaveAttribute('data-method', 'p');
-    await expect(other).not.toHaveCSS('background-color', PURPLE);
-    await expect(other).not.toHaveCSS('color', PURPLE);
-    {
-      const [m, o] = [await boxOf(main), await boxOf(other)];
-      expect(o.x > m.x && near(o.y, m.y), `Promote only at ${o.x},${o.y}; main at ${m.x},${m.y}`).toBe(true);
-    }
-    await expect(statusBox(page).locator('[data-release-stage]')).toHaveCount(0);
-
     await expect(main).toHaveAttribute('data-one-click', 'true');
-    await expect(other).toHaveAttribute('data-one-click', 'true');
     await main.click();
-    // The apply is held back 1.5s, so the busy state is on screen: the button says
-    // it is working, and neither button can be pressed meanwhile.
-    await expect(main).toHaveText(stageCardCopy.merge.working, { useInnerText: true });
-    await expect(main).toHaveAttribute('aria-disabled', 'true');
-    await expect(other).toHaveAttribute('aria-disabled', 'true');
+    // The apply is held back 1.5s, so the busy state is on screen: the line says
+    // it is promoting, the pill says Working…, and nothing can be pressed.
+    await expect(prompt).toContainText(copy.promoting('dev'));
+    await expect(heading(page)).toHaveText('Working…');
     await expect(confirmButton(page)).toHaveCount(0);
     await shoot(page, '1-working');
 
+    await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'promoted', { timeout: 60000 });
+    await expect(logLine(page, 'log-promoted')).toContainText(copy.promotedTo('dev'));
+    await expect(logLine(page, 'log-promoted')).toContainText('you');
+    const releaseButton = releaseMain(page, 'dev');
+    await expect(releaseButton).toHaveText(copy.release, { useInnerText: true });
+    await expect(releaseButton).toHaveCSS('background-color', PURPLE);
+    await expect(releaseButton).toHaveAttribute('data-one-click', 'true');
+    await releaseButton.click();
     await expect(page.locator('#announce')).toContainText(stageCardCopy.announce.released('dev'), { timeout: 90000 });
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'released', { timeout: 30000 });
-    await expect(heading(page)).toHaveText(stageCardCopy.headline.released('dev'));
+    await expect(heading(page)).toHaveText(copy.releasedTo('dev'));
     await expect(heading(page)).toBeFocused();
-    await expect(statusBox(page)).toContainText('By you, just now', { timeout: 30000 });
-    const next = statusBox(page).getByRole('link', { name: new RegExp(stageCardCopy.goTo('staging')) });
+    await expect(logLine(page, 'log-released')).toContainText('you', { timeout: 30000 });
+    const next = logLine(page, 'log-end').getByRole('link', { name: copy.goTo('staging') });
     await expect(next).toHaveAttribute('href', changeOrderPath(fx.spaces.base.slug, fx.changeOrderSlug, 'staging'));
-    // Done: the box says so and offers nothing more.
+    // Done: the log says so and offers nothing more.
     await expect(page.locator('[data-testid="stage-merge"]')).toHaveCount(0);
     expect(traffic.applies.length).toBe(1);
     await shoot(page, '7');
   });
 
-  test('promote only, then release: the button beside the main one, and Release is all that is left', async ({ page }) => {
+  test('promoted, not released: the release prompt is all that is left, and nothing is live mid-action', async ({ page }) => {
     test.setTimeout(180_000);
     await installStubs(page, fx);
     await openStage(page, fx, 'staging');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'ready', { timeout: 30000 });
-    await expect(promoteMain(page, 'staging')).toHaveAttribute('data-method', 'pr');
-    await expect(otherButton(page)).toHaveAttribute('data-one-click', 'true');
-    await otherButton(page).click();
+    await expect(promoteMain(page, 'staging')).toHaveAttribute('data-one-click', 'true');
+    await promoteMain(page, 'staging').click();
     // Recorded from the click on: before it, the button is live by design.
     await recordTimeline(page);
     await expect(confirmButton(page)).toHaveCount(0);
 
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'promoted', { timeout: 60000 });
     {
-      // Until it is promoted, nothing can be pressed and no "Promoted in 1 of 2" shows.
       const frames = await timeline(page);
       const before = frames.slice(0, frames.findIndex((f) => f.state === 'promoted'));
       expect(before.filter((f) => f.live), JSON.stringify(frames)).toEqual([]);
-      expect(frames.filter((f) => /Promoted in \d/.test(f.heading)), JSON.stringify(frames)).toEqual([]);
     }
-    await expect(heading(page)).toHaveText(stageCardCopy.headline.promoted);
+    await expect(heading(page)).toHaveText('Your turn');
     const release = releaseMain(page, 'staging');
     await expect(release).toBeFocused();
-    await expect(release).toHaveText(stageCardCopy.merge.label('r', 'staging', false), { useInnerText: true });
-    await expect(release).toHaveCSS('background-color', PURPLE);
-    // One method left, so one button.
-    await expect(otherButton(page)).toHaveCount(0);
-    await expect(statusBox(page)).toContainText(stageCardCopy.dryRun.release(2));
-    await expect(sidebar(page)).toContainText(stageCardCopy.sidebar.targetsEarlier(2));
-    await expect(statusBox(page)).toContainText('By you, just now');
+    await expect(logLine(page, 'open-release')).toContainText(`${copy.releaseTo('staging')} ${copy.yourTurn}`);
+    // What the Targets run now is behind the (i), not a second line.
+    await expect(logLine(page, 'open-release')).not.toContainText(copy.targetsRunEarlier(2));
+    await expect(logLine(page, 'open-release').getByTestId('release-info')).toHaveAttribute(
+      'aria-label',
+      `${copy.releaseInfoLabel}: ${copy.targetsRunEarlier(2)}`,
+    );
+    await expect(logLine(page, 'log-promoted')).toContainText('you');
+    await expect(page.locator('[data-promote-stage="staging"]')).toHaveCount(0);
     await shoot(page, '5');
 
-    // Release is one click too: the box already says where it publishes.
-    await expect(release).toHaveAttribute('data-one-click', 'true');
     await release.click();
     await recordTimeline(page);
     await expect(confirmButton(page)).toHaveCount(0);
@@ -765,69 +752,44 @@ test.describe('ChangeOrder stage card', () => {
     // The Release button does not come back while the release runs.
     const frames = await timeline(page);
     expect(frames.filter((f) => f.live), JSON.stringify(frames)).toEqual([]);
-    await expect(sidebar(page)).toContainText(stageCardCopy.sidebar.targetsRun(2));
+    await expect(logLine(page, 'log-released')).toContainText(copy.targetsRanIt(2));
   });
 
-  test('the dry run: checking, unavailable (and re-run at confirm), no permission, and held', async ({ page }) => {
+  test('the dry run: checking, unavailable (and Try again), no permission, and held', async ({ page }) => {
     test.setTimeout(180_000);
     const { stubs, traffic } = await installStubs(page, fx, { quiet: 'ok', quietDelayMs: 8000, apply: 'ok' });
 
+    // Checking: skeleton lines below Now, the pill says so, and nothing can be pressed.
     await openStage(page, fx, 'prod');
-    await expect(dryLine(page)).toHaveAttribute('data-dry-run', 'running', { timeout: 30000 });
-    await expect(dryLine(page)).toHaveText(stageCardCopy.dryRun.running);
-    // While it runs, Promote is still offered; a confirm waits for the answer.
-    await expect(promoteMain(page, 'prod')).toBeEnabled();
+    await expect(logLine(page, 'log-skeleton-1')).toBeVisible({ timeout: 30000 });
+    await expect(heading(page)).toHaveText('Checking…');
+    await expect(page.locator('[data-testid="stage-merge"]')).toHaveCount(0);
     await shoot(page, '1-dry-running');
-    await expect(dryLine(page)).toHaveAttribute('data-dry-run', 'done', { timeout: 30000 });
-    await expect(dryLine(page)).toHaveText(stageCardCopy.dryRun.counts(9, 3));
+    await expect(promoteMain(page, 'prod')).toBeVisible({ timeout: 30000 });
+    await expect(logLine(page, 'open-promote')).toContainText(copy.yourTurnSpaces(3));
 
-    // No answer: the reader is told it runs at confirm, and the confirm runs it.
+    // No answer: a red line says so, offers Try again, and nothing is offered to write.
     stubs.quiet = 'unavailable';
     stubs.quietDelayMs = 0;
     await openStage(page, fx, 'prod');
-    await expect(dryLine(page)).toHaveAttribute('data-dry-run', 'unavailable', { timeout: 30000 });
-    await expect(dryLine(page)).toContainText(stageCardCopy.dryRun.unavailable);
+    const error = logLine(page, 'log-error');
+    await expect(error).toBeVisible({ timeout: 30000 });
+    await expect(error).toContainText(copy.cantCheck('prod'));
+    await expect(error).toContainText(copy.serverAnswered(500));
+    await expect(heading(page)).toHaveText(copy.cantCheck('prod'));
+    await expect(page.locator('[data-testid="stage-merge"]')).toHaveCount(0);
     await shoot(page, '1-dry-unavailable');
-    // The line asks again in place; the button does not move.
-    // (Measured from the box's top, so a scroll of the page does not count as a move.)
-    const offset = async () => (await boxOf(promoteMain(page, 'prod'))).y - (await boxOf(statusBox(page))).y;
-    const mainBefore = await offset();
-    const askedBefore = traffic.quiet.length;
-    await dryLine(page).getByText(stageCardCopy.merge.checkAgain).click();
-    await expect.poll(() => traffic.quiet.length, { timeout: 15000 }).toBeGreaterThan(askedBefore);
-    await expect(dryLine(page)).toHaveAttribute('data-dry-run', 'unavailable', { timeout: 15000 });
-    const mainAfter = await offset();
-    expect(near(mainAfter, mainBefore), `the button moved from ${mainBefore} to ${mainAfter} below the box's top`).toBe(true);
     const asked = traffic.quiet.length;
-    // With no answer to show, the click opens a confirm, in place: where the button was.
-    await expect(promoteMain(page, 'prod')).toHaveAttribute('data-one-click', 'false');
-    await promoteMain(page, 'prod').scrollIntoViewIfNeeded();
-    const before = await boxOf(promoteMain(page, 'prod'));
-    await promoteMain(page, 'prod').click();
-    await expect(confirmButton(page)).toBeFocused();
-    await expect(confirmButton(page)).toHaveText(stageCardCopy.merge.confirm('pr', false));
-    // Purple like the button it replaces; the pointer is still over it, so look with it moved off.
-    await page.mouse.move(0, 0);
-    await expect(confirmButton(page)).toHaveCSS('background-color', PURPLE);
-    await expect(cancelButton(page)).toHaveText(stageCardCopy.merge.cancel);
-    const after = await boxOf(confirmButton(page));
-    expect(near(after.x, before.x) && near(after.y, before.y), `confirm at ${after.x},${after.y}; button was at ${before.x},${before.y}`).toBe(true);
-    await shoot(page, '1-confirm');
-    await confirmButton(page).click();
+    await error.getByRole('button', { name: copy.tryAgain }).click();
     await expect.poll(() => traffic.quiet.length, { timeout: 15000 }).toBeGreaterThan(asked);
-    // Still no answer: the confirm becomes "anyway", behind an acknowledgement, and nothing was written.
-    await expect(confirmButton(page)).toHaveText(stageCardCopy.merge.confirm('pr', true), { timeout: 15000 });
-    await expect(statusBox(page).getByRole('checkbox', { name: stageCardCopy.merge.ack.noDryRun })).toBeVisible();
     expect(traffic.applies).toEqual([]);
-    await cancelButton(page).click();
-    await expect(confirmButton(page)).toHaveCount(0);
 
-    // 403: the box says so in place of a button, and the page is not replaced.
+    // 403: said in place of a button, and the page is not replaced.
     stubs.quiet = 'forbidden';
     await openStage(page, fx, 'prod');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'noPermission', { timeout: 30000 });
-    await expect(heading(page)).toHaveText(stageCardCopy.headline.noPermission('prod'));
-    await expect(statusBox(page)).toContainText(stageCardCopy.body.noPermission);
+    await expect(heading(page)).toHaveText('No permission');
+    await expect(logLine(page, 'open-promote')).toContainText(copy.cantPromoteInto('prod'));
     await expect(page.locator('[data-testid="stage-merge"]')).toHaveCount(0);
     await expect(page).not.toHaveURL(/access-denied/);
 
@@ -835,26 +797,30 @@ test.describe('ChangeOrder stage card', () => {
     stubs.quiet = 'held';
     await openStage(page, fx, 'prod');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'serverHeld', { timeout: 30000 });
-    await expect(heading(page)).toHaveText(stageCardCopy.headline.serverHeld('prod'));
-    await expect(statusBox(page).locator('[data-held]')).toContainText('simulated hold');
+    await expect(heading(page)).toHaveText(copy.held('prod'));
+    await expect(logLine(page, 'log-held')).toContainText('simulated hold');
+    await expect(logLine(page, 'open-promote')).toContainText(copy.waitsForServer('prod'));
     await expect(page.locator('[data-testid="stage-merge"]')).toHaveCount(0);
     expect(traffic.applies).toEqual([]);
   });
 
-  test('review approve: the form in the box, one Pass, then Ready to promote', async ({ page }) => {
+  test('review approve: the prompt, its reason form, one Pass, then Your turn to promote', async ({ page }) => {
     const mocks = await mockReviews(page, fx, 'partial', { countNewRecords: true });
     await openStage(page, fx, 'prod');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'reviewNeeded', { timeout: 45000 });
-    await expect(heading(page)).toHaveText(stageCardCopy.headline.reviewNeeded);
-    await expect(statusBox(page)).toContainText('security-review');
-    await expect(statusBox(page)).toContainText('before prod can be promoted.');
+    await expect(heading(page)).toHaveText('Your turn');
+    const review = logLine(page, 'open-review');
+    await expect(review).toHaveAttribute('data-tone', 'prompt');
+    await expect(review).toContainText(`${stageCardCopy.review.yourReview} ${stageCardCopy.review.needed}`);
+    await expect(logLine(page, 'open-promote')).toContainText(`${copy.waitsFor}${copy.review}`);
     await expect(page.locator('[data-promote-stage]')).toHaveCount(0);
     await shoot(page, '2');
 
-    await statusBox(page).getByTestId('review-approve').click();
-    const form = statusBox(page).getByTestId('review-form');
+    await review.getByTestId('review-approve').click();
+    const form = review.getByTestId('review-form');
     await expect(form).toBeVisible();
-    await expect(form.getByLabel(stageCardCopy.review.reasonLabel(noteRequired('Pass')))).toBeVisible();
+    await expect(form.getByLabel(stageCardCopy.review.compactLabel(true, true))).toBeVisible();
+    await expect(form).toContainText(stageCardCopy.review.compactHint);
     await shoot(page, '2-approve');
     await form.getByTestId('review-reason').fill('Checked the image tag and the memory limit.');
     await form.getByTestId('review-submit').click();
@@ -862,56 +828,58 @@ test.describe('ChangeOrder stage card', () => {
     expect(mocks.attests[0].body).toMatchObject({ Result: 'Pass', ChangeOrderID: fx.changeOrderId });
     await expect(page.getByTestId('review-toast')).toBeVisible();
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'ready', { timeout: 45000 });
-    await expect(heading(page)).toHaveText(stageCardCopy.headline.readyAfterApproval);
+    await expect(heading(page)).toHaveText('Your turn');
     await expect(promoteMain(page, 'prod')).toBeVisible();
   });
 
   test('review reject, then withdraw: a revocation, and the review is asked for again', async ({ page }) => {
     const mocks = await mockReviews(page, fx, 'partial', { countNewRecords: true });
     await openStage(page, fx, 'prod');
-    await statusBox(page).getByTestId('review-reject').click({ timeout: 45000 });
-    const form = statusBox(page).getByTestId('review-form');
+    const review = logLine(page, 'open-review');
+    await review.getByTestId('review-reject').click({ timeout: 45000 });
+    const form = review.getByTestId('review-form');
     await form.getByTestId('review-submit').click();
     await expect(form).toContainText(stageCardCopy.review.reasonMissing);
     await form.getByTestId('review-reason').fill('Pin the memory limit before prod.');
-    await expect(form.getByTestId('review-submit')).toHaveText(stageCardCopy.review.submitRejection);
+    await expect(form.getByTestId('review-submit')).toHaveText(stageCardCopy.review.compactSubmit(false));
     await form.getByTestId('review-submit').click();
     await expect.poll(() => mocks.attests.length, { timeout: 15000 }).toBe(1);
     expect(mocks.attests[0].body).toMatchObject({ Result: 'Fail' });
 
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'reviewRejected', { timeout: 45000 });
-    await expect(heading(page)).toHaveText(stageCardCopy.headline.rejectedByYou);
-    await expect(statusBox(page)).toContainText(stageCardCopy.review.clearsWhenYou);
-    await expect(statusBox(page)).toContainText('Pin the memory limit before prod.');
-    await statusBox(page).getByRole('button', { name: stageCardCopy.review.withdraw }).click();
-    await statusBox(page).getByRole('button', { name: stageCardCopy.review.confirmWithdraw }).click();
+    await expect(heading(page)).toHaveText('Rejected by you');
+    await expect(logLine(page, 'log-rejected')).toContainText('Pin the memory limit before prod.');
+    await expect(review).toContainText(stageCardCopy.review.youCanWithdraw);
+    await review.getByRole('button', { name: stageCardCopy.review.withdraw }).click();
+    await review.getByRole('button', { name: stageCardCopy.review.confirmWithdraw }).click();
     // One revocation per Space the rejection was recorded in.
     await expect.poll(() => mocks.revokes.length, { timeout: 15000 }).toBe(fx.spacesInStage('staging').length);
     for (const revoke of mocks.revokes) expect(revoke.body.RevokedAttestationID).toBeTruthy();
     expect(mocks.attests).toHaveLength(1);
     await expect(page.locator('#announce')).toContainText(stageCardCopy.announce.rejectionWithdrawn);
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'reviewNeeded', { timeout: 45000 });
-    await expect(heading(page)).toHaveText(stageCardCopy.headline.reviewNeeded);
+    await expect(heading(page)).toHaveText('Your turn');
   });
 
   test('author: waiting on review, request a review, and ask the rejecter again', async ({ page }) => {
     let mocks = await mockReviews(page, fx, 'author');
     await openStage(page, fx, 'prod');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'reviewWaiting', { timeout: 45000 });
-    await expect(heading(page)).toHaveText(stageCardCopy.headline.reviewWaiting);
-    await expect(statusBox(page)).toContainText('since you wrote this change');
-    await expect(statusBox(page).getByTestId('review-approve')).toHaveCount(0);
+    await expect(heading(page)).toHaveText(/^Waiting on /);
+    const review = logLine(page, 'open-review');
+    await expect(review).toContainText(stageCardCopy.review.youWroteIt);
+    await expect(review.getByTestId('review-approve')).toHaveCount(0);
     await shoot(page, '3');
 
-    await statusBox(page).getByRole('button', { name: stageCardCopy.review.requestReview }).click();
-    const picker = statusBox(page).getByTestId('review-request-picker');
+    await review.getByRole('button', { name: stageCardCopy.review.compactRequest, exact: true }).click();
+    const picker = review.getByTestId('review-request-picker');
     await expect(picker).toContainText(stageCardCopy.review.requestFrom);
     await picker.getByRole('checkbox', { name: PEOPLE.priya.name }).check();
     await picker.getByRole('button', { name: stageCardCopy.review.requestSubmit, exact: true }).click();
     await expect.poll(() => mocks.patches.length, { timeout: 15000 }).toBe(1);
     const asked = (mocks.patches[0].ReviewRequests as { UserID?: string }[] | undefined) ?? [];
     expect(asked.map((r) => r.UserID)).toContain(PEOPLE.priya.id);
-    await expect(statusBox(page)).toContainText(stageCardCopy.review.requestedFrom(PEOPLE.priya.name));
+    await expect(review).toContainText(stageCardCopy.review.requestedFrom(PEOPLE.priya.name));
 
     // Tom rejected; Tom and Lena were asked hours ago. Asking Tom again moves his request only.
     await page.unrouteAll({ behavior: 'ignoreErrors' });
@@ -924,12 +892,12 @@ test.describe('ChangeOrder stage card', () => {
     });
     await openStage(page, fx, 'prod');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'reviewRejected', { timeout: 45000 });
-    await expect(heading(page)).toHaveText(stageCardCopy.headline.rejectedBy(PEOPLE.tom.name));
-    await expect(statusBox(page)).toContainText('session-store needs synchronous deletes');
-    await expect(statusBox(page)).toContainText(stageCardCopy.review.clearsWhen(PEOPLE.tom.name).replace(/\.$/, ''));
+    await expect(heading(page)).toHaveText(`Rejected by ${PEOPLE.tom.name}`);
+    await expect(logLine(page, 'log-rejected')).toContainText('session-store needs synchronous deletes');
+    await expect(review).toContainText(stageCardCopy.review.canWithdraw(PEOPLE.tom.name));
     await shoot(page, '4');
     const startedAt = Date.now();
-    await statusBox(page).getByRole('button', { name: stageCardCopy.review.askAgain(PEOPLE.tom.name) }).click();
+    await review.getByRole('button', { name: stageCardCopy.review.compactAskAgain, exact: true }).click();
     await expect.poll(() => mocks.patches.length, { timeout: 15000 }).toBe(1);
     const sent = (mocks.patches[0].ReviewRequests as { UserID?: string; RequestedAt?: string }[] | undefined) ?? [];
     const tom = sent.find((r) => r.UserID === PEOPLE.tom.id);
@@ -937,7 +905,7 @@ test.describe('ChangeOrder stage card', () => {
     expect(Date.parse(tom?.RequestedAt ?? ''), 'Tom is asked again: a later RequestedAt').toBeGreaterThanOrEqual(startedAt - 60_000);
     expect(lena, 'the other requests are kept').toBeDefined();
     expect(Date.parse(lena?.RequestedAt ?? '') < startedAt - 3 * HOUR, 'and left as they were').toBe(true);
-    await expect(statusBox(page)).toContainText(stageCardCopy.review.askedAgain(PEOPLE.tom.name));
+    await expect(review).toContainText(stageCardCopy.review.askedAgain(PEOPLE.tom.name));
   });
 
   /*
@@ -945,7 +913,9 @@ test.describe('ChangeOrder stage card', () => {
    * is still offered: it may be exactly what the reader wants. So the button says
    * "anyway", and the confirm waits for the reader to tick what they checked.
    */
-  test('a Space that takes the change differently: amber, the bar with Same and Differs boxes, and an acknowledged "anyway"', async ({ page }) => {
+  test('a Space that takes the change differently: the amber line and pill, the bar with Same and Differs boxes, and an acknowledged "anyway"', async ({
+    page,
+  }) => {
     // Not the first of the stage's Spaces: see the test at the end for that case.
     const odd = (await spacesInListOrder(fx, 'prod')).at(-1) as ChangeOrderSpace;
     const { traffic } = await installStubs(page, fx, {
@@ -956,9 +926,10 @@ test.describe('ChangeOrder stage card', () => {
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'problem', { timeout: 45000 });
     await expect(problem(page)).toHaveAttribute('data-problem-kind', 'differs');
     await expect(heading(page)).toHaveText(stageCardCopy.headline.differs(1));
-    await expect(problem(page)).toContainText(odd.slug);
+    await expect(heading(page)).toHaveAttribute('data-tone', 'warning');
+    await expect(logLine(page, 'log-warn')).toContainText(odd.slug);
     const main = promoteMain(page, 'prod');
-    await expect(main).toHaveText(stageCardCopy.merge.label('pr', 'prod', true), { useInnerText: true });
+    await expect(main).toHaveText(copy.promoteAnyway, { useInnerText: true });
     // "…anyway" is outlined, still in Promote's purple.
     await expect(main).toHaveCSS('color', PURPLE);
     await expect(main).toHaveCSS('border-top-color', PURPLE);
@@ -978,12 +949,14 @@ test.describe('ChangeOrder stage card', () => {
     await expect(differs).toContainText('1 Space');
     // One or two Spaces are named on a closed box.
     await expect(differs).toContainText(odd.slug);
-    await expect(sidebar(page)).toContainText(stageCardCopy.mark.differs);
     expect(traffic.errors).toEqual([]);
     await shoot(page, '9');
 
     await main.click();
+    // The prompt asks it as a question, and the acknowledgement opens under it.
+    await expect(logLine(page, 'open-promote')).toContainText(copy.promoteAnywayTo('prod'));
     const confirm = confirmButton(page);
+    await expect(confirm).toHaveText(copy.confirmAnyway);
     await expect(confirm).toHaveAttribute('aria-disabled', 'true');
     await expect(statusBox(page)).toContainText(stageCardCopy.merge.tickFirst);
     const ack = statusBox(page).getByRole('checkbox');
@@ -1051,13 +1024,11 @@ test.describe('ChangeOrder stage card', () => {
     // The short form: the field's label and the kept image tag, not the whole reference.
     await expect(problem(page)).toContainText('a protected field in');
     await expect(problem(page)).toContainText('v0.2.19');
-    await expect(sidebar(page)).toContainText(/Keeps /);
     expect(traffic.errors).toEqual([]);
     await shoot(page, '10');
 
     // Opening a box opens it in place: the page does not scroll, so the card the
-    // reader pressed in stays where it was. (The boxes sit above the status box,
-    // so that moves down.)
+    // reader pressed in stays where it was.
     const toggles = page.getByTestId('stage-outcome-toggle');
     const diff = page.locator('#stage-diff');
     const changeCard = page.getByTestId('stage-change-card');
@@ -1109,7 +1080,6 @@ test.describe('ChangeOrder stage card', () => {
     await expect(problem(page)).toHaveAttribute('data-problem-kind', 'unknown');
     await expect(heading(page)).toHaveText(stageCardCopy.headline.unknown(1, 3));
     await expect(problem(page)).toContainText('The dry run could not plan');
-    await expect(sidebar(page)).toContainText(stageCardCopy.mark.unknown);
     await shoot(page, '11');
     await promoteMain(page, 'prod').click();
     await expect(statusBox(page).getByRole('checkbox', { name: stageCardCopy.merge.ack.unknown(1) })).toBeVisible();
@@ -1118,7 +1088,7 @@ test.describe('ChangeOrder stage card', () => {
     expect(traffic.applies).toEqual([]);
   });
 
-  test('a failed promotion: the box, a re-check on focus, the retry, and the record after a reload', async ({ page }) => {
+  test('a failed promotion: the red line, a re-check on focus, the retry, and the record after a reload', async ({ page }) => {
     test.setTimeout(180_000);
     await page.clock.install();
     const failing = fx.spaces['prod-us-east'];
@@ -1135,48 +1105,42 @@ test.describe('ChangeOrder stage card', () => {
 
     const box = statusBox(page);
     await expect(box).toHaveAttribute('data-stage-state', 'failed', { timeout: 30000 });
-    await expect(heading(page)).toHaveText(stageCardCopy.headline.promoteFailed(1, 3));
+    await expect(heading(page)).toHaveText('Promote failed');
     await expect(heading(page)).toBeFocused();
+    const red = logLine(page, 'log-promote-failed');
+    await expect(red).toHaveAttribute('data-tone', 'bad');
+    await expect(red).toContainText(`${copy.actionTo(false, 'prod')} ${copy.failedInOf(1, 3)}`);
     const error = page.getByTestId('change-order-foot-error');
-    await expect(error).toBeVisible();
     await expect(error).toContainText('simulated merge refusal on app');
     await expect(error).toContainText(failing.slug);
-    await expect(sidebar(page)).toContainText(stageCardCopy.mark.failed);
-    await box.getByText(stageCardCopy.body.serverMessage, { exact: true }).click();
-    await expect(box.locator('details[open]')).toContainText('simulated merge refusal on app');
 
     // The dry run fails for that Space now: Check again, and no retry yet.
     stubs.quiet = 'fails';
     await returnToWindow(page);
-    await expect(box).toContainText('Dry run fails for', { timeout: 30000 });
-    const checkAgain = box.getByRole('button', { name: stageCardCopy.merge.checkAgain });
+    const promote = logLine(page, 'open-promote');
+    await expect(promote).toContainText('Dry run fails for', { timeout: 30000 });
+    const checkAgain = promote.getByRole('button', { name: stageCardCopy.merge.checkAgain });
     await expect(checkAgain).toBeVisible();
     await shoot(page, '6');
 
     // No verdict at all: a retry is still possible, as "anyway".
     stubs.quiet = 'unavailable';
     await checkAgain.click();
-    await expect(box).toContainText(stageCardCopy.dryRun.didNotFinish, { timeout: 30000 });
-    await expect(box.getByRole('button', { name: stageCardCopy.merge.retryAnyway(true) })).toBeVisible();
+    await expect(promote.getByRole('button', { name: stageCardCopy.merge.retryAnyway(false) })).toBeVisible({ timeout: 30000 });
     await shoot(page, '6-dry-unavailable');
 
-    // Asked again; while it runs it says so, without a spinner.
+    // Asked again: once the dry run passes, Retry, whose confirm says what it writes again.
     stubs.quiet = 'ok';
-    stubs.quietDelayMs = 8000;
     await returnToWindow(page);
-    await expect(box).toContainText(/Checking .+…/, { timeout: 15000 });
-    await shoot(page, '6-dry-running');
-    await expect(box).toContainText('the dry run passes now.', { timeout: 30000 });
-    const retry = box.getByRole('button', { name: stageCardCopy.merge.retry('prod', true) });
-    await expect(retry).toBeVisible();
+    const retry = promote.getByRole('button', { name: copy.retry, exact: true });
+    await expect(retry).toBeVisible({ timeout: 30000 });
     await shoot(page, '6-recheck');
     await retry.click();
-    await expect(box).toContainText(stageCardCopy.merge.retryWrites(failing.slug, 3, true));
-    await expect(confirmButton(page)).toHaveText(stageCardCopy.merge.retryConfirm(true));
+    await expect(box).toContainText(stageCardCopy.merge.retryWrites(failing.slug, 3, false));
+    await expect(confirmButton(page)).toHaveText(stageCardCopy.merge.retryConfirm(false));
     await cancelButton(page).click();
 
     // The failure is recorded on the ChangeOrder, so a reload still shows it.
-    stubs.quietDelayMs = 0;
     stubs.promotionFailures = [
       stub('promotion-failure', {
         stage: 'prod',
@@ -1192,98 +1156,60 @@ test.describe('ChangeOrder stage card', () => {
     await expect(page.getByTestId('change-order-foot-error')).toContainText('simulated recorded failure');
   });
 
-  /*
-   * A RELEASE THAT FAILS IN ONE SPACE is published again in that Space only: the
-   * others already run the change, and publishing them again is not a retry.
-   */
-  test('a release that failed in one Space: Release again publishes only that Space', async ({ page }) => {
-    const [ok1, ok2, failing] = fx.spacesInStage('prod');
-    const { stubs, traffic } = await installStubs(page, fx, { quiet: 'ok', apply: 'ok', releaseFailSpaceIds: [failing.spaceId] });
-    await openStage(page, fx, 'prod');
-    await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'ready', { timeout: 45000 });
-    await expect(promoteMain(page, 'prod')).toHaveAttribute('data-one-click', 'true');
-    await promoteMain(page, 'prod').click();
-    await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'failed', { timeout: 60000 });
-    await expect(heading(page)).toHaveText(stageCardCopy.headline.releaseFailed(1, 3));
-    expect(new Set(traffic.releases)).toEqual(new Set([ok1.spaceId, ok2.spaceId, failing.spaceId]));
-
-    stubs.releaseFailSpaceIds = [];
-    const before = traffic.releases.length;
-    await statusBox(page).getByRole('button', { name: stageCardCopy.merge.releaseAgain }).click();
-    await confirmButton(page).click();
-    await expect.poll(() => traffic.releases.length, { timeout: 30000 }).toBeGreaterThan(before);
-    await page.waitForTimeout(1000);
-    expect(traffic.releases.slice(before), 'only the Space whose release failed').toEqual([failing.spaceId]);
-  });
-
-  test('a released stage offers nothing and folds its review; the source stage is one line', async ({ page }) => {
+  test('a released stage offers nothing and keeps its approvals in the log; the source stage is one line', async ({ page }) => {
     // dev's entry review, over the ChangeOrder's own Space, approved by Priya and Lena.
     await mockReviews(page, fx, 'satisfied', { firstStage: true }, 'base');
     await openStage(page, fx, 'dev');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'released', { timeout: 45000 });
+    await expect(heading(page)).toHaveText(copy.releasedTo('dev'));
+    await expect(heading(page)).toHaveAttribute('data-tone', 'success');
     await expect(page.locator('[data-testid="stage-merge"]')).toHaveCount(0);
     await expect(page.locator('[data-release-stage]')).toHaveCount(0);
-    const row = sidebar(page).locator('[data-testid="stage-review-row"][data-requirement="first-look"]');
-    await expect(row).toContainText('approved by', { timeout: 30000 });
-    await expect(row.locator('[aria-expanded="true"]')).toHaveCount(0);
-    await expect(sidebar(page)).toContainText(stageCardCopy.sidebar.targetsRun(1));
+    await expect(logLine(page, 'log-open')).toHaveCount(0);
+    // Nothing folds: the approvals are there, with who gave them, without opening anything.
+    await expect(logLine(page, 'log-end')).toBeVisible({ timeout: 30000 });
+    await expect(logLine(page, 'log-fold')).toHaveCount(0);
+    await expect(statusBox(page)).toContainText(`${PEOPLE.lena.name} ${copy.approved}`, { timeout: 30000 });
+    await expect(logLine(page, 'log-end')).toContainText(copy.nothingLeft('dev'));
 
-    // No box: one line at the card's edge, since there is nothing to do here.
+    // The source: the line it was made in, and where to go next.
     await openStage(page, fx, SOURCE_STAGE);
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'source');
-    await expect(statusBox(page)).toContainText(stageCardCopy.body.source);
-    await expect(page.locator('#stage-status-heading')).toHaveCount(0);
-    await expect(card(page).getByRole('link', { name: new RegExp(stageCardCopy.goTo('dev')) })).toHaveAttribute(
+    await expect(heading(page)).toHaveText('Made here');
+    await expect(logLine(page, 'log-arrival')).toContainText(`${copy.madeHere} ${fx.spaces.base.slug}`);
+    await expect(logLine(page, 'log-end')).toContainText(copy.startsHere);
+    await expect(logLine(page, 'log-end').getByRole('link', { name: copy.goTo('dev') })).toHaveAttribute(
       'href',
       changeOrderPath(fx.spaces.base.slug, fx.changeOrderSlug, 'dev'),
     );
-    await expect(sidebar(page)).toContainText(stageCardCopy.sidebar.gatesNone);
     await shoot(page, '8');
   });
 
-  test('keyboard: the two buttons, the acknowledgement and its confirm, the review form, and focus after a failure', async ({
-    page,
-  }) => {
+  test('keyboard: the acknowledgement and its confirm, the review form, and focus after a failure', async ({ page }) => {
     test.setTimeout(180_000);
     const { stubs, traffic } = await installStubs(page, fx, { quiet: 'ok', apply: 'ok' });
-    await openStage(page, fx, 'prod');
-    await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'ready', { timeout: 45000 });
     const main = promoteMain(page, 'prod');
 
-    // The main button, then "Promote only", in the tab order.
-    await main.focus();
-    await page.keyboard.press('Tab');
-    const other = otherButton(page);
-    await expect(other).toBeFocused();
-    expect(traffic.applies).toEqual([]);
-
-    // A propagation problem: each button opens its own confirm. The acknowledgement
-    // takes focus, Space ticks it, and Escape gives focus back to the button.
+    // A propagation problem: the acknowledgement takes focus, Space ticks it, and
+    // Escape gives focus back to the button.
     const odd = (await spacesInListOrder(fx, 'prod')).at(-1) as ChangeOrderSpace;
     stubs.forced = (result) => mutateSpace(result, odd.spaceId, takesDifferently);
     await openStage(page, fx, 'prod');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'problem', { timeout: 45000 });
-    await other.focus();
-    await page.keyboard.press('Enter');
-    await expect(statusBox(page).getByRole('checkbox')).toBeFocused();
-    await expect(confirmButton(page)).toHaveText(stageCardCopy.merge.confirm('p', false));
-    await page.keyboard.press('Escape');
-    await expect(confirmButton(page)).toHaveCount(0);
-    await expect(other).toBeFocused();
     await main.focus();
     await page.keyboard.press('Enter');
     const ack = statusBox(page).getByRole('checkbox');
     await expect(ack).toBeFocused();
     await page.keyboard.press('Space');
     await expect(ack).toBeChecked();
-    await expect(confirmButton(page)).toHaveText(stageCardCopy.merge.confirm('pr', false));
+    await expect(confirmButton(page)).toHaveText(copy.confirmAnyway);
     await expect(confirmButton(page)).not.toHaveAttribute('aria-disabled', 'true');
     await page.keyboard.press('Escape');
     await expect(confirmButton(page)).toHaveCount(0);
     await expect(main).toBeFocused();
     expect(traffic.applies).toEqual([]);
 
-    // A failure: focus goes to the headline that says so.
+    // A failure: focus goes to the pill that says so.
     stubs.forced = undefined;
     stubs.apply = 'partial';
     stubs.applyFailSpaceIds = [fx.spaces['prod-us-east'].spaceId];
@@ -1295,7 +1221,7 @@ test.describe('ChangeOrder stage card', () => {
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'failed', { timeout: 30000 });
     await expect(heading(page)).toBeFocused();
 
-    // The review form: Escape closes it onto Approve…, and Ctrl+Enter submits.
+    // The review form: Escape closes it onto Approve…, and Enter submits.
     await page.unrouteAll({ behavior: 'ignoreErrors' });
     const mocks = await mockReviews(page, fx, 'partial');
     await openStage(page, fx, 'prod');
@@ -1304,15 +1230,14 @@ test.describe('ChangeOrder stage card', () => {
     await approve.focus();
     await page.keyboard.press('Enter');
     const reason = statusBox(page).getByTestId('review-reason');
-    const submit = statusBox(page).getByTestId('review-submit');
-    await expect(noteRequired('Pass') ? reason : submit).toBeFocused();
+    await expect(reason).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(statusBox(page).getByTestId('review-form')).toHaveCount(0);
     await expect(approve).toBeFocused();
     await page.keyboard.press('Enter');
     await reason.focus();
     await page.keyboard.type('Read the diff.');
-    await page.keyboard.press('Control+Enter');
+    await page.keyboard.press('Enter');
     await expect.poll(() => mocks.attests.length, { timeout: 15000 }).toBe(1);
   });
 
@@ -1329,10 +1254,9 @@ test.describe('ChangeOrder stage card', () => {
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'problem', { timeout: 45000 });
     await expect(heading(page)).toHaveText(stageCardCopy.headline.differs(1));
     await expect(problem(page)).toContainText(first.slug);
-    await expect(sidebar(page).locator(`[data-testid="stage-space"][data-space-id="${first.spaceId}"]`)).toContainText(stageCardCopy.mark.differs);
   });
 
-  /** No sideways scroll, and the sidebar beside the main column at `width`, or below it on a phone. */
+  /** No sideways scroll; the log fills the column under the change card at every width. */
   async function checkLayout(page: Page, width: number): Promise<void> {
     await page.setViewportSize({ width, height: 900 });
     await page.waitForTimeout(300);
@@ -1350,38 +1274,24 @@ test.describe('ChangeOrder stage card', () => {
     // Polled: the card lays out again after the window changes size.
     await expect.poll(async () => (await overflow()).card, { message: `the stage card runs past the window at ${width}`, timeout: 5000 }).toBeLessThanOrEqual(1);
     if (width >= 760) expect((await overflow()).page, `page scrolls sideways at ${width}`).toBeLessThanOrEqual(1);
-    const main = await boxOf(statusBox(page));
+    const log = await boxOf(page.getByTestId('stage-log'));
     const change = await boxOf(page.getByTestId('stage-change-card'));
-    const side = await boxOf(sidebar(page));
-    if (width >= 760) {
-      for (const [name, box] of [['status box', main], ['change card', change]] as const) {
-        expect(side.x, `the sidebar is beside the ${name}, not over it, at ${width}`).toBeGreaterThanOrEqual(box.x + box.width - 1);
-      }
-    } else {
-      expect(side.y, `the sidebar is below the main column at ${width}`).toBeGreaterThanOrEqual(main.y + main.height - 1);
-      expect(near(side.x, main.x, 2)).toBe(true);
-    }
+    expect(log.y, `the log is below the change card at ${width}`).toBeGreaterThanOrEqual(change.y + change.height - 1);
+    expect(near(log.x, change.x, 2) && near(log.width, change.width, 2), `the log and the change card share one column at ${width}`).toBe(true);
   }
 
-  test('layout at 1440 and 400: the stage card fits the window; the sidebar beside the main column, or below it on a phone', async ({ page }) => {
+  test('layout at 1440, 1000 and 400: one column, the log under the change card, nothing past the window', async ({ page }) => {
     await installStubs(page, fx, { quiet: 'ok' });
     await openStage(page, fx, 'prod');
     await expect(statusBox(page)).toBeVisible({ timeout: 45000 });
-    for (const width of [1440, 400]) await checkLayout(page, width);
+    for (const width of [1440, 1000, 400]) await checkLayout(page, width);
     await page.setViewportSize({ width: 1440, height: 900 });
   });
 
-  test('layout at 1000: the sidebar clears the main column', async ({ page }) => {
-    await installStubs(page, fx, { quiet: 'ok' });
-    await openStage(page, fx, 'prod');
-    await expect(statusBox(page)).toBeVisible({ timeout: 45000 });
-    await checkLayout(page, 1000);
-  });
-
   /*
-   * ONE CLICK WRITES ONLY WHAT THE BOX SHOWED. An answer older than a minute is
+   * ONE CLICK WRITES ONLY WHAT THE LOG SHOWED. An answer older than a minute is
    * asked again at the click; the stub plans something new on every ask, so the
-   * answer asked again plans something else. Nothing is written, the box shows
+   * answer asked again plans something else. Nothing is written, the log shows
    * the new answer, and a second click promotes on it.
    */
   test('one click: a dry run asked again that plans something else writes nothing, and the next click promotes', async ({ page }) => {
@@ -1390,11 +1300,11 @@ test.describe('ChangeOrder stage card', () => {
     const { traffic } = await installStubs(page, fx, { quiet: 'ok', apply: 'ok' });
     await openStage(page, fx, 'prod');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'ready', { timeout: 45000 });
-    const only = otherButton(page);
-    await expect(only).toHaveAttribute('data-one-click', 'true');
+    const main = promoteMain(page, 'prod');
+    await expect(main).toHaveAttribute('data-one-click', 'true');
     const asked = traffic.quiet.length;
     await page.clock.fastForward('01:05');
-    await only.click();
+    await main.click();
     await expect.poll(() => traffic.quiet.length, { timeout: 15000 }).toBeGreaterThan(asked);
     await expect(page.locator('#announce')).toContainText(stageCardCopy.announce.planChanged('prod'), { timeout: 15000 });
     await expect(heading(page)).toBeFocused();
@@ -1402,27 +1312,49 @@ test.describe('ChangeOrder stage card', () => {
     await expect(confirmButton(page)).toHaveCount(0);
     expect(traffic.applies, 'a plan the reader did not see is not written').toEqual([]);
 
-    await only.click();
+    await main.click();
     await expect.poll(() => traffic.applies.length, { timeout: 30000 }).toBe(1);
   });
 
   /*
-   * NOTHING CAN BE PRESSED HALF-WAY. Promote and release is one action: between
-   * the click and "Released", the box never offers a live button, and never shows the
-   * promote leg's own state ("Promoted, not released", "Promoted in 1 of 3"). Last in
-   * the file, because it really promotes and releases prod.
+   * NOTHING CAN BE PRESSED HALF-WAY, and A RELEASE THAT FAILS IN ONE SPACE is
+   * published again in that Space only: the others already run the change, and
+   * publishing them again is not a retry. Last in the file, because it really
+   * promotes and releases prod.
    */
-  test('promote and release on prod: no clickable or half-way state between the click and Released', async ({ page }) => {
-    test.setTimeout(180_000);
-    await installStubs(page, fx);
+  test('promote and release on prod: nothing live mid-action, and Release again publishes only the Space that failed', async ({ page }) => {
+    test.setTimeout(240_000);
+    const [ok1, ok2, failing] = fx.spacesInStage('prod');
+    const { stubs, traffic } = await installStubs(page, fx, { releaseFailSpaceIds: [failing.spaceId] });
     await openStage(page, fx, 'prod');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'ready', { timeout: 45000 });
     await expect(promoteMain(page, 'prod')).toHaveAttribute('data-one-click', 'true');
     await promoteMain(page, 'prod').click();
     await recordTimeline(page);
+    await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'promoted', { timeout: 120000 });
+    let frames = await timeline(page);
+    const before = frames.slice(0, frames.findIndex((f) => f.state === 'promoted'));
+    expect(before.filter((f) => f.live), `a live button mid-promote: ${JSON.stringify(frames)}`).toEqual([]);
+
+    await releaseMain(page, 'prod').click();
+    await recordTimeline(page);
+    await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'failed', { timeout: 120000 });
+    frames = await timeline(page);
+    const midRelease = frames.slice(0, frames.findIndex((f) => f.state === 'failed'));
+    expect(midRelease.filter((f) => f.live), `a live button mid-release: ${JSON.stringify(frames)}`).toEqual([]);
+    await expect(heading(page)).toHaveText('Release failed');
+    await expect(logLine(page, 'log-promote-failed')).toContainText(`${copy.actionTo(true, 'prod')} ${copy.failedInOf(1, 3)}`);
+    expect(new Set(traffic.releases)).toEqual(new Set([ok1.spaceId, ok2.spaceId, failing.spaceId]));
+
+    stubs.releaseFailSpaceIds = [];
+    const released = traffic.releases.length;
+    const release = logLine(page, 'open-release');
+    await expect(release).toContainText(copy.releaseAgainTo('prod'));
+    await release.getByRole('button', { name: stageCardCopy.merge.releaseAgain }).click();
+    await confirmButton(page).click();
+    await expect.poll(() => traffic.releases.length, { timeout: 30000 }).toBeGreaterThan(released);
+    await page.waitForTimeout(1000);
+    expect(traffic.releases.slice(released), 'only the Space whose release failed').toEqual([failing.spaceId]);
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'released', { timeout: 120000 });
-    const frames = await timeline(page);
-    expect(frames.filter((f) => f.live), `a live button mid-action: ${JSON.stringify(frames)}`).toEqual([]);
-    expect(frames.filter((f) => /Promoted, not released|Promoted in \d/.test(f.heading)), JSON.stringify(frames)).toEqual([]);
   });
 });

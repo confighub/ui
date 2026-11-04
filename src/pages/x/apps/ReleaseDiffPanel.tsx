@@ -48,6 +48,7 @@ import {
 import type { TreeDiffDomHooks } from './TreeDiffSection';
 import { useColumnResize } from './useColumnResize';
 import type { ReleaseUnitDiff } from './useReleaseDiff';
+import { withDocumentChanges } from './wholeResourceChanges';
 
 // ============================================================================
 // PUBLIC TYPES
@@ -115,7 +116,9 @@ function buildUnitTree(unit: ReleaseDiffUnitView): ReleaseUnitTree {
   const resources = unit.result.diff.Resources ?? [];
   const imageRows: ImageRowModel[][] = [];
   const split = resources.map((resource) => {
-    const { rows, others } = imageRowsOfResource(resource);
+    // A resource added or deleted whole (a Unit new in the comparison) is read into
+    // path changes so it draws as a tree, not as its YAML.
+    const { rows, others } = imageRowsOfResource(withDocumentChanges(resource));
     imageRows.push(rows);
     return { ...resource, Changes: others };
   });

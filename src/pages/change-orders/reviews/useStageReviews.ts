@@ -43,7 +43,6 @@ import { inClause } from '@/hooks/inClauseChunks';
 import { usePolling } from '@/hooks/usePolling';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import {
-  useListAllRevisionsQuery,
   useListGroupsQuery,
   useListSpacesQuery,
   type AttestationRead,
@@ -53,6 +52,8 @@ import {
 } from '@confighub/rtk-query';
 
 import { authFetch } from '@/auth/session';
+import { taggedRevisionWheres } from '../../x/apps/change-order/taggedRevisionReads';
+import { useGetTaggedRevisionsQuery } from '../../x/apps/change-order/taggedRevisionsApi';
 import { SERVER_GATES_POLL_INTERVAL_MS } from '../../x/apps/change-order/useServerStageGates';
 import type { ChangeOrderDetail } from '../useChangeOrderDetail';
 import { DEFAULT_ATTESTATION_TYPE, combineGateReviews, deriveGateReviews, promoteReadiness } from './changeOrderReviews';
@@ -103,8 +104,6 @@ import {
 const NOW_TICK_MS = 60_000;
 /** How long a recorded decision waits for the server's fresh gate verdicts before saying it could not. */
 const VERDICT_WAIT_MS = 20_000;
-/** Two Revisions per Unit (start and end Tags) of the Spaces reviewed, at the server's largest page. */
-const CHANGED_REVISION_LIMIT = 1000;
 const EMPTY_RECORDS: AttestationRead[] = [];
 const EMPTY_DEFINITIONS: ChangeWorkflowAttestationPrerequisite[] = [];
 const NO_GATES: readonly ReviewGateRef[] = [];
@@ -421,25 +420,24 @@ export function useGateReviews(detail: ChangeOrderDetail, gates: readonly Review
 
   // Which Units the change changed in the Spaces reviewed: entry and Final gates read only those.
   const onlyChanged = summary !== undefined && (summary.feeds ?? [summary.gate]).every((gate) => gate.kind !== 'release');
-  const tagWhere = useMemo(() => {
-    if (!onlyChanged || summary === undefined || startTagId === undefined || endTagId === undefined) return undefined;
-    const spaces = summary.gateSpaces.map((space) => `'${space.spaceId}'`).sort();
-    if (spaces.length === 0) return undefined;
-    return `SpaceID IN (${spaces.join(', ')}) AND Tags.*.TagID IN ('${startTagId}', '${endTagId}')`;
+  const tagWheres = useMemo(() => {
+    if (!onlyChanged || summary === undefined) return undefined;
+    return taggedRevisionWheres(startTagId, endTagId, { in: summary.gateSpaces.map((space) => space.spaceId) });
   }, [onlyChanged, summary, startTagId, endTagId]);
-  const tagged = useListAllRevisionsQuery(
-    tagWhere === undefined ? skipToken : { where: tagWhere, distinctOn: 'Off', limit: CHANGED_REVISION_LIMIT, select: 'UnitID,RevisionNum,Tags' },
+  // Every page of each Tag's clause: a read cut at a page would call changed Units unchanged.
+  const tagged = useGetTaggedRevisionsQuery(
+    tagWheres === undefined ? skipToken : { wheres: tagWheres, select: 'RevisionID,UnitID,RevisionNum,Tags', live: true },
   );
   const changedUnitIds = useMemo(() => {
     const rows = tagged.data;
-    // A full page may have left some out: then nothing is called unchanged.
-    if (rows === undefined || rows.length >= CHANGED_REVISION_LIMIT) return undefined;
+    // Not read, or the read failed: nothing is called unchanged.
+    if (rows === undefined || tagged.isError) return undefined;
     return changedUnitIdsOf(
       rows.flatMap((row) => (row.Revision === undefined ? [] : [row.Revision])),
       startTagId,
       endTagId,
     );
-  }, [tagged.data, startTagId, endTagId]);
+  }, [tagged.data, tagged.isError, startTagId, endTagId]);
 
   const types = useMemo(() => decisionTypes(summary), [summary]);
   const dryRunArg = useMemo(() => {

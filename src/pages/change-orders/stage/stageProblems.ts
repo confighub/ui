@@ -62,17 +62,27 @@ export function needsAcknowledgement(problems: readonly PropagationProblem[]): b
 
 /** The acknowledgement's sentence: specific for one problem, general for several. */
 export function acknowledgementText(problems: readonly PropagationProblem[], nameOf: (spaceId: string) => string): string {
+  return acknowledgementSegments(problems, nameOf)
+    .map((part) => part.text)
+    .join('');
+}
+
+/** The same sentence, with the field and its values as code: they are real values, so they take the value pill. */
+export function acknowledgementSegments(problems: readonly PropagationProblem[], nameOf: (spaceId: string) => string): CopySegment[] {
   const ack = stageCardCopy.merge.ack;
+  const text = (t: string): CopySegment => ({ kind: 'text', text: t });
+  const code = (t: string): CopySegment => ({ kind: 'code', text: t });
   if (problems.length === 1) {
     const only = problems[0];
     if (only.kind === 'differs') {
       const [from, to] = differsValueTexts(only);
-      return ack.differs(nameOf(only.spaceId), only.label, from, to);
+      return ack.differsParts(nameOf(only.spaceId), only.label, from, to).map((p, i) => (i % 2 === 0 ? text(p) : code(p)));
     }
-    if (only.kind === 'kept') return ack.kept(nameOf(only.spaceId), only.label, only.valueText);
+    if (only.kind === 'kept')
+      return ack.keptParts(nameOf(only.spaceId), only.label, only.valueText).map((p, i) => (i % 2 === 0 ? text(p) : code(p)));
   }
-  if (problems.every((p) => p.kind === 'unknown')) return ack.unknown(problemSpaceIds(problems).length);
-  return ack.several;
+  if (problems.every((p) => p.kind === 'unknown')) return [text(ack.unknown(problemSpaceIds(problems).length))];
+  return [text(ack.several)];
 }
 
 /** The four values of a `differs` problem as the box shows them: image tags for an image. */

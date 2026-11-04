@@ -146,6 +146,21 @@ test('a stage restored everywhere reads as restored', () => {
   expect(state.restoredCount).toBe(2);
 });
 
+test('a stage with no Spaces is never restored, whatever restore fields the ChangeOrder carries', () => {
+  const stage = stageOf([]);
+  const progress = progressOf({
+    resolved: ['prod-1'],
+    released: ['prod-1'],
+    restored: ['prod-1'],
+    releasedRestored: ['prod-1'],
+  });
+
+  const state = stageStateOf(stage, progress);
+  expect(state.verdict).not.toBe('restored');
+  expect(state.verdict).not.toBe('restore-released');
+  expect(state.restoredCount).toBe(0);
+});
+
 test('a stage whose undoing was released everywhere reads as restore-released', () => {
   const stage = stageOf(['prod-1', 'prod-2']);
   const progress = progressOf({

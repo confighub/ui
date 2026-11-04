@@ -58,6 +58,7 @@ import type {
   UseGateReviewsResult,
 } from './changeOrderReviewTypes';
 
+import { LogInfo } from '../stage/StageLogLine';
 import { REVIEW_PANEL_ID } from './reviewAnchor';
 
 interface ReviewPanelProps {
@@ -573,7 +574,10 @@ export function ReviewPanel({
       lead = (
         <YouLine initials={initials} tone="idle">
           <b>{name}</b>
-          {viewerWrote && types.every(authorsCountFor) ? reviewCopy.you.eligibleAuthorLead(names) : reviewCopy.you.eligibleLead(names)}
+          {reviewCopy.you.eligibleLead(names)}
+          {viewerWrote && types.every(authorsCountFor) ? (
+            <LogInfo text={reviewCopy.you.authorsMayApprove} label={reviewCopy.you.infoLabel} testId="review-panel-info" />
+          ) : null}
         </YouLine>
       );
     }

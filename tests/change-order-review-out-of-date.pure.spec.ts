@@ -165,3 +165,50 @@ test.describe('a decision the server does not count on what a gate reads now', (
     expect(outOfDateDecisions(combined)).toHaveLength(1);
   });
 });
+
+test.describe('a row held for a reason no approval can change (the empty-change case)', () => {
+  // The change in the Space is empty: the server reads no Revision there and holds the requirement with NotMarked.
+  const empty = (): PromoteGateResult => ({
+    ...row('promote-approval', { satisfied: false, revisions: 0, entries: [] }),
+    Reason: 'NotMarked',
+    Message: 'change order has no revisions marked in the space',
+  });
+
+  test('not "out of date": the server reason is said instead, in few words', () => {
+    const s = derive(entryGate, 'promote-approval', [empty()]);
+    expect(s.viewer.ownByType.Approval?.notCovering).toBeUndefined();
+    expect(outOfDateDecisions(s)).toEqual([]);
+    expect(s.requirements[0]?.heldFor).toEqual({
+      spaceSlug: STAGING.spaceSlug,
+      spaceSlugs: [STAGING.spaceSlug],
+      text: `Nothing in ${STAGING.spaceSlug} to approve for this change.`,
+    });
+  });
+
+  test('a row that reads Revisions but is held by another code says the server message', () => {
+    const other: PromoteGateResult = {
+      ...row('promote-approval', { satisfied: false, revisions: 2, entries: [] }),
+      Reason: 'ValidationErrors',
+      Message: 'Unit app has validation errors',
+    };
+    const s = derive(entryGate, 'promote-approval', [other]);
+    expect(outOfDateDecisions(s)).toEqual([]);
+    expect(s.requirements[0]?.heldFor?.text).toBe('Unit app has validation errors');
+  });
+
+  test('a row held on approvals is still out of date, and says no held reason', () => {
+    const s = derive(entryGate, 'promote-approval', [
+      row('promote-approval', { satisfied: false, revisions: 2, entries: [] }),
+    ]);
+    expect(outOfDateDecisions(s).map((d) => d.id)).toEqual([APPROVAL.AttestationID]);
+    expect(s.requirements[0]?.heldFor).toBeUndefined();
+  });
+});
+
+test('a row with no Revisions count is not read as "nothing to approve"', () => {
+  const noCount = row('promote-approval', { satisfied: false, revisions: 2, entries: [] });
+  delete (noCount.Attestation as { Revisions?: number }).Revisions;
+  const s = derive(entryGate, 'promote-approval', [noCount]);
+  expect(s.requirements[0]?.heldFor).toBeUndefined();
+});
+

@@ -18,7 +18,7 @@ import CheckIcon from '@mui/icons-material/Check';
 
 import { changeOrderBorder, changeOrderFontMono, changeOrderInk, changeOrderShape, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
 import { reviewLinkButtonSx } from './reviewButtons';
-import { agoText, entryText, firstName, reviewCopy, reviewTime } from './reviewCopy';
+import { agoText, entryText, logTime, firstName, reviewCopy, reviewTime } from './reviewCopy';
 import { Monogram, ReviewChip, ReviewTag } from './reviewParts';
 import type { RequirementProgress, RequirementRules, ReviewDecision } from './changeOrderReviewTypes';
 
@@ -124,12 +124,17 @@ function DecisionRow({
   now,
   showType,
   rulesByName,
+  gateLabel,
+  clockTimes = false,
 }: {
   decision: ReviewDecision;
   byId: ReadonlyMap<string, ReviewDecision>;
   now: number;
   showType: boolean;
   rulesByName: ReadonlyMap<string, RequirementRules>;
+  /** Which review it is for ("to enter Public"). */
+  gateLabel?: string;
+  clockTimes?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const listId = useId();
@@ -167,7 +172,7 @@ function DecisionRow({
           </Box>
           <DecisionChip decision={decision} />
           <Box component="span" sx={{ marginLeft: 'auto', fontSize: changeOrderType.size.small, color: changeOrderInk.subtle, fontFamily: changeOrderFontMono }}>
-            {agoText(decision.createdAt, now)}
+            {clockTimes ? logTime(decision.createdAt, now) : agoText(decision.createdAt, now)}
           </Box>
         </Box>
         {decision.origin !== undefined ? (
@@ -218,6 +223,7 @@ function DecisionRow({
               {requirements.join(', ')}
             </Box>
           ) : null}
+          {gateLabel !== undefined ? <span data-testid="review-decision-gate">{gateLabel}</span> : null}
           {when !== '' ? <span>{when}</span> : null}
           <Box
             component="button"
@@ -303,8 +309,17 @@ export function ReviewDecisionList({
   decisions,
   requirements = [],
   now,
+  itemTestId,
+  gateLabelOf,
+  clockTimes = false,
 }: {
   decisions: ReviewDecision[];
+  /** Times as the clock ("14:20"), as the Stage log says them, not "11m ago". */
+  clockTimes?: boolean;
+  /** A design id for each decision, in the order drawn (the Stage log's Review details). */
+  itemTestId?: (index: number) => string;
+  /** Which review a decision is for ("to enter Public"), when the list holds more than one review. */
+  gateLabelOf?: (decision: ReviewDecision) => string | undefined;
   /** The gate's requirements, for the rules behind a discard reason (MaxAge, who may approve). */
   requirements?: RequirementProgress[];
   now: number;
@@ -320,9 +335,30 @@ export function ReviewDecisionList({
   const rulesByName = new Map(requirements.map((r) => [r.name, r.rules]));
   return (
     <Box component="ul" sx={{ listStyle: 'none', margin: 0, padding: 0 }}>
-      {chainOrder(decisions, byId).map((decision) => (
-        <DecisionRow key={decision.id} decision={decision} byId={byId} now={now} showType={showType} rulesByName={rulesByName} />
-      ))}
+      {chainOrder(decisions, byId).map((decision, i) => {
+        const gateLabel = gateLabelOf?.(decision);
+        const row = (
+          <DecisionRow
+            key={decision.id}
+            decision={decision}
+            byId={byId}
+            now={now}
+            showType={showType}
+            rulesByName={rulesByName}
+            clockTimes={clockTimes}
+            {...(gateLabel === undefined ? {} : { gateLabel })}
+          />
+        );
+        if (itemTestId === undefined) return row;
+        // A list item of its own around the row's own item, so the list stays a list.
+        return (
+          <Box component="li" key={decision.id} data-testid={itemTestId(i)}>
+            <Box component="ul" sx={{ listStyle: 'none', margin: 0, padding: 0 }}>
+              {row}
+            </Box>
+          </Box>
+        );
+      })}
     </Box>
   );
 }

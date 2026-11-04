@@ -27,7 +27,7 @@
  * offers the action and the server's answer is what the box then says.
  */
 
-import { useId, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from 'react';
 
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -35,7 +35,7 @@ import Checkbox from '@mui/material/Checkbox';
 import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
 import useMediaQuery from '@mui/material/useMediaQuery';
-import { alpha, type Theme } from '@mui/material/styles';
+import { alpha, type SxProps, type Theme } from '@mui/material/styles';
 
 import { componentTheme } from '../../x/apps/componentTheme';
 import { stageCardCopy } from './stageCardCopy';
@@ -85,6 +85,15 @@ export interface MergeButtonProps {
    */
   onConfirm: (method: MergeMethod, how: { oneClick: boolean }) => Promise<boolean | void> | boolean | void;
   onCancel?: () => void;
+  /**
+   * `log`: the button sits in a Stage log line, a direct child of the line's grid.
+   * The buttons take the action column, and the confirm goes under the sentence.
+   */
+  layout?: 'box' | 'log';
+  /** The design's id for the button's place in the log (`act-promote`, `act-release`). */
+  actTestId?: string;
+  /** Told when the confirm opens or closes, so the line can say what it asks. */
+  onConfirmingChange?: (confirming: boolean) => void;
 }
 
 /** The buttons as a status box offers them: everything but the stage. */
@@ -145,7 +154,11 @@ export function MergeButton({
   onOpenConfirm,
   onConfirm,
   onCancel,
+  layout = 'box',
+  actTestId,
+  onConfirmingChange,
 }: MergeButtonProps) {
+  const inLog = layout === 'log';
   const narrow = useMediaQuery(NARROW.replace('@media ', ''));
   const enabled = methods.filter((m) => !m.disabled);
   /** The method the open confirm is for. */
@@ -161,6 +174,11 @@ export function MergeButton({
   const focusNext = useRef<MergeMethod | 'confirm' | 'ack' | 'open' | null>(null);
   const hintId = useId();
   const fullLabelId = useId();
+  const notify = useRef(onConfirmingChange);
+  notify.current = onConfirmingChange;
+  useEffect(() => {
+    notify.current?.(confirming);
+  }, [confirming]);
 
   // The main button does the default; a default the stage no longer offers (it was promoted meanwhile) falls back to the first.
   const method = enabled.find((m) => m.method === defaultMethod)?.method ?? enabled[0]?.method;
@@ -260,7 +278,7 @@ export function MergeButton({
   };
 
   if (confirming) {
-    return (
+    const confirmBox = (
       <Box onKeyDown={onConfirmKeys} data-testid="stage-merge-confirm" data-method={confirmMethod}>
         {needsAck ? (
           <Box
@@ -270,9 +288,9 @@ export function MergeButton({
               display: 'flex',
               gap: '10px',
               alignItems: 'flex-start',
-              mt: '12px',
+              mt: inLog ? 0 : '12px',
               p: '12px',
-              maxWidth: 560,
+              maxWidth: inLog ? 'none' : 560,
               boxSizing: 'border-box',
               minWidth: 0,
               overflowWrap: 'anywhere',
@@ -307,11 +325,12 @@ export function MergeButton({
             {confirmNote}
           </Typography>
         ) : null}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', mt: '12px' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: inLog ? '6px' : '8px', flexWrap: 'wrap', mt: inLog ? '8px' : '12px' }}>
           <Button
             variant="contained"
             color="secondary"
             ref={focusOnMount('confirm')}
+            {...(inLog ? { 'data-testid': 'act-confirm' } : {})}
             aria-disabled={busy || blocked ? true : undefined}
             aria-describedby={blocked && !busy && !confirmWaiting ? hintId : undefined}
             onClick={() => void confirm()}
@@ -332,11 +351,17 @@ export function MergeButton({
             {copy.cancel}
           </Button>
           {blocked && !busy && !confirmWaiting ? (
-            <Typography id={hintId} component="span" variant="body2" sx={{ color: 'text.secondary' }}>
+            <Typography id={hintId} component="span" variant="body2" sx={{ color: 'text.secondary', ...(inLog ? { fontSize: '12px' } : {}) }}>
               {copy.tickFirst}
             </Typography>
           ) : null}
         </Box>
+      </Box>
+    );
+    if (!inLog) return confirmBox;
+    return (
+      <Box data-testid="ask-anyway" sx={{ gridColumn: '3 / 5', minWidth: 0, maxWidth: 620, mt: '10px', [NARROW]: { gridColumn: 3 } }}>
+        {confirmBox}
       </Box>
     );
   }
@@ -351,8 +376,11 @@ export function MergeButton({
     ...(retry ? { 'data-retry': 'true' } : {}),
   };
 
+  const rowSx: SxProps<Theme> = inLog
+    ? { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px', flexWrap: 'wrap', alignSelf: 'center', [NARROW]: { gridColumn: 3, justifyContent: 'flex-start', mt: '6px' } }
+    : { mt: '12px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', maxWidth: '100%' };
   return (
-    <Box sx={{ mt: '12px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', maxWidth: '100%' }}>
+    <Box sx={rowSx} data-testid={actTestId}>
       <Button
         variant={anyway ? 'outlined' : 'contained'}
         color="secondary"

@@ -194,7 +194,13 @@ function dryRunOverrides(input: StageCardStateInput): boolean {
  */
 export function deriveStageCardState(input: StageCardStateInput): StageCardState {
   if (input.isSource) return { kind: input.invocationSource ? 'invocationSource' : 'source' };
-  if (input.abortedReason !== '') return { kind: 'aborted', reason: input.abortedReason };
+  if (input.abortedReason !== '') {
+    // The server restores only an aborted ChangeOrder: a restored stage says so, with the abort's reason.
+    if (input.verdict === 'restored' || input.verdict === 'restore-released') {
+      return { kind: 'restored', verdict: input.verdict, problems: input.problems, abortedReason: input.abortedReason };
+    }
+    return { kind: 'aborted', reason: input.abortedReason };
+  }
   if (input.membershipLoaded === false || input.gatesAnswered === false) return { kind: 'loading' };
   if (input.spaceIds.length === 0) return { kind: 'noSpaces' };
   if (input.targets.some((id) => input.inFlightSpaceIds.has(id))) return { kind: 'working' };
@@ -279,7 +285,9 @@ export function isReviewState(kind: StageCardStateKind): boolean {
  * States in which the quiet dry run runs: the ones that offer Promote, and the
  * ones the dry run itself decided, so a changed answer can move the card on. Not
  * while a review or a gate holds the stage, since a held stage is not previewed,
- * and not for a failed release, which a promote plan says nothing about.
+ * and not for a failed release, which a promote plan says nothing about. Not for a
+ * restored stage: the server restores only an aborted ChangeOrder, and refuses to
+ * promote an aborted one, so its dry run is always refused.
  */
 export function dryRunWanted(state: StageCardState | StageCardStateKind): boolean {
   const kind = typeof state === 'string' ? state : state.kind;
@@ -289,7 +297,6 @@ export function dryRunWanted(state: StageCardState | StageCardStateKind): boolea
     case 'problem':
     case 'inProgress':
     case 'progressUnknown':
-    case 'restored':
     case 'failed':
     case 'serverHeld':
     case 'noPermission':
@@ -346,24 +353,26 @@ export function stageBoxLook(state: StageCardState): StageBoxLook {
 // The promote buttons
 // ---------------------------------------------------------------------------
 
-const PROMOTING_STATES: ReadonlySet<StageCardStateKind> = new Set(['ready', 'problem', 'inProgress', 'progressUnknown', 'restored', 'failed']);
+// Not `restored`: a restored ChangeOrder is aborted, and the server never promotes it again.
+const PROMOTING_STATES: ReadonlySet<StageCardStateKind> = new Set(['ready', 'problem', 'inProgress', 'progressUnknown', 'failed']);
 
 /**
  * What the buttons offer: the first is the main button, the rest sit beside it.
  *
  * A promoted stage has one action left, Release, so it is one button and never
  * a re-promote. A stage with no Target is never released, so it offers
- * Promote alone. Done and held states offer nothing: the box says why instead of
- * showing a disabled button.
+ * Promote alone. A stage whose workflow names release prerequisites is released
+ * as a separate step, once its release gates hold, so it offers Promote alone too. Done and held states
+ * offer nothing: the box says why instead of showing a disabled button.
  */
-export function methodsFor(state: StageCardState, stageHasTargets: boolean, stageName: string): MergeMethodOption[] {
+export function methodsFor(state: StageCardState, stageHasTargets: boolean, stageName: string, releasePrerequisites = false): MergeMethodOption[] {
   const item = stageCardCopy.merge.item;
   if (state.kind === 'promoted') {
     return [{ method: 'r', label: item.r.label, description: item.r.description(stageName), disabled: false }];
   }
   if (!PROMOTING_STATES.has(state.kind)) return [];
   if (state.kind === 'failed' && !state.canRetry) return [];
-  if (!stageHasTargets) return [{ method: 'p', label: item.p.label, description: item.p.description(stageName), disabled: false }];
+  if (!stageHasTargets || releasePrerequisites) return [{ method: 'p', label: item.p.label, description: item.p.description(stageName), disabled: false }];
   return [
     { method: 'pr', label: item.pr.label, description: item.pr.description(stageName), disabled: false },
     { method: 'p', label: item.p.label, description: item.p.description(stageName), disabled: false },

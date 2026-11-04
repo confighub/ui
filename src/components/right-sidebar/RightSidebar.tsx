@@ -947,7 +947,7 @@ export const InvokerSidebar = ({
       )}
 
       {/* Button Bar - acts as separator between main content and sidebar */}
-      <ButtonBar>
+      <ButtonBar data-testid="invoker-rail">
         <Tooltip title="Functions (F)" placement="left">
           <SidebarButton
             isActive={isOpen}

@@ -186,6 +186,12 @@ export interface RequirementProgress {
   rejected: boolean;
   /** Every evaluated Space satisfied, and at least one evaluated. */
   satisfied: boolean;
+  /**
+   * The server holds the requirement for a reason no approval can change: there is nothing in a
+   * Space for it to read (`Revisions` 0, `NotMarked`), or another code. The server's reason, said
+   * in place of "your approval is out of date".
+   */
+  heldFor?: { spaceSlug: string; text: string; spaceSlugs: string[] };
   perSpace: RequirementSpaceProgress[];
   /** From server entries with CountedOn > 0. */
   passers: ReviewPerson[];

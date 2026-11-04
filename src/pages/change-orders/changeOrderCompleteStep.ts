@@ -227,5 +227,6 @@ export function buildCompleteConsoleStage(row: CompleteStepRow): ConsoleStage {
     isSource: false,
     segmentTone,
     hasReleaseTargets: false,
+    hasReleasePrerequisites: false,
   };
 }

@@ -256,6 +256,12 @@ export interface ChangeOrderDetail {
   finalGates: ChangeOrderGate[];
   /** Spaces in this ChangeOrder's scope, or `null` when scope cannot be known. */
   scopedSpaces: ChangeOrderSpace[] | null;
+  /**
+   * A Space's release Target, from every listed Space: the same answer the rail's
+   * `ConsoleStage.hasReleaseTargets` is built from, so the card's Release and the
+   * rail agree, also for a Space the scoped list leaves out (`Stage=None`).
+   */
+  releaseTargetOf: (spaceId: string) => string | undefined;
   /** `ConsoleRow.stagesDone`: the steps of the promotion path the ChangeOrder has passed. */
   stagesDone: number;
   /** `ConsoleRow.stagesTotal`: every step of the promotion path, as the rail draws it. */
@@ -563,6 +569,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
     () => new Map(allSpaces.map((space) => [space.spaceId, space])),
     [allSpaces],
   );
+  const releaseTargetOf = useCallback((spaceId: string) => allSpaceById.get(spaceId)?.releaseTargetId, [allSpaceById]);
 
   const isLoading = orders.isLoading || spaces.isLoading || stageSpacesLoading;
   const error = orders.error ?? spaces.error ?? one.error ?? releases.error;
@@ -692,6 +699,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
         gatesByStageId: {},
         finalGates: [],
         scopedSpaces: null,
+        releaseTargetOf,
         stagesDone: 0,
         stagesTotal: 0,
         nextStageId: null,
@@ -866,6 +874,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
       gatesByStageId,
       finalGates,
       scopedSpaces,
+      releaseTargetOf,
       // The console row's counts, so the list and this page agree.
       stagesDone: consoleRow.stagesDone,
       stagesTotal: consoleRow.stagesTotal,
@@ -911,6 +920,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
     stageSpacesByClause,
     allSpaces,
     allSpaceById,
+    releaseTargetOf,
     serverGates,
     refreshServerGates,
     address,

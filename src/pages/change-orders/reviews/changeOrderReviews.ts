@@ -26,6 +26,7 @@ import type {
 } from '@confighub/rtk-query';
 
 import type { ChangeOrderApprover, ChangeOrderGate } from '../../x/apps/change-order/changeOrderTypes';
+import { reviewCopy } from './reviewCopy';
 import type {
   AttestationDiscardReason,
   CallerReason,
@@ -220,6 +221,31 @@ function gateEntryOf(ids: ReadonlySet<string>, requirement: Requirement): Decisi
   return { countedOn, ...(reason ? { reason } : {}), ...(untils.length > 0 ? { validUntil: untils[0] } : {}) };
 }
 
+/** Gate codes that are about the approvals themselves: anything else holds for a reason an approval cannot change. */
+const ATTESTATION_REASONS: ReadonlySet<string> = new Set(['AttestationsMissing', 'AttestationRejected']);
+
+/**
+ * Whether a row that does not hold is held for a reason no approval can change: it read no
+ * Revision in its Space, or its code is not about the approvals.
+ */
+function heldNotForApprovals(row: PromoteGateResult): boolean {
+  if (row.Satisfied === true) return false;
+  // Revisions is the server's count of what it read; absent is not "none".
+  if (row.Attestation?.Revisions === 0) return true;
+  return row.Reason !== undefined && row.Reason !== '' && !ATTESTATION_REASONS.has(row.Reason);
+}
+
+/** The server's reason for the first such row, in few words. */
+export function heldForOf(rows: readonly PromoteGateResult[]): { spaceSlug: string; text: string; spaceSlugs: string[] } | undefined {
+  const held = rows.filter(heldNotForApprovals);
+  const row = held[0];
+  if (row === undefined) return undefined;
+  const spaceSlug = row.SpaceSlug ?? '';
+  const spaceSlugs = held.map((r) => r.SpaceSlug ?? '');
+  const nothing = row.Attestation?.Revisions === 0 || row.Reason === 'NotMarked';
+  return { spaceSlug, spaceSlugs, text: nothing ? reviewCopy.requirements.nothingToApprove(spaceSlug) : row.Message || row.Reason || '' };
+}
+
 /** Discard reasons that say the decision is not the viewer's to replace: other UI explains them. */
 const NOT_A_COVERAGE_GAP: ReadonlySet<string> = new Set(['NotEligible', 'Author', 'FailIgnored', 'Revoked', 'Expired']);
 
@@ -234,6 +260,8 @@ function notCoveringRequirement(ids: ReadonlySet<string>, type: string, requirem
   return requirement.rows.some((row) => {
     const result = row.Attestation;
     if (result === undefined || row.Satisfied === true) return false;
+    // Held for a reason no approval can change (nothing to read, or another code): not "out of date".
+    if (heldNotForApprovals(row)) return false;
     const mine = (result.Attestations ?? []).filter((entry) => ids.has(entry.AttestationID ?? ''));
     if (mine.length === 0) return true;
     if (mine.some((entry) => entry.Reason !== undefined && NOT_A_COVERAGE_GAP.has(entry.Reason))) return false;
@@ -449,6 +477,10 @@ function requirementProgress(requirement: Requirement, works: DecisionWork[], in
     need: satisfied || !evaluated ? 0 : Math.max(0, required - passes),
     rejected,
     satisfied,
+    ...(satisfied ? {} : (() => {
+      const heldFor = heldForOf(requirement.rows);
+      return heldFor === undefined ? {} : { heldFor };
+    })()),
     perSpace,
     passers: uniquePeople(countedOf('Pass').map((entry) => person(entry.UserID ?? ''))),
     rejecters: uniquePeople(countedOf('Fail').map((entry) => person(entry.UserID ?? ''))),

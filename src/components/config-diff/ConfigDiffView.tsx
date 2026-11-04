@@ -149,7 +149,7 @@ const ResourceDiffSection = memo(({ resource, resourceKey, columnStyle, onDivide
       {rowComments === undefined ? null : rowComments.renderBelow('')}
       {prelude}
 
-      {added || deleted ? (
+      {(added || deleted) && (resource.Changes ?? []).length === 0 ? (
         // A resource added or deleted whole has no path changes: the document is the change.
         <Box
           component='pre'

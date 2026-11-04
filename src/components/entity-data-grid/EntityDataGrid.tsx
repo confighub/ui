@@ -26,30 +26,11 @@ import {
 } from '@mui/x-data-grid';
 
 import { ResetTableButton } from '../common/ResetTableButton';
+import { scrollbarStyles } from '../styled/scrollbarStyles';
 import { ColumnGroup, DynamicGroupConfig } from './column-groups-types';
 import { GroupedColumnsPanel } from './GroupedColumnsPanel';
 import { HighlightedCell } from './components/HighlightedCell';
 
-// Reusable scrollbar styles to avoid duplication
-const scrollbarStyles = (theme: Theme) => ({
-  '::-webkit-scrollbar': {
-    WebkitAppearance: 'none',
-    width: '12px',
-    height: '12px',
-  },
-  '::-webkit-scrollbar-track': {
-    background: theme.palette.grey[100],
-    borderRadius: '10px',
-  },
-  '::-webkit-scrollbar-thumb': {
-    background: '#aaa',
-    borderRadius: '10px',
-    border: '2px solid ' + theme.palette.grey[100],
-  },
-  '::-webkit-scrollbar-thumb:hover': {
-    background: '#888',
-  },
-});
 /**
  * Enhances column definitions to automatically add search highlighting
  * to columns that don't have a custom renderCell defined.
@@ -480,6 +461,12 @@ export const EntityDataGrid = <T extends GridValidRowModel>({
           },
           scrollbarWidth: 'thin',
           scrollbarColor: '#aaa #f5f5f5',
+        },
+        // The last header's hidden column-menu button sticks out past the grid's right
+        // edge. MUI clips it only when the grid already scrolls, so when the columns fit
+        // it would give the scroller a few pixels of overflow, and a scroll bar.
+        '& .MuiDataGrid-columnHeader--last': {
+          overflow: 'hidden',
         },
         // Ensure the main container doesn't prevent scrolling
         '& .MuiDataGrid-main': {

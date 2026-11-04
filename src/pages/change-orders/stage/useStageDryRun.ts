@@ -130,6 +130,112 @@ function answerIsCurrent(answer: StageDryRunAnswer | undefined, refreshKey: stri
   return answer !== undefined && answer.refreshKey === refreshKey && now - answer.ranAt < STAGE_DRY_RUN_FRESH_MS;
 }
 
+/** What an answer is about: one stage, its Spaces, one ChangeOrder. `''` when there is nothing to plan. */
+export function stageDryRunScope(
+  changeOrderId: string | undefined,
+  baseSpaceId: string | undefined,
+  stageId: string | undefined,
+  targetSpaceIds: readonly string[],
+): string {
+  if (stageId === undefined || promoteHasNothingToDo(changeOrderId, baseSpaceId, targetSpaceIds)) return '';
+  return `${changeOrderId}|${stageId}|${whereSpaceOf(targetSpaceIds)}`;
+}
+
+/*
+ * ANSWERS KEPT ACROSS CARDS, by scope. The page asks the next stage's quiet dry run ahead of time
+ * (`preloadStageDryRun`), and a stage seen a moment ago was asked already: a card opened on that
+ * scope takes the answer instead of planning the promotion again. Only an answer still current
+ * for the ChangeOrder as it is now (`refreshKey`, under a minute) is taken; a promote still asks
+ * again before it confirms (`ensureFresh`), and a stale plan is refused by the server (412).
+ */
+const ANSWERS_KEPT = 12;
+const answersByScope = new Map<string, StageDryRunAnswer>();
+/** Preloads in flight, by `scope#refreshKey`: a card opened meanwhile waits for one rather than ask again. */
+const preloading = new Map<string, Promise<void>>();
+/**
+ * Every `scope#refreshKey` asked ahead of time, answered or failed. A preload is asked once for a
+ * state of the ChangeOrder: a failure (403, 5xx, the network) is not asked again in the
+ * background, and neither is an answer past its minute. Only a new `refreshKey`, or the card
+ * opened on that stage, asks again.
+ */
+const PRELOADS_REMEMBERED = 50;
+const preloaded = new Set<string>();
+
+function rememberPreload(key: string) {
+  preloaded.add(key);
+  while (preloaded.size > PRELOADS_REMEMBERED) {
+    const oldest = preloaded.values().next().value;
+    if (oldest === undefined) break;
+    preloaded.delete(oldest);
+  }
+}
+
+function rememberAnswer(scope: string, answer: StageDryRunAnswer) {
+  answersByScope.delete(scope);
+  answersByScope.set(scope, answer);
+  while (answersByScope.size > ANSWERS_KEPT) {
+    const oldest = answersByScope.keys().next().value;
+    if (oldest === undefined) break;
+    answersByScope.delete(oldest);
+  }
+}
+
+/** A kept answer for this scope, current for this `refreshKey`. */
+export function cachedStageDryRun(scope: string, refreshKey: string): StageDryRunAnswer | undefined {
+  const answer = scope === '' ? undefined : answersByScope.get(scope);
+  return answerIsCurrent(answer, refreshKey, Date.now()) ? answer : undefined;
+}
+
+/**
+ * Asks a stage's quiet dry run ahead of time and keeps the answer, drawing nothing. The same
+ * request the card sends. A refusal or a failure keeps nothing: the card asks itself when opened.
+ */
+export function preloadStageDryRun(args: {
+  changeOrderId: string | undefined;
+  baseSpaceId: string | undefined;
+  stageId: string;
+  targetSpaceIds: readonly string[];
+  refreshKey: string;
+  send?: Send;
+}): Promise<void> {
+  const { changeOrderId, baseSpaceId, stageId, targetSpaceIds, refreshKey, send = authFetch } = args;
+  const scope = stageDryRunScope(changeOrderId, baseSpaceId, stageId, targetSpaceIds);
+  if (scope === '' || cachedStageDryRun(scope, refreshKey) !== undefined) return Promise.resolve();
+  const key = `${scope}#${refreshKey}`;
+  const already = preloading.get(key);
+  if (already !== undefined) return already;
+  if (preloaded.has(key)) return Promise.resolve();
+  rememberPreload(key);
+  const selector = whereSpaceOf(targetSpaceIds);
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), STAGE_DRY_RUN_TIMEOUT_MS);
+  const promise = answerOf(send, '/api/promote?dry_run=true', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ChangeOrderID: changeOrderId, WhereSpace: selector, DryRun: true }),
+    signal: controller.signal,
+  })
+    .then((reply) => {
+      if (!ok(reply.status) && reply.status !== 409) return;
+      const result = promoteResultOf(reply.body);
+      rememberAnswer(scope, {
+        status: reply.status,
+        body: reply.body,
+        ...(result !== undefined ? { result } : {}),
+        selector,
+        refreshKey,
+        ranAt: Date.now(),
+      });
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      window.clearTimeout(timer);
+      preloading.delete(key);
+    });
+  preloading.set(key, promise);
+  return promise;
+}
+
 interface Inflight {
   generation: number;
   scope: string;
@@ -153,7 +259,7 @@ export function useStageDryRun(args: UseStageDryRunArgs): StageDryRun {
   const selector = whereSpaceOf(targetSpaceIds);
   const nothingToPlan = stageId === undefined || promoteHasNothingToDo(changeOrderId, baseSpaceId, targetSpaceIds);
   /** What an answer is about. One stage, its Spaces, one ChangeOrder: anything else is another question. */
-  const scope = nothingToPlan ? '' : `${changeOrderId}|${stageId}|${selector}`;
+  const scope = stageDryRunScope(changeOrderId, baseSpaceId, stageId, targetSpaceIds);
 
   const [state, setState] = useState<{ scope: string; answer?: StageDryRunAnswer; running: boolean }>({
     scope: '',
@@ -173,6 +279,8 @@ export function useStageDryRun(args: UseStageDryRunArgs): StageDryRun {
   /** Answers a confirm has used: their plan is spent, whether the promote landed or was refused. */
   const spent = useRef(new WeakSet<StageDryRunAnswer>());
   const lastStartedAt = useRef(0);
+  /** `run` itself, for the ask that follows a preload that kept nothing. */
+  const runRef = useRef<(force?: boolean) => Promise<StageDryRunAnswer | undefined>>(() => Promise.resolve(undefined));
 
   const adoptFrom = useCallback((answer: StageDryRunAnswer | undefined) => {
     const plan = answer !== undefined && ok(answer.status) ? answer.result?.Plan : undefined;
@@ -181,11 +289,44 @@ export function useStageDryRun(args: UseStageDryRunArgs): StageDryRun {
     );
   }, []);
 
-  const run = useCallback((): Promise<StageDryRunAnswer | undefined> => {
+  /** Takes a kept answer for the scope on screen, as an answer of this card's own. */
+  const takeKept = useCallback((): StageDryRunAnswer | undefined => {
+    const now = live.current;
+    const kept = cachedStageDryRun(now.scope, now.refreshKey);
+    if (kept === undefined || spent.current.has(kept)) return undefined;
+    answerRef.current = kept;
+    setState({ scope: now.scope, answer: kept, running: false });
+    adoptFrom(kept);
+    return kept;
+  }, [adoptFrom]);
+
+  /** `force`: Check again asks the server even when an answer is kept. */
+  const run = useCallback((force = false): Promise<StageDryRunAnswer | undefined> => {
     const now = live.current;
     if (now.nothingToPlan || now.scope === '') return Promise.resolve(undefined);
     const current = inflight.current;
     if (current !== null && current.scope === now.scope && current.refreshKey === now.refreshKey) return current.promise;
+    if (!force) {
+      const kept = takeKept();
+      if (kept !== undefined) return Promise.resolve(kept);
+      // The same question asked ahead of time and not answered yet: wait for it, not a second request.
+      const pending = preloading.get(`${now.scope}#${now.refreshKey}`);
+      if (pending !== undefined) {
+        const askedScope = now.scope;
+        const askedKey = now.refreshKey;
+        setState((previous) => ({
+          scope: askedScope,
+          running: true,
+          ...(previous.scope === askedScope && previous.answer !== undefined ? { answer: previous.answer } : {}),
+        }));
+        return pending.then(() => {
+          const later = live.current;
+          if (later.scope !== askedScope || later.refreshKey !== askedKey) return undefined;
+          // A preload that failed kept nothing: the card asks itself.
+          return takeKept() ?? runRef.current(true);
+        });
+      }
+    }
 
     abort.current?.abort();
     const controller = new AbortController();
@@ -227,6 +368,7 @@ export function useStageDryRun(args: UseStageDryRunArgs): StageDryRun {
           ranAt: Date.now(),
         };
         answerRef.current = answer;
+        if (ok(answer.status) || answer.status === 409) rememberAnswer(askedScope, answer);
         setState({ scope: askedScope, answer, running: false });
         /*
          * EVERY ANSWER REPLACES THE PLAN HELD, INCLUDING ONE WITH NO PLAN. The
@@ -247,7 +389,8 @@ export function useStageDryRun(args: UseStageDryRunArgs): StageDryRun {
       });
     inflight.current = { generation: mine, scope: askedScope, refreshKey: askedKey, promise };
     return promise;
-  }, [adoptFrom]);
+  }, [adoptFrom, takeKept]);
+  runRef.current = run;
 
   // A new stage, new Spaces or a changed ChangeOrder: drop what was asked for the old one.
   useEffect(() => {
@@ -256,7 +399,11 @@ export function useStageDryRun(args: UseStageDryRunArgs): StageDryRun {
     inflight.current = null;
     answerRef.current = undefined;
     adoptPlan(null);
-  }, [scope, adoptPlan]);
+    // A stage asked ahead of time shows its answer at once, without waiting for the forced dry run.
+    if (enabled) takeKept();
+    // `enabled` is read when the scope changes; a later change of it runs the ask below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope, adoptPlan, takeKept]);
 
   // Asked on opening the stage and whenever the ChangeOrder changes, once the forced dry run is in.
   const asking = enabled && forcedDryRunSettled && scope !== '';
@@ -292,7 +439,7 @@ export function useStageDryRun(args: UseStageDryRunArgs): StageDryRun {
     [],
   );
 
-  const recheck = useCallback(() => run(), [run]);
+  const recheck = useCallback(() => run(true), [run]);
 
   const ensureFresh = useCallback(async (): Promise<StageDryRunAnswer | undefined> => {
     const pending = inflight.current;

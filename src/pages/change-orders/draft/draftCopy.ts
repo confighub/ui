@@ -255,9 +255,9 @@ export const draftCopy = {
     separator: ' · ',
   },
 
-  /** The promotion path and the selected stage's card, below the summary. */
+  /** The promotion Stages and the selected stage's card, below the summary. */
   path: {
-    heading: 'Promotion path',
+    heading: 'Promotion Stages',
     /** The source node: how many waiting changes the draft carries. */
     sourceSummary: (count: number) => `${count} ${count === 1 ? 'change' : 'changes'}`,
     dryRun: 'Dry run',

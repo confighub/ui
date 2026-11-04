@@ -15,13 +15,11 @@ import {
   changeScope,
   gateSpacesOf,
   previousStageOf,
-  sidebarGateFlags,
   dryRunRefreshKey,
   isReviewRequirementGate,
   nextStepOf,
   otherGatesHolding,
   sidebarMarks,
-  sidebarTargets,
 } from '../src/pages/change-orders/stage/stageCardParts';
 import { segmentsText } from '../src/pages/change-orders/stage/stageCardCopy';
 import type { DryRunSummary, StageFailure } from '../src/pages/change-orders/stage/stageTypes';
@@ -82,18 +80,7 @@ test.describe('where "Go to" leads', () => {
   });
 });
 
-test.describe('the sidebar', () => {
-  const targetOf = (spaceId: string) => ({ s1: 't1', s2: 't1', s3: 't2' } as Record<string, string | undefined>)[spaceId];
-
-  test('Targets count distinct Targets, link to them, and say whether they run the change', () => {
-    const targets = sidebarTargets(['s1', 's2', 's3'], targetOf, 'promoted');
-    expect(targets?.count).toBe(2);
-    expect(targets?.phase).toBe('promoted');
-    expect(decodeURIComponent(targets?.href ?? '')).toBe("/targets?filterWhere=TargetID IN ('t1', 't2')");
-    expect(sidebarTargets(['s1'], targetOf, 'released')?.phase).toBe('released');
-    expect(sidebarTargets(['s4'], targetOf, 'waiting')).toBeNull();
-  });
-
+test.describe('the Space marks', () => {
   test('after a failed promotion each target says whether it failed or holds the change', () => {
     const marks = sidebarMarks(new Map([['s1', { kind: 'differs' as const }]]), failure(1, 3), ['s1', 's2', 's3'], new Set(['s1']));
     expect(marks.get('s1')).toEqual({ kind: 'promoted' });
@@ -138,16 +125,7 @@ test.describe('the dry run as the box reads it', () => {
   });
 });
 
-test.describe('gates that wait, gates in the box, and the stage before', () => {
-  test('waiting gates are flagged apart from failing ones; the box\'s gates start closed', () => {
-    const failing = gate('check/healthy', false);
-    const waiting = gate('check/released', false);
-    const flags = sidebarGateFlags({ kind: 'gateFailed', gates: [failing], waiting: [waiting] });
-    expect([...flags.waitingGateIds]).toEqual([waiting.id]);
-    expect([...flags.gateIdsInBox].sort()).toEqual([failing.id, waiting.id].sort());
-    expect(sidebarGateFlags({ kind: 'ready', approvedByYou: false }).gateIdsInBox.size).toBe(0);
-  });
-
+test.describe('the stage before', () => {
   test('the stage before: none for the first stage; landed once promoted; health pending while unreported', () => {
     const detail = (verdict: 'waiting' | 'promoted', release: { liveStatus?: null } | null) => ({
       sequence: {

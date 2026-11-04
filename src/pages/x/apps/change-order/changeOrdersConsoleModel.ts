@@ -66,6 +66,7 @@ import {
   previousStageOf,
   promotionSkippedSpaceId,
   promotionTargets,
+  stageHasReleasePrerequisites,
 } from './changeOrderStages';
 import {
   deriveProgress,
@@ -363,6 +364,8 @@ export interface ConsoleStage {
    * otherwise promise a release into somewhere nothing is written.
    */
   hasReleaseTargets: boolean;
+  /** The workflow names release prerequisites for this stage, so it is released as a separate step, once its release gates hold. */
+  hasReleasePrerequisites: boolean;
 }
 
 export interface ConsoleRow {
@@ -547,7 +550,8 @@ export function promotionFor(
     stageId: stage.stageId,
     spaceIds: promotionTargets(stage.spaceIds, row.skippedSpaceId),
     gates: stage.gates,
-    canRelease: stage.hasReleaseTargets,
+    // A stage with release prerequisites is released as a separate step, once its release gates hold: only Promote here.
+    canRelease: stage.hasReleaseTargets && !stage.hasReleasePrerequisites,
   };
 }
 
@@ -1391,6 +1395,19 @@ function stagelessRow(
 }
 
 /**
+ * The Spaces of a stage a Release publishes: its promotion targets (the Space the promotion
+ * passes over left out) that have a release Target. The rail's `hasReleaseTargets` and the
+ * stage card's Release read this one list, so they agree.
+ */
+export function stageReleaseSpaceIds(
+  spaceIds: readonly string[],
+  skippedSpaceId: string | undefined,
+  releaseTargetOf: (spaceId: string) => string | undefined,
+): string[] {
+  return promotionTargets(spaceIds, skippedSpaceId).filter((id) => releaseTargetOf(id) !== undefined);
+}
+
+/**
  * One row.
  *
  * The governing workflow rides on the order itself, so a row is built from one
@@ -1582,9 +1599,9 @@ export function buildConsoleRow(
   const complete = state === 'complete' || state === 'complete-unverified';
   const stages: ConsoleStage[] = sequence.stages.map((stage, i) => ({
     stageId: stage.id,
-    hasReleaseTargets: promotionTargets(stage.spaceIds, skippedSpaceId).some(
-      (id) => bySpaceId.get(id)?.releaseTargetId !== undefined,
-    ),
+    hasReleaseTargets:
+      stageReleaseSpaceIds(stage.spaceIds, skippedSpaceId, (id) => bySpaceId.get(id)?.releaseTargetId).length > 0,
+    hasReleasePrerequisites: stageHasReleasePrerequisites(workflow, stage.id),
     spaceSlugs: stage.spaceIds
       .map((id) => bySpaceId.get(id)?.slug)
       .filter((slug): slug is string => slug !== undefined),

@@ -53,6 +53,16 @@ export function reviewTime(iso: string | undefined): string {
   return `${shortDate(at).replace(/ \d{4}$/, '')}, ${clockTime(at)}`;
 }
 
+/**
+ * A time as the Stage log says it: the clock ("14:20") today, and with the date ("26 Oct, 14:20")
+ * on another day. Empty when there is no time.
+ */
+export function logTime(iso: string | undefined, now: number): string {
+  const at = epochOf(iso);
+  if (at === undefined) return '';
+  return shortDate(at) === shortDate(now) ? clockTime(at) : reviewTime(iso);
+}
+
 /** `19 h`, `39 min`, `3 d 5 h`: a length of time, rounded down. */
 export function durationText(ms: number): string {
   const minutes = Math.max(0, Math.floor(ms / 60_000));
@@ -206,6 +216,17 @@ export const reviewCopy = {
     andMore: 'and more',
   },
   /** ChangeOrder.ReviewRequests. */
+  /** The Stage log's Review details (H7): the bars' summaries and the reviewers' status. */
+  details: {
+    coversLead: 'Covers',
+    coversIn: 'in',
+    waiting: (n: number) => `${n} waiting`,
+    approvedAt: (when: string) => `Approved ${when}`,
+    rejectedAt: (when: string) => `Rejected ${when}`,
+    approvedCount: (n: number) => `${n} approved`,
+    rejectedCount: (n: number) => `${n} rejected`,
+    notCountedCount: (n: number) => `${n} not counted`,
+  },
   requests: {
     label: 'Requested reviewers',
     ofYouBand: (by: string, ago: string) => `Review requested of you by ${by}, ${ago}`,
@@ -391,9 +412,9 @@ export const reviewCopy = {
   you: {
     eligibleLead: (requirements: string[]) =>
       `, you can review for ${requirements.join(', ')}.`,
-    /** The viewer wrote gate Revisions, but the requirement allows authors (AllowAuthors). */
-    eligibleAuthorLead: (requirements: string[]) =>
-      `, you can review for ${requirements.join(', ')}. Authors may approve here.`,
+    /** The viewer wrote gate Revisions, but the requirement allows authors (AllowAuthors): behind the (i). */
+    authorsMayApprove: 'You wrote part of this change. Authors may approve here.',
+    infoLabel: 'About your review',
     /** The viewer's own decision that the server does not count (Caller.Counts false). */
     ownNotCounted: (choice: ReviewChoice, at: string) => ({
       lead: choice === 'Pass' ? 'You approved' : 'You rejected',
@@ -486,6 +507,9 @@ export const reviewCopy = {
     typeHead: (type: string) => type,
     loading: 'Checking what a decision covers…',
     unavailable: 'Coverage unavailable.',
+    /** A Space folded to one line (`bySpace`). */
+    unitCount: (n: number) => plural(n, 'Unit'),
+    showAllSpaces: (n: number) => `Show all ${n} Spaces`,
   },
   requirements: {
     needed: (n: number) => `${n} needed`,
@@ -501,6 +525,11 @@ export const reviewCopy = {
     rejectionsIgnored: 'rejections do not block',
     groupTooltip: (id: string) => `Group ${id}`,
     forGate: (thing: string) => `For ${thing}`,
+    /** Which review a row is, in the Stage log's Review details: an entry and a release review can share a name. */
+    toEnter: (stage: string) => `to enter ${stage}`,
+    /** The server read nothing to approve in the Space (`Revisions` 0, `NotMarked`). */
+    nothingToApprove: (space: string) => `Nothing in ${space} to approve for this change.`,
+    toRelease: (stage: string) => `to release ${stage}`,
   },
   decision: {
     approved: 'Approved',

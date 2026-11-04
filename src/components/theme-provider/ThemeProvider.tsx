@@ -10,7 +10,7 @@ import { TOP_NAV_HEIGHT } from '@/utility/constants';
 // These values define the ConfigHub design system. Any change here propagates
 // to all MUI components and to the CSS custom properties injected globally.
 
-const tokens = {
+export const tokens = {
   // Surfaces
   surface: '#ffffff',
   bg: '#f6f7f9',

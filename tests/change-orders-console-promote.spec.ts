@@ -100,6 +100,35 @@ async function watchPromoteTraffic(page: Page): Promise<PromoteTraffic> {
   return traffic;
 }
 
+/** The ChangeOrder reads with a release prerequisite (`release-ok`) on `stageName`. */
+function withReleasePrerequisite(value: unknown, stageName: string): unknown {
+  if (Array.isArray(value))
+    return value.map((child) => withReleasePrerequisite(child, stageName));
+  if (typeof value !== 'object' || value === null) return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value))
+    out[key] = withReleasePrerequisite(child, stageName);
+  const workflow = out.ChangeWorkflow as
+    | {
+        Stages?: { Name?: string; ReleasePrerequisites?: string[] }[];
+        AttestationPrerequisites?: unknown[];
+      }
+    | undefined;
+  if (workflow !== undefined && workflow !== null && Array.isArray(workflow.Stages)) {
+    out.ChangeWorkflow = {
+      ...workflow,
+      Stages: workflow.Stages.map((stage) =>
+        stage.Name === stageName ? { ...stage, ReleasePrerequisites: ['release-ok'] } : stage,
+      ),
+      AttestationPrerequisites: [
+        ...(workflow.AttestationPrerequisites ?? []),
+        { Name: 'release-ok', Count: 1, Type: 'Approval' },
+      ],
+    };
+  }
+  return out;
+}
+
 /**
  * The console, narrowed to one ChangeOrder.
  *
@@ -178,6 +207,35 @@ test.describe('promoting from a console row', () => {
   });
 
   /*
+   * #6154: a stage whose workflow names release prerequisites is released as a separate step, once
+   * its release gates hold; its release leg would be refused. So the dialog offers Promote alone there.
+   */
+  test('a stage with release prerequisites: the dialog offers Promote only, not Promote and release', async ({
+    page,
+  }) => {
+    // After the traffic watch: the route added last runs first, and the watch continues every request.
+    const { writes } = await watchPromoteTraffic(page);
+    await page.route(
+      (url) => url.pathname.startsWith('/api/') && url.pathname.includes('change_order'),
+      async (route) => {
+        if (route.request().method() !== 'GET') return route.fallback();
+        const response = await route.fetch();
+        if (!response.ok()) return route.fulfill({ response });
+        return route.fulfill({
+          response,
+          body: JSON.stringify(withReleasePrerequisite(await response.json(), OPEN_STAGE)),
+        });
+      },
+    );
+    const row = await findRow(page, fx.changeOrderSlug);
+    await row.getByRole('button', { name: 'Promote', exact: true }).click();
+    await expect(page.locator('[data-confirm]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-promote-rel]')).toHaveCount(0);
+    await page.locator('[data-cancel]').click();
+    expect(writes, 'opening and cancelling the dialog must write nothing').toEqual([]);
+  });
+
+  /*
    * THE ONE PLACE THIS PATH IS ACTUALLY FIRED. The console's Promote was
    * rendered permanently disabled before this, so "it is wired" is not a claim
    * a render can support.
@@ -251,7 +309,7 @@ test.describe('promoting from a console row', () => {
      * ChangeOrder's own order — not the reason's full wording, which belongs to
      * the gate copy.
      */
-    await expect(page.locator('#stage-status-heading')).toContainText(/released/i);
+    await expect(page.locator('#stage-status-heading')).toHaveText(/^(Released failed|Waiting on dev)$/);
     await expect(box).toContainText(`'${fx.changeOrderSlug}'`);
 
     // NO CONTROL THAT PROMOTES, AND NOT A DISABLED ONE EITHER. A greyed-out

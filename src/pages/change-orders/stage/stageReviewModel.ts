@@ -26,7 +26,7 @@ import type {
   ReviewDecision,
   ReviewPerson,
 } from '../reviews/changeOrderReviewTypes';
-import { authorInText, decisionTypes, entryText, placesText, reviewTime } from '../reviews/reviewCopy';
+import { authorInText, decisionTypes, entryText, placesText, reviewCopy, reviewTime } from '../reviews/reviewCopy';
 import { stageChangeLanded } from '../reviews/stageReviewInputs';
 import type { ChangeOrderStageVerdict } from '../../x/apps/change-order/changeOrderTypes';
 import { REVIEWER_ROW_LIMIT, stageCardCopy } from './stageCardCopy';
@@ -75,22 +75,6 @@ export function stageSectionGates(summaries: readonly GateReviewSummary[], stage
     .sort((a, b) => order(a) - order(b));
 }
 
-/**
- * Reviews whose subject is this stage's change but whose actions are on another
- * card: listed read-only under "Reviews of this change", with a link to the card
- * that hosts them (`actionStageId`, undefined while none does).
- */
-export function subjectReviews(
-  summaries: readonly GateReviewSummary[],
-  stageId: string,
-  verdictOf: VerdictOf,
-): { summary: GateReviewSummary; actionStageId: string | undefined }[] {
-  return summaries
-    .filter((s) => s.gate.kind === 'entry' && s.attestTarget.TargetStage === stageId)
-    .map((summary) => ({ summary, actionStageId: reviewActionStageId(summary, verdictOf) }))
-    .filter((entry) => entry.actionStageId !== stageId);
-}
-
 // ---------------------------------------------------------------------------
 // The viewer
 // ---------------------------------------------------------------------------
@@ -133,11 +117,10 @@ export function viewerFlow(summary: GateReviewSummary, coverageByType: Readonly<
   const authorsAllowed = types.length > 0 && types.every(authorsCountFor);
   const authoredWhere = authoredSpaces(summary, coverages, eligibility);
   const authorNote =
-    authoredWhere.length === 0
+    authoredWhere.length === 0 || authorsAllowed
       ? undefined
-      : authorsAllowed
-        ? stageCardCopy.review.authorCounts(authoredWhere.join(', '))
-        : stageCardCopy.review.authorDoesNotCount(authoredWhere.join(', '));
+      : stageCardCopy.review.authorDoesNotCount(authoredWhere.join(', '));
+  const authorInfo = authoredWhere.length > 0 && authorsAllowed ? stageCardCopy.review.authorMayApprove : undefined;
   const notCounting = eligibility.kind === 'notEligible' || eligibility.kind === 'author';
   const ownNotCounted = notCounting
     ? own.map((d) => stageCardCopy.review.ownNotCounted(d.result, reviewTime(d.createdAt), own.length > 1 ? d.type : undefined, notCountedReasons(summary, d)))
@@ -149,6 +132,7 @@ export function viewerFlow(summary: GateReviewSummary, coverageByType: Readonly<
     ownNotCounted,
     ...(otherRejecter === undefined ? {} : { otherRejecter }),
     ...(authorNote === undefined ? {} : { authorNote }),
+    ...(authorInfo === undefined ? {} : { authorInfo }),
   };
 
   if (eligibility.kind === 'author') return { kind: 'author', authorIn: authorPlaces(summary, eligibility.authorIn), ...base };
@@ -271,7 +255,13 @@ export function rejection(summary: GateReviewSummary): ReviewRejection | undefin
  * the viewer, then people asked to review, then anyone else who can still approve.
  * At most `limit`, with the rest counted.
  */
-export function reviewerRows(summary: GateReviewSummary, limit: number = REVIEWER_ROW_LIMIT, requirement?: RequirementProgress): ReviewerRows {
+export function reviewerRows(
+  summary: GateReviewSummary,
+  limit: number = REVIEWER_ROW_LIMIT,
+  requirement?: RequirementProgress,
+  /** The viewer, when they may decide on this review: listed first, as the one asked, though no rule names them. */
+  viewer?: ReviewPerson,
+): ReviewerRows {
   const seen = new Set<string>();
   const decided: ReviewerRow[] = [];
   for (const decision of summary.decisions) {
@@ -288,6 +278,7 @@ export function reviewerRows(summary: GateReviewSummary, limit: number = REVIEWE
     const rank = person.isYou ? 0 : request !== undefined ? 1 : 2;
     pending.push({ row: { person, status: request !== undefined ? 'requested' : 'notReviewed', ...(request === undefined ? {} : { request }) }, rank });
   };
+  if (viewer !== undefined) add(viewer, summary.requests.find((r) => r.user.userId === viewer.userId));
   for (const entry of summary.whoCanStillApprove) {
     add(entry.person, entry.requested ?? summary.requests.find((r) => r.user.userId === entry.person.userId));
   }
@@ -311,6 +302,8 @@ export function decisionCountsFor(decision: ReviewDecision, requirement: Require
   } else if (decision.countsToward.includes(requirement.name) || requirement.passers.some((p) => p.userId === userId)) {
     return true;
   }
+  // The server evaluated this requirement and named no entry of the decision: it does not count here.
+  if (requirement.evaluated) return false;
   return decision.countsToward.length === 0 && Object.keys(decision.byRequirement).length === 0;
 }
 
@@ -365,3 +358,74 @@ export function approverNames(summary: GateReviewSummary): string[] {
 export function ownRejections(summary: GateReviewSummary): ReviewDecision[] {
   return Object.values(summary.viewer.ownByType).filter((d) => d.live && d.result === 'Fail');
 }
+
+/**
+ * The reviews Review details lists, in order: the stage's entry review, then its release review,
+ * each once (the card hosts one of them). Their requirements, and `notReachedGateKeys`: the gates
+ * not reached yet, the release review's while the promote is still to happen. Matched by gate,
+ * never by name: the entry and the release review can be named the same (`prod-approval` on both).
+ */
+export function detailsReviews(
+  hosted: GateReviewSummary,
+  entry: GateReviewSummary | undefined,
+  release: GateReviewSummary | undefined,
+  releaseNotReached: boolean,
+): { summaries: GateReviewSummary[]; requirements: RequirementProgress[]; notReachedGateKeys: string[] } {
+  const summaries: GateReviewSummary[] = [];
+  for (const s of [entry, hosted, release]) {
+    if (s !== undefined && !summaries.some((known) => known.gate.key === s.gate.key)) summaries.push(s);
+  }
+  summaries.sort((a, b) => Number(a.gate.kind === 'release') - Number(b.gate.kind === 'release'));
+  const requirements = summaries.flatMap((s) => s.requirements);
+  const notReachedGateKeys = releaseNotReached ? summaries.filter((s) => s.gate.kind === 'release').map((s) => s.gate.key) : [];
+  return { summaries, requirements, notReachedGateKeys };
+}
+
+/**
+ * Who the review names as approvers, by name, without the viewer: the users of
+ * its requirement's rules and the members of its groups (as the who-can list
+ * resolves them). `anyone`: the requirement names nobody, so anyone with Approve
+ * on the Spaces can approve. Not `approverNames`, which lists who already approved.
+ */
+export function namedApprovers(summary: GateReviewSummary): { names: string[]; anyone: boolean } {
+  const requirement = summary.primary ?? summary.requirements[0];
+  if (requirement === undefined) return { names: [], anyone: true };
+  const { fromUsers, fromGroups } = requirement.rules;
+  if (fromUsers.length === 0 && fromGroups.length === 0) return { names: [], anyone: true };
+  const names: string[] = [];
+  const add = (person: { name: string; isYou: boolean }) => {
+    if (!person.isYou && !names.includes(person.name)) names.push(person.name);
+  };
+  fromUsers.forEach(add);
+  for (const who of summary.whoCanStillApprove) if (who.viaGroupId !== undefined) add(who.person);
+  return { names, anyone: false };
+}
+
+/**
+ * The Decisions bar's summary: "1 approved · 2 not counted". Counted by what the server counts
+ * (`countsToward`), not by live records: a live approval the server named for no requirement does
+ * not count.
+ */
+export function decisionsSummary(decisions: readonly ReviewDecision[]): string {
+  const counted = decisions.filter((d) => d.live && d.countsToward.length > 0);
+  const approved = counted.filter((d) => d.result === 'Pass').length;
+  const rejected = counted.filter((d) => d.result === 'Fail').length;
+  const notCounted = decisions.length - counted.length;
+  const c = reviewCopy.details;
+  return [approved > 0 ? c.approvedCount(approved) : '', rejected > 0 ? c.rejectedCount(rejected) : '', notCounted > 0 ? c.notCountedCount(notCounted) : '']
+    .filter((p) => p !== '')
+    .join(' · ');
+}
+
+/**
+ * The approvals a requirement still needs in the Spaces an approval can change: a Space the server
+ * holds for another reason (`heldFor`: nothing to read, or another code) is left out, so another
+ * Space that still needs approvals still says so.
+ */
+export function needOutsideHeld(requirement: RequirementProgress): number {
+  const held = new Set(requirement.heldFor?.spaceSlugs ?? []);
+  if (held.size === 0) return requirement.need;
+  const open = requirement.perSpace.filter((space) => space.evaluated && !space.satisfied && !held.has(space.spaceSlug));
+  return open.reduce((n, space) => Math.max(n, space.required - space.counted), 0);
+}
+
