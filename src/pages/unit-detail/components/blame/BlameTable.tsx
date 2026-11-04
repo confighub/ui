@@ -34,7 +34,13 @@ import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
-import type { GridColDef, GridRowSelectionModel } from '@mui/x-data-grid';
+import {
+  type GridColDef,
+  type GridComparatorFn,
+  type GridRowSelectionModel,
+  type GridSortDirection,
+  gridStringOrNumberComparator,
+} from '@mui/x-data-grid';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 
@@ -79,8 +85,72 @@ const HIDDEN_COLUMNS = {
 
 const monoSx = { fontFamily: 'monospace', fontSize: '0.8125rem' } as const;
 
+/**
+ * Sorts within each resource: a column sorts the fields of every resource, which stay
+ * together under the resource's own row, and the resources stay in their order.
+ */
+function withinResource(direction: GridSortDirection): GridComparatorFn {
+  return (v1, v2, p1, p2) => {
+    const a = p1.api.getRow(p1.id) as BlameRow | null;
+    const b = p2.api.getRow(p2.id) as BlameRow | null;
+    if (a && b) {
+      if (a.group !== b.group) return a.group - b.group;
+      if (a.isResource !== b.isResource) return a.isResource ? -1 : 1;
+    }
+    const order = gridStringOrNumberComparator(v1, v2, p1, p2);
+    return direction === 'desc' ? -order : order;
+  };
+}
+
+/** The resource's own row heads its fields, and is set apart from the resource before it. */
+const RESOURCE_ROW_CLASS = 'blame-resource-row';
+
+const resourceRowSx = {
+  [`& .${RESOURCE_ROW_CLASS}`]: {
+    bgcolor: 'action.selected',
+    borderTop: 2,
+    borderColor: 'divider',
+  },
+  [`& .${RESOURCE_ROW_CLASS}:hover`]: { bgcolor: 'action.focus' },
+} as const;
+
+/** The resource a row about one names: its kind and its name, with its full type on hover. */
+const ResourceHeading = ({ row }: { row: BlameRow }) => {
+  const type = row.field.ResourceType ?? '';
+  const kind = type.slice(type.lastIndexOf('/') + 1);
+  return (
+    <Tooltip title={row.resource}>
+      <Box
+        component='span'
+        sx={{
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 1,
+          overflow: 'hidden',
+          minWidth: 0,
+        }}
+      >
+        <Typography component='span' variant='body2' color='text.secondary' noWrap>
+          {kind}
+        </Typography>
+        <Typography
+          component='span'
+          noWrap
+          sx={{
+            ...monoSx,
+            fontWeight: 600,
+            textDecoration: row.field.Deleted ? 'line-through' : undefined,
+          }}
+        >
+          {row.field.ResourceName}
+        </Typography>
+      </Box>
+    </Tooltip>
+  );
+};
+
 function buildColumns(onValidationClick: (field: BlameField) => void): GridColDef<BlameRow>[] {
-  return [
+  return columnsWithinResource([
     {
       field: 'flags',
       headerName: 'Flags',
@@ -106,16 +176,27 @@ function buildColumns(onValidationClick: (field: BlameField) => void): GridColDe
       flex: 2,
       minWidth: 240,
       valueGetter: (_, row) => row.field.Path ?? '',
-      renderCell: (params) => (
-        <Tooltip title={params.row.resource}>
-          <Typography
-            component='span'
-            sx={{ ...monoSx, fontStyle: params.row.field.Absent ? 'italic' : undefined }}
-          >
-            {params.row.field.Path}
-          </Typography>
-        </Tooltip>
-      ),
+      // A resource's own row has no value, so its heading takes the Value cell too.
+      colSpan: (_, row) => (row.isResource ? 2 : 1),
+      renderCell: (params) =>
+        params.row.isResource ? (
+          <ResourceHeading row={params.row} />
+        ) : (
+          <Tooltip title={params.row.resource}>
+            <Typography
+              component='span'
+              sx={{
+                ...monoSx,
+                pl: 2,
+                fontStyle: params.row.field.Absent ? 'italic' : undefined,
+                textDecoration: params.row.field.Deleted ? 'line-through' : undefined,
+                color: params.row.field.Deleted ? 'text.secondary' : undefined,
+              }}
+            >
+              {params.row.field.Path}
+            </Typography>
+          </Tooltip>
+        ),
     },
     {
       field: 'value',
@@ -123,14 +204,24 @@ function buildColumns(onValidationClick: (field: BlameField) => void): GridColDe
       flex: 1,
       minWidth: 140,
       valueGetter: (_, row) => (row.field.Value ?? '').trim(),
-      renderCell: (params) => (
-        <Typography
-          component='span'
-          sx={{ ...monoSx, overflow: 'hidden', textOverflow: 'ellipsis' }}
-        >
-          {params.value}
-        </Typography>
-      ),
+      renderCell: (params) =>
+        params.row.field.Deleted ? (
+          <Typography
+            component='span'
+            variant='body2'
+            color='text.secondary'
+            sx={{ fontStyle: 'italic' }}
+          >
+            deleted
+          </Typography>
+        ) : (
+          <Typography
+            component='span'
+            sx={{ ...monoSx, overflow: 'hidden', textOverflow: 'ellipsis' }}
+          >
+            {params.value}
+          </Typography>
+        ),
     },
     {
       field: 'setBy',
@@ -233,7 +324,13 @@ function buildColumns(onValidationClick: (field: BlameField) => void): GridColDe
       width: 160,
       valueGetter: (_, row) => (row.here?.ChangeOrders ?? []).join(', '),
     },
-  ];
+  ]);
+}
+
+function columnsWithinResource(columns: GridColDef<BlameRow>[]): GridColDef<BlameRow>[] {
+  return columns.map((column) =>
+    column.sortable === false ? column : { ...column, getSortComparator: withinResource },
+  );
 }
 
 type DialogKind = '' | 'guard' | 'removeGuard' | 'applyConflicts' | 'setValue';
@@ -282,7 +379,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
   );
   const selectedFields = useMemo(() => {
     const ids = new Set(selected.map(String));
-    return rows.filter((row) => ids.has(row.id)).map((row) => row.field);
+    return rows.filter((row) => ids.has(row.id) && !row.placeholder).map((row) => row.field);
   }, [rows, selected]);
 
   const [setProtection, { isLoading: isProtecting }] = useSetUnitProtectionMutation();
@@ -310,8 +407,8 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
       }).unwrap();
       done(
         protect
-          ? 'The selected fields are kept on merge'
-          : 'Merges may update the selected fields',
+          ? 'The selected fields and resources are kept on merge'
+          : 'Merges may update the selected fields and resources',
       );
     } catch (err) {
       failed(err, 'Failed to set protection');
@@ -473,7 +570,13 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
         rowSelectionModel={selected}
         onRowSelectionModelChange={setSelected}
         customToolbarActions={customToolbarActions}
-        onRowClick={(params) => setDrawerField((params.row as BlameRow).field)}
+        sx={resourceRowSx}
+        rowClassName={(row) => (row.isResource ? RESOURCE_ROW_CLASS : undefined)}
+        isRowSelectable={(row) => !row.placeholder}
+        onRowClick={(params) => {
+          const row = params.row as BlameRow;
+          if (!row.placeholder) setDrawerField(row.field);
+        }}
         hasNoData={!isFetching && rows.length === 0}
         emptyState={
           <Typography variant='body2' color='text.secondary' sx={{ p: 2 }}>

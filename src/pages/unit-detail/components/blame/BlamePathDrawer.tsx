@@ -27,7 +27,7 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 
 import { unitRevisionHref } from '../../unitDetailHrefs';
 import { BlameFlagChip } from './BlameFlagChip';
-import { originUnitLabel } from './blameFields';
+import { originUnitLabel, resourceLabel } from './blameFields';
 
 dayjs.extend(relativeTime);
 
@@ -153,9 +153,13 @@ const FieldSummary = ({ report }: { report: UnitPathReport }) => {
         {[field.ResourceType, field.ResourceName].filter(Boolean).join(' ')}
       </Line>
       <Line label='Path'>
-        <Typography variant='body2' sx={monoSx}>
-          {field.Path}
-        </Typography>
+        {field.Path ? (
+          <Typography variant='body2' sx={monoSx}>
+            {field.Path}
+          </Typography>
+        ) : (
+          'none: this is the resource as a whole'
+        )}
       </Line>
       <Line label='REF'>
         <Typography variant='body2' sx={monoSx}>
@@ -165,7 +169,9 @@ const FieldSummary = ({ report }: { report: UnitPathReport }) => {
       <Line label='Value'>
         {field.Absent ? (
           'none: the Unit does not have this field'
-        ) : (
+        ) : field.Deleted ? (
+          `none: a change deleted the ${field.Path ? 'field' : 'resource'} from the Unit`
+        ) : !field.Path ? undefined : (
           <Box
             component='pre'
             sx={{ ...monoSx, m: 0, fontSize: '0.8125rem', whiteSpace: 'pre-wrap' }}
@@ -185,11 +191,15 @@ const FieldSummary = ({ report }: { report: UnitPathReport }) => {
       </Line>
       <Line label='Released'>{report.ReleaseMessage}</Line>
       <Line label='Kept on merge'>
-        {field.ResourceProtected
-          ? 'yes: its resource is protected as a whole'
-          : field.Protected
-            ? 'yes: an override a merge from upstream leaves alone'
-            : undefined}
+        {field.Deleted && field.Protected
+          ? 'yes: a merge from upstream leaves it deleted'
+          : field.ResourceProtected && !field.Path
+            ? 'yes: the resource is protected as a whole, so a merge from upstream leaves all of it alone'
+            : field.ResourceProtected
+              ? 'yes: its resource is protected as a whole'
+              : field.Protected
+                ? 'yes: an override a merge from upstream leaves alone'
+                : undefined}
       </Line>
       <Line label='Guards'>
         {Object.entries(field.Guards ?? {})
@@ -278,7 +288,7 @@ export const BlamePathDrawer = ({ spaceId, unitId, field, onClose }: BlamePathDr
     >
       <Stack direction='row' alignItems='center' sx={{ p: 2, pb: 1 }}>
         <Typography variant='h6' sx={{ flex: 1, ...monoSx }}>
-          {field?.Path}
+          {field?.Path || resourceLabel(field ?? {})}
         </Typography>
         <IconButton aria-label='Close' onClick={close}>
           <CloseIcon />
@@ -296,12 +306,20 @@ export const BlamePathDrawer = ({ spaceId, unitId, field, onClose }: BlamePathDr
         {data && (
           <>
             <FieldSummary report={data} />
-            <Heading>Changes, from this Unit out to where the value was set</Heading>
+            <Heading>
+              {data.Field?.Deleted
+                ? 'Changes, from this Unit out to where it was deleted'
+                : !data.Field?.Path
+                  ? 'Changes, from this Unit out to where the resource was added'
+                  : 'Changes, from this Unit out to where the value was set'}
+            </Heading>
             {(data.Changes ?? []).length === 0 ? (
               <Typography variant='body2' color='text.secondary'>
                 {data.Field?.Absent
                   ? 'No recorded change: the Unit does not have this field.'
-                  : 'No recorded change: the value has been there since the Unit was created.'}
+                  : !data.Field?.Path
+                    ? 'No recorded change: the resource has been there since the Unit was created.'
+                    : 'No recorded change: the value has been there since the Unit was created.'}
               </Typography>
             ) : (
               <Stack spacing={1}>

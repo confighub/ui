@@ -78,37 +78,140 @@ const service: BlameField = {
   Flags: ['Protected'],
 };
 
+// The rows about the resources as a whole, which have no path.
+const deployment: BlameField = {
+  Ref: 'd0d0d0d',
+  ResourceType: DEPLOYMENT,
+  ResourceName: 'confighubplaceholder/web',
+  Path: '',
+  Flags: ['Protected', 'ValidationError'],
+  Protected: true,
+  ResourceProtected: true,
+  Validation: [
+    { Gate: 'dev/cel/vet-cel', Issues: [{ Message: 'needs a PodDisruptionBudget' }] },
+  ],
+  Chain: [{ SpaceSlug: 'dev', UnitSlug: 'web', RevisionNum: 1, SetBy: 'CreateUnit' }],
+};
+
+const worker: BlameField = {
+  Ref: 'e1e1e1e',
+  ResourceType: DEPLOYMENT,
+  ResourceName: 'confighubplaceholder/worker',
+  Path: '',
+  Flags: ['Protected', 'Deleted'],
+  Protected: true,
+  ResourceProtected: true,
+  Deleted: true,
+  Chain: [{ SpaceSlug: 'dev', UnitSlug: 'web', RevisionNum: 3, SetBy: 'delete-resource' }],
+};
+
+const deletedPort: BlameField = {
+  Ref: 'f2f2f2f',
+  ResourceType: 'v1/Service',
+  ResourceName: 'confighubplaceholder/web',
+  Path: 'spec.ports.?port=443',
+  Flags: ['Deleted'],
+  Deleted: true,
+};
+
 test('rows are by resource and then path, and name the hop that set the value', () => {
   const rows = blameRows([service, replicas, namespace]);
   expect(rows.map((row) => row.field.Path)).toEqual([
+    '',
     'metadata.namespace',
     'spec.replicas',
+    '',
     'spec.ports.?port=80.targetPort',
   ]);
-  const replicasRow = rows[1];
+  const replicasRow = rows[2];
   expect(replicasRow.origin?.SpaceSlug).toBe('base');
   expect(replicasRow.here?.SpaceSlug).toBe('dev');
   expect(originUnitLabel(replicasRow.origin)).toBe('base/web');
-  expect(new Set(rows.map((row) => row.id)).size).toBe(3);
+  expect(new Set(rows.map((row) => row.id)).size).toBe(5);
 });
 
-test('the filters keep a path, a resource, and any of the flags chosen', () => {
-  const rows = blameRows([service, replicas, namespace]);
-  expect(filterBlameRows(rows, { path: 'replicas', resource: '', flags: [] })).toHaveLength(1);
+test('each resource is headed by its own row, made up when the server sent none', () => {
+  const rows = blameRows([service, worker, replicas, deployment, namespace]);
   expect(
-    filterBlameRows(rows, {
-      path: '',
-      resource: `v1/Service confighubplaceholder/web`,
-      flags: [],
-    }),
-  ).toHaveLength(1);
+    rows.map((row) => [row.group, row.isResource, !!row.placeholder, row.field.Ref]),
+  ).toEqual([
+    [0, true, false, 'd0d0d0d'],
+    [0, false, false, '9f7c173'],
+    [0, false, false, '7253c88'],
+    [1, true, false, 'e1e1e1e'],
+    [2, true, true, ''],
+    [2, false, false, 'aa11bb2'],
+  ]);
+  // The made-up heading names the resource, and says nothing else about it.
+  expect(rows[4].field).toMatchObject({ ResourceType: 'v1/Service', Path: '' });
+  expect(rows[4].field.Flags).toBeUndefined();
+});
+
+test('the filters keep a path, a resource, and any of the flags chosen, under their resource', () => {
+  const rows = blameRows([service, replicas, namespace, deployment, worker]);
+  const refs = (filter: Parameters<typeof filterBlameRows>[1]) =>
+    filterBlameRows(rows, filter).map((r) => r.field.Ref);
+  // A path filter matches no resource's own row, which is kept to head the fields it kept.
+  expect(refs({ path: 'replicas', resource: '', flags: [] })).toEqual(['d0d0d0d', '7253c88']);
   expect(
-    filterBlameRows(rows, {
-      path: '',
-      resource: '',
-      flags: ['Conflict', 'ValidationError'],
-    }).map((r) => r.field.Ref),
-  ).toEqual(['9f7c173', '7253c88']);
+    refs({ path: '', resource: `v1/Service confighubplaceholder/web`, flags: [] }),
+  ).toEqual(['', 'aa11bb2']);
+  expect(refs({ path: '', resource: '', flags: ['Conflict', 'ValidationError'] })).toEqual([
+    'd0d0d0d',
+    '9f7c173',
+    '7253c88',
+  ]);
+  // A resource's own row is kept for a flag of its own, with none of its fields.
+  expect(refs({ path: '', resource: '', flags: ['Deleted'] })).toEqual(['e1e1e1e']);
+  // A made-up heading is kept only to head a field, and is not kept above for a flag the
+  // Service's own row might have had.
+  expect(refs({ path: '', resource: '', flags: ['Protected'] })).toEqual([
+    'd0d0d0d',
+    '7253c88',
+    'e1e1e1e',
+    '',
+    'aa11bb2',
+  ]);
+});
+
+test('a resource is protected and unprotected as a whole on its own row', () => {
+  expect(
+    protectionRequest([{ ...deployment, Protected: false, ResourceProtected: false }], true),
+  ).toEqual([
+    {
+      Resource: { ResourceType: DEPLOYMENT, ResourceName: 'confighubplaceholder/web' },
+      Protected: { '': true },
+    },
+  ]);
+  expect(blameActionApplies.unprotect([deployment])).toBe(true);
+  // A deleted resource is unprotected on its own row, which is what lets a merge from upstream
+  // add it back; a deleted field is protected on its own.
+  expect(protectionRequest([worker, replicas], false)).toEqual([
+    {
+      Resource: { ResourceType: DEPLOYMENT, ResourceName: 'confighubplaceholder/worker' },
+      Protected: { '': false },
+    },
+    {
+      Resource: { ResourceType: DEPLOYMENT, ResourceName: 'confighubplaceholder/web' },
+      Protected: { 'spec.replicas': false },
+    },
+  ]);
+  expect(protectionRequest([deletedPort], true)).toEqual([
+    {
+      Resource: { ResourceType: 'v1/Service', ResourceName: 'confighubplaceholder/web' },
+      Protected: { 'spec.ports.?port=443': true },
+    },
+  ]);
+  // A guard on a resource is on its own row; a field with no value takes none, nor a value.
+  expect(guardSetRequest([deployment, deletedPort], 'owner', 'platform')).toEqual([
+    {
+      Resource: { ResourceType: DEPLOYMENT, ResourceName: 'confighubplaceholder/web' },
+      Set: { '': { owner: 'platform' } },
+    },
+  ]);
+  expect(blameActionApplies.guard([worker, deletedPort])).toBe(false);
+  expect(blameActionApplies.setValue([deployment])).toBe(false);
+  expect(blameActionApplies.setValue([deletedPort])).toBe(false);
 });
 
 test('every flag has a label and a meaning, and the needs-attention ones are those the server is asked for', () => {

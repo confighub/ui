@@ -33,7 +33,7 @@ const BLAME_FLAG_TEXT: readonly Omit<BlameFlagMeta, 'color'>[] = [
     code: 'Protected',
     label: 'Kept on merge',
     meaning:
-      'Protected: an override a merge from upstream leaves alone, by itself or as part of a resource protected as a whole',
+      'Protected: an override a merge from upstream leaves alone, by itself or as part of a resource protected as a whole. On a resource, the resource is protected as a whole; on what was deleted, a merge leaves it deleted',
     attention: false,
   },
   {
@@ -55,6 +55,13 @@ const BLAME_FLAG_TEXT: readonly Omit<BlameFlagMeta, 'color'>[] = [
     meaning:
       'The Unit does not have this field; a conflict names a change that could not be made to it',
     attention: true,
+  },
+  {
+    code: 'Deleted',
+    label: 'Deleted',
+    meaning:
+      'The Unit does not have this field or resource because a change deleted it; kept on merge, a merge from upstream leaves it deleted',
+    attention: false,
   },
   {
     code: 'Finding',
@@ -128,6 +135,7 @@ const BLAME_FLAG_COLORS: Readonly<Record<string, string>> = {
   Guarded: '#5e35b1',
   Conflict: '#d84315',
   Absent: '#e65100',
+  Deleted: '#616161',
   Finding: '#b26a00',
   ValidationError: '#c62828',
   ValidationWarning: '#ef6c00',
@@ -198,16 +206,32 @@ export function validationSummary(field: BlameField, warning: boolean): string[]
 export const NEEDS_ATTENTION_FLAGS =
   'Conflict,Absent,Finding,ValidationError,ValidationWarning';
 
-/** One row of the tab's grid: a field and what the grid shows of it. */
+/**
+ * One row of the tab's grid: a field and what the grid shows of it. Each resource's rows start
+ * with the row about the resource as a whole, the field with no path, which heads its group.
+ */
 export interface BlameRow {
   id: string;
   field: BlameField;
   resource: string;
+  /** The position of the row's resource among the Unit's, which keeps a resource's rows together. */
+  group: number;
+  /** The row about the resource as a whole, which heads the resource's rows. */
+  isResource: boolean;
+  /**
+   * A heading the tab made for a resource whose own row the server did not return, as when
+   * only the fields that need attention were asked for. It names the resource and nothing else,
+   * so it cannot be selected or opened.
+   */
+  placeholder?: boolean;
   /** The hop that set the value: the end of the chain. */
   origin?: BlameOrigin;
   /** The change in this Unit that brought the value: the start of the chain. */
   here?: BlameOrigin;
 }
+
+/** Whether a field is the row about its resource as a whole, which has no path. */
+export const isResourceField = (field: Pick<BlameField, 'Path'>) => !field.Path;
 
 /** The resource a field is in, as `type name`. */
 export function resourceLabel(
@@ -216,16 +240,20 @@ export function resourceLabel(
   return [field.ResourceType, field.ResourceName].filter(Boolean).join(' ');
 }
 
-/** The grid's rows, by resource and then path. A REF is unique within a Unit, but two
- * resources can share a path, so the id names the resource too. */
+/**
+ * The grid's rows, by resource and then path, each resource headed by its own row. A REF is
+ * unique within a Unit, but two resources can share a path, so the id names the resource too.
+ */
 export function blameRows(fields: readonly BlameField[] | undefined): BlameRow[] {
-  return (fields ?? [])
+  const sorted = (fields ?? [])
     .map((field) => {
       const chain = field.Chain ?? [];
       return {
         id: [field.Ref, field.ResourceType, field.ResourceName, field.Path].join('|'),
         field,
         resource: resourceLabel(field),
+        group: 0,
+        isResource: isResourceField(field),
         origin: chain[chain.length - 1],
         here: chain[0],
       };
@@ -235,6 +263,37 @@ export function blameRows(fields: readonly BlameField[] | undefined): BlameRow[]
         a.resource.localeCompare(b.resource) ||
         (a.field.Path ?? '').localeCompare(b.field.Path ?? ''),
     );
+  const rows: BlameRow[] = [];
+  for (const row of sorted) {
+    const previous = rows[rows.length - 1];
+    if (previous?.resource !== row.resource) {
+      const group = previous ? previous.group + 1 : 0;
+      if (!row.isResource) {
+        rows.push({
+          id: `resource|${row.field.ResourceType}|${row.field.ResourceName}`,
+          field: {
+            SpaceID: row.field.SpaceID,
+            SpaceSlug: row.field.SpaceSlug,
+            UnitID: row.field.UnitID,
+            UnitSlug: row.field.UnitSlug,
+            ResourceType: row.field.ResourceType,
+            ResourceName: row.field.ResourceName,
+            ResourceNameWithoutScope: row.field.ResourceNameWithoutScope,
+            Path: '',
+            Ref: '',
+          },
+          resource: row.resource,
+          group,
+          isResource: true,
+          placeholder: true,
+        });
+      }
+      rows.push({ ...row, group });
+    } else {
+      rows.push({ ...row, group: previous.group });
+    }
+  }
+  return rows;
 }
 
 /** What the tab filters in the browser. */
@@ -249,8 +308,13 @@ export interface BlameFilter {
 
 export const NO_BLAME_FILTER: BlameFilter = { path: '', resource: '', flags: [] };
 
+/**
+ * The rows the filter keeps. A resource's own row is kept when it matches, and, to name the
+ * resource, whenever one of its fields is kept; a path filter matches no resource's own row,
+ * since it has no path.
+ */
 export function filterBlameRows(rows: readonly BlameRow[], filter: BlameFilter): BlameRow[] {
-  return rows.filter((row) => {
+  const matches = (row: BlameRow) => {
     if (filter.path !== '' && !(row.field.Path ?? '').includes(filter.path)) return false;
     if (filter.resource !== '' && row.resource !== filter.resource) return false;
     if (
@@ -259,7 +323,14 @@ export function filterBlameRows(rows: readonly BlameRow[], filter: BlameFilter):
     )
       return false;
     return true;
-  });
+  };
+  const kept = new Set(rows.filter((row) => !row.placeholder && matches(row)));
+  const groupsWithFields = new Set(
+    rows.filter((row) => !row.isResource && kept.has(row)).map((row) => row.group),
+  );
+  return rows.filter(
+    (row) => kept.has(row) || (row.isResource && groupsWithFields.has(row.group)),
+  );
 }
 
 /** The resources of the rows, for the resource filter. */
@@ -269,19 +340,29 @@ export function blameResources(rows: readonly BlameRow[]): string[] {
 
 const hasFlag = (field: BlameField, code: string) => (field.Flags ?? []).includes(code);
 
+/**
+ * Whether a field's protection is its own to clear. A field protected because its resource is,
+ * as a whole, is unprotected by unprotecting the resource, on the resource's own row, which is
+ * not what selecting the field asks for.
+ */
+const ownProtection = (f: BlameField) =>
+  !!f.Protected && (!f.ResourceProtected || isResourceField(f));
+
 /** Whether an action applies to at least one of the selected fields. */
 export const blameActionApplies = {
   protect: (fields: readonly BlameField[]) => fields.some((f) => !f.Absent && !f.Protected),
-  // A field protected because its resource is, as a whole, is unprotected by unprotecting the
-  // resource, which is not what selecting the field asks for.
-  unprotect: (fields: readonly BlameField[]) =>
-    fields.some((f) => f.Protected && !f.ResourceProtected),
-  guard: (fields: readonly BlameField[]) => fields.some((f) => !f.Absent),
+  unprotect: (fields: readonly BlameField[]) => fields.some(ownProtection),
+  // A guard records why a value is what it is, so a field with no value takes none.
+  guard: (fields: readonly BlameField[]) => fields.some((f) => !f.Absent && !f.Deleted),
   removeGuard: (fields: readonly BlameField[]) =>
     fields.some((f) => Object.keys(f.Guards ?? {}).length > 0),
   conflicts: (fields: readonly BlameField[]) =>
     fields.some((f) => hasFlag(f, 'Conflict') || (f.Conflicts ?? []).length > 0),
-  setValue: (fields: readonly BlameField[]) => fields.length === 1 && !fields[0].Absent,
+  setValue: (fields: readonly BlameField[]) =>
+    fields.length === 1 &&
+    !fields[0].Absent &&
+    !fields[0].Deleted &&
+    !isResourceField(fields[0]),
 };
 
 /** Groups fields by resource, in the order they first appear. */
@@ -301,16 +382,19 @@ function byResource<T>(
   return Array.from(groups.values());
 }
 
-/** The SetUnitProtection edits that protect, or unprotect, the selected fields' paths. */
+/**
+ * The SetUnitProtection edits that protect, or unprotect, the selected fields' paths. The row
+ * about a resource has no path, which is how the request addresses the resource as a whole.
+ */
 export function protectionRequest(
   fields: readonly BlameField[],
   protect: boolean,
 ): ResourceProtection[] {
   return byResource(fields, (field) => {
-    if (field.Absent || field.Path === undefined) return undefined;
-    if (!protect && (!field.Protected || field.ResourceProtected)) return undefined;
+    if (field.Absent) return undefined;
+    if (!protect && !ownProtection(field)) return undefined;
     if (protect && field.Protected) return undefined;
-    return [field.Path, protect];
+    return [field.Path ?? '', protect];
   }).map(({ field, entries }) => ({
     Resource: { ResourceType: field.ResourceType, ResourceName: field.ResourceName },
     Protected: Object.fromEntries(entries),
@@ -324,7 +408,7 @@ export function guardSetRequest(
   value: string,
 ): ResourceGuards[] {
   return byResource(fields, (field) =>
-    field.Absent || field.Path === undefined ? undefined : [field.Path, { [key]: value }],
+    field.Absent || field.Deleted ? undefined : [field.Path ?? '', { [key]: value }],
   ).map(({ field, entries }) => ({
     Resource: { ResourceType: field.ResourceType, ResourceName: field.ResourceName },
     Set: Object.fromEntries(entries),
@@ -341,9 +425,7 @@ export function guardRemoveRequest(
   key: string,
 ): ResourceGuards[] {
   return byResource(fields, (field) =>
-    field.Path === undefined || field.Guards?.[key] === undefined
-      ? undefined
-      : [field.Path, [key]],
+    field.Guards?.[key] === undefined ? undefined : [field.Path ?? '', [key]],
   ).map(({ field, entries }) => ({
     Resource: { ResourceType: field.ResourceType, ResourceName: field.ResourceName },
     Remove: Object.fromEntries(entries),

@@ -13,13 +13,13 @@ import {
   GridColumnVisibilityModel,
   GridEventListener,
   GridInitialState,
+  GridOverlay,
   GridRowSelectionModel,
   GridSlotsComponent,
   GridSortModel,
   GridToolbarColumnsButton,
   GridToolbarContainer,
   GridToolbarProps,
-  GridOverlay,
   GridToolbarQuickFilter,
   GridValidRowModel,
   gridClasses,
@@ -27,8 +27,8 @@ import {
 
 import { ResetTableButton } from '../common/ResetTableButton';
 import { scrollbarStyles } from '../styled/scrollbarStyles';
-import { ColumnGroup, DynamicGroupConfig } from './column-groups-types';
 import { GroupedColumnsPanel } from './GroupedColumnsPanel';
+import { ColumnGroup, DynamicGroupConfig } from './column-groups-types';
 import { HighlightedCell } from './components/HighlightedCell';
 
 /**
@@ -159,8 +159,21 @@ interface CustomToolbarSlotProps extends Partial<GridToolbarProps> {
 }
 
 // Stable style constants extracted outside the component to avoid re-creating objects on every render
-const toolbarContainerSx = { backgroundColor: 'white', px: 1.5, pt: 1.5, flexWrap: 'nowrap', alignItems: 'flex-start' } as const;
-const toolbarLeftSx = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, flex: 1, minWidth: 0 } as const;
+const toolbarContainerSx = {
+  backgroundColor: 'white',
+  px: 1.5,
+  pt: 1.5,
+  flexWrap: 'nowrap',
+  alignItems: 'flex-start',
+} as const;
+const toolbarLeftSx = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  alignItems: 'center',
+  gap: 1,
+  flex: 1,
+  minWidth: 0,
+} as const;
 const quickFilterSx = { flexShrink: 0 } as const;
 const columnsButtonSlotProps = {
   button: {
@@ -198,9 +211,7 @@ const getRowClassName = (params: { indexRelativeToCurrentPage: number }) =>
  * filtering and the toolbar quick filter show the same empty state.
  */
 const CustomNoRowsOverlay = ({ children }: { children?: React.ReactNode }) => (
-  <GridOverlay sx={{ flexDirection: 'column' }}>
-    {children}
-  </GridOverlay>
+  <GridOverlay sx={{ flexDirection: 'column' }}>{children}</GridOverlay>
 );
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 250] as const;
@@ -283,6 +294,10 @@ export interface EntityDataGridProps<T extends GridValidRowModel> {
   hasNoData?: boolean;
   /** When false, the grid fills its container and rows scroll internally. Defaults to true. */
   autoHeight?: boolean;
+  /** A class for a row of its own, beside the even/odd striping, for a page to style it. */
+  rowClassName?: (row: T) => string | undefined;
+  /** Whether a row can be selected, when checkboxSelection is on; every row can by default. */
+  isRowSelectable?: (row: T) => boolean;
 }
 
 export const EntityDataGrid = <T extends GridValidRowModel>({
@@ -315,6 +330,8 @@ export const EntityDataGrid = <T extends GridValidRowModel>({
   noRowsOverlay,
   emptyState,
   hasNoData = false,
+  rowClassName,
+  isRowSelectable,
 }: EntityDataGridProps<T>) => {
   const hasColumnGroups = !!columnGroups && columnGroups.length > 0;
   // Enhance columns with automatic highlighting
@@ -425,12 +442,13 @@ export const EntityDataGrid = <T extends GridValidRowModel>({
         // content spills upwards over the column headers. The min-height on the
         // inner element is a backstop — it can only grow downwards from the
         // headers' bottom edge, so the content can never paint over them.
-        ...(noRowsOverlay && (rows.length === 0 || !loading) && {
-          '--DataGrid-overlayHeight': '300px',
-          '& .MuiDataGrid-overlayWrapperInner': {
-            minHeight: 300,
-          },
-        }),
+        ...(noRowsOverlay &&
+          (rows.length === 0 || !loading) && {
+            '--DataGrid-overlayHeight': '300px',
+            '& .MuiDataGrid-overlayWrapperInner': {
+              minHeight: 300,
+            },
+          }),
         '& .MuiDataGrid-toolbarContainer': {
           backgroundColor: 'white',
         },
@@ -478,7 +496,17 @@ export const EntityDataGrid = <T extends GridValidRowModel>({
       loading={loading}
       initialState={initialState}
       disableRowSelectionOnClick={disableRowSelectionOnClick}
-      getRowClassName={getRowClassName}
+      getRowClassName={
+        rowClassName
+          ? (params) =>
+              [getRowClassName(params), rowClassName(params.row as T)]
+                .filter(Boolean)
+                .join(' ')
+          : getRowClassName
+      }
+      isRowSelectable={
+        isRowSelectable ? (params) => isRowSelectable(params.row as T) : undefined
+      }
       slots={mergedSlots}
       slotProps={mergedSlotProps}
       columnVisibilityModel={columnVisibilityModel}
