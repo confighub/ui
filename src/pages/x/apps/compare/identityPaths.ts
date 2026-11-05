@@ -24,6 +24,10 @@
  * the underlying document.
  */
 
+import type { ResourceMutation } from '@confighub/rtk-query';
+
+import { kubernetesResourceTypeWithoutAPIVersion } from '@/utility/resource-type-functions';
+
 import { parseUnitDataStructured, type FieldEntry, type ResourceInfo } from '../configParser';
 
 /**
@@ -167,60 +171,250 @@ export interface IdentityIndexedUnit {
 }
 
 /**
- * Key a document so the same resource joins across deployments.
+ * The names a column's resources had before, from that unit's `MutationSources`:
+ * for each resource, keyed by `resourceAliasKey`, the names without scope it has
+ * had (`AliasesWithoutScopes`). This is what lets a resource that was renamed in
+ * one deployment still find itself in another.
+ */
+export type ResourceAliasIndex = ReadonlyMap<string, ReadonlySet<string>>;
+
+/**
+ * A resource type without its API version. The server identifies resources this
+ * way, so a resource keeps its identity when its API version changes, and the join
+ * does the same. The documents here are read from `apiVersion` and `kind`.
+ */
+function typeWithoutVersion(resourceType: string): string {
+  return kubernetesResourceTypeWithoutAPIVersion(resourceType);
+}
+
+/** A name without its scope: `ns/web` is `web`. */
+function nameWithoutScope(name: string): string {
+  const slash = name.indexOf('/');
+  return slash >= 0 ? name.slice(slash + 1) : name;
+}
+
+/** The key `ResourceAliasIndex` is keyed by. */
+export function resourceAliasKey(resourceType: string, resourceName: string): string {
+  return `${typeWithoutVersion(resourceType)}\u0000${resourceName}`;
+}
+
+/** Index a unit's `MutationSources` by resource, for `joinDocumentsAcross`. */
+export function resourceAliasesFromMutationSources(
+  sources: readonly ResourceMutation[] | undefined,
+): ResourceAliasIndex {
+  const index = new Map<string, Set<string>>();
+  for (const source of sources ?? []) {
+    const type = source.Resource?.ResourceType;
+    const name = source.Resource?.ResourceName;
+    if (!type || !name) continue;
+    const key = resourceAliasKey(type, name);
+    let aliases = index.get(key);
+    if (!aliases) {
+      aliases = new Set<string>();
+      index.set(key, aliases);
+    }
+    for (const alias of Object.keys(source.AliasesWithoutScopes ?? {})) {
+      if (alias) aliases.add(alias);
+    }
+  }
+  return index;
+}
+
+/** One resource, joined across every column: the document each column holds of it. */
+export interface JoinedDocument {
+  /** Stable key for this resource across every column. */
+  key: string;
+  /** The document each column holds of this resource, parallel to the columns. */
+  slots: (IdentityIndexedDocument | undefined)[];
+}
+
+/**
+ * Join the documents of every column, so the same resource lines up across
+ * deployments. Ordered by first appearance, left to right.
  *
- * THE NAME IS DELIBERATELY NOT IN THE KEY BY DEFAULT, and that is the whole
+ * THE NAME IS DELIBERATELY NOT PART OF THE JOIN BY DEFAULT, and that is the whole
  * subtlety. Within ONE unit, a resource is identified by type AND name — that is
  * this repo's settled rule, and it is what tells a Deployment from a ConfigMap
  * and one ConfigMap from another. Across DEPLOYMENTS of the same unit, the name
  * is one of the values being compared: a resource routinely carries its own
- * space's name. Keying the join on it means the documents stop joining at
- * exactly the moment there is a difference worth showing, and each column then
- * reads as though the other deployment had no such resource at all.
+ * space's name. Joining on it means the documents stop joining at exactly the
+ * moment there is a difference worth showing, and each column then reads as
+ * though the other deployment had no such resource at all.
  *
- * So the name enters the key only where it is doing the job it was meant for:
- * telling two documents of the SAME Kind apart inside one unit. `ambiguousKinds`
- * names those Kinds, and it is computed across every column at once so all of
- * them key the same way.
+ * So the name enters the join only where it is doing the job it was meant for:
+ * telling two documents of the SAME type apart inside one unit. Those are joined
+ * the way the server's diff matches resources, so the two cannot disagree about
+ * which resources are the same one:
+ *
+ *  1. the same name, namespace included;
+ *  2. otherwise the same name without its namespace, when that names exactly one
+ *     resource of the type in each unit — a variant replaces the upstream's
+ *     `confighubplaceholder` namespace with its own, and that must not make its
+ *     resources strangers;
+ *  3. otherwise a name one resource had before, recorded in its unit's
+ *     `MutationSources` aliases, when that names exactly one resource.
+ *
+ * A name that would match several resources matches none of them, rather than
+ * whichever came first.
  */
-export function documentKey(
-  resource: ResourceInfo | undefined,
-  ordinal: number,
-  ambiguousKinds?: ReadonlySet<string>,
-): string {
-  const kind = resource?.ResourceType ?? '';
-  // A document with no identity at all can only be joined by its position in the
-  // unit, which is the very thing this module exists to avoid one level down. It
-  // is marked so it can be SEEN rather than joined quietly: a format with no
-  // resource concept (ini, properties, plain JSON) reaches this, and so would a
-  // Kubernetes document that failed to parse.
-  if (!kind) return `${POSITIONAL_MARKER}doc:${ordinal}`;
-  if (ambiguousKinds?.has(kind)) {
-    return `${kind}/${resource?.ResourceName ?? `${POSITIONAL_MARKER}${ordinal}`}`;
+export function joinDocumentsAcross(
+  units: readonly IdentityIndexedUnit[],
+  aliasesByColumn: readonly (ResourceAliasIndex | undefined)[] = [],
+): { joined: JoinedDocument[]; ambiguousTypes: Set<string> } {
+  const ambiguousTypes = ambiguousTypesAcross(units);
+  const columnCount = units.length;
+  const joined: JoinedDocument[] = [];
+  const byKey = new Map<string, JoinedDocument>();
+
+  // For a type told apart by name: the members already joined, so a later column
+  // can be matched against every name the resource goes by.
+  interface Member {
+    column: number;
+    fullName?: string;
+    shortName?: string;
+    aliases: ReadonlySet<string>;
+    /** True when `shortName` names one resource of this type in its unit. */
+    shortNameUnique: boolean;
   }
-  return kind;
+  const membersOf = new Map<JoinedDocument, Member[]>();
+  const typeOfEntry = new Map<JoinedDocument, string>();
+
+  const open = (key: string): JoinedDocument => {
+    const entry: JoinedDocument = { key, slots: new Array(columnCount).fill(undefined) };
+    joined.push(entry);
+    byKey.set(key, entry);
+    return entry;
+  };
+
+  units.forEach((unit, column) => {
+    const aliasIndex = aliasesByColumn[column];
+
+    // How many resources of each type share a name without scope, in this unit.
+    const shortNameCount = new Map<string, number>();
+    const pending: { document: IdentityIndexedDocument; type: string; member: Member; ordinal: number }[] = [];
+
+    unit.documents.forEach((document, ordinal) => {
+      const resourceType = document.resource?.ResourceType;
+      // A document with no identity at all can only be joined by its position in
+      // the unit, which is the very thing this module exists to avoid one level
+      // down. It is marked so it can be SEEN rather than joined quietly: a format
+      // with no resource concept (ini, properties, plain JSON) reaches this, and
+      // so would a Kubernetes document that failed to parse.
+      if (!resourceType) {
+        const key = `${POSITIONAL_MARKER}doc:${ordinal}`;
+        (byKey.get(key) ?? open(key)).slots[column] = document;
+        return;
+      }
+      const type = typeWithoutVersion(resourceType);
+      if (!ambiguousTypes.has(type)) {
+        (byKey.get(type) ?? open(type)).slots[column] = document;
+        return;
+      }
+      const fullName = document.resource?.ResourceName;
+      const shortName = fullName ? nameWithoutScope(fullName) || undefined : undefined;
+      // A document with no name, such as a Job that only sets `generateName`, has
+      // nothing to be matched by but its position, so it is joined by position
+      // and marked as such, as a document with no identity is.
+      if (!fullName || !shortName) {
+        const key = `${type}/${POSITIONAL_MARKER}${ordinal}`;
+        (byKey.get(key) ?? open(key)).slots[column] = document;
+        return;
+      }
+      const countKey = `${type}\u0000${shortName}`;
+      shortNameCount.set(countKey, (shortNameCount.get(countKey) ?? 0) + 1);
+      const aliases = aliasIndex?.get(resourceAliasKey(resourceType, fullName)) ?? new Set<string>();
+      pending.push({
+        document,
+        type,
+        ordinal,
+        member: { column, fullName, shortName, aliases, shortNameUnique: false },
+      });
+    });
+
+    for (const item of pending) {
+      const { shortName } = item.member;
+      item.member.shortNameUnique =
+        shortName !== undefined && shortNameCount.get(`${item.type}\u0000${shortName}`) === 1;
+    }
+
+    // The resources of this type joined so far that this column has not filled.
+    const candidates = (type: string): JoinedDocument[] =>
+      joined.filter((entry) => entry.slots[column] === undefined && typeOfEntry.get(entry) === type);
+
+    const place = (item: (typeof pending)[number], entry: JoinedDocument) => {
+      entry.slots[column] = item.document;
+      membersOf.get(entry)?.push(item.member);
+    };
+
+    const rules: ((item: (typeof pending)[number], member: Member) => boolean)[] = [
+      (item, member) => item.member.fullName !== undefined && member.fullName === item.member.fullName,
+      (item, member) =>
+        item.member.shortNameUnique && member.shortNameUnique && member.shortName === item.member.shortName,
+      // A resource's aliases include its current name, so the name looked up in
+      // the other side's aliases has to be unique on its own side, as for rule 2,
+      // or this would join what rule 2 refused to.
+      (item, member) =>
+        (item.member.shortNameUnique &&
+          item.member.shortName !== undefined &&
+          member.aliases.has(item.member.shortName)) ||
+        (member.shortNameUnique && member.shortName !== undefined && item.member.aliases.has(member.shortName)),
+    ];
+
+    // Rule by rule over the whole column, so a looser rule never takes a resource
+    // a stricter one would have matched to a document later in the same unit.
+    let unplaced = pending;
+    for (const rule of rules) {
+      const still: typeof pending = [];
+      for (const item of unplaced) {
+        const matches = candidates(item.type).filter((entry) =>
+          (membersOf.get(entry) ?? []).some((member) => rule(item, member)),
+        );
+        if (matches.length === 1 && matches[0]) place(item, matches[0]);
+        else still.push(item);
+      }
+      unplaced = still;
+    }
+
+    for (const item of unplaced) {
+      let key = `${item.type}/${item.member.fullName}`;
+      // Two documents of one type and name in one unit: still two resources here.
+      for (let n = 2; byKey.has(key); n += 1) key = `${item.type}/${item.member.fullName}~${n}`;
+      const entry = open(key);
+      typeOfEntry.set(entry, item.type);
+      membersOf.set(entry, []);
+      place(item, entry);
+    }
+  });
+
+  return { joined, ambiguousTypes };
 }
 
 /**
- * The Kinds that appear more than once in any one unit, and therefore need
+ * The types that appear more than once in any one unit, and therefore need
  * their name to be told apart.
  *
- * Computed over every column together: a Kind that is unique in one deployment
- * and duplicated in another must key the same way in both, or the two would not
+ * Computed over every column together: a type that is unique in one deployment
+ * and duplicated in another must join the same way in both, or the two would not
  * join for the opposite reason.
  */
-export function ambiguousKindsAcross(units: readonly IdentityIndexedUnit[]): Set<string> {
+function ambiguousTypesAcross(units: readonly IdentityIndexedUnit[]): Set<string> {
   const ambiguous = new Set<string>();
   for (const unit of units) {
     const seen = new Set<string>();
     for (const document of unit.documents) {
-      const kind = document.resource?.ResourceType;
-      if (!kind) continue;
-      if (seen.has(kind)) ambiguous.add(kind);
-      seen.add(kind);
+      const resourceType = document.resource?.ResourceType;
+      if (!resourceType) continue;
+      const type = typeWithoutVersion(resourceType);
+      if (seen.has(type)) ambiguous.add(type);
+      seen.add(type);
     }
   }
   return ambiguous;
+}
+
+/** True when a resource type is told apart by name in the compared units. */
+export function typeIsAmbiguous(resourceType: string, ambiguousTypes: ReadonlySet<string>): boolean {
+  return ambiguousTypes.has(typeWithoutVersion(resourceType));
 }
 
 /**

@@ -12,6 +12,7 @@ import type {
   ResourceGuards,
   ResourceProtection,
   UnitConflictSelector,
+  WithheldGuard,
 } from '@confighub/rtk-query';
 
 /** A flag code the server returns on a field, with how the tab shows it. */
@@ -459,6 +460,71 @@ export function conflictSelectors(fields: readonly BlameField[]): UnitConflictSe
     }
   }
   return selectors;
+}
+
+/** The reasons whose conflicts name the guards that withheld the change. */
+const GUARD_REASONS = new Set(['Guarded', 'GuardWithheld']);
+
+/** A guard as a selector names it: `key=value`, or the key alone for a guard with no value. */
+const guardSelector = (guard: WithheldGuard) =>
+  guard.Value ? `${guard.Key}=${guard.Value}` : (guard.Key ?? '');
+
+/**
+ * The ResolveUnitConflicts selectors that dismiss the selected fields' conflicts for good: one per
+ * reason at each path, on the field's resource as this Unit names it, which is the resource a
+ * dismissal is recorded on. A guard-caused conflict names its guards, so the dismissal covers what
+ * those guards withhold and not what another guard would.
+ */
+export function permanentDismissalSelectors(
+  fields: readonly BlameField[],
+): UnitConflictSelector[] {
+  const selectors: UnitConflictSelector[] = [];
+  const seen = new Set<string>();
+  for (const field of fields) {
+    for (const conflict of field.Conflicts ?? []) {
+      const guards = GUARD_REASONS.has(conflict.Reason ?? '')
+        ? (conflict.Guards ?? (conflict.Guard ? [conflict.Guard] : [])).map(guardSelector)
+        : [];
+      const selector: UnitConflictSelector = {
+        ResourceType: field.ResourceType,
+        ResourceName: field.ResourceName,
+        Path: conflict.Path,
+        Reason: conflict.Reason,
+        Guards: guards.length > 0 ? guards : undefined,
+      };
+      const key = [
+        selector.ResourceType,
+        selector.ResourceName,
+        selector.Path,
+        selector.Reason,
+        ...guards,
+      ].join('\u0000');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      selectors.push(selector);
+    }
+  }
+  return selectors;
+}
+
+/** The annotation kind a permanent conflict dismissal is recorded under. */
+export const CONFLICT_DISMISSAL_KIND = 'ConflictDismissal';
+
+/**
+ * What a path's recorded dismissals cover, one entry per key: a reason (`Subtracted`), or a reason
+ * and the guard that withheld it (`Guarded-owner`, whose value is the guard's value, or empty for
+ * any value).
+ */
+export function conflictDismissalSummary(entries: Record<string, string>): string[] {
+  return Object.keys(entries)
+    .sort()
+    .map((key) => {
+      const separator = key.indexOf('-');
+      if (separator < 0) return key;
+      const guard = key.slice(separator + 1);
+      const value = entries[key];
+      return `${key.slice(0, separator)} by guard ${value ? `${guard}=${value}` : guard}`;
+    });
 }
 
 const quote = (value: string) => `'${value.replace(/'/g, "''")}'`;

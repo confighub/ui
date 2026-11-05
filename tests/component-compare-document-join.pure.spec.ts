@@ -25,6 +25,7 @@ import {
   type CompareColumnInput,
   type CompareLeafRow,
 } from '../src/pages/x/apps/compare/deploymentCompareModel';
+import { resourceAliasKey } from '../src/pages/x/apps/compare/identityPaths';
 
 const PROD = `apiVersion: apps/v1
 kind: Deployment
@@ -108,6 +109,125 @@ data:
     expect(result.groups.map((group) => group.name).sort()).toEqual(['features', 'settings']);
     // Joined, so nothing diverges.
     expect(result.differingCount).toBe(0);
+  });
+
+  test('a resource whose namespace a variant replaced joins by its name without the namespace', () => {
+    // Two ExternalSecrets, so the name is part of the join; the variant moved
+    // both out of the upstream's placeholder namespace.
+    const upstream = `apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: app-secrets
+  namespace: confighubplaceholder
+spec:
+  refreshInterval: 1h
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: ghcr-secret
+  namespace: confighubplaceholder
+spec:
+  refreshInterval: 1h
+`;
+    const variant = upstream.replaceAll('namespace: confighubplaceholder', 'namespace: app-staging');
+    const result = buildCompareResult(columns(upstream, variant));
+    expect(result.groups).toHaveLength(2);
+    expect(result.groups.map((group) => group.name).sort()).toEqual(['app-secrets', 'ghcr-secret']);
+    for (const group of result.groups) {
+      const rows = leaves(group.rows);
+      const namespace = rows.find((row) => row.identityPath === 'metadata.namespace');
+      expect(namespace?.cells.map((cell) => cell.kind)).toEqual(['differs', 'differs']);
+      // Only the namespace differs; nothing is left without its counterpart.
+      expect(group.differingCount).toBe(1);
+      for (const row of rows) for (const cell of row.cells) expect(cell.kind).not.toBe('no-document');
+    }
+  });
+
+  test('a name without its namespace that names two resources joins neither by it', () => {
+    const twoNamespaces = `apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: reader
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: reader
+  namespace: app
+`;
+    const moved = twoNamespaces.replace('namespace: app', 'namespace: app-prod');
+    const result = buildCompareResult(columns(twoNamespaces, moved));
+    // kube-system/reader joins exactly; app/reader and app-prod/reader stay apart,
+    // rather than one of them being picked.
+    expect(result.groups).toHaveLength(3);
+
+    // Aliases list each resource's current name too, so once MutationSources
+    // load they must not join what the name without its namespace could not.
+    const aliasesOf = (data: string) =>
+      new Map(
+        [...data.matchAll(/namespace: (\S+)/g)].map((match) => [
+          resourceAliasKey('rbac.authorization.k8s.io/v1/Role', `${match[1]}/reader`),
+          new Set(['reader']),
+        ]),
+      );
+    const [before, after] = columns(twoNamespaces, moved);
+    const withAliases = buildCompareResult([
+      { ...(before as CompareColumnInput), resourceAliases: aliasesOf(twoNamespaces) },
+      { ...(after as CompareColumnInput), resourceAliases: aliasesOf(moved) },
+    ]);
+    expect(withAliases.groups).toHaveLength(3);
+  });
+
+  test('documents of a repeated type with no name still join by position, and say so', () => {
+    const jobs = `apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: migrate-
+spec:
+  backoffLimit: 1
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: seed-
+spec:
+  backoffLimit: 1
+`;
+    const result = buildCompareResult(columns(jobs, jobs));
+    expect(result.groups).toHaveLength(2);
+    expect(result.differingCount).toBe(0);
+    expect(result.hasPositionalRows).toBe(true);
+  });
+
+  test('a renamed resource joins its counterpart through its MutationSources aliases', () => {
+    const before = `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: settings
+data:
+  tier: gold
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: features
+data:
+  beta: "on"
+`;
+    const after = before.replace('name: settings', 'name: settings-v2');
+    const renamed = new Map([[resourceAliasKey('v1/ConfigMap', '/settings-v2'), new Set(['settings', 'settings-v2'])]]);
+
+    const withoutAliases = buildCompareResult(columns(before, after));
+    expect(withoutAliases.groups).toHaveLength(3);
+
+    const [prod, dev] = columns(before, after);
+    const result = buildCompareResult([prod as CompareColumnInput, { ...(dev as CompareColumnInput), resourceAliases: renamed }]);
+    expect(result.groups).toHaveLength(2);
+    const settings = result.groups.find((group) => group.name === 'settings');
+    const name = leaves(settings?.rows ?? []).find((row) => row.identityPath === 'metadata.name');
+    expect(name?.cells.map((cell) => cell.literal)).toEqual(['settings', 'settings-v2']);
   });
 
   test('different Kinds never merge into one group', () => {

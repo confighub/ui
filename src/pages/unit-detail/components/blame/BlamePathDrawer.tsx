@@ -27,7 +27,12 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 
 import { unitRevisionHref } from '../../unitDetailHrefs';
 import { BlameFlagChip } from './BlameFlagChip';
-import { originUnitLabel, resourceLabel } from './blameFields';
+import {
+  CONFLICT_DISMISSAL_KIND,
+  conflictDismissalSummary,
+  originUnitLabel,
+  resourceLabel,
+} from './blameFields';
 
 dayjs.extend(relativeTime);
 
@@ -206,13 +211,19 @@ const FieldSummary = ({ report }: { report: UnitPathReport }) => {
           .map(([key, value]) => `${key}=${value}`)
           .join(' ')}
       </Line>
-      {Object.entries(report.Annotations ?? {}).map(([kind, values]) => (
-        <Line key={kind} label={kind}>
-          {Object.entries(values)
-            .map(([key, value]) => `${key}=${value}`)
-            .join(' ')}
-        </Line>
-      ))}
+      {Object.entries(report.Annotations ?? {}).map(([kind, values]) =>
+        kind === CONFLICT_DISMISSAL_KIND ? (
+          <Line key={kind} label='Conflicts dismissed on merge'>
+            {conflictDismissalSummary(values).join(', ')}
+          </Line>
+        ) : (
+          <Line key={kind} label={kind}>
+            {Object.entries(values)
+              .map(([key, value]) => `${key}=${value}`)
+              .join(' ')}
+          </Line>
+        ),
+      )}
       {(field.Conflicts ?? []).map((conflict, i) => (
         <Line key={`conflict-${i}`} label='Conflict'>
           {`${conflict.Reason ?? ''}: upstream ${conflict.Source?.MutationType ?? 'change'}${

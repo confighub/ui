@@ -50,6 +50,7 @@ import { CompareCollapsible } from './compare/CompareCollapsible';
 import { CompareColumnDnd } from './compare/CompareColumnDnd';
 import { ComponentCompareSection, type CompareUnit } from './compare/ComponentCompareSection';
 import { DeploymentSelectors, type DeploymentOption } from './compare/DeploymentSelectors';
+import { resourceAliasesFromMutationSources, type ResourceAliasIndex } from './compare/identityPaths';
 import { buildFieldPathMeta } from './configParser';
 import { pathContainsArrayIndex } from './componentKeyUtils';
 import { buildProtectedPathLookup } from './protectedPaths';
@@ -1637,6 +1638,20 @@ export const ComponentSidePane = memo(
       return lookups;
     }, [compareUnits, mutationSourcesByUnitId]);
 
+    // The names each compared unit's resources had before, from the same
+    // MutationSources, so a resource renamed in one deployment still joins its
+    // counterpart in another — the way the server's diff matches them.
+    const compareAliasesByUnitId = useMemo(() => {
+      const aliases = new Map<string, ResourceAliasIndex>();
+      for (const unit of compareUnits) {
+        for (const column of unit.columns) {
+          if (!column.unitId || aliases.has(column.unitId)) continue;
+          aliases.set(column.unitId, resourceAliasesFromMutationSources(mutationSourcesByUnitId.get(column.unitId)));
+        }
+      }
+      return aliases;
+    }, [compareUnits, mutationSourcesByUnitId]);
+
     const compareUnitsWithProtection = useMemo(
       () =>
         compareUnits.map((unit) => ({
@@ -1644,9 +1659,10 @@ export const ComponentSidePane = memo(
           columns: unit.columns.map((column) => ({
             ...column,
             isProtected: column.unitId ? compareProtectionByUnitId.get(column.unitId) : undefined,
+            resourceAliases: column.unitId ? compareAliasesByUnitId.get(column.unitId) : undefined,
           })),
         })),
-      [compareUnits, compareProtectionByUnitId],
+      [compareUnits, compareProtectionByUnitId, compareAliasesByUnitId],
     );
 
     // Stable per-unit callback so a kebab click can lazily request this unit's

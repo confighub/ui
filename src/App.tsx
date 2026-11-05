@@ -69,8 +69,8 @@ const routes = [
     ),
   },
   {
-    // Reached when the instance has no identity provider, so there is no login
-    // page to redirect to. Outside AuthenticatedContextProvider, because
+    // Reached from a `cub auth browser-session` link, and when the instance has no
+    // identity provider, so there is no login page to redirect to. Outside AuthenticatedContextProvider, because
     // arriving here means there is no session to establish.
     path: '/cli-signin',
     element: (

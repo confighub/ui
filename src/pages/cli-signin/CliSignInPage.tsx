@@ -13,8 +13,8 @@ const ticketFromFragment = (): string | null =>
   new URLSearchParams(window.location.hash.slice(1)).get('ticket');
 
 /**
- * Where a browser signs in on an instance with no identity provider, and where
- * an unauthenticated one lands there. There is no login form to show: the session
+ * Where a local identity or service account signs a browser in, and where an
+ * unauthenticated browser lands on an instance with no identity provider. There is no login form to show: the session
  * comes from the CLI, which already holds a key. Opened from the link
  * `cub auth browser-session` prints, it redeems the ticket in the fragment;
  * otherwise it says which command produces one.
@@ -66,9 +66,8 @@ export const CliSignInPage = () => {
           </Alert>
         )}
         <Typography variant='body1' color='text.secondary'>
-          This instance has no identity provider configured, so there is no
-          password to enter here. Your session comes from the CLI, which already
-          holds a key.
+          There is no password to enter here. Your session comes from the CLI,
+          which already holds a key.
         </Typography>
         <Paper
           variant='outlined'

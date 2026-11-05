@@ -12,12 +12,14 @@ import {
   blameActionApplies,
   blameFlagMeta,
   blameRows,
+  conflictDismissalSummary,
   conflictSelectors,
   filterBlameRows,
   guardKeys,
   guardRemoveRequest,
   guardSetRequest,
   originUnitLabel,
+  permanentDismissalSelectors,
   protectionRequest,
   setInThisUnit,
   setValueRequest,
@@ -297,6 +299,65 @@ test('conflicts are selected by resource type, name and path, once each', () => 
   ]);
   expect(blameActionApplies.conflicts([namespace])).toBe(false);
   expect(blameActionApplies.conflicts([replicas])).toBe(true);
+});
+
+test('a permanent dismissal names the reason, and a guarded conflict every guard that withheld it', () => {
+  const guarded: BlameField = {
+    ...replicas,
+    ResourceName: 'prod/web',
+    Conflicts: [
+      {
+        Reason: 'Guarded',
+        // As the upstream named the resource; the dismissal is recorded on this Unit's.
+        Resource: { ResourceType: DEPLOYMENT, ResourceName: 'confighubplaceholder/web' },
+        Path: 'spec.replicas',
+        Guard: { Key: 'owner', Value: 'platform' },
+        Guards: [
+          { Key: 'owner', Value: 'platform' },
+          { Key: 'reviewed', Value: '' },
+        ],
+      },
+      { Reason: 'ProtectedPath', Path: 'spec.replicas' },
+    ],
+  };
+  expect(permanentDismissalSelectors([guarded, guarded, namespace])).toEqual([
+    {
+      ResourceType: DEPLOYMENT,
+      ResourceName: 'prod/web',
+      Path: 'spec.replicas',
+      Reason: 'Guarded',
+      Guards: ['owner=platform', 'reviewed'],
+    },
+    {
+      ResourceType: DEPLOYMENT,
+      ResourceName: 'prod/web',
+      Path: 'spec.replicas',
+      Reason: 'ProtectedPath',
+      Guards: undefined,
+    },
+  ]);
+  // A conflict recorded before every guard was reported names its one guard.
+  const legacy: BlameField = {
+    ...replicas,
+    Conflicts: [
+      { Reason: 'Guarded', Path: 'spec.replicas', Guard: { Key: 'owner', Value: 'platform' } },
+    ],
+  };
+  expect(permanentDismissalSelectors([legacy])[0].Guards).toEqual(['owner=platform']);
+});
+
+test('a recorded dismissal reads as the reasons and guards it covers', () => {
+  expect(
+    conflictDismissalSummary({
+      Subtracted: '',
+      'Guarded-owner': 'platform',
+      'Guarded-policy-exception': '',
+    }),
+  ).toEqual([
+    'Guarded by guard owner=platform',
+    'Guarded by guard policy-exception',
+    'Subtracted',
+  ]);
 });
 
 test('set value runs set-path on the field, narrowed to its resource', () => {

@@ -283,7 +283,7 @@ test.describe('what "differing" means with no reference column', () => {
     expect(replicas.cells.map((cell) => cell.kind)).toEqual(['differs', 'differs', 'differs']);
   });
 
-  test('a column with no document for this row is not evidence either way', () => {
+  test('a resource one column does not hold differs from the columns that do', () => {
     const withConfigMap = 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: shared\ndata:\n  tier: gold\n';
     const withoutConfigMap =
       'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: payments-api\nspec:\n  replicas: 3\n';
@@ -294,7 +294,13 @@ test.describe('what "differing" means with no reference column', () => {
     ]);
     const tier = leafAt(result, 'data.tier');
     expect(tier.cells[2]?.kind).toBe('no-document');
-    expect(rowDiffers(tier.cells)).toBe(false);
+    expect(rowDiffers(tier.cells)).toBe(true);
+    expect(tier.cells.map((cell) => cell.kind)).toEqual(['differs', 'differs', 'no-document']);
+    // Every field of the resource the third column lacks is counted, so the
+    // Differing filter does not hide it.
+    const configMap = result.groups.find((group) => group.kind === 'ConfigMap');
+    expect(configMap?.differingCount).toBe(configMap?.totalCount);
+    expect(configMap?.totalCount).toBeGreaterThan(0);
   });
 
   test('filtering drops a folder row left with nothing under it', () => {

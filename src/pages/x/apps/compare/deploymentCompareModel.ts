@@ -26,13 +26,13 @@
  */
 
 import {
-  ambiguousKindsAcross,
   documentKeyIsPositional,
   indexUnitByIdentity,
-  documentKey,
+  joinDocumentsAcross,
   pathIsPositional,
   resolveIdentityPath,
-  type IdentityIndexedDocument,
+  typeIsAmbiguous,
+  type ResourceAliasIndex,
 } from './identityPaths';
 import type { ResourceInfo } from '../configParser';
 import { ancestorPathsOf, buildCompareTreeRows } from './compareTree';
@@ -69,6 +69,12 @@ export interface CompareColumnInput {
    * is keyed on — and what `editTargets` already resolves per column.
    */
   isProtected?: (positionalPath: string) => boolean;
+  /**
+   * The names this unit's resources had before, from its `MutationSources`, so a
+   * resource renamed in one deployment still joins its counterpart in another.
+   * Absent until they load; the join then goes by the names the documents carry.
+   */
+  resourceAliases?: ResourceAliasIndex;
   /** Why this column cannot answer, when it cannot. See `unanswerable.ts`. */
   unavailable?: ColumnUnavailable;
   /**
@@ -94,9 +100,9 @@ export type CompareCellKind =
   /** This deployment cannot answer yet, or has nothing to answer with. */
   | 'unknown'
   /**
-   * This deployment's unit loaded and holds no document this row belongs to —
-   * no document this row belongs to. Terminal, and a different fact from a
-   * field being unset inside a document that IS here.
+   * This deployment's unit loaded and holds no document this row belongs to.
+   * Terminal, and a different fact from a field being unset inside a document
+   * that IS here — but, like it, a difference from a column that has the field.
    */
   | 'no-document';
 
@@ -383,20 +389,24 @@ export function rowUnverifiable(cells: readonly CompareCell[]): boolean {
 /**
  * Does this leaf row diverge?
  *
- * Every answering cell (not `unknown`, not `no-document`) contributes a
- * token: its literal, or an ABSENT sentinel when it has none. The row
- * differs the moment two tokens disagree. This is stricter than "any two
- * (present) values disagree" because set-vs-unset counts as a difference; it
- * is looser than "differs from a reference column" because `unknown` and
- * `no-document` cells are not evidence either way.
+ * Every answering cell (not `unknown`) contributes a token: its literal, an
+ * ABSENT sentinel when its document leaves the field unset, or a NO_DOCUMENT
+ * sentinel when its unit holds no such resource. The row differs the moment two
+ * tokens disagree. This is stricter than "any two (present) values disagree"
+ * because set-vs-unset counts as a difference, and so does a resource one
+ * deployment has and another does not — the most consequential difference
+ * there is, and the one a reader filtering to differences most needs to see. It
+ * is looser than "differs from a reference column" because an `unknown` cell is
+ * not evidence either way.
  */
 const ABSENT_TOKEN = Symbol('compare-absent');
+const NO_DOCUMENT_TOKEN = Symbol('compare-no-document');
 
 export function rowDiffers(cells: readonly CompareCell[]): boolean {
-  let first: string | typeof ABSENT_TOKEN | undefined;
+  let first: string | symbol | undefined;
   for (const cell of cells) {
-    if (cell.kind === 'unknown' || cell.kind === 'no-document') continue;
-    const token = cell.literal ?? ABSENT_TOKEN;
+    if (cell.kind === 'unknown') continue;
+    const token = cell.kind === 'no-document' ? NO_DOCUMENT_TOKEN : (cell.literal ?? ABSENT_TOKEN);
     if (first === undefined) first = token;
     else if (token !== first) return true;
   }
@@ -468,24 +478,12 @@ export function buildCompareResult(columns: readonly CompareColumnInput[]): Comp
   const indexed = columns.map((column) =>
     column.unavailable ? { documents: [] } : indexUnitByIdentity(column.data),
   );
-  const ambiguousKinds = ambiguousKindsAcross(indexed);
-
   // Join documents across columns by resource identity, ordering by the first
   // column that carries each one — first appearance, left to right.
-  const documentsByKey = new Map<string, (IdentityIndexedDocument | undefined)[]>();
-  const order: string[] = [];
-  indexed.forEach((unit, columnIndex) => {
-    unit.documents.forEach((document, ordinal) => {
-      const key = documentKey(document.resource, ordinal, ambiguousKinds);
-      let slots = documentsByKey.get(key);
-      if (!slots) {
-        slots = new Array<IdentityIndexedDocument | undefined>(columns.length).fill(undefined);
-        documentsByKey.set(key, slots);
-        order.push(key);
-      }
-      slots[columnIndex] = document;
-    });
-  });
+  const { joined, ambiguousTypes } = joinDocumentsAcross(
+    indexed,
+    columns.map((column) => column.resourceAliases),
+  );
 
   const groups: CompareDocumentGroup[] = [];
   let differingCount = 0;
@@ -493,9 +491,7 @@ export function buildCompareResult(columns: readonly CompareColumnInput[]): Comp
   let unverifiableCount = 0;
   let hasPositionalRows = false;
 
-  for (const key of order) {
-    const slots = documentsByKey.get(key);
-    if (!slots) continue;
+  for (const { key, slots } of joined) {
 
     // Union the identity paths, in first-appearance order (left to right), so
     // the grid reads down the first column that carries each path and anything
@@ -616,7 +612,7 @@ export function buildCompareResult(columns: readonly CompareColumnInput[]): Comp
       resourceType,
       name: qualifiedName ? (qualifiedName.slice(slash + 1) || qualifiedName) : undefined,
       namespace,
-      kindIsAmbiguous: resourceType !== undefined && ambiguousKinds.has(resourceType),
+      kindIsAmbiguous: resourceType !== undefined && typeIsAmbiguous(resourceType, ambiguousTypes),
       rows,
       differingCount: visible.length,
       totalCount: leaves.length,

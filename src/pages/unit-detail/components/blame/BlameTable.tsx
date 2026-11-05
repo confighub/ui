@@ -13,6 +13,7 @@ import { getApiErrorMessage } from '@/utility/error-functions';
 import {
   type BlameField,
   type ConfigDiff,
+  type UnitConflictSelector,
   useGetUnitBlameQuery,
   useInvokeFunctionsOnOrgMutation,
   useResolveUnitConflictsMutation,
@@ -60,6 +61,7 @@ import {
   guardRemoveRequest,
   guardSetRequest,
   originUnitLabel,
+  permanentDismissalSelectors,
   protectionRequest,
   setInThisUnit,
   setValueRequest,
@@ -333,7 +335,13 @@ function columnsWithinResource(columns: GridColDef<BlameRow>[]): GridColDef<Blam
   );
 }
 
-type DialogKind = '' | 'guard' | 'removeGuard' | 'applyConflicts' | 'setValue';
+type DialogKind =
+  | ''
+  | 'guard'
+  | 'removeGuard'
+  | 'applyConflicts'
+  | 'dismissConflicts'
+  | 'setValue';
 
 /** The Blame tab: what set each field of the Unit, and actions on the fields selected. */
 export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProps) => {
@@ -415,14 +423,21 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
     }
   };
 
-  const onDismissConflicts = async () => {
+  const onDismissConflicts = async (permanent: boolean) => {
     try {
       const result = await resolveConflicts({
         spaceId,
         unitId,
-        unitConflictsRequest: { Action: 'Dismiss', Select: conflictSelectors(selectedFields) },
+        unitConflictsRequest: permanent
+          ? {
+              Action: 'Dismiss',
+              Permanent: true,
+              Select: permanentDismissalSelectors(selectedFields),
+            }
+          : { Action: 'Dismiss', Select: conflictSelectors(selectedFields) },
       }).unwrap();
-      done(`Dismissed ${result.Dismissed ?? 0} conflict${result.Dismissed === 1 ? '' : 's'}`);
+      const dismissed = `Dismissed ${result.Dismissed ?? 0} conflict${result.Dismissed === 1 ? '' : 's'}`;
+      done(permanent ? `${dismissed}, and later merges will dismiss them too` : dismissed);
     } catch (err) {
       failed(err, 'Failed to dismiss the conflicts');
     }
@@ -472,7 +487,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
       <Button
         size='small'
         disabled={busy || !blameActionApplies.conflicts(selectedFields)}
-        onClick={onDismissConflicts}
+        onClick={() => setDialog('dismissConflicts')}
       >
         Dismiss conflicts
       </Button>
@@ -667,6 +682,13 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
           }
         }}
       />
+      <DismissConflictsDialog
+        open={dialog === 'dismissConflicts'}
+        busy={busy}
+        conflicts={permanentDismissalSelectors(selectedFields)}
+        onClose={() => setDialog('')}
+        onSubmit={onDismissConflicts}
+      />
       <SetValueDialog
         open={dialog === 'setValue'}
         busy={busy}
@@ -853,6 +875,78 @@ const ApplyConflictsDialog = ({
           onClick={onSubmit}
         >
           Apply
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
+/**
+ * Dismissing drops the selected conflicts. Checked, it also records them on the Unit, so that a
+ * later merge reporting the same conflict leaves it dismissed rather than outstanding.
+ */
+const DismissConflictsDialog = ({
+  open,
+  busy,
+  conflicts,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  busy: boolean;
+  conflicts: UnitConflictSelector[];
+  onClose: () => void;
+  onSubmit: (permanent: boolean) => void;
+}) => {
+  const [permanent, setPermanent] = useState(false);
+  useEffect(() => {
+    if (open) setPermanent(false);
+  }, [open]);
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth='md'>
+      <DialogTitle>Dismiss conflicts</DialogTitle>
+      <DialogContent>
+        <Stack spacing={0.5} sx={{ mb: 2 }} data-testid='dismiss-conflicts-list'>
+          {conflicts.map((conflict) => (
+            <Typography
+              key={[
+                conflict.ResourceType,
+                conflict.ResourceName,
+                conflict.Path,
+                conflict.Reason,
+                ...(conflict.Guards ?? []),
+              ].join('\u0000')}
+              variant='body2'
+              sx={{ ...monoSx, wordBreak: 'break-all' }}
+            >
+              {[
+                conflict.Reason,
+                `${conflict.ResourceType} ${conflict.ResourceName}`,
+                conflict.Path || '(whole resource)',
+                (conflict.Guards ?? []).length > 0
+                  ? `guard ${(conflict.Guards ?? []).join(', ')}`
+                  : '',
+              ]
+                .filter(Boolean)
+                .join('  ')}
+            </Typography>
+          ))}
+        </Stack>
+        <FormControlLabel
+          control={
+            <Checkbox checked={permanent} onChange={(e) => setPermanent(e.target.checked)} />
+          }
+          label='Also dismiss them whenever a later merge reports them'
+        />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button
+          variant='contained'
+          disabled={busy || conflicts.length === 0}
+          onClick={() => onSubmit(permanent)}
+        >
+          Dismiss
         </Button>
       </DialogActions>
     </Dialog>
