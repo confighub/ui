@@ -12,7 +12,7 @@ import {
   blameActionApplies,
   blameFlagMeta,
   blameRows,
-  conflictDismissalSummary,
+  conflictDismissalText,
   conflictSelectors,
   filterBlameRows,
   guardKeys,
@@ -23,6 +23,7 @@ import {
   protectionRequest,
   setInThisUnit,
   setValueRequest,
+  undismissSelectors,
   validationSummary,
 } from '../src/pages/unit-detail/components/blame/blameFields';
 import {
@@ -346,18 +347,63 @@ test('a permanent dismissal names the reason, and a guarded conflict every guard
   expect(permanentDismissalSelectors([legacy])[0].Guards).toEqual(['owner=platform']);
 });
 
-test('a recorded dismissal reads as the reasons and guards it covers', () => {
+test('a recorded dismissal reads as what it dismisses and where it is recorded', () => {
+  expect(conflictDismissalText({ Reason: 'Subtracted', Path: 'spec.replicas' })).toBe(
+    'Subtracted, at spec.replicas',
+  );
   expect(
-    conflictDismissalSummary({
-      Subtracted: '',
-      'Guarded-owner': 'platform',
-      'Guarded-policy-exception': '',
+    conflictDismissalText({
+      Reason: 'Guarded',
+      Guard: 'owner',
+      GuardValue: 'platform',
+      Path: 'spec.template.spec.containers.*.image',
     }),
-  ).toEqual([
-    'Guarded by guard owner=platform',
-    'Guarded by guard policy-exception',
-    'Subtracted',
+  ).toBe('Guarded by guard owner=platform, at spec.template.spec.containers.*.image');
+  expect(conflictDismissalText({ Reason: 'DeleteShadowed' })).toBe(
+    'DeleteShadowed, on the resource as a whole',
+  );
+});
+
+test('undismissing names each recorded dismissal where it is recorded, once', () => {
+  const dismissed: BlameField = {
+    ...replicas,
+    ResourceName: 'prod/web',
+    ConflictDismissals: [
+      { Reason: 'Subtracted', Path: 'spec.replicas' },
+      { Reason: 'Guarded', Guard: 'owner', Path: 'spec.replicas' },
+    ],
+  };
+  const resourceRow: BlameField = {
+    ...deployment,
+    ResourceName: 'prod/web',
+    ConflictDismissals: [{ Reason: 'DeleteShadowed' }],
+  };
+  expect(undismissSelectors([dismissed, dismissed, resourceRow, namespace])).toEqual([
+    {
+      ResourceType: DEPLOYMENT,
+      ResourceName: 'prod/web',
+      Path: 'spec.replicas',
+      Reason: 'Subtracted',
+      Guards: undefined,
+    },
+    {
+      ResourceType: DEPLOYMENT,
+      ResourceName: 'prod/web',
+      Path: 'spec.replicas',
+      Reason: 'Guarded',
+      Guards: ['owner'],
+    },
+    // No path: the one on the resource as a whole.
+    {
+      ResourceType: DEPLOYMENT,
+      ResourceName: 'prod/web',
+      Path: '',
+      Reason: 'DeleteShadowed',
+      Guards: undefined,
+    },
   ]);
+  expect(blameActionApplies.undismiss([namespace])).toBe(false);
+  expect(blameActionApplies.undismiss([dismissed])).toBe(true);
 });
 
 test('set value runs set-path on the field, narrowed to its resource', () => {

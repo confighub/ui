@@ -6,6 +6,7 @@
  * fields selected. Kept free of React so the request bodies can be checked without a page.
  */
 import type {
+  BlameConflictDismissal,
   BlameField,
   BlameOrigin,
   FunctionInvocationsRequest,
@@ -49,6 +50,13 @@ const BLAME_FLAG_TEXT: readonly Omit<BlameFlagMeta, 'color'>[] = [
     label: 'Conflict',
     meaning: 'A merge or resolve dropped an upstream change to this field',
     attention: true,
+  },
+  {
+    code: 'ConflictDismissed',
+    label: 'Conflicts dismissed',
+    meaning:
+      'A conflict dismissal is recorded here, so a merge reporting a conflict of its reason here leaves it dismissed; the drawer lists every one that covers the field',
+    attention: false,
   },
   {
     code: 'Absent',
@@ -135,6 +143,7 @@ const BLAME_FLAG_COLORS: Readonly<Record<string, string>> = {
   Protected: '#1e88e5',
   Guarded: '#5e35b1',
   Conflict: '#d84315',
+  ConflictDismissed: '#ad1457',
   Absent: '#e65100',
   Deleted: '#616161',
   Finding: '#b26a00',
@@ -359,6 +368,8 @@ export const blameActionApplies = {
     fields.some((f) => Object.keys(f.Guards ?? {}).length > 0),
   conflicts: (fields: readonly BlameField[]) =>
     fields.some((f) => hasFlag(f, 'Conflict') || (f.Conflicts ?? []).length > 0),
+  undismiss: (fields: readonly BlameField[]) =>
+    fields.some((f) => (f.ConflictDismissals ?? []).length > 0),
   setValue: (fields: readonly BlameField[]) =>
     fields.length === 1 &&
     !fields[0].Absent &&
@@ -507,24 +518,56 @@ export function permanentDismissalSelectors(
   return selectors;
 }
 
-/** The annotation kind a permanent conflict dismissal is recorded under. */
-export const CONFLICT_DISMISSAL_KIND = 'ConflictDismissal';
+/**
+ * A recorded conflict dismissal in words: what it dismisses, the way `cub unit conflicts` takes it,
+ * and where it is recorded.
+ */
+export function conflictDismissalText(dismissal: BlameConflictDismissal): string {
+  let text = dismissal.Reason ?? '';
+  if (dismissal.Guard) {
+    text += ` by guard ${dismissal.Guard}`;
+    if (dismissal.GuardValue) text += `=${dismissal.GuardValue}`;
+  }
+  return dismissal.Path
+    ? `${text}, at ${dismissal.Path}`
+    : `${text}, on the resource as a whole`;
+}
 
 /**
- * What a path's recorded dismissals cover, one entry per key: a reason (`Subtracted`), or a reason
- * and the guard that withheld it (`Guarded-owner`, whose value is the guard's value, or empty for
- * any value).
+ * The ResolveUnitConflicts selectors that undismiss the dismissals recorded for the selected rows,
+ * one per dismissal, each at the path it is recorded at: no path names the one on the resource as
+ * a whole, as it does when one is recorded.
  */
-export function conflictDismissalSummary(entries: Record<string, string>): string[] {
-  return Object.keys(entries)
-    .sort()
-    .map((key) => {
-      const separator = key.indexOf('-');
-      if (separator < 0) return key;
-      const guard = key.slice(separator + 1);
-      const value = entries[key];
-      return `${key.slice(0, separator)} by guard ${value ? `${guard}=${value}` : guard}`;
-    });
+export function undismissSelectors(fields: readonly BlameField[]): UnitConflictSelector[] {
+  const selectors: UnitConflictSelector[] = [];
+  const seen = new Set<string>();
+  for (const field of fields) {
+    for (const dismissal of field.ConflictDismissals ?? []) {
+      const guard = dismissal.Guard
+        ? dismissal.GuardValue
+          ? `${dismissal.Guard}=${dismissal.GuardValue}`
+          : dismissal.Guard
+        : undefined;
+      const selector: UnitConflictSelector = {
+        ResourceType: field.ResourceType,
+        ResourceName: field.ResourceName,
+        Path: dismissal.Path ?? '',
+        Reason: dismissal.Reason,
+        Guards: guard ? [guard] : undefined,
+      };
+      const key = [
+        selector.ResourceType,
+        selector.ResourceName,
+        selector.Path,
+        selector.Reason,
+        guard ?? '',
+      ].join('\u0000');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      selectors.push(selector);
+    }
+  }
+  return selectors;
 }
 
 const quote = (value: string) => `'${value.replace(/'/g, "''")}'`;

@@ -167,15 +167,29 @@ test.describe('Blame tab: dismissing a conflict for good', () => {
     expect(unit.Conflicts ?? []).toEqual([]);
     expect(unit.HeadRevisionNum).toBe(before + 2);
 
-    // The field's drawer says what is dismissed there.
+    // The row is flagged, and the field's drawer says what is dismissed there and where.
     await page.reload();
-    await blame
-      .getByRole('row')
-      .filter({ hasText: 'spec.replicas' })
-      .getByRole('gridcell')
-      .nth(2)
-      .click();
-    await expect(page.getByText('Conflicts dismissed on merge')).toBeVisible();
-    await expect(page.getByText(/^ProtectedPath$|^Subtracted$/)).toBeVisible();
+    const dismissedRow = blame.getByRole('row').filter({ hasText: 'spec.replicas' });
+    await expect(dismissedRow.getByText('Conflicts dismissed', { exact: true })).toBeVisible();
+    await dismissedRow.getByRole('gridcell').nth(2).click();
+    const drawerLine = page.getByText(/^(ProtectedPath|Subtracted), at spec\.replicas$/);
+    await expect(drawerLine).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    // Undismissed, the next merge reports the conflict again.
+    await dismissedRow.getByRole('checkbox').check();
+    await page.keyboard.press('Escape');
+    await blame.getByRole('button', { name: 'Undismiss conflicts', exact: true }).click();
+    const undismiss = page.getByRole('dialog', { name: 'Undismiss conflicts' });
+    await expect(undismiss.getByTestId('undismiss-conflicts-list')).toContainText(
+      'spec.replicas',
+    );
+    await undismiss.getByRole('button', { name: 'Undismiss', exact: true }).click();
+    await expect(page.getByText(/^Removed 1 conflict dismissal;/)).toBeVisible();
+
+    await setData(baseId, 12);
+    await upgrade();
+    unit = (await variant()).Unit;
+    expect((unit.Conflicts ?? []).map((conflict) => conflict.Path)).toEqual(['spec.replicas']);
   });
 });

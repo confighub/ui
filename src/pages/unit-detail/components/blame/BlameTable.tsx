@@ -55,6 +55,7 @@ import {
   blameActionApplies,
   blameResources,
   blameRows,
+  conflictDismissalText,
   conflictSelectors,
   filterBlameRows,
   guardKeys,
@@ -65,6 +66,7 @@ import {
   protectionRequest,
   setInThisUnit,
   setValueRequest,
+  undismissSelectors,
 } from './blameFields';
 
 dayjs.extend(relativeTime);
@@ -341,6 +343,7 @@ type DialogKind =
   | 'removeGuard'
   | 'applyConflicts'
   | 'dismissConflicts'
+  | 'undismissConflicts'
   | 'setValue';
 
 /** The Blame tab: what set each field of the Unit, and actions on the fields selected. */
@@ -443,6 +446,25 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
     }
   };
 
+  const onUndismissConflicts = async () => {
+    try {
+      const result = await resolveConflicts({
+        spaceId,
+        unitId,
+        unitConflictsRequest: {
+          Action: 'Undismiss',
+          Select: undismissSelectors(selectedFields),
+        },
+      }).unwrap();
+      const removed = result.Removed ?? 0;
+      done(
+        `Removed ${removed} conflict dismissal${removed === 1 ? '' : 's'}; later merges will report those conflicts again`,
+      );
+    } catch (err) {
+      failed(err, 'Failed to undismiss the conflicts');
+    }
+  };
+
   const customToolbarActions = (
     <>
       <Tooltip title='A merge from upstream leaves these values alone'>
@@ -490,6 +512,13 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
         onClick={() => setDialog('dismissConflicts')}
       >
         Dismiss conflicts
+      </Button>
+      <Button
+        size='small'
+        disabled={busy || !blameActionApplies.undismiss(selectedFields)}
+        onClick={() => setDialog('undismissConflicts')}
+      >
+        Undismiss conflicts
       </Button>
       <Button
         size='small'
@@ -688,6 +717,13 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
         conflicts={permanentDismissalSelectors(selectedFields)}
         onClose={() => setDialog('')}
         onSubmit={onDismissConflicts}
+      />
+      <UndismissConflictsDialog
+        open={dialog === 'undismissConflicts'}
+        busy={busy}
+        fields={selectedFields}
+        onClose={() => setDialog('')}
+        onSubmit={onUndismissConflicts}
       />
       <SetValueDialog
         open={dialog === 'setValue'}
@@ -947,6 +983,58 @@ const DismissConflictsDialog = ({
           onClick={() => onSubmit(permanent)}
         >
           Dismiss
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
+/**
+ * Undismissing removes the conflict dismissals recorded for the selected rows, so that a later merge
+ * reports those conflicts again. Each is listed where it is recorded.
+ */
+const UndismissConflictsDialog = ({
+  open,
+  busy,
+  fields,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  busy: boolean;
+  fields: readonly BlameField[];
+  onClose: () => void;
+  onSubmit: () => void;
+}) => {
+  const lines = Array.from(
+    new Set(
+      fields.flatMap((field) =>
+        (field.ConflictDismissals ?? []).map(
+          (dismissal) =>
+            `${conflictDismissalText(dismissal)}  (${field.ResourceType} ${field.ResourceName})`,
+        ),
+      ),
+    ),
+  );
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth='md'>
+      <DialogTitle>Undismiss conflicts</DialogTitle>
+      <DialogContent>
+        <Typography variant='body2' sx={{ mb: 1 }}>
+          Later merges will report these conflicts again.
+        </Typography>
+        <Stack spacing={0.5} data-testid='undismiss-conflicts-list'>
+          {lines.map((line) => (
+            <Typography key={line} variant='body2' sx={{ ...monoSx, wordBreak: 'break-all' }}>
+              {line}
+            </Typography>
+          ))}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button variant='contained' disabled={busy || lines.length === 0} onClick={onSubmit}>
+          Undismiss
         </Button>
       </DialogActions>
     </Dialog>
