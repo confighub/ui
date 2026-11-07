@@ -203,7 +203,10 @@ const FieldSummary = ({ report }: { report: UnitPathReport }) => {
       </Line>
       <Line label='Guards'>
         {Object.entries(field.Guards ?? {})
-          .map(([key, value]) => `${key}=${value}`)
+          .map(
+            ([key, value]) =>
+              `${key}=${value}${(field.InheritedGuards ?? []).includes(key) ? ' (inherited)' : ''}`,
+          )
           .join(' ')}
       </Line>
       {Object.entries(report.Annotations ?? {}).map(([kind, values]) => (

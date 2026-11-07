@@ -330,8 +330,8 @@ test.describe('the Invocation Create saves for an inline call', () => {
     const differs: DraftSavedInvocation[] = [
       { ...stored, calls: [{ ...call, Arguments: [...(call.Arguments ?? [])].reverse() }] },
       { ...stored, calls: [{ ...call, WhereResource: "ResourceType = 'apps/v1/Deployment'" }] },
-      { ...stored, calls: [{ ...call, Clearance: [{ Key: 'team', Operator: 'In', Values: ['a'] }] }] },
-      { ...stored, calls: [{ ...call, Guards: { team: 'a' } }] },
+      { ...stored, clearance: [{ Key: 'Scale', Operator: 'In', Values: ['RegionSpecific'] }] },
+      { ...stored, guards: { Scale: 'RegionSpecific' } },
       { ...stored, toolchainType: 'AppConfig/Properties' },
       { ...stored, parameters: [...stored.parameters].reverse() },
     ];

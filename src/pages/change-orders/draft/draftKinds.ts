@@ -21,9 +21,11 @@
  * Pure: no React, no RTK, so the browser-free specs can import it.
  */
 import type {
+  Clearance,
   FunctionArgument,
   FunctionInvocation,
   FunctionParameter,
+  GuardStamp,
   Invocation,
   InvocationRead,
 } from '@confighub/rtk-query';
@@ -98,6 +100,9 @@ export interface DraftSavedInvocation {
   calls: FunctionInvocation[];
   /** Its declared parameters: what a ChangeOrder that runs it gives values for. */
   parameters: FunctionParameter[];
+  /** The guarded reasons its functions are cleared for, and the guards they record. */
+  clearance?: Clearance;
+  guards?: GuardStamp;
   /** When it was saved: how recent it is, for the function slot's short list. */
   createdAt?: string;
 }
@@ -112,6 +117,8 @@ export function savedInvocationOf(invocation: InvocationRead | undefined): Draft
     toolchainType: invocation.ToolchainType,
     calls: invocation.FunctionInvocations ?? [],
     parameters: invocation.Parameters ?? [],
+    clearance: invocation.Clearance,
+    guards: invocation.Guards,
     createdAt: invocation.CreatedAt || undefined,
   };
 }
@@ -486,15 +493,22 @@ const isEmptyMap = (value: unknown) => value === undefined || value === null || 
 /**
  * Whether a saved Invocation runs exactly what an inline call would save, field by field as the
  * server tells two Invocations apart (`ComputeInvocationHash`): the toolchain, each call's function,
- * resource filter, arguments, clearance and guards in order, and the declared parameters in order.
+ * resource filter and arguments in order, the declared parameters in order, and its clearance and
+ * guards.
  * A saved one that differs in any of them runs something else, and is never
  * taken for the call typed.
  */
 export function sameInvocationShape(
-  saved: Pick<DraftSavedInvocation, 'calls' | 'parameters' | 'toolchainType'>,
-  wanted: Pick<Invocation, 'FunctionInvocations' | 'Parameters' | 'ToolchainType'>,
+  saved: Pick<DraftSavedInvocation, 'calls' | 'parameters' | 'toolchainType' | 'clearance' | 'guards'>,
+  wanted: Pick<Invocation, 'FunctionInvocations' | 'Parameters' | 'ToolchainType' | 'Clearance' | 'Guards'>,
 ): boolean {
   if (saved.toolchainType !== wanted.ToolchainType) return false;
+  if (!isEmptyList(saved.clearance) || !isEmptyList(wanted.Clearance)) {
+    if (JSON.stringify(saved.clearance ?? []) !== JSON.stringify(wanted.Clearance ?? [])) return false;
+  }
+  if (!isEmptyMap(saved.guards) || !isEmptyMap(wanted.Guards)) {
+    if (JSON.stringify(saved.guards ?? {}) !== JSON.stringify(wanted.Guards ?? {})) return false;
+  }
   const calls = wanted.FunctionInvocations ?? [];
   if (saved.calls.length !== calls.length) return false;
   for (let i = 0; i < calls.length; i += 1) {
@@ -502,12 +516,6 @@ export function sameInvocationShape(
     const b = calls[i];
     if (a.FunctionName !== b.FunctionName) return false;
     if ((a.WhereResource ?? '') !== (b.WhereResource ?? '')) return false;
-    if (!isEmptyList(a.Clearance) || !isEmptyList(b.Clearance)) {
-      if (JSON.stringify(a.Clearance ?? []) !== JSON.stringify(b.Clearance ?? [])) return false;
-    }
-    if (!isEmptyMap(a.Guards) || !isEmptyMap(b.Guards)) {
-      if (JSON.stringify(a.Guards ?? {}) !== JSON.stringify(b.Guards ?? {})) return false;
-    }
     const argsA = (a.Arguments ?? []).map(argumentText);
     const argsB = (b.Arguments ?? []).map(argumentText);
     if (argsA.join('\n') !== argsB.join('\n')) return false;
