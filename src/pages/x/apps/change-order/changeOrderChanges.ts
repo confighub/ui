@@ -41,6 +41,7 @@ import { PLACEHOLDER_RESOURCE_TYPE, segmentLabel } from '../../../../components/
 import { parseUnitDataStructured, resourceIdentitiesOf } from '../configParser';
 import { groupFieldEntriesByDocument, VALUE_PLACEHOLDER } from '../diffTree';
 import type { ChangeOrderChangeGroup, ChangeOrderResourceConflict } from './changeOrderTypes';
+import { conflictGuards, guardText } from '../../../../utility/clearance-functions';
 
 /** One resource's before/after, however the caller obtained them. */
 export interface ChangeOrderChangeSource {
@@ -108,6 +109,7 @@ function scalarText(value: string | undefined): string | undefined {
 
 /** One of the server's merge conflicts, in the shape the stage tree reads. */
 export function resourceConflictOf(conflict: MutationConflict): ChangeOrderResourceConflict {
+  const guards = conflictGuards(conflict).map(guardText);
   return {
     reason: conflict.Reason ?? '',
     resourceName: conflict.Resource?.ResourceName,
@@ -116,6 +118,7 @@ export function resourceConflictOf(conflict: MutationConflict): ChangeOrderResou
     targetValue: scalarText(conflict.Target?.Value),
     sourceValue: scalarText(conflict.Source?.Value),
     targetProtected: conflict.Target?.Protected === true,
+    ...(guards.length > 0 ? { guards } : {}),
     blocks: conflictBlocks(conflict.Reason),
   };
 }

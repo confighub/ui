@@ -92,9 +92,6 @@ test.describe('a stage gating on a declared custom prerequisite', () => {
     await expect(red).toContainText(`Needs ${CUSTOM_PREREQUISITE.Description}`);
     expect(consoleErrors, 'a declared check must not crash the page').toEqual([]);
 
-    // The prod Spaces take from `staging`, which this workflow has no stage
-    // for, so it is given the change here; otherwise prod has nothing to take.
-    await fx.promoteStage('staging');
     for (const space of fx.spacesInStage('dev')) {
       const resp = await hubApi.patch(`/api/space/${space.spaceId}`, {
         headers: { 'Content-Type': 'application/merge-patch+json' },

@@ -390,6 +390,8 @@ export function useChangeOrderConsoleChanges(args: {
   scopedSpaces: ChangeOrderSpace[] | null;
   resolvedSpaceIds: ReadonlySet<string>;
   skip: boolean;
+  /** The Invocation's Version, for an Invoke ChangeOrder: an edit to it plans the dry runs again. */
+  invocationVersion?: number;
 }): ChangeOrderConsoleChanges {
   const {
     changeOrderId,
@@ -402,6 +404,7 @@ export function useChangeOrderConsoleChanges(args: {
     scopedSpaces,
     resolvedSpaceIds,
     skip,
+    invocationVersion,
   } = args;
 
   const spaceIds = useMemo(() => (scopedSpaces ?? []).map((s) => s.spaceId), [scopedSpaces]);
@@ -495,7 +498,7 @@ export function useChangeOrderConsoleChanges(args: {
     selectedStageId,
     takenSpaceIds: resolvedSpaceIds,
     currentDataByUnitId,
-    skip: skip || currentDataByUnitId.size === 0,
+    skip: skip || currentDataByUnitId.size === 0,    refreshKey: invocationVersion === undefined ? undefined : String(invocationVersion),
   });
 
   /*
@@ -532,7 +535,7 @@ export function useChangeOrderConsoleChanges(args: {
     selectedStageId: invocationStage === null ? null : INVOCATION_SOURCE_STAGE_ID,
     takenSpaceIds: resolvedSpaceIds,
     currentDataByUnitId,
-    skip: skip || invocationStage === null || currentDataByUnitId.size === 0,
+    skip: skip || invocationStage === null || currentDataByUnitId.size === 0,    refreshKey: invocationVersion === undefined ? undefined : String(invocationVersion),
   });
 
   const baseline = useChangeOrderBaseline({

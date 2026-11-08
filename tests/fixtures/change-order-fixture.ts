@@ -558,6 +558,27 @@ function topologyFor(
   }));
 }
 
+const STAGING_SPACES = new Set(['staging', 'staging-canary']);
+
+/**
+ * The sequence with no `staging` Spaces, its `prod` Spaces taking from `dev`,
+ * for a workflow that declares no `staging` stage.
+ *
+ * The server refuses a ChangeOrder headed for a Space that no stage of its
+ * workflow selects. Leaving the `staging` Spaces out of `InScopeSpaceIDs` alone
+ * is refused too, because propagation is hop by hop and `prod` would then take
+ * from a Space the ChangeOrder is not headed for.
+ */
+function withoutStaging(sequence: TopologyNode[]): TopologyNode[] {
+  return sequence
+    .filter((node) => !STAGING_SPACES.has(node.name))
+    .map((node) =>
+      node.upstream !== null && STAGING_SPACES.has(node.upstream)
+        ? { ...node, upstream: 'dev', previousStage: node.previousStage === null ? null : 'dev' }
+        : node,
+    );
+}
+
 export interface BuildChangeOrderFixtureOptions {
   /**
    * How many resources to seed per Space. `full` seeds all four, which the
@@ -648,6 +669,8 @@ export interface BuildChangeOrderFixtureOptions {
    * `custom-prerequisite` gates `prod` on a check the workflow declares as a
    * CEL expression. Nothing in `ui/` can evaluate CEL, so this is the shape
    * that decides whether an unevaluated check reads as unknown or as passed.
+   * It has no `staging` stage, so it seeds no `staging` Spaces either, and the
+   * `prod` Spaces take from `dev` (see `withoutStaging`).
    *
    * `no-health-check` declares the same three stages with NO prerequisite on
    * any of them. It is the only shape here whose gates stay open over a stage
@@ -707,7 +730,8 @@ export async function buildChangeOrderFixture(
     if (unit) return at === BEFORE ? unit.before : unit.after;
     return render(resource as ResourceName, at);
   };
-  const TOPOLOGY = topologyFor(labelBaseStage, stageLabels, stageDepth);
+  const sequence = topologyFor(labelBaseStage, stageLabels, stageDepth);
+  const TOPOLOGY = workflow === 'custom-prerequisite' ? withoutStaging(sequence) : sequence;
   const spaces: Record<string, ChangeOrderSpace> = {};
   /** What each deployment Space's deploying tool reports, written onto each Release it publishes. */
   const healthByName: Record<string, LiveHealth> = {};

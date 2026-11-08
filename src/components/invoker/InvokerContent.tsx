@@ -9,18 +9,32 @@ import { AttributeValueItem } from './utils/result-formatters';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import {
   Alert,
   Box,
   Button,
   CircularProgress,
+  Collapse,
   IconButton,
   FormControlLabel,
   Switch,
 } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
+import { clearanceToRows, rowsToClearance } from '@/components/clearance-field/clearanceRows';
+import { type GuardValues, guardValuesComplete } from '@/components/guarded-write/guardValues';
+import {
+  type ChangeSetOption,
+  type InvokeWriteOptions,
+  type InvokeWriteOptionsForm,
+  InvokeWriteOptionsSection,
+} from './InvokeWriteOptions';
+import { useListAllChangeSetsQuery } from '@confighub/rtk-query';
+import { skipToken } from '@reduxjs/toolkit/query';
 import { InlineSavePanel, SaveInvocationOptions as InlineSaveOptions } from './InlineSavePanel';
+import { guardSaveBlockedReason, storedGuardValues } from './utils/invocation-write-options';
 import { PanelContent, PanelFooter } from './styles/invoker.styles';
 import {
   FunctionParameterFormData,
@@ -48,16 +62,20 @@ export interface InvokerContentProps {
     parameters: FunctionParameterFormData,
     dryRun: boolean,
     parameterizedInvocationId?: string,
+    writeOptions?: InvokeWriteOptions,
   ) => Promise<void>;
   onSave: (
     options: SaveInvocationOptions,
-    parameters: FunctionParameterFormData
+    parameters: FunctionParameterFormData,
+    writeOptions: InvokeWriteOptions,
   ) => Promise<{ success: boolean; error?: string }>;
   isInvoking?: boolean;
   invokeResult?: {
     success: boolean;
     message?: string;
     responses?: FunctionInvocationsResponse[];
+    /** The invocation was a dry run: nothing was written. */
+    dryRun?: boolean;
     slugByUnitId?: Record<string, string>;
   } | null;
   onRemoveUnit?: (unitId: string) => void;
@@ -75,6 +93,8 @@ export interface InvokerContentProps {
   isSavingAttributes?: boolean;
   /** Set when a page asked for a Trigger to be created in its Space */
   saveAsTrigger?: { requestSeq: number; spaceId: string; spaceName: string; onCancel: () => void };
+  /** Whether a ChangeSet can be chosen; not where the invoker makes its own, as in an initiative. */
+  changeSetChoice?: boolean;
 }
 
 export const InvokerContent = ({
@@ -104,12 +124,59 @@ export const InvokerContent = ({
   totalVisibleUnits,
   onSaveAttributes,
   saveAsTrigger,
+  changeSetChoice = true,
 }: InvokerContentProps) => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const savePanelRef = useRef<HTMLDivElement>(null);
   const resultsSectionRef = useRef<HTMLDivElement>(null);
   const [showInlineSavePanel, setShowInlineSavePanel] = useState(false);
   const [dryRun, setDryRun] = useState(false);
+  const [writeOptionsOpen, setWriteOptionsOpen] = useState(false);
+  // A loaded Invocation states its clearance and guard as the section does. The invoker remounts
+  // for each selection, so they are read once, here.
+  const [guardValues, setGuardValues] = useState<GuardValues>(() =>
+    storedGuardValues(loadedInvocation?.Guards),
+  );
+  const writeOptionsForm = useForm<InvokeWriteOptionsForm>({
+    defaultValues: { Clearance: clearanceToRows(loadedInvocation?.Clearance) },
+    mode: 'onChange',
+  });
+  const clearanceRows = useWatch({ control: writeOptionsForm.control, name: 'Clearance' });
+  const [changeDescription, setChangeDescription] = useState('');
+  const [guardKeyMissing, setGuardKeyMissing] = useState(false);
+  const [changeSet, setChangeSet] = useState<ChangeSetOption | null>(null);
+
+  // The open ChangeSets of the selected Units' Spaces, read once the options are opened.
+  const selectedSpaceIds = [...new Set((context.selectedUnits ?? []).map((unit) => unit.spaceId))].sort();
+  const changeSets = useListAllChangeSetsQuery(
+    changeSetChoice && writeOptionsOpen && selectedSpaceIds.length > 0
+      ? {
+          where: `SpaceID IN (${selectedSpaceIds.map((id) => `'${id}'`).join(', ')}) AND State != 'Closed'`,
+          include: 'SpaceID',
+          select: 'ChangeSetID,Slug,DisplayName,SpaceID',
+        }
+      : skipToken,
+  );
+  const changeSetOptions: ChangeSetOption[] = (changeSets.data ?? []).flatMap((item) =>
+    item.ChangeSet?.ChangeSetID
+      ? [
+          {
+            id: item.ChangeSet.ChangeSetID,
+            label: item.Space?.Slug ? `${item.Space.Slug}/${item.ChangeSet.Slug}` : item.ChangeSet.Slug,
+          },
+        ]
+      : [],
+  );
+
+  // What a saved Invocation or Trigger keeps of the options: the clearance and the guard.
+  const writeOptionsStated = rowsToClearance(clearanceRows).length > 0 || guardValues.enabled;
+  // What the collapsed options say is set, so a run never carries something out of sight.
+  const optionsSummary = [
+    changeDescription.trim() !== '' && 'Description',
+    changeSetChoice && changeSet && `ChangeSet ${changeSet.label}`,
+    rowsToClearance(clearanceRows).length > 0 && 'Clearance',
+    guardValues.enabled && 'Guard',
+  ].filter((item): item is string => !!item);
 
   // Scroll to results when invoke completes
   // Use a small delay to ensure the element is rendered before scrolling
@@ -177,14 +244,44 @@ export const InvokerContent = ({
   const onValidationError = (errors: unknown) => {
     console.error('Form validation errors:', errors);
   };
+  // The clearance and guard stated, or undefined when a clearance row is incomplete, which opens
+  // the section to show it.
+  const writeOptions = async (): Promise<InvokeWriteOptions | undefined> => {
+    const clearanceComplete = await writeOptionsForm.trigger();
+    // A guard asked for without a key cannot be recorded. Like an incomplete clearance row, it
+    // opens the Options to show what is missing rather than disabling Invoke with no reason.
+    const guardComplete = guardValuesComplete(guardValues);
+    setGuardKeyMissing(!guardComplete);
+    if (!clearanceComplete || !guardComplete) {
+      setWriteOptionsOpen(true);
+      return undefined;
+    }
+    const clearance = rowsToClearance(writeOptionsForm.getValues('Clearance'));
+    return {
+      changeDescription: changeDescription.trim() || undefined,
+      changeSetId: (changeSetChoice && changeSet?.id) || undefined,
+      clearance: clearance.length > 0 ? clearance : undefined,
+      guardValues,
+    };
+  };
   const handleInvoke = isParameterizedInvocation
     ? invocationParamForm.handleSubmit(async (data) => {
         if (!selectedFunction?.FunctionName || !loadedInvocation?.InvocationID) return;
-        await onInvoke(selectedFunction.FunctionName, data, dryRun, loadedInvocation.InvocationID);
+        const options = await writeOptions();
+        if (!options) return;
+        await onInvoke(
+          selectedFunction.FunctionName,
+          data,
+          dryRun,
+          loadedInvocation.InvocationID,
+          options,
+        );
       }, onValidationError)
     : form.handleSubmit(async (data) => {
         if (!selectedFunction?.FunctionName) return;
-        await onInvoke(selectedFunction.FunctionName, data, dryRun);
+        const options = await writeOptions();
+        if (!options) return;
+        await onInvoke(selectedFunction.FunctionName, data, dryRun, undefined, options);
       }, onValidationError);
 
   const handleSave = () => {
@@ -194,6 +291,8 @@ export const InvokerContent = ({
   // Handle inline save panel save
   const handleInlineSave = async (options: InlineSaveOptions): Promise<{ success: boolean; error?: string }> => {
     const data = form.getValues();
+    const stated = await writeOptions();
+    if (!stated) return { success: false, error: 'Complete the clearance and guard under Options.' };
 
     // Determine if we're updating based on the existing ID (invocation or trigger)
     const saveOptions = options.existingInvocationId
@@ -220,7 +319,7 @@ export const InvokerContent = ({
         channelId: options.channelId,
       };
 
-    const result = await onSave(saveOptions, data);
+    const result = await onSave(saveOptions, data, stated);
 
     if (result?.success) {
       setShowInlineSavePanel(false);
@@ -316,45 +415,100 @@ export const InvokerContent = ({
             </Box>
 
             {/* Footer - Sticky when panel closed, part of flow when open */}
-            <PanelFooter
+            <Box
               sx={{
                 position: showInlineSavePanel ? 'static' : 'sticky',
                 bottom: 0,
                 zIndex: 15,
               }}
             >
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={dryRun}
-                    onChange={(e) => setDryRun(e.target.checked)}
-                    size="small"
-                  />
-                }
-                label="Dry Run"
-                sx={{ ml: 1, mr: 0 }}
-              />
-              {!showInlineSavePanel && (
+              <Box sx={{ borderTop: 1, borderColor: 'divider', bgcolor: 'background.default' }}>
                 <Button
-                  variant="outlined"
-                  startIcon={<AddIcon />}
-                  onClick={handleSave}
+                  size="small"
+                  fullWidth
+                  onClick={() => setWriteOptionsOpen((open) => !open)}
+                  aria-expanded={writeOptionsOpen}
+                  endIcon={writeOptionsOpen ? <ExpandMoreIcon /> : <ExpandLessIcon />}
+                  sx={{ justifyContent: 'flex-start', px: 2.5, py: 1, gap: 1, textTransform: 'none' }}
+                  data-testid="invoker-write-options-toggle"
                 >
-                  Save
+                  <Box component="span" sx={{ fontWeight: 600 }}>
+                    Options
+                  </Box>
+                  <Box
+                    component="span"
+                    sx={{
+                      color: 'text.secondary',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      mr: 'auto',
+                    }}
+                    data-testid="invoker-options-summary"
+                  >
+                    {optionsSummary.join(' · ')}
+                  </Box>
                 </Button>
-              )}
+                <Collapse in={writeOptionsOpen}>
+                  <Box sx={{ px: 2.5, pb: 2, pt: 1, maxHeight: '40vh', overflowY: 'auto' }}>
+                    <InvokeWriteOptionsSection
+                      control={writeOptionsForm.control}
+                      changeDescription={changeDescription}
+                      onChangeDescriptionChange={setChangeDescription}
+                      changeSet={
+                        changeSetChoice
+                          ? {
+                              value: changeSet,
+                              options: changeSetOptions,
+                              loading: changeSets.isFetching,
+                              error: changeSets.isError,
+                            }
+                          : undefined
+                      }
+                      onChangeSetChange={setChangeSet}
+                      guardValues={guardValues}
+                      onGuardValuesChange={setGuardValues}
+                      guardKeyMissing={guardKeyMissing}
+                      disabled={isInvoking}
+                    />
+                  </Box>
+                </Collapse>
+              </Box>
+              <PanelFooter>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={dryRun}
+                      onChange={(e) => setDryRun(e.target.checked)}
+                      size="small"
+                    />
+                  }
+                  label="Dry Run"
+                  sx={{ mr: 'auto', ml: 0, whiteSpace: 'nowrap' }}
+                />
+                {!showInlineSavePanel && (
+                  <Button
+                    variant="outlined"
+                    startIcon={<AddIcon />}
+                    onClick={handleSave}
+                  >
+                    Save
+                  </Button>
+                )}
 
-              <Button
-                variant="contained"
-                color="primary"
-                startIcon={isInvoking ? <CircularProgress size={16} /> : <PlayArrowIcon />}
-                onClick={handleInvoke}
-                disabled={!canInvoke || isInvoking || !selectedFunction}
-                data-testid="invoker-invoke-button"
-              >
-                {isInvoking ? 'Invoking...' : 'Invoke'}
-              </Button>
-            </PanelFooter>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  startIcon={isInvoking ? <CircularProgress size={16} /> : <PlayArrowIcon />}
+                  onClick={handleInvoke}
+                  disabled={!canInvoke || isInvoking || !selectedFunction}
+                  data-testid="invoker-invoke-button"
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  {isInvoking ? 'Invoking...' : 'Invoke'}
+                </Button>
+              </PanelFooter>
+            </Box>
 
             {/* Inline Save Panel */}
             <Box ref={savePanelRef}>
@@ -369,6 +523,8 @@ export const InvokerContent = ({
                 defaultSpaceId={saveAsTrigger?.spaceId || context.selectedUnits?.[0]?.spaceId}
                 defaultSaveType={saveAsTrigger ? 'trigger' : 'invocation'}
                 presetKey={saveAsTrigger?.requestSeq}
+                writeOptionsStated={writeOptionsStated}
+                blockedReason={guardSaveBlockedReason(guardValues)}
               />
             </Box>
           </>

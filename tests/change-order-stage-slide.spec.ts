@@ -4,8 +4,9 @@
 /**
  * THE OPEN STEP MOVES AT ONCE.
  *
- * On the bare address the page opens the next stage, and moves on by itself once it is promoted.
- * Only one stage is ever mounted, and the new one replaces the old at once: it slides in with what
+ * On the bare address the page opens the first stage with work left, and moves on by itself once
+ * that work is done: a stage with no release Target once it is promoted, a stage with one once it
+ * is released. Only one stage is ever mounted, and the new one replaces the old at once: it slides in with what
  * it has, the log's skeleton on a first read. After the reader's own Promote the page goes up to the
  * rail at the same time, and the rail's marker moves to the new stage. Focus moves to its heading.
  * Under prefers-reduced-motion nothing animates. Another user's promote scrolls nothing.
@@ -323,5 +324,143 @@ test.describe('ChangeOrder page — the open step slides', () => {
       'data-testid',
       'stage-rail-complete',
     );
+  });
+});
+
+/**
+ * THE OPEN STAGE WAITS FOR ITS RELEASE.
+ *
+ * Every Space has a release Target, so a promoted stage still has its Release to do. The next
+ * stage's entry gate needs it released, so the page stays on the stage after Promote, and moves on
+ * only after Release. When the address names the stage, the reader's own Release takes the page to
+ * the bare address, and it moves on as after any action of theirs.
+ */
+test.describe('ChangeOrder page — the open stage waits for its Release', () => {
+  test.describe.configure({ mode: 'serial' });
+  test.use({ storageState: 'authentication.json', viewport: { width: 1440, height: 900 } });
+
+  let fx: ChangeOrderFixture;
+  let fixturePage: Page;
+
+  const card = (page: Page) => page.getByTestId('stage-card');
+  const promoteMain = (page: Page, stage: string) =>
+    page.locator(`[data-testid="stage-merge"][data-promote-stage="${stage}"]`);
+  const releaseMain = (page: Page, stage: string) => page.locator(`[data-release-stage="${stage}"]`);
+
+  test.beforeAll(async ({ browser }) => {
+    test.setTimeout(300_000);
+    fixturePage = await (await newAuthorizedContext(browser)).newPage();
+    await fixturePage.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect
+      .poll(async () => (await hubApi.get('/api/space', { params: { limit: 1 } })).status(), {
+        timeout: 60000,
+        intervals: [1000],
+      })
+      .toBe(200);
+    fx = await buildChangeOrderFixture(fixturePage, {
+      workflow: 'no-health-check',
+      releasable: true,
+      resources: 'minimal',
+    });
+  });
+
+  test.afterAll(async () => {
+    try {
+      if (fx) await fx.teardown();
+    } finally {
+      if (fixturePage) await fixturePage.context().close();
+    }
+  });
+
+  test('the address names dev: Promote stays on dev, and Release moves the page on to staging, on the bare address', async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    await page.goto(`${fx.changeOrderPath}/dev`);
+    await expect(card(page)).toHaveAttribute('data-stage', 'dev', { timeout: 45000 });
+    await expect(promoteMain(page, 'dev')).toBeVisible({ timeout: 45000 });
+    await promoteMain(page, 'dev').click();
+    const release = releaseMain(page, 'dev');
+    await expect(release).toBeVisible({ timeout: 90000 });
+    await expect(release).toBeEnabled({ timeout: 90000 });
+    await release.click();
+    // The reader's own Release: the page moves on to staging by itself, as after any action of theirs.
+    await expect(card(page)).toHaveAttribute('data-stage', 'staging', { timeout: 90000 });
+    await expect(page).toHaveURL(new RegExp(`${fx.changeOrderPath}$`));
+    await expect(page.getByTestId('stage-slide')).toHaveAttribute('data-move', 'own');
+    await expectMarkerOn(page, 'staging');
+  });
+
+  test('on the bare address: Promote on staging stays on staging, and Release moves the page on to prod', async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    await page.goto(fx.changeOrderPath);
+    await expect(card(page)).toHaveAttribute('data-stage', 'staging', { timeout: 45000 });
+    await expect(promoteMain(page, 'staging')).toBeVisible({ timeout: 45000 });
+    await promoteMain(page, 'staging').click();
+    // Promoted, not released: staging still has its Release to do, and prod's entry gate waits on it.
+    const release = releaseMain(page, 'staging');
+    await expect(release).toBeVisible({ timeout: 90000 });
+    await expect(card(page)).toHaveAttribute('data-stage', 'staging');
+    await expect(page).toHaveURL(new RegExp(`${fx.changeOrderPath}$`));
+    await expect(release).toBeEnabled({ timeout: 90000 });
+    await release.click();
+    await expect(card(page)).toHaveAttribute('data-stage', 'prod', { timeout: 90000 });
+    await expect(page).toHaveURL(new RegExp(`${fx.changeOrderPath}$`));
+    await expect(page.getByTestId('stage-slide')).toHaveAttribute('data-move', 'own');
+    await expectMarkerOn(page, 'prod');
+  });
+});
+
+/**
+ * A STAGE WITH NO RELEASE TARGET IS DONE ONCE PROMOTED.
+ *
+ * When the address names such a stage, the reader's own Promote leaves it with no work left, so the
+ * page goes to the bare address and moves on to the next stage, as after a Promote there.
+ */
+test.describe('ChangeOrder page — Promote on a named stage with no release Target moves on', () => {
+  test.use({ storageState: 'authentication.json', viewport: { width: 1440, height: 900 } });
+
+  let fx: ChangeOrderFixture;
+  let fixturePage: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    test.setTimeout(300_000);
+    fixturePage = await (await newAuthorizedContext(browser)).newPage();
+    await fixturePage.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect
+      .poll(async () => (await hubApi.get('/api/space', { params: { limit: 1 } })).status(), {
+        timeout: 60000,
+        intervals: [1000],
+      })
+      .toBe(200);
+    fx = await buildChangeOrderFixture(fixturePage, {
+      workflow: 'no-health-check',
+      releasable: false,
+      resources: 'minimal',
+    });
+  });
+
+  test.afterAll(async () => {
+    try {
+      if (fx) await fx.teardown();
+    } finally {
+      if (fixturePage) await fixturePage.context().close();
+    }
+  });
+
+  test('the address names dev: Promote moves the page on to staging, on the bare address', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto(`${fx.changeOrderPath}/dev`);
+    const card = page.getByTestId('stage-card');
+    await expect(card).toHaveAttribute('data-stage', 'dev', { timeout: 45000 });
+    const promote = page.locator('[data-testid="stage-merge"][data-promote-stage="dev"]');
+    await expect(promote).toBeVisible({ timeout: 45000 });
+    await promote.click();
+    await expect(card).toHaveAttribute('data-stage', 'staging', { timeout: 90000 });
+    await expect(page).toHaveURL(new RegExp(`${fx.changeOrderPath}$`));
+    await expect(page.getByTestId('stage-slide')).toHaveAttribute('data-move', 'own');
+    await expectMarkerOn(page, 'staging');
   });
 });

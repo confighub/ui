@@ -161,6 +161,7 @@ export const InfoPeekTooltip = ({
   onAction,
   placement = 'bottom-start',
   testId,
+  describeChild,
   children,
 }: {
   color: string;
@@ -169,6 +170,11 @@ export const InfoPeekTooltip = ({
   placement?: TooltipProps['placement'];
   /** `data-testid` of the card. */
   testId?: string;
+  /**
+   * The open card describes the trigger instead of naming it, so a trigger
+   * with its own `aria-label` keeps that name while the card is open.
+   */
+  describeChild?: boolean;
   children: ReactElement;
 }) => {
   const [open, setOpen] = useState(false);
@@ -179,6 +185,7 @@ export const InfoPeekTooltip = ({
       onOpen={() => setOpen(true)}
       onClose={() => setOpen(false)}
       placement={placement}
+      describeChild={describeChild}
       enterDelay={120}
       // A short grace period lets the pointer cross from the trigger to the card.
       leaveDelay={interactive ? 150 : 0}

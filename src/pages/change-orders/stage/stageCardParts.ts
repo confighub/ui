@@ -282,10 +282,12 @@ export function nextStepOf(
 
 /**
  * What makes the quiet dry run ask again: anything that changes the ChangeOrder
- * (its Version moves on every update), what holds and released it, and its records.
+ * (its Version moves on every update), what holds and released it, its records,
+ * and, for an Invoke ChangeOrder, its Invocation, which each promotion reads afresh.
  */
 export function dryRunRefreshKey(detail: {
   version?: number;
+  invocation?: { Version?: number };
   orderStage?: string;
   progress: { resolvedSpaceIds: ReadonlySet<string>; releasedSpaceIds: ReadonlySet<string> };
   promotions: readonly unknown[];
@@ -298,6 +300,7 @@ export function dryRunRefreshKey(detail: {
     [...detail.progress.releasedSpaceIds].sort(),
     detail.promotions.length,
     detail.promotionFailures.length,
+    detail.invocation?.Version,
   ]);
 }
 

@@ -107,7 +107,26 @@ export const useInitiativeChangeSetLifecycle = () => {
     [bulkPatchUnits],
   );
 
-  return { openChangeSet, closeChangeSet };
+  // Puts the Units in no ChangeSet into one that is already open, for a write made in it; they
+  // stay in it until it closes. A Unit already in it is left as it is, and one in another
+  // ChangeSet is left too: the write in this one refuses it, saying which it is in.
+  const joinChangeSet = useCallback(
+    async ({ unitIds, changeSetId }: { unitIds: string[]; changeSetId: string }): Promise<void> => {
+      if (unitIds.length === 0) return;
+      const responses = await bulkPatchUnits({
+        where: `${unitIdsWhere(unitIds)} AND ChangeSetID IS NULL`,
+        body: { ChangeSetID: changeSetId },
+      }).unwrap();
+      // A bulk patch answers 207 with an error per Unit it could not change.
+      const failed = responses.find((response) => response.Error);
+      if (failed?.Error) {
+        throw new Error(`Could not add ${failed.Unit?.Slug ?? 'a Unit'} to the ChangeSet: ${failed.Error.Message}`);
+      }
+    },
+    [bulkPatchUnits],
+  );
+
+  return { openChangeSet, closeChangeSet, joinChangeSet };
 };
 
 // Re-export key constants so callers don't need to reach into utils.

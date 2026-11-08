@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import Editor, { useMonaco } from '@monaco-editor/react';
 import Box from '@mui/material/Box';
+import GlobalStyles from '@mui/material/GlobalStyles';
 import { styled } from '@mui/material/styles';
 import { editor } from 'monaco-editor';
 import { configureMonacoYaml } from 'monaco-yaml';
@@ -55,6 +56,20 @@ export const MONACO_SCHEMA_MAX_BYTES = 256 * 1024;
 const isOversizedForMonacoSchema = (content: string): boolean =>
   content.length > MONACO_SCHEMA_MAX_BYTES;
 
+/** A line marked in the editor's gutter, with what hovering the mark says. */
+export interface GutterMark {
+  /** 1-based, of the value the editor was given. */
+  line: number;
+  /** Plain text, shown as written. */
+  hover: string;
+}
+
+/** Monaco renders a hover as markdown, so a plain-text hover escapes what markdown would read. */
+const markdownEscaped = (text: string): string =>
+  text.replace(/[\\`*_{}[\]()#+\-.!|<>~]/g, '\\$&');
+
+const GUTTER_MARK_CLASS = 'code-editor-gutter-mark';
+
 export const Container = styled('div')`
   width: 100%;
   animation: ${fadeIn} 0.3s ease-in;
@@ -89,6 +104,13 @@ export interface ICodeEditorProps extends CmpProps {
    * a 'NNvh' string is resolved against `window.innerHeight`. Defaults to '60vh'.
    */
   maxContentHeight?: number | string;
+  /**
+   * Lines to mark in the gutter, each with a hover. They are of the `value` given: an edit moves
+   * a mark with the line it is on, and new marks are drawn when the caller passes new ones.
+   */
+  gutterMarks?: GutterMark[];
+  /** The colour of the gutter marks. */
+  gutterMarkColor?: string;
 }
 
 /** Resolve a max-height (px number or 'NNvh' string) to a pixel value. */
@@ -114,6 +136,8 @@ export const CodeEditor = ({
   goToLineValues,
   fitContentHeight = false,
   maxContentHeight = '60vh',
+  gutterMarks,
+  gutterMarkColor = '#5e35b1',
 }: ICodeEditorProps) => {
   const resolvedLanguage: MonacoLanguageId = resolveMonacoLanguage(toolchainType, language);
   const [formattedValue, setFormattedValue] = useState<string>(value);
@@ -133,6 +157,7 @@ export const CodeEditor = ({
   const monaco = useMonaco();
   const [editorInstance, setEditorInstance] = useState<editor.IStandaloneCodeEditor>();
   const decorationsRef = useRef<string[]>([]);
+  const gutterDecorationsRef = useRef<string[]>([]);
   // Disposable for the onDidContentSizeChange listener used by fitContentHeight.
   const contentSizeDisposableRef = useRef<{ dispose: () => void } | null>(null);
 
@@ -263,6 +288,29 @@ export const CodeEditor = ({
       editorInstance.setValue(formattedValue);
     }
   }, [editorInstance, formattedValue]);
+
+  // Drawn when the marks or the value given change, not as the user types: Monaco moves a
+  // decoration with the line it is on, which is as far as a mark can follow an unsaved edit.
+  // After the effect above, so marks are drawn on the value they are for. Skipped on oversized
+  // documents, as the highlight pass is.
+  const hasGutterMarks = !isOversized && (gutterMarks?.length ?? 0) > 0;
+  useEffect(() => {
+    if (!editorInstance || !monaco) return;
+    const marks = hasGutterMarks ? (gutterMarks ?? []) : [];
+    if (marks.length === 0 && gutterDecorationsRef.current.length === 0) return;
+    gutterDecorationsRef.current = editorInstance.deltaDecorations(
+      gutterDecorationsRef.current,
+      marks.map((mark) => ({
+        range: new monaco.Range(mark.line, 1, mark.line, 1),
+        options: {
+          glyphMarginClassName: GUTTER_MARK_CLASS,
+          glyphMarginHoverMessage: { value: markdownEscaped(mark.hover) },
+          lineNumberClassName: GUTTER_MARK_CLASS,
+          stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+        },
+      })),
+    );
+  }, [editorInstance, monaco, formattedValue, gutterMarks, hasGutterMarks]);
 
   // monaco-yaml is a process-wide singleton: configureMonacoYaml mutates the
   // YAML language service for the whole Monaco runtime, so two CodeEditors
@@ -510,6 +558,20 @@ export const CodeEditor = ({
 
   return (
     <>
+      {hasGutterMarks && (
+        <GlobalStyles
+          styles={{
+            [`.monaco-editor .glyph-margin-widgets .${GUTTER_MARK_CLASS}`]: {
+              borderLeft: `3px solid ${gutterMarkColor}`,
+              marginLeft: 6,
+            },
+            [`.monaco-editor .line-numbers.${GUTTER_MARK_CLASS}`]: {
+              color: gutterMarkColor,
+              fontWeight: 600,
+            },
+          }}
+        />
+      )}
       {showSchemaDisabledNote && (
         <Box
           data-testid='code-editor-large-file-note'
@@ -554,6 +616,7 @@ export const CodeEditor = ({
             minimap: { enabled: showMinimap && !isOversized },
             fontSize: 14,
             lineNumbers: 'on',
+            glyphMargin: hasGutterMarks,
             automaticLayout: true,
             // Read from the prop, not a copy of it in state: a copy lags a render behind, so
             // the editor stayed read-only for the first keystrokes after Edit was clicked.

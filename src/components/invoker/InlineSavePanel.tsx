@@ -51,6 +51,10 @@ interface InlineSavePanelProps {
    * to a panel that is already open or holds a loaded Invocation
    */
   presetKey?: number;
+  /** Whether the Options state a clearance or a guard, which is saved with the function call. */
+  writeOptionsStated?: boolean;
+  /** Why the clearance or guard the Options state cannot be saved, which holds the save back. */
+  blockedReason?: string;
 }
 
 export interface SaveInvocationOptions {
@@ -86,6 +90,8 @@ export const InlineSavePanel = ({
   defaultSpaceId = '',
   defaultSaveType = 'invocation',
   presetKey,
+  writeOptionsStated = false,
+  blockedReason,
 }: InlineSavePanelProps) => {
   // Basic fields
   const [name, setName] = useState(defaultName);
@@ -577,6 +583,18 @@ export const InlineSavePanel = ({
               />
             </Box>
 
+            {blockedReason ? (
+              <Alert severity="warning" data-testid="invoker-save-blocked">
+                {blockedReason}
+              </Alert>
+            ) : (
+              writeOptionsStated && (
+                <Typography variant="body2" color="text.secondary">
+                  Saved with the clearance and guard under Options.
+                </Typography>
+              )
+            )}
+
             {/* General error message */}
             {error && !error.includes('Name') && !error.includes('Space') && (
               <Alert ref={errorRef} severity="error">{error}</Alert>
@@ -611,7 +629,7 @@ export const InlineSavePanel = ({
             onClick={handleSave}
             variant="contained"
             color="primary"
-            disabled={isSaving || !trimmedName || !selectedSpaceId}
+            disabled={isSaving || !trimmedName || !selectedSpaceId || !!blockedReason}
             startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon />}
           >
             {isSaving ? 'Saving...' : willUpdate ? 'Update' : 'Save'}

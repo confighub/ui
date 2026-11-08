@@ -34,6 +34,8 @@ import {
   buildUpgradeEntries,
   buildVariationEntries,
   countUpgradableBadgeFields,
+  countSelectableUpgradeFields,
+  guardedKeysOf,
   type VariationDiffs,
 } from '../src/pages/x/apps/entryBuilders';
 import type { MergedUnit, VariationEntry } from '../src/pages/x/apps/componentTypes';
@@ -584,6 +586,56 @@ test.describe('upgrade entries from the dry-run Diff', () => {
     };
 
     expect(countUpgradableBadgeFields(merged(diff, TWO_DOCS))).toBe(1);
+  });
+
+  test('a change a guard holds back is a row of its own, counted with the rest', () => {
+    const diff: ConfigDiff = {
+      Resources: [update(SERVICE, [{
+        ChangeType: 'Update',
+        Segments: fields('metadata', 'labels', 'app'),
+        FromValue: 'web',
+        FromDataType: 'string',
+        ToValue: 'web-s',
+        ToDataType: 'string',
+      }])],
+    };
+    const guarded: MutationConflict = {
+      Reason: 'Guarded',
+      Resource: DEPLOYMENT,
+      Path: 'spec.replicas',
+      Source: { MutationType: 'Update', Index: 0, Value: '10' },
+      Guards: [{ Key: 'Scale', Value: 'RegionSpecific' }],
+    };
+
+    const unit = merged(diff, TWO_DOCS, undefined, [guarded]);
+
+    expect(unit.upgradeEntry?.guardedKeys).toEqual([
+      { key: treeKey(TWO_DOCS, 0, 'spec.replicas'), guards: ['Scale=RegionSpecific'], inherited: false },
+    ]);
+    expect(countUpgradableBadgeFields(unit)).toBe(2);
+    // "Select all" leaves it for the person to tick.
+    expect(countSelectableUpgradeFields(unit)).toBe(1);
+  });
+
+  test('a guard is inherited where the path, an ancestor or the resource marks it so', () => {
+    const guarded: MutationConflict = {
+      Reason: 'Guarded',
+      Resource: DEPLOYMENT,
+      Path: 'spec.replicas',
+      Source: { MutationType: 'Update', Index: 0, Value: '10' },
+      Guards: [{ Key: 'Scale', Value: 'RegionSpecific' }],
+    };
+    const annotations = (at: string) => [
+      {
+        Resource: { ResourceType: 'apps/v1/Deployment', ResourceName: 'web', ResourceNameWithoutScope: 'web' },
+        PathAnnotationMap: { [at]: { Guard: { Scale: 'RegionSpecific' }, GuardInherited: { Scale: '' } } },
+      },
+    ];
+    expect(guardedKeysOf([guarded], TWO_DOCS, annotations('spec.replicas'))[0]?.inherited).toBe(true);
+    expect(guardedKeysOf([guarded], TWO_DOCS, annotations('spec'))[0]?.inherited).toBe(true);
+    expect(guardedKeysOf([guarded], TWO_DOCS, annotations('metadata'))[0]?.inherited).toBe(false);
+    // A conflict about the resource as a whole has no row to offer it on.
+    expect(guardedKeysOf([{ ...guarded, Path: '' }], TWO_DOCS, undefined)).toEqual([]);
   });
 
   test('a local override of the path keeps it out of the count', () => {

@@ -1,13 +1,19 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { Suspense, lazy, useState } from 'react';
+import { Suspense, lazy, useMemo, useState } from 'react';
 
 import { ErrorBox } from '@/components/error-box/ErrorBox';
+import { WithheldByGuardsNotice } from '@/components/guarded-write/WithheldByGuardsNotice';
+import { type GuardedChange, guardedChanges } from '@/components/guarded-write/guardedWrite';
+import { useGuardedWrite } from '@/components/guarded-write/useGuardedWrite';
 import { Section } from '@/components/styled';
 import { BorderedAccordion, fadeIn } from '@/components/styled';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
 import { useEditableUnitData, useUploadUnitData } from '@/hooks/useUnitData';
 import { Direction } from '@/types/enums';
+import { unitHasGuards } from '@/utility/clearance-functions';
+import { getApiErrorMessage } from '@/utility/error-functions';
+import { guardOnLineText, guardedLines } from '@/utility/guard-line-functions';
 import { UnitRead } from '@confighub/rtk-query';
 import CancelIcon from '@mui/icons-material/Cancel';
 import EditIcon from '@mui/icons-material/Edit';
@@ -20,8 +26,9 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
 
+import { blameFlagMeta } from '../components/blame/blameFields';
 import { LastChangeDescriptionModal } from '../components/last-change-description-modal/LastChangeDescriptionModal';
-import { UNIT_DETAIL_TAB } from '../unitDetailHrefs';
+import { UNIT_DETAIL_TAB, unitBlameHref } from '../unitDetailHrefs';
 
 // Monaco (plus monaco-yaml and its workers) is the heaviest dependency on this
 // page. Loading it dynamically keeps it out of the initial chunk; it's fetched
@@ -91,8 +98,28 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
   const { data: loadedData, etag, isLoaded } = useEditableUnitData(unit.SpaceID, unit.UnitID);
   const hasChanges = editedData !== undefined && editedData !== loadedData;
 
+  // The lines guards are recorded on, marked in the gutter. Worked out from the configuration as
+  // loaded, not as typed: while editing, a mark moves with its line but no new one appears until
+  // the edit is saved. Kubernetes YAML only: there the text shown is what the guards' paths are
+  // paths into, and its resources are named by type and name.
+  const gutterMarks = useMemo(
+    () =>
+      unit.ToolchainType === 'Kubernetes/YAML'
+        ? guardedLines(loadedData, unit.PathAnnotations).map(({ line, guards }) => ({
+            line,
+            hover: `Guarded: ${guards.map(guardOnLineText).join(', ')}`,
+          }))
+        : [],
+    [loadedData, unit.PathAnnotations, unit.ToolchainType],
+  );
+
   // API Hooks
   const [uploadUnitData, { error, isSuccess }] = useUploadUnitData();
+  // Dry runs have their own instance: the one above closes the editor when it succeeds.
+  const [previewUnitData] = useUploadUnitData();
+  const guardedWrite = useGuardedWrite('Save');
+  // What guards withheld from the last save, which landed without it.
+  const [withheld, setWithheld] = useState<GuardedChange[]>([]);
 
   // Error Handling
   useApiErrorMessage(error, isSuccess, setErrorMessage, {
@@ -118,16 +145,35 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
     // The configuration goes to the data endpoint; the change description is metadata. The
     // write names the configuration the edit started from, so it cannot land on a Unit that
     // holds anything else.
+    // On a Unit with guards, a dry run first finds what they would withhold, so the person can
+    // clear it before anything is written rather than find out afterwards.
+    let dryRunFailed = false;
     try {
-      await uploadUnitData({
-        spaceId: unit.SpaceID!,
-        unitId: unit.UnitID!,
-        body: editedData,
-        lastChangeDescription,
-        'If-Match': etag || undefined,
-      }).unwrap();
-    } catch {
-      // Reported through useApiErrorMessage.
+      const result = await guardedWrite.start({
+        guarded: unitHasGuards(unit.PathAnnotations),
+        run: async ({ dryRun, clearance }) => {
+          const upload = dryRun ? previewUnitData : uploadUnitData;
+          dryRunFailed = dryRun;
+          const response = await upload({
+            spaceId: unit.SpaceID!,
+            unitId: unit.UnitID!,
+            body: editedData,
+            lastChangeDescription,
+            'If-Match': etag || undefined,
+            dryRun: dryRun || undefined,
+            clearance: clearance ? JSON.stringify(clearance) : undefined,
+          }).unwrap();
+          dryRunFailed = false;
+          return guardedChanges(response.Conflicts, unit.Slug ?? '', {
+            spaceId: unit.SpaceID!,
+            unitId: unit.UnitID!,
+          });
+        },
+      });
+      if (result.status === 'written') setWithheld(result.withheld);
+    } catch (err) {
+      // A failed write is reported through useApiErrorMessage; a failed dry run is not.
+      if (dryRunFailed) setErrorMessage(getApiErrorMessage(err, 'Failed to check the guards'));
     }
   };
 
@@ -144,6 +190,20 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
       {selectedTab === CONFIG_TAB_ID && (
         <>
           <ErrorBox sx={{ mb: 1 }} error={errorMessage} onClose={() => setErrorMessage('')} />
+          {withheld.length > 0 && (
+            <WithheldByGuardsNotice
+              withheld={withheld}
+              blameHref={unitBlameHref(
+                unit.SpaceID!,
+                unit.UnitID!,
+                new Set(withheld.map((change) => change.path)).size === 1
+                  ? withheld[0].path
+                  : '',
+              )}
+              onClose={() => setWithheld([])}
+            />
+          )}
+          {guardedWrite.dialog}
 
           <Container>
             <BorderedAccordion sx={{ marginBottom: '15px' }} expanded>
@@ -192,6 +252,8 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
                         if (isEditMode) setEditedData(value);
                       }}
                       canEdit={isEditMode}
+                      gutterMarks={gutterMarks}
+                      gutterMarkColor={blameFlagMeta('Guarded').color}
                     />
                   </Suspense>
                 )}
@@ -217,7 +279,7 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
                     <Button
                       variant='contained'
                       fullWidth
-                      disabled={!hasChanges}
+                      disabled={!hasChanges || guardedWrite.busy}
                       onClick={() => {
                         // Show change description modal
                         setIsShowLastChangeDescriptionModalOpen(true);

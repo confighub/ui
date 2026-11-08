@@ -17,10 +17,6 @@ import { useNavigate } from 'react-router-dom';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Dialog from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogTitle from '@mui/material/DialogTitle';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
@@ -41,12 +37,11 @@ import {
 } from '@confighub/rtk-query';
 
 import { BackingUnitLink } from '@/components/backing-unit/BackingUnitLink';
-import { CodeEditor } from '@/components/code-editor/CodeEditor';
+import { EntityDocumentDialog } from '@/components/entity-document/EntityDocumentDialog';
 import { Cell, DetailRow, DetailTable, SectionCard, StatusDot, When } from '@/components/console-detail/ConsoleDetail';
 import { isSetTime, permissionSubjects, timeOf, type DetailColumn } from '@/components/console-detail/consoleDetailUtil';
 import { PermissionsList } from '@/components/console-detail/PermissionsList';
 import { usePrincipalNames } from '@/hooks/usePrincipalNames';
-import { getApiErrorMessage } from '@/utility/error-functions';
 
 import { Fact, FactLink, OpenedAt, StateChip, SummaryCard } from '../change-orders/components/SummaryFacts';
 import { consoleTokens as T, elapsed } from '../change-orders/consoleStyle';
@@ -325,66 +320,25 @@ export function ChannelDetailView({ channel, now }: { channel: ChannelRead; now:
   );
 }
 
-/**
- * The Channel's document in an editor. Saving sends the document as read with
- * the edit, so a change someone made meanwhile is refused rather than overwritten.
- */
+/** The Channel's document in an editor, as `cub channel edit` opens it. */
 function ChannelDocumentDialog({ channel, onClose }: { channel: ChannelRead; onClose: () => void }) {
   const ids = { spaceId: channel.SpaceID ?? '', channelId: channel.ChannelID ?? '' };
   const documentQuery = useGetChannelDocumentQuery(ids, { refetchOnMountOrArgChange: true });
   const [save, { isLoading }] = useUpdateChannelDocumentMutation();
-  const [draft, setDraft] = useState<string>();
-  const [error, setError] = useState<string>();
-  const base = documentQuery.data?.Document;
-  const text = draft ?? base ?? '';
-
-  const submit = async () => {
-    if (base === undefined || documentQuery.data === undefined) return;
-    setError(undefined);
-    try {
-      await save({ ...ids, entityDocumentEdit: { Base: base, Document: text, Version: documentQuery.data.Version } }).unwrap();
-      onClose();
-    } catch (e: unknown) {
-      setError(getApiErrorMessage(e) || 'The document could not be saved.');
-    }
-  };
-
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth='lg'>
-      <DialogTitle>
-        Edit {channel.SpaceSlug}/{channel.Slug}
-      </DialogTitle>
-      <DialogContent>
-        <Typography variant='body2' color='text.secondary' sx={{ mb: 1.5 }}>
+    <EntityDocumentDialog
+      title={`Edit ${channel.SpaceSlug}/${channel.Slug}`}
+      description={
+        <>
           The same document <code>cub channel edit</code> opens: its Commands, Subscriptions, Permissions, Labels and Annotations.
-        </Typography>
-        {documentQuery.isError ? <Alert severity='error'>{getApiErrorMessage(documentQuery.error) || 'The document could not be read.'}</Alert> : null}
-        {base !== undefined ? (
-          <Box sx={{ border: `1px solid ${T.line}`, borderRadius: '8px', overflow: 'hidden' }} data-testid='channel-document-editor'>
-            <CodeEditor value={base} language='yaml' height='55vh' canEdit showMinimap={false} onCodeChanged={setDraft} />
-          </Box>
-        ) : (
-          !documentQuery.isError && <Typography sx={{ fontSize: 12.5, color: T.ink3 }}>Loading…</Typography>
-        )}
-        {error ? (
-          <Alert severity='error' sx={{ mt: 2, whiteSpace: 'pre-wrap' }}>
-            {error}
-          </Alert>
-        ) : null}
-      </DialogContent>
-      <DialogActions>
-        <Button variant='outlined' onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          variant='contained'
-          onClick={() => void submit()}
-          disabled={isLoading || base === undefined || draft === undefined || draft === base}
-          data-testid='channel-document-save'
-        >
-          Save
-        </Button>
-      </DialogActions>
-    </Dialog>
+        </>
+      }
+      document={documentQuery.data}
+      readError={documentQuery.isError ? documentQuery.error : undefined}
+      onSave={(edit) => save({ ...ids, entityDocumentEdit: edit }).unwrap()}
+      isSaving={isLoading}
+      onClose={onClose}
+      testId='channel-document'
+    />
   );
 }

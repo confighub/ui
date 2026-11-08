@@ -49,7 +49,7 @@ function Link({ href, children }: { href: string; children: React.ReactNode }) {
   );
 }
 
-function Row({ term, children }: { term: string; children: React.ReactNode }) {
+export function InvocationSourceRow({ term, children }: { term: string; children: React.ReactNode }) {
   return (
     <>
       <Box component="dt" sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.subtle, margin: 0 }}>
@@ -69,9 +69,11 @@ const mono = { fontFamily: changeOrderFontMono } as const;
 
 export interface InvocationSourceDetailsProps {
   source: InvocationSource;
+  /** Further rows (`InvocationSourceRow`), after the ones about what runs. */
+  extraRows?: React.ReactNode;
 }
 
-export function InvocationSourceDetails({ source }: InvocationSourceDetailsProps) {
+export function InvocationSourceDetails({ source, extraRows }: InvocationSourceDetailsProps) {
   const parameters = Object.entries(source.parameters);
   return (
     <Box
@@ -89,7 +91,7 @@ export function InvocationSourceDetails({ source }: InvocationSourceDetailsProps
         background: changeOrderSurface.sunk,
       }}
     >
-      <Row term="Invocation">
+      <InvocationSourceRow term="Invocation">
         {source.status === 'loading' ? (
           'Reading the Invocation…'
         ) : source.status === 'failed' ? (
@@ -112,14 +114,14 @@ export function InvocationSourceDetails({ source }: InvocationSourceDetailsProps
             ) : null}
           </>
         )}
-      </Row>
+      </InvocationSourceRow>
       {source.backingUnitId !== undefined ? (
-        <Row term="Backing Unit">
+        <InvocationSourceRow term="Backing Unit">
           {/* A ChangeOrder page holds work in progress, so the Unit opens in a new tab. */}
           <BackingUnitLink backingUnitId={source.backingUnitId} newTab />
-        </Row>
+        </InvocationSourceRow>
       ) : null}
-      <Row term="Parameters">
+      <InvocationSourceRow term="Parameters">
         {parameters.length === 0 ? (
           <Box component="span" sx={{ color: changeOrderInk.muted }}>None</Box>
         ) : (
@@ -129,8 +131,8 @@ export function InvocationSourceDetails({ source }: InvocationSourceDetailsProps
             </Box>
           ))
         )}
-      </Row>
-      <Row term="Units">
+      </InvocationSourceRow>
+      <InvocationSourceRow term="Units">
         {source.whereUnit === undefined && source.unitFilterId === undefined ? (
           'Every Unit of each Space it is promoted into'
         ) : (
@@ -147,9 +149,9 @@ export function InvocationSourceDetails({ source }: InvocationSourceDetailsProps
             ) : null}
           </>
         )}
-      </Row>
+      </InvocationSourceRow>
       {source.functionInvocations.length > 0 ? (
-        <Row term="Runs">
+        <InvocationSourceRow term="Runs">
           {source.functionInvocations.map((call, i) => (
             <Box key={`${call.FunctionName ?? ''}-${i}`} sx={{ marginBottom: '4px' }}>
               {call.FunctionName !== undefined ? (
@@ -168,8 +170,9 @@ export function InvocationSourceDetails({ source }: InvocationSourceDetailsProps
               ))}
             </Box>
           ))}
-        </Row>
+        </InvocationSourceRow>
       ) : null}
+      {extraRows}
     </Box>
   );
 }

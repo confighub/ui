@@ -63,11 +63,11 @@ export const useComponentRefOptions = (skip = false) => {
 };
 
 /**
- * Invocations of one toolchain across the organization, named <space>/<invocation>, that a Trigger
- * can run: a Trigger fires with no caller to supply parameter values, so one that declares
- * parameters is left out.
+ * Invocations of one toolchain across the organization, named <space>/<invocation>, that run with
+ * no caller to supply parameter values -- a Trigger's, or a Link's transform -- so one that
+ * declares parameters is left out.
  */
-export const useTriggerInvocationRefOptions = (toolchainType: string, skip = false) => {
+export const useParameterlessInvocationRefOptions = (toolchainType: string, skip = false) => {
   const { data = [], isFetching } = useListAllInvocationsQuery(
     { where: `ToolchainType = '${toolchainType}'`, include: 'SpaceID' },
     { skip: skip || !toolchainType },

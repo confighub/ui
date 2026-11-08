@@ -21,13 +21,20 @@
  * PURE, so `change-orders-address.pure.spec.ts` can check it without a page.
  */
 
-/** The fields of a ChangeOrder that address it. */
 /**
  * The navigation state a page sets when it sends the reader to a ChangeOrder it has just made: the
  * detail view's title takes the keyboard once it is drawn.
  */
 export const FOCUS_TITLE_STATE = 'focusChangeOrderTitle';
 
+/**
+ * The navigation state of the bare address the ChangeOrder page goes to by itself, after the
+ * reader's own Promote or Release leaves the stage the address named with no work left: the move
+ * that follows is the reader's own.
+ */
+export const MOVED_ON_STATE = 'changeOrderMovedOn';
+
+/** The fields of a ChangeOrder that address it. */
 export interface ChangeOrderRef {
   spaceId: string;
   spaceSlug: string;

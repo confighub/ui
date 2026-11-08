@@ -28,7 +28,7 @@ import { isIDInvalid } from '@/utility/validation-functions';
 import { LinkRow } from '../components/links-table/LinksTable';
 
 const EMPTY_LINKS: ExtendedLinkRead[] = [];
-const LINK_INCLUDE = 'FromUnitID,ToUnitID,SpaceID,ToSpaceID';
+const LINK_INCLUDE = 'FromUnitID,ToUnitID,SpaceID,ToSpaceID,TransformInvocationID';
 
 export interface IUseUnitDetailDataProps {
   id: string;

@@ -40,6 +40,8 @@ const KEPT_BY: Readonly<Record<string, string>> = {
  * be shown as it came.
  */
 function keptSentence(conflict: ChangeOrderResourceConflict): ReactNode {
+  const guarded = guardSentence(conflict);
+  if (guarded !== null) return guarded;
   const subject = KEPT_BY[conflict.reason];
   if (subject === undefined || conflict.path === undefined || conflict.path === '') return null;
   return (
@@ -48,6 +50,30 @@ function keptSentence(conflict: ChangeOrderResourceConflict): ReactNode {
       {conflict.resourceName !== undefined ? ` in ${conflict.resourceName}` : null}
       {` keeps ${conflict.path}`}
       {conflict.targetValue !== undefined && conflict.targetValue !== '' ? ` at ${conflict.targetValue}` : null}.
+    </>
+  );
+}
+
+/**
+ * A refusal a guard caused, naming the guards: "Guard Scale=RegionSpecific in api keeps
+ * spec.replicas." A guard that withheld a guard change says so, since the value may have
+ * landed. `null` for any other refusal, or a guard refusal that names no guard.
+ */
+function guardSentence(conflict: ChangeOrderResourceConflict): ReactNode {
+  const guards = conflict.guards ?? [];
+  if (guards.length === 0 || (conflict.reason !== 'Guarded' && conflict.reason !== 'GuardWithheld')) return null;
+  const where = conflict.path !== undefined && conflict.path !== '' ? conflict.path : 'the whole resource';
+  return (
+    <>
+      <b>{`${guards.length === 1 ? 'Guard' : 'Guards'} ${guards.join(', ')}`}</b>
+      {conflict.resourceName !== undefined ? ` in ${conflict.resourceName}` : null}
+      {conflict.reason === 'Guarded'
+        ? ` ${guards.length === 1 ? 'keeps' : 'keep'} ${where}`
+        : ` withheld a change to the guards at ${where}`}
+      {conflict.reason === 'Guarded' && conflict.targetValue !== undefined && conflict.targetValue !== ''
+        ? ` at ${conflict.targetValue}`
+        : null}
+      .
     </>
   );
 }

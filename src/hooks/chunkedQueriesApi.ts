@@ -16,15 +16,6 @@
  * share one cache entry, so a list that arrives in a different order does not refetch.
  */
 import {
-  defaultSerializeQueryArgs,
-  type BaseQueryFn,
-  type FetchArgs,
-  type FetchBaseQueryError,
-  type FetchBaseQueryMeta,
-} from '@reduxjs/toolkit/query';
-
-import {
-  confighubApi,
   type ListAllReleasesApiArg,
   type ListAllReleasesApiResponse,
   type ListAllRevisionsApiResponse,
@@ -33,16 +24,26 @@ import {
   type ListUsersApiResponse,
   type SearchRevisionDataApiResponse,
   type SearchRevisionMutationSourcesApiResponse,
+  type SearchUnitBlameApiResponse,
   type SearchUnitDataApiResponse,
   type SearchUnitMutationSourcesApiResponse,
+  confighubApi,
 } from '@confighub/rtk-query';
+import {
+  type BaseQueryFn,
+  type FetchArgs,
+  type FetchBaseQueryError,
+  type FetchBaseQueryMeta,
+  defaultSerializeQueryArgs,
+} from '@reduxjs/toolkit/query';
 
 import { chunkIds, inClause } from './inClauseChunks';
 
 /** At most this many chunk requests are in flight for one query. */
 export const MAX_PARALLEL_CHUNKS = 4;
 
-export interface ListAllUnitsChunkedArg extends Pick<ListAllUnitsApiArg, 'select' | 'include' | 'includeHidden'> {
+export interface ListAllUnitsChunkedArg
+  extends Pick<ListAllUnitsApiArg, 'select' | 'include' | 'includeHidden'> {
   spaceIds: string[];
   /** ANDed with each chunk's `SpaceID IN (...)`. */
   where?: string;
@@ -85,7 +86,8 @@ export interface UserIdsArg {
 // The Release reads' fields, typed as the generated argument's so that
 // tests/api-field-lists.pure.spec.ts checks them against the API.
 const PUBLISHED_RELEASE_FIELDS: Pick<ListAllReleasesApiArg, 'select'> = {
-  select: 'ReleaseID,SpaceID,TargetID,ReleaseNum,ManifestDigest,CreatedAt,Published,LiveStatus',
+  select:
+    'ReleaseID,SpaceID,TargetID,ReleaseNum,ManifestDigest,CreatedAt,Published,LiveStatus',
 };
 const RELEASES_SINCE_FIELDS: Pick<ListAllReleasesApiArg, 'select'> = {
   select: 'ReleaseID,SpaceID,ReleaseNum,CreatedAt,Published,LiveStatus',
@@ -103,7 +105,9 @@ export type ChunkBaseQuery = (
   args: string | FetchArgs,
 ) => ReturnType<BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError>>;
 /** `truncated`: a `maxPages` cap stopped a read before its last page. */
-export type ChunkResult<T> = { data: T[]; truncated?: boolean } | { error: FetchBaseQueryError };
+export type ChunkResult<T> =
+  | { data: T[]; truncated?: boolean }
+  | { error: FetchBaseQueryError };
 
 /**
  * Sorted and without duplicates or empties: the form the cache key is built from.
@@ -134,7 +138,9 @@ export async function fetchAllPages<T>(
   args: FetchArgs,
   baseQuery: ChunkBaseQuery,
   { maxPages }: { maxPages?: number } = {},
-): Promise<{ data: T[]; truncated?: boolean; error?: undefined } | { error: FetchBaseQueryError }> {
+): Promise<
+  { data: T[]; truncated?: boolean; error?: undefined } | { error: FetchBaseQueryError }
+> {
   const rows: T[] = [];
   let token: string | undefined;
   let pages = 0;
@@ -182,12 +188,18 @@ export async function fetchChunks<T>(
   ids: readonly string[],
   request: (where: string, count: number, chunk: readonly string[]) => FetchArgs,
   baseQuery: ChunkBaseQuery,
-  { paged = false, maxItems, maxPages }: { paged?: boolean; maxItems?: number; maxPages?: number } = {},
+  {
+    paged = false,
+    maxItems,
+    maxPages,
+  }: { paged?: boolean; maxItems?: number; maxPages?: number } = {},
 ): Promise<ChunkResult<T>> {
   const chunks = chunkIds(column, ids, { maxItems });
-  const results: ({ data: T[]; truncated?: boolean } | { error: FetchBaseQueryError } | undefined)[] = new Array(
-    chunks.length,
-  );
+  const results: (
+    | { data: T[]; truncated?: boolean }
+    | { error: FetchBaseQueryError }
+    | undefined
+  )[] = new Array(chunks.length);
   let next = 0;
   const worker = async () => {
     while (next < chunks.length) {
@@ -367,7 +379,8 @@ const chunkedQueriesApi = confighubApi.injectEndpoints({
         );
         if ('error' in result) return result;
         // Parsed, since fractional seconds vary in length and so do not compare as text.
-        const time = (row: ListAllRevisionsApiResponse[number]) => Date.parse(row.Revision?.CreatedAt ?? '') || 0;
+        const time = (row: ListAllRevisionsApiResponse[number]) =>
+          Date.parse(row.Revision?.CreatedAt ?? '') || 0;
         const newest = [...result.data].sort((a, b) => time(b) - time(a)).slice(0, arg.limit);
         return { data: newest };
       },
@@ -375,7 +388,11 @@ const chunkedQueriesApi = confighubApi.injectEndpoints({
         defaultSerializeQueryArgs({
           endpointName,
           endpointDefinition,
-          queryArgs: { spaceIds: idSet(queryArgs.spaceIds), sources: idSet(queryArgs.sources), limit: queryArgs.limit },
+          queryArgs: {
+            spaceIds: idSet(queryArgs.spaceIds),
+            sources: idSet(queryArgs.sources),
+            limit: queryArgs.limit,
+          },
         }),
       providesTags: ['Revision'],
     }),
@@ -434,24 +451,47 @@ const chunkedQueriesApi = confighubApi.injectEndpoints({
         }),
       providesTags: ['Revision'],
     }),
-    searchUnitMutationSourcesChunked: build.query<SearchUnitMutationSourcesApiResponse, UnitIdsArg>(
-      {
-        queryFn: (arg, _api, _extra, baseQuery) =>
-          fetchChunks<SearchUnitMutationSourcesApiResponse[number]>(
-            'UnitID',
-            idSet(arg.unitIds),
-            (where) => ({ url: `/unit_mutation_sources`, params: { where } }),
-            baseQuery,
-          ),
-        serializeQueryArgs: ({ endpointName, endpointDefinition, queryArgs }) =>
-          defaultSerializeQueryArgs({
-            endpointName,
-            endpointDefinition,
-            queryArgs: { unitIds: idSet(queryArgs.unitIds) },
+    // The guarded fields of some Units, each as the Unit itself records it: its value, its guards
+    // and which of them are inherited. The blame search returns at most 50 Units a request.
+    searchGuardedFieldsChunked: build.query<SearchUnitBlameApiResponse, UnitIdsArg>({
+      queryFn: (arg, _api, _extra, baseQuery) =>
+        fetchChunks<SearchUnitBlameApiResponse[number]>(
+          'UnitID',
+          idSet(arg.unitIds),
+          (where, count) => ({
+            url: `/unit_blame`,
+            params: { where, flags: 'Guarded', upstream: false, limit: count },
           }),
-        providesTags: ['Unit'],
-      },
-    ),
+          baseQuery,
+          { maxItems: BY_ID_CHUNK_SIZE },
+        ),
+      serializeQueryArgs: ({ endpointName, endpointDefinition, queryArgs }) =>
+        defaultSerializeQueryArgs({
+          endpointName,
+          endpointDefinition,
+          queryArgs: { unitIds: idSet(queryArgs.unitIds) },
+        }),
+      providesTags: ['Unit'],
+    }),
+    searchUnitMutationSourcesChunked: build.query<
+      SearchUnitMutationSourcesApiResponse,
+      UnitIdsArg
+    >({
+      queryFn: (arg, _api, _extra, baseQuery) =>
+        fetchChunks<SearchUnitMutationSourcesApiResponse[number]>(
+          'UnitID',
+          idSet(arg.unitIds),
+          (where) => ({ url: `/unit_mutation_sources`, params: { where } }),
+          baseQuery,
+        ),
+      serializeQueryArgs: ({ endpointName, endpointDefinition, queryArgs }) =>
+        defaultSerializeQueryArgs({
+          endpointName,
+          endpointDefinition,
+          queryArgs: { unitIds: idSet(queryArgs.unitIds) },
+        }),
+      providesTags: ['Unit'],
+    }),
     searchRevisionMutationSourcesChunked: build.query<
       SearchRevisionMutationSourcesApiResponse,
       RevisionIdsArg
@@ -487,10 +527,12 @@ export const {
   useListRecentRevisionsChunkedQuery,
   useListUsersByIdChunkedQuery,
   useSearchUnitDataChunkedQuery,
+  useSearchGuardedFieldsChunkedQuery,
   useSearchRevisionDataChunkedQuery,
   useSearchUnitMutationSourcesChunkedQuery,
   useSearchRevisionMutationSourcesChunkedQuery,
 } = chunkedQueriesApi;
 
 /** The published Releases of some Spaces as the cache has them, asking for nothing. */
-export const useListPublishedReleasesChunkedQueryState = chunkedQueriesApi.endpoints.listPublishedReleasesChunked.useQueryState;
+export const useListPublishedReleasesChunkedQueryState =
+  chunkedQueriesApi.endpoints.listPublishedReleasesChunked.useQueryState;

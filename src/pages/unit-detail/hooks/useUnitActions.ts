@@ -1,27 +1,39 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { useAppDispatch } from '@/hooks/useApp';
 import {
-  BulkPatchUnitsApiArg,
+  type GuardedChange,
+  guardedChanges,
+  withheldSummary,
+} from '@/components/guarded-write/guardedWrite';
+import {
+  type GuardedWriteResult,
+  useGuardedWrite,
+} from '@/components/guarded-write/useGuardedWrite';
+import { chunkInClause } from '@/hooks/inClauseChunks';
+import { useAppDispatch } from '@/hooks/useApp';
+import { setAlert } from '@/state/slices/alert';
+import { unitHasGuards } from '@/utility/clearance-functions';
+import { getApiErrorMessage } from '@/utility/error-functions';
+import {
   DeleteUnitApiArg,
   ExtendedUnitRead,
   FunctionInvocationsRequest,
   FunctionInvocationsResponse,
   FunctionSignature,
   Unit,
+  UnitCreateOrUpdateResponseRead,
   UnitRead,
-  UpdateUnitApiArg,
   useBulkPatchUnitsMutation,
   useDeleteUnitMutation,
   useInvokeFunctionsMutation,
   useInvokeFunctionsOnOrgMutation,
   useLazyGetUnitQuery,
+  useLazyListAllUnitsQuery,
   useUpdateUnitMutation,
 } from '@confighub/rtk-query';
-import { setAlert } from '@/state/slices/alert';
 import type { SerializedError } from '@reduxjs/toolkit';
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query';
 
@@ -86,6 +98,12 @@ interface UseUnitActionsReturn {
   // State
   functionInvocationError: string;
   setFunctionInvocationError: (error: string) => void;
+
+  /** Asks about an upgrade guards would partly withhold; has to be rendered. */
+  upgradeGuardDialog: ReactNode;
+  /** What guards withheld from this Unit's last upgrade, which landed without it. */
+  upgradeWithheld: GuardedChange[];
+  setUpgradeWithheld: (withheld: GuardedChange[]) => void;
 }
 
 export const useUnitActions = ({
@@ -122,6 +140,21 @@ export const useUnitActions = ({
   const [bulkPatchUnits, { error: bulkPatchError, isSuccess: isBulkPatchSuccess }] =
     useBulkPatchUnitsMutation();
   const [getUnit] = useLazyGetUnitQuery();
+  const [listUnits] = useLazyListAllUnitsQuery();
+  // Dry runs have their own instances, so a failed one is not reported as a failed upgrade.
+  const [previewUpdateUnit] = useUpdateUnitMutation();
+  const [previewBulkPatchUnits] = useBulkPatchUnitsMutation();
+  const guardedUpgrade = useGuardedWrite('Upgrade');
+  const [upgradeWithheld, setUpgradeWithheld] = useState<GuardedChange[]>([]);
+
+  const reportFailedDryRun = (error: unknown) =>
+    dispatch(
+      setAlert({
+        message: getApiErrorMessage(error, 'Failed to check the guards'),
+        type: 'error',
+        isOpen: true,
+      }),
+    );
 
   // Action Handlers
   const onUnitDeleted = async (): Promise<void> => {
@@ -137,79 +170,147 @@ export const useUnitActions = ({
   };
 
   const onUnitUpgrade = async () => {
+    if (!currentUnit) return;
+    // The confirmation is answered; what guards would withhold is asked about on its own.
+    setIsUpgradeModalOpen(false);
+    setUpgradeWithheld([]);
+    const preUpgradeRevisionNum = currentUnit.HeadRevisionNum ?? null;
+    let dryRunFailed = false;
     try {
-      // Store pre-upgrade state
-      setPreUpgradeRevisionNum(currentUnit?.HeadRevisionNum ?? null);
-
-      // Trigger upgrade
-      const input: UpdateUnitApiArg = {
-        unit: currentUnit as Unit,
-        spaceId: spaceId,
-        unitId: unitId,
-        upgrade: true,
-      };
-
-      const response = await updateUnit(input);
-
-      if (response?.data?.Unit) {
-        // Get new revision number
-        setPostUpgradeRevisionNum(response.data.Unit.HeadRevisionNum ?? null);
-
+      const result = await guardedUpgrade.start({
+        guarded: unitHasGuards(currentUnit.PathAnnotations),
+        run: async ({ dryRun, clearance }) => {
+          dryRunFailed = dryRun;
+          const response = await (dryRun ? previewUpdateUnit : updateUnit)({
+            unit: currentUnit as Unit,
+            spaceId,
+            unitId,
+            upgrade: true,
+            dryRun: dryRun || undefined,
+            clearance: clearance ? JSON.stringify(clearance) : undefined,
+          }).unwrap();
+          dryRunFailed = false;
+          if (!dryRun) {
+            setPreUpgradeRevisionNum(preUpgradeRevisionNum);
+            setPostUpgradeRevisionNum(response.Unit?.HeadRevisionNum ?? null);
+          }
+          return guardedChanges(response.Conflicts, currentUnit.Slug ?? '', {
+            spaceId,
+            unitId,
+          });
+        },
+      });
+      if (result.status === 'written') {
+        setUpgradeWithheld(result.withheld);
         onRefresh();
       }
-    } finally {
-      // TODO: Investigate what is wrong with closing the modals.
-      // Passing callbacks in `onClose` to the modal does not work.
-      setIsUpgradeModalOpen(false);
+    } catch (error) {
+      // A failed upgrade is reported through apiStates.update; a failed dry run is not.
+      if (dryRunFailed) reportFailedDryRun(error);
     }
   };
 
   const onBulkUnitUpgrade = async () => {
-    const input: BulkPatchUnitsApiArg = {
-      upgrade: true,
-      include: 'UpstreamUnitID',
-      where: `Unit.UpstreamUnitID='${unitId}' AND Unit.UpstreamRevisionNum < UpstreamUnit.HeadRevisionNum`,
-      // @ts-expect-error https://stackoverflow.com/questions/68283492/rtk-query-merge-patchjson-content-type-ruins-request-body
-      body: JSON.stringify({}),
-    };
+    const needsUpgrade = `Unit.UpstreamUnitID='${unitId}' AND Unit.UpstreamRevisionNum < UpstreamUnit.HeadRevisionNum`;
+    const upgrade = (where: string, options: { dryRun: boolean; clearance?: string }) =>
+      (options.dryRun ? previewBulkPatchUnits : bulkPatchUnits)({
+        upgrade: true,
+        include: 'UpstreamUnitID',
+        where,
+        dryRun: options.dryRun || undefined,
+        clearance: options.clearance,
+        // @ts-expect-error https://stackoverflow.com/questions/68283492/rtk-query-merge-patchjson-content-type-ruins-request-body
+        body: JSON.stringify({}),
+      }).unwrap();
 
-    const response = await bulkPatchUnits(input);
-
-    if (response && Array.isArray(response.data)) {
-      const upgradedUnits = response.data
-        .map((response) => response.Unit)
-        .flat()
-        .filter(Boolean);
-
-      const errorUnits = response.data
-        .map((response) => response.Error)
-        .flat()
-        .filter(Boolean);
-
-      if (upgradedUnits.length > 0) {
-        const successMessage = 'Downstream units upgraded successfully.';
-        dispatch(
-          setAlert({
-            message: successMessage,
-            type: 'success',
-            isOpen: true,
-          }),
+    let dryRunFailed = false;
+    let responses: UnitCreateOrUpdateResponseRead[] = [];
+    let result: GuardedWriteResult;
+    try {
+      // Which downstream Units have guards: only those are run as a dry run first. Each is named
+      // with its Space, since they can be in other Spaces than this one.
+      dryRunFailed = true;
+      const downstream = await listUnits({
+        where: `UpstreamUnitID = '${unitId}'`,
+        include: 'SpaceID',
+        select: 'UnitID,Slug,SpaceID,PathAnnotations',
+      }).unwrap();
+      dryRunFailed = false;
+      const labelByUnitId = new Map(
+        downstream.map((item) => [
+          item.Unit?.UnitID ?? '',
+          item.Space?.Slug ? `${item.Space.Slug}/${item.Unit?.Slug}` : (item.Unit?.Slug ?? ''),
+        ]),
+      );
+      const guarded = downstream
+        .filter((item) => unitHasGuards(item.Unit?.PathAnnotations))
+        .map((item) => item.Unit?.UnitID);
+      const withheldIn = (items: UnitCreateOrUpdateResponseRead[]) =>
+        items.flatMap((item) =>
+          guardedChanges(
+            item.Conflicts,
+            labelByUnitId.get(item.Unit?.UnitID ?? '') ?? item.Unit?.Slug ?? '',
+            item.Unit?.SpaceID && item.Unit?.UnitID
+              ? { spaceId: item.Unit.SpaceID, unitId: item.Unit.UnitID }
+              : undefined,
+          ),
         );
 
-        onRefresh();
-        setUnitsUpgraded(true);
-      }
+      result = await guardedUpgrade.start({
+        guarded: guarded.length > 0,
+        run: async ({ dryRun, clearance }) => {
+          const cleared = clearance ? JSON.stringify(clearance) : undefined;
+          if (dryRun) {
+            dryRunFailed = true;
+            const pages = await Promise.all(
+              chunkInClause('Unit.UnitID', guarded).map((ids) =>
+                upgrade(`${needsUpgrade} AND ${ids}`, { dryRun: true }),
+              ),
+            );
+            dryRunFailed = false;
+            return withheldIn(pages.flat());
+          }
+          responses = await upgrade(needsUpgrade, { dryRun: false, clearance: cleared });
+          return withheldIn(responses);
+        },
+      });
+    } catch (error) {
+      // A failed upgrade is reported through apiStates.upgrade; a failed dry run is not.
+      if (dryRunFailed) reportFailedDryRun(error);
+      return;
+    }
+    if (result.status === 'cancelled') return;
 
-      if (errorUnits.length > 0) {
-        const errorMessage = errorUnits.map((err) => err?.Details).join(', ');
-        dispatch(
-          setAlert({
-            message: `Error upgrading downstream units: ${errorMessage}`,
-            type: 'error',
-            isOpen: true,
-          }),
-        );
-      }
+    const upgradedUnits = responses.map((response) => response.Unit).filter(Boolean);
+    const errorUnits = responses.map((response) => response.Error).filter(Boolean);
+
+    if (upgradedUnits.length > 0) {
+      // Upgraded without what guards withheld, which stays on each Unit as a conflict.
+      const withheldFrom = [...new Set(result.withheld.map((change) => change.unitLabel))];
+      dispatch(
+        setAlert({
+          message:
+            result.withheld.length > 0
+              ? `Downstream units upgraded. ${withheldSummary(result.withheld)} in ${withheldFrom.join(', ')}; apply them from the Blame tab of each.`
+              : 'Downstream units upgraded successfully.',
+          type: result.withheld.length > 0 ? 'warning' : 'success',
+          isOpen: true,
+        }),
+      );
+
+      onRefresh();
+      setUnitsUpgraded(true);
+    }
+
+    if (errorUnits.length > 0) {
+      const errorMessage = errorUnits.map((err) => err?.Details).join(', ');
+      dispatch(
+        setAlert({
+          message: `Error upgrading downstream units: ${errorMessage}`,
+          type: 'error',
+          isOpen: true,
+        }),
+      );
     }
   };
 
@@ -468,5 +569,9 @@ export const useUnitActions = ({
     // ValidationErrors monitoring
     awaitTriggersRemoval,
     usePollingForValidationErrors,
+
+    upgradeGuardDialog: guardedUpgrade.dialog,
+    upgradeWithheld,
+    setUpgradeWithheld,
   };
 };

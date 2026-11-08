@@ -383,6 +383,8 @@ interface CardFrame {
   /** A Promote or Release main button is on screen and can be pressed. */
   live: boolean;
   change: string;
+  /** From `recordTimeline` only: the stage whose card is shown. */
+  stage?: string;
   /** From `recordFromLoad` only: each prerequisite line's tone, whether the log is still being read, the log's text. */
   gates?: string[];
   checking?: boolean;
@@ -408,6 +410,7 @@ const RECORD = () => {
         (b) => b.getAttribute('aria-disabled') !== 'true' && !(b as HTMLButtonElement).disabled,
       ),
       change: document.querySelector('[data-testid="stage-change-card"]')?.textContent ?? '',
+      stage: document.querySelector('[data-testid="stage-card"]')?.getAttribute('data-stage') ?? '',
     };
     const last = w.__frames[w.__frames.length - 1];
     if (last === undefined || JSON.stringify(last) !== JSON.stringify(frame)) w.__frames.push(frame);
@@ -702,9 +705,13 @@ test.describe('ChangeOrder stage card', () => {
     await expect(releaseButton).toHaveAttribute('data-one-click', 'true');
     await releaseButton.click();
     await expect(page.locator('#announce')).toContainText(stageCardCopy.announce.released('dev'), { timeout: 90000 });
+    // Released, dev's work is done: the page moves on to staging, on the bare address, with focus.
+    await expect(card(page)).toHaveAttribute('data-stage', 'staging', { timeout: 30000 });
+    await expect(page).toHaveURL(new RegExp(`${fx.changeOrderPath}$`));
+    await expect(heading(page)).toBeFocused();
+    await openStage(page, fx, 'dev');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'released', { timeout: 30000 });
     await expect(heading(page)).toHaveText(copy.releasedTo('dev'));
-    await expect(heading(page)).toBeFocused();
     await expect(logLine(page, 'log-released')).toContainText('you', { timeout: 30000 });
     const next = logLine(page, 'log-end').getByRole('link', { name: copy.goTo('staging') });
     await expect(next).toHaveAttribute('href', changeOrderPath(fx.spaces.base.slug, fx.changeOrderSlug, 'staging'));
@@ -748,10 +755,14 @@ test.describe('ChangeOrder stage card', () => {
     await release.click();
     await recordTimeline(page);
     await expect(confirmButton(page)).toHaveCount(0);
-    await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'released', { timeout: 90000 });
+    // Released, staging's work is done: the page moves on to prod, on the bare address.
+    await expect(card(page)).toHaveAttribute('data-stage', 'prod', { timeout: 90000 });
+    await expect(page).toHaveURL(new RegExp(`${fx.changeOrderPath}$`));
     // The Release button does not come back while the release runs.
-    const frames = await timeline(page);
+    const frames = (await timeline(page)).filter((f) => f.stage === 'staging');
     expect(frames.filter((f) => f.live), JSON.stringify(frames)).toEqual([]);
+    await openStage(page, fx, 'staging');
+    await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'released', { timeout: 30000 });
     await expect(logLine(page, 'log-released')).toContainText(copy.targetsRanIt(2));
   });
 
@@ -1355,6 +1366,9 @@ test.describe('ChangeOrder stage card', () => {
     await expect.poll(() => traffic.releases.length, { timeout: 30000 }).toBeGreaterThan(released);
     await page.waitForTimeout(1000);
     expect(traffic.releases.slice(released), 'only the Space whose release failed').toEqual([failing.spaceId]);
+    // Released, prod's work is done: the page moves on, on the bare address.
+    await expect(page).toHaveURL(new RegExp(`${fx.changeOrderPath}$`), { timeout: 120000 });
+    await openStage(page, fx, 'prod');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'released', { timeout: 120000 });
   });
 });

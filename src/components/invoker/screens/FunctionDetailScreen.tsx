@@ -262,6 +262,8 @@ export interface FunctionDetailScreenProps {
     success: boolean;
     message?: string;
     responses?: FunctionInvocationsResponse[];
+    /** The invocation was a dry run: nothing was written. */
+    dryRun?: boolean;
     slugByUnitId?: Record<string, string>;
   } | null;
   onRemoveUnit?: (unitId: string) => void;
@@ -906,6 +908,7 @@ export const FunctionDetailScreen = ({
                       columnStyle={columnStyle}
                       onDividerMouseDown={onDividerMouseDown}
                       isDragging={isDragging}
+                      dryRun={invokeResult.dryRun}
                       onSaveAttributes={onSaveAttributes}
                     />
                   );

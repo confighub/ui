@@ -1,8 +1,11 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
+import type { ReactNode } from 'react';
+
 import { Box, Container, Link, Typography } from '@mui/material';
 
-export const EmptyLinks = () => {
+/** What the Links tab shows for a Unit with no Links, with `action` to create one. */
+export const EmptyLinks = ({ action }: { action?: ReactNode }) => {
     return (
         <Container maxWidth='sm'>
             <Box
@@ -31,6 +34,7 @@ export const EmptyLinks = () => {
                         Read more about links →
                     </Link>
                 </Typography>
+                {action && <Box sx={{ mt: 2 }}>{action}</Box>}
             </Box>
         </Container>
     );

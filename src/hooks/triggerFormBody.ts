@@ -1,20 +1,14 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 // What the Add/Edit Trigger form holds, and how it becomes the Trigger it writes.
-import type { ClearanceRequirement, TriggerRead } from '@confighub/rtk-query';
+import type { TriggerRead } from '@confighub/rtk-query';
 
+import {
+  type ClearanceRow,
+  clearanceToRows,
+  rowsToClearance,
+} from '@/components/clearance-field/clearanceRows';
 import { type MapRow, mapToRows, rowsToGates, rowsToMap } from '@/components/map-field-editor/map-rows';
-
-/** The operators a clearance requirement takes. In and NotIn compare against Values. */
-export const CLEARANCE_OPERATORS = ['Exists', 'In', 'NotIn', 'DoesNotExist'] as const;
-export type ClearanceOperator = (typeof CLEARANCE_OPERATORS)[number];
-
-/** One clearance requirement as the form edits it: Values as one comma-separated string. */
-export interface ClearanceRow {
-  Key: string;
-  Operator: ClearanceOperator;
-  Values: string;
-}
 
 /** Whether a Trigger runs a function it names or a stored Invocation. */
 export type TriggerSource = 'Function' | 'Invocation';
@@ -67,9 +61,6 @@ export const defaultTriggerFormInput = (): IAddTriggerFormInput => ({
   Clearance: [],
 });
 
-const isOperator = (value: string | undefined): value is ClearanceOperator =>
-  (CLEARANCE_OPERATORS as readonly string[]).includes(value ?? '');
-
 /** The form's values for a Trigger being edited. */
 export const triggerToFormInput = (trigger: TriggerRead): IAddTriggerFormInput => ({
   ...defaultTriggerFormInput(),
@@ -93,23 +84,8 @@ export const triggerToFormInput = (trigger: TriggerRead): IAddTriggerFormInput =
   OtherDataSource: trigger.OtherDataSource || '',
   Protect: trigger.Protect || false,
   Guards: mapToRows(trigger.Guards),
-  Clearance: (trigger.Clearance ?? []).map((requirement) => ({
-    Key: requirement.Key || '',
-    Operator: isOperator(requirement.Operator) ? requirement.Operator : 'Exists',
-    Values: (requirement.Values ?? []).join(', '),
-  })),
+  Clearance: clearanceToRows(trigger.Clearance),
 });
-
-/** A clearance row as the API takes it, or undefined for a row with no key. */
-const clearanceRequirement = (row: ClearanceRow): ClearanceRequirement | undefined => {
-  const key = row.Key.trim();
-  if (!key) return undefined;
-  const requirement: ClearanceRequirement = { Key: key, Operator: row.Operator };
-  if (row.Operator === 'In' || row.Operator === 'NotIn') {
-    requirement.Values = row.Values.split(',').map((v) => v.trim()).filter(Boolean);
-  }
-  return requirement;
-};
 
 /** The text of an optional field, or undefined when it is blank, so it is left out. */
 const optional = (value: string | undefined): string | undefined => {
@@ -138,9 +114,7 @@ export const buildTriggerBody = (
   selectedFunctionValidating = false,
 ): TriggerRead => {
   const runsInvocation = data.Source === 'Invocation';
-  const clearance = (data.Clearance ?? [])
-    .map(clearanceRequirement)
-    .filter((r): r is ClearanceRequirement => !!r);
+  const clearance = rowsToClearance(data.Clearance);
   return {
     Slug: data.Slug,
     DisplayName: optional(data.DisplayName),

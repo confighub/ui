@@ -5,12 +5,20 @@
  * What the Blame tab shows of a Unit's fields, and the requests its actions send for the
  * fields selected. Kept free of React so the request bodies can be checked without a page.
  */
+import {
+  conflictGuards,
+  distinctGuards,
+  guardText,
+  withheldGuards,
+} from '@/utility/clearance-functions';
 import type {
   BlameConflictDismissal,
   BlameField,
   BlameOrigin,
   FunctionInvocationsRequest,
+  PathAnnotationList,
   ResourceGuards,
+  ResourcePathAnnotations,
   ResourceProtection,
   UnitConflictSelector,
   WithheldGuard,
@@ -358,14 +366,23 @@ const hasFlag = (field: BlameField, code: string) => (field.Flags ?? []).include
 const ownProtection = (f: BlameField) =>
   !!f.Protected && (!f.ResourceProtected || isResourceField(f));
 
+/** Whether Set guard writes a field: a guard records why a value is what it is, so a field with
+ * no value takes none. */
+export const guardSettable = (field: BlameField) => !field.Absent && !field.Deleted;
+
 /** Whether an action applies to at least one of the selected fields. */
 export const blameActionApplies = {
   protect: (fields: readonly BlameField[]) => fields.some((f) => !f.Absent && !f.Protected),
   unprotect: (fields: readonly BlameField[]) => fields.some(ownProtection),
-  // A guard records why a value is what it is, so a field with no value takes none.
-  guard: (fields: readonly BlameField[]) => fields.some((f) => !f.Absent && !f.Deleted),
+  guard: (fields: readonly BlameField[]) => fields.some(guardSettable),
   removeGuard: (fields: readonly BlameField[]) =>
     fields.some((f) => Object.keys(f.Guards ?? {}).length > 0),
+  makeInherited: (
+    fields: readonly BlameField[],
+    annotations: PathAnnotationList | undefined,
+  ) => guardInheritanceKeys(fields, annotations, true).length > 0,
+  makeLocal: (fields: readonly BlameField[], annotations: PathAnnotationList | undefined) =>
+    guardInheritanceKeys(fields, annotations, false).length > 0,
   conflicts: (fields: readonly BlameField[]) =>
     fields.some((f) => hasFlag(f, 'Conflict') || (f.Conflicts ?? []).length > 0),
   undismiss: (fields: readonly BlameField[]) =>
@@ -413,17 +430,152 @@ export function protectionRequest(
   }));
 }
 
-/** The SetUnitGuard edits that record one guard on the selected fields' paths. */
+/** The guards to set, as guards of this Unit alone or as inherited ones. */
+const guardSetEntries = (
+  entries: Record<string, Record<string, string>>,
+  inherited: boolean,
+): Pick<ResourceGuards, 'Set' | 'SetInherited'> =>
+  inherited ? { SetInherited: entries } : { Set: entries };
+
+/**
+ * The SetUnitGuard edits that record one guard on the selected fields' paths, as a guard of this
+ * Unit alone or, inherited, one its clones and downstream Units receive.
+ */
 export function guardSetRequest(
   fields: readonly BlameField[],
   key: string,
   value: string,
+  inherited = false,
 ): ResourceGuards[] {
   return byResource(fields, (field) =>
-    field.Absent || field.Deleted ? undefined : [field.Path ?? '', { [key]: value }],
+    guardSettable(field) ? [field.Path ?? '', { [key]: value }] : undefined,
   ).map(({ field, entries }) => ({
     Resource: { ResourceType: field.ResourceType, ResourceName: field.ResourceName },
-    Set: Object.fromEntries(entries),
+    ...guardSetEntries(Object.fromEntries(entries), inherited),
+  }));
+}
+
+/** The guards recorded at a field's own path, and which of them are inherited. */
+export interface OwnGuards {
+  guards: Readonly<Record<string, string>>;
+  inherited: ReadonlySet<string>;
+}
+
+/**
+ * The Unit's annotations about a field's resource, matched as the server matches them for the
+ * field's Guards: by type and name, by the name without its namespace, or by an earlier name.
+ */
+function resourceAnnotations(
+  annotations: PathAnnotationList,
+  field: BlameField,
+): ResourcePathAnnotations | undefined {
+  const sameType = (entry: ResourcePathAnnotations) =>
+    entry.Resource?.ResourceType === field.ResourceType;
+  const name = field.ResourceName ?? '';
+  const withoutScope = field.ResourceNameWithoutScope ?? '';
+  return (
+    annotations.find((entry) => sameType(entry) && entry.Resource?.ResourceName === name) ??
+    annotations.find(
+      (entry) =>
+        sameType(entry) &&
+        withoutScope !== '' &&
+        entry.Resource?.ResourceNameWithoutScope === withoutScope,
+    ) ??
+    annotations.find((entry) => sameType(entry) && name in (entry.Aliases ?? {}))
+  );
+}
+
+/**
+ * The guards at the field's own path, from the Unit's PathAnnotations, which BlameField.Guards
+ * does not tell apart from its ancestors' and its resource's. Undefined while the annotations
+ * are not known, or when the field has guards on a resource the page cannot find among them.
+ */
+export function ownGuards(
+  annotations: PathAnnotationList | undefined,
+  field: BlameField,
+): OwnGuards | undefined {
+  if (annotations === undefined) return undefined;
+  const entry = resourceAnnotations(annotations, field);
+  if (entry === undefined) {
+    return Object.keys(field.Guards ?? {}).length > 0
+      ? undefined
+      : { guards: {}, inherited: new Set() };
+  }
+  const own = field.Path ? entry.PathAnnotationMap?.[field.Path] : entry.ResourceAnnotations;
+  return {
+    guards: { ...(own?.Guard ?? {}) },
+    inherited: new Set(Object.keys(own?.GuardInherited ?? {})),
+  };
+}
+
+/**
+ * The guards a guard edit on the given fields has to be cleared for. The server checks an edit
+ * against the guards already at each path it changes, the path's own and not its ancestors' or
+ * its resource's, since the edit writes only the path's own entry; a path with no guards yet, or
+ * an edit that leaves a path's guards as they are, needs none. Where a field's own guards are not
+ * known, every guard on it is listed, which is never narrower than what the server needs.
+ */
+export function guardEditGuardsToClear(
+  fields: readonly BlameField[],
+  annotations: PathAnnotationList | undefined,
+  changes: (own: OwnGuards) => boolean,
+): WithheldGuard[] {
+  return distinctGuards(
+    fields.flatMap((field) => {
+      const own = ownGuards(annotations, field);
+      let guards: Readonly<Record<string, string>> = {};
+      if (own === undefined) guards = field.Guards ?? {};
+      else if (changes(own)) guards = own.guards;
+      return Object.entries(guards).map(([Key, Value]) => ({ Key, Value }));
+    }),
+  );
+}
+
+/** Whether setting a guard changes a path's own guards: its value, or whether it is inherited. */
+export const guardSetChanges =
+  (key: string, value: string, inherited: boolean) => (own: OwnGuards) =>
+    own.guards[key] !== value || own.inherited.has(key) !== inherited;
+
+/**
+ * The guard keys that Make inherited (or Make local) would change on the selected fields: keys
+ * a field holds at its own path, not yet inherited (or inherited). A guard a field takes from an
+ * ancestor or its resource is changed on that row, not this one.
+ */
+export function guardInheritanceKeys(
+  fields: readonly BlameField[],
+  annotations: PathAnnotationList | undefined,
+  inherited: boolean,
+): string[] {
+  const keys = new Set<string>();
+  for (const field of fields) {
+    const own = ownGuards(annotations, field);
+    for (const key of Object.keys(own?.guards ?? {})) {
+      if (own?.inherited.has(key) !== inherited) keys.add(key);
+    }
+  }
+  return Array.from(keys).sort();
+}
+
+/**
+ * The SetUnitGuard edits that make one guard inherited, or local, where the selected fields hold
+ * it at their own path. The guard is written again at the value it has, through SetInherited or
+ * Set, which each also decide whether it is inherited.
+ */
+export function guardInheritanceRequest(
+  fields: readonly BlameField[],
+  annotations: PathAnnotationList | undefined,
+  key: string,
+  inherited: boolean,
+): ResourceGuards[] {
+  return byResource(fields, (field) => {
+    const own = ownGuards(annotations, field);
+    const value = own?.guards[key];
+    if (own === undefined || value === undefined || own.inherited.has(key) === inherited)
+      return undefined;
+    return [field.Path ?? '', { [key]: value }];
+  }).map(({ field, entries }) => ({
+    Resource: { ResourceType: field.ResourceType, ResourceName: field.ResourceName },
+    ...guardSetEntries(Object.fromEntries(entries), inherited),
   }));
 }
 
@@ -473,12 +625,24 @@ export function conflictSelectors(fields: readonly BlameField[]): UnitConflictSe
   return selectors;
 }
 
-/** The reasons whose conflicts name the guards that withheld the change. */
-const GUARD_REASONS = new Set(['Guarded', 'GuardWithheld']);
-
-/** A guard as a selector names it: `key=value`, or the key alone for a guard with no value. */
-const guardSelector = (guard: WithheldGuard) =>
-  guard.Value ? `${guard.Key}=${guard.Value}` : (guard.Key ?? '');
+/**
+ * The guards applying the selected fields' conflicts has to be cleared for. Applying one writes a
+ * guarded field like any other write, so it is checked against every guard on the field -- its
+ * own, its ancestors' and its resource's -- whatever kind of conflict it is. The guards a conflict
+ * names are not enough on their own: they are the ones the merge's clearance did not cover, and a
+ * merge cleared for some of the field's guards names only the rest. They are added all the same,
+ * for a conflict at an ancestor whose guard the field's nearer one of the same key overrides.
+ */
+export function conflictGuardsToClear(fields: readonly BlameField[]): WithheldGuard[] {
+  return distinctGuards(
+    fields
+      .filter((field) => (field.Conflicts ?? []).length > 0)
+      .flatMap((field) => [
+        ...Object.entries(field.Guards ?? {}).map(([Key, Value]) => ({ Key, Value })),
+        ...withheldGuards(field.Conflicts ?? []),
+      ]),
+  );
+}
 
 /**
  * The ResolveUnitConflicts selectors that dismiss the selected fields' conflicts for good: one per
@@ -493,9 +657,8 @@ export function permanentDismissalSelectors(
   const seen = new Set<string>();
   for (const field of fields) {
     for (const conflict of field.Conflicts ?? []) {
-      const guards = GUARD_REASONS.has(conflict.Reason ?? '')
-        ? (conflict.Guards ?? (conflict.Guard ? [conflict.Guard] : [])).map(guardSelector)
-        : [];
+      // A selector names a guard as it is written: key=value, or the key alone.
+      const guards = conflictGuards(conflict).map(guardText);
       const selector: UnitConflictSelector = {
         ResourceType: field.ResourceType,
         ResourceName: field.ResourceName,

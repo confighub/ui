@@ -65,11 +65,13 @@ import {
   type ChangeWorkflowSpec,
   type ComponentRead,
   type ExtendedSpaceRead,
+  type InvocationRead,
 } from '@confighub/rtk-query';
 
 import type { RunningRelease } from '../x/apps/liveStatus';
 import { resolveChangeOrderAddress, type ChangeOrderAddress, type ChangeOrderRef } from './changeOrderAddress';
 import { usePromoteFinalQuery } from './reviews/reviewServerApi';
+import { useChangeOrderInvocation } from './useChangeOrderInvocation';
 import { promoteFinalOf, type PromoteFinalAnswer } from './reviews/stageReviewInputs';
 import {
   applyPromotionRecord,
@@ -170,6 +172,11 @@ export interface ChangeOrderDetail {
   fanOutSource?: FanOutSource;
   /** What an Invoke ChangeOrder runs (`useInvocationSource`). Absent for every other type. */
   invocationSource?: InvocationSource;
+  /**
+   * The Invocation an Invoke ChangeOrder runs, as stored: its Clearance and Guards, and the
+   * Version an update sends. Absent for every other type, and until it is read.
+   */
+  invocation?: InvocationRead;
   baseSpaceSlug?: string;
   createdAt?: string;
   /** `ChangeOrder.UserID`: who created the ChangeOrder. Absent for ChangeOrders created before it was recorded. */
@@ -506,6 +513,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
     unitFilterId: order?.UnitFilterID,
     skip: !invokes,
   });
+  const invocation = useChangeOrderInvocation(order?.InvocationID, !invokes);
 
   // The component this ChangeOrder is named by, read off the base Space's own
   // Component — the same `orderComponent` the fleet console uses. Display only:
@@ -843,6 +851,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
       inScopeSpaceIds: order.InScopeSpaceIDs,
       fanOutSource: fansOut ? fanOutSource : undefined,
       invocationSource,
+      invocation,
       baseSpaceSlug: order.SpaceSlug ?? entry?.Space?.Slug,
       createdAt: order.CreatedAt,
       creatorUserId: order.UserID,
@@ -913,6 +922,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
     fansOut,
     fanOutSource,
     invocationSource,
+    invocation,
     componentName,
     governing,
     workflow,

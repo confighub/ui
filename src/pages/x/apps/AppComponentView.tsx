@@ -43,8 +43,12 @@ import { ComponentFlowGraphSkeleton } from './ComponentFlowGraphSkeleton';
 import { ComponentSidePane } from './ComponentSidePane';
 import type { HiddenUnitsState, PaneUnitScope } from './ComponentToolbar';
 import { usePreviewUnitUpgradeMutation } from './upgradePreviewApi';
-import type { StagedCommitPayload } from './ComponentValuesSection';
+import type { StagedCommitPayload, StagedCommitResult } from './ComponentValuesSection';
+import { resolveConflictPath } from './configDiffFieldDiffs';
 import { useUnitDataMap, useUploadUnitData } from '@/hooks/useUnitData';
+import { guardedChanges } from '@/components/guarded-write/guardedWrite';
+import { useGuardedWrite } from '@/components/guarded-write/useGuardedWrite';
+import { unitHasGuards } from '@/utility/clearance-functions';
 import { useListAllUnitsChunkedQuery } from '@/hooks/chunkedQueriesApi';
 import { buildAllApplyEntries, buildUpgradeEntries, buildVariationEntries, splitDryRunItems } from './entryBuilders';
 import { type SetValueResult } from './configParser';
@@ -154,7 +158,7 @@ const RUNNING_RELEASE_POLL_MS = 5_000;
 // was made in (see changeSets.ts). Shared by every units-fetching batch
 // (the chunked SpaceID read and the upstream-outside-set UnitID lookup) so they all narrow the payload identically.
 const UNITS_QUERY_SELECT =
-  'UnitID,Slug,SpaceID,TargetID,Unreleasable,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ValidationWarnings,ValidationResults,ValidationTriggerIDs,ToolchainType,DataHash,DataSize,ChangeSetID,'
+  'UnitID,Slug,SpaceID,TargetID,Unreleasable,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ValidationWarnings,ValidationResults,ValidationTriggerIDs,ToolchainType,DataHash,DataSize,ChangeSetID,PathAnnotations,'
   + 'HeadRevision.RevisionID,HeadRevision.CreatedAt,HeadRevision.Description,HeadRevision.ChangeSetID,LastReleasedRevision.RevisionID';
 const UNITS_QUERY_INCLUDE = 'SpaceID,TargetID,UpstreamUnitID,HeadRevisionNum,LastReleasedRevisionNum';
 
@@ -456,6 +460,10 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   const [dryRunPatch] = usePreviewUnitUpgradeMutation();
   const [updateUnit] = useUpdateUnitMutation();
   const [uploadUnitData] = useUploadUnitData();
+  // A commit that writes a guarded field asks first, with the dialog every guarded write uses.
+  // Each Unit commits on its own, so guarded commits take turns at the one dialog.
+  const { start: startGuardedWrite, dialog: guardedWriteDialog } = useGuardedWrite('Upgrade');
+  const guardedCommitQueueRef = useRef<Promise<unknown>>(Promise.resolve());
   const [getUnit] = useLazyGetUnitQuery();
   const [setUnitProtection] = useSetUnitProtectionMutation();
 
@@ -1405,7 +1413,8 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   // upgradeSettleTargetsRef, populated below). On FAILURE there's nothing to
   // settle, so it's cleared immediately here instead.
   const handleCommitStaged = useCallback(
-    async (unitId: string, spaceId: string, payload: StagedCommitPayload): Promise<boolean> => {
+    async (unitId: string, spaceId: string, payload: StagedCommitPayload): Promise<StagedCommitResult> => {
+      let withheldKeys: string[] = [];
       const preCommitHead = unitById.get(unitId)?.Unit?.HeadRevisionNum ?? 0;
       upgradeSettleTargetsRef.current.set(unitId, { spaceId, preCommitHead });
       setUpgradingDeploymentIds((prev) => new Set([...prev, spaceId]));
@@ -1421,12 +1430,62 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
         } else {
           // Configuration goes to the Unit's data endpoint. A Unit body has nowhere to put
           // one, so a PATCH carrying Data would report success and write nothing.
-          await uploadUnitData({
-            spaceId,
-            unitId,
-            body: payload.data,
-            changeSetId: openChangeSetIdOf(unitById, unitId),
-          }).unwrap();
+          const upload = (options: { dryRun: boolean; clearance?: string }) =>
+            uploadUnitData({
+              spaceId,
+              unitId,
+              body: payload.data,
+              changeSetId: openChangeSetIdOf(unitById, unitId),
+              dryRun: options.dryRun || undefined,
+              clearance: options.clearance,
+            }).unwrap();
+          const unit = unitById.get(unitId);
+          if (!unitHasGuards(unit?.Unit?.PathAnnotations)) {
+            await upload({ dryRun: false });
+          } else {
+            // A ticked row a guard holds back, or an edit to a guarded field, is asked about
+            // before anything is written. A wholesale upgrade never is: it is chosen only when
+            // no guarded row is ticked, and then the guard keeping the value is what was asked
+            // for.
+            const label = unit?.Unit?.Slug ?? '';
+            const ids = { spaceId, unitId };
+            const turn = guardedCommitQueueRef.current.then(() =>
+              startGuardedWrite({
+                guarded: true,
+                run: async ({ dryRun, clearance }) =>
+                  guardedChanges(
+                    (await upload({ dryRun, clearance: clearance ? JSON.stringify(clearance) : undefined }))
+                      .Conflicts,
+                    label,
+                    ids,
+                  ),
+              }),
+            );
+            guardedCommitQueueRef.current = turn.catch(() => undefined);
+            const result = await turn;
+            if (result.status === 'cancelled') {
+              upgradeSettleTargetsRef.current.delete(unitId);
+              setUpgradingDeploymentIds((prev) => {
+                if (!prev.has(spaceId)) return prev;
+                const next = new Set(prev);
+                next.delete(spaceId);
+                return next;
+              });
+              return false;
+            }
+            // The rows of what the guards withheld, which the section leaves unmarked.
+            const currentData = dataAccessors.unitData(unitId);
+            withheldKeys = result.withheld.flatMap((change) => {
+              const key = resolveConflictPath(
+                {
+                  Resource: { ResourceType: change.resourceType, ResourceName: change.resourceName },
+                  Path: change.path,
+                },
+                currentData,
+              );
+              return key === undefined ? [] : [key];
+            });
+          }
         }
         setDeploymentErrors((prev) => {
           if (!prev.has(spaceId)) return prev;
@@ -1450,7 +1509,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
         setDryRunDiffs(new Map());
         setDryRunConflicts(new Map());
         flashSuccess(new Set([spaceId]), 'Upgraded');
-        return true;
+        return withheldKeys.length > 0 ? { withheldKeys } : true;
       } catch (err: unknown) {
         upgradeSettleTargetsRef.current.delete(unitId);
         setUpgradingDeploymentIds((prev) => {
@@ -1464,7 +1523,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
         return false;
       }
     },
-    [bulkPatch, uploadUnitData, flashSuccess, setErrorsForDeployments, unitById],
+    [bulkPatch, uploadUnitData, flashSuccess, setErrorsForDeployments, unitById, startGuardedWrite, dataAccessors],
   );
 
   // A wave's bulk Upgrade lands in many Spaces at once. As after one staged
@@ -2022,6 +2081,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
         </Box>
       </GraphPane>
     </Container>
+    {guardedWriteDialog}
     </>
   );
 });

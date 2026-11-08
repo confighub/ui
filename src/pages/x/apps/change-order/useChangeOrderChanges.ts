@@ -100,6 +100,11 @@ export interface UseChangeOrderChangesArgs {
   /** Current configuration data per Unit, keyed by unit id — the "before" side. */
   currentDataByUnitId: ReadonlyMap<string, { slug: string; spaceId: string; data?: string }>;
   skip: boolean;
+  /**
+   * Changes when what the dry run plans has changed without the scope changing: an Invoke
+   * ChangeOrder's Invocation edited, its clearance included. A new value plans again.
+   */
+  refreshKey?: string;
 }
 
 const EMPTY_GROUPS: ReadonlyMap<string, ChangeOrderChangeGroup[]> = new Map();
@@ -138,7 +143,7 @@ export function useChangeOrderChanges(args: UseChangeOrderChangesArgs): Readonly
 
 /** {@link useChangeOrderChanges}, with whether the groups can be trusted yet. */
 export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs): ChangeOrderChangesResult {
-  const { changeOrderId, stages, selectedStageId, takenSpaceIds, currentDataByUnitId, skip } = args;
+  const { changeOrderId, stages, selectedStageId, takenSpaceIds, currentDataByUnitId, skip, refreshKey } = args;
 
   const selectedStage = useMemo(
     () => stages.find((s) => s.id === selectedStageId),
@@ -218,7 +223,7 @@ export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs)
 
   useEffect(() => {
     if (skip || changeOrderId === undefined || pendingKey === '') return;
-    const scopeKey = `${changeOrderId}|${pendingKey}`;
+    const scopeKey = `${changeOrderId}|${pendingKey}|${refreshKey ?? ''}`;
     if (lastDryRunKeyRef.current === scopeKey) return;
     lastDryRunKeyRef.current = scopeKey;
     const markOutcome = (outcome: 'succeeded' | 'failed') =>
@@ -312,7 +317,7 @@ export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs)
          */
         markOutcome('failed');
       });
-  }, [skip, changeOrderId, pendingKey, runPromote]);
+  }, [skip, changeOrderId, pendingKey, refreshKey, runPromote]);
 
   // ── Written: the Revisions that carry the ChangeOrder, for the Spaces that
   //    have actually taken it (plus the source, which always has) ───────────
@@ -481,7 +486,7 @@ export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs)
     const writtenPending =
       writtenSpaceIds.length > 0 &&
       (revisionsLoading || carryingDataFetching || priorRevisionsLoading || priorDataPending || writtenDiffPending);
-    const scopeKey = `${changeOrderId}|${pendingKey}`;
+    const scopeKey = `${changeOrderId}|${pendingKey}|${refreshKey ?? ''}`;
     const dryRunOutcome = pendingKey === '' ? undefined : dryRunOutcomeByKey.get(scopeKey);
     const dryRunPending = pendingKey !== '' && dryRunOutcome === undefined;
     if (writtenPending || dryRunPending) return LOADING_RESULT;
@@ -578,5 +583,6 @@ export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs)
     priorDataPending,
     dryRunOutcomeByKey,
     pendingKey,
+    refreshKey,
   ]);
 }

@@ -7,12 +7,16 @@ import { useLazyUnitData, useRevisionDataMap, useRevisionMutationSourcesMap } fr
 import { DATE_TIME_GRID_SLOTS } from '@/components/data-grid/cells';
 import { EntityDataGrid } from '@/components/entity-data-grid/EntityDataGrid';
 import { ErrorBox } from '@/components/error-box/ErrorBox';
+import { WithheldByGuardsNotice } from '@/components/guarded-write/WithheldByGuardsNotice';
+import { type GuardedChange, guardedChanges } from '@/components/guarded-write/guardedWrite';
+import { useGuardedWrite } from '@/components/guarded-write/useGuardedWrite';
 import { MutationDrawer } from '@/components/mutation-drawer/MutationDrawer';
 import { RevisionCompareDrawer } from '@/components/revision-compare-drawer/RevisionCompareDrawer';
 import { Section } from '@/components/styled';
 import { useGridPersistence } from '@/components/unit-data-grid/hooks/useGridPersistence';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
 import { useRevisionViewerUrl } from '@/hooks/useRevisionViewerUrl';
+import { unitBlameHref } from '@/pages/unit-detail/unitDetailHrefs';
 import {
   ResourceMutation,
   RevisionRead,
@@ -24,6 +28,8 @@ import {
 } from '@confighub/rtk-query';
 import { CmpProps, type RevisionRow } from '@/types';
 import { Direction } from '@/types/enums';
+import { unitHasGuards } from '@/utility/clearance-functions';
+import { getApiErrorMessage } from '@/utility/error-functions';
 import { isIDInvalid } from '@/utility/validation-functions';
 import CompareArrowsOutlinedIcon from '@mui/icons-material/CompareArrowsOutlined';
 import SourceOutlinedIcon from '@mui/icons-material/SourceOutlined';
@@ -79,6 +85,11 @@ export const RevisionsTable = ({
 
   const [updateUnit, { isSuccess: isUpdateSuccess, error: updateError }] =
     useUpdateUnitMutation();
+  // Dry runs have their own instance, so a failed one is not reported as a failed restore.
+  const [previewUpdateUnit] = useUpdateUnitMutation();
+  const guardedRestore = useGuardedWrite('Restore');
+  // What guards withheld from the last restore, which landed without it.
+  const [restoreWithheld, setRestoreWithheld] = useState<GuardedChange[]>([]);
   const [selectedTab, setSelectedTab] = useState(0);
   const [isUpstreamDiffOpen, setIsUpstreamDiffOpen] = useState(false);
   const [isMutationDetailDrawerOpen, setIsMutationDetailDrawerOpen] = useState(false);
@@ -159,19 +170,39 @@ export const RevisionsTable = ({
 
   const onRevisionConfirmed = async (revision: RevisionRow) => {
     const revisionId = revision?.Revision?.RevisionID || fromRevision.RevisionID;
+    const unit = currentUnitExtended?.Unit || ({} as UnitRead);
+    const unitId = unit.UnitID || '';
+    const spaceId = unit.SpaceID || '';
+    setRestoreWithheld([]);
+    let dryRunFailed = false;
     try {
-      const input: UpdateUnitApiArg = {
-        unitId: currentUnitExtended?.Unit?.UnitID || '',
-        spaceId: currentUnitExtended?.Unit?.SpaceID || '',
-        unit: {
-          ...(currentUnitExtended?.Unit || ({} as UnitRead)),
+      const result = await guardedRestore.start({
+        // A restore is checked against the guards the Unit has now, its data and the
+        // Revision's guards it puts back alike, so a Unit with none withholds nothing.
+        guarded: unitHasGuards(unit.PathAnnotations),
+        run: async ({ dryRun, clearance }) => {
+          const input: UpdateUnitApiArg = {
+            unitId,
+            spaceId,
+            unit: { ...unit },
+            revisionId,
+            dryRun: dryRun || undefined,
+            clearance: clearance ? JSON.stringify(clearance) : undefined,
+          };
+          dryRunFailed = dryRun;
+          const response = await (dryRun ? previewUpdateUnit : updateUnit)(input).unwrap();
+          dryRunFailed = false;
+          return guardedChanges(response.Conflicts, unit.Slug ?? '', { spaceId, unitId });
         },
-        revisionId,
-      };
-
-      await updateUnit(input);
-    } finally {
-      handleCloseRevisionViewer();
+      });
+      // Cancelled, the viewer stays open on the Revision; a write closes it when it settles.
+      if (result.status === 'written') setRestoreWithheld(result.withheld);
+    } catch (err) {
+      // A failed restore is reported through useApiErrorMessage; a failed dry run is not.
+      if (dryRunFailed) {
+        setErrorMessage(getApiErrorMessage(err, 'Failed to check the guards'));
+        handleCloseRevisionViewer();
+      }
     }
   };
 
@@ -276,6 +307,20 @@ export const RevisionsTable = ({
           sx={{ mt: 1, mb: 1 }}
           onClose={() => setErrorMessage('')}
         />
+        {restoreWithheld.length > 0 && (
+          <WithheldByGuardsNotice
+            withheld={restoreWithheld}
+            blameHref={unitBlameHref(
+              currentUnitExtended?.Unit?.SpaceID || '',
+              currentUnitExtended?.Unit?.UnitID || '',
+              new Set(restoreWithheld.map((change) => change.path)).size === 1
+                ? restoreWithheld[0].path
+                : '',
+            )}
+            onClose={() => setRestoreWithheld([])}
+          />
+        )}
+        {guardedRestore.dialog}
         {tagErrorMessage && (
           <ErrorBox
             error={tagErrorMessage}
@@ -340,6 +385,7 @@ export const RevisionsTable = ({
           setDiffTarget={setDiffTarget}
           showRestoreButton={true}
           onRevisionConfirmed={onRevisionConfirmed}
+          isRestoring={guardedRestore.busy}
           revisionViewerUrl={revisionViewerUrl}
         />
       </Section>

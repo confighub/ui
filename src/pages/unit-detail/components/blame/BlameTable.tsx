@@ -6,15 +6,31 @@ import { useNavigate } from 'react-router-dom';
 import { ConfigDiffView } from '@/components/config-diff/ConfigDiffView';
 import { EntityDataGrid } from '@/components/entity-data-grid/EntityDataGrid';
 import { ErrorBox } from '@/components/error-box/ErrorBox';
+import { GuardAcknowledgements } from '@/components/guarded-write/GuardAcknowledgements';
+import { GuardValuesSection } from '@/components/guarded-write/GuardValuesSection';
+import {
+  type GuardValues,
+  NO_GUARD_VALUES,
+  clearanceRecording,
+  guardParams,
+  guardValuesComplete,
+} from '@/components/guarded-write/guardValues';
+import { guardedChanges, withheldSummary } from '@/components/guarded-write/guardedWrite';
+import { useGuardAcknowledgements } from '@/components/guarded-write/useGuardAcknowledgements';
 import { NavLink } from '@/components/nav-link/NavLink';
 import { useAppDispatch } from '@/hooks/useApp';
 import { setAlert } from '@/state/slices/alert';
+import { clearanceCovering } from '@/utility/clearance-functions';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import {
   type BlameField,
+  type Clearance,
   type ConfigDiff,
+  type PathAnnotationList,
   type UnitConflictSelector,
+  type WithheldGuard,
   useGetUnitBlameQuery,
+  useGetUnitQuery,
   useInvokeFunctionsOnOrgMutation,
   useResolveUnitConflictsMutation,
   useSetUnitGuardMutation,
@@ -56,12 +72,19 @@ import {
   blameResources,
   blameRows,
   conflictDismissalText,
+  conflictGuardsToClear,
   conflictSelectors,
   filterBlameRows,
+  guardEditGuardsToClear,
+  guardInheritanceKeys,
+  guardInheritanceRequest,
   guardKeys,
   guardRemoveRequest,
+  guardSetChanges,
   guardSetRequest,
+  guardSettable,
   originUnitLabel,
+  ownGuards,
   permanentDismissalSelectors,
   protectionRequest,
   setInThisUnit,
@@ -341,6 +364,8 @@ type DialogKind =
   | ''
   | 'guard'
   | 'removeGuard'
+  | 'makeInherited'
+  | 'makeLocal'
   | 'applyConflicts'
   | 'dismissConflicts'
   | 'undismissConflicts'
@@ -372,6 +397,18 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
     { skip: !spaceId || !unitId },
   );
 
+  // The guards at each path, which a guard edit has to be cleared for: BlameField.Guards
+  // includes its ancestors' and its resource's. Shared with the page's own read of the Unit.
+  const { data: unitData } = useGetUnitQuery(
+    { spaceId, unitId },
+    { skip: !spaceId || !unitId },
+  );
+  const unitRead = unitData?.Unit;
+  const annotations = useMemo<PathAnnotationList | undefined>(
+    () => (unitRead ? (unitRead.PathAnnotations ?? []) : undefined),
+    [unitRead],
+  );
+
   const rows = useMemo(() => blameRows(data?.Fields), [data?.Fields]);
   const resources = useMemo(() => blameResources(rows), [rows]);
   const shownRows = useMemo(
@@ -392,6 +429,12 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
     const ids = new Set(selected.map(String));
     return rows.filter((row) => ids.has(row.id) && !row.placeholder).map((row) => row.field);
   }, [rows, selected]);
+  // What applying the selected conflicts has to be cleared for: the guards on their fields.
+  const applyGuards = useMemo(() => conflictGuardsToClear(selectedFields), [selectedFields]);
+  const applyClearance = useMemo(() => {
+    const clearance = clearanceCovering(applyGuards);
+    return clearance.length > 0 ? clearance : undefined;
+  }, [applyGuards]);
 
   const [setProtection, { isLoading: isProtecting }] = useSetUnitProtectionMutation();
   const [setGuard, { isLoading: isGuarding }] = useSetUnitGuardMutation();
@@ -499,6 +542,28 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
       >
         Remove guard
       </Button>
+      <Tooltip title='Clones and downstream Units receive the guard'>
+        <span>
+          <Button
+            size='small'
+            disabled={busy || !blameActionApplies.makeInherited(selectedFields, annotations)}
+            onClick={() => setDialog('makeInherited')}
+          >
+            Make inherited
+          </Button>
+        </span>
+      </Tooltip>
+      <Tooltip title='The guard stays with this Unit'>
+        <span>
+          <Button
+            size='small'
+            disabled={busy || !blameActionApplies.makeLocal(selectedFields, annotations)}
+            onClick={() => setDialog('makeLocal')}
+          >
+            Make local
+          </Button>
+        </span>
+      </Tooltip>
       <Button
         size='small'
         disabled={busy || !blameActionApplies.conflicts(selectedFields)}
@@ -637,14 +702,17 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
       <GuardDialog
         open={dialog === 'guard'}
         busy={busy}
+        fields={selectedFields}
+        annotations={annotations}
         onClose={() => setDialog('')}
-        onSubmit={async (key, value) => {
+        onSubmit={async (key, value, inherited, clearance) => {
           try {
             await setGuard({
               spaceId,
               unitId,
               unitGuardRequest: {
-                ResourceGuards: guardSetRequest(selectedFields, key, value),
+                ResourceGuards: guardSetRequest(selectedFields, key, value, inherited),
+                Clearance: clearance,
               },
             }).unwrap();
             done(`Guard ${key} set on the selected fields`);
@@ -657,6 +725,8 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
         open={dialog === 'removeGuard'}
         busy={busy}
         keys={guardKeys(selectedFields)}
+        fields={selectedFields}
+        annotations={annotations}
         onClose={() => setDialog('')}
         onSubmit={async (key, clearance) => {
           try {
@@ -665,9 +735,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
               unitId,
               unitGuardRequest: {
                 ResourceGuards: guardRemoveRequest(selectedFields, key),
-                // Retiring a guard is a write to a guarded path, so it is cleared for the guard's
-                // own values.
-                Clearance: clearance ? [{ Key: key, Operator: 'Exists' }] : undefined,
+                Clearance: clearance,
               },
             }).unwrap();
             done(`Guard ${key} removed from the selected fields`);
@@ -676,10 +744,50 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
           }
         }}
       />
+      <GuardInheritanceDialog
+        open={dialog === 'makeInherited' || dialog === 'makeLocal'}
+        inherited={dialog === 'makeInherited'}
+        busy={busy}
+        fields={selectedFields}
+        annotations={annotations}
+        onClose={() => setDialog('')}
+        onSubmit={async (key, inherited, clearance) => {
+          try {
+            await setGuard({
+              spaceId,
+              unitId,
+              unitGuardRequest: {
+                ResourceGuards: guardInheritanceRequest(
+                  selectedFields,
+                  annotations,
+                  key,
+                  inherited,
+                ),
+                Clearance: clearance,
+              },
+            }).unwrap();
+            done(
+              inherited
+                ? `Guard ${key} is inherited by clones and downstream Units`
+                : `Guard ${key} stays with this Unit`,
+            );
+          } catch (err) {
+            failed(
+              err,
+              inherited
+                ? 'Failed to make the guard inherited'
+                : 'Failed to make the guard local',
+            );
+          }
+        }}
+      />
       <ApplyConflictsDialog
         open={dialog === 'applyConflicts'}
         busy={busy}
+        guards={applyGuards}
         onClose={() => setDialog('')}
+        // The preview is of the apply with every guard acknowledged, which is the only apply the
+        // dialog sends: without a clearance covering them the server refuses it.
         preview={async () =>
           (
             await resolveConflicts({
@@ -689,6 +797,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
                 Action: 'Apply',
                 DryRun: true,
                 Select: conflictSelectors(selectedFields),
+                Clearance: applyClearance,
               },
             }).unwrap()
           ).Diff
@@ -701,6 +810,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
               unitConflictsRequest: {
                 Action: 'Apply',
                 Select: conflictSelectors(selectedFields),
+                Clearance: applyClearance,
               },
             }).unwrap();
             done(
@@ -730,7 +840,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
         busy={busy}
         field={selectedFields[0]}
         onClose={() => setDialog('')}
-        onSubmit={async (value, description, keep) => {
+        onSubmit={async (value, description, keep, guardValues, clearance) => {
           const field = selectedFields[0];
           if (!field) return;
           try {
@@ -738,11 +848,22 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
               executorSpace: spaceId,
               where: `UnitID = '${unitId}'`,
               protect: keep || undefined,
+              ...guardParams(guardValues),
+              clearance: clearance ? JSON.stringify(clearance) : undefined,
               functionInvocationsRequest: setValueRequest(field, value, description),
             }).unwrap();
             const unitError = results?.find((result) => result.Error)?.Error;
             if (unitError) {
               setErrorMessage(unitError.Message ?? 'Failed to set the value');
+              return;
+            }
+            // The guards can change after the page read them, so a write can still be withheld.
+            const withheld = results.flatMap((result) => guardedChanges(result.Conflicts, ''));
+            if (withheld.length > 0) {
+              setDialog('');
+              setErrorMessage(
+                `${withheldSummary(withheld)}: ${field.Path} was not set. Its guards changed; select it again to see them.`,
+              );
               return;
             }
             done(`${field.Path} set`);
@@ -755,19 +876,54 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
   );
 };
 
+/** The narrowest clearance covering the guards acknowledged, or none for none. */
+const clearanceFor = (guards: readonly WithheldGuard[]): Clearance | undefined =>
+  guards.length > 0 ? clearanceCovering(guards) : undefined;
+
+/**
+ * Sets one guard on the selected fields' paths. A path that already has guards of its own has its
+ * reasons changed, which the server refuses unless the edit is cleared for them, so each is
+ * acknowledged and the edit is cleared for exactly those.
+ */
 const GuardDialog = ({
   open,
   busy,
+  fields,
+  annotations,
   onClose,
   onSubmit,
 }: {
   open: boolean;
   busy: boolean;
+  fields: readonly BlameField[];
+  annotations: PathAnnotationList | undefined;
   onClose: () => void;
-  onSubmit: (key: string, value: string) => void;
+  onSubmit: (key: string, value: string, inherited: boolean, clearance?: Clearance) => void;
 }) => {
   const [key, setKey] = useState('');
   const [value, setValue] = useState('');
+  const [inherited, setInherited] = useState(false);
+  useEffect(() => {
+    if (open) {
+      setKey('');
+      setValue('');
+      setInherited(false);
+    }
+  }, [open]);
+  const guards = useMemo(
+    () =>
+      guardEditGuardsToClear(
+        fields.filter(guardSettable),
+        annotations,
+        guardSetChanges(key, value, inherited),
+      ),
+    [fields, annotations, key, value, inherited],
+  );
+  const {
+    acknowledged,
+    toggle,
+    all: allAcknowledged,
+  } = useGuardAcknowledgements(guards, open);
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth='sm'>
       <DialogTitle>Set guard</DialogTitle>
@@ -782,14 +938,27 @@ const GuardDialog = ({
             label='Key'
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            placeholder='owner'
+            placeholder='RunAsRoot'
           />
           <TextField
             size='small'
             label='Value'
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder='platform'
+            placeholder='LegacyImage'
+          />
+          <FormControlLabel
+            control={
+              <Checkbox checked={inherited} onChange={(e) => setInherited(e.target.checked)} />
+            }
+            label='Inherited by clones and downstream Units'
+          />
+          <GuardAcknowledgements
+            guards={guards}
+            acknowledged={acknowledged}
+            onToggle={toggle}
+            intro='The selected paths already have guards.'
+            confirm='Confirm you understand why each guard is there to change the guards at these paths.'
           />
         </Stack>
       </DialogContent>
@@ -797,8 +966,8 @@ const GuardDialog = ({
         <Button onClick={onClose}>Cancel</Button>
         <Button
           variant='contained'
-          disabled={busy || key === '' || value === ''}
-          onClick={() => onSubmit(key, value)}
+          disabled={busy || key === '' || value === '' || !allAcknowledged}
+          onClick={() => onSubmit(key, value, inherited, clearanceFor(guards))}
         >
           Set guard
         </Button>
@@ -807,21 +976,47 @@ const GuardDialog = ({
   );
 };
 
+/**
+ * Removes one guard key where the selected fields hold it. Removing changes the reasons at the
+ * path, so the removal is cleared for the guards there, each acknowledged.
+ */
 const RemoveGuardDialog = ({
   open,
   busy,
   keys,
+  fields,
+  annotations,
   onClose,
   onSubmit,
 }: {
   open: boolean;
   busy: boolean;
   keys: string[];
+  fields: readonly BlameField[];
+  annotations: PathAnnotationList | undefined;
   onClose: () => void;
-  onSubmit: (key: string, clearance: boolean) => void;
+  onSubmit: (key: string, clearance?: Clearance) => void;
 }) => {
   const [key, setKey] = useState<string | null>(null);
-  const [clearance, setClearance] = useState(true);
+  useEffect(() => {
+    if (open) setKey(null);
+  }, [open]);
+  const guards = useMemo(
+    () =>
+      key === null
+        ? []
+        : guardEditGuardsToClear(
+            fields.filter((field) => field.Guards?.[key] !== undefined),
+            annotations,
+            (own) => own.guards[key] !== undefined,
+          ),
+    [fields, annotations, key],
+  );
+  const {
+    acknowledged,
+    toggle,
+    all: allAcknowledged,
+  } = useGuardAcknowledgements(guards, open);
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth='sm'>
       <DialogTitle>Remove guard</DialogTitle>
@@ -833,11 +1028,12 @@ const RemoveGuardDialog = ({
             onChange={(_, v) => setKey(v)}
             renderInput={(params) => <TextField {...params} size='small' label='Key' />}
           />
-          <FormControlLabel
-            control={
-              <Checkbox checked={clearance} onChange={(e) => setClearance(e.target.checked)} />
-            }
-            label='Clear the removal for the guard, saying its reason is understood'
+          <GuardAcknowledgements
+            guards={guards}
+            acknowledged={acknowledged}
+            onToggle={toggle}
+            intro='The selected paths are guarded.'
+            confirm='Confirm you understand why each guard is there to change the guards at these paths.'
           />
         </Stack>
       </DialogContent>
@@ -845,8 +1041,8 @@ const RemoveGuardDialog = ({
         <Button onClick={onClose}>Cancel</Button>
         <Button
           variant='contained'
-          disabled={busy || !key}
-          onClick={() => key && onSubmit(key, clearance)}
+          disabled={busy || !key || !allAcknowledged}
+          onClick={() => key && onSubmit(key, clearanceFor(guards))}
         >
           Remove guard
         </Button>
@@ -855,15 +1051,109 @@ const RemoveGuardDialog = ({
   );
 };
 
+/**
+ * Makes a guard the selected fields hold at their own path inherited, so clones and downstream
+ * Units receive it, or local, so it stays with this Unit and downstream Units drop it. Either
+ * changes the guard's policy at the path, so it is cleared for the guards there.
+ */
+const GuardInheritanceDialog = ({
+  open,
+  inherited,
+  busy,
+  fields,
+  annotations,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  inherited: boolean;
+  busy: boolean;
+  fields: readonly BlameField[];
+  annotations: PathAnnotationList | undefined;
+  onClose: () => void;
+  onSubmit: (key: string, inherited: boolean, clearance?: Clearance) => void;
+}) => {
+  const keys = useMemo(
+    () => guardInheritanceKeys(fields, annotations, inherited),
+    [fields, annotations, inherited],
+  );
+  const [key, setKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (open) setKey(keys.length === 1 ? keys[0] : null);
+    // The key is chosen afresh each time the dialog opens, not each time the Unit is read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  const guards = useMemo(
+    () =>
+      key === null
+        ? []
+        : guardEditGuardsToClear(
+            fields.filter((field) => ownGuards(annotations, field) !== undefined),
+            annotations,
+            (own) => own.guards[key] !== undefined && own.inherited.has(key) !== inherited,
+          ),
+    [fields, annotations, key, inherited],
+  );
+  const {
+    acknowledged,
+    toggle,
+    all: allAcknowledged,
+  } = useGuardAcknowledgements(guards, open);
+  const action = inherited ? 'Make inherited' : 'Make local';
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth='sm'>
+      <DialogTitle>{action}</DialogTitle>
+      <DialogContent>
+        <Typography variant='body2' color='text.secondary' sx={{ mb: 2 }}>
+          {inherited
+            ? 'Clones of this Unit and Units downstream of it receive the guard.'
+            : 'The guard stays with this Unit. Units downstream drop it at their next merge.'}
+        </Typography>
+        <Stack spacing={2}>
+          <Autocomplete
+            options={keys}
+            value={key}
+            onChange={(_, v) => setKey(v)}
+            renderInput={(params) => <TextField {...params} size='small' label='Key' />}
+          />
+          <GuardAcknowledgements
+            guards={guards}
+            acknowledged={acknowledged}
+            onToggle={toggle}
+            intro='The selected paths are guarded.'
+            confirm='Confirm you understand why each guard is there to change the guards at these paths.'
+          />
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button
+          variant='contained'
+          disabled={busy || !key || !keys.includes(key) || !allAcknowledged}
+          onClick={() => key && onSubmit(key, inherited, clearanceFor(guards))}
+        >
+          {action}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
+/**
+ * Applying writes what the merge withheld. Where the fields it writes are guarded, each guard has
+ * to be acknowledged: the apply is cleared for exactly those guards, which the Mutation records.
+ */
 const ApplyConflictsDialog = ({
   open,
   busy,
+  guards,
   onClose,
   preview,
   onSubmit,
 }: {
   open: boolean;
   busy: boolean;
+  guards: WithheldGuard[];
   onClose: () => void;
   preview: () => Promise<ConfigDiff | undefined>;
   onSubmit: () => void;
@@ -871,6 +1161,11 @@ const ApplyConflictsDialog = ({
   const [diff, setDiff] = useState<ConfigDiff | undefined>(undefined);
   const [previewError, setPreviewError] = useState('');
   const [loading, setLoading] = useState(false);
+  const {
+    acknowledged,
+    toggle,
+    all: allAcknowledged,
+  } = useGuardAcknowledgements(guards, open);
   useEffect(() => {
     if (!open) {
       setDiff(undefined);
@@ -892,6 +1187,14 @@ const ApplyConflictsDialog = ({
       <DialogTitle>Apply withheld upstream changes</DialogTitle>
       <DialogContent>
         <ErrorBox error={previewError} onClose={() => setPreviewError('')} />
+        <Box sx={{ mb: guards.length > 0 ? 2 : 0 }} data-testid='apply-conflicts-guards'>
+          <GuardAcknowledgements
+            guards={guards}
+            acknowledged={acknowledged}
+            onToggle={toggle}
+            intro='These changes write guarded fields.'
+          />
+        </Box>
         {loading && <Typography variant='body2'>Previewing…</Typography>}
         {!loading &&
           diff &&
@@ -907,7 +1210,7 @@ const ApplyConflictsDialog = ({
         <Button onClick={onClose}>Cancel</Button>
         <Button
           variant='contained'
-          disabled={busy || loading || previewError !== ''}
+          disabled={busy || loading || previewError !== '' || !allAcknowledged}
           onClick={onSubmit}
         >
           Apply
@@ -1052,16 +1355,35 @@ const SetValueDialog = ({
   busy: boolean;
   field?: BlameField;
   onClose: () => void;
-  onSubmit: (value: string, description: string, keep: boolean) => void;
+  onSubmit: (
+    value: string,
+    description: string,
+    keep: boolean,
+    guardValues: GuardValues,
+    clearance?: Clearance,
+  ) => void;
 }) => {
+  // Setting the value writes the field, so it is cleared for every guard on it. There is no
+  // partial write to offer: without them all the value is withheld.
+  const guards = useMemo(
+    () => Object.entries(field?.Guards ?? {}).map(([Key, Value]) => ({ Key, Value })),
+    [field?.Guards],
+  );
+  const {
+    acknowledged,
+    toggle,
+    all: allAcknowledged,
+  } = useGuardAcknowledgements(guards, open);
   const [value, setValue] = useState('');
   const [description, setDescription] = useState('');
   const [keep, setKeep] = useState(false);
+  const [guardValues, setGuardValues] = useState<GuardValues>(NO_GUARD_VALUES);
   useEffect(() => {
     if (open) {
       setValue((field?.Value ?? '').trim());
       setDescription('');
       setKeep(false);
+      setGuardValues(NO_GUARD_VALUES);
     }
   }, [open, field?.Value]);
   return (
@@ -1091,14 +1413,33 @@ const SetValueDialog = ({
             control={<Checkbox checked={keep} onChange={(e) => setKeep(e.target.checked)} />}
             label='Keep on merge'
           />
+          <GuardValuesSection values={guardValues} onChange={setGuardValues} />
+          <GuardAcknowledgements
+            guards={guards}
+            acknowledged={acknowledged}
+            onToggle={toggle}
+            intro='This field is guarded.'
+          />
         </Stack>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
         <Button
           variant='contained'
-          disabled={busy || value === ''}
-          onClick={() => onSubmit(value, description, keep)}
+          disabled={
+            busy || value === '' || !allAcknowledged || !guardValuesComplete(guardValues)
+          }
+          // Cleared for the field's guards, and for the guard it records, which the server
+          // refuses to record for a write not cleared for it.
+          onClick={() =>
+            onSubmit(
+              value,
+              description,
+              keep,
+              guardValues,
+              clearanceRecording(clearanceFor(guards), guardValues),
+            )
+          }
         >
           Set value
         </Button>

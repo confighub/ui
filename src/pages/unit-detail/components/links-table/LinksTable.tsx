@@ -2,33 +2,18 @@
 // SPDX-License-Identifier: MIT
 import { useMemo, useState } from 'react';
 
-import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
 import { DATE_TIME_GRID_SLOTS, DateTimeCell } from '@/components/data-grid/cells';
-import { ErrorBox } from '@/components/error-box/ErrorBox';
 import { NavLink } from '@/components/nav-link/NavLink';
 import { CenteredTableCell, StripedDataGrid } from '@/components/styled';
 import { DataGridToolbar } from '@/components/unit-data-grid/components/DataGridToolbar';
 import { useGridPersistence } from '@/components/unit-data-grid/hooks/useGridPersistence';
-import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
-import {
-  ExtendedLinkRead,
-  Link,
-  LinkRead,
-  Space,
-  Unit,
-  UnitRead,
-  useDeleteLinkMutation,
-} from '@confighub/rtk-query';
+import { ExtendedLinkRead, Space, Unit } from '@confighub/rtk-query';
 import { CmpProps } from '@/types';
 import { isGoZeroTime } from '@/utility/datetime-utils';
-import DeleteIcon from '@mui/icons-material/Delete';
-import ModeEditIcon from '@mui/icons-material/ModeEdit';
-import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import { GridColDef } from '@mui/x-data-grid';
+import { GridColDef, GridRowSelectionModel } from '@mui/x-data-grid';
 
-import { LinkDetailsDrawer } from '../link-details-drawer/LinkDetailsDrawer';
-import { UpdateLinksModal } from '../update-links-modal/UpdateLinksModal';
+import { LinkDrawer } from '../link-drawer/LinkDrawer';
 
 /**
  * LinkRow represents a single row in the links table, combining link data with a unique ID
@@ -36,7 +21,7 @@ import { UpdateLinksModal } from '../update-links-modal/UpdateLinksModal';
 export type LinkRow = { id: string } & ExtendedLinkRead;
 
 // Define all possible column fields for type safety
-type LinkColumnFields = 'slug' | 'from' | 'fromSpace' | 'to' | 'toSpace' | 'updateType' | 'autoUpdate' | 'stale' | 'useLiveState' | 'whereMutation' | 'whereResource' | 'upstreamLastMergedRev' | 'downstreamLastMergedRev' | 'hiddenReason' | 'createdAt' | 'updatedAt' | 'actions';
+type LinkColumnFields = 'slug' | 'from' | 'fromSpace' | 'to' | 'toSpace' | 'updateType' | 'autoUpdate' | 'stale' | 'useLiveState' | 'whereMutation' | 'whereResource' | 'upstreamLastMergedRev' | 'downstreamLastMergedRev' | 'hiddenReason' | 'createdAt' | 'updatedAt';
 
 // Create a type that requires all columns to be specified
 type LinkColumnVisibility = Record<LinkColumnFields, boolean>;
@@ -44,13 +29,17 @@ type LinkColumnVisibility = Record<LinkColumnFields, boolean>;
 export interface LinksTableProps extends CmpProps {
   rows: Array<LinkRow> | undefined;
   onLinkAction?: () => void;
+  /** The LinkIDs checked in the table's first column, which the tab deletes. */
+  selectedRows?: string[];
+  onRowSelected?: (linkIds: string[]) => void;
 }
 
 /**
- * LinksTable displays a data grid of links between units with edit and delete operations.
+ * LinksTable displays a data grid of links between units. A Link's name opens its drawer, which
+ * shows and edits it; the checked rows are what the tab's Delete deletes.
  */
 export const LinksTable = (props: LinksTableProps) => {
-  const { rows = [], onLinkAction } = props;
+  const { rows = [], onLinkAction, selectedRows = [], onRowSelected } = props;
   const {
     handleColumnResize,
     applyStoredWidths,
@@ -83,39 +72,11 @@ export const LinksTable = (props: LinksTableProps) => {
       hiddenReason: false,
       createdAt: false,
       updatedAt: false,
-      actions: true,
     } satisfies LinkColumnVisibility,
   });
 
-  const [isLinkDeleteConfirmationOpen, setIsLinkDeleteConfirmationOpen] = useState(false);
-  const [selectedLinkID, setSelectedLinkID] = useState<string>('');
-  const [isUpdateLinksModalOpen, setIsUpdateLinksModalOpen] = useState(false);
-  const [editLinkFrom, setEditLinkFrom] = useState<UnitRead>({} as UnitRead);
-  const [editLinkTo, setEditLinkTo] = useState<UnitRead>({} as UnitRead);
-  const [editLink, setEditLink] = useState<LinkRead>({} as LinkRead);
-  const [errorMessage, setErrorMessage] = useState<string>('');
   const [detailsLinkID, setDetailsLinkID] = useState<string>('');
-
-  const [deleteLink, { isSuccess: isDeleteSuccess, error: deleteError }] =
-    useDeleteLinkMutation();
-
-  const selectedLink: Link =
-    rows.find((link) => link.id === selectedLinkID)?.Link || ({} as Link);
-
-  useApiErrorMessage(deleteError, isDeleteSuccess, setErrorMessage);
-
-  const onLinkDelete = async () => {
-    const response = await deleteLink({
-      spaceId: selectedLink.SpaceID || '',
-      linkId: selectedLink.LinkID || '',
-    });
-
-    setIsLinkDeleteConfirmationOpen(false);
-
-    if ('data' in response) {
-      onLinkAction?.();
-    }
-  };
+  const detailsLink = rows.find((link) => link.id === detailsLinkID);
 
   // Memoize base columns definition
   const baseColumns: GridColDef<LinkRow>[] = useMemo(() => [
@@ -359,42 +320,7 @@ export const LinksTable = (props: LinksTableProps) => {
       },
       renderCell: (params) => <DateTimeCell params={params} />,
     },
-    {
-      field: 'actions',
-      headerName: 'Actions',
-      minWidth: 100,
-      flex: 0.5,
-      renderCell: (params) => {
-        const fromUnit = params.row.FromUnit || ({} as UnitRead);
-        const toUnit = params.row.ToUnit || ({} as UnitRead);
-
-        return (
-          <CenteredTableCell>
-            <Stack direction='row' spacing={1}>
-              <DeleteIcon
-                sx={{ cursor: 'pointer' }}
-                color='error'
-                onClick={() => {
-                  setSelectedLinkID(params.row.id);
-                  setIsLinkDeleteConfirmationOpen(true);
-                }}
-              />
-              <ModeEditIcon
-                sx={{ cursor: 'pointer' }}
-                color='secondary'
-                onClick={() => {
-                  setEditLinkFrom(fromUnit);
-                  setEditLinkTo(toUnit);
-                  setEditLink(params.row.Link || ({} as LinkRead));
-                  setIsUpdateLinksModalOpen(true);
-                }}
-              />
-            </Stack>
-          </CenteredTableCell>
-        );
-      },
-    },
-  ], [setSelectedLinkID, setIsLinkDeleteConfirmationOpen, setEditLinkFrom, setEditLinkTo, setEditLink, setIsUpdateLinksModalOpen, setDetailsLinkID]);
+  ], [setDetailsLinkID]);
 
   // Apply stored widths to columns
   const columns = useMemo(
@@ -408,11 +334,6 @@ export const LinksTable = (props: LinksTableProps) => {
 
   return (
     <>
-      <ErrorBox
-        error={errorMessage}
-        sx={{ mt: 1, mb: 1 }}
-        onClose={() => setErrorMessage('')}
-      />
       <StripedDataGrid
         rows={[...rows]}
         // @ts-expect-error I don't know
@@ -436,30 +357,23 @@ export const LinksTable = (props: LinksTableProps) => {
           },
         }}
         disableRowSelectionOnClick
-        checkboxSelection={false}
+        checkboxSelection={!!onRowSelected}
+        rowSelectionModel={selectedRows}
+        // The grid's model is the row IDs, which are LinkIDs.
+        onRowSelectionModelChange={(model: GridRowSelectionModel) => onRowSelected?.(model.map(String))}
         getRowClassName={(params) =>
           params.indexRelativeToCurrentPage % 2 === 0 ? 'even' : 'odd'
         }
         rowHeight={40}
       />
-      <ConfirmationModal
-        isOpen={isLinkDeleteConfirmationOpen}
-        onClose={() => setIsLinkDeleteConfirmationOpen(false)}
-        onSubmit={onLinkDelete}
-        modalDescriptionText={`Are you sure you want to delete ${selectedLink.Slug || 'the selected link'}?`}
-        modalTitleText='Delete Link'
-      />
-      <LinkDetailsDrawer
-        link={rows.find((link) => link.id === detailsLinkID)}
+      <LinkDrawer
+        subject={detailsLink ? { mode: 'edit', link: detailsLink } : undefined}
         onClose={() => setDetailsLinkID('')}
-      />
-      <UpdateLinksModal
-        isOpen={isUpdateLinksModalOpen}
-        onClose={() => setIsUpdateLinksModalOpen(false)}
-        fromUnit={editLinkFrom}
-        toUnit={editLinkTo}
-        link={editLink}
-        refresh={onLinkAction}
+        onSaved={() => {
+          setDetailsLinkID('');
+          onLinkAction?.();
+        }}
+        onChanged={onLinkAction}
       />
     </>
   );

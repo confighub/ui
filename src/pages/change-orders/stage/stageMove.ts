@@ -4,11 +4,13 @@
 /**
  * How the open step moves when it changes: where the move came from, and the rail's marker.
  *
- * The move after the reader's own Promote or Release takes them up to the promotion path and shows
- * the marker go from the old step to the new one, so that they see the stage change. A rail click
- * or the address (a link, Back) shows the marker move but does not scroll: the reader is already
- * where they look. A move nobody here asked for (another user's promote) scrolls nothing and moves
- * nothing: the rail and the step change in place.
+ * The page moves on by itself when the open stage's work is done (`changeOrderOpenStage.ts`): after
+ * Promote on a stage with no release Target, and after Release on a stage with one, because the next
+ * stage's entry gate needs it released. That move after the reader's own Promote or Release takes
+ * them up to the promotion path and shows the marker go from the old step to the new one, so that
+ * they see the stage change. A rail click or the address (a link, Back) shows the marker move but
+ * does not scroll: the reader is already where they look. A move nobody here asked for (another
+ * user's promote) scrolls nothing and moves nothing: the rail and the step change in place.
  */
 import {
   changeOrderAction,
@@ -17,6 +19,12 @@ import {
 } from '../changeOrdersTokens';
 
 export type StageMoveKind = 'own' | 'rail' | 'address' | 'other';
+
+/**
+ * How the page's address changed with the move: `same`, not at all; `reader`, a new address from a
+ * link or Back; `movedOn`, the bare address the page went to by itself after the reader's own action.
+ */
+export type AddressChange = 'same' | 'reader' | 'movedOn';
 
 /** The promotion path's node that is open now carries `aria-pressed="true"`. */
 export const RAIL_SELECTOR = '[data-testid="promotion-path"]';
@@ -56,24 +64,25 @@ export function watchActivations(): () => void {
 }
 
 /**
- * Where a move of the open step came from. `addressChanged`: the page's path is not what it was.
- * The reader's own action moves the page on its bare address, so a new address (a link, Back) is
- * never 'own'. Pure, as a render needs: the caller forgets the activation once the move is drawn.
+ * Where a move of the open step came from. The reader's own action moves the page on its bare
+ * address. When the address named the stage their action finished, the page goes to the bare address
+ * itself (`movedOn`), so that move can be 'own' too; a new address from the reader (a link, Back) never is.
+ * Pure, as a render needs: the caller forgets the activation once the move is drawn.
  */
-export function stageMoveKind(addressChanged: boolean, now = Date.now()): StageMoveKind {
+export function stageMoveKind(address: AddressChange, now = Date.now()): StageMoveKind {
   const last = lastActivation;
   if (last !== null) {
     if (now - last.at < RAIL_CLICK_MS && last.target.closest(RAIL_SELECTOR) !== null)
       return 'rail';
     // The control is gone by now (the card changed), so its place in the document is read from the event.
     if (
-      !addressChanged &&
+      address !== 'reader' &&
       now - last.at < OWN_ACTION_MS &&
       last.target.closest(ACTION_SELECTOR) !== null
     )
       return 'own';
   }
-  return addressChanged ? 'address' : 'other';
+  return address === 'same' ? 'other' : 'address';
 }
 
 /** An activation counts for one move only: a later move with no new input is nobody's. */

@@ -4,8 +4,11 @@
 /**
  * The open step (a stage, or Complete) changes with a visible move, rather than a jump.
  *
- * The page moves on by itself after a promote (to the next stage) and after the last release
- * (to Complete), and the reader moves it with the rail or the address. Only one step is ever
+ * The page moves on by itself when the open stage's work is done (`changeOrderOpenStage.ts`): after
+ * a promote when the stage has no release Target, and after its release when it has one, because
+ * the next stage's entry gate needs it released; after the last stage, to Complete. When the address
+ * names the stage, and the reader's own Promote or Release leaves it with no work left, the page
+ * goes to the bare address (`MOVED_ON_STATE`), and moves on in the same way. The reader moves it with the rail or the address. Only one step is ever
  * mounted, and the new one replaces the old at once: it slides in from the side of the path it
  * comes from, with what it has (the log's skeleton on a first read, until its reads answer), while
  * the box eases to its height. Nothing waits for anything. At the same time, after the reader's own
@@ -16,12 +19,15 @@
  * reader's own action, and the step changes in place.
  */
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 
+import { MOVED_ON_STATE } from './changeOrderAddress';
 import {
+  type AddressChange,
   RAIL_SELECTOR,
   RailMarker,
   type Rect,
@@ -76,6 +82,8 @@ export function StageSlide({
 }) {
   const theme = useTheme();
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const { state: navigationState } = useLocation();
+  const movedOn = (navigationState as Record<string, unknown> | null)?.[MOVED_ON_STATE] === true;
   const [shown, setShown] = useState<{ key: string; order: number; move: StageMoveKind; count: number }>({
     key: slideKey,
     order,
@@ -99,7 +107,9 @@ export function StageSlide({
     const dir = order >= shown.order ? 1 : -1;
     // The first step of a page load (nothing shown before) is drawn as it comes.
     const first = shown.key === '';
-    const move = first ? 'other' : stageMoveKind(window.location.pathname !== lastPath.current);
+    const address: AddressChange =
+      window.location.pathname === lastPath.current ? 'same' : movedOn ? 'movedOn' : 'reader';
+    const move = first ? 'other' : stageMoveKind(address);
     setShown({ key: slideKey, order, move, count: first ? 0 : shown.count + 1 });
     setPhase(first || reduced || move === 'other' ? { kind: 'still' } : { kind: 'start', from: lastHeight.current, dir });
   }

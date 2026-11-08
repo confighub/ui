@@ -39,6 +39,8 @@ export interface UseStageConfirmArgs {
   focusAfter: (target: OutcomeFocusTarget) => void;
   /** The stage being written, or `null`: its box keeps its state and its confirm says "Working…" meanwhile. */
   setRunning: (stageId: string | null) => void;
+  /** The reader's own Promote or Release of this stage succeeded, and the read after it has landed. */
+  onStageActed: (stageId: string) => void;
 }
 
 /** How long Confirm waits for the read that follows a write before it lets the box move on. */
@@ -81,7 +83,7 @@ function summaryOf(answer: StageDryRunAnswer, baseSpaceId: string | undefined): 
  * revisiting this first.
  */
 export function useStageConfirm(args: UseStageConfirmArgs) {
-  const { stageId, stageName, actions, dryRun, baseSpaceId, gatesBlock, failedGateCount, targets, releaseSpaceIds, failure, nameOfSpace, announce, focusAfter, setRunning } = args;
+  const { stageId, stageName, actions, dryRun, baseSpaceId, gatesBlock, failedGateCount, targets, releaseSpaceIds, failure, nameOfSpace, announce, focusAfter, setRunning, onStageActed } = args;
   const stageHasTargets = releaseSpaceIds.length > 0;
   /** The stage whose confirm found no dry-run answer: the confirm then asks for "anyway". */
   const [noDryRun, setNoDryRun] = useState<string | null>(null);
@@ -122,6 +124,7 @@ export function useStageConfirm(args: UseStageConfirmArgs) {
         focusAfter('heading');
         setRunning(null);
         announce(result.ok ? stageCardCopy.announce.released(stageName) : result.message);
+        if (result.ok) onStageActed(stageId);
         return true;
       }
       // The gate is enforced at the point of action as well as in what the box offers.
@@ -183,9 +186,10 @@ export function useStageConfirm(args: UseStageConfirmArgs) {
       // `promoteAnnouncement` reads `didNothing` first: "Nothing to promote" never becomes "Promoted".
       const said = promoteAnnouncement(stageId, result);
       announce(withRelease && result.ok ? `${said} ${stageCardCopy.announce.released(stageName)}` : said);
+      if (result.ok) onStageActed(stageId);
       return true;
     },
-    [stageId, stageName, announce, actions, releaseSpaceIds, gatesBlock, noDryRun, dryRun, baseSpaceId, failedGateCount, stageHasTargets, targets, failure, nameOfSpace, focusAfter, setRunning, settled, stopped],
+    [stageId, stageName, announce, actions, releaseSpaceIds, gatesBlock, noDryRun, dryRun, baseSpaceId, failedGateCount, stageHasTargets, targets, failure, nameOfSpace, focusAfter, setRunning, settled, stopped, onStageActed],
   );
   const onCancel = useCallback(() => {
     setNoDryRun(null);

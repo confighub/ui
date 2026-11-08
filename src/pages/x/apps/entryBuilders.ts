@@ -1,11 +1,12 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import type { ConfigDiff, ExtendedUnitRead, MutationConflict, UnitCreateOrUpdateResponseRead, UnitDiff } from '@confighub/rtk-query';
+import type { ConfigDiff, ExtendedUnitRead, MutationConflict, PathAnnotationList, UnitCreateOrUpdateResponseRead, UnitDiff } from '@confighub/rtk-query';
+import { guardText } from '@/utility/clearance-functions';
 
 import { changeEntriesOf } from './change-order/changeOrderChanges';
 import { parseUnitData, parseUnitDataStructured, type FieldEntry } from './configParser';
 import { addedResourceLeafRows, fieldDiffsFromConfigDiff, isWholeResourceChange, resolveConflictPath, type TreeSideOptions } from './configDiffFieldDiffs';
-import type { ApplyEntryWithGates, FieldDiff, KeyedFieldDiff, MergedUnit, UpgradeEntry, VariationEntry, WholeResourceChange } from './componentTypes';
+import type { ApplyEntryWithGates, FieldDiff, GuardedKey, KeyedFieldDiff, MergedUnit, UpgradeEntry, VariationEntry, WholeResourceChange } from './componentTypes';
 import { treeReadsDocuments } from './componentValues';
 
 // ============================================================================
@@ -85,17 +86,34 @@ export function fieldDiffKey(d: FieldDiff): string {
  * the two must never carry independent copies of this predicate (rule 4).
  */
 export function countUpgradableBadgeFields(unit: MergedUnit): number {
+  return countUpgradeFields(unit, true);
+}
+
+/**
+ * The changes "Select all" ticks: the upgradable ones but those a guard holds back, which
+ * only the person ticks, as choosing to clear a guard. So the button offers what it does.
+ */
+export function countSelectableUpgradeFields(unit: MergedUnit): number {
+  return countUpgradeFields(unit, false);
+}
+
+function countUpgradeFields(unit: MergedUnit, withGuarded: boolean): number {
   if (!unit.upgradeEntry) return 0;
   const overriddenKeys = new Set(unit.variationEntry?.fieldDiffs.map(fieldDiffKey) ?? []);
   // Includes upstream removals (newValue '-' or ''): a removed path is a real
   // upgrade change and is shown (struck-through) in the upgradable view.
   // Also counts blocked upstream deletions (swallowed by SubtractMutations) so
-  // the badge reflects those opt-in upgrades too. This is the SAME key set
-  // "Select all" stages, so the count matches what gets staged.
+  // the badge reflects those opt-in upgrades too, and the changes a guard holds
+  // back, which land once cleared. The same keys as the Incoming filter; "Select
+  // all" takes these but the guarded ones, which need a clearance to land.
+  const guardedKeys = (unit.upgradeEntry.guardedKeys ?? []).map((guarded) => guarded.key);
   const keys = [
-    ...unit.upgradeEntry.fieldDiffs.map(fieldDiffKey).filter((key) => !overriddenKeys.has(key)),
-    ...(unit.upgradeEntry.blockedDeleteKeys ?? []),
-  ];
+    ...new Set([
+      ...unit.upgradeEntry.fieldDiffs.map(fieldDiffKey).filter((key) => !overriddenKeys.has(key)),
+      ...(unit.upgradeEntry.blockedDeleteKeys ?? []),
+      ...(withGuarded ? guardedKeys : []),
+    ]),
+  ].filter((key) => withGuarded || !guardedKeys.includes(key));
   return countLogicalChanges(keys) + availableWholeResourceChanges(unit.upgradeEntry).length;
 }
 
@@ -459,6 +477,61 @@ export function blockedDeleteKey(conflict: Pick<MutationConflict, 'Resource' | '
 }
 
 /**
+ * The rows whose upstream change a guard held back in a dry run, each with the guards and
+ * whether they are inherited. A conflict about a resource as a whole, or one whose path names
+ * no row, is left out: there is no row to offer it on.
+ */
+export function guardedKeysOf(
+  conflicts: readonly MutationConflict[] | undefined,
+  currentData: string,
+  annotations: PathAnnotationList | null | undefined,
+): GuardedKey[] {
+  const byKey = new Map<string, GuardedKey>();
+  for (const conflict of conflicts ?? []) {
+    if (conflict.Reason !== 'Guarded' || !conflict.Path) continue;
+    const key = resolveConflictPath(conflict, currentData);
+    if (key === undefined) continue;
+    const guards = conflict.Guards ?? (conflict.Guard ? [conflict.Guard] : []);
+    if (guards.length === 0) continue;
+    byKey.set(key, {
+      key,
+      guards: guards.map(guardText),
+      inherited: guards.every((guard) => guardInheritedAt(annotations, conflict, guard.Key ?? '')),
+    });
+  }
+  return [...byKey.values()];
+}
+
+/**
+ * Whether a guard is inherited where it guards the conflict's path: at the path itself, an
+ * ancestor of it, or the resource. The resource is matched by type, and by name with or without
+ * its namespace, as a conflict may name it either way.
+ */
+function guardInheritedAt(
+  annotations: PathAnnotationList | null | undefined,
+  conflict: MutationConflict,
+  guardKey: string,
+): boolean {
+  const name = conflict.Resource?.ResourceName ?? '';
+  const withoutScope = name.includes('/') ? name.slice(name.indexOf('/') + 1) : name;
+  const entry = (annotations ?? []).find(
+    (candidate) =>
+      candidate.Resource?.ResourceType === conflict.Resource?.ResourceType &&
+      (candidate.Resource?.ResourceName === name ||
+        candidate.Resource?.ResourceNameWithoutScope === withoutScope),
+  );
+  if (!entry) return false;
+  const holds = (at: Record<string, Record<string, string>> | undefined) =>
+    at?.Guard?.[guardKey] !== undefined ? at?.GuardInherited?.[guardKey] !== undefined : undefined;
+  const segments = (conflict.Path ?? '').split('.');
+  for (let length = segments.length; length > 0; length--) {
+    const found = holds(entry.PathAnnotationMap?.[segments.slice(0, length).join('.')]);
+    if (found !== undefined) return found;
+  }
+  return holds(entry.ResourceAnnotations) ?? false;
+}
+
+/**
  * Build the list of upgrade entries for deployments that have active upgrades.
  * Uses revision numbers to determine upgradeability (matches backend behavior).
  *
@@ -528,6 +601,7 @@ export function buildUpgradeEntries(
           .map((c) => blockedDeleteKey(c, currentData)));
         if (blocked.size > 0) blockedDeleteKeys = [...blocked];
       }
+      const guardedKeys = guardedKeysOf(unitConflicts, currentData, u.Unit?.PathAnnotations);
 
       entries.push({
         unitId,
@@ -545,6 +619,7 @@ export function buildUpgradeEntries(
         upstreamCreatedAt: upstream.HeadRevision?.CreatedAt,
         upstreamDescription: upstream.HeadRevision?.Description ?? undefined,
         blockedDeleteKeys,
+        guardedKeys: guardedKeys.length > 0 ? guardedKeys : undefined,
       });
     }
   }

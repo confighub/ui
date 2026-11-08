@@ -1,7 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Control, Controller, FieldErrors, useFieldArray, useForm, useWatch } from 'react-hook-form';
+import { Control, Controller, FieldErrors, useForm } from 'react-hook-form';
 
 import { BackingUnitHeaderField } from '@/components/backing-unit/BackingUnitHeaderField';
 import {
@@ -9,11 +9,12 @@ import {
   NO_BACKING_UNIT,
 } from '@/components/backing-unit/backingUnitChoice';
 import { backingUnitFailureMessage, enableBackingUnit } from '@/components/backing-unit/enableBackingUnit';
+import { ClearanceFieldSection } from '@/components/clearance-field/ClearanceFieldSection';
 import { CopyToClipboard } from '@/components/copy-to-clipboard/CopyToClipboard';
 import { EntityRefSelect, type EntityRefOption } from '@/components/entity-ref-select/EntityRefSelect';
 import {
   useFilterRefOptions,
-  useTriggerInvocationRefOptions,
+  useParameterlessInvocationRefOptions,
 } from '@/components/entity-ref-select/useEntityRefOptions';
 import { DEFAULT_TOOLCHAIN_TYPES } from '@/components/query-builder';
 import { ErrorList } from '@/components/error-list/ErrorList';
@@ -24,7 +25,7 @@ import {
   type SimpleFunctionOption,
 } from '@/components/simple-function-picker/SimpleFunctionPicker';
 import { FixedSubmitContainer, SectionCard } from '@/components/styled';
-import { CLEARANCE_OPERATORS, defaultTriggerFormInput } from '@/hooks/triggerFormBody';
+import { defaultTriggerFormInput } from '@/hooks/triggerFormBody';
 import { IAddTriggerFormInput, useAddTrigger } from '@/hooks/useAddTrigger';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
 import { useAppDispatch } from '@/hooks/useApp';
@@ -41,9 +42,7 @@ import {
   useListFunctionsQuery,
 } from '@confighub/rtk-query';
 import { SLUG_PATTERN, SLUG_PATTERN_MESSAGE } from '@confighub/api';
-import Add from '@mui/icons-material/Add';
 import ArrowBack from '@mui/icons-material/ArrowBack';
-import DeleteOutline from '@mui/icons-material/DeleteOutline';
 import CheckCircle from '@mui/icons-material/CheckCircle';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
@@ -57,7 +56,6 @@ import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import FormHelperText from '@mui/material/FormHelperText';
 import Grid from '@mui/material/Grid2';
-import IconButton from '@mui/material/IconButton';
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
 import OutlinedInput from '@mui/material/OutlinedInput';
@@ -69,6 +67,8 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+
+import { TriggerDocumentDialog } from './TriggerDocumentDialog';
 
 // Types
 export interface AddTriggerDrawerProps {
@@ -635,8 +635,6 @@ const WritesCard = ({
   control: Control<IAddTriggerFormInput>;
   validating: boolean;
 }) => {
-  const { fields, append, remove } = useFieldArray({ control, name: 'Clearance' });
-  const clearance = useWatch({ control, name: 'Clearance' });
   return (
     <SectionCard title='Writes'>
       <Stack spacing={2}>
@@ -675,72 +673,12 @@ const WritesCard = ({
           disabled={validating}
           testId='trigger-guards'
         />
-        <Box>
-          <Typography variant='subtitle2' sx={{ fontWeight: 600 }}>
-            Clearance
-          </Typography>
-          <Typography variant='body2' color='text.secondary' sx={{ mb: 1 }}>
-            The guards the function may write over. A path whose guards it is not cleared for is
-            left as it is, and the change it would have made is recorded as a conflict.
-          </Typography>
-          <Stack spacing={1}>
-            {fields.map((row, index) => (
-              <Stack key={row.id} direction='row' spacing={1} alignItems='flex-start'>
-                <Controller
-                  name={`Clearance.${index}.Key`}
-                  control={control}
-                  render={({ field }) => (
-                    <TextField {...field} label='Guard key' size='small' sx={{ flex: 1 }} />
-                  )}
-                />
-                <Controller
-                  name={`Clearance.${index}.Operator`}
-                  control={control}
-                  render={({ field }) => (
-                    <FormControl size='small' sx={{ minWidth: 150 }}>
-                      <InputLabel>Operator</InputLabel>
-                      <Select {...field} label='Operator' input={<OutlinedInput label='Operator' />}>
-                        {CLEARANCE_OPERATORS.map((operator) => (
-                          <MenuItem key={operator} value={operator}>
-                            {operator}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  )}
-                />
-                <Controller
-                  name={`Clearance.${index}.Values`}
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label='Values'
-                      size='small'
-                      placeholder='a, b'
-                      disabled={!['In', 'NotIn'].includes(clearance?.[index]?.Operator ?? '')}
-                      helperText='For In and NotIn, comma-separated'
-                      sx={{ flex: 1 }}
-                    />
-                  )}
-                />
-                <IconButton aria-label={`Remove clearance ${index + 1}`} onClick={() => remove(index)}>
-                  <DeleteOutline fontSize='small' />
-                </IconButton>
-              </Stack>
-            ))}
-            <Box>
-              <Button
-                size='small'
-                startIcon={<Add />}
-                onClick={() => append({ Key: '', Operator: 'Exists', Values: '' })}
-                data-testid='trigger-clearance-add'
-              >
-                Add clearance
-              </Button>
-            </Box>
-          </Stack>
-        </Box>
+        <ClearanceFieldSection
+          control={control}
+          name='Clearance'
+          description='The guards the function may write over. A path whose guards it is not cleared for is left as it is, and the change it would have made is recorded as a conflict.'
+          testId='trigger-clearance'
+        />
       </Stack>
     </SectionCard>
   );
@@ -762,6 +700,7 @@ export const AddTriggerDrawer = ({
   existingTrigger,
 }: AddTriggerDrawerProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingDocument, setEditingDocument] = useState(false);
   const isEditMode = !!existingTrigger;
   const dispatch = useAppDispatch();
   const [backingUnit, setBackingUnit] = useState<BackingUnitChoice>(NO_BACKING_UNIT);
@@ -809,7 +748,7 @@ export const AddTriggerDrawer = ({
   const watchedChannelId = watch('ChannelID');
   const runsInvocation = watch('Source') === 'Invocation';
 
-  const { options: invocationOptions, isFetching: invocationsLoading } = useTriggerInvocationRefOptions(
+  const { options: invocationOptions, isFetching: invocationsLoading } = useParameterlessInvocationRefOptions(
     watchedToolchainType,
     !isOpen || !runsInvocation,
   );
@@ -1085,7 +1024,18 @@ export const AddTriggerDrawer = ({
         </Box>
 
         {/* Fixed Submit Button */}
-        <FixedSubmitContainer>
+        <FixedSubmitContainer sx={{ display: 'flex', gap: 2 }}>
+          {isEditMode && (
+            // A save as YAML reloads the Trigger, which resets the form to what was saved.
+            <Button
+              onClick={() => setEditingDocument(true)}
+              disabled={isSubmitting}
+              sx={{ flexShrink: 0 }}
+              data-testid='trigger-edit-yaml'
+            >
+              Edit as YAML
+            </Button>
+          )}
           <Button
             variant='contained'
             fullWidth
@@ -1105,6 +1055,9 @@ export const AddTriggerDrawer = ({
           </Button>
         </FixedSubmitContainer>
       </Box>
+      {editingDocument && existingTrigger && (
+        <TriggerDocumentDialog trigger={existingTrigger} onClose={() => setEditingDocument(false)} />
+      )}
     </Drawer>
   );
 };

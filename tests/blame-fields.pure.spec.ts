@@ -3,7 +3,7 @@
 //
 // blameFields turns a Unit's blame into the Blame tab's rows and builds the requests its actions
 // send for the fields selected.
-import type { BlameField } from '@confighub/rtk-query';
+import type { BlameField, PathAnnotationList } from '@confighub/rtk-query';
 import { expect, test } from '@playwright/test';
 
 import {
@@ -13,12 +13,18 @@ import {
   blameFlagMeta,
   blameRows,
   conflictDismissalText,
+  conflictGuardsToClear,
   conflictSelectors,
   filterBlameRows,
+  guardEditGuardsToClear,
+  guardInheritanceKeys,
+  guardInheritanceRequest,
   guardKeys,
   guardRemoveRequest,
+  guardSetChanges,
   guardSetRequest,
   originUnitLabel,
+  ownGuards,
   permanentDismissalSelectors,
   protectionRequest,
   setInThisUnit,
@@ -35,6 +41,7 @@ import {
   unitOverviewHref,
   unitRevisionHref,
 } from '../src/pages/unit-detail/unitDetailHrefs';
+import { clearanceCovering } from '../src/utility/clearance-functions';
 
 const DEPLOYMENT = 'apps/v1/Deployment';
 
@@ -269,6 +276,102 @@ test('a guard is set on each selected path, and removed only where the field hol
   expect(guardKeys([replicas, namespace])).toEqual(['owner']);
 });
 
+test('an inherited guard is set through SetInherited', () => {
+  expect(guardSetRequest([replicas], 'RunAsRoot', 'LegacyImage', true)).toEqual([
+    {
+      Resource: { ResourceType: DEPLOYMENT, ResourceName: 'confighubplaceholder/web' },
+      SetInherited: { 'spec.replicas': { RunAsRoot: 'LegacyImage' } },
+    },
+  ]);
+});
+
+// The guards on the Deployment: one on the resource as a whole, one on spec.replicas, inherited,
+// and one on metadata.namespace. BlameField.Guards on namespace merges its own and the resource's.
+const guardedDeployment: PathAnnotationList = [
+  {
+    Resource: { ResourceType: DEPLOYMENT, ResourceName: 'confighubplaceholder/web' },
+    ResourceAnnotations: { Guard: { Team: 'Web' } },
+    PathAnnotationMap: {
+      'spec.replicas': {
+        Guard: { Scale: 'RegionSpecific' },
+        GuardInherited: { Scale: '' },
+      },
+      'metadata.namespace': { Guard: { owner: 'platform' } },
+    },
+  },
+];
+const guardedNamespace: BlameField = {
+  ...namespace,
+  Guards: { owner: 'platform', Team: 'Web' },
+};
+const guardedReplicas: BlameField = {
+  ...replicas,
+  Guards: { Scale: 'RegionSpecific', Team: 'Web' },
+  InheritedGuards: ['Scale'],
+};
+
+test("a field's own guards are those at its path, not its ancestors' or its resource's", () => {
+  expect(ownGuards(guardedDeployment, guardedNamespace)).toEqual({
+    guards: { owner: 'platform' },
+    inherited: new Set(),
+  });
+  expect(ownGuards(guardedDeployment, guardedReplicas)).toEqual({
+    guards: { Scale: 'RegionSpecific' },
+    inherited: new Set(['Scale']),
+  });
+  expect(ownGuards(guardedDeployment, deployment)?.guards).toEqual({ Team: 'Web' });
+  // Not known until the Unit is read, or for guards on a resource the page cannot find.
+  expect(ownGuards(undefined, guardedNamespace)).toBeUndefined();
+  expect(ownGuards([], guardedNamespace)).toBeUndefined();
+  expect(ownGuards([], service)).toEqual({ guards: {}, inherited: new Set() });
+});
+
+test('a guard edit is cleared for the guards at each path it changes, and only those', () => {
+  const set = (key: string, value: string, inherited: boolean) =>
+    guardEditGuardsToClear(
+      [guardedNamespace, guardedReplicas, service],
+      guardedDeployment,
+      guardSetChanges(key, value, inherited),
+    );
+  expect(set('RunAsRoot', 'LegacyImage', false)).toEqual([
+    { Key: 'Scale', Value: 'RegionSpecific' },
+    { Key: 'owner', Value: 'platform' },
+  ]);
+  // Re-setting a guard as it is changes nothing at that path.
+  expect(set('Scale', 'RegionSpecific', true)).toEqual([{ Key: 'owner', Value: 'platform' }]);
+  // Where the own guards are not known, every guard on the field, which is never too narrow.
+  expect(
+    guardEditGuardsToClear([guardedNamespace], undefined, guardSetChanges('a', 'b', false)),
+  ).toEqual([
+    { Key: 'Team', Value: 'Web' },
+    { Key: 'owner', Value: 'platform' },
+  ]);
+});
+
+test('a guard is made inherited or local only where the field holds it', () => {
+  const fields = [guardedNamespace, guardedReplicas];
+  expect(guardInheritanceKeys(fields, guardedDeployment, true)).toEqual(['owner']);
+  expect(guardInheritanceKeys(fields, guardedDeployment, false)).toEqual(['Scale']);
+  // Team is the resource's, so the field's row does not change it.
+  expect(guardInheritanceKeys([guardedNamespace], guardedDeployment, false)).toEqual([]);
+  expect(guardInheritanceKeys(fields, undefined, true)).toEqual([]);
+  expect(blameActionApplies.makeInherited([guardedReplicas], guardedDeployment)).toBe(false);
+  expect(blameActionApplies.makeLocal([guardedReplicas], guardedDeployment)).toBe(true);
+
+  expect(guardInheritanceRequest(fields, guardedDeployment, 'owner', true)).toEqual([
+    {
+      Resource: { ResourceType: DEPLOYMENT, ResourceName: 'confighubplaceholder/web' },
+      SetInherited: { 'metadata.namespace': { owner: 'platform' } },
+    },
+  ]);
+  expect(guardInheritanceRequest(fields, guardedDeployment, 'Scale', false)).toEqual([
+    {
+      Resource: { ResourceType: DEPLOYMENT, ResourceName: 'confighubplaceholder/web' },
+      Set: { 'spec.replicas': { Scale: 'RegionSpecific' } },
+    },
+  ]);
+});
+
 test('conflicts are selected by resource type, name and path, once each', () => {
   expect(conflictSelectors([replicas, replicas, namespace])).toEqual([
     {
@@ -345,6 +448,84 @@ test('a permanent dismissal names the reason, and a guarded conflict every guard
     ],
   };
   expect(permanentDismissalSelectors([legacy])[0].Guards).toEqual(['owner=platform']);
+});
+
+test('applying conflicts is cleared for the guards on their fields and the guards that withheld them', () => {
+  const guarded: BlameField = {
+    ...replicas,
+    Conflicts: [
+      {
+        Reason: 'Guarded',
+        Path: 'spec.replicas',
+        Guard: { Key: 'Scale', Value: 'RegionSpecific' },
+        Guards: [
+          { Key: 'Scale', Value: 'RegionSpecific' },
+          { Key: 'reviewed', Value: '' },
+        ],
+      },
+      // A conflict no guard caused needs no clearance, whatever it carries.
+      {
+        Reason: 'ProtectedPath',
+        Path: 'spec.replicas',
+        Guard: { Key: 'ignored', Value: 'x' },
+      },
+    ],
+  };
+  const withheldGuardChange: BlameField = {
+    ...namespace,
+    Conflicts: [
+      {
+        Reason: 'GuardWithheld',
+        Path: 'metadata.namespace',
+        Guards: [
+          { Key: 'Scale', Value: 'Zonal' },
+          { Key: 'Scale', Value: 'RegionSpecific' },
+        ],
+      },
+    ],
+  };
+  const guards = conflictGuardsToClear([guarded, withheldGuardChange, service]);
+  // The guards the conflicts name, and the field's own (namespace's owner=platform).
+  expect(guards).toEqual([
+    { Key: 'Scale', Value: 'RegionSpecific' },
+    { Key: 'Scale', Value: 'Zonal' },
+    { Key: 'owner', Value: 'platform' },
+    { Key: 'reviewed', Value: '' },
+  ]);
+  // One requirement per key, naming the values acknowledged and no others.
+  expect(clearanceCovering(guards)).toEqual([
+    { Key: 'Scale', Operator: 'In', Values: ['RegionSpecific', 'Zonal'] },
+    { Key: 'owner', Operator: 'In', Values: ['platform'] },
+    { Key: 'reviewed', Operator: 'Exists' },
+  ]);
+  expect(conflictGuardsToClear([replicas, service])).toEqual([]);
+  expect(clearanceCovering([])).toEqual([]);
+
+  // A merge cleared for one of a field's guards names only the other, but applying is checked
+  // against both, so the apply is cleared for every guard on the field.
+  const partlyCleared: BlameField = {
+    ...replicas,
+    Guards: { owner: 'local', Scale: 'Zonal' },
+    Conflicts: [
+      {
+        Reason: 'Guarded',
+        Path: 'spec.replicas',
+        Guard: { Key: 'Scale', Value: 'Zonal' },
+        Guards: [{ Key: 'Scale', Value: 'Zonal' }],
+      },
+    ],
+  };
+  expect(clearanceCovering(conflictGuardsToClear([partlyCleared]))).toEqual([
+    { Key: 'Scale', Operator: 'In', Values: ['Zonal'] },
+    { Key: 'owner', Operator: 'In', Values: ['local'] },
+  ]);
+  // So is a conflict no guard caused, on a guarded field: applying it writes the field.
+  const protectedAndGuarded: BlameField = { ...replicas, Guards: { owner: 'local' } };
+  expect(conflictGuardsToClear([protectedAndGuarded])).toEqual([
+    { Key: 'owner', Value: 'local' },
+  ]);
+  // A guarded field with no conflict is not applied, so needs nothing.
+  expect(conflictGuardsToClear([namespace])).toEqual([]);
 });
 
 test('a recorded dismissal reads as what it dismisses and where it is recorded', () => {

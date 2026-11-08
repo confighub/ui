@@ -281,6 +281,13 @@ export type StagedCommitPayload =
   | { kind: 'patch-data'; data: string };
 
 /**
+ * How a commit went: false when nothing was written. Written, it can come back with the stage
+ * keys of the rows guards withheld, which the person chose to upgrade without; those rows are
+ * not marked done, since the Unit keeps what it held there.
+ */
+export type StagedCommitResult = boolean | { withheldKeys: string[] };
+
+/**
  * Sentinel value stored in `stagedEditedValues` to mark a STAGED manual DELETE
  * of a key (the "remove key" flow deferred until commit). Distinguished from a
  * real user-typed value by reference identity is impossible across a Map, so we
@@ -655,6 +662,8 @@ interface NodeRowProps {
   upgradeFieldDiffs: Map<string, string>;
   /** Stage key → the upstream value a local override keeps out. */
   variationFieldDiffs: Map<string, string>;
+  /** Stage key → what keeps the upstream value out when a guard does, for the row's hover. */
+  guardedStatusByKey?: ReadonlyMap<string, string>;
   /** Stage keys of the rows differing between upstream HEAD and the unit's CURRENT committed
    *  data (never the dry-run) — drives the value border. See VariationEntry.liveFieldDiffs. */
   liveVariationKeys: Set<string>;
@@ -782,7 +791,7 @@ interface ComponentValuesSectionProps {
   /** Increment to STAGE every available upgrade for this unit (select-all; does not commit). */
   stageAllSignal?: number;
   /** Commit this unit's staged batch in ONE call. Resolves true on success (staged set is then cleared). */
-  onCommitStaged?: (payload: StagedCommitPayload) => Promise<boolean>;
+  onCommitStaged?: (payload: StagedCommitPayload) => Promise<StagedCommitResult>;
   /**
    * Commit this unit's staged PROTECTION changes in ONE call, via the
    * dedicated `SetUnitProtection` endpoint — a SEPARATE revision from the
@@ -944,6 +953,7 @@ const NodeRow = memo(({
   pathPrefix,
   upgradeFieldDiffs,
   variationFieldDiffs,
+  guardedStatusByKey,
   liveVariationKeys,
   allPaths,
   upstreamOnlyKeys,
@@ -1113,6 +1123,8 @@ const NodeRow = memo(({
   // before committing. Only the pill (up-arrow → undo) and the staged tint change.
   const displayedCurrentValue = isAbsentCurrent ? ABSENT : _rawCurrentValue;
   const overriddenUpstreamValue = variationFieldDiffs.get(stageKey);
+  // A guard, rather than a local override, may be what keeps the upstream value out.
+  const guardedStatus = guardedStatusByKey?.get(stageKey);
   const showOverriddenUpstreamPill = overriddenUpstreamValue !== undefined && upgradeValue === undefined;
 
   // STAGED MANUAL EDIT: the user typed a value (or a delete sentinel) for this
@@ -1885,7 +1897,7 @@ const NodeRow = memo(({
                       action="Local value kept"
                       value={overriddenUpstreamValue}
                       noValue={isEmptyValue(overriddenUpstreamValue)}
-                      status="your local value overrides upstream"
+                      status={guardedStatus ?? 'your local value overrides upstream'}
                     />
                   }
                   placement="top"
@@ -1922,7 +1934,11 @@ const NodeRow = memo(({
                           action="Uncheck to discard"
                           value={overriddenUpstreamValue}
                           noValue={isEmptyValue(overriddenUpstreamValue)}
-                          status="staged — overrides your local change"
+                          status={
+                            guardedStatus
+                              ? 'Upgrade asks before clearing the guard'
+                              : 'staged — overrides your local change'
+                          }
                         />
                       ) : (
                         <ActionTooltipContent
@@ -1931,7 +1947,7 @@ const NodeRow = memo(({
                           action="Sync with upstream"
                           value={overriddenUpstreamValue}
                           noValue={isEmptyValue(overriddenUpstreamValue)}
-                          status="your local value overrides upstream"
+                          status={guardedStatus ?? 'your local value overrides upstream'}
                         />
                       )
                     ) : (
@@ -2245,6 +2261,7 @@ const NodeRow = memo(({
     documentScope: docScope,
     upgradeFieldDiffs,
     variationFieldDiffs,
+    guardedStatusByKey,
     liveVariationKeys,
     allPaths,
     upstreamOnlyKeys,
@@ -2990,15 +3007,35 @@ export const ComponentValuesSection = memo(({
       keys.add(key);
     }
     for (const key of unit.upgradeEntry?.blockedDeleteKeys ?? []) keys.add(key);
+    for (const guarded of unit.upgradeEntry?.guardedKeys ?? []) keys.add(guarded.key);
     return [...keys];
-  }, [unit.upgradeEntry?.fieldDiffs, unit.upgradeEntry?.blockedDeleteKeys, variationKeys, isProtected]);
+  }, [unit.upgradeEntry?.fieldDiffs, unit.upgradeEntry?.blockedDeleteKeys, unit.upgradeEntry?.guardedKeys, variationKeys, isProtected]);
+
+  // The rows whose upstream change a guard holds back, and what their hover says of it. They
+  // are upgradable (listed and counted, since a clearance lands them) but never ticked for the
+  // user: ticking one is choosing to clear a guard, which Upgrade then asks about.
+  const guardedStatusByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const guarded of unit.upgradeEntry?.guardedKeys ?? []) {
+      map.set(
+        guarded.key,
+        `${guarded.guards.length === 1 ? 'guard' : 'guards'} ${guarded.guards.join(', ')}${
+          guarded.inherited ? ' (inherited)' : ''
+        } ${guarded.guards.length === 1 ? 'keeps' : 'keep'} it. Upgrade asks before clearing ${
+          guarded.guards.length === 1 ? 'it' : 'them'
+        }.`,
+      );
+    }
+    return map;
+  }, [unit.upgradeEntry?.guardedKeys]);
 
   // What "Select all" and the Upgradable-tab auto-stage add to `stagedPaths`: every
-  // upgradable row's key, and each whole-resource change the user can take.
-  const upgradableStageKeys = useMemo(
-    () => (availableWholeResourceKeys.size > 0 ? [...upgradableFieldKeys, ...availableWholeResourceKeys] : upgradableFieldKeys),
-    [upgradableFieldKeys, availableWholeResourceKeys],
-  );
+  // upgradable row's key but the guarded ones, and each whole-resource change the user can
+  // take.
+  const upgradableStageKeys = useMemo(() => {
+    const keys = upgradableFieldKeys.filter((key) => !guardedStatusByKey.has(key));
+    return availableWholeResourceKeys.size > 0 ? [...keys, ...availableWholeResourceKeys] : keys;
+  }, [upgradableFieldKeys, guardedStatusByKey, availableWholeResourceKeys]);
 
   // Every key the upgrade changes, overridden ones included.
   const changedKeys = useMemo(() => new Set(upgradeFieldDiffs.keys()), [upgradeFieldDiffs]);
@@ -3592,8 +3629,14 @@ export const ComponentValuesSection = memo(({
       payload = { kind: 'patch-data', data };
     }
 
-    void commit(payload).then((ok) => {
-      if (!ok) return;
+    void commit(payload).then((outcome) => {
+      if (outcome === false) return;
+      // A row guards withheld keeps what the Unit held there, so it gets no "done" mark.
+      if (typeof outcome === 'object' && outcome.withheldKeys.length > 0) {
+        const withheld = new Set(outcome.withheldKeys);
+        committedValues = new Map([...committedValues].filter(([key]) => !withheld.has(key)));
+        committedAdds = new Set([...committedAdds].filter((key) => !withheld.has(key)));
+      }
       // Snapshot the pre-refetch downstream value for each committed non-removal path so a
       // leaf can detect, AT RENDER, when the refetch lands (the live value diverges from
       // this baseline) and hand display back to the authoritative value — without deleting
@@ -4087,6 +4130,7 @@ export const ComponentValuesSection = memo(({
           pathPrefix: '' as const,
           upgradeFieldDiffs,
           variationFieldDiffs,
+          guardedStatusByKey,
           liveVariationKeys,
           allPaths,
           upstreamOnlyKeys,

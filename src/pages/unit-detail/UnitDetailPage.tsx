@@ -6,6 +6,7 @@ import { useLocation, useNavigate, useParams, useSearchParams } from 'react-rout
 import { ActionButton } from '@/components/action-button/ActionButton';
 import { DiffDrawer } from '@/components/diff-drawer/DiffDrawer';
 import { ErrorBox } from '@/components/error-box/ErrorBox';
+import { WithheldByGuardsNotice } from '@/components/guarded-write/WithheldByGuardsNotice';
 import { Header } from '@/components/header/Header';
 import { QueryErrorState } from '@/components/query-error-state/QueryErrorState';
 import { SettingsTabs } from '@/components/settings-tabs/SettingsTabs';
@@ -41,7 +42,7 @@ import { BlameTab } from './tabs/BlameTab';
 import { MutationsTab } from './tabs/MutationsTab';
 import { ResourcesTab } from './tabs/ResourcesTab';
 import { UnitSettingsForm } from './components/unit-settings/UnitSettingsForm';
-import { UNIT_DETAIL_TAB, UNIT_DETAIL_TAB_ORDER } from './unitDetailHrefs';
+import { UNIT_DETAIL_TAB, UNIT_DETAIL_TAB_ORDER, unitBlameHref } from './unitDetailHrefs';
 import { useRevisionDataMap } from '@/hooks/useUnitData';
 
 const Container = styled('div')`
@@ -161,6 +162,9 @@ export const UnitDetailPage = () => {
     functionInvocationError,
     apiStates,
     usePollingForValidationErrors,
+    upgradeGuardDialog,
+    upgradeWithheld,
+    setUpgradeWithheld,
   } = useUnitActions({
     unitId: id,
     spaceId: spaceID,
@@ -473,6 +477,20 @@ export const UnitDetailPage = () => {
       />
       <Main sx={{ p: 2 }}>
         <ErrorBox sx={{ mb: 2 }} error={errorMessage} onClose={() => setErrorMessage('')} />
+        {upgradeWithheld.length > 0 && (
+          <WithheldByGuardsNotice
+            withheld={upgradeWithheld}
+            blameHref={unitBlameHref(
+              spaceID,
+              id,
+              new Set(upgradeWithheld.map((change) => change.path)).size === 1
+                ? upgradeWithheld[0].path
+                : '',
+            )}
+            onClose={() => setUpgradeWithheld([])}
+          />
+        )}
+        {upgradeGuardDialog}
         <Section $display={selectedTab === 0} $direction={Direction.FadeIn}>
           {selectedTab === 0 && (
             <Dashboard
@@ -518,6 +536,7 @@ export const UnitDetailPage = () => {
           linkRows={links}
           unitId={id}
           spaceId={spaceID}
+          unit={currentUnitExtended}
           onLinkAction={() => setRefresh(!refresh)}
         />
         <MutationsTab

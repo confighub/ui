@@ -301,6 +301,8 @@ export interface ChangeOrderResourceConflict {
   sourceValue?: string;
   /** The target's value at `path` is protected: kept on merge. */
   targetProtected?: boolean;
+  /** For a reason a guard caused, the guards that withheld the change, as `key=value`. */
+  guards?: string[];
   /**
    * False ONLY for the reasons that report the change landing and say what the
    * variant lost. Everything else blocks, including a reason we do not

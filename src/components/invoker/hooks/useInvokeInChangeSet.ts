@@ -1,27 +1,33 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-
 import { useCallback, useState } from 'react';
 
 import { useAppDispatch } from '@/hooks/useApp';
-import {
-  confighubApi,
-  type FunctionInvocation,
-  type FunctionInvocationsResponse,
-  useInvokeFunctionsOnOrgMutation,
-} from '@confighub/rtk-query';
 import {
   invocationAborted,
   invocationCompleted,
   invocationStarted,
 } from '@/state/slices/initiativeInvocation';
+import {
+  type FunctionInvocation,
+  type FunctionInvocationsResponse,
+  type InvokeFunctionsOnOrgApiArg,
+  confighubApi,
+  useInvokeFunctionsOnOrgMutation,
+} from '@confighub/rtk-query';
 
 import {
   INVOCATION_ANNOTATION_KEY,
   useInitiativeChangeSetLifecycle,
 } from './useInitiativeChangeSetLifecycle';
 
-export interface InvokeInChangeSetArgs {
+/** What the invocation is cleared for and the guards it records, as the invoke API takes them. */
+export type InvokeGuardParams = Pick<
+  InvokeFunctionsOnOrgApiArg,
+  'clearance' | 'guards' | 'inheritedGuards'
+>;
+
+export interface InvokeInChangeSetArgs extends InvokeGuardParams {
   // The Space the ChangeSet is created in.
   spaceId: string;
   // The Space whose executor runs the function, when the Units share one.
@@ -31,10 +37,13 @@ export interface InvokeInChangeSetArgs {
   toolchainType: string;
   functionInvocation: FunctionInvocation;
   dryRun: boolean;
+  /** Why the change is made; it becomes the description of each Revision it makes. */
+  changeDescription?: string;
 }
 
 export interface InvokeInChangeSetResult {
-  changeSetId: string;
+  /** The ChangeSet the write was made in; none for a dry run. */
+  changeSetId?: string;
   responses: FunctionInvocationsResponse[];
 }
 
@@ -49,7 +58,48 @@ export const useInvokeInChangeSet = () => {
 
   const invoke = useCallback(
     async (args: InvokeInChangeSetArgs): Promise<InvokeInChangeSetResult> => {
-      const { spaceId, executorSpaceId, initiativeId, unitIds, toolchainType, functionInvocation, dryRun } = args;
+      const {
+        spaceId,
+        executorSpaceId,
+        initiativeId,
+        unitIds,
+        toolchainType,
+        functionInvocation,
+        dryRun,
+        clearance,
+        guards,
+        inheritedGuards,
+        changeDescription,
+      } = args;
+      const run = (changeSetId?: string) =>
+        invokeFunctions({
+          executorSpace: executorSpaceId,
+          where: unitIdsWhere(unitIds),
+          dryRun: dryRun ? 'true' : undefined,
+          clearance,
+          guards,
+          inheritedGuards,
+          include: 'Diff',
+          changeSetId,
+          functionInvocationsRequest: {
+            ToolchainType: toolchainType,
+            FunctionInvocations: [functionInvocation],
+            ChangeDescription: changeDescription,
+          },
+        }).unwrap();
+
+      // A dry run writes nothing, so it needs no ChangeSet, which the server does not ask of a
+      // dry run. Opening one would lock the Units, and a dry run that asks before a guarded write
+      // would hold them while the person decides, and leave the ChangeSet behind if they cancel.
+      if (dryRun) {
+        setIsInvoking(true);
+        try {
+          return { responses: await run() };
+        } finally {
+          setIsInvoking(false);
+        }
+      }
+
       setIsInvoking(true);
       dispatch(invocationStarted({ initiativeId }));
       let changeSetId: string | undefined;
@@ -70,17 +120,7 @@ export const useInvokeInChangeSet = () => {
         });
         changeSetId = opened.changeSetId;
 
-        const responses = await invokeFunctions({
-          executorSpace: executorSpaceId,
-          where: unitIdsWhere(unitIds),
-          dryRun: dryRun ? 'true' : undefined,
-          include: 'Diff',
-          changeSetId,
-          functionInvocationsRequest: {
-            ToolchainType: toolchainType,
-            FunctionInvocations: [functionInvocation],
-          },
-        }).unwrap();
+        const responses = await run(changeSetId);
 
         await closeChangeSet({ spaceId, unitIds });
 
@@ -94,7 +134,10 @@ export const useInvokeInChangeSet = () => {
           try {
             await closeChangeSet({ spaceId, unitIds });
           } catch (closeErr) {
-            console.error(`[useInvokeInChangeSet] orphan changeset ${changeSetId} could not be closed:`, closeErr);
+            console.error(
+              `[useInvokeInChangeSet] orphan changeset ${changeSetId} could not be closed:`,
+              closeErr,
+            );
           }
         }
         throw err;

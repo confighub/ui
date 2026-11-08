@@ -59,7 +59,12 @@ export interface ComponentCompareSectionProps {
    * Writes one unit's configuration. Absent makes the whole surface read-only,
    * which is what it was before editing existed.
    */
-  onCommitStaged?: (unitId: string, spaceId: string, payload: { kind: 'patch-data'; data: string }) => Promise<boolean>;
+  /** Resolves false when nothing was written; otherwise written, possibly with what guards withheld. */
+  onCommitStaged?: (
+    unitId: string,
+    spaceId: string,
+    payload: { kind: 'patch-data'; data: string },
+  ) => Promise<boolean | { withheldKeys: string[] }>;
   /**
    * Draw each unit under its own foldable header (the default). A page that
    * compares one unit at a time, and names it elsewhere, turns it off: the
@@ -513,10 +518,12 @@ function ComponentCompareSectionInner({
         // one who has to tell them apart.
         let thrown: string | undefined;
         try {
-          ok = await onCommitStaged(column.unitId, column.deploymentId, {
-            kind: 'patch-data',
-            data: merged.data,
-          });
+          // Written, even when guards withheld part of it: the dialog said so before it was.
+          ok =
+            (await onCommitStaged(column.unitId, column.deploymentId, {
+              kind: 'patch-data',
+              data: merged.data,
+            })) !== false;
         } catch (error: unknown) {
           ok = false;
           thrown = getApiErrorMessage(error);

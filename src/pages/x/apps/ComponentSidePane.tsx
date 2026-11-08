@@ -55,7 +55,7 @@ import { buildFieldPathMeta } from './configParser';
 import { pathContainsArrayIndex } from './componentKeyUtils';
 import { buildProtectedPathLookup } from './protectedPaths';
 import { ComponentValuesSection } from './ComponentValuesSection';
-import type { StagedCommitPayload } from './ComponentValuesSection';
+import type { StagedCommitPayload, StagedCommitResult } from './ComponentValuesSection';
 import { SpaceSettingsSheet, type SpaceSettingsFooterState, type SpaceSettingsSheetHandle } from './SpaceSettingsSheet';
 import {
   BottomBar,
@@ -76,7 +76,7 @@ import {
 import { formatTimeAgo } from './diffTree';
 import { HeavyUnitGate, HeavyUnitLoading, UnitSizeChip, UnitSourceOverrideBar } from './HeavyUnitGate';
 import { isHeavyUnitData, shouldDeferUnitPaint, shouldShowUnitSizeChip } from './unitSizeGuard';
-import { computeTotalAllFields, countLogicalChanges, countUpgradableBadgeFields, fieldDiffKey, hasRealUpgrade } from './entryBuilders';
+import { computeTotalAllFields, countLogicalChanges, countSelectableUpgradeFields, countUpgradableBadgeFields, fieldDiffKey, hasRealUpgrade } from './entryBuilders';
 import { upgradeButtonState } from './upgradeButtonState';
 import { buildDeploymentMap } from './componentData';
 import { componentTheme } from './componentTheme';
@@ -449,7 +449,7 @@ export interface ComponentSidePaneProps {
    *  - { kind: 'patch-data', data } → ONE bulkPatch{Data} with the merged data
    * Resolves true on success. The staging Upgrade button commits all staged units.
    */
-  onCommitStaged?: (unitId: string, spaceId: string, payload: StagedCommitPayload) => Promise<boolean>;
+  onCommitStaged?: (unitId: string, spaceId: string, payload: StagedCommitPayload) => Promise<StagedCommitResult>;
   /**
    * Commit a single unit's STAGED protection batch (a separate revision from
    * onCommitStaged — see ComponentValuesSection's commit-signal effect,
@@ -1465,6 +1465,11 @@ export const ComponentSidePane = memo(
       () => mergedUnits.reduce((n, u) => n + countUpgradableBadgeFields(u), 0),
       [mergedUnits],
     );
+    // What "Select all" ticks: the same, but the changes a guard holds back.
+    const totalSelectableFields = useMemo(
+      () => mergedUnits.reduce((n, u) => n + countSelectableUpgradeFields(u), 0),
+      [mergedUnits],
+    );
     // Units with a REAL revision gap (an entry in `upgradeEntries` only ever
     // exists when upstreamRevisionNum < upstreamHeadRevisionNum — see
     // buildUpgradeEntries) but ZERO stageable fields — either the upstream's
@@ -1876,7 +1881,7 @@ export const ComponentSidePane = memo(
     // Per-unit commit binding (stable refs so the section memo isn't broken).
     const commitStagedByUnit = useMemo(() => {
       if (!onCommitStaged) return null;
-      const m = new Map<string, (payload: StagedCommitPayload) => Promise<boolean>>();
+      const m = new Map<string, (payload: StagedCommitPayload) => Promise<StagedCommitResult>>();
       for (const u of mergedUnits) {
         m.set(u.unitId, (payload) => onCommitStaged(u.unitId, u.spaceId, payload));
       }
@@ -3194,7 +3199,7 @@ export const ComponentSidePane = memo(
                   Only meaningful on the Incoming tab: staging is auto-cleared
                   when leaving 'incoming' (setFilterModeWithStaging), so the
                   button is inert on 'all' — gate it to that tab. */}
-              {filterMode === 'incoming' && totalUpgradableFields > 0 && totalStaged < totalUpgradableFields && (
+              {filterMode === 'incoming' && totalSelectableFields > 0 && totalStaged < totalSelectableFields && (
                 <Button
                   data-testid='component-select-all-button'
                   variant='text'
@@ -3211,7 +3216,7 @@ export const ComponentSidePane = memo(
                     '&:hover': { backgroundColor: componentTheme.doneMuted },
                   }}
                 >
-                  {`Select all (${totalUpgradableFields})`}
+                  {`Select all (${totalSelectableFields})`}
                 </Button>
               )}
               {/* Keep both on merge — STAGES a protect for every currently

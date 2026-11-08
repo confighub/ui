@@ -222,6 +222,16 @@ export interface WholeResourceChange {
   resource: ResourceInfo | undefined;
 }
 
+/** A row whose upstream change a guard holds back, and the guards that do. */
+export interface GuardedKey {
+  /** The row's stage key. */
+  key: string;
+  /** The guards, as `key=value`. */
+  guards: string[];
+  /** Whether every one of them is inherited at the path. */
+  inherited: boolean;
+}
+
 export interface UpgradeEntry {
   unitId: string;
   slug: string;
@@ -255,6 +265,14 @@ export interface UpgradeEntry {
    * own that matches none.
    */
   blockedDeleteKeys?: string[];
+  /**
+   * The rows whose upstream change a guard holds back: the dry run withheld it (a
+   * Guarded conflict), so it is in no field diff. Surfaced as opt-in upgrades, as a
+   * blocked deletion is, and counted with the Incoming changes, since a clearance lands
+   * them; never ticked for the user, since landing one needs a clearance. Each is
+   * resolved to its row as a blocked deletion is.
+   */
+  guardedKeys?: GuardedKey[];
   /**
    * True when this diff describes a change that has ALREADY been applied —
    * a record of what happened, not a proposal of what would happen if

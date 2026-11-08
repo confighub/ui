@@ -10,6 +10,9 @@ import { Link as RouterLink } from 'react-router-dom';
 
 import { ConfigDiffView } from '@/components/config-diff/ConfigDiffView';
 import { summarizeConfigDiff } from '@/components/config-diff/configDiffTree';
+import { WithheldByGuardsNotice } from '@/components/guarded-write/WithheldByGuardsNotice';
+import { guardedChanges } from '@/components/guarded-write/guardedWrite';
+import { unitBlameHref } from '@/pages/unit-detail/unitDetailHrefs';
 import { componentTheme } from '@/pages/x/apps/componentTheme';
 import type { FunctionInvocationsResponse } from '@confighub/rtk-query';
 
@@ -34,6 +37,21 @@ interface UnitSummary {
  *  summary. Order of precedence: failure > validation-failure > mutation >
  *  outputs-only > no-op. */
 const summarize = (
+  response: FunctionInvocationsResponse,
+  diffCount: number,
+  withheldCount = 0,
+): UnitSummary => {
+  const summary = summarizeOutcome(response, diffCount);
+  // What guards withheld did not land, so the invocation did not do all it was asked to.
+  if (withheldCount === 0 || summary.tone === 'error') return summary;
+  const withheld = `${withheldCount} withheld by guards`;
+  return {
+    tone: 'warning',
+    text: summary.tone === 'neutral' ? withheld : `${summary.text} · ${withheld}`,
+  };
+};
+
+const summarizeOutcome = (
   response: FunctionInvocationsResponse,
   diffCount: number,
 ): UnitSummary => {
@@ -141,6 +159,8 @@ export interface PerUnitResultCardProps {
   columnStyle: CSSProperties;
   onDividerMouseDown: (columnIndex: 0 | 1, e: React.MouseEvent) => void;
   isDragging?: boolean;
+  /** The invocation was a dry run, so what guards withheld is what they would withhold. */
+  dryRun?: boolean;
   /** When provided, AttributeValueListDisplay renders in editable mode. */
   onSaveAttributes?: (
     unitId: string,
@@ -156,12 +176,14 @@ export const PerUnitResultCard = ({
   columnStyle,
   onDividerMouseDown,
   isDragging,
+  dryRun,
   onSaveAttributes,
 }: PerUnitResultCardProps) => {
+  const withheld = guardedChanges(response.Conflicts, unitDisplay);
   const diff = response.Success ? response.Diff : undefined;
   const diffCount = summarizeConfigDiff(diff).total;
   const hasDiff = diff !== undefined && diffCount > 0;
-  const summary = summarize(response, diffCount);
+  const summary = summarize(response, diffCount, withheld.length);
   const spaceId = response.SpaceID;
   const unitId = response.UnitID;
   const hasOutputs = response.Outputs && Object.keys(response.Outputs).length > 0;
@@ -245,6 +267,16 @@ export const PerUnitResultCard = ({
               </Typography>
             )}
           </Alert>
+        </Box>
+      )}
+
+      {withheld.length > 0 && (
+        <Box sx={{ px: 1.5, pt: 0.5 }}>
+          <WithheldByGuardsNotice
+            withheld={withheld}
+            dryRun={dryRun}
+            blameHref={spaceId && unitId ? unitBlameHref(spaceId, unitId) : undefined}
+          />
         </Box>
       )}
 

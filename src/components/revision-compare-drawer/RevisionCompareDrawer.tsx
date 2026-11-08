@@ -74,6 +74,8 @@ export interface RevisionCompareDrawerProps {
   showRestoreButton?: boolean;
   /** Callback when restore is confirmed */
   onRevisionConfirmed?: (revision: RevisionRow) => Promise<void>;
+  /** Whether a restore is under way, so another cannot be started. */
+  isRestoring?: boolean;
   /** Revision viewer URL helper */
   revisionViewerUrl?: UseRevisionViewerUrlReturn;
 }
@@ -105,6 +107,7 @@ export const RevisionCompareDrawer = ({
   setDiffTarget,
   language = 'yaml' as Language,
   onRevisionConfirmed,
+  isRestoring = false,
   revisionViewerUrl,
 }: RevisionCompareDrawerProps) => {
   const [showFieldTree, setShowFieldTree] = useState(true);
@@ -518,6 +521,7 @@ export const RevisionCompareDrawer = ({
                       </Ellipses>
                       <Button
                         variant='text'
+                        disabled={isRestoring}
                         onClick={() => {
                           if (onRevisionConfirmed) {
                             onRevisionConfirmed(activeRevision);

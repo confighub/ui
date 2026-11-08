@@ -109,6 +109,48 @@ test.describe('Triggers of every Space', () => {
       await removeSpaces(spaces);
     }
   });
+
+  test('a Trigger is edited as YAML from its drawer', async ({ page }) => {
+    const api = new ApiHelper(page);
+    const base = `trgyaml-${RandomSlugGenerator.randomSlugName()}`;
+    const spaces: string[] = [];
+    try {
+      spaces.push((await api.createSpace({ space: { Slug: base } })).SpaceID!);
+      await createTrigger(spaces[0], { Slug: `${base}-one`, FunctionName: 'vet-schemas' });
+      const [trigger] = await triggersIn(spaces[0]);
+      const read = await hubApi.get(`/api/space/${spaces[0]}/trigger/${trigger.TriggerID}/document`);
+      expect(read.ok(), await read.text()).toBeTruthy();
+      const { Document: document } = (await read.json()) as { Document: string };
+      expect(document).not.toContain('Labels:');
+
+      await page.goto(`/triggers?edit=${trigger.TriggerID}`);
+      await page.getByTestId('trigger-edit-yaml').click();
+      const editor = page.getByTestId('trigger-document-editor');
+      await expect(editor).toContainText(`Slug: ${base}-one`);
+
+      // A one-line flow mapping on a new first line, at column 0 of a top-level field, which
+      // Monaco's auto-indent leaves as typed.
+      const monaco = editor.locator('div.monaco-editor');
+      await monaco.locator('.view-line', { hasText: 'Disabled:' }).click();
+      await page.keyboard.press('Home');
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('ArrowUp');
+      await page.keyboard.insertText('Labels: {Tier: web}');
+      await page.getByTestId('trigger-document-save').click();
+      await expect(editor).toBeHidden();
+
+      await expect
+        .poll(async () => {
+          const response = await hubApi.get(`/api/space/${spaces[0]}/trigger/${trigger.TriggerID}`);
+          return ((await response.json()) as { Trigger: { Labels?: Record<string, string> } }).Trigger.Labels;
+        })
+        .toEqual({ Tier: 'web' });
+      // The drawer stays open and shows what was saved.
+      await expect(page.getByTestId('trigger-labels-key-0')).toHaveValue('Tier');
+    } finally {
+      await removeSpaces(spaces);
+    }
+  });
 });
 
 const deployment = (name: string, replicas: number) => `apiVersion: apps/v1

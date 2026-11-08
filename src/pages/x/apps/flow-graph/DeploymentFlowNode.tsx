@@ -26,6 +26,7 @@ import {
   type VitalTone,
 } from '../liveStatus';
 import type { ConditionKind, WaveCondition } from './fold/deploymentCondition';
+import { gatedMarkLabel, gatedSignal } from './fold/gatedSignal';
 import { MARK_LABEL, markStyle } from './fold/markStyle';
 import { InfoPeekTooltip, type InfoPeekSpec } from '@/components/info-peek/InfoPeek';
 
@@ -181,6 +182,11 @@ export interface DeploymentFlowNodeData {
    * shows them once for every member, so the card does not repeat them.
    */
   suppressedConditions?: ReadonlyArray<WaveCondition>;
+  /**
+   * `compact` only: a member of an open stack. A Gated wave then shows as a
+   * small mark on the card instead of nothing (`gatedSignal`).
+   */
+  stackMember?: boolean;
   /** `tree` only: variant Spaces downstream of this node, at every depth. */
   variantCount?: number;
   /**
@@ -636,6 +642,7 @@ const StatusChipWithPeek = ({
   spec,
   onGo,
   testId,
+  markLabel,
 }: {
   /** The tone, not a colour — see `CHIP_TONE` for why the difference matters. */
   tone: ChipTone;
@@ -650,6 +657,12 @@ const StatusChipWithPeek = ({
   onGo?: (tab: ChipTab) => void;
   /** `data-testid` of the chip. */
   testId?: string;
+  /**
+   * Draw only `leading`, as a button with this accessible name: a mark for
+   * many cards in a row, where the label on each would be loud. A button, so
+   * it takes keyboard focus, which opens the peek, and Enter opens the tab.
+   */
+  markLabel?: string;
 }) => {
   const { color, tint, tintHover } = CHIP_TONE[tone];
   const handleGo = (e: React.MouseEvent) => {
@@ -661,7 +674,8 @@ const StatusChipWithPeek = ({
     <InfoPeekTooltip
       color={color}
       spec={spec}
-      testId={testId === 'gated-chip' ? 'gate-peek' : undefined}
+      testId={testId === 'gated-chip' || testId === 'gated-mark' ? 'gate-peek' : undefined}
+      describeChild={!!markLabel}
       onAction={onGo ? () => onGo(spec.tab) : undefined}
     >
       <StatusChip
@@ -673,11 +687,22 @@ const StatusChipWithPeek = ({
         className="nodrag nopan"
         onClick={handleGo}
         onMouseDown={(e) => e.stopPropagation()}
-        sx={textColor ? { color: textColor } : undefined}
+        {...(markLabel
+          ? {
+              component: 'button' as const,
+              type: 'button' as const,
+              'aria-label': markLabel,
+              sx: {
+                padding: '3px 4px',
+                lineHeight: 0,
+                '&:focus-visible': { outline: `2px solid ${color}`, outlineOffset: 1 },
+              },
+            }
+          : { sx: textColor ? { color: textColor } : undefined })}
       >
         {leading}
-        <Box component="span">{label}</Box>
-        {meta && <ChipMeta>· {meta}</ChipMeta>}
+        {!markLabel && <Box component="span">{label}</Box>}
+        {!markLabel && meta && <ChipMeta>· {meta}</ChipMeta>}
       </StatusChip>
     </InfoPeekTooltip>
   );
@@ -1127,6 +1152,7 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
     density = 'full',
     width,
     suppressedConditions,
+    stackMember,
     variantCount,
     componentName,
     treeMark,
@@ -1234,7 +1260,13 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
   const suppressed = (condition: WaveCondition) => suppressedConditions?.includes(condition) ?? false;
   const showStaleChip = isStale && !isTransient && !suppressed('stale');
   const showUnreleasedChip = isUnreleased && !suppressed('unreleased');
-  const showGatedChip = isGated && !suppressed('gated');
+  const gated = gatedSignal({
+    gated: isGated,
+    gatedIsWave: suppressed('gated'),
+    stackMember: !!stackMember,
+  });
+  const showGatedChip = gated === 'chip';
+  const showGatedMark = gated === 'mark';
   const showWarningsChip = isWarned;
 
   // Vitals — "is it synced" and "is it healthy" as two independent, always-on
@@ -1418,6 +1450,17 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
           onGo={openTab}
         />
       )}
+      {showGatedMark && (
+        <StatusChipWithPeek
+          tone="gated"
+          leading={<GatedIcon />}
+          label="Gated"
+          markLabel={gatedMarkLabel(units)}
+          testId="gated-mark"
+          spec={gatedSpec}
+          onGo={openTab}
+        />
+      )}
     </>
   );
 
@@ -1495,6 +1538,7 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
     !showStaleChip &&
     !showUnreleasedChip &&
     !showGatedChip &&
+    !showGatedMark &&
     !showWarningsChip;
 
   const compactBody = (

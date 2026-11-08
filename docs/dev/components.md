@@ -73,6 +73,9 @@ you can cite them in review.
 11. **Do NOT add a review-then-confirm dialog before the Upgrade button commits.** `PromotionCommitSummaryDialog`
     was built and then explicitly removed in #4619; the Upgrade button commits directly via
     `handleConfirmCommit`. Adding a review step back is a rejected pattern (see Rejected approaches).
+    The one exception is the guard dialog every guarded write uses (`useGuardedWrite`): it appears
+    only when a ticked change would write a field a guard keeps (rule 18), and asks about those
+    guards, not about the whole commit.
 12. **Mirror the treeview's interaction model in Source view.** (User: *"copy how the pills and
     buttons work in the treeview."*) Pills + accept/revert, not a separate paradigm.
 13. **Treeview is the DEFAULT view; Source view is the opt-in alternative.** Do not flip the default.
@@ -87,6 +90,17 @@ you can cite them in review.
     anything else risks flagging *every* field as removed (`-` sentinel) → a transient
     "everything removed" preview. See Gotchas → phantom deletions.
 17. **Source-view edits use an explicit Save button** — never auto-save / blur-to-save.
+18. **Surface a change a guard holds back as an opt-in upgrade, counted but never ticked for the
+    user.** The dry run withholds it (a `Guarded` conflict), so it is in no field diff; without
+    this it is simply missing from Incoming, and the Variant reads as up to date. It is a row of
+    `UpgradeEntry.guardedKeys` (`guardedKeysOf`), shown with the blocked lock checkbox a local
+    override gets, its hover naming the guard. It counts in Incoming, since a clearance lands it
+    (the user's call, over rule 1), but "Select all" and the auto-stage leave it out
+    (`upgradableStageKeys`): ticking it is choosing to clear a guard. A ticked one makes the commit
+    a data write, and a data write to a guarded Unit goes through the guard dialog
+    (`handleCommitStaged`); the wholesale upgrade, chosen only when none is ticked, never asks. A
+    row the guards still withheld comes back in `withheldKeys` and is not marked done. Applying a
+    conflict an earlier upgrade left stays on the Blame tab.
 
 ---
 

@@ -76,6 +76,28 @@ test.describe('rendering a refusal', () => {
     expect(html).not.toContain('Subtracted');
   });
 
+  test('a refusal a guard caused names the guards', () => {
+    const html = renderToStaticMarkup(
+      createElement(ChangeOrderRefusals, {
+        conflicts: [
+          { reason: 'Guarded', blocks: true, resourceName: 'api', path: 'spec.replicas', guards: ['Scale=RegionSpecific'] },
+          {
+            reason: 'GuardWithheld',
+            blocks: true,
+            resourceName: 'api',
+            path: 'spec.template.spec',
+            guards: ['owner=local', 'Scale=Zonal'],
+          },
+        ],
+      }),
+    );
+    expect(html).toContain('<b>Guard Scale=RegionSpecific</b> in api keeps spec.replicas.');
+    expect(html).toContain(
+      '<b>Guards owner=local, Scale=Zonal</b> in api withheld a change to the guards at spec.template.spec.',
+    );
+    expect(html).not.toContain('GuardWithheld');
+  });
+
   test('a reason nobody modelled is printed, not swallowed', () => {
     const html = renderToStaticMarkup(
       createElement(ChangeOrderRefusals, {

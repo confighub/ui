@@ -1,17 +1,26 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { ActionButton, createEnablementRule } from '@/components/action-button/ActionButton';
+import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
+import { ErrorList } from '@/components/error-list/ErrorList';
 import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
 import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 
 import { Section } from '@/components/styled';
+import { runChunkedBulkWrite } from '@/hooks/chunkedBulkWrite';
+import { getApiErrorMessage } from '@/utility/error-functions';
 import { EmptyLinks } from '@/pages/unit-detail/components/empty-links/EmptyLinks';
 import {
   LinkRow,
   LinksTable,
 } from '@/pages/unit-detail/components/links-table/LinksTable.tsx';
 import { Direction } from '@/types/enums';
+import { type ExtendedUnitRead, useBulkDeleteLinksMutation } from '@confighub/rtk-query';
+import AddIcon from '@mui/icons-material/Add';
+import Button from '@mui/material/Button';
+import Box from '@mui/material/Box';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
@@ -26,6 +35,8 @@ import {
   readLinkFilter,
   writeLinkFilter,
 } from '../unitDetailHrefs';
+import { LinkDrawer } from '../components/link-drawer/LinkDrawer';
+import { linkEnd } from '../components/link-drawer/linkForm';
 
 export interface ILinksTabProps {
   selectedTab: number;
@@ -33,6 +44,8 @@ export interface ILinksTabProps {
   /** The Unit whose Links these are: each Link is from it or to it. */
   unitId: string;
   spaceId: string;
+  /** The Unit itself, which a new Link is from */
+  unit?: ExtendedUnitRead;
   onLinkAction?: () => void;
 }
 
@@ -48,9 +61,23 @@ const DIRECTION_LABELS: Record<LinkDirectionFilter, string> = {
  * LinksTab lists the Links from the unit and the Links to it, from any Space, narrowed by
  * the filters in the page's URL (`unitDetailHrefs`).
  */
-export const LinksTab = ({ selectedTab, linkRows, unitId, spaceId, onLinkAction }: ILinksTabProps) => {
+export const LinksTab = ({ selectedTab, linkRows, unitId, spaceId, unit, onLinkAction }: ILinksTabProps) => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { includeHidden, setIncludeHidden } = useIncludeHidden();
+  const [creating, setCreating] = useState(false);
+  const from = unit ? linkEnd(unit) : undefined;
+  const newLinkButton = (
+    <Button
+      variant='outlined'
+      size='small'
+      startIcon={<AddIcon />}
+      onClick={() => setCreating(true)}
+      disabled={!from}
+      data-testid='links-new-link'
+    >
+      New Link
+    </Button>
+  );
+  const { includeHidden, setIncludeHidden, includeHiddenParam } = useIncludeHidden();
   const filter = useMemo(() => readLinkFilter(searchParams), [searchParams]);
 
   const setFilter = (update: Partial<LinkFilter>) => {
@@ -75,6 +102,45 @@ export const LinksTab = ({ selectedTab, linkRows, unitId, spaceId, onLinkAction 
   const filteredRows = useMemo(
     () => filterLinkRows(linkRows, filter, { unitId, spaceId }),
     [linkRows, filter, unitId, spaceId],
+  );
+
+  const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [deleteErrors, setDeleteErrors] = useState<string[]>([]);
+  const [bulkDeleteLinks] = useBulkDeleteLinksMutation();
+
+  // A Link deleted, or filtered out of the table, leaves the selection: Delete deletes only what
+  // is shown checked.
+  useEffect(() => {
+    const shown = new Set(filteredRows.map((row) => row.id));
+    setSelectedLinkIds((ids) => {
+      const kept = ids.filter((id) => shown.has(id));
+      return kept.length === ids.length ? ids : kept;
+    });
+  }, [filteredRows]);
+
+  // The Links can be in several Spaces, so they are deleted by ID across the organization. When
+  // any fails the selection stays, so Delete can be tried again.
+  const deleteSelected = async () => {
+    const failures = await runChunkedBulkWrite(
+      'LinkID',
+      selectedLinkIds,
+      (where) => bulkDeleteLinks({ where, includeHidden: includeHiddenParam }).unwrap(),
+      (error) => getApiErrorMessage(error, 'The Links could not be deleted.'),
+    );
+    setIsDeleteConfirmOpen(false);
+    setDeleteErrors(failures);
+    if (failures.length === 0) setSelectedLinkIds([]);
+    onLinkAction?.();
+  };
+
+  const selectedCount = selectedLinkIds.length;
+  const deleteButton = (
+    <ActionButton
+      buttonText={selectedCount > 1 ? `Delete ${selectedCount} Links` : 'Delete Link'}
+      onButtonClick={() => setIsDeleteConfirmOpen(true)}
+      enablementRules={[createEnablementRule(selectedCount === 0, 'Select at least one Link to delete.')]}
+    />
   );
 
   return (
@@ -132,12 +198,42 @@ export const LinksTab = ({ selectedTab, linkRows, unitId, spaceId, onLinkAction 
                 label='Other spaces only'
               />
               <IncludeHiddenToggle includeHidden={includeHidden} onChange={setIncludeHidden} entities='Links' />
+              <Box sx={{ flex: 1 }} />
+              {newLinkButton}
+              <Box data-testid='links-delete'>{deleteButton}</Box>
             </Stack>
-            <LinksTable rows={filteredRows} onLinkAction={onLinkAction} />
+            <ErrorList errors={deleteErrors} onClose={() => setDeleteErrors([])} />
+            <LinksTable
+              rows={filteredRows}
+              onLinkAction={onLinkAction}
+              selectedRows={selectedLinkIds}
+              onRowSelected={setSelectedLinkIds}
+            />
           </>
         ) : (
-          <EmptyLinks />
+          <EmptyLinks action={newLinkButton} />
         ))}
+      <ConfirmationModal
+        isOpen={isDeleteConfirmOpen}
+        onClose={() => setIsDeleteConfirmOpen(false)}
+        onSubmit={deleteSelected}
+        modalTitleText={selectedCount > 1 ? 'Delete Links' : 'Delete Link'}
+        modalDescriptionText={
+          selectedCount > 1
+            ? `Are you sure you want to delete the ${selectedCount} selected Links?`
+            : `Are you sure you want to delete ${
+                filteredRows.find((row) => row.id === selectedLinkIds[0])?.Link?.Slug ?? 'the selected Link'
+              }?`
+        }
+      />
+      <LinkDrawer
+        subject={creating && from ? { mode: 'create', from: [from] } : undefined}
+        onClose={() => setCreating(false)}
+        onSaved={() => {
+          setCreating(false);
+          onLinkAction?.();
+        }}
+      />
     </Section>
   );
 };

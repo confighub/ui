@@ -2,13 +2,9 @@
 // SPDX-License-Identifier: MIT
 import { useMemo, useState } from 'react';
 
-import { ErrorList } from '@/components/error-list/ErrorList';
-import { useAnalytics } from '@/hooks/useAnalytics';
-import {
-  type ExtendedUnitRead,
-  useCreateLinkMutation,
-} from '@confighub/rtk-query';
-import { ENTITY_TYPES } from '@/utility/analytics-constants';
+import { LinkDrawer } from '@/pages/unit-detail/components/link-drawer/LinkDrawer';
+import { type LinkEnd, linkEnd } from '@/pages/unit-detail/components/link-drawer/linkForm';
+import type { ExtendedUnitRead } from '@confighub/rtk-query';
 import EastIcon from '@mui/icons-material/East';
 import { Box, Button, Stack, Typography } from '@mui/material';
 import Grid from '@mui/material/Grid2';
@@ -21,6 +17,14 @@ interface LinkWorkflowProps {
   onSave: () => void;
 }
 
+const ends = (units: ExtendedUnitRead[]): LinkEnd[] =>
+  units.map(linkEnd).filter((end): end is LinkEnd => end !== undefined);
+
+/**
+ * The Unit list's Link action: the Units selected when it started are the downstream Units, the
+ * ones picked in the table below are the upstream Units, and the Link drawer then creates a Link
+ * from each of the one to each of the other, with the settings given there.
+ */
 export const LinkWorkflow = ({
   sourceUnits,
   allUnits,
@@ -28,76 +32,13 @@ export const LinkWorkflow = ({
   onCancel,
   onSave,
 }: LinkWorkflowProps) => {
-  // Track saving state and errors
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string>('');
-
-  const [createLink] = useCreateLinkMutation();
-  const { trackEntityBulkCreated } = useAnalytics();
+  const [configuring, setConfiguring] = useState(false);
 
   // Filter all units to get the selected target units
   const selectedTargetUnits = useMemo(
     () => allUnits.filter((unit) => selectedTargetUnitIds.includes(unit.Unit?.UnitID ?? '')),
     [allUnits, selectedTargetUnitIds],
   );
-
-  // Create links between source and target units
-  const handleSave = async () => {
-    if (selectedTargetUnits.length === 0) {
-      setError('Please select at least one target unit');
-      return;
-    }
-
-    setIsSaving(true);
-    setError('');
-
-    try {
-      // Create individual links for each source/target pair
-      const results = await Promise.allSettled(
-        sourceUnits.flatMap((sourceUnit) =>
-          selectedTargetUnits.map((targetUnit) =>
-            createLink({
-              spaceId: sourceUnit.Unit?.SpaceID ?? '',
-              link: {
-                Slug: '',
-                FromUnitID: sourceUnit.Unit?.UnitID ?? '',
-                ToUnitID: targetUnit.Unit?.UnitID ?? '',
-                ToSpaceID: targetUnit.Unit?.SpaceID ?? '',
-                // Named rather than left to the legacy default: a Link with no UpdateType
-                // meant NeedsProvides resolved automatically, which is what this creates.
-                UpdateType: 'NeedsProvides',
-                AutoUpdate: true,
-              },
-            }).unwrap(),
-          ),
-        ),
-      );
-
-      const failures = results.filter(
-        (r): r is PromiseRejectedResult => r.status === 'rejected',
-      );
-
-      if (failures.length > 0) {
-        const messages = failures.map((f) => {
-          const reason = f.reason as { data?: { message?: string } };
-          return reason?.data?.message ?? 'Unknown error';
-        });
-        setError(messages.join('; '));
-      } else {
-        trackEntityBulkCreated({
-          entity_type: ENTITY_TYPES.LINK,
-          count: sourceUnits.length * selectedTargetUnits.length,
-        });
-        onSave();
-      }
-    } catch (err) {
-      setError(
-        `Failed to create links: ${err instanceof Error ? err.message : 'Unknown error'}`,
-      );
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column' }}>
@@ -123,23 +64,27 @@ export const LinkWorkflow = ({
 
       {/* Source and target units visualization */}
       <Box sx={{ p: 2, bgcolor: 'background.paper' }}>
-        <ErrorList errors={[error]} onClose={() => setError('')} />
         <Grid container spacing={2} alignItems='center'>
-          {/* Source unit */}
+          {/* Source units */}
           <Grid size={{ xs: 'auto' }}>
-            <Box
-              sx={{
-                px: 1.5,
-                py: 0.5,
-                bgcolor: 'background.paper',
-                border: '1px solid',
-                borderColor: 'divider',
-                borderRadius: 1,
-              }}
-            >
-              <Typography variant='body2' fontWeight={600}>
-                {sourceUnits?.[0]?.Unit?.Slug?.toUpperCase() || 'Unknown'}
-              </Typography>
+            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+              {sourceUnits.map((unit) => (
+                <Box
+                  key={unit.Unit?.UnitID}
+                  sx={{
+                    px: 1.5,
+                    py: 0.5,
+                    bgcolor: 'background.paper',
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 1,
+                  }}
+                >
+                  <Typography variant='body2' fontWeight={600}>
+                    {unit.Unit?.Slug?.toUpperCase() || 'Unknown'}
+                  </Typography>
+                </Box>
+              ))}
             </Box>
           </Grid>
 
@@ -208,20 +153,32 @@ export const LinkWorkflow = ({
             {selectedTargetUnits.length !== 1 ? 's' : ''} selected
           </Typography>
           <Stack direction='row' spacing={2}>
-            <Button variant='outlined' size='small' onClick={onCancel} disabled={isSaving}>
+            <Button variant='outlined' size='small' onClick={onCancel}>
               Cancel
             </Button>
             <Button
               variant='contained'
               size='small'
-              onClick={handleSave}
-              disabled={isSaving || selectedTargetUnits.length === 0}
+              onClick={() => setConfiguring(true)}
+              disabled={selectedTargetUnits.length === 0}
+              data-testid='link-workflow-next'
             >
-              {isSaving ? 'Creating Links...' : 'Create Links'}
+              Next: Link settings
             </Button>
           </Stack>
         </Stack>
       </Box>
+      <LinkDrawer
+        subject={
+          configuring ? { mode: 'create', from: ends(sourceUnits), to: ends(selectedTargetUnits) } : undefined
+        }
+        backLabel='Back to Units'
+        onClose={() => setConfiguring(false)}
+        onSaved={() => {
+          setConfiguring(false);
+          onSave();
+        }}
+      />
     </Box>
   );
 };

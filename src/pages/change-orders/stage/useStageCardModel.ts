@@ -83,10 +83,12 @@ export interface UseStageCardModelArgs {
   /** The page's one live region. */
   announce: (text: string) => void;
   onReviewRecorded: Recorded;
+  /** The reader's own Promote or Release of this stage succeeded: the page may move on. */
+  onStageActed: (stageId: string) => void;
 }
 
 export function useStageCardModel(args: UseStageCardModelArgs) {
-  const { detail, stage, changes, coReviews, history, hrefForStage, hasComplete, approveRef, announce, onReviewRecorded } = args;
+  const { detail, stage, changes, coReviews, history, hrefForStage, hasComplete, approveRef, announce, onReviewRecorded, onStageActed } = args;
   const stageId = stage.stageId;
   const isSource = stage.verdict === 'source';
   const stageName = stageDisplayName(stageId, isSource);
@@ -385,6 +387,7 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     announce,
     focusAfter,
     setRunning,
+    onStageActed,
   });
 
   const methods = methodsFor(state, stageHasTargets, stageName, stageHasReleasePrerequisites(detail.workflow, stageId));

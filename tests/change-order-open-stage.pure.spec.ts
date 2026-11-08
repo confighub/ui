@@ -2,9 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The stage the ChangeOrder page opens on when the URL names none (#6154): a
- * last stage that is promoted and not released still has its Release to do, so
- * the page opens on it, not on Complete.
+ * The stage the ChangeOrder page opens on when the URL names none: the first
+ * stage, in order, with work left. That is a stage with a release Target that is
+ * promoted and not yet released (its Release is still to do), or the next stage
+ * to promote into. With neither, the page opens on Complete. A stage with no
+ * release Target is done once promoted.
+ *
+ * The page waits on a stage until its Release is done because the next stage's
+ * entry gate needs this stage released: moving on after Promote opens a stage
+ * the reader cannot promote yet, and they must go back to release.
  *
  * Whether a stage has a release Target is the rail's own answer
  * (`ConsoleStage.hasReleaseTargets`), so the card and the rail agree: it holds
@@ -35,8 +41,44 @@ function input(over: Partial<OpenStageInput> = {}): OpenStageInput {
   };
 }
 
-test('the next stage the change has not reached comes first', () => {
+test('the next stage to promote into is open when no stage before it has a Release to do', () => {
   expect(defaultOpenStageId(input({ nextStageId: 'dev' }))).toBe('dev');
+});
+
+/** dev, staging and prod; staging is the next stage to promote into. */
+function threeStages(dev: 'promoted' | 'released', devHasTarget = true): OpenStageInput {
+  return {
+    nextStageId: 'staging',
+    stageStates: [
+      { stageId: 'base', verdict: 'source' },
+      { stageId: 'dev', verdict: dev },
+      { stageId: 'staging', verdict: 'waiting' },
+      { stageId: 'prod', verdict: 'waiting' },
+    ],
+    stageHasReleaseTargets: (id) => id !== 'base' && (id !== 'dev' || devHasTarget),
+  };
+}
+
+test('after Promote, a stage with a release Target stays open until its Release is done', () => {
+  expect(defaultOpenStageId(threeStages('promoted'))).toBe('dev');
+});
+
+test('after Release, the page moves on to the next stage', () => {
+  expect(defaultOpenStageId(threeStages('released'))).toBe('staging');
+});
+
+test('a promoted stage with no release Target is done: the page moves on to the next stage', () => {
+  expect(defaultOpenStageId(threeStages('promoted', false))).toBe('staging');
+});
+
+test('a stage being promoted, with a release Target, stays open', () => {
+  const state = threeStages('promoted');
+  expect(
+    defaultOpenStageId({
+      ...state,
+      stageStates: state.stageStates.map((s) => (s.stageId === 'dev' ? { ...s, verdict: 'in-progress' as const } : s)),
+    }),
+  ).toBe('dev');
 });
 
 test('a last stage promoted and not released, with a release Target, is opened instead of Complete', () => {
@@ -151,18 +193,106 @@ test('a Space labelled Stage=none: the rail still sees its release Target, so th
   expect(openedFrom(row({ released: [DEV], prodLabels: { Tier: 'prod', Stage: 'None' }, inScope: [BASE, DEV, PROD] }))).toBe('prod');
 });
 
-test('the card and the rail agree: the card opens a stage exactly when the rail offers a Release still to do', () => {
-  for (const r of [
-    row({ released: [DEV], inScope: [BASE, DEV, PROD] }),
-    row({ released: [DEV, PROD], inScope: [BASE, DEV, PROD] }),
-    row({ released: [DEV] }),
-    row({ released: [DEV], prodLabels: { Tier: 'prod', Stage: 'None' }, inScope: [BASE, DEV, PROD] }),
-  ]) {
-    const releaseToDo = r.stages.filter((s) => s.hasReleaseTargets && s.state.verdict === 'promoted').map((s) => s.stageId);
-    const opened = openedFrom(r);
-    if (r.nextStageId !== null) expect(opened).toBe(r.nextStageId);
-    else expect(opened === null ? [] : [opened]).toEqual(releaseToDo.slice(0, 1));
+/**
+ * The card's open stage for each row the rail draws, written out by hand: `verdict` is the verdict
+ * of the stage with work left, so the table covers a Release still to do after a full promote
+ * (`promoted`) and after a partial one (`in-progress`).
+ */
+test('the card and the rail agree: the card opens the first stage with a Release still to do, else the next stage, else Complete', () => {
+  const cases: { name: string; r: ReturnType<typeof row>; open: string | null; verdict?: string }[] = [
+    { name: 'prod promoted, not released', r: row({ released: [DEV], inScope: [BASE, DEV, PROD] }), open: 'prod', verdict: 'promoted' },
+    { name: 'prod released', r: row({ released: [DEV, PROD], inScope: [BASE, DEV, PROD] }), open: null },
+    { name: 'scope unknown', r: row({ released: [DEV] }), open: null },
+    {
+      name: 'prod labelled Stage=none',
+      r: row({ released: [DEV], prodLabels: { Tier: 'prod', Stage: 'None' }, inScope: [BASE, DEV, PROD] }),
+      open: 'prod',
+      verdict: 'promoted',
+    },
+    { name: 'dev promoted into one of two Spaces', r: threeRow({ resolved: [DEV_A], released: [] }), open: 'dev', verdict: 'in-progress' },
+    { name: 'dev promoted, not released', r: threeRow({ resolved: [DEV_A, DEV_B], released: [] }), open: 'dev', verdict: 'promoted' },
+    { name: 'dev released in one Space', r: threeRow({ resolved: [DEV_A, DEV_B], released: [DEV_A] }), open: 'dev', verdict: 'promoted' },
+    { name: 'dev released', r: threeRow({ resolved: [DEV_A, DEV_B], released: [DEV_A, DEV_B] }), open: 'staging', verdict: 'waiting' },
+    {
+      name: 'staging promoted, not released',
+      r: threeRow({ resolved: [DEV_A, DEV_B, STAGING], released: [DEV_A, DEV_B] }),
+      open: 'staging',
+      verdict: 'promoted',
+    },
+  ];
+  for (const c of cases) {
+    expect(openedFrom(c.r), c.name).toBe(c.open);
+    if (c.verdict !== undefined) {
+      expect(c.r.stages.find((s) => s.stageId === c.open)?.state.verdict, c.name).toBe(c.verdict);
+    }
   }
+});
+
+// ---------------------------------------------------------------------------
+// A middle stage: dev (two Spaces), staging and prod, each Space with a release Target
+// ---------------------------------------------------------------------------
+
+const DEV_A = 'dev-a';
+const DEV_B = 'dev-b';
+const STAGING = 'staging-1';
+const [DEV_STAGE, STAGING_STAGE, PROD_STAGE] = ['dev', 'staging', 'prod'].map((name) => ({
+  Name: name,
+  WhereSpace: `Labels.Stage = '${name}'`,
+}));
+const THREE_STAGES: ChangeWorkflowSpec = { Stages: [DEV_STAGE, STAGING_STAGE, PROD_STAGE] };
+
+/** `resolved`: the Spaces the change is promoted into; `released`: those the server records as released. */
+function threeRow(opts: { resolved: string[]; released: string[] }) {
+  const member = (spaceId: string, stage: string): ConsoleSpace => ({
+    spaceId,
+    slug: `myapp-${spaceId}`,
+    component: COMPONENT,
+    labels: { Stage: stage },
+    releaseTargetId: `target-${spaceId}`,
+  });
+  const spaces: ConsoleSpace[] = [
+    { spaceId: BASE, slug: 'myapp-base', component: COMPONENT },
+    member(DEV_A, 'dev'),
+    member(DEV_B, 'dev'),
+    member(STAGING, 'staging'),
+    member(PROD, 'prod'),
+  ];
+  const read = (ids: string[]) => ids.map((id) => ({ Space: { SpaceID: id } }) as ExtendedSpaceRead);
+  const stageSpaces: Record<string, ExtendedSpaceRead[]> = {
+    [stageWhereSpace(DEV_STAGE)]: read([DEV_A, DEV_B]),
+    [stageWhereSpace(STAGING_STAGE)]: read([STAGING]),
+    [stageWhereSpace(PROD_STAGE)]: read([PROD]),
+  };
+  return buildConsoleRow(
+    {
+      changeOrderId: 'co-3',
+      slug: 'ship-it',
+      spaceId: BASE,
+      spaceSlug: 'myapp-base',
+      resolvedSpaceIds: [BASE, ...opts.resolved],
+      releasedSpaceIds: opts.released,
+      releases: carryingReleases(opts.released),
+      inScopeSpaceIds: [BASE, DEV_A, DEV_B, STAGING, PROD],
+      governing: { state: 'governed', workflow: THREE_STAGES, changeWorkflowId: 'wf-3' },
+      stage: 'dev',
+    },
+    spaces,
+    stageSpaces,
+  );
+}
+
+test('dev promoted, not released: the page stays on dev, although staging is the next stage to promote into', () => {
+  const r = threeRow({ resolved: [DEV_A, DEV_B], released: [] });
+  expect(r.nextStageId).toBe('staging');
+  expect(openedFrom(r)).toBe('dev');
+});
+
+test('dev released in one of its two Spaces: its Release is not done, so the page stays on dev', () => {
+  expect(openedFrom(threeRow({ resolved: [DEV_A, DEV_B], released: [DEV_A] }))).toBe('dev');
+});
+
+test('dev released in every Space: the page moves on to staging', () => {
+  expect(openedFrom(threeRow({ resolved: [DEV_A, DEV_B], released: [DEV_A, DEV_B] }))).toBe('staging');
 });
 
 // ---------------------------------------------------------------------------

@@ -204,6 +204,7 @@ export function toFlowElements(
       data.density = 'compact';
       data.width = n.placement === 'card' ? CARD_W : STACK_W;
       data.suppressedConditions = waveList(base);
+      if (n.placement === 'member') data.stackMember = true;
       if (n.placement === 'card') {
         data.recoveredUntil = ctx.recoveredUntilById?.get(d.deploymentId);
         data.keptSelected = ctx.keptSelectedIds?.has(d.deploymentId) || undefined;

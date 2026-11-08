@@ -12,6 +12,7 @@ import FunctionsIcon from '@mui/icons-material/Functions';
 import CloseIcon from '@mui/icons-material/Close';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import {
+  Clearance,
   FunctionArgument,
   FunctionInvocationsResponse,
   FunctionSignature,
@@ -21,6 +22,7 @@ import {
   useDeleteInvocationMutation,
   useGetSpaceQuery,
   useInvokeFunctionsOnOrgMutation,
+  useLazyListAllUnitsQuery,
   useListAllUnitsQuery,
   useListAllInvocationsQuery,
   useListOrgFunctionsQuery,
@@ -35,7 +37,10 @@ import {
 } from '@/state/slices/invokerRequest';
 import { selectInvocationInitiativeId } from '@/state/slices/selectedUnits';
 import { useInvokeInChangeSet } from '@/components/invoker/hooks/useInvokeInChangeSet';
-import { LockedUnitsError } from '@/components/invoker/hooks/useInitiativeChangeSetLifecycle';
+import {
+  LockedUnitsError,
+  useInitiativeChangeSetLifecycle,
+} from '@/components/invoker/hooks/useInitiativeChangeSetLifecycle';
 import { useForceUnlockUnits } from '@/components/invoker/hooks/useForceUnlockUnits';
 import { LockedUnitsDialog } from '@/components/invoker/components/LockedUnitsDialog';
 import { useInvocationHistory } from '../invoker/hooks/useInvocationHistory';
@@ -48,6 +53,22 @@ import {
 import { extractApiErrorMessage, extractEmbeddedError } from '../invoker/utils/error-handling.utils';
 import { firstInvocationFunction, invocationFunctions } from '@/utility/invocation-functions';
 import { FUNCTIONS_PANEL_MARKER } from './appPanel';
+import { guardedChanges } from '@/components/guarded-write/guardedWrite';
+import { useGuardedWrite } from '@/components/guarded-write/useGuardedWrite';
+import {
+  NO_GUARD_VALUES,
+  clearanceRecording,
+  guardParams,
+  guardStamp,
+} from '@/components/guarded-write/guardValues';
+import type { InvokeWriteOptions } from '@/components/invoker/InvokeWriteOptions';
+import {
+  guardSaveBlockedReason,
+  guardsPatch,
+  storedClearance,
+} from '@/components/invoker/utils/invocation-write-options';
+import { chunkInClause, inClause } from '@/hooks/inClauseChunks';
+import { unitHasGuards } from '@/utility/clearance-functions';
 
 export type ListOrgFunctionsApiResponse = {
   [key: string]: {
@@ -416,6 +437,26 @@ export const InvokerSidebar = ({
 
   // Mutations
   const [invokeFunctionMutation] = useInvokeFunctionsOnOrgMutation();
+  const [listUnits] = useLazyListAllUnitsQuery();
+  const { start: startGuardedWrite, dialog: guardedWriteDialog } = useGuardedWrite('Run');
+
+  // Which of the Units have guards, read in chunks since a long IN clause goes past the server's
+  // limit. A write to the others is never withheld by a guard, so they need no dry run.
+  const guardedUnitIds = useCallback(
+    async (unitIds: string[]) => {
+      const pages = await Promise.all(
+        chunkInClause('UnitID', unitIds).map((where) =>
+          listUnits({ where, select: 'UnitID,PathAnnotations' }).unwrap(),
+        ),
+      );
+      return pages
+        .flat()
+        .filter((item) => unitHasGuards(item.Unit?.PathAnnotations))
+        .map((item) => item.Unit?.UnitID)
+        .filter((id): id is string => !!id);
+    },
+    [listUnits],
+  );
   const [createInvocationMutation] = useCreateInvocationMutation();
 
   // When the Invoker is running in an initiative's context, each invocation is
@@ -423,6 +464,7 @@ export const InvokerSidebar = ({
   // invocations go through the normal stateless `invokeFunctions` path.
   const initiativeId = useAppSelector(selectInvocationInitiativeId);
   const { invoke: invokeInChangeSet } = useInvokeInChangeSet();
+  const { joinChangeSet } = useInitiativeChangeSetLifecycle();
   const [lockedUnitIds, setLockedUnitIds] = useState<string[]>([]);
   const pendingInvokeRef = useRef<(() => void) | null>(null);
   const { holders: lockHolders, forceUnlock } = useForceUnlockUnits({
@@ -575,6 +617,7 @@ export const InvokerSidebar = ({
       parameters: FunctionParameterFormData,
       dryRun: boolean = false,
       parameterizedInvocationId?: string,
+      writeOptions?: InvokeWriteOptions,
     ) => {
       if (!spaceId) {
         setInvokeResult({
@@ -605,58 +648,108 @@ export const InvokerSidebar = ({
         }
 
         const selectedUnitIds = enrichedContext.selectedUnits.map((u: { id: string }) => u.id);
-        const unitIds = selectedUnitIds.map((id: string) => `'${id}'`).join(',');
-        const whereClause = `UnitID IN (${unitIds})`;
 
-        let result;
-        if (parameterizedInvocationId) {
-          // Parameterized Invocation: send the declared parameter values,
-          // referencing the stored Invocation, and let the server expand its
-          // templated arguments. (Not yet routed through an Initiative/ChangeSet.)
+        // Each Unit as the dialog and the results name it: with its Space, since slugs repeat.
+        const labelByUnitId: Record<string, string> = {};
+        for (const u of enrichedContext.selectedUnits) {
+          labelByUnitId[u.id] = u.spaceName ? `${u.spaceName}/${u.name}` : u.name;
+        }
+        const withheldIn = (responses: FunctionInvocationsResponse[]) =>
+          responses.flatMap((r) =>
+            guardedChanges(
+              r.Conflicts,
+              (r.UnitID && labelByUnitId[r.UnitID]) || '',
+              r.SpaceID && r.UnitID ? { spaceId: r.SpaceID, unitId: r.UnitID } : undefined,
+            ),
+          );
+        // One invocation, on the Units given. A parameterized Invocation sends the declared
+        // parameter values, referencing the stored Invocation, and the server expands its
+        // templated arguments. In an initiative's context the write is made in a ChangeSet of its
+        // own (not yet for a parameterized Invocation).
+        // The clearance is what the person stated, plus the guards they acknowledged at the write
+        // (requirements of one key are alternatives, so the two add up), plus the guard the write
+        // records, which the server refuses to record otherwise. A dry run sends the same, so it
+        // previews what the write would withhold.
+        const guardValues = writeOptions?.guardValues ?? NO_GUARD_VALUES;
+        const invokeOn = async (
+          unitIdsToRun: string[],
+          options: { dryRun: boolean; clearance?: Clearance },
+        ): Promise<FunctionInvocationsResponse[]> => {
+          const cleared = [...(writeOptions?.clearance ?? []), ...(options.clearance ?? [])];
+          const clearance = clearanceRecording(cleared.length > 0 ? cleared : undefined, guardValues);
+          const guardOptions = {
+            clearance: clearance ? JSON.stringify(clearance) : undefined,
+            ...guardParams(guardValues),
+          };
+          if (initiativeId && !parameterizedInvocationId) {
+            const { responses } = await invokeInChangeSet({
+              spaceId,
+              executorSpaceId,
+              initiativeId,
+              unitIds: unitIdsToRun,
+              toolchainType: enrichedContext.primaryToolchainType || '',
+              functionInvocation: { FunctionName: functionName, Arguments: functionArgs },
+              dryRun: options.dryRun,
+              changeDescription: writeOptions?.changeDescription,
+              ...guardOptions,
+            });
+            return responses;
+          }
           const paramValues = Object.fromEntries(
             Object.entries(parameters).filter(
               ([, value]) => value !== undefined && value !== null && value !== '',
             ),
           );
-          result = await invokeFunctionMutation({
+          return invokeFunctionMutation({
             executorSpace: executorSpaceId,
-            where: whereClause || undefined,
-            dryRun: dryRun ? 'true' : undefined,
+            where: inClause('UnitID', unitIdsToRun),
+            dryRun: options.dryRun ? 'true' : undefined,
+            ...guardOptions,
+            // A dry run writes nothing, so it is made in no ChangeSet: the Units join one only for
+            // the write itself, and the server asks a ChangeSet to be open with them in it.
+            changeSetId: options.dryRun ? undefined : writeOptions?.changeSetId,
             include: 'Diff',
-            functionInvocationsRequest: {
-              ToolchainType: enrichedContext.primaryToolchainType || '',
-              ParameterizedInvocations: [
-                { InvocationID: parameterizedInvocationId, Parameters: paramValues },
-              ],
-            },
-          }).unwrap();
-        } else if (initiativeId) {
-          const { responses } = await invokeInChangeSet({
-            spaceId,
-            executorSpaceId,
-            initiativeId,
-            unitIds: selectedUnitIds,
-            toolchainType: enrichedContext.primaryToolchainType || '',
-            functionInvocation: { FunctionName: functionName, Arguments: functionArgs },
-            dryRun,
-          });
-          result = responses;
-        } else {
-          result = await invokeFunctionMutation({
-            executorSpace: executorSpaceId,
-            where: whereClause || undefined,
-            dryRun: dryRun ? 'true' : undefined,
-            include: 'Diff',
-            functionInvocationsRequest: {
-              ToolchainType: enrichedContext.primaryToolchainType || '',
-              FunctionInvocations: [
-                {
-                  FunctionName: functionName,
-                  Arguments: functionArgs,
+            functionInvocationsRequest: parameterizedInvocationId
+              ? {
+                  ToolchainType: enrichedContext.primaryToolchainType || '',
+                  ParameterizedInvocations: [
+                    { InvocationID: parameterizedInvocationId, Parameters: paramValues },
+                  ],
+                  ChangeDescription: writeOptions?.changeDescription,
+                }
+              : {
+                  ToolchainType: enrichedContext.primaryToolchainType || '',
+                  FunctionInvocations: [{ FunctionName: functionName, Arguments: functionArgs }],
+                  ChangeDescription: writeOptions?.changeDescription,
                 },
-              ],
-            },
           }).unwrap();
+        };
+
+        let result: FunctionInvocationsResponse[] | undefined;
+        if (dryRun) {
+          // A dry run asked for is the preview already: what guards would withhold shows in
+          // its results.
+          result = await invokeOn(selectedUnitIds, { dryRun: true });
+        } else {
+          // Where some of the Units have guards, those are run as a dry run first, to ask
+          // before anything is written whether to clear what the guards would withhold.
+          const guarded = await guardedUnitIds(selectedUnitIds);
+          const outcome = await startGuardedWrite({
+            guarded: guarded.length > 0,
+            run: async ({ dryRun: preview, clearance }) => {
+              if (preview) {
+                return withheldIn(await invokeOn(guarded, { dryRun: true }));
+              }
+              // A ChangeSet the person chose is joined only for the write itself, so a dry run or
+              // a cancelled one leaves the Units as they were.
+              if (writeOptions?.changeSetId && !(initiativeId && !parameterizedInvocationId)) {
+                await joinChangeSet({ unitIds: selectedUnitIds, changeSetId: writeOptions.changeSetId });
+              }
+              result = await invokeOn(selectedUnitIds, { dryRun: false, clearance });
+              return withheldIn(result);
+            },
+          });
+          if (outcome.status === 'cancelled') return;
         }
 
         const hasErrors = result?.some((r) => !r.Success);
@@ -668,6 +761,7 @@ export const InvokerSidebar = ({
 
         const invokeResultObj = {
           success: !hasErrors,
+          dryRun,
           message: hasErrors ? 'Some invocations failed' : 'All invocations succeeded',
           responses: result,
           slugByUnitId,
@@ -691,7 +785,7 @@ export const InvokerSidebar = ({
       } catch (error) {
         if (error instanceof LockedUnitsError) {
           pendingInvokeRef.current = () => {
-            void handleInvoke(functionName, parameters, dryRun);
+            void handleInvoke(functionName, parameters, dryRun, parameterizedInvocationId, writeOptions);
           };
           setLockedUnitIds(error.lockedUnitIds);
           setIsInvoking(false);
@@ -724,17 +818,28 @@ export const InvokerSidebar = ({
         setIsInvoking(false);
       }
     },
-    [spaceId, executorSpaceId, enrichedContext, invokeFunctionMutation, initiativeId, invokeInChangeSet, addInvocation]
+    [spaceId, executorSpaceId, enrichedContext, invokeFunctionMutation, initiativeId, invokeInChangeSet, joinChangeSet, addInvocation, guardedUnitIds, startGuardedWrite]
   );
 
   // Handle save invocation or trigger
   const handleSave = useCallback(
-    async (options: SaveInvocationOptions, parameters: FunctionParameterFormData): Promise<{ success: boolean; error?: string }> => {
+    async (
+      options: SaveInvocationOptions,
+      parameters: FunctionParameterFormData,
+      writeOptions: InvokeWriteOptions,
+    ): Promise<{ success: boolean; error?: string }> => {
       const targetSpaceId = options.spaceId || spaceId;
 
       if (!targetSpaceId || !selectedFunction?.FunctionName) {
         return { success: false, error: 'Missing space ID or function name' };
       }
+      // An Invocation or Trigger stores the clearance and the guard the Options
+      // state. Neither can hold an inherited guard, so that is not saved rather than dropped.
+      const { guardValues } = writeOptions;
+      const blockedReason = guardSaveBlockedReason(guardValues);
+      if (blockedReason) return { success: false, error: blockedReason };
+      const clearance = storedClearance(writeOptions.clearance, guardValues);
+      const guards = guardStamp(guardValues);
 
       try {
         const functionArgs: FunctionArgument[] = Object.entries(parameters)
@@ -762,6 +867,8 @@ export const InvokerSidebar = ({
                 ...(options.labels && { Labels: options.labels }),
                 ...(options.annotations && { Annotations: options.annotations }),
                 ...(options.channelId && { ChannelID: options.channelId }),
+                ...(clearance && { Clearance: clearance }),
+                ...(guards && { Guards: guards }),
               },
             }).unwrap();
 
@@ -788,6 +895,8 @@ export const InvokerSidebar = ({
                 ...(options.labels && { Labels: options.labels }),
                 ...(options.annotations && { Annotations: options.annotations }),
                 ...(options.channelId && { ChannelID: options.channelId }),
+                ...(clearance && { Clearance: clearance }),
+                ...(guards && { Guards: guards }),
               },
             }).unwrap();
 
@@ -817,11 +926,15 @@ export const InvokerSidebar = ({
               )
             : [{ FunctionName: selectedFunction.FunctionName, Arguments: functionArgs }];
 
+          const patchedGuards = guardsPatch(loadedInvocation?.Guards, guardValues);
           const result = await patchInvocationMutation({
             spaceId,
             invocationId: options.invocationId,
             body: {
               FunctionInvocations: updatedFunctions,
+              // A merge patch replaces a list whole, and null removes it.
+              Clearance: clearance ?? null,
+              ...(patchedGuards && { Guards: patchedGuards }),
               Version: loadedInvocation?.Version ?? 0,
             },
           }).unwrap();
@@ -1029,9 +1142,11 @@ export const InvokerSidebar = ({
             onSaveAttributes={handleSaveAttributes}
             isSavingAttributes={isSavingAttributes}
             saveAsTrigger={saveAsTrigger}
+            changeSetChoice={!initiativeId}
           />
         </SidebarContent>
       </SidebarPanel>
+      {guardedWriteDialog}
       <LockedUnitsDialog
         open={lockedUnitIds.length > 0}
         holders={lockHolders}

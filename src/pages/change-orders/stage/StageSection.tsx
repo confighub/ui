@@ -13,14 +13,16 @@
  * A done stage says so and offers nothing: the log ends with where to go next.
  */
 
-import { forwardRef, useImperativeHandle, type CSSProperties, type RefObject } from 'react';
+import { forwardRef, useImperativeHandle, useMemo, type CSSProperties, type RefObject } from 'react';
 
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 
 import type { ConfigDiffColumns } from '@/components/config-diff/ConfigDiffView';
 import type { DiffComments } from '@/components/config-diff/diffComments';
-import { InvocationSourceDetails } from '../components/InvocationSourceDetails';
+import { InvocationSourcePanel } from '../components/InvocationSourcePanel';
+import { guardsNotCovered, invocationEditTakesEffect, spacesToPromote } from '../invocationClearance';
+import { useGetInvocationWithheldQuery } from '../invocationClearanceApi';
 import type { ChangeOrderDetail } from '../useChangeOrderDetail';
 import type { ChangeOrderHistory } from '../useChangeOrderHistory';
 import type { useChangeOrderConsoleChanges } from '../useChangeOrderConsoleChanges';
@@ -66,6 +68,8 @@ export interface StageSectionProps {
   announce: (text: string) => void;
   onReviewRecorded: (outcome: Extract<SubmitReviewOutcome, { ok: true }>, summary: GateReviewSummary, result: ReviewChoice) => void;
   onNotice: (message: string) => void;
+  /** The reader's own Promote or Release of this stage succeeded. */
+  onStageActed: (stageId: string) => void;
 }
 
 /** What the page can ask of the card. */
@@ -87,6 +91,7 @@ export const StageSection = forwardRef<StageSectionHandle, StageSectionProps>(fu
     approveRef: props.approveRef,
     announce: props.announce,
     onReviewRecorded: props.onReviewRecorded,
+    onStageActed: props.onStageActed,
   });
   const { diff } = model;
   /*
@@ -97,6 +102,25 @@ export const StageSection = forwardRef<StageSectionHandle, StageSectionProps>(fu
 
   const log = useStageLog({ model, detail, stage, history: props.history, coReviews: props.coReviews });
   const invocationSource = model.state.kind === 'invocationSource' && detail.invocationSource !== undefined;
+  const invocationEditable = invocationEditTakesEffect({
+    inScopeSpaceIds: detail.inScopeSpaceIds,
+    resolvedSpaceIds: detail.progress.resolvedSpaceIds,
+    abortedReason: detail.abortedReason,
+  });
+  // Asked only where the answer can be acted on: the source shown, and Spaces still to promote.
+  const withheldRead = useGetInvocationWithheldQuery(
+    {
+      changeOrderId: detail.changeOrderId ?? '',
+      spaceIds: spacesToPromote(detail.inScopeSpaceIds, detail.progress.resolvedSpaceIds),
+      invocationVersion: detail.invocation?.Version,
+    },
+    { skip: !invocationSource || !invocationEditable || detail.changeOrderId === undefined || detail.invocation === undefined },
+  );
+  const invocationClearance = detail.invocation?.Clearance;
+  const withheld = useMemo(
+    () => guardsNotCovered((withheldRead.currentData ?? []).flatMap((response) => response.Conflicts ?? []), invocationClearance ?? []),
+    [withheldRead.currentData, invocationClearance],
+  );
   return (
     <Box
       component="section"
@@ -120,7 +144,12 @@ export const StageSection = forwardRef<StageSectionHandle, StageSectionProps>(fu
         {/* An Invocation's source writes nothing itself: the card shows the Invocation each stage runs as it is promoted. */}
         {invocationSource && detail.invocationSource !== undefined ? (
           <Box data-testid="invocation-card">
-            <InvocationSourceDetails source={detail.invocationSource} />
+            <InvocationSourcePanel
+              source={detail.invocationSource}
+              invocation={detail.invocation}
+              editable={invocationEditable}
+              withheld={withheld}
+            />
           </Box>
         ) : log.view.hideChangeCard ? null : (
           <Box data-testid="change-card">

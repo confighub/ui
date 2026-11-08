@@ -83,8 +83,8 @@ import {
   changeOrderType,
 } from './changeOrdersTokens';
 import { ChangeOrderBlockedResources, ChangeOrderRefusals } from './changeOrderRefusals';
-import { FOCUS_TITLE_STATE, changeOrderPath } from './changeOrderAddress';
-import { defaultOpenStageId, railReleaseTargets } from './changeOrderOpenStage';
+import { FOCUS_TITLE_STATE, MOVED_ON_STATE, changeOrderPath } from './changeOrderAddress';
+import { defaultOpenStageId, railReleaseTargets, stageHasWorkLeft } from './changeOrderOpenStage';
 import { useSharedDiffColumns } from './useSharedDiffColumns';
 import { UnitDiffRow } from './components/UnitDiffRow';
 import { Fact, FactLink, OpenedAt, StateChip, SummaryCard } from './components/SummaryFacts';
@@ -649,6 +649,8 @@ export default function ChangeOrdersPage() {
    * previous selection. Nothing on this page stores one — the URL is the whole
    * selection state.
    */
+  // The rail's own answer, so the card and the rail agree on which stage still has a Release to do.
+  const stageHasReleaseTargets = useMemo(() => railReleaseTargets(detail.consoleRow?.stages), [detail.consoleRow?.stages]);
   const selectedStage = useMemo(() => {
     if (detail.stageStates.length === 0) return undefined;
     if (stageParam === COMPLETE_STAGE_ID) return undefined;
@@ -656,15 +658,38 @@ export default function ChangeOrdersPage() {
       const match = detail.stageStates.find((s) => s.stageId === stageParam);
       if (match !== undefined) return match;
     }
-    // A last stage that is promoted and not released still has its Release to do: open it, not Complete.
+    // The first stage with work left: a stage with a Release still to do comes before the next stage.
     const openStageId = defaultOpenStageId({
       nextStageId: detail.nextStageId,
       stageStates: detail.stageStates,
-      // The rail's own answer, so the card and the rail agree on which stage still has a Release to do.
-      stageHasReleaseTargets: railReleaseTargets(detail.consoleRow?.stages),
+      stageHasReleaseTargets,
     });
     return detail.stageStates.find((s) => s.stageId === openStageId);
-  }, [detail.stageStates, detail.nextStageId, detail.consoleRow?.stages, stageParam]);
+  }, [detail.stageStates, detail.nextStageId, stageHasReleaseTargets, stageParam]);
+  /*
+   * The stage the reader promoted or released while the address named it. The address always wins,
+   * so once the stage has no work left (the rule the bare address opens by) the page goes to the bare
+   * address, and moves on to the stage that is open there, as it does after the same action on the
+   * bare address. A stage with a Release still to do keeps the page. Moving the reader elsewhere
+   * drops it. Not while the page still reads: a release Target not read yet would make a stage look done.
+   */
+  const [actedNamed, setActedNamed] = useState<string | null>(null);
+  const onStageActed = useCallback((stageId: string) => setActedNamed(stageId), []);
+  useEffect(() => {
+    if (actedNamed === null) return;
+    if (stageParam !== actedNamed) {
+      setActedNamed(null);
+      return;
+    }
+    if (detail.isLoading) return;
+    const acted = detail.stageStates.find((s) => s.stageId === actedNamed);
+    if (acted === undefined || stageHasWorkLeft(acted, { nextStageId: detail.nextStageId, stageHasReleaseTargets })) return;
+    setActedNamed(null);
+    navigate(
+      { pathname: changeOrderPath(detail.baseSpaceSlug, detail.slug), search, hash },
+      { replace: true, state: { [MOVED_ON_STATE]: true } },
+    );
+  }, [actedNamed, stageParam, detail.isLoading, detail.stageStates, detail.nextStageId, stageHasReleaseTargets, detail.baseSpaceSlug, detail.slug, navigate, search, hash]);
   /*
    * Complete is the open step when the address names it, and also when the bare address has no stage
    * left to open: every stage done, so the page moves on to Complete after the last release.
@@ -789,6 +814,7 @@ export default function ChangeOrdersPage() {
     scopedSpaces: detail.scopedSpaces,
     resolvedSpaceIds,
     skip: !detail.found,
+    invocationVersion: detail.invocation?.Version,
   });
 
   const { changeSets } = useChangeOrderChangeSets({
@@ -1957,6 +1983,7 @@ export default function ChangeOrdersPage() {
               announce={setAnnouncement}
               onReviewRecorded={onReviewRecorded}
               onNotice={showNotice}
+              onStageActed={onStageActed}
             />
           ) : null}
 
