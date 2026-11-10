@@ -113,6 +113,8 @@ export function resourceConflictOf(conflict: MutationConflict): ChangeOrderResou
   return {
     reason: conflict.Reason ?? '',
     resourceName: conflict.Resource?.ResourceName,
+    ...(conflict.Resource?.ResourceType ? { resourceType: conflict.Resource.ResourceType } : {}),
+    ...(conflict.Resource?.ResourceNameWithoutScope ? { resourceNameWithoutScope: conflict.Resource.ResourceNameWithoutScope } : {}),
     path: conflict.Path,
     details: conflict.Details,
     targetValue: scalarText(conflict.Target?.Value),

@@ -54,9 +54,10 @@ import type {
 export const DEFAULT_ATTESTATION_TYPE = 'Approval';
 
 /**
- * Records of one person within this window of the first form one decision (one /attest call).
- * One call writes its records (one per Space) in one transaction, so they are seconds apart at
- * most; two calls a minute apart are two decisions.
+ * Records of one person, each within this window of the one before it, form one decision (one
+ * /attest call). One call writes its records one Space at a time, each in its own transaction, so
+ * a call over many Spaces can last much longer than this from its first record to its last, but
+ * its records come close one after the other. Two calls a minute apart are two decisions.
  */
 export const DECISION_WINDOW_MS = 2_000;
 
@@ -189,19 +190,24 @@ function toRecords(input: DeriveGateReviewsInput): ReviewRecord[] {
   return records.sort((a, b) => a.createdMs - b.createdMs || a.id.localeCompare(b.id));
 }
 
-/** Records of one /attest call: same person, Type, result, note and ChangeOrder, close in time, one per Space. */
+/**
+ * Records of one /attest call: same person, Type, result, note and ChangeOrder, one per Space,
+ * each close in time to the one before it. `records` is sorted oldest first, so the last member
+ * of a group is its latest.
+ */
 function groupRecords(records: ReviewRecord[]): ReviewRecord[][] {
   const groups: ReviewRecord[][] = [];
   for (const record of records) {
     const group = groups.find((candidate) => {
       const first = candidate[0];
+      const last = candidate[candidate.length - 1];
       return (
         first.userId === record.userId &&
         first.type === record.type &&
         first.result === record.result &&
         (first.attestation.Note ?? '') === (record.attestation.Note ?? '') &&
         (first.attestation.ChangeOrderID ?? '') === (record.attestation.ChangeOrderID ?? '') &&
-        record.createdMs - first.createdMs <= DECISION_WINDOW_MS &&
+        record.createdMs - last.createdMs <= DECISION_WINDOW_MS &&
         !candidate.some((member) => member.spaceId === record.spaceId)
       );
     });
@@ -303,7 +309,11 @@ function buildDecisions(records: ReviewRecord[], requirements: Requirement[], in
       ? group.reduce((latest, record) => ((record.revokedAt ?? '') > (latest.revokedAt ?? '') ? record : latest))
       : undefined;
     const countsToward = requirements.map((r) => r.name).filter((name) => (byRequirement[name]?.countedOn ?? 0) > 0);
-    const notCovering = requirements.filter((requirement) => notCoveringRequirement(ids, first.type, requirement)).map((r) => r.name);
+    // Absent from rows that were asked for before the record was read is not "does not cover".
+    const rowsBehind = group.some((record) => input.recordsAheadOfRows?.has(record.id) === true);
+    const notCovering = rowsBehind
+      ? []
+      : requirements.filter((requirement) => notCoveringRequirement(ids, first.type, requirement)).map((r) => r.name);
     const decision: ReviewDecision = {
       id: first.id,
       attestationIds: group.map((record) => record.id),

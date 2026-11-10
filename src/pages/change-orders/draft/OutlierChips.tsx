@@ -28,6 +28,8 @@ import { BARE_BUTTON, CODE_SX, DRAFT_TRANSITION, FOCUS_RING, OPEN_PRESSED, PRESS
 import type { OutlierAction } from './draftPageModel';
 import { DraftPopover, PopoverHeading } from './DraftPopover';
 import type { DraftOutlierFact } from './draftPreview';
+import { SpacesMoreButton } from '../components/SpaceListing';
+import { NAMES_SHOWN } from '../components/spaceListLogic';
 
 const copy = draftCopy.page.outlier;
 
@@ -363,7 +365,7 @@ export function OutsideChips({ variants, workflowSlug, onLeaveOut }: OutsideChip
   const [restoreFocus, setRestoreFocus] = useState(true);
   return (
     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '6px', minWidth: 0 }} data-testid="draft-outside-chips">
-      {variants.map((variant) => (
+      {variants.slice(0, NAMES_SHOWN).map((variant) => (
         <Box
           key={variant.spaceId}
           component="button"
@@ -382,6 +384,7 @@ export function OutsideChips({ variants, workflowSlug, onLeaveOut }: OutsideChip
           <span>{copy.outsideText}</span>
         </Box>
       ))}
+      {variants.length > NAMES_SHOWN ? <SpacesMoreButton spaces={variants.map(({ spaceId, name }) => ({ spaceId, name }))} plain /> : null}
       <DraftPopover anchorEl={open?.anchor ?? null} onClose={() => setOpen(null)} label={open?.variant.name ?? ''} restoreFocus={restoreFocus}>
         {open === null ? null : (
           <>

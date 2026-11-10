@@ -134,7 +134,9 @@ test.describe('Blame tab: dismissing a conflict for good', () => {
     await page.goto(unitBlameHref(spaceId, variantId, 'spec.replicas'));
     const blame = page.getByTestId('blame-tab');
     const row = blame.getByRole('row').filter({ hasText: 'spec.replicas' });
-    await expect(row).toHaveCount(1);
+    // The first page a busy CI worker opens can take longer to start and load the blame than an
+    // assertion waits by default.
+    await expect(row).toHaveCount(1, { timeout: 20000 });
     await row.getByRole('checkbox').check();
     // A row click also opens the field's drawer, which is not what this test is about.
     await page.keyboard.press('Escape');

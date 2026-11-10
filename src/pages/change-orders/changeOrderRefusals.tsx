@@ -26,6 +26,8 @@ import { Box } from '@mui/material';
 
 import type { ChangeOrderResourceConflict } from '../x/apps/change-order/changeOrderTypes';
 import { changeOrderInk, changeOrderShape, changeOrderStatus, changeOrderSurface, changeOrderType } from './changeOrdersTokens';
+import { MoreRowsButton } from './components/SpaceListing';
+import { useCappedRows } from './components/useCappedRows';
 
 /** What keeps a field's value, for the two reasons that mean the target kept it. */
 const KEPT_BY: Readonly<Record<string, string>> = {
@@ -138,6 +140,8 @@ export function ChangeOrderBlockedResources<TUnit extends { unitId: string }>({
    */
   renderUnit: (unit: TUnit) => ReactNode;
 }) {
+  // Each row carries the refusal's reasons, so "more" shows the rest in place; a name-only list would open the shared Space list.
+  const rows = useCappedRows(units);
   if (units.length === 0) return null;
   return (
     <Box
@@ -163,11 +167,12 @@ export function ChangeOrderBlockedResources<TUnit extends { unitId: string }>({
           ? 'This resource did not change, and the change expected it to'
           : `${units.length} resources did not change, and the change expected them to`}
       </Box>
-      {units.map((unit) => (
+      {rows.visible.map((unit) => (
         <Box key={unit.unitId} sx={{ padding: '4px 0' }}>
           {renderUnit(unit)}
         </Box>
       ))}
+      <MoreRowsButton total={units.length} more={rows.more} onShow={rows.showAll} />
     </Box>
   );
 }

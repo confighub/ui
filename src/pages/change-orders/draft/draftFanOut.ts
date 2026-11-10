@@ -22,6 +22,7 @@ import { linkedSourcePaths } from '../../x/apps/change-order/linkedSourcePaths';
 import { draftCopy } from './draftCopy';
 import type { DraftAddress, DraftAddressPatch } from './draftDecisions';
 import type { DraftDecision, DraftPastChangeOrder, DraftProblem, DraftVariant } from './draftTypes';
+import { namesText } from '../components/spaceListLogic';
 
 /** The update types of a fan-out ChangeOrder, in the order the sub bar offers them. */
 export const FAN_OUT_TYPES = ['TransformPaths', 'Upsert', 'Insert'] as const;
@@ -240,9 +241,9 @@ export function resolveFanOutDraft(input: ResolveFanOutInput): DraftFanOut {
   if (automatic.length > 0) {
     const names = variants.filter((variant) => automatic.some((link) => link.spaceId === variant.spaceId));
     const leaveOut: DraftAddressPatch = { out: [...variants.filter((variant) => !scopeIds.includes(variant.spaceId)).map((variant) => variant.slug), ...names.map((variant) => variant.slug)] };
-    problem('auto-update', words.autoUpdate(automatic.map((link) => link.slug).join(', '), names.map((variant) => variant.name).join(', ')), {
+    problem('auto-update', words.autoUpdate(namesText(automatic.map((link) => link.slug)), namesText(names.map((variant) => variant.name))), {
       row: 'where',
-      fix: { label: draftCopy.fixes.leaveOutNamed(names.map((variant) => variant.name).join(', ')), patch: leaveOut },
+      fix: { label: draftCopy.fixes.leaveOutNamed(namesText(names.map((variant) => variant.name))), patch: leaveOut },
     });
   }
 
@@ -272,7 +273,7 @@ export function resolveFanOutDraft(input: ResolveFanOutInput): DraftFanOut {
     if (endNum === undefined && endTagId !== undefined) skip = 'notMarked';
     else if (endNum !== undefined && start >= endNum) skip = 'alreadyTaken';
     if (endNum !== undefined && highest > endNum)
-      problem('past-end', words.pastEnd(unit.slug, sourceLinks.filter((link) => link.lastMergedRevisionNum > (endNum ?? 0)).map((link) => link.slug).join(', ')), {
+      problem('past-end', words.pastEnd(unit.slug, namesText(sourceLinks.filter((link) => link.lastMergedRevisionNum > (endNum ?? 0)).map((link) => link.slug))), {
         row: 'howMuch',
         focusId: FAN_OUT_IDS.end,
         fix: { label: draftCopy.fixes.endAtLatest, patch: { until: null } },
@@ -315,7 +316,7 @@ export function resolveFanOutDraft(input: ResolveFanOutInput): DraftFanOut {
     changeSets,
     request: followed.length === 0 ? undefined : { updateType: typeValue, endTagId },
     previewRequest,
-    sourceName: spaceSlugs.join(', '),
+    sourceName: namesText(spaceSlugs),
     carried,
     problems,
   };

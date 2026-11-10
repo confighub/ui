@@ -31,6 +31,7 @@ import { draftCopy } from './draftCopy';
 import type { DraftInvoke } from './draftInvoke';
 import type { DraftInvokeSourceGroup } from './draftInvokePreview';
 import type { DraftInvokePreview } from './useDraftInvokePreview';
+import { NameList } from '../components/SpaceListing';
 
 const copy = draftCopy.invoke;
 
@@ -61,7 +62,7 @@ function SourceGroup({ group, preview, everyVariant, columns }: SourceGroupProps
   const spaceName = everyVariant ? copy.eachVariant : (preview.nameBySpaceId.get(group.representativeSpaceId) ?? '');
   return (
     <Box data-testid="draft-source-group" sx={{ marginBottom: '10px' }}>
-      <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, marginBottom: '4px' }}>{copy.groupCaption(group.names)}</Box>
+      <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, marginBottom: '4px' }}>{copy.groupCaptionLead} <NameList names={group.names} /></Box>
       {group.groups.length === 0 ? <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, padding: '4px 12px 10px' }}>{copy.noFieldsDiffer}</Box> : null}
       {group.groups.map((unit) => (
         <UnitDiffRow

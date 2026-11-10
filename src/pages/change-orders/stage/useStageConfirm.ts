@@ -3,7 +3,6 @@
 
 import { useCallback, useRef, useState } from 'react';
 
-import { listText } from '../reviews/reviewCopy';
 import { changeOrderCopy } from '../../x/apps/change-order/changeOrderCopy';
 import {
   promoteAnnouncement,
@@ -16,6 +15,7 @@ import { retryTargets } from './stageFailure';
 import type { DryRunAnswer, DryRunSummary, MergeMethod, StageFailure } from './stageTypes';
 import type { OutcomeFocusTarget } from './useOutcomeFocus';
 import type { StageDryRun, StageDryRunAnswer } from './useStageDryRun';
+import { namesText } from '../components/spaceListLogic';
 
 export interface UseStageConfirmArgs {
   stageId: string;
@@ -106,10 +106,31 @@ export function useStageConfirm(args: UseStageConfirmArgs) {
       if (answer.kind === 'held') announce(`${h.serverHeld(stageName)}. ${answer.text}`);
       else if (answer.kind === 'noPermission') announce(`${h.noPermission(stageName)}. ${stageCardCopy.body.noPermission}`);
       else if (answer.kind === 'refused') announce(`${h.dryRunRefused}. ${answer.reason}`);
-      else if (answer.kind === 'fails') announce(stageCardCopy.dryRun.fails(listText([...answer.summary.failuresBySpace.keys()].map(nameOfSpace))));
+      else if (answer.kind === 'fails') announce(stageCardCopy.dryRun.fails(namesText([...answer.summary.failuresBySpace.keys()].map(nameOfSpace))));
       focusAfter('heading');
     },
     [announce, stageName, nameOfSpace, focusAfter],
+  );
+
+  /**
+   * Publishes these Spaces, with the box steady meanwhile, and says how it went. "Release the
+   * fix" ends here too, `quiet`: its confirm says the outcome once, with what else it did, and
+   * moves focus only when it closes.
+   */
+  const releaseTo = useCallback(
+    async (spaceIds: string[], { quiet = false }: { quiet?: boolean } = {}): Promise<ChangeOrderActionResult> => {
+      setRunning(stageId);
+      announce(stageCardCopy.announce.releasing(stageName));
+      const result = await actions.release(spaceIds, { stageId });
+      await settled();
+      if (!quiet) focusAfter('heading');
+      setRunning(null);
+      if (!quiet) announce(result.ok ? stageCardCopy.announce.released(stageName) : result.message);
+      // The page moves on from a stage with no work left, so "Release the fix" tells it too.
+      if (result.ok) onStageActed(stageId);
+      return result;
+    },
+    [stageId, stageName, actions, announce, focusAfter, setRunning, settled, onStageActed],
   );
 
   const onConfirm = useCallback(
@@ -117,14 +138,7 @@ export function useStageConfirm(args: UseStageConfirmArgs) {
       if (method === 'r') {
         // "Release again" publishes only where the release failed; a first release, every Space with a Target.
         const spaceIds = failure?.action === 'release' ? retryTargets(failure, targets, releaseSpaceIds, nameOfSpace) : [...releaseSpaceIds];
-        setRunning(stageId);
-        announce(stageCardCopy.announce.releasing(stageName));
-        const result = await actions.release(spaceIds, { stageId });
-        await settled();
-        focusAfter('heading');
-        setRunning(null);
-        announce(result.ok ? stageCardCopy.announce.released(stageName) : result.message);
-        if (result.ok) onStageActed(stageId);
+        await releaseTo(spaceIds);
         return true;
       }
       // The gate is enforced at the point of action as well as in what the box offers.
@@ -189,7 +203,7 @@ export function useStageConfirm(args: UseStageConfirmArgs) {
       if (result.ok) onStageActed(stageId);
       return true;
     },
-    [stageId, stageName, announce, actions, releaseSpaceIds, gatesBlock, noDryRun, dryRun, baseSpaceId, failedGateCount, stageHasTargets, targets, failure, nameOfSpace, focusAfter, setRunning, settled, stopped, onStageActed],
+    [stageId, stageName, announce, actions, releaseSpaceIds, gatesBlock, noDryRun, dryRun, baseSpaceId, failedGateCount, stageHasTargets, targets, failure, nameOfSpace, focusAfter, setRunning, settled, stopped, releaseTo, onStageActed],
   );
   const onCancel = useCallback(() => {
     setNoDryRun(null);
@@ -198,5 +212,5 @@ export function useStageConfirm(args: UseStageConfirmArgs) {
 
   const isChecking = checking === stageId;
   const note = (staleNote?.stageId === stageId ? staleNote.text : undefined) ?? (isChecking && dryRun.stale ? stageCardCopy.dryRun.rerunning : undefined);
-  return { onConfirm, onCancel, ackNoDryRun: noDryRun === stageId && !ok(dryRun.answer), checking: isChecking, note };
+  return { onConfirm, onCancel, releaseTo, ackNoDryRun: noDryRun === stageId && !ok(dryRun.answer), checking: isChecking, note };
 }

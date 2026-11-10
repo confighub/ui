@@ -9,6 +9,17 @@ import {
   rowsToClearance,
 } from '@/components/clearance-field/clearanceRows';
 import { type MapRow, mapToRows, rowsToGates, rowsToMap } from '@/components/map-field-editor/map-rows';
+import {
+  ENFORCED_AT_ANNOTATION,
+  ENFORCED_BY_ANNOTATION,
+  enforcedAtAfter,
+  PRIORITY_ANNOTATION,
+  ENFORCEMENT_ANNOTATIONS,
+  enforcementDate,
+  toEnforcementTime,
+  type TriggerPriority,
+  triggerPriority,
+} from '@/utility/triggerEnforcement';
 
 /** Whether a Trigger runs a function it names or a stored Invocation. */
 export type TriggerSource = 'Function' | 'Invocation';
@@ -18,7 +29,12 @@ export interface IAddTriggerFormInput {
   DisplayName?: string;
   Description?: string;
   Labels?: MapRow[];
+  /** The annotations other than the enforcement ones, which have fields of their own below. */
   Annotations?: MapRow[];
+  /** The Priority annotation of a validating Trigger. */
+  Priority?: TriggerPriority;
+  /** The EnforcedBy annotation of a validating Trigger, as a date (2026-12-31). */
+  EnforcedBy?: string;
   DeleteGates?: MapRow[];
   EventType: 'Mutation' | 'PostClone';
   ToolchainType: string;
@@ -43,6 +59,8 @@ export const defaultTriggerFormInput = (): IAddTriggerFormInput => ({
   Description: '',
   Labels: [],
   Annotations: [],
+  Priority: 'Unspecified',
+  EnforcedBy: '',
   DeleteGates: [],
   EventType: 'Mutation',
   ToolchainType: 'Kubernetes/YAML',
@@ -68,7 +86,13 @@ export const triggerToFormInput = (trigger: TriggerRead): IAddTriggerFormInput =
   DisplayName: trigger.DisplayName || '',
   Description: trigger.Description || '',
   Labels: mapToRows(trigger.Labels),
-  Annotations: mapToRows(trigger.Annotations),
+  Annotations: mapToRows(
+    Object.fromEntries(
+      Object.entries(trigger.Annotations ?? {}).filter(([key]) => !ENFORCEMENT_ANNOTATIONS.includes(key)),
+    ),
+  ),
+  Priority: triggerPriority(trigger.Annotations),
+  EnforcedBy: enforcementDate(trigger.Annotations?.[ENFORCED_BY_ANNOTATION]),
   DeleteGates: mapToRows(trigger.DeleteGates),
   EventType: (trigger.Event as 'Mutation' | 'PostClone') || 'Mutation',
   ToolchainType: trigger.ToolchainType || 'Kubernetes/YAML',
@@ -112,6 +136,7 @@ export const buildTriggerBody = (
   argumentValues: Record<string, string>,
   ids: { spaceId: string; orgID: string },
   selectedFunctionValidating = false,
+  existingTrigger?: TriggerRead,
 ): TriggerRead => {
   const runsInvocation = data.Source === 'Invocation';
   const clearance = rowsToClearance(data.Clearance);
@@ -120,7 +145,12 @@ export const buildTriggerBody = (
     DisplayName: optional(data.DisplayName),
     Description: optional(data.Description),
     Labels: rowsToMap(data.Labels),
-    Annotations: rowsToMap(data.Annotations),
+    Annotations: withEnforcementAnnotations(
+      rowsToMap(data.Annotations),
+      data,
+      selectedFunctionValidating || !!existingTrigger?.Validating,
+      existingTrigger,
+    ),
     DeleteGates: rowsToGates(data.DeleteGates),
     SpaceID: ids.spaceId,
     OrganizationID: ids.orgID,
@@ -142,4 +172,31 @@ export const buildTriggerBody = (
     Guards: optionalMap(rowsToMap(data.Guards)),
     Clearance: clearance.length > 0 ? clearance : undefined,
   };
+};
+
+/**
+ * The annotations with the enforcement ones added back from their fields. EnforcedAt follows Warn: it
+ * is stamped when a validating Trigger is created blocking or an edit makes it block, kept while it
+ * blocks, and removed when it goes back to warning.
+ */
+const withEnforcementAnnotations = (
+  annotations: Record<string, string>,
+  data: IAddTriggerFormInput,
+  validating: boolean,
+  existingTrigger: TriggerRead | undefined,
+): Record<string, string> => {
+  const out = { ...annotations };
+  if (data.Priority && data.Priority !== 'Unspecified') out[PRIORITY_ANNOTATION] = data.Priority;
+  // The form holds a date; a time of day set elsewhere is kept while the date is unchanged.
+  const storedEnforcedBy = existingTrigger?.Annotations?.[ENFORCED_BY_ANNOTATION];
+  const enforcedBy =
+    storedEnforcedBy && enforcementDate(storedEnforcedBy) === data.EnforcedBy
+      ? storedEnforcedBy
+      : toEnforcementTime(data.EnforcedBy ?? '');
+  if (enforcedBy) out[ENFORCED_BY_ANNOTATION] = enforcedBy;
+  const enforcedAt = validating
+    ? enforcedAtAfter(existingTrigger, data.Warn ?? false)
+    : existingTrigger?.Annotations?.[ENFORCED_AT_ANNOTATION];
+  if (enforcedAt) out[ENFORCED_AT_ANNOTATION] = enforcedAt;
+  return out;
 };

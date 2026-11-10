@@ -30,6 +30,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import { changeOrderBorder, changeOrderFontMono, changeOrderFontSans, changeOrderInk, changeOrderShape, changeOrderStatus, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
 import { reviewDangerButtonSx, reviewQuietButtonSx } from './reviewButtons';
 import { decisionTypes, gateThing, listText, reviewCopy, reviewFeeds, reviewSubject } from './reviewCopy';
+import { GateSpaceNames } from './reviewParts';
 import type { RequirementProgress, ReviewChoice, ReviewCoverage, ReviewDecision, ReviewGateRef, StageReviewSummary } from './changeOrderReviewTypes';
 
 const copy = reviewCopy.confirm;
@@ -154,9 +155,14 @@ function validUntilText(requirements: RequirementProgress[]): string {
 }
 
 /** "staging: staging-eu, staging-us": the stage reviewed and its Spaces, or the own Space alone. */
-function reviewsText(summary: StageReviewSummary): string {
+function ReviewsValue({ summary }: { summary: StageReviewSummary }) {
   const subject = reviewSubject(summary);
-  return copy.reviewsValue(subject.name, summary.gateSpaces.map((space) => space.spaceSlug).join(', '), subject.base);
+  return (
+    <>
+      {subject.base ? null : `${subject.name}: `}
+      <GateSpaceNames spaces={summary.gateSpaces} />
+    </>
+  );
 }
 
 /** `text` with each requirement name in it set in the mono face. */
@@ -304,7 +310,9 @@ export function ReviewConfirmDialog({
         })}
         <Box component="dl" sx={{ display: 'flex', flexDirection: 'column', gap: '7px', margin: '10px 0 0' }}>
           <Row term={copy.target}>{orderSlug}</Row>
-          <Row term={copy.reviews}>{reviewsText(summary)}</Row>
+          <Row term={copy.reviews}>
+            <ReviewsValue summary={summary} />
+          </Row>
           <Row term={copy.opens}>{heldThings(summary)}</Row>
           {replaces.map((d) => (
             <Row key={d.id} term={copy.revokes}>

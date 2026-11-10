@@ -119,7 +119,7 @@ export const useUploadUnitData = useUploadUnitDataMutation;
  */
 export const useRevisionDataMap = (revisionIds: (string | undefined)[]) => {
   const ids = revisionIds.filter((id): id is string => !!id);
-  const { data, isFetching } = useSearchRevisionDataChunkedQuery(
+  const { data, isFetching, error } = useSearchRevisionDataChunkedQuery(
     { revisionIds: ids },
     { skip: ids.length === 0 },
   );
@@ -137,7 +137,8 @@ export const useRevisionDataMap = (revisionIds: (string | undefined)[]) => {
   // Whether dataFor answers for every id: until the request lands it returns '' for all of
   // them, which a caller comparing configurations would read as every field changed.
   const ready = ids.length === 0 || (data !== undefined && !isFetching);
-  return { dataFor, isFetching, ready };
+  // A failed read also answers '' for every id: a caller that decides on the data says so.
+  return { dataFor, isFetching, ready, error: ids.length === 0 ? undefined : error };
 };
 
 /** The configuration of several Units in one bulk read, keyed by UnitID. */

@@ -60,8 +60,8 @@ const makeGatedComponent = async (
   units: Record<string, string>,
   {
     baseInComponent = true,
-    trigger: triggerSpec = PLACEHOLDERS_TRIGGER,
-  }: { baseInComponent?: boolean; trigger?: Record<string, unknown> } = {},
+    triggers: triggerSpecs = [PLACEHOLDERS_TRIGGER],
+  }: { baseInComponent?: boolean; triggers?: Record<string, unknown>[] } = {},
 ): Promise<GatedComponent> => {
   const api = new ApiHelper(page);
   // Unique per test, so tests that run at once never share a Component.
@@ -83,11 +83,14 @@ const makeGatedComponent = async (
   });
   const target = await api.createTarget({ spaceId: dev.SpaceID, slug: 'release' });
   await api.updateSpace({ spaceId: dev.SpaceID, space: { ReleaseTargetID: target.TargetID } });
-  const trigger = await hubApi.post(`/api/space/${dev.SpaceID}/trigger`, {
-    data: { Event: 'Mutation', ToolchainType: 'Kubernetes/YAML', ...triggerSpec },
-  });
-  expect(trigger.ok(), await trigger.text()).toBe(true);
-  const triggerID = ((await trigger.json()) as { TriggerID: string }).TriggerID;
+  const triggerIDs: string[] = [];
+  for (const triggerSpec of triggerSpecs) {
+    const trigger = await hubApi.post(`/api/space/${dev.SpaceID}/trigger`, {
+      data: { Event: 'Mutation', ToolchainType: 'Kubernetes/YAML', ...triggerSpec },
+    });
+    expect(trigger.ok(), await trigger.text()).toBe(true);
+    triggerIDs.push(((await trigger.json()) as { TriggerID: string }).TriggerID);
+  }
 
   const made: GatedComponent['units'] = {};
   for (const [unitSlug, data] of Object.entries(units)) {
@@ -108,7 +111,7 @@ const makeGatedComponent = async (
       params: { executor_space: dev.SpaceID, where: `UnitID = '${devUnit.UnitID}'` },
       data: {
         ToolchainType: 'Kubernetes/YAML',
-        Triggers: [triggerID],
+        Triggers: triggerIDs,
         UpdateValidationResults: true,
         FunctionInvocations: null,
       },
@@ -183,6 +186,12 @@ test.describe('Gates tab', () => {
       );
       await expect(page.getByTestId('fix-origin-link-1-1')).toHaveText(
         `Fix in ${c.slug}-base`,
+      );
+      // The test user wrote the base Unit, so the origin names that user.
+      const me = (await (await hubApi.get('/api/me')).json()) as { Username?: string };
+      expect(me.Username).toBeTruthy();
+      await expect(page.getByTestId('fix-origin-1-1')).toContainText(
+        `${c.slug}-base/web: ${me.Username}`,
       );
       // Every Unit the tab names links to that Unit's configuration page, in a new tab.
       const devHref = `/units/${c.dev.SpaceID}/${devUnit.devId}?tab=1`;
@@ -318,13 +327,56 @@ test.describe('Gates tab', () => {
     }
   });
 
+  test('the Description leads a gate, and its Rule shows on request without opening the gate', async ({
+    page,
+  }) => {
+    const c = await makeGatedComponent(
+      page,
+      { web: deployment('web').replace('replicas: 1', 'replicas: 3') },
+      { triggers: [PLACEHOLDERS_TRIGGER, REPLICAS_TRIGGER] },
+    );
+    try {
+      await openGates(page, c);
+      // Two gates: the first is open, the second is closed until the first is cleared.
+      await expect(page.getByTestId('gate-collapsed-2')).toBeVisible();
+      const description = page.getByTestId('gate-description-2');
+      await expect(description).toHaveText(
+        new RegExp(`^(${PLACEHOLDERS_TRIGGER.Description}|${REPLICAS_TRIGGER.Description})$`),
+      );
+
+      const toggle = page.getByTestId('gate-rule-toggle-2');
+      const details = page.getByTestId('gate-rule-details-2');
+      await expect(toggle).toHaveText('Show details');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(toggle).toHaveAttribute(
+        'aria-controls',
+        (await details.getAttribute('id'))!,
+      );
+      await expect(details).toBeHidden();
+
+      await toggle.click();
+      await expect(details).toBeVisible();
+      await expect(details).not.toBeEmpty();
+      await expect(toggle).toHaveText('Hide details');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      // The click shows the Rule only: the gate stays closed.
+      await expect(page.getByTestId('gate-collapsed-2')).toBeVisible();
+
+      await toggle.click();
+      await expect(details).toBeHidden();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    } finally {
+      await c.cleanup();
+    }
+  });
+
   test('Re-check runs the Trigger again, and says so when it did not run on a Unit', async ({
     page,
   }) => {
     const c = await makeGatedComponent(
       page,
       { web: deployment('web').replace('replicas: 1', 'replicas: 3') },
-      { trigger: REPLICAS_TRIGGER },
+      { triggers: [REPLICAS_TRIGGER] },
     );
     try {
       await openGates(page, c);

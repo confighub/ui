@@ -38,6 +38,7 @@ import { StageChangeCard } from './StageChangeCard';
 import { StageLog } from './StageLog';
 import { StageLogPill } from './StageLogPill';
 import { StageOutcomeBoxes } from './StageOutcomeBoxes';
+import { ReleaseFixDialog } from './ReleaseFixDialog';
 import { stageCardCopy } from './stageCardCopy';
 import { useStageCardModel } from './useStageCardModel';
 import { useStageLog } from './useStageLog';
@@ -197,6 +198,7 @@ export const StageSection = forwardRef<StageSectionHandle, StageSectionProps>(fu
         approveRef={props.approveRef}
         announce={props.announce}
       />
+      <ReleaseFixDialog fix={model.releaseFix} stageName={model.stage.name} nameOfSpace={model.nameOfSpace} />
     </Box>
   );
 });

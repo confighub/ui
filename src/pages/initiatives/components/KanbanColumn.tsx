@@ -1,10 +1,8 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-
 import { useCallback, useRef, useState } from 'react';
 
-import type { Initiative, InitiativeStatus } from '@/types/initiative';
-import { useDroppable } from '@dnd-kit/core';
+import { ENFORCEMENT_STAGE_INFO, type EnforcementStage } from '@/utility/triggerEnforcement';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import Box from '@mui/material/Box';
@@ -14,16 +12,18 @@ import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 
-import { DraggableCard } from './DraggableCard';
+import type { ValidationPolicy } from '../validationModel';
+import { PolicyCard } from './PolicyCard';
 
 // Small fudge factor so sub-pixel rounding doesn't leave the fade visible when
 // the user has effectively scrolled to the bottom.
 const SCROLL_BOTTOM_EPSILON = 1;
 
-const COLUMN_CONFIG: Record<InitiativeStatus, { label: string; dotColor: string; bg: string }> = {
-  draft: { label: 'Draft', dotColor: '#9E9E9E', bg: '#fafafa' },
-  in_progress: { label: 'In Progress', dotColor: '#ba3d03', bg: '#fff' },
-  completed: { label: 'Completed', dotColor: '#4caf50', bg: '#fafafa' },
+const COLUMN_BG: Record<EnforcementStage, string> = {
+  Created: '#fafafa',
+  Audited: '#fff',
+  Enforced: '#fff',
+  Disabled: '#fafafa',
 };
 
 const COLLAPSED_WIDTH = 44;
@@ -31,26 +31,24 @@ const COLUMN_MAX_HEIGHT = 'calc(100vh - 240px)';
 const FADE_HEIGHT = 28;
 
 interface KanbanColumnProps {
-  status: InitiativeStatus;
-  initiatives: Initiative[];
+  stage: EnforcementStage;
+  policies: ValidationPolicy[];
   selectedId: string | null;
   isCollapsed: boolean;
+  isLast: boolean;
   onToggleCollapse: () => void;
-  onDelete: (initiative: Initiative) => void;
-  onStatusChange: (id: string, status: InitiativeStatus) => void;
 }
 
+/** One stage of the Validation board: the Triggers in it, as cards. */
 export const KanbanColumn = ({
-  status,
-  initiatives,
+  stage,
+  policies,
   selectedId,
   isCollapsed,
+  isLast,
   onToggleCollapse,
-  onDelete,
-  onStatusChange,
 }: KanbanColumnProps) => {
-  const config = COLUMN_CONFIG[status];
-  const { setNodeRef, isOver } = useDroppable({ id: status });
+  const config = { ...ENFORCEMENT_STAGE_INFO[stage], bg: COLUMN_BG[stage] };
 
   // Only show the bottom fade when the cards container actually overflows AND
   // the user hasn't scrolled to the very bottom. Tracked via a callback ref so
@@ -105,7 +103,6 @@ export const KanbanColumn = ({
     return (
       <Tooltip title={`Expand ${config.label}`} placement='top'>
         <Box
-          ref={setNodeRef}
           onClick={onToggleCollapse}
           role='button'
           tabIndex={0}
@@ -122,7 +119,7 @@ export const KanbanColumn = ({
             px: 0.5,
             borderRight: '1px solid',
             borderColor: 'divider',
-            backgroundColor: isOver ? 'action.hover' : config.bg,
+            backgroundColor: config.bg,
             '&:last-child': { borderRight: 'none' },
             display: 'flex',
             flexDirection: 'column',
@@ -144,7 +141,7 @@ export const KanbanColumn = ({
             }}
           />
           <Chip
-            label={initiatives.length}
+            label={policies.length}
             size='small'
             sx={{ height: 20, fontSize: '0.7rem', fontWeight: 500 }}
           />
@@ -167,14 +164,14 @@ export const KanbanColumn = ({
 
   return (
     <Box
-      ref={setNodeRef}
+      data-testid={`validation-column-${stage}`}
       sx={{
         flex: 1,
         minWidth: 0,
         p: 1.5,
         borderRight: '1px solid',
         borderColor: 'divider',
-        backgroundColor: isOver ? 'action.hover' : config.bg,
+        backgroundColor: config.bg,
         '&:last-child': { borderRight: 'none' },
         display: 'flex',
         flexDirection: 'column',
@@ -188,14 +185,30 @@ export const KanbanColumn = ({
         direction='row'
         alignItems='center'
         spacing={1}
-        sx={{ pb: 1.5, mb: 1.5, borderBottom: '1px solid', borderColor: 'divider', flexShrink: 0 }}
+        sx={{
+          pb: 1.5,
+          mb: 1.5,
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          flexShrink: 0,
+        }}
       >
-        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: config.dotColor, flexShrink: 0 }} />
-        <Typography variant='subtitle2' fontWeight={600} color='text.primary'>
-          {config.label}
-        </Typography>
+        <Box
+          sx={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            bgcolor: config.dotColor,
+            flexShrink: 0,
+          }}
+        />
+        <Tooltip title={config.description}>
+          <Typography variant='subtitle2' fontWeight={600} color='text.primary'>
+            {config.label}
+          </Typography>
+        </Tooltip>
         <Chip
-          label={initiatives.length}
+          label={policies.length}
           size='small'
           sx={{ height: 20, fontSize: '0.7rem', fontWeight: 500, ml: 'auto !important' }}
         />
@@ -206,7 +219,7 @@ export const KanbanColumn = ({
             aria-label={`Collapse ${config.label}`}
             sx={{ p: 0.25 }}
           >
-            {status === 'completed' ? (
+            {isLast ? (
               <ChevronLeftIcon fontSize='small' />
             ) : (
               <ChevronRightIcon fontSize='small' />
@@ -241,23 +254,18 @@ export const KanbanColumn = ({
             : {}),
         }}
       >
-        {initiatives.length === 0 ? (
+        {policies.length === 0 ? (
           <Typography
-            variant='caption'
+            variant='body2'
+            fontSize='0.75rem'
             color='text.disabled'
             sx={{ textAlign: 'center', py: 4 }}
           >
-            No {config.label.toLowerCase()} initiatives
+            {config.description}
           </Typography>
         ) : (
-          initiatives.map((c) => (
-            <DraggableCard
-              key={c.id}
-              initiative={c}
-              isSelected={c.id === selectedId}
-              onDelete={() => onDelete(c)}
-              onStatusChange={(newStatus) => onStatusChange(c.id, newStatus)}
-            />
+          policies.map((p) => (
+            <PolicyCard key={p.id} policy={p} isSelected={p.id === selectedId} />
           ))
         )}
       </Stack>

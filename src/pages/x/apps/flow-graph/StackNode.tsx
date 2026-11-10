@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { NodeProps } from 'reactflow';
 
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -16,6 +16,7 @@ import {
   fitNamesPreview,
   moreFitsOnLine,
   moreLabel,
+  standoutNote,
 } from './fold/namePreview';
 
 /**
@@ -29,6 +30,12 @@ const NAMES_INSET = 4 + 24 + 4;
 /** The strip's width budget: marks grow to fill it, from 3 to 9 px each. */
 const STRIP_BUDGET = 150;
 const MARK_GAP = 2;
+/** Card border (2 + 2) and padding (12 + 12): what the strip row's width loses. */
+const CARD_INSET = 4 + 24;
+/** The strip row's gap, between the marks and a note. */
+const STRIP_ROW_GAP = 8;
+/** The width of one character of a strip note, which is set in an 11 px monospace font. */
+const NOTE_CHAR_W = 11 * 0.6;
 /** A pointer that moves further than this between press and release panned the canvas. */
 const CLICK_SLOP = 4;
 
@@ -63,11 +70,8 @@ function useFontsLoaded(): boolean {
   return loaded;
 }
 
-const markWidth = (count: number): number =>
-  Math.max(
-    3,
-    Math.min(9, Math.floor((STRIP_BUDGET - (count - 1) * MARK_GAP) / Math.max(1, count))),
-  );
+const markWidth = (count: number, budget: number = STRIP_BUDGET): number =>
+  Math.max(3, Math.min(9, Math.floor((budget - (count - 1) * MARK_GAP) / Math.max(1, count))));
 
 // ============================================================================
 // STYLED COMPONENTS
@@ -190,6 +194,17 @@ const StripNote = styled('span')({
   whiteSpace: 'nowrap',
 });
 
+/** Why the first members stand out; their marks are the first in the strip. */
+const LeadReason = styled(StripNote)({
+  color: componentTheme.fgDefault,
+  fontWeight: 600,
+});
+
+/** A standout's name: not muted, so it reads before the rest. */
+const LeadName = styled('span')({
+  color: componentTheme.fgDefault,
+});
+
 const Mark = styled('i')({
   display: 'block',
   height: 8,
@@ -229,6 +244,7 @@ export const StackNode = memo(({ data }: NodeProps<StackNodeData>) => {
     label,
     count,
     marks,
+    standouts,
     previewNames,
     expanded,
     componentName,
@@ -239,19 +255,28 @@ export const StackNode = memo(({ data }: NodeProps<StackNodeData>) => {
   const fontsLoaded = useFontsLoaded();
   const pressedAt = useRef<{ x: number; y: number } | null>(null);
 
-  const namesKey = previewNames.join('\u0000');
+  const names = useMemo(
+    () => [...standouts.map((m) => m.name), ...previewNames],
+    [standouts, previewNames],
+  );
+  const namesKey = names.join('\u0000');
   const { preview, moreOnLine } = useMemo(
     () => {
       const maxWidth = width - NAMES_INSET;
-      const p = fitNamesPreview(previewNames, maxWidth, measureName);
+      const p = fitNamesPreview(names, maxWidth, measureName);
       return { preview: p, moreOnLine: moreFitsOnLine(p, maxWidth, measureName) };
     },
-    // previewNames is rebuilt on every status poll; its content is what matters.
+    // The names are rebuilt on every status poll; their content is what matters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [namesKey, width, fontsLoaded],
   );
   const sheets = expanded ? 0 : count >= 6 ? 2 : count >= 2 ? 1 : 0;
-  const mw = markWidth(marks.length);
+  // The standouts' note takes room from the marks, so it is never cut.
+  const note = standoutNote(standouts);
+  const stripBudget = note
+    ? Math.min(STRIP_BUDGET, width - CARD_INSET - STRIP_ROW_GAP - note.length * NOTE_CHAR_W)
+    : STRIP_BUDGET;
+  const mw = markWidth(marks.length, stripBudget);
 
   const handleClick = (e: React.MouseEvent) => {
     const down = pressedAt.current;
@@ -294,10 +319,20 @@ export const StackNode = memo(({ data }: NodeProps<StackNodeData>) => {
               <Mark key={i} style={{ width: mw, ...markStyle(kind) }} />
             ))}
           </Strip>
+          {note && <LeadReason>{note}</LeadReason>}
           {!moreOnLine && <StripNote>+{preview.more} more</StripNote>}
         </StripRow>
-        <Names title={previewNames.join(NAMES_SEPARATOR)}>
-          {preview.shown.join(NAMES_SEPARATOR)}
+        <Names
+          title={[...standouts.map((m) => `${m.name} (${m.reason})`), ...previewNames].join(
+            NAMES_SEPARATOR,
+          )}
+        >
+          {preview.shown.map((name, i) => (
+            <Fragment key={i}>
+              {i > 0 && NAMES_SEPARATOR}
+              {i < standouts.length ? <LeadName>{name}</LeadName> : name}
+            </Fragment>
+          ))}
           {preview.more > 0 && moreOnLine && <More>{moreLabel(preview.more)}</More>}
         </Names>
       </Card>

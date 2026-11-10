@@ -291,6 +291,13 @@ export interface ChangeOrderResourceConflict {
   reason: string;
   /** `namespace/name` inside the payload, when the conflict names a resource. */
   resourceName?: string;
+  /**
+   * The resource's `ResourceType` (`apps/v1/Deployment`) and `ResourceNameWithoutScope`, when
+   * the conflict names them: a kept value can be the resource's only change, and the stage's
+   * diff then leaves the resource out, so this is the one place that says which it is.
+   */
+  resourceType?: string;
+  resourceNameWithoutScope?: string;
   /** The path inside that resource. Absent means the whole resource. */
   path?: string;
   /** What the reason alone cannot say — the only content a `ReplayFailed` carries. */

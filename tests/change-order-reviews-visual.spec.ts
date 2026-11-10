@@ -398,6 +398,58 @@ test.describe('ChangeOrder reviews — the six design states', () => {
     );
   });
 
+  /**
+   * After Approve the page reads the records at once and the server's gate rows later (a dry
+   * run over many Spaces takes seconds). In between, the rows do not list the new decision yet,
+   * and the box must not say that it does not cover the change.
+   */
+  async function approveAndWatchBox(page: Page, mocks: Awaited<ReturnType<typeof mockReviews>>) {
+    await openReview(page, fx, { details: false });
+    await page.getByTestId('review-approve').click();
+    const form = statusBox(page).getByTestId('review-form');
+    await form.getByTestId('review-reason').fill('Checked it.');
+    const seen: string[] = [];
+    const watch = setInterval(() => {
+      void statusBox(page)
+        .innerText({ timeout: 1000 })
+        .then((text) => seen.push(text))
+        .catch(() => undefined);
+    }, 100);
+    try {
+      await form.getByTestId('review-submit').click();
+      await expect.poll(() => mocks.attests.length, { timeout: 10000 }).toBe(1);
+      await page.waitForTimeout(3500);
+    } finally {
+      clearInterval(watch);
+    }
+    return seen;
+  }
+
+  test('approve: while the gate rows are late, the box never says the approval does not cover the change', async ({
+    page,
+  }) => {
+    const mocks = await mockReviews(page, fx, 'partial', { countNewRecords: true, rowsDelayMs: 1500 });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const seen = await approveAndWatchBox(page, mocks);
+    expect(seen.length, 'the box was read while the rows were late').toBeGreaterThan(10);
+    expect(seen.filter((text) => /does not cover|Review again/.test(text))).toEqual([]);
+    await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'ready', { timeout: 20000 });
+  });
+
+  test('approve: rows read again that still lack the decision say it does not cover the change', async ({
+    page,
+  }) => {
+    const mocks = await mockReviews(page, fx, 'partial', {
+      countNewRecords: true,
+      rowsDelayMs: 1500,
+      rowsBlindToNewRecords: true,
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const seen = await approveAndWatchBox(page, mocks);
+    expect(seen.length).toBeGreaterThan(10);
+    expect(seen.some((text) => /does not cover what .* reads now\. Review again\./.test(text))).toBe(true);
+  });
+
   test('reject: the reason is required, and it is recorded as Fail with no dialog', async ({
     page,
   }) => {

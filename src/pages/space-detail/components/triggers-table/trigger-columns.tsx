@@ -9,6 +9,11 @@ import {
   TRIGGER_SELECTION_STATUS_DISPLAY,
   type TriggerSelectionStatus,
 } from '@/components/trigger-selection/useTriggerSelection';
+import {
+  PRIORITY_COLORS,
+  TRIGGER_PRIORITIES,
+  type TriggerPriority,
+} from '@/utility/triggerEnforcement';
 import { ExtendedTriggerRead } from '@confighub/rtk-query';
 import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
@@ -36,7 +41,7 @@ export const TRIGGER_COLUMN_GROUPS: ColumnGroup[] = [
   },
   {
     header: 'Status',
-    columns: ['Validating', 'Disabled', 'Warn'],
+    columns: ['Validating', 'Disabled', 'Warn', 'Priority'],
   },
   {
     header: 'Timestamps',
@@ -70,6 +75,8 @@ export interface TriggerRowItem {
   Validating: boolean;
   Disabled: boolean;
   Warn: boolean;
+  /** The priority of a validating Trigger's policy; none for another Trigger */
+  Priority?: TriggerPriority;
   HiddenReason: string;
   CreatedAt: string;
   UpdatedAt: string;
@@ -206,6 +213,25 @@ export const createTriggerStaticColumns = () =>
       display: {
         true: () => <Chip size="small" color="warning" label="Warn" />,
         false: () => <Chip size="small" color="primary" label="Blocking" />,
+      },
+    },
+
+    Priority: {
+      type: 'custom',
+      headerName: 'Priority',
+      minWidth: 110,
+      flex: 0.8,
+      // Sorted most urgent first, with Unspecified, then non-validating Triggers, last.
+      valueGetter: (row) => (row.Priority ? TRIGGER_PRIORITIES.indexOf(row.Priority) : TRIGGER_PRIORITIES.length),
+      renderCell: (params) => {
+        const priority = params.row.Priority;
+        if (!priority || priority === 'Unspecified') return null;
+        const colors = PRIORITY_COLORS[priority];
+        return (
+          <CenteredTableCell>
+            <Chip size='small' label={priority} sx={{ bgcolor: colors.bg, color: colors.color, fontWeight: 600 }} />
+          </CenteredTableCell>
+        );
       },
     },
 

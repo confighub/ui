@@ -1275,7 +1275,7 @@ test.describe('ChangeOrder draft', () => {
       await expect(page.getByTestId('draft-same-figure')).toContainText(draftCopy.page.facts.ofSame(4), { timeout: 30_000 });
       // No image moves: the quiet band, and the full diff "At the source", grouped as the detail view groups it.
       await expect(page.getByTestId('change-order-no-image-change')).toBeVisible();
-      await expect(page.getByTestId('draft-source-group').first()).toContainText(draftCopy.invoke.groupCaption(['dev', 'prod-ap', 'prod-eu', 'prod-us']));
+      await expect(page.getByTestId('draft-source-group').first()).toContainText(`${draftCopy.invoke.groupCaptionLead} dev, prod-ap, prod-eu +1 more`);
       // The description suggests what it sets.
       await expect(descriptionField(page)).toHaveValue('team=payments');
 

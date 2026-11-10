@@ -1,20 +1,25 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
+/*
+ * Pinned to React's JSX runtime, and MUI comes through its barrel, so that a browser-free spec
+ * can render `CopyText`: Playwright otherwise claims the JSX, and Node cannot import a MUI
+ * component directory.
+ */
+/** @jsxImportSource react */
+
 /**
  * The parts the Stage log's sentences are built from: sentences with links and
  * code, a sentence under a line, a tinted note, a quote, and a row of buttons.
  */
 
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 
-import Box from '@mui/material/Box';
-import ButtonBase from '@mui/material/ButtonBase';
-import Link from '@mui/material/Link';
-import Typography from '@mui/material/Typography';
+import { Box, Link, Typography } from '@mui/material';
 
-import { stageCardCopy } from './stageCardCopy';
+import { SpacesMoreButton } from '../components/SpaceListing';
+import { spaceListSegments } from './stageCopyParts';
 import { hrefOfRef, type LinkResolvers } from './stageLinks';
 import type { CopyLinkRef, CopySegment, StageTone } from './stageTypes';
 
@@ -96,6 +101,9 @@ export function CopyText({ parts, links, codeInherit = false }: { parts: readonl
             </Box>
           );
         }
+        if (part.kind === 'spaces') {
+          return links === undefined ? <span key={i}>{part.text}</span> : <SpacesMoreButton key={i} spaces={part.spaces} shown={part.shown} />;
+        }
         if (links === undefined) return <span key={i}>{part.text}</span>;
         return <SegmentLink key={i} part={part} links={links} />;
       })}
@@ -175,32 +183,9 @@ export function StatusActions({ children }: { children: ReactNode }) {
 }
 
 /**
- * "a, b and c": Spaces as links. With `limit`, the first `limit` and then "and N more", which
- * shows the rest: a review can read 50 Spaces.
+ * "a, b and c": Spaces as links. Past `limit` (3 when left out) the rest are "N more", a
+ * button that opens them all: a review can read 50 Spaces.
  */
 export function SpaceList({ spaces, links, limit }: { spaces: readonly { spaceId: string; name: string }[]; links?: StageLinks; limit?: number }) {
-  const [all, setAll] = useState(false);
-  const cut = limit !== undefined && !all && spaces.length > limit;
-  const shown = cut ? spaces.slice(0, limit) : spaces;
-  const parts: CopySegment[] = [];
-  shown.forEach((space, i) => {
-    if (i > 0) parts.push({ kind: 'text', text: !cut && i === shown.length - 1 ? ' and ' : ', ' });
-    parts.push({ kind: 'link', text: space.name, ref: { to: 'space', spaceId: space.spaceId } });
-  });
-  return (
-    <>
-      <CopyText parts={parts} links={links} />
-      {cut ? (
-        <>
-          {' '}
-          <ButtonBase
-            onClick={() => setAll(true)}
-            sx={{ font: 'inherit', fontSize: '11.5px', fontWeight: 600, color: 'text.secondary', verticalAlign: 'baseline', borderRadius: '3px', '&:hover': { color: 'text.primary' }, '&.Mui-focusVisible': { outline: '2px solid var(--rust)', outlineOffset: '2px' } }}
-          >
-            {stageCardCopy.reviewRow.andMore(spaces.length - shown.length)}
-          </ButtonBase>
-        </>
-      ) : null}
-    </>
-  );
+  return <CopyText parts={spaceListSegments(spaces, limit)} links={links} />;
 }

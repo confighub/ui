@@ -183,6 +183,9 @@ test.describe('link drawer', () => {
       });
     }
     await page.goto(`/units/${spaceId}/${appId}?tab=${LINKS_TAB}`);
+    // The Delete button is shown only once the Links have loaded, which can take longer than an
+    // assertion waits by default.
+    await expect(page.getByRole('row', { name: /first-link/ })).toBeVisible({ timeout: 20000 });
     const deleteButton = page.getByTestId('links-delete').getByRole('button');
     await expect(deleteButton).toBeDisabled();
 

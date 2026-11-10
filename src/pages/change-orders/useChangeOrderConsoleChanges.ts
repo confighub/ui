@@ -45,6 +45,7 @@ import {
 } from '../x/apps/change-order/changeOrderChanges';
 import type { ChangeOrderChangeGroup, ChangeOrderStage } from '../x/apps/change-order/changeOrderTypes';
 import type { MergedUnit } from '../x/apps/componentTypes';
+import { unitHeadOf, type UnitHead } from './stage/stageFix';
 import type { ChangeOrderSpace } from './useChangeOrderDetail';
 import { buildChangeOrderOutcome, type ChangeOrderOutcomeGroup } from './changeOrderOutcome';
 import { useGetChangeOrderSourceDiffQuery, useGetFanOutSourceDiffQuery } from './changeOrderImageDiffApi';
@@ -136,6 +137,13 @@ export interface ChangeOrderConsoleChanges {
   sourceSpaceGroups: ChangeOrderOutcomeGroup[];
   /** The stage's variant matrix, or null when there is nothing to compare. */
   matrix: ChangeOrderStageMatrix | null;
+  /**
+   * Each Unit's head, from the same read of the scope's Units. The matrix is read from what a
+   * promotion wrote, so a Revision made after it by hand (a fix) is seen only here.
+   */
+  heads: ReadonlyMap<string, UnitHead>;
+  /** A Unit's head configuration; '' while it is read. */
+  headDataOf: (unitId: string) => string;
   isLoading: boolean;
   /**
    * The selected stage's Spaces its forced dry run did not plan, with the
@@ -824,8 +832,17 @@ export function useChangeOrderConsoleChanges(args: {
     fanOutSourceStatus,
     invocationSourceStatus,
   ]);
+  const heads = useMemo(() => {
+    const index = new Map<string, UnitHead>();
+    for (const unit of units) {
+      const head = unitHeadOf(unit);
+      if (head !== undefined) index.set(head.unitId, head);
+    }
+    return index;
+  }, [units]);
+
   return useMemo(
-    () => ({ ...changes, reviewRevisionNumByUnitId, unplannedReasonBySpaceId, stageChangesStatus }),
-    [changes, reviewRevisionNumByUnitId, unplannedReasonBySpaceId, stageChangesStatus],
+    () => ({ ...changes, reviewRevisionNumByUnitId, unplannedReasonBySpaceId, stageChangesStatus, heads, headDataOf: unitDataFor }),
+    [changes, reviewRevisionNumByUnitId, unplannedReasonBySpaceId, stageChangesStatus, heads, unitDataFor],
   );
 }

@@ -117,6 +117,8 @@ export interface SavedIds {
 }
 
 const MAX_SLUG_TRIES = 20;
+// A read-back answered by another request is asked again, a few times at most.
+const READ_BACK_ATTEMPTS = 3;
 
 /** A failed write as one plain sentence for a toast. */
 export function saveErrorMessage(err: unknown, fallback: string): string {
@@ -172,9 +174,24 @@ export function useSaveView() {
   const [getView] = useLazyGetViewQuery();
   const [getFilter] = useLazyGetFilterQuery();
 
-  /** The View and its Filter as the server has them now, never from the cache. */
+  /**
+   * The View and its Filter as the server has them now, never from the cache. A read of a View RTK is
+   * already fetching -- as it is right after a write invalidates it -- is answered with that fetch, or,
+   * while the fetch is pending, with what the cache held before it: either can be from before the
+   * write. So only the answer to this read's own request is taken, and the read is asked again otherwise.
+   */
   const readBack = useCallback(
-    (spaceId: string, viewId: string) => getView({ spaceId, viewId, include: 'FilterID' }, false).unwrap(),
+    async (spaceId: string, viewId: string) => {
+      const args = { spaceId, viewId, include: 'FilterID' };
+      for (let attempt = 0; attempt < READ_BACK_ATTEMPTS; attempt++) {
+        const request = getView(args, false);
+        const result = await request;
+        if (result.requestId !== request.requestId) continue;
+        if (result.isError) throw result.error;
+        if (result.data) return result.data;
+      }
+      throw new Error('The view could not be read back.');
+    },
     [getView],
   );
   const [listSpaceFilters] = useLazyListFiltersQuery();

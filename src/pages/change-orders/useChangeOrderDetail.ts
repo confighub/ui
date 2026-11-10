@@ -49,7 +49,7 @@
  */
 
 import { skipToken } from '@reduxjs/toolkit/query';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { useComponentSlugs } from '@/hooks/useComponentSlugs';
 import { usePolling } from '@/hooks/usePolling';
@@ -71,6 +71,7 @@ import {
 import type { RunningRelease } from '../x/apps/liveStatus';
 import { resolveChangeOrderAddress, type ChangeOrderAddress, type ChangeOrderRef } from './changeOrderAddress';
 import { usePromoteFinalQuery } from './reviews/reviewServerApi';
+import { createRowsAskedAt, finalRowsAskedAt, type RowsAskedAt, useSettledStart } from './reviews/rowsAskedAt';
 import { useChangeOrderInvocation } from './useChangeOrderInvocation';
 import { promoteFinalOf, type PromoteFinalAnswer } from './reviews/stageReviewInputs';
 import {
@@ -269,6 +270,8 @@ export interface ChangeOrderDetail {
    * rail agree, also for a Space the scoped list leaves out (`Stage=None`).
    */
   releaseTargetOf: (spaceId: string) => string | undefined;
+  /** A Space's labels, from the Space list this hook already reads. A list of Spaces groups by them. */
+  spaceLabelsOf: (spaceId: string) => Readonly<Record<string, string>> | undefined;
   /** `ConsoleRow.stagesDone`: the steps of the promotion path the ChangeOrder has passed. */
   stagesDone: number;
   /** `ConsoleRow.stagesTotal`: every step of the promotion path, as the rail draws it. */
@@ -295,6 +298,12 @@ export interface ChangeOrderDetail {
    * when nothing else changed.
    */
   gateCheckedAt: (stageName: string) => number | undefined;
+  /**
+   * When the server's gate rows (the stage dry runs and the Final probe) were last asked for, so
+   * the reviews can tell a record the rows have not seen yet from one they do not list. A stable
+   * object a reader subscribes to, so polls keep `detail`'s identity.
+   */
+  rowsAskedAt?: RowsAskedAt;
   /** When the ChangeOrder was last read (epoch ms), or undefined before any read; a stable getter, so polls keep `detail`'s identity. */
   readAt: () => number | undefined;
   /**
@@ -578,6 +587,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
     [allSpaces],
   );
   const releaseTargetOf = useCallback((spaceId: string) => allSpaceById.get(spaceId)?.releaseTargetId, [allSpaceById]);
+  const spaceLabelsOf = useCallback((spaceId: string) => allSpaceById.get(spaceId)?.labels, [allSpaceById]);
 
   const isLoading = orders.isLoading || spaces.isLoading || stageSpacesLoading;
   const error = orders.error ?? spaces.error ?? one.error ?? releases.error;
@@ -649,7 +659,13 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
       )
       .map((stage) => stage.Name);
   }, [workflow, stageSpaces, workflowCompleted, ownSpaceReached]);
+  const rowsAskedAt = useMemo(createRowsAskedAt, []);
+  const finalAskedAt = useSettledStart(finalProbe);
+  useEffect(() => {
+    rowsAskedAt.set('final', finalRowsAskedAt(probeCompletion, finalAnswer?.kind === 'completed', finalAskedAt));
+  }, [rowsAskedAt, probeCompletion, finalAnswer?.kind, finalAskedAt]);
   const serverGateReads = useServerStageGateReads({
+    askedAt: rowsAskedAt,
     changeOrderId: order?.ChangeOrderID,
     stageNames: serverGateStageNames,
     refreshKey: JSON.stringify([
@@ -708,6 +724,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
         finalGates: [],
         scopedSpaces: null,
         releaseTargetOf,
+        spaceLabelsOf,
         stagesDone: 0,
         stagesTotal: 0,
         nextStageId: null,
@@ -884,6 +901,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
       finalGates,
       scopedSpaces,
       releaseTargetOf,
+      spaceLabelsOf,
       // The console row's counts, so the list and this page agree.
       stagesDone: consoleRow.stagesDone,
       stagesTotal: consoleRow.stagesTotal,
@@ -892,6 +910,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
       serverGatesByStage: serverGates,
       serverGateRefusals,
       gateCheckedAt,
+      rowsAskedAt,
       readAt,
       refreshServerGates,
       isLoading,
@@ -917,6 +936,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
     reviewRequests,
     serverGateRefusals,
     gateCheckedAt,
+    rowsAskedAt,
     readAt,
     invokes,
     fansOut,
@@ -931,6 +951,7 @@ export function useChangeOrderDetail(segments: ChangeOrderRouteSegments): Change
     allSpaces,
     allSpaceById,
     releaseTargetOf,
+    spaceLabelsOf,
     serverGates,
     refreshServerGates,
     address,

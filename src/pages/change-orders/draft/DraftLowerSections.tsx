@@ -52,6 +52,7 @@ import type { DraftContext } from './useDraftContext';
 import { DRAFT_SCOPE_STAGE_ID, type DraftPreview } from './useDraftPreview';
 import type { DraftSourceDiff } from './useDraftSourceDiff';
 import type { DraftValidation } from './useDraftValidation';
+import { namesText } from '../components/spaceListLogic';
 
 const H3_SX = {
   fontSize: changeOrderType.size.prose,
@@ -383,7 +384,7 @@ function OutsideEveryStage({ spaceIds, nameBySpaceId, workflowSlug, onLeaveOut }
         <CodeChip>{named}</CodeChip> {draftCopy.path.outsideEveryStage} <CodeChip>{workflowSlug}</CodeChip>
       </span>
       {onLeaveOut !== undefined ? (
-        <LeaveOutButton onClick={() => onLeaveOut(spaceIds)} ariaLabel={draftCopy.path.leaveOutNamed(names.join(', '))} />
+        <LeaveOutButton onClick={() => onLeaveOut(spaceIds)} ariaLabel={draftCopy.path.leaveOutNamed(namesText(names))} />
       ) : null}
     </Box>
   );

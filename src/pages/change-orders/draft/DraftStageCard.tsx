@@ -48,6 +48,7 @@ import { DRAFT_TRANSITION, FOCUS_RING, PRESS } from './draftLook';
 import { comparableGroupsOf, inScopeOrder } from './draftPath';
 import type { DraftStagePreview } from './draftPreview';
 import type { DraftClone, DraftPreview } from './useDraftPreview';
+import { namesText } from '../components/spaceListLogic';
 
 /** The diff columns every tree on the page shares (`useSharedDiffColumns`). */
 export interface DraftDiffColumns {
@@ -580,7 +581,7 @@ export function DraftStageCard({
               <Box sx={{ margin: '-4px 0 10px 36px' }}>
                 <LeaveOutButton
                   onClick={() => onLeaveOut(unknownGroup.spaceIds)}
-                  ariaLabel={draftCopy.path.leaveOutNamed(unknownGroup.spaceIds.map(nameOf).join(', '))}
+                  ariaLabel={draftCopy.path.leaveOutNamed(namesText(unknownGroup.spaceIds.map(nameOf)))}
                 />
               </Box>
             ) : null}

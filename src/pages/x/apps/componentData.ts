@@ -126,6 +126,14 @@ export function deploymentTargetId(
   return releaseTargetId || targets[0]?.targetId;
 }
 
+/**
+ * The `where`s of the two unit lists that find the units keeping a value on
+ * merge: a path, or a whole resource, that a merge from upstream must not
+ * overwrite. Two lists, because a `where` has no `OR`.
+ */
+export const KEPT_PATH_UNITS_WHERE = 'MutationSources.*.PathMutationMap.*.Protected = true';
+export const KEPT_RESOURCE_UNITS_WHERE = 'MutationSources.*.ResourceMutationInfo.Protected = true';
+
 const NO_CONFIG_SIGNALS: ConfigSignals = Object.freeze({
   staleUnits: 0,
   unreleasedUnits: 0,
@@ -180,6 +188,10 @@ export function unitConfigSignal(
  *
  * `runningReleaseBySpaceId` is the Release each Space is running (see
  * `useRunningReleases`), which carries its live status.
+ *
+ * `keptValueUnits` are the units that keep a value on merge, read with
+ * `KEPT_PATH_UNITS_WHERE` and `KEPT_RESOURCE_UNITS_WHERE`; each unit counts
+ * once towards its Space's `keptValueUnits`, though both lists can hold it.
  */
 export function buildComponentData(
   spaces: ExtendedSpaceRead[],
@@ -190,6 +202,7 @@ export function buildComponentData(
   targetSpaceSlugById?: Map<string, string>,
   targetFactsById?: ReadonlyMap<string, Readonly<Record<string, string>>>,
   runningReleaseBySpaceId?: ReadonlyMap<string, RunningRelease>,
+  keptValueUnits?: readonly ExtendedUnitRead[],
 ): { deployments: ComponentDeployment[]; stages: Stage[] } {
   const unitToSpaceId = new Map<string, string>();
   for (const u of allUnits) {
@@ -282,6 +295,16 @@ export function buildComponentData(
     }
   }
 
+  const keptValueUnitsBySpace = new Map<string, number>();
+  const keptUnitIds = new Set<string>();
+  for (const u of keptValueUnits ?? []) {
+    const uid = u.Unit?.UnitID;
+    const sid = u.Unit?.SpaceID;
+    if (!uid || !sid || keptUnitIds.has(uid)) continue;
+    keptUnitIds.add(uid);
+    keptValueUnitsBySpace.set(sid, (keptValueUnitsBySpace.get(sid) ?? 0) + 1);
+  }
+
   const componentSpaces = spaces.filter((s) => !!s.Space?.SpaceID);
   const targetLabelById = uniqueTargetLabels(
     componentSpaces.flatMap((s) => [...(targetIdsBySpace.get(s.Space!.SpaceID!) ?? [])]),
@@ -307,6 +330,7 @@ export function buildComponentData(
       const liveStatus = runningRelease?.liveStatus ?? undefined;
       const factsTargetId = deploymentTargetId(s.Space?.ReleaseTargetID, targets);
       const targetFacts = factsTargetId ? targetFactsById?.get(factsTargetId) : undefined;
+      const keptCount = keptValueUnitsBySpace.get(sid);
       return {
         deploymentId: sid,
         slug,
@@ -341,6 +365,7 @@ export function buildComponentData(
         labels: { ...(s.Space?.Labels ?? {}) },
         ...(targetFacts && { targetFacts }),
         configSignals: configSignalsBySpace.get(sid) ?? { ...NO_CONFIG_SIGNALS },
+        ...(keptCount !== undefined && { keptValueUnits: keptCount }),
       };
     });
 

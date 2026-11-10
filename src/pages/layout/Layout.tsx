@@ -25,7 +25,7 @@ import ExploreIcon from '@mui/icons-material/Explore';
 import FlashOnOutlinedIcon from '@mui/icons-material/FlashOnOutlined';
 import FolderCopyIcon from '@mui/icons-material/FolderCopy';
 import LocalLibraryIcon from '@mui/icons-material/LocalLibrary';
-import PublishedWithChangesIcon from '@mui/icons-material/PublishedWithChanges';
+import PolicyIcon from '@mui/icons-material/Policy';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import SchemaIcon from '@mui/icons-material/Schema';
 import SearchIcon from '@mui/icons-material/Search';
@@ -299,6 +299,12 @@ const ConfigurationItems: INavItem[] = [
     disable: false,
   },
   {
+    text: 'Validation',
+    component: <PolicyIcon sx={{ color: 'white' }} />,
+    navigate: `/validation`,
+    disable: false,
+  },
+  {
     text: 'Changes',
     component: <WorkspacesIcon sx={{ color: 'white' }} />,
     disable: false,
@@ -324,12 +330,6 @@ const ConfigurationItems: INavItem[] = [
         text: 'ChangeWorkflows',
         component: <SchemaIcon sx={{ fontSize: 18 }} />,
         navigate: `/change-workflows`,
-        disable: false,
-      },
-      {
-        text: 'Initiatives',
-        component: <PublishedWithChangesIcon sx={{ fontSize: 18 }} />,
-        navigate: `/x/initiatives`,
         disable: false,
       },
     ],

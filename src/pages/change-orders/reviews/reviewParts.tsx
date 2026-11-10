@@ -6,7 +6,7 @@
  * the progress pips, the uppercase tag and the section label.
  */
 
-import { Fragment, useId, useState, type ReactNode } from 'react';
+import { Fragment, useId, useMemo, useState, type ReactNode } from 'react';
 
 import Box from '@mui/material/Box';
 import Collapse from '@mui/material/Collapse';
@@ -28,9 +28,10 @@ import {
   changeOrderSurface,
   changeOrderType,
 } from '../changeOrdersTokens';
+import { SpaceNameList } from '../components/SpaceListing';
 import { REVIEW_TONE, reviewLinkButtonSx, type ReviewTone } from './reviewButtons';
 import { reviewCopy, reviewSubject, splitAroundStage } from './reviewCopy';
-import type { RequirementProgress, RequirementSpaceProgress, ReviewPerson, StageReviewSummary } from './changeOrderReviewTypes';
+import type { RequirementProgress, RequirementSpaceProgress, ReviewGateSpace, ReviewPerson, StageReviewSummary } from './changeOrderReviewTypes';
 
 const stageLinkSx = {
   font: 'inherit',
@@ -386,6 +387,12 @@ export function ReviewGateSpaces({ requirement }: { requirement: RequirementProg
       ))}
     </Box>
   );
+}
+
+/** The Spaces a gate is read over: three names, then "+M more" opens all of them. */
+export function GateSpaceNames({ spaces }: { spaces: readonly ReviewGateSpace[] }) {
+  const listed = useMemo(() => spaces.map((space) => ({ spaceId: space.spaceId, name: space.spaceSlug })), [spaces]);
+  return <SpaceNameList spaces={listed} />;
 }
 
 /** One Space's tag: the server's verdict and count, or "not evaluated" with no count. */

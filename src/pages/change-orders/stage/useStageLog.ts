@@ -26,6 +26,7 @@ import {
   type StageLogPillView,
   type StageLogView,
   deriveStageLog,
+  releaseRanCount,
   releaseReviewHolds,
   stageLogPill,
   warnProblemsOf,
@@ -188,6 +189,12 @@ export function useStageLog({ model, detail, stage, history, coReviews }: StageL
     const promotedHere = stage.verdict === 'promoted';
     const releaseOpen = releaseReviewHolds(releaseSummary?.requirements ?? [], promotedHere);
     const releaseName = releaseSummary?.requirements[0]?.name;
+    const ranCount = releaseRanCount(
+      sequenceStage?.spaceIds ?? [],
+      detail.skippedSpaceId,
+      detail.releaseTargetOf,
+      detail.progress,
+    );
     const busyMethod =
       model.merge?.busy === true
         ? model.merge.methods[0]?.method === 'r'
@@ -243,6 +250,7 @@ export function useStageLog({ model, detail, stage, history, coReviews }: StageL
                 name: model.bylines.released.name,
                 isYou: model.bylines.released.isYou,
               },
+              ...(ranCount === undefined ? {} : { ranCount }),
             },
           }),
       dryRunUnavailable: model.dryRunLine.mode === 'unavailable',

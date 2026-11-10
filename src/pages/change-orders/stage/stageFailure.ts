@@ -9,9 +9,11 @@
 
 import type { ChangeOrderPromotion, ChangeOrderPromotionFailure } from '@confighub/rtk-query';
 
+import { parseGateName } from '../../../utility/name-format-functions';
 import type { HistoryEntry } from '../changeOrderHistory';
 import type { ChangeOrderStageVerdict } from '../../x/apps/change-order/changeOrderTypes';
-import type { ActionFailedSpace, StageByline, StageFailedSpace, StageFailure } from './stageTypes';
+import { stageCardCopy } from './stageCardCopy';
+import type { ActionFailedSpace, StageByline, StageFailedSpace, StageFailure, StageFailureItem } from './stageTypes';
 
 // ---------------------------------------------------------------------------
 // A failed promotion or release
@@ -196,6 +198,99 @@ export function retryTargets(
   const failedIds = new Set(failure.failedSpaces.map((s) => s.spaceId).filter((id) => id !== ''));
   const failedSlugs = new Set(failure.failedSpaces.map((s) => s.slug).filter((slug) => slug !== ''));
   return releaseSpaceIds.filter((id) => failedIds.has(id) || failedSlugs.has(slugOf(id)));
+}
+
+// ---------------------------------------------------------------------------
+// A Unit refused because gates hold it
+// ---------------------------------------------------------------------------
+
+/** How the server starts its refusal to release (or apply) a Unit that has gates. */
+const GATED_MESSAGE = 'outstanding ValidationErrors';
+
+/** The gate that holds a Unit while its Triggers still run; it has no Trigger of its own. */
+export const AWAITING_TRIGGERS_GATE = 'awaiting/triggers';
+
+/**
+ * The gates a failed item names, when the server refused the Unit because of its
+ * gates; `undefined` for any other failure. The server lists them comma-joined after
+ * "Validation Errors:" in the message's metadata, which both a release's 422 answer
+ * and a promotion record carry. A message without that list names none, and the
+ * line then says only that the Unit is gated.
+ */
+export function gateNamesOf(message: string): string[] | undefined {
+  if (!message.includes(GATED_MESSAGE)) return undefined;
+  const listed = /Validation Errors:\s*(\S+)/.exec(message)?.[1] ?? '';
+  return [...new Set(listed.split(',').map((name) => name.trim()).filter((name) => name !== ''))];
+}
+
+/**
+ * The names a reader sees for these gates, one per Trigger: the Trigger's
+ * DisplayName when it is known, else its slug from the gate's name. The
+ * function's name is left out, since it says nothing about what is wrong.
+ */
+export function gateLabels(gateNames: readonly string[], displayNameOf: (gateName: string) => string | undefined = () => undefined): string[] {
+  const labels = gateNames.map((gate) => {
+    if (gate === AWAITING_TRIGGERS_GATE) return stageCardCopy.problem.triggersStillRun;
+    const shown = displayNameOf(gate)?.trim();
+    return shown !== undefined && shown !== '' ? shown : parseGateName(gate).triggerSlug;
+  });
+  return [...new Set(labels)];
+}
+
+/** The Units of one failed Space that gates hold, each with the gates named, and the Space's other items. */
+export interface GatedItems<Item extends StageFailureItem> {
+  /** One per Unit, in the order the items name them; a Unit the failure does not name has no `unitSlug`. */
+  gated: { unitSlug?: string; unitId?: string; gates: string[]; messages: string[] }[];
+  others: Item[];
+}
+
+/** Splits a failed Space's items into the Units gates hold, grouped by Unit, and every other failure. */
+export function splitGatedItems<Item extends StageFailureItem>(items: readonly Item[]): GatedItems<Item> {
+  const byUnit = new Map<string, GatedItems<Item>['gated'][number]>();
+  const others: Item[] = [];
+  for (const item of items) {
+    const gates = gateNamesOf(item.message);
+    if (gates === undefined) {
+      others.push(item);
+      continue;
+    }
+    const key = item.unitSlug ?? '';
+    const unit = byUnit.get(key) ?? {
+      ...(item.unitSlug === undefined ? {} : { unitSlug: item.unitSlug }),
+      ...(item.unitId === undefined ? {} : { unitId: item.unitId }),
+      gates: [],
+      messages: [],
+    };
+    for (const gate of gates) if (!unit.gates.includes(gate)) unit.gates.push(gate);
+    if (!unit.messages.includes(item.message)) unit.messages.push(item.message);
+    byUnit.set(key, unit);
+  }
+  return { gated: [...byUnit.values()], others };
+}
+
+/**
+ * Each gate's Trigger DisplayName, found by the Trigger ID the gated Units record
+ * for it (`ValidationTriggerIDs`), not by the slugs in its name: a Trigger renamed
+ * or moved since keeps its ID, and two Spaces may each have a Trigger of one slug.
+ * A gate with no recorded ID, or whose Trigger is gone, has no name here.
+ */
+export function triggerNamesByGate(
+  units: readonly { ValidationTriggerIDs?: Readonly<Record<string, string>> }[],
+  triggers: readonly { TriggerID?: string; DisplayName?: string }[],
+): Map<string, string> {
+  const nameById = new Map<string, string>();
+  for (const trigger of triggers) {
+    const name = trigger.DisplayName?.trim();
+    if (trigger.TriggerID !== undefined && name !== undefined && name !== '') nameById.set(trigger.TriggerID, name);
+  }
+  const names = new Map<string, string>();
+  for (const unit of units) {
+    for (const [gate, triggerId] of Object.entries(unit.ValidationTriggerIDs ?? {})) {
+      const name = nameById.get(triggerId);
+      if (name !== undefined) names.set(gate, name);
+    }
+  }
+  return names;
 }
 
 // ---------------------------------------------------------------------------

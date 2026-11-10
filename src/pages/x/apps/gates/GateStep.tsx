@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { Fragment } from 'react';
+import { Fragment, useId, useState } from 'react';
 
 import { parseGateName } from '@/utility/name-format-functions';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
@@ -15,7 +15,7 @@ import { UnitLink } from './UnitLink';
 import { isFixableKind } from './gateFixKinds';
 import { type Gate, type GateField } from './gateModel';
 import { type FieldOrigin } from './gateOrigin';
-import { ruleParts } from './gateRule';
+import { gateRuleText, ruleParts } from './gateRule';
 import {
   Code,
   Hint,
@@ -169,7 +169,7 @@ const Rule = styled(Box)({
 });
 
 const RuleLabel = styled('span')({
-  fontSize: 10.5,
+  fontSize: 12,
   fontWeight: 700,
   color: componentTheme.fgSubtle,
   flexShrink: 0,
@@ -327,6 +327,9 @@ export const GateStep = (props: GateStepProps) => {
     elsewhereOpen,
     checking,
   } = props;
+  // Unset until the toggle is clicked, so the default can follow the Trigger as it loads.
+  const [ruleToggled, setRuleToggled] = useState<boolean>();
+  const ruleDetailsId = useId();
   const trigger = gate.trigger;
   // A gate's Trigger is in the Space its name starts with: the gate's own Space, unless the read
   // of the Trigger says otherwise.
@@ -365,10 +368,13 @@ export const GateStep = (props: GateStepProps) => {
     const fix = staged.get(f.key);
     return fix?.op === 'set' && !!typedValueProblem(f, fix.value);
   }).length;
-  const rule = ruleParts(
-    gate.functionName,
-    trigger?.Arguments,
-    gate.unitFindings.flatMap((u) => u.messages),
+  const ruleText = gateRuleText(
+    trigger?.Description,
+    ruleParts(
+      gate.functionName,
+      trigger?.Arguments,
+      gate.unitFindings.flatMap((u) => u.messages),
+    ),
   );
   const warning = gate.warning;
   const statusTone = state === 'cleared' ? 'success' : warning ? 'muted' : 'attention';
@@ -446,27 +452,44 @@ export const GateStep = (props: GateStepProps) => {
     );
   }
 
-  const description = trigger?.Description ? (
-    <Description $none={false} data-testid={`gate-description-${label}`}>
-      {trigger.Description}
-    </Description>
-  ) : (
-    <Description $none data-testid={`gate-description-${label}`}>
-      The Trigger has no description. Add one so others know how to fix this gate.
+  const description = (
+    <Description $none={ruleText.noDescription} data-testid={`gate-description-${label}`}>
+      {ruleText.lead}
     </Description>
   );
+  // With no Description, the Rule is the only text that says what failed, so it starts open.
+  const ruleOpen = ruleToggled ?? ruleText.noDescription;
   const ruleLine =
-    rule.length > 0 ? (
+    ruleText.details.length > 0 ? (
       <Rule data-testid={`gate-rule-${label}`}>
         <RuleLabel>Rule</RuleLabel>
         <span>
-          {rule.map((part, i) =>
-            'code' in part ? (
-              <Code key={i}>{part.code}</Code>
-            ) : (
-              <span key={i}>{part.text}</span>
-            ),
-          )}
+          {/* Before the details, so the button stays under the pointer when they open. */}
+          <LinkButton
+            data-testid={`gate-rule-toggle-${label}`}
+            aria-expanded={ruleOpen}
+            aria-controls={ruleDetailsId}
+            onClick={(e) => {
+              // A closed gate opens on a click anywhere on its card; this click only shows the Rule.
+              e.stopPropagation();
+              setRuleToggled(!ruleOpen);
+            }}
+          >
+            {ruleOpen ? 'Hide details' : 'Show details'}
+          </LinkButton>
+          <span
+            id={ruleDetailsId}
+            data-testid={`gate-rule-details-${label}`}
+            style={{ display: ruleOpen ? 'block' : 'none' }}
+          >
+            {ruleText.details.map((part, i) =>
+              'code' in part ? (
+                <Code key={i}>{part.code}</Code>
+              ) : (
+                <span key={i}>{part.text}</span>
+              ),
+            )}
+          </span>
         </span>
       </Rule>
     ) : null;

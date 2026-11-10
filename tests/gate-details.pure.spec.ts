@@ -12,8 +12,12 @@ import {
   buildGates,
   gateAfterSave,
 } from '../src/pages/x/apps/gates/gateModel';
-import { blameFieldsForFinding, originForFinding } from '../src/pages/x/apps/gates/gateOrigin';
-import { ruleParts } from '../src/pages/x/apps/gates/gateRule';
+import {
+  blameFieldsForFinding,
+  hopDescription,
+  originForFinding,
+} from '../src/pages/x/apps/gates/gateOrigin';
+import { NO_DESCRIPTION, gateRuleText, ruleParts } from '../src/pages/x/apps/gates/gateRule';
 import {
   duplicateEntryPath,
   fixInvocations,
@@ -292,6 +296,75 @@ test('the Rule line says what the Trigger expects', () => {
     { code: 'latest' },
   ]);
   expect(ruleParts('some-other-function', [])).toEqual([]);
+});
+
+test('the Trigger Description leads a gate, and the regex of its Rule is only in details', () => {
+  const rule = ruleParts('vet-images', [
+    { ParameterName: 'image-filter', Value: '{"DenyRegexp":":v1\\\\.([0-9]|1[0-6])\\\\."}' },
+  ]);
+  expect(rule).toEqual([
+    { text: 'Not allowed: values that match ' },
+    { code: ':v1\\.([0-9]|1[0-6])\\.' },
+  ]);
+  const text = gateRuleText(
+    'Prod runs cert-manager v1.17 or later. Set the image tag to v1.17.2.',
+    rule,
+  );
+  expect(text).toEqual({
+    lead: 'Prod runs cert-manager v1.17 or later. Set the image tag to v1.17.2.',
+    noDescription: false,
+    details: rule,
+  });
+});
+
+test('a gate whose Trigger has no Description asks for one, and keeps its Rule in details', () => {
+  const rule = ruleParts('vet-images', [
+    { ParameterName: 'image-filter', Value: '{"DenyRegexp":":latest$"}' },
+  ]);
+  for (const description of [undefined, '', '  ']) {
+    expect(gateRuleText(description, rule)).toEqual({
+      lead: NO_DESCRIPTION,
+      noDescription: true,
+      details: rule,
+    });
+  }
+  // A function with no Rule line has no details either.
+  expect(gateRuleText(undefined, ruleParts('some-other-function', [])).details).toEqual([]);
+});
+
+test('the origin of a value names the person who set it, and the function they ran', () => {
+  const hop = {
+    SetBy: 'set-image-reference',
+    Source: 'UpdateUnit',
+    RevisionNum: 3,
+    When: '2026-11-05T10:00:00Z',
+  };
+  expect(hopDescription({ ...hop, User: 'alice', UserID: 'u-alice' })).toEqual({
+    text: 'alice with set-image-reference, Revision 3',
+    date: '5 Nov',
+  });
+  // A change with no SetBy or Source still names the person.
+  expect(hopDescription({ User: 'alice', RevisionNum: 3 }).text).toBe('alice, Revision 3');
+});
+
+test('the origin of a value that no person set names what set it', () => {
+  // Triggers, Links and resolve run as no user, which the server names automation.
+  expect(
+    hopDescription({ SetBy: 'link base-to-prod', User: 'automation', RevisionNum: 4 }).text,
+  ).toBe('link base-to-prod, Revision 4');
+  expect(hopDescription({ SetBy: 'set-image-reference', RevisionNum: 3 }).text).toBe(
+    'set-image-reference, Revision 3',
+  );
+  expect(hopDescription({ User: '' }).text).toBe('a change');
+  // A server that cannot read a username sends the user's ID as the User: that names no one.
+  const id = '3f1c9e2a-6b7d-4c1e-9a2b-0d4e5f6a7b8c';
+  expect(
+    hopDescription({ SetBy: 'set-image-reference', User: id, UserID: id, RevisionNum: 3 })
+      .text,
+  ).toBe('set-image-reference, Revision 3');
+  expect(hopDescription({ SetBy: 'set-image-reference', User: id.toUpperCase() }).text).toBe(
+    'set-image-reference',
+  );
 });
 
 test('a block finding has one origin only when every leaf under it came from the same Unit', () => {

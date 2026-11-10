@@ -14,6 +14,7 @@
  */
 
 import { clockTime, plural, shortDate } from '../changeOrderHistory';
+import { namesText } from '../components/spaceListLogic';
 import type {
   DecisionGateEntry,
   GateReviewSummary,
@@ -163,12 +164,12 @@ export function skippedCodeText(code: string | undefined): string | undefined {
 
 /** "rrv-dev, rrv-staging": the Spaces where the viewer wrote part of the change. */
 export function placesText(spaces: readonly string[]): string {
-  return spaces.join(', ');
+  return namesText(spaces);
 }
 
 /** "rrv-dev (1 of 2 Units)", from the server's Caller per Space. */
 export function authorInText(authorIn: readonly ReviewAuthorIn[]): string {
-  return authorIn.map((a) => `${a.spaceSlug} (${a.authoredRevisions} of ${plural(a.revisions, 'Unit')})`).join(', ');
+  return namesText(authorIn.map((a) => `${a.spaceSlug} (${a.authoredRevisions} of ${plural(a.revisions, 'Unit')})`));
 }
 
 export const reviewCopy = {
@@ -566,7 +567,6 @@ export const reviewCopy = {
     requirement: (n: number) => (n === 1 ? 'Requirement' : 'Requirements'),
     target: 'ChangeOrder',
     reviews: 'Change in',
-    reviewsValue: (subject: string, spaces: string, base: boolean) => (base ? spaces : `${subject}: ${spaces}`),
     opens: 'Counts toward',
     covers: 'Covers',
     coversValue: (revisions: number | undefined, spaces: number) =>
@@ -608,7 +608,7 @@ export const reviewCopy = {
     revokeFailed: (spaces: string[]) =>
       spaces.length === 0
         ? 'Your earlier decision was not withdrawn. Nothing changed.'
-        : `Only part of your earlier decision was withdrawn (${spaces.join(', ')}). Nothing new was saved.`,
+        : `Only part of your earlier decision was withdrawn (${namesText(spaces)}). Nothing new was saved.`,
     recordFailedAfterRevoke: 'Your earlier decision is withdrawn. The new one was not saved.',
     /** Why a record of the earlier decision is not revoked: nothing is sent, so it stays in force. */
     unrevocable: {

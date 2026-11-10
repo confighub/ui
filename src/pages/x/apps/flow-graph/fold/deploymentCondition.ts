@@ -104,3 +104,42 @@ export function stripMark(
   if (c.stale && !waves.has('stale')) return 'stale';
   return 'quiet';
 }
+
+/**
+ * Why a member that is not a card goes first in its stack, under its own
+ * name: a card-earning condition that is not a wave on its Base (a member
+ * over the card cap), else a value it keeps on merge. A wave is not a reason,
+ * because it is true of most members and the wave chip says it once.
+ */
+export type StandoutReason = Exclude<ConditionKind, 'stale'> | 'kept';
+
+/** The words a stack shows after a standout member's name. */
+export const STANDOUT_LABEL: Record<StandoutReason, string> = {
+  degraded: 'Degraded',
+  outOfSync: 'Out of sync',
+  gated: 'Gated',
+  progressing: 'Progressing',
+  unreleased: 'Unreleased changes',
+  changeSet: 'ChangeSet',
+  kept: 'Kept on merge',
+};
+
+/** Whether a Deployment keeps a value on merge in any of its units. */
+export const keepsValue = (d: ComponentDeployment): boolean => (d.keptValueUnits ?? 0) > 0;
+
+/** Why a stack member stands out, or null when nothing sets it apart. */
+export function standoutOf(
+  c: Record<ConditionKind, boolean>,
+  waves: ReadonlySet<WaveCondition>,
+  kept: boolean,
+): StandoutReason | null {
+  const kind = worstCardKind(c, waves);
+  if (kind !== null && kind !== 'stale') return kind;
+  return kept ? 'kept' : null;
+}
+
+/** Sort rank of a standout reason, worst first: the card severities, then a kept value. */
+export function standoutRank(reason: StandoutReason | null): number {
+  if (reason === null) return 0;
+  return reason === 'kept' ? 0.5 : CARD_SEVERITY.length - CARD_SEVERITY.indexOf(reason);
+}

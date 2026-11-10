@@ -42,6 +42,7 @@ import { type Locator, type Page, type Request } from '@playwright/test';
 import { test, expect, newAuthorizedContext, hubApi } from './fixtures/test';
 
 import { changeOrderPath } from '../src/pages/change-orders/changeOrderAddress';
+import { releaseFixCopy } from '../src/pages/change-orders/stage/releaseFixCopy';
 import { stageCardCopy } from '../src/pages/change-orders/stage/stageCardCopy';
 import {
   CUSTOM_PREREQUISITE,
@@ -280,6 +281,167 @@ async function installStubs(page: Page, fx: ChangeOrderFixture, overrides: Parti
   );
 
   return { stubs, traffic };
+}
+
+/** How the stubbed `POST /api/unit/tag` answers one Space's move. */
+type MoveAnswer = 'ok' | 'refused' | 'noItem';
+
+/** What the "Release the fix" stubs saw: the moves of the release Tag, and what was asked in what order. */
+interface FixTraffic {
+  on: boolean;
+  /** How each Space's move is answered; a Space not named here is moved. */
+  answer: Record<string, MoveAnswer>;
+  /** The bodies and where clauses of `POST /api/unit/tag`, while `on`. */
+  moves: { where: string; body: Json }[];
+  /** `move:<spaceId>` and `release:<spaceId>`, in the order the page sent them while `on`. */
+  order: string[];
+  /** Each Space's `app` Unit, and the head the stubs give each fixed Unit, by Unit id. */
+  appUnitIds: Record<string, string>;
+  heads: Record<string, number>;
+  /** A second Unit of the first Space, fixed too while `withExtra`, for a move that is refused on one Unit only. */
+  extra: { unitId: string; slug: string; spaceId: string };
+  withExtra: boolean;
+  /** Units whose move is refused while their Space's answer is `ok`. */
+  refuseUnitIds: string[];
+}
+
+/**
+ * A fix saved by hand in each of `spaces`, after its release failed on a gate: the `app`
+ * Unit's head is one Revision past the one the ChangeOrder's release Tag marks, and that
+ * marked Revision has ValidationErrors. The server cannot be made to gate one Space's
+ * release on demand, so the reads say so, while `on`; the move of the release Tag is
+ * answered here (`answer`) and never reaches the server.
+ */
+async function installFixStubs(page: Page, spaces: ChangeOrderSpace[], releaseTagId: string): Promise<FixTraffic> {
+  const fix: FixTraffic = {
+    on: false,
+    answer: {},
+    moves: [],
+    order: [],
+    appUnitIds: {},
+    heads: {},
+    extra: { unitId: '', slug: '', spaceId: '' },
+    withExtra: false,
+    refuseUnitIds: [],
+  };
+  // Known before the page reads anything: the marks may be read before the heads are.
+  for (const space of spaces) {
+    const listed = await hubApi.get('/api/unit', { params: { where: `SpaceID = '${space.spaceId}'` } });
+    expect(listed.ok(), `list ${space.slug}: ${listed.status()}`).toBe(true);
+    const units = ((await listed.json()) as { Unit?: { UnitID?: string; Slug?: string } }[]).map((row) => row.Unit);
+    const app = units.find((u) => u?.Slug === 'app');
+    expect(app?.UnitID, `${space.slug}/app exists`).toBeDefined();
+    fix.appUnitIds[space.spaceId] = app?.UnitID ?? '';
+    const other = units.find((u) => u?.Slug !== undefined && u.Slug !== 'app');
+    if (space === spaces[0] && other?.UnitID !== undefined && other.Slug !== undefined) fix.extra = { unitId: other.UnitID, slug: other.Slug, spaceId: space.spaceId };
+  }
+  expect(fix.extra.unitId, `${spaces[0].slug} has a second Unit`).not.toBe('');
+  const spaceOfUnit = (unitId: unknown) =>
+    fix.withExtra && unitId === fix.extra.unitId ? fix.extra.spaceId : Object.keys(fix.appUnitIds).find((spaceId) => fix.appUnitIds[spaceId] === unitId);
+  // The units list the card reads its heads from.
+  await page.route(
+    (url) => url.pathname === '/api/unit',
+    async (route) => {
+      if (!fix.on || route.request().method() !== 'GET') return route.fallback();
+      const response = await route.fetch();
+      if (!response.ok()) return route.fulfill({ response });
+      const rows = (await response.json()) as { Unit?: Json }[];
+      const changed = rows.map((row) => {
+        const unit = row.Unit;
+        const spaceId = spaceOfUnit(unit?.UnitID);
+        if (unit === undefined || spaceId === undefined) return row;
+        const unitId = String(unit.UnitID);
+        fix.heads[unitId] = Number(unit.HeadRevisionNum) + 1;
+        return { ...row, Unit: { ...unit, HeadRevisionNum: fix.heads[unitId], ValidationErrors: {} } };
+      });
+      return route.fulfill({ response, body: JSON.stringify(changed) });
+    },
+  );
+  // The Revisions the ChangeOrder's Tags mark.
+  await page.route(
+    (url) => url.pathname === '/api/revision' && (url.searchParams.get('where') ?? '').includes(`Tags ? '${releaseTagId}'`),
+    async (route) => {
+      if (!fix.on) return route.fallback();
+      const response = await route.fetch();
+      if (!response.ok()) return route.fulfill({ response });
+      const rows = (await response.json()) as { Revision?: Json }[];
+      const changed = rows.map((row) => {
+        const revision = row.Revision;
+        const spaceId = spaceOfUnit(revision?.UnitID);
+        if (revision === undefined || spaceId === undefined || revision.SpaceID !== spaceId) return row;
+        return { ...row, Revision: { ...revision, ValidationErrors: { 'vet-images/vet-images': true } } };
+      });
+      return route.fulfill({ response, body: JSON.stringify(changed) });
+    },
+  );
+  // What the confirm shows of the head: its diff and who saved it.
+  await page.route(
+    (url) => /^\/api\/space\/[^/]+\/unit\/[^/]+\/(diff|revision)$/.test(url.pathname) && spaceOfUnit(url.pathname.split('/')[5]) !== undefined,
+    async (route) => {
+      if (!fix.on) return route.fallback();
+      if (route.request().url().includes('/diff')) {
+        return route.fulfill(
+          json({
+            Diff: {
+              Resources: [
+                {
+                  Resource: { ResourceName: 'confighub-app', ResourceType: 'apps/v1/Deployment' },
+                  ChangeType: 'Update',
+                  Changes: [
+                    {
+                      Path: 'spec.template.spec.containers.?name=app.image',
+                      DisplayPath: 'spec.template.spec.containers.?name=app.image',
+                      Segments: [],
+                      ChangeType: 'Update',
+                      FromValue: IMAGE_BEFORE,
+                      ToValue: IMAGE_AFTER,
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+        );
+      }
+      return route.fulfill(json([{ Revision: { RevisionNum: 0, CreatedAt: new Date().toISOString() }, User: { DisplayName: 'Gate Fixer', Slug: 'fixer' } }]));
+    },
+  );
+  await page.route(
+    (url) => url.pathname === '/api/unit/tag',
+    async (route) => {
+      const request = route.request();
+      const where = new URL(request.url()).searchParams.get('where') ?? '';
+      const spaceId = /SpaceID = '([^']+)'/.exec(where)?.[1] ?? '';
+      const unitIds = [...(/UnitID IN \(([^)]*)\)/.exec(where)?.[1] ?? '').matchAll(/'([^']+)'/g)].map((m) => m[1]);
+      fix.moves.push({ where, body: bodyOf(request) });
+      fix.order.push(`move:${spaceId}`);
+      switch (fix.answer[spaceId] ?? 'ok') {
+        case 'refused':
+          return route.fulfill(
+            json(
+              unitIds.map((id) => ({ Message: `Failed to tag unit ${id}`, Error: { Message: 'the revision has validation errors, so it could not be released' } })),
+              207,
+            ),
+          );
+        case 'noItem':
+          return route.fulfill(json([]));
+        case 'ok': {
+          // The server moves Unit by Unit: one refusal leaves the others moved, in a 207.
+          const items = unitIds.map((id) =>
+            fix.refuseUnitIds.includes(id)
+              ? { Message: `Failed to tag unit ${id}`, Error: { Message: 'the revision has validation errors, so it could not be released' } }
+              : { Message: `Tag moved from revision 1 to Revision (revision 2) for unit ${id}` },
+          );
+          return route.fulfill(json(items, items.some((item) => 'Error' in item) ? 207 : 200));
+        }
+      }
+    },
+  );
+  page.on('request', (request) => {
+    const match = /^\/api\/space\/([^/]+)\/release$/.exec(new URL(request.url()).pathname);
+    if (fix.on && match !== null && request.method() === 'POST' && bodyOf(request).DryRun !== true) fix.order.push(`release:${match[1]}`);
+  });
+  return fix;
 }
 
 // ---------------------------------------------------------------------------
@@ -1328,15 +1490,23 @@ test.describe('ChangeOrder stage card', () => {
   });
 
   /*
-   * NOTHING CAN BE PRESSED HALF-WAY, and A RELEASE THAT FAILS IN ONE SPACE is
-   * published again in that Space only: the others already run the change, and
-   * publishing them again is not a retry. Last in the file, because it really
+   * NOTHING CAN BE PRESSED HALF-WAY, and A RELEASE THAT FAILS IN SOME SPACES is
+   * published again in those Spaces only: the others already run the change, and
+   * publishing them again is not a retry. A FIX SAVED OUTSIDE THE CHANGEORDER is
+   * released from the card only by moving the release Tag to it first, after a
+   * confirm that shows what it adopts. Last in the file, because it really
    * promotes and releases prod.
    */
-  test('promote and release on prod: nothing live mid-action, and Release again publishes only the Space that failed', async ({ page }) => {
-    test.setTimeout(240_000);
-    const [ok1, ok2, failing] = fx.spacesInStage('prod');
-    const { stubs, traffic } = await installStubs(page, fx, { releaseFailSpaceIds: [failing.spaceId] });
+  test('promote and release on prod: nothing live mid-action, Release again publishes only the Spaces that failed, and Release the fix moves the release Tag first', async ({ page }) => {
+    test.setTimeout(360_000);
+    const [ok1, gatedA, gatedB] = fx.spacesInStage('prod');
+    const order = await hubApi.get(`/api/space/${fx.changeOrderSpaceId}/change_order/${fx.changeOrderId}`);
+    expect(order.ok(), `read the ChangeOrder: ${order.status()}`).toBe(true);
+    const read = (await order.json()) as Json & { ChangeOrder?: Json };
+    const releaseTagId = String(read.ReleaseTagID ?? read.ChangeOrder?.ReleaseTagID ?? '');
+    expect(releaseTagId, 'the ChangeOrder has a release Tag').not.toBe('');
+    const fix = await installFixStubs(page, [gatedA, gatedB], releaseTagId);
+    const { stubs, traffic } = await installStubs(page, fx, { releaseFailSpaceIds: [gatedA.spaceId, gatedB.spaceId] });
     await openStage(page, fx, 'prod');
     await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'ready', { timeout: 45000 });
     await expect(promoteMain(page, 'prod')).toHaveAttribute('data-one-click', 'true');
@@ -1354,18 +1524,129 @@ test.describe('ChangeOrder stage card', () => {
     const midRelease = frames.slice(0, frames.findIndex((f) => f.state === 'failed'));
     expect(midRelease.filter((f) => f.live), `a live button mid-release: ${JSON.stringify(frames)}`).toEqual([]);
     await expect(heading(page)).toHaveText('Release failed');
-    await expect(logLine(page, 'log-promote-failed')).toContainText(`${copy.actionTo(true, 'prod')} ${copy.failedInOf(1, 3)}`);
-    expect(new Set(traffic.releases)).toEqual(new Set([ok1.spaceId, ok2.spaceId, failing.spaceId]));
+    await expect(logLine(page, 'log-promote-failed')).toContainText(`${copy.actionTo(true, 'prod')} ${copy.failedInOf(2, 3)}`);
+    expect(new Set(traffic.releases)).toEqual(new Set([ok1.spaceId, gatedA.spaceId, gatedB.spaceId]));
 
-    stubs.releaseFailSpaceIds = [];
+    // Release again publishes the Revision the release Tag marks, so a gate on it fails again.
     const released = traffic.releases.length;
     const release = logLine(page, 'open-release');
     await expect(release).toContainText(copy.releaseAgainTo('prod'));
+    await expect(page.getByTestId('release-fix-offer'), 'no fix has been saved').toHaveCount(0);
     await release.getByRole('button', { name: stageCardCopy.merge.releaseAgain }).click();
     await confirmButton(page).click();
-    await expect.poll(() => traffic.releases.length, { timeout: 30000 }).toBeGreaterThan(released);
+    await expect.poll(() => traffic.releases.length, { timeout: 30000 }).toBeGreaterThanOrEqual(released + 2);
     await page.waitForTimeout(1000);
-    expect(traffic.releases.slice(released), 'only the Space whose release failed').toEqual([failing.spaceId]);
+    expect(new Set(traffic.releases.slice(released)), 'only the Spaces whose release failed').toEqual(new Set([gatedA.spaceId, gatedB.spaceId]));
+    await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'failed', { timeout: 120000 });
+
+    // A fix saved after that in both Spaces, outside the ChangeOrder. After a reload the stage reads promoted.
+    fix.on = true;
+    await page.reload();
+    await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'promoted', { timeout: 60000 });
+    const offer = page.getByTestId('release-fix-offer');
+    await expect(offer).toContainText('saved outside this ChangeOrder', { timeout: 30000 });
+    await expect(offer).toContainText(`${gatedA.slug}/app`);
+    await expect(offer).toContainText(`${gatedB.slug}/app`);
+    const dialog = page.getByTestId('release-fix-confirm');
+    const errorBox = dialog.getByTestId('release-fix-error');
+    const openConfirm = async () => {
+      fix.order = [];
+      fix.moves = [];
+      await offer.getByTestId('act-release-fix').click();
+      await expect(dialog).toContainText(releaseFixCopy.title('prod'));
+    };
+    const closeConfirm = async () => {
+      await dialog.getByRole('button', { name: releaseFixCopy.close }).click();
+      await expect(dialog).toHaveCount(0);
+    };
+
+    await openConfirm();
+    await expect(dialog.getByTestId('release-fix-outside')).toHaveText(releaseFixCopy.outside(2));
+    await expect(dialog.getByTestId('release-fix-approval')).toContainText(releaseFixCopy.approval(2));
+    await expect(dialog.getByTestId('release-fix-saved-by').first()).toContainText('Saved by Gate Fixer');
+    await expect(dialog.getByTestId('release-fix-unit').first()).toContainText('v0.2.20');
+    expect(fix.moves, 'nothing moves before Confirm').toEqual([]);
+    await dialog.getByRole('button', { name: releaseFixCopy.cancel }).click();
+    await expect(dialog).toHaveCount(0);
+
+    // 0. Two fixed Units in A, and the move refused on one: the confirm says which moved, and A is not released.
+    fix.withExtra = true;
+    fix.refuseUnitIds = [fix.extra.unitId];
+    await page.reload();
+    await expect(offer).toContainText(`${gatedA.slug}/${fix.extra.slug}`, { timeout: 60000 });
+    await openConfirm();
+    fix.answer = { [gatedB.spaceId]: 'refused' };
+    await dialog.getByTestId('release-fix-submit').click();
+    await expect(errorBox).toContainText(
+      releaseFixCopy.partlyMoved(gatedA.slug, [`${gatedA.slug}/app`], [`${gatedA.slug}/${fix.extra.slug}`], 'the revision has validation errors, so it could not be released'),
+    );
+    await expect(errorBox).toContainText(releaseFixCopy.notMoved(gatedB.slug, 'the revision has validation errors, so it could not be released'));
+    expect(fix.order.filter((o) => o.startsWith('release:')), 'a Space with a Unit not moved is not released').toEqual([]);
+    await closeConfirm();
+    fix.withExtra = false;
+    fix.refuseUnitIds = [];
+    await page.reload();
+    await expect(offer).not.toContainText(`${gatedA.slug}/${fix.extra.slug}`, { timeout: 60000 });
+    await expect(offer).toContainText(`${gatedB.slug}/app`);
+
+    // 1. Both moves refused: an error item each. Nothing is released.
+    await openConfirm();
+    fix.answer = { [gatedA.spaceId]: 'refused', [gatedB.spaceId]: 'refused' };
+    await dialog.getByTestId('release-fix-submit').click();
+    await expect(errorBox).toContainText(releaseFixCopy.notMoved(gatedA.slug, 'the revision has validation errors, so it could not be released'));
+    await expect(errorBox).toContainText(releaseFixCopy.notMoved(gatedB.slug, 'the revision has validation errors, so it could not be released'));
+    // The Spaces go in the card's order, which is not the fixture's.
+    const moveOf = (space: ChangeOrderSpace) => fix.moves.find((m) => m.where.includes(`SpaceID = '${space.spaceId}'`));
+    expect(new Set(fix.order), 'a refused move releases nothing').toEqual(new Set([`move:${gatedA.spaceId}`, `move:${gatedB.spaceId}`]));
+    for (const space of [gatedA, gatedB]) {
+      // The Revision the confirm showed, by number: a Revision saved since is never adopted unseen.
+      expect(moveOf(space)).toEqual({
+        where: `UnitID IN ('${fix.appUnitIds[space.spaceId]}') AND SpaceID = '${space.spaceId}'`,
+        body: { TagID: releaseTagId, Revision: String(fix.heads[fix.appUnitIds[space.spaceId]]), Move: true },
+      });
+    }
+    await closeConfirm();
+
+    // 2. An answer without an item for the Unit sent: it is not counted as moved.
+    await openConfirm();
+    fix.answer = { [gatedA.spaceId]: 'noItem', [gatedB.spaceId]: 'noItem' };
+    await dialog.getByTestId('release-fix-submit').click();
+    await expect(errorBox).toContainText(releaseFixCopy.noAnswer([`${gatedA.slug}/app`]));
+    await expect(errorBox).toContainText(releaseFixCopy.noAnswer([`${gatedB.slug}/app`]));
+    expect(fix.order.filter((o) => o.startsWith('release:')), 'a Unit with no answer releases nothing').toEqual([]);
+    await closeConfirm();
+
+    // 3. Both moved, and the release after it fails: the confirm says the Tag moved and the release failed.
+    await openConfirm();
+    fix.answer = {};
+    await dialog.getByTestId('release-fix-submit').click();
+    await expect(errorBox).toContainText('The release failed:', { timeout: 60000 });
+    await expect(errorBox).toContainText(new RegExp(`The release Tag moved in (${gatedA.slug} and ${gatedB.slug}|${gatedB.slug} and ${gatedA.slug})\\.`));
+    expect(new Set(fix.order.slice(0, 2))).toEqual(new Set([`move:${gatedA.spaceId}`, `move:${gatedB.spaceId}`]));
+    expect(new Set(fix.order.slice(2))).toEqual(new Set([`release:${gatedA.spaceId}`, `release:${gatedB.spaceId}`]));
+    await closeConfirm();
+
+    // 4. A moved and released, B refused (207 with an error item): the confirm says both.
+    stubs.releaseFailSpaceIds = [];
+    await openConfirm();
+    fix.answer = { [gatedB.spaceId]: 'refused' };
+    const partial = traffic.releases.length;
+    await dialog.getByTestId('release-fix-submit').click();
+    await expect(dialog.getByTestId('release-fix-released')).toHaveText(releaseFixCopy.releasedIn([gatedA.slug]), { timeout: 60000 });
+    await expect(errorBox).toContainText(releaseFixCopy.notMoved(gatedB.slug, 'the revision has validation errors, so it could not be released'));
+    expect(traffic.releases.slice(partial), 'only the Space whose Tag moved').toEqual([gatedA.spaceId]);
+    await closeConfirm();
+
+    // 5. B alone now; it moves, is released, and the confirm closes.
+    await expect(offer).not.toContainText(`${gatedA.slug}/app`, { timeout: 60000 });
+    await openConfirm();
+    fix.answer = {};
+    const last = traffic.releases.length;
+    await dialog.getByTestId('release-fix-submit').click();
+    await expect.poll(() => traffic.releases.length, { timeout: 30000 }).toBeGreaterThan(last);
+    expect(fix.order, 'the release Tag moves, then the Space is released').toEqual([`move:${gatedB.spaceId}`, `release:${gatedB.spaceId}`]);
+    expect(traffic.releases.slice(last), 'only the Space with the fix').toEqual([gatedB.spaceId]);
+    await expect(dialog).toHaveCount(0, { timeout: 30000 });
     // Released, prod's work is done: the page moves on, on the bare address.
     await expect(page).toHaveURL(new RegExp(`${fx.changeOrderPath}$`), { timeout: 120000 });
     await openStage(page, fx, 'prod');

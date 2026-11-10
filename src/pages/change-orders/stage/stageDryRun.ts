@@ -12,12 +12,12 @@
 
 import type { PromoteResult } from '@confighub/rtk-query';
 
-import { listText } from '../reviews/reviewCopy';
 import { refusalText, type ServerAnswer } from '../reviews/stageReviewInputs';
 import { changeOrderCopy } from '../../x/apps/change-order/changeOrderCopy';
 import { promoteGatesHolding, summarisePromote } from '../../x/apps/change-order/useChangeOrderActions';
 import { stageCardCopy } from './stageCardCopy';
 import type { DryRunAnswer, DryRunLine, DryRunSummary, PropagationProblem, StageDryRunView } from './stageTypes';
+import { namesText } from '../components/spaceListLogic';
 
 /** Unit actions that write nothing to the Unit's configuration. A Mark only moves Tags. */
 const NON_CHANGING_UNIT_ACTIONS: ReadonlySet<string> = new Set(['Mark', 'Unchanged', 'Skip']);
@@ -186,7 +186,7 @@ export function dryRunLine(input: DryRunLineInput): DryRunLine {
       const summary = view.summary;
       const names = [...(summary?.failuresBySpace.keys() ?? [])].map(nameOf);
       const first = summary?.failures[0];
-      const lead = copy.fails(names.length > 0 ? listText(names) : changeOrderCopy.unnamedSpace);
+      const lead = copy.fails(names.length > 0 ? namesText(names) : changeOrderCopy.unnamedSpace);
       return { mode, text: first === undefined ? lead : `${lead} ${first}`, icon: 'fail' };
     }
     case 'done': {

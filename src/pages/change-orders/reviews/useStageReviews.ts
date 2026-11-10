@@ -56,6 +56,7 @@ import { taggedRevisionWheres } from '../../x/apps/change-order/taggedRevisionRe
 import { useGetTaggedRevisionsQuery } from '../../x/apps/change-order/taggedRevisionsApi';
 import { SERVER_GATES_POLL_INTERVAL_MS } from '../../x/apps/change-order/useServerStageGates';
 import type { ChangeOrderDetail } from '../useChangeOrderDetail';
+import { NOTHING_SEEN, earliestAskedAt, recordsAheadOfRows, recordsSeenAfter, useRowsAskedAt, useSettledStart } from './rowsAskedAt';
 import { DEFAULT_ATTESTATION_TYPE, combineGateReviews, deriveGateReviews, promoteReadiness } from './changeOrderReviews';
 import type {
   GateReviewSummary,
@@ -202,6 +203,18 @@ function useReviewData(detail: ChangeOrderDetail, options: { poll?: boolean } = 
   const revocationsRead = useListRevocationsQuery(recordIds.length === 0 ? skipToken : { attestationIds: recordIds });
   const revocations = revocationsRead.data ?? EMPTY_RECORDS;
 
+  // Which records the rows were asked for before: the rows cannot list those yet, so a decision made of
+  // them is not "out of date" for being absent from the rows.
+  const releaseAskedAt = useSettledStart(releaseRuns);
+  const stageRowsAskedAt = useRowsAskedAt(detail.rowsAskedAt);
+  const rowsAskedAt = earliestAskedAt([stageRowsAskedAt, releaseAskedAt]);
+  // Set during the render that first holds a record, so no render shows it before it is noted.
+  const [recordsSeen, setRecordsSeen] = useState(NOTHING_SEEN);
+  const seenNow = recordsSeenAfter(recordsSeen, changeOrderId, recordIds, recordsRead.data !== undefined, Date.now());
+  if (seenNow !== recordsSeen) setRecordsSeen(seenNow);
+  const aheadKey = recordsAheadOfRows(seenNow, rowsAskedAt).join(',');
+  const recordsAhead = useMemo(() => new Set(aheadKey === '' ? [] : aheadKey.split(',')), [aheadKey]);
+
   // People and Groups.
   const definitions = workflow?.AttestationPrerequisites ?? EMPTY_DEFINITIONS;
   const groupIds = useMemo(() => [...new Set(definitions.flatMap((d) => d.FromGroupIDs ?? []))].sort(), [definitions]);
@@ -267,6 +280,7 @@ function useReviewData(detail: ChangeOrderDetail, options: { poll?: boolean } = 
         serverRows: server?.rows ?? [],
         notEvaluatedBySpaceId: server?.notEvaluatedBySpaceId ?? {},
         attestations: records,
+        recordsAheadOfRows: recordsAhead,
         revocations,
         users: reviewUsers,
         groups: reviewGroups,
@@ -280,7 +294,7 @@ function useReviewData(detail: ChangeOrderDetail, options: { poll?: boolean } = 
       });
       return summary === undefined ? [] : [summary];
     });
-  }, [changeOrderId, gates, rowsByGateKey, promotions, createdAt, definitions, records, revocations, reviewUsers, reviewGroups, reviewRequests, viewerUserId, now]);
+  }, [changeOrderId, gates, rowsByGateKey, promotions, createdAt, definitions, records, recordsAhead, revocations, reviewUsers, reviewGroups, reviewRequests, viewerUserId, now]);
   const byGateKey = useMemo(() => Object.fromEntries(summaries.map((s) => [s.gate.key, s])), [summaries]);
 
   // A skipped query has nothing to refetch (RTK throws if asked), so only started ones are.
@@ -288,10 +302,12 @@ function useReviewData(detail: ChangeOrderDetail, options: { poll?: boolean } = 
   const [refetchRecords, refetchRevocations, refetchRelease] = started;
   const refetch = useCallback(async () => {
     await Promise.all(
-      [refetchRecords, refetchRevocations, refetchRelease].map(async (run) => {
+      [refetchRecords, refetchRevocations].map(async (run) => {
         if (run !== undefined) await run();
       }),
     );
+    // Asked for after the records are in, so the rows are never older than a record the page shows.
+    if (refetchRelease !== undefined) await refetchRelease();
   }, [refetchRecords, refetchRevocations, refetchRelease]);
   const pollReads = useCallback(() => {
     if (options.poll === true) void refetch();

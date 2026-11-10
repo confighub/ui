@@ -105,6 +105,53 @@ test.describe('deriveChangeSetReviews', () => {
     expect(summary.viewerIsAuthor).toBe(false);
   });
 
+  test('one call over 55 Spaces, 100 ms apart, is one decision; a second call after the window is another', () => {
+    const at = (ms: number) => new Date(Date.parse('2026-10-01T10:00:00.000Z') + ms).toISOString();
+    const call = (prefix: string, start: number) =>
+      Array.from({ length: 55 }, (_, i) => ({ ...approval(`${prefix}${i}`, BOB, at(start + i * 100)), SpaceID: `space-${i}` }));
+    const first = call('a', 0);
+    const one = deriveChangeSetReviews({
+      revisions: [revision('web', 2, ALICE, first)],
+      revocations: [],
+      requests: [],
+      userNames: names,
+      viewerUserId: BOB,
+    });
+    expect(one.decisions).toHaveLength(1);
+    expect(one.decisions[0].records).toHaveLength(55);
+
+    const two = deriveChangeSetReviews({
+      revisions: [revision('web', 2, ALICE, [...first, ...call('b', 5_400 + 3_000)])],
+      revocations: [],
+      requests: [],
+      userNames: names,
+      viewerUserId: BOB,
+    });
+    expect(two.decisions).toHaveLength(2);
+  });
+
+  test('a Space seen again starts a new decision, so calls in a loop do not chain into one', () => {
+    // Three calls over the same two Spaces, each record 500 ms after the one before.
+    const records = ['a', 'b', 'c'].flatMap((call, n) =>
+      ['space-1', 'space-2'].map((space, i) => ({
+        ...approval(`${call}${i}`, BOB, new Date(Date.parse('2026-10-01T10:00:00.000Z') + (n * 2 + i) * 500).toISOString()),
+        SpaceID: space,
+      })),
+    );
+    const summary = deriveChangeSetReviews({
+      revisions: [revision('web', 2, ALICE, records)],
+      revocations: [],
+      requests: [],
+      userNames: names,
+      viewerUserId: BOB,
+    });
+    expect(summary.decisions.map((d) => d.records.map((r) => r.attestationId)).sort()).toEqual([
+      ['a0', 'a1'],
+      ['b0', 'b1'],
+      ['c0', 'c1'],
+    ]);
+  });
+
   test("a person's later decision replaces their earlier one, and a revoked one does not count", () => {
     const approved = approval('a1', BOB, '2026-10-01T10:00:00Z');
     const rejected = approval('a2', BOB, '2026-10-01T12:00:00Z', 'Fail', 'replicas too high');

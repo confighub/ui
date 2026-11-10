@@ -68,6 +68,14 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 
+import {
+  ENFORCED_AT_ANNOTATION,
+  ENFORCED_BY_ANNOTATION,
+  PRIORITY_ANNOTATION,
+  TRIGGER_PRIORITIES,
+} from '@/utility/triggerEnforcement';
+import dayjs from 'dayjs';
+
 import { TriggerDocumentDialog } from './TriggerDocumentDialog';
 
 // Types
@@ -555,6 +563,80 @@ const StatusAndFunctionCard = ({
  *
  * Which Units the Trigger applies to, and which resources in them its function operates on.
  */
+/**
+ * EnforcementCard
+ *
+ * How the policy a validating Trigger checks is rolled out: its priority, when it is due to be
+ * enforced (made blocking), and when it was. The Validation page tracks Triggers by these.
+ */
+const EnforcementCard = ({
+  control,
+  enforcedAt,
+}: {
+  control: Control<IAddTriggerFormInput>;
+  enforcedAt?: string;
+}) => (
+  <SectionCard title='Enforcement' testId='trigger-enforcement'>
+    <Grid container spacing={2}>
+      <Grid size={{ xs: 4 }}>
+        <Controller
+          name='Priority'
+          control={control}
+          render={({ field }) => (
+            <TextField
+              {...field}
+              value={field.value ?? 'Unspecified'}
+              select
+              label='Priority'
+              fullWidth
+              size='small'
+              data-testid='trigger-priority'
+              helperText={`The ${PRIORITY_ANNOTATION} annotation`}
+            >
+              {TRIGGER_PRIORITIES.map((p) => (
+                <MenuItem key={p} value={p}>
+                  {p}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
+        />
+      </Grid>
+      <Grid size={{ xs: 4 }}>
+        <Controller
+          name='EnforcedBy'
+          control={control}
+          render={({ field }) => (
+            <TextField
+              {...field}
+              value={field.value ?? ''}
+              type='date'
+              label='Enforce by'
+              fullWidth
+              size='small'
+              slotProps={{ inputLabel: { shrink: true } }}
+              data-testid='trigger-enforced-by'
+              helperText={`When it is due to block (Validation Mode Blocking); the ${ENFORCED_BY_ANNOTATION} annotation`}
+            />
+          )}
+        />
+      </Grid>
+      <Grid size={{ xs: 4 }}>
+        <TextField
+          value={enforcedAt ? dayjs(enforcedAt).format('MMM D, YYYY HH:mm') : ''}
+          label='Enforced at'
+          placeholder='Not enforced'
+          fullWidth
+          size='small'
+          disabled
+          slotProps={{ inputLabel: { shrink: true } }}
+          helperText={`Recorded in ${ENFORCED_AT_ANNOTATION} when the Trigger is made Blocking`}
+        />
+      </Grid>
+    </Grid>
+  </SectionCard>
+);
+
 const AppliesToCard = ({
   control,
   unitFilters,
@@ -982,6 +1064,12 @@ export const AddTriggerDrawer = ({
               invocations={invocationOptions}
               invocationsLoading={invocationsLoading}
             />
+            {(validatingFunction || !!existingTrigger?.Validating) && (
+              <EnforcementCard
+                control={control}
+                enforcedAt={existingTrigger?.Annotations?.[ENFORCED_AT_ANNOTATION]}
+              />
+            )}
             <AppliesToCard
               control={control}
               unitFilters={unitFilterOptions}

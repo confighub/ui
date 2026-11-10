@@ -22,11 +22,11 @@ import { partitionShortfall, type ChangeOrderOutcome } from '../changeOrderOutco
 import { keptValueOf, rowRefusals } from '../changeOrderCard';
 import type { ChangeOrderStageMatrix, ChangeOrderMatrixRow } from '../../x/apps/change-order/changeOrderMatrix';
 import { changeOrderCopy } from '../../x/apps/change-order/changeOrderCopy';
-import type { ChangeOrderChangeGroup } from '../../x/apps/change-order/changeOrderTypes';
+import type { ChangeOrderChangeGroup, ChangeOrderResourceConflict } from '../../x/apps/change-order/changeOrderTypes';
 import { stageCardCopy } from './stageCardCopy';
 import { changeFieldLabel, imageValueText, isImageField } from './stageChangeLines';
 import { problemSpaceIds } from './stageProblems';
-import type { PropagationProblem, PropagationProblemKind, SpaceMark, StagePropagation, UnknownCause } from './stageTypes';
+import type { PropagationProblem, PropagationProblemKind, ResourceRef, SpaceMark, StagePropagation, UnknownCause } from './stageTypes';
 
 export {
   acknowledgementSegments,
@@ -66,36 +66,65 @@ const KIND_RANK: Record<PropagationProblemKind, number> = { unknown: 0, refused:
 const EMPTY: StagePropagation = { problems: [], marks: new Map(), quietNotes: [], chainedSpaceIds: [], referenceSpaceId: null };
 
 interface PathChangeValue {
+  path: string;
   from: string;
   to: string;
   label: string;
   isImage: boolean;
+  resource?: ResourceRef;
 }
 
-/** A group's changes by path: the server's diff where there is one, else its flattened field diffs. */
+/** The resource a server diff entry is about, when it names both its type and its name. */
+function resourceRefOf(info: { ResourceType?: string; ResourceName?: string; ResourceNameWithoutScope?: string } | undefined): ResourceRef | undefined {
+  const type = info?.ResourceType ?? '';
+  const name = info?.ResourceNameWithoutScope || (info?.ResourceName ?? '').split('/').pop() || '';
+  return type === '' || name === '' ? undefined : { type, name };
+}
+
+/**
+ * A group's changes, keyed by resource and path: the server's diff where there is one, else
+ * its flattened field diffs. Two resources of one Unit can change the same path, and each is
+ * its own change.
+ */
 function changesByPath(group: ChangeOrderChangeGroup | undefined): Map<string, PathChangeValue> {
   const out = new Map<string, PathChangeValue>();
   if (group === undefined) return out;
   if (group.diff !== undefined) {
     for (const resource of group.diff.Resources ?? []) {
+      const ref = resourceRefOf(resource.Resource);
       for (const change of resource.Changes ?? []) {
         if (change.ChangeType === 'None') continue;
         const path = change.DisplayPath ?? change.Path ?? '';
         if (path === '') continue;
-        out.set(path, {
+        out.set(`${ref?.type ?? ''}\u0000${ref?.name ?? ''}\u0000${path}`, {
+          path,
           from: change.FromValue ?? '',
           to: change.ToValue ?? '',
           label: changeFieldLabel(change.Segments, path),
           isImage: isImageField(change.Segments, path),
+          ...(ref === undefined ? {} : { resource: ref }),
         });
       }
     }
     if (out.size > 0) return out;
   }
   for (const diff of group.fieldDiffs) {
-    out.set(diff.path, { from: diff.oldValue, to: diff.newValue, label: changeFieldLabel(null, diff.path), isImage: isImageField(null, diff.path) });
+    out.set(diff.path, { path: diff.path, from: diff.oldValue, to: diff.newValue, label: changeFieldLabel(null, diff.path), isImage: isImageField(null, diff.path) });
   }
   return out;
+}
+
+/**
+ * The resource a conflict is about: as the conflict names it, else the resource of the
+ * group's diff with its `namespace/name`. The conflict comes first because a value kept out
+ * can be the resource's only incoming change, and the diff then leaves the resource out.
+ */
+function conflictResource(group: ChangeOrderChangeGroup, conflict: ChangeOrderResourceConflict): ResourceRef | undefined {
+  const own = resourceRefOf({ ResourceType: conflict.resourceType, ResourceName: conflict.resourceName, ResourceNameWithoutScope: conflict.resourceNameWithoutScope });
+  if (own !== undefined) return own;
+  if (conflict.resourceName === undefined || conflict.resourceName === '') return undefined;
+  const match = (group.diff?.Resources ?? []).find((r) => r.Resource?.ResourceName === conflict.resourceName);
+  return resourceRefOf(match?.Resource);
 }
 
 /**
@@ -387,6 +416,7 @@ function differsProblems(
             valueText,
             reason: conflict.reason,
             ...(kept.incoming === undefined ? {} : { incoming: kept.incoming }),
+            ...withResource(conflictResource(group, conflict)),
           });
           raise({ kind: 'keeps', value: valueText, ...(valueText === kept.value ? {} : { title: kept.value }) });
         } else {
@@ -406,10 +436,11 @@ function differsProblems(
       if (blocking.length > 0) continue;
       const own = changesByPath(group);
       const ref = changesByPath(refGroup);
-      for (const path of new Set([...own.keys(), ...ref.keys()])) {
-        const a = own.get(path);
-        const b = ref.get(path);
+      for (const key of new Set([...own.keys(), ...ref.keys()])) {
+        const a = own.get(key);
+        const b = ref.get(key);
         if (a !== undefined && b !== undefined && a.from === b.from && a.to === b.to) continue;
+        const path = a?.path ?? b?.path ?? key;
         problems.push({
           kind: 'differs',
           spaceId,
@@ -423,6 +454,7 @@ function differsProblems(
           refFrom: b?.from ?? '',
           refTo: b?.to ?? '',
           refSpaceId,
+          ...withResource(a?.resource ?? b?.resource),
         });
         raise({ kind: 'differs' });
         found = true;
@@ -449,6 +481,8 @@ function differsProblems(
   }
   return mark ?? { kind: 'differs' };
 }
+
+const withResource = (resource: ResourceRef | undefined) => (resource === undefined ? {} : { resource });
 
 /**
  * The outcome partition with `same` and `differs` measured against the majority,

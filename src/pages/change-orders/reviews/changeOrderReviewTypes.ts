@@ -478,6 +478,11 @@ export interface DeriveGateReviewsInput {
   notEvaluatedBySpaceId: Record<string, NotEvaluatedReason>;
   /** Attestation records: those the server entries name, and this ChangeOrder's. */
   attestations: AttestationRead[];
+  /**
+   * Ids of records the page read after it last asked the server for the rows: the rows cannot list
+   * them yet, so a decision made of them is not reported as not covering.
+   */
+  recordsAheadOfRows?: ReadonlySet<string>;
   /** Records with RevokedAttestationID, any Type. */
   revocations: AttestationRead[];
   users: Record<string, ReviewUser>;

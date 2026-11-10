@@ -297,6 +297,16 @@ export interface MockOptions {
    * records and a revocation revokes, so the box can move on after a decision.
    */
   countNewRecords?: boolean;
+  /**
+   * With `countNewRecords`: the promote dry run for prod answers this many ms late once a record
+   * has been written through the page, as a server reading many Spaces does.
+   */
+  rowsDelayMs?: number;
+  /**
+   * With `countNewRecords`: the gate rows do not list the records written through the page, as
+   * for an approval that a newer Revision has left behind.
+   */
+  rowsBlindToNewRecords?: boolean;
   /** `Final.Prerequisites` names a sign-off review over the last stage. */
   signOff?: boolean;
   /**
@@ -513,10 +523,13 @@ export async function mockReviews(
   const revokedIds = new Set(revocations.map((r) => r.RevokedAttestationID as string));
   const requirements = mockRequirements(options);
   const reqNamed = (name: string) => requirements.find((r) => r.name === name) as MockRequirement;
-  const rowsFor = (names: string[], spaces: { spaceId: string; slug: string }[]) =>
-    spaces.flatMap((space, i) =>
-      names.map((name) => gateRow(reqNamed(name), space, records, revokedIds, { now, authorId, caller: callerFor(reqNamed(name), i) })),
+  const writtenByPage = new Set<string>();
+  const rowsFor = (names: string[], spaces: { spaceId: string; slug: string }[]) => {
+    const listed = options.rowsBlindToNewRecords === true ? records.filter((r) => !writtenByPage.has(r.AttestationID as string)) : records;
+    return spaces.flatMap((space, i) =>
+      names.map((name) => gateRow(reqNamed(name), space, listed, revokedIds, { now, authorId, caller: callerFor(reqNamed(name), i) })),
     );
+  };
 
   // The release dry run (#5788): `ReleasePublishResponse.Gates` on a 200 and on a 422.
   if (options.release !== undefined) {
@@ -625,6 +638,7 @@ export async function mockReviews(
       }
       if (options.countNewRecords === true) {
         gate.forEach((space, i) => {
+          writtenByPage.add(uuidOf(`new-${mocks.attests.length}`, i));
           records.push({
             AttestationID: uuidOf(`new-${mocks.attests.length}`, i),
             ChangeOrderID: fx.changeOrderId,
@@ -689,6 +703,9 @@ export async function mockReviews(
       }
       if (body.TargetStage !== PROD) return route.fallback();
       if (options.entryNoPermission === true) return route.fulfill(json({ message: 'You need Promote on these Spaces.' }, 403));
+      if (options.rowsDelayMs !== undefined && writtenByPage.size > 0) {
+        await new Promise((resolve) => setTimeout(resolve, options.rowsDelayMs));
+      }
       const staging = fx.spacesInStage('staging');
       const gates: Record<string, unknown>[] = [
         ...staging.map((space) => ({

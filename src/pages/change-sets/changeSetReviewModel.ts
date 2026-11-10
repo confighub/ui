@@ -145,7 +145,11 @@ export function deriveChangeSetReviews(input: DeriveChangeSetReviewsInput): Chan
   const revokedBy = new Map<string, AttestationRead>();
   for (const record of revocations) if (record.RevokedAttestationID) revokedBy.set(record.RevokedAttestationID, record);
 
-  // Records of one person with the same result and reason, within the window of the first, are one decision.
+  // Records of one person with the same result and reason, each within the window of the one
+  // before it, are one decision: one call writes a Space at a time, so a call over many Spaces
+  // can last longer than the window from its first record to its last. One call writes one
+  // record per Space, so a Space seen again starts a new decision; without this, calls run one
+  // after another in a loop would chain into one decision.
   const records = approvalRecords(revisions).sort((a, b) => epoch(a.record.CreatedAt) - epoch(b.record.CreatedAt));
   const groups: { first: AttestationRead; items: typeof records }[] = [];
   for (const item of records) {
@@ -155,7 +159,8 @@ export function deriveChangeSetReviews(input: DeriveChangeSetReviewsInput): Chan
         g.first.UserID === record.UserID &&
         g.first.Result === record.Result &&
         (g.first.Note ?? '') === (record.Note ?? '') &&
-        epoch(record.CreatedAt) - epoch(g.first.CreatedAt) <= DECISION_WINDOW_MS,
+        epoch(record.CreatedAt) - epoch(g.items[g.items.length - 1].record.CreatedAt) <= DECISION_WINDOW_MS &&
+        !g.items.some((member) => member.record.SpaceID === record.SpaceID),
     );
     if (group !== undefined) group.items.push(item);
     else groups.push({ first: record, items: [item] });

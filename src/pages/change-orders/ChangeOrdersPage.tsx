@@ -31,7 +31,6 @@ import { Link as RouterLink, useLocation, useNavigate, useParams } from 'react-r
 import Box from '@mui/material/Box';
 import Collapse from '@mui/material/Collapse';
 import useMediaQuery from '@mui/material/useMediaQuery';
-import Tooltip from '@mui/material/Tooltip';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 import FolderCopyOutlinedIcon from '@mui/icons-material/FolderCopyOutlined';
@@ -40,7 +39,6 @@ import SchemaOutlinedIcon from '@mui/icons-material/SchemaOutlined';
 import SyncAltOutlinedIcon from '@mui/icons-material/SyncAltOutlined';
 import UpdateOutlinedIcon from '@mui/icons-material/UpdateOutlined';
 
-import { INFO_PEEK_TOOLTIP_SX } from '@/components/info-peek/InfoPeek';
 import { ChangeOrderGateList } from '../x/apps/change-order/ChangeOrderGateList';
 import { changeOrderCopy, stageDisplayName } from '../x/apps/change-order/changeOrderCopy';
 import { changeOrdersConsoleCopy } from '../x/apps/change-order/changeOrdersConsoleCopy';
@@ -48,7 +46,7 @@ import { changeOrderOwnSpaceReached } from '../x/apps/change-order/changeOrderSt
 import { componentSpaceDeepLink } from '../x/apps/change-order/changeOrdersConsoleModel';
 import { unitLinksHref } from '../unit-detail/unitDetailHrefs';
 import type { ConsoleState } from '../x/apps/change-order/changeOrdersConsoleModel';
-import type { ChangeOrderGate, ChangeOrderStage } from '../x/apps/change-order/changeOrderTypes';
+import type { ChangeOrderGate } from '../x/apps/change-order/changeOrderTypes';
 import { TreeDiffSection } from '../x/apps/TreeDiffSection';
 import { ROUTE_COMPONENTS } from '../x/apps/appTypes';
 import type { MergedUnit } from '../x/apps/componentTypes';
@@ -86,6 +84,8 @@ import { ChangeOrderBlockedResources, ChangeOrderRefusals } from './changeOrderR
 import { FOCUS_TITLE_STATE, MOVED_ON_STATE, changeOrderPath } from './changeOrderAddress';
 import { defaultOpenStageId, railReleaseTargets, stageHasWorkLeft } from './changeOrderOpenStage';
 import { useSharedDiffColumns } from './useSharedDiffColumns';
+import { SpaceLabelsContext } from './components/spaceLabelsContext';
+import { NameList, SpacesMoreButton } from './components/SpaceListing';
 import { UnitDiffRow } from './components/UnitDiffRow';
 import { Fact, FactLink, OpenedAt, StateChip, SummaryCard } from './components/SummaryFacts';
 import { useChangeOrderDetail, type ChangeOrderSpace } from './useChangeOrderDetail';
@@ -100,7 +100,7 @@ import { StageSlide } from './StageSlide';
 import Snackbar from '@mui/material/Snackbar';
 import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
 import { ReviewBand, type ReviewBandAction } from './reviews/ReviewBand';
-import { ReviewChip, ReviewGateActions, ReviewGateSpaces } from './reviews/reviewParts';
+import { GateSpaceNames, ReviewChip, ReviewGateActions, ReviewGateSpaces } from './reviews/reviewParts';
 import type { ChangeOrderGateExtra } from '../x/apps/change-order/ChangeOrderGateList';
 import { recordedToastText, reviewCopy, reviewFeeds, reviewSubject } from './reviews/reviewCopy';
 import { AnnounceContext } from './reviews/announceContext';
@@ -128,6 +128,7 @@ import { completeRailDot, railDot } from './components/railDots';
 import { railGateWaits } from './components/railStage';
 import { reviewActionStageId } from './stage/stageReviewModel';
 import { StageSection, type StageSectionHandle } from './stage/StageSection';
+import { namesText } from './components/spaceListLogic';
 
 /**
  * The header status chip's own tone, per `ConsoleState`.
@@ -281,151 +282,32 @@ function nextStageHint(stage: string, summary: StageReviewSummary | undefined, r
 }
 
 /**
- * The Scope fact: how many Spaces the ChangeOrder is headed for, with the Spaces
- * themselves one hover or keyboard focus away.
- *
- * The list reads in the order the ChangeOrder travels. A Space sorts by the first
- * stage whose `WhereSpace` selected it, the same membership the rest of this
- * page draws, so the base Space (the source stage's one member) comes first.
- * A Space no stage selected comes last. Slug orders the Spaces within each
- * group. The muted text names the stage, or the Space's `Stage` label when no
- * stage selected it.
- *
- * The popper renders in place rather than in a portal, so Tab from the count
- * moves into the links. `open` is controlled so the list stays open while focus
- * is inside it: MUI closes a tooltip when its trigger loses focus, and would
- * otherwise close it under the link that just took the focus.
+ * The Scope fact: how many Spaces the ChangeOrder is headed for. The count opens the shared
+ * Space list, with a filter, a Group by choice (Region when the Spaces have it) and a scroll cap,
+ * so 104 Spaces are never one long list. The labels come from the Spaces themselves.
  */
-function ScopeSpaces({ spaces, stages }: { spaces: ChangeOrderSpace[]; stages: ChangeOrderStage[] }) {
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const listRef = useRef<HTMLUListElement>(null);
-
-  const rows = useMemo(() => {
-    // A real stage before the synthetic source row: a base a stage's selector
-    // covers is promoted (or gated on) in that stage, which is the fact worth
-    // naming. `viewerPositionIn` places a Space the same way.
-    const firstStage = new Map<string, ChangeOrderStage>();
-    for (const stage of stages) {
-      if (stage.isSource) continue;
-      for (const spaceId of stage.spaceIds) {
-        if (!firstStage.has(spaceId)) firstStage.set(spaceId, stage);
-      }
-    }
-    for (const stage of stages) {
-      if (!stage.isSource) continue;
-      for (const spaceId of stage.spaceIds) {
-        if (!firstStage.has(spaceId)) firstStage.set(spaceId, stage);
-      }
-    }
-    return spaces
-      .map((space) => {
-        const stage = firstStage.get(space.spaceId);
-        return {
-          space,
-          rank: stage?.index ?? Number.MAX_SAFE_INTEGER,
-          stageName: stage ? stageDisplayName(stage.id, stage.isSource) : space.labels?.Stage,
-        };
-      })
-      .sort((a, b) => a.rank - b.rank || a.space.slug.localeCompare(b.space.slug));
-  }, [spaces, stages]);
-
+function ScopeSpaces({ spaces }: { spaces: ChangeOrderSpace[] }) {
+  const listed = useMemo(
+    () => spaces.map((space) => ({ spaceId: space.spaceId, name: space.displayName || space.slug, labels: space.labels })),
+    [spaces],
+  );
   const label = `${spaces.length} ${spaces.length === 1 ? 'Space' : 'Spaces'}`;
   if (spaces.length === 0) return <>{label}</>;
-
-  const inList = (node: EventTarget | null) => node instanceof Node && (listRef.current?.contains(node) ?? false);
-
-  const handleClose = (event: Event | React.SyntheticEvent) => {
-    if (event.type === 'keydown') {
-      // Escape. Focus goes back to the count before the list unmounts under it.
-      if (inList(document.activeElement)) triggerRef.current?.focus();
-      setOpen(false);
-      return;
-    }
-    const next = event.type === 'blur' ? (event as React.FocusEvent).relatedTarget : document.activeElement;
-    if (!inList(next)) setOpen(false);
-  };
-
-  const handleListBlur = (event: React.FocusEvent) => {
-    const next = event.relatedTarget;
-    if (inList(next) || next === triggerRef.current) return;
-    setOpen(false);
-  };
-
-  const list = (
-    <Box
-      component="ul"
-      ref={listRef}
-      data-testid="change-order-scope-spaces-list"
-      aria-label="In-scope Spaces"
-      onBlur={handleListBlur}
-      sx={{
-        listStyle: 'none',
-        margin: 0,
-        padding: '6px 0',
-        maxHeight: 320,
-        overflowY: 'auto',
-        minWidth: 200,
-        fontFamily: changeOrderFontSans,
-        fontSize: changeOrderType.size.body,
-        lineHeight: changeOrderType.lineHeight.body,
+  return (
+    <SpacesMoreButton
+      spaces={listed}
+      testId="change-order-scope-spaces"
+      buttonSx={{
+        font: 'inherit',
+        color: 'inherit',
+        textDecoration: 'underline dotted',
+        textDecorationColor: changeOrderBorder.strong,
+        textUnderlineOffset: '3px',
+        '&.Mui-focusVisible': { outline: `2px solid ${changeOrderAction.focus}`, outlineOffset: 2, borderRadius: `${changeOrderShape.radius.xs}px` },
       }}
     >
-      {rows.map(({ space, stageName }) => (
-        <Box
-          component="li"
-          key={space.spaceId}
-          sx={{ display: 'flex', alignItems: 'baseline', gap: '12px', padding: '3px 12px' }}
-        >
-          <Box sx={{ minWidth: 0, flex: 1, color: changeOrderInk.default, overflowWrap: 'anywhere' }}>
-            <FactLink href={`/spaces/${space.spaceId}`}>{space.displayName || space.slug}</FactLink>
-          </Box>
-          {stageName && (
-            <Box component="span" sx={{ fontSize: changeOrderType.size.small, color: changeOrderInk.subtle }}>
-              {stageName}
-            </Box>
-          )}
-        </Box>
-      ))}
-    </Box>
-  );
-
-  return (
-    <Tooltip
-      title={list}
-      open={open}
-      onOpen={() => setOpen(true)}
-      onClose={handleClose}
-      describeChild
-      placement="bottom-start"
-      slotProps={{ tooltip: { sx: INFO_PEEK_TOOLTIP_SX }, popper: { disablePortal: true } }}
-    >
-      <Box
-        component="button"
-        ref={triggerRef}
-        type="button"
-        data-testid="change-order-scope-spaces"
-        aria-label={`Show the ${label} in scope`}
-        sx={{
-          font: 'inherit',
-          color: 'inherit',
-          background: 'none',
-          border: 0,
-          padding: 0,
-          cursor: 'help',
-          textDecoration: 'underline dotted',
-          textDecorationColor: changeOrderBorder.strong,
-          textUnderlineOffset: '3px',
-          '&:focus-visible': {
-            outline: `2px solid ${changeOrderAction.focus}`,
-            outlineOffset: 2,
-            borderRadius: `${changeOrderShape.radius.xs}px`,
-          },
-        }}
-      >
-        {label}
-      </Box>
-    </Tooltip>
+      {label}
+    </SpacesMoreButton>
   );
 }
 
@@ -510,7 +392,7 @@ function CompleteStepDetail({
           <Box component="span" sx={{ marginLeft: 'auto', fontSize: changeOrderType.size.body, color: changeOrderInk.subtle }}>
             {reviewCopy.stage.signOffEvaluatedOver}{' '}
             <Box component="span" sx={{ fontFamily: changeOrderFontMono, color: changeOrderInk.muted }}>
-              {signOff.summary.gateSpaces.map((space) => space.spaceSlug).join(', ')}
+              <GateSpaceNames spaces={signOff.summary.gateSpaces} />
             </Box>
           </Box>
         ) : null}
@@ -632,9 +514,9 @@ export default function ChangeOrdersPage() {
   );
   const sourceSummary = useMemo(() => {
     if (detail.invocationSource !== undefined) return detail.invocationSource.slug ?? '';
-    return (detail.fanOutSource?.spaceIds ?? [])
-      .map((spaceId) => detail.fanOutSource?.spaceNameBySpaceId.get(spaceId) ?? spaceId)
-      .join(', ');
+    return namesText(
+      (detail.fanOutSource?.spaceIds ?? []).map((spaceId) => detail.fanOutSource?.spaceNameBySpaceId.get(spaceId) ?? spaceId),
+    );
   }, [detail.invocationSource, detail.fanOutSource]);
 
   /**
@@ -1215,6 +1097,7 @@ export default function ChangeOrdersPage() {
     <ReviewCommentsProvider reviews={reviewComments} revisionNumByUnitId={changes.reviewRevisionNumByUnitId} variantNameOf={reviewVariantNameOf}>
     {/* Components deep in the page announce through the one live region below. */}
     <AnnounceContext.Provider value={setAnnouncement}>
+    <SpaceLabelsContext.Provider value={detail.spaceLabelsOf}>
     <Box
       id={CHANGE_ORDERS_ROOT_ID}
       sx={{
@@ -1556,7 +1439,7 @@ export default function ChangeOrdersPage() {
                   {detail.scopedSpaces === null ? (
                     'Not reported by the server'
                   ) : (
-                    <ScopeSpaces spaces={detail.scopedSpaces} stages={detail.sequence.stages} />
+                    <ScopeSpaces spaces={detail.scopedSpaces} />
                   )}
                 </Fact>
                 <Fact term="Opened" icon={CalendarTodayOutlinedIcon}>
@@ -1793,7 +1676,7 @@ export default function ChangeOrdersPage() {
                       return (
                         <Box key={group.representativeSpaceId} sx={{ marginBottom: '10px' }}>
                           <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, marginBottom: '4px' }}>
-                            {changeOrderCopy.invocationSource.groupCaption(group.labels)}
+                            {changeOrderCopy.invocationSource.groupCaptionLead} <NameList names={group.labels} />
                           </Box>
                           {changedUnits.length === 0 && blockedUnits.length === 0 ? (
                             <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted, padding: '4px 12px 10px' }}>
@@ -2027,6 +1910,7 @@ export default function ChangeOrdersPage() {
         </>
       ) : null}
     </Box>
+    </SpaceLabelsContext.Provider>
     </AnnounceContext.Provider>
     </ReviewCommentsProvider>
   );

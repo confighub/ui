@@ -59,3 +59,14 @@ export function moreFitsOnLine(
     measure(preview.shown.join(NAMES_SEPARATOR)) + measure(moreLabel(preview.more)) <= maxWidth
   );
 }
+
+/**
+ * The note beside a stack's strip marks when members stand out: the first
+ * one's reason, and how many more stand out, as their names lead the names
+ * line but only the first reason has room.
+ */
+export function standoutNote(standouts: readonly { reason: string }[]): string {
+  if (standouts.length === 0) return '';
+  const more = standouts.length - 1;
+  return more > 0 ? `${standouts[0].reason} +${more} more` : standouts[0].reason;
+}

@@ -31,7 +31,7 @@
  * away with it. See `RollbackReport`.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -42,6 +42,8 @@ import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
 import TextField from '@mui/material/TextField';
 
+import { MoreRowsButton, SpacesMoreButton } from '../../../change-orders/components/SpaceListing';
+import { useCappedRows } from '../../../change-orders/components/useCappedRows';
 import { componentTheme } from '../componentTheme';
 import { changeOrderCopy } from './changeOrderCopy';
 import { ABORTED_REASON_MAX_LENGTH, validateAbortReason } from './changeOrderAbort';
@@ -51,6 +53,7 @@ import type {
   ChangeOrderEndIntent,
   SpaceOutcome,
 } from './changeOrderRollback';
+import { endDialogRows, type EndDialogMemory } from './changeOrderRollback';
 
 export interface EndChangeOrderSpace {
   spaceId: string;
@@ -147,6 +150,16 @@ export function EndChangeOrderDialog({
   const [reason, setReason] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const spaceRows = useCappedRows(spaces);
+  // After a run, the failed Spaces are named and the ones that went through are one line; a failure never hides behind "more".
+  // The order of the last report holds while a retry runs, so the rows do not jump.
+  const memoryRef = useRef<EndDialogMemory | null>(null);
+  const shown = useMemo(() => endDialogRows(spaces, outcomes, memoryRef.current), [spaces, outcomes]);
+  useEffect(() => {
+    memoryRef.current = shown.memory;
+  }, [shown.memory]);
+  const listedSpaces = outcomes === null ? spaceRows.visible : shown.rows;
+  const throughSpaces = useMemo(() => shown.collapsed.map((space) => ({ spaceId: space.spaceId, name: space.label })), [shown.collapsed]);
 
   // The dialog stays mounted across opens (its parent's own state, not
   // Dialog's), so its own field state has to be reset explicitly each time it
@@ -231,8 +244,8 @@ export function EndChangeOrderDialog({
                   ? copy.spacesTitleRollBack(spaces.length)
                   : copy.spacesTitleAbort(spaces.length)}
               </Box>
-              <Box component="ul" sx={{ m: 0, pl: 0, listStyle: 'none' }}>
-                {spaces.map((space) => {
+              <Box component="ul" sx={{ m: 0, pl: 0, listStyle: 'none', maxHeight: 320, overflowY: 'auto' }}>
+                {listedSpaces.map((space) => {
                   const outcome = outcomes?.find((o) => o.spaceId === space.spaceId);
                   return (
                     <Box
@@ -260,6 +273,15 @@ export function EndChangeOrderDialog({
                   );
                 })}
               </Box>
+              {shown.collapsed.length > 0 ? (
+                <Box data-testid="change-order-end-spaces-through" sx={{ py: 0.35, fontSize: 12.5, color: componentTheme.fgMuted }}>
+                  {/* With no failure the "Rolled back in N Spaces" line already says it, so only the way to the list is here. */}
+                  {shown.anyFailed ? <>{copy.spacesThrough(shown.collapsed.length)}{' '}</> : null}
+                  <SpacesMoreButton spaces={throughSpaces}>{shown.anyFailed ? copy.seeSpaces : copy.seeAllSpaces(shown.collapsed.length)}</SpacesMoreButton>
+                </Box>
+              ) : null}
+              {/* Each row can carry the Space's own outcome, so "more" shows the rest in place. */}
+              <MoreRowsButton total={spaces.length} more={outcomes === null ? spaceRows.more : 0} noun="Space" onShow={spaceRows.showAll} />
               <Box sx={{ mt: 0.75, fontSize: 11, color: componentTheme.fgSubtle }}>
                 {copy.spacesNote}
               </Box>

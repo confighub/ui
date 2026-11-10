@@ -137,6 +137,13 @@ export interface ComponentDeployment {
   /** Per-Space unit counts behind the card's config chips; see `ConfigSignals`. */
   configSignals: ConfigSignals;
   /**
+   * How many of this Space's units keep a value on merge (a protected path).
+   * Absent when none do, or before the read that finds them has returned. A
+   * folded graph shows such a Variant first in its stack, by name, because a
+   * value it keeps is what makes it differ from the rest.
+   */
+  keptValueUnits?: number;
+  /**
    * The ChangeSets open on this Space's units, or that their head Revisions
    * were made in (`changeSets.ts`). Absent when there are none.
    */

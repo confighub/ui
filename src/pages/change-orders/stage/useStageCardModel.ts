@@ -12,6 +12,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
+import { useRevisionDataMap } from '@/hooks/useUnitData';
+import { getApiErrorMessage } from '@/utility/error-functions';
+
 import type { ChangeOrderDetail } from '../useChangeOrderDetail';
 import type { ChangeOrderHistory } from '../useChangeOrderHistory';
 import type { useChangeOrderConsoleChanges } from '../useChangeOrderConsoleChanges';
@@ -47,6 +50,7 @@ import {
   deriveStageCardState,
   dryRunWanted,
   methodsFor,
+  retryTargets,
   stageBoxLook,
   stageBylines,
   stageFailure,
@@ -54,6 +58,8 @@ import {
   type StageCardStateInput,
 } from './stageCardState';
 import { stageDiffSections } from './stageDiffSections';
+import { releaseFixCopy } from './releaseFixCopy';
+import { releaseFixOffer, settlingRevisionIds, withoutFixedProblems, withProblems } from './stageFix';
 import { classifyDryRunAnswer, dryRunLine, releaseLine } from './stageDryRun';
 import { outcomeByMajority, stagePropagation } from './stagePropagation';
 import { stageSectionGates, viewerFlow } from './stageReviewModel';
@@ -61,12 +67,15 @@ import type { MergeControl } from './MergeButton';
 import type { StageLinks } from './StageBoxParts';
 import type { StageCardState } from './stageTypes';
 import { useOutcomeFocus } from './useOutcomeFocus';
+import { useChangeMarks, useReleaseFix } from './useReleaseFix';
 import { useStageConfirm } from './useStageConfirm';
 import { useStageDiff } from './useStageDiff';
 import { useStageDryRun } from './useStageDryRun';
 import { useStagePreload } from './useStagePreload';
 
 type Changes = ReturnType<typeof useChangeOrderConsoleChanges>;
+
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 type Recorded = (outcome: Extract<SubmitReviewOutcome, { ok: true }>, summary: GateReviewSummary, result: ReviewChoice) => void;
 
 export interface UseStageCardModelArgs {
@@ -181,7 +190,7 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     [detail.fanOutSource, changes.sourceGroupsByUnitId, changes.sourceCreatedResourceKeys],
   );
   const outcome = useMemo(() => buildChangeOrderOutcome(changes.matrix, carriedResourceKeys), [changes.matrix, carriedResourceKeys]);
-  const propagation = useMemo(
+  const propagationRaw = useMemo(
     () =>
       stagePropagation({
         outcome,
@@ -195,6 +204,53 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
       }),
     [outcome, changes.matrix, changes.groupsByUnitId, changes.spaceIdByUnitId, carriedResourceKeys, changes.unplannedReasonBySpaceId, stageName, previousLanded],
   );
+  /*
+   * A Revision saved by hand after the change arrived (a fix in the Gates tab) never reaches
+   * the matrix, which is read from what the promotion wrote. A problem is dropped once the
+   * Revision the release Tag marks has the value, since that is what a release publishes;
+   * while only the head has it, the line stays and the card offers to release the fix.
+   */
+  const changeArrived = stage.verdict === 'promoted' || stage.verdict === 'released' || stage.verdict === 'in-progress';
+  // A ChangeOrder created before ChangeOrders had release Tags has none: nothing can be moved.
+  const releaseTagId = detail.releaseTagId === undefined || detail.releaseTagId === '' || detail.releaseTagId === NIL_UUID ? undefined : detail.releaseTagId;
+  const changeMarks = useChangeMarks({
+    releaseTagId,
+    endTagId: detail.endTagId,
+    spaceIds: targets,
+    releaseSpaceIds,
+    enabled: changeArrived,
+  });
+  const { heads, headDataOf } = changes;
+  const marks = changeMarks.marks;
+  // Only the Revisions that settle a line (`settlingRevisionIds`) of Units a problem names are read.
+  const settlingRevisionIdsOf = useCallback((unitId: string) => settlingRevisionIds(unitId, heads.get(unitId), marks), [heads, marks]);
+  const settlingIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of propagationRaw.problems) {
+      if (p.kind !== 'differs' && p.kind !== 'kept') continue;
+      for (const id of settlingRevisionIdsOf(p.unitId)) ids.add(id);
+    }
+    return [...ids].sort();
+  }, [propagationRaw.problems, settlingRevisionIdsOf]);
+  const settling = useRevisionDataMap(settlingIds);
+  const settlingDataFor = settling.dataFor;
+  // Nothing is decided on a read that has not answered: until then, or when it failed, every line stays.
+  const settlingReady = changeMarks.ready && settling.ready && settling.error === undefined;
+  const problems = useMemo(
+    () =>
+      settlingReady
+        ? withoutFixedProblems(propagationRaw.problems, (unitId) => settlingRevisionIdsOf(unitId).map(settlingDataFor))
+        : propagationRaw.problems,
+    [settlingReady, propagationRaw.problems, settlingRevisionIdsOf, settlingDataFor],
+  );
+  // A failed read is said in the change card's notes, as the card says a change it could not read.
+  const settlingError = changeMarks.error ?? settling.error;
+  const settlingNote = settlingError === undefined ? undefined : releaseFixCopy.readFailed(getApiErrorMessage(settlingError, 'the request failed'));
+  // The log, the Spaces list and the diff sections all say the same thing.
+  const propagation = useMemo(() => {
+    const fixed = withProblems(propagationRaw, problems);
+    return settlingNote === undefined ? fixed : { ...fixed, quietNotes: [...fixed.quietNotes, settlingNote] };
+  }, [propagationRaw, problems, settlingNote]);
   const diffModelRaw = useMemo(
     () =>
       stageDiffSections({
@@ -322,7 +378,7 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     ...(stage.verdict === 'promoted' && hostsRelease && hostedReview !== undefined ? { releaseReview: hostedReview } : {}),
     ...(stage.verdict !== 'promoted' && hostsOwnEntry && hostedReview !== undefined ? { entryReview: hostedReview } : {}),
     ...(detail.serverGateRefusals[stageId] === undefined ? {} : { serverGateRefusal: detail.serverGateRefusals[stageId] }),
-    problems: propagation.problems,
+    problems,
   };
   // The dry run is asked only where it can change what the box offers.
   const before = deriveStageCardState({ ...baseInput, dryRun: { mode: 'idle' } });
@@ -388,6 +444,42 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     focusAfter,
     setRunning,
     onStageActed,
+  });
+
+  /*
+   * "Release the fix": the Spaces whose release waits (it failed, or the stage is promoted and
+   * they are not released yet), where a later head can take the release Tag's place.
+   */
+  const releasedSpaceIds = detail.progress.releasedSpaceIds;
+  const waitingSpaceIds =
+    state.kind === 'failed' && state.failure.action === 'release'
+      ? retryTargets(state.failure, targets, releaseSpaceIds, nameOfSpace)
+      : state.kind === 'promoted'
+        ? releaseSpaceIds.filter((id) => !releasedSpaceIds.has(id))
+        : [];
+  const waitingKey = waitingSpaceIds.join(',');
+  const offer = useMemo(() => {
+    if (!changeMarks.ready || releaseTagId === undefined || waitingKey === '') return undefined;
+    const spaceIds = waitingKey.split(',');
+    const inSpaces = new Set(spaceIds);
+    return releaseFixOffer({
+      spaceIds,
+      heads: [...heads.values()].filter((h) => inSpaces.has(h.spaceId)),
+      marks: changeMarks.marks,
+      releasedAtTagSpaceIds: changeMarks.releasedAtTagSpaceIds,
+      problems,
+      headDataOf,
+    });
+  }, [changeMarks.ready, changeMarks.marks, changeMarks.releasedAtTagSpaceIds, releaseTagId, waitingKey, heads, problems, headDataOf]);
+  const releaseFix = useReleaseFix({
+    offer,
+    releaseTagId,
+    stageName,
+    nameOfSpace,
+    releaseTo: confirm.releaseTo,
+    announce,
+    focusAfter,
+    refetchMarks: changeMarks.refetch,
   });
 
   const methods = methodsFor(state, stageHasTargets, stageName, stageHasReleasePrerequisites(detail.workflow, stageId));
@@ -478,8 +570,10 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     diff,
     diffModel,
     spaceCount: targets.length,
-    /** How the change reaches each Space differently, whichever state the card is in. */
-    problems: propagation.problems,
+    /** How the change reaches each Space differently, whichever state the card is in, less what a later head fixed. */
+    problems,
+    /** "Release the fix": a fix saved outside the ChangeOrder that the release Tag can move to. */
+    releaseFix,
     /**
      * Spaces of the stage that already hold the change while the stage is not promoted as a whole:
      * the server's resolved Spaces. The card's forced dry run leaves them out, so the propagation

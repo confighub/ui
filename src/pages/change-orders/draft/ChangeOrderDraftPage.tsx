@@ -35,6 +35,7 @@ import { useOutOfView } from './useOutOfView';
 import { DRAFT_KIND_ID } from './KindTrack';
 import { DRAFT_UPDATE_TYPE_ID } from './UpdateTypeBar';
 import { DRAFT_WORKFLOW_ID } from './WorkflowPopover';
+import { namesText } from '../components/spaceListLogic';
 
 const copy = draftCopy.page;
 
@@ -175,7 +176,7 @@ export default function ChangeOrderDraftPage() {
       const before = address.out;
       update({ out: [...leftOut, ...leaving.map((variant) => variant.slug)] });
       setToast({
-        message: copy.outlier.leftOut(leaving.map((variant) => variant.name).join(', ')),
+        message: copy.outlier.leftOut(namesText(leaving.map((variant) => variant.name))),
         undo: () => update({ out: before ?? null }),
       });
       // What offered it has gone with the variants: the keyboard goes to the way back.

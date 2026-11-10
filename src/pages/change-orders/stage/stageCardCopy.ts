@@ -14,7 +14,7 @@
 import { clockTime, plural } from '../changeOrderHistory';
 import { agoText, listText, reviewCopy, reviewTime } from '../reviews/reviewCopy';
 import { changeOrderCopy } from '../../x/apps/change-order/changeOrderCopy';
-import { approvals, differsTail, listSegments, seg, spaceLink, type NamedSpace } from './stageCopyParts';
+import { approvals, differsTail, listSegments, seg, spaceLink, spaceListSegments, type NamedSpace } from './stageCopyParts';
 import type { CopySegment, MergeMethod, ReviewAction } from './stageTypes';
 
 export {
@@ -57,6 +57,9 @@ export const stageCardCopy = {
     spaces: (n: number) => plural(n, 'Space'),
     releasedTo: (stage: string) => `Released to ${stage}`,
     targetsRanIt: (n: number) => `${plural(n, 'Target')} ran it`,
+    /** The released line's status: "54 of 55 Targets ran it" when some ran it, "55 Targets ran it" when all did. */
+    releasedStatus: (ran: number, total: number) =>
+      ran < total ? `${ran} of ${plural(total, 'Target')} ran it` : `${plural(total, 'Target')} ran it`,
     restored: 'Restored',
     takenBackOut: (stage: string) => `The change was taken back out of ${stage}`,
     restoreReleased: 'Released the restored Revisions',
@@ -177,7 +180,7 @@ export const stageCardCopy = {
     noPermission: 'No permission to promote.',
     gateWait: (checkedAt: number) => `Checked ${clockTime(checkedAt)}.`,
     goToPrevious: (stage: string) => `Go to ${stage}`,
-    gateIn: (spaces: readonly NamedSpace[]) => [seg.text('in '), ...listSegments(spaces.map((s) => [spaceLink(s)]))],
+    gateIn: (spaces: readonly NamedSpace[]) => [seg.text('in '), ...spaceListSegments(spaces)],
     /**
      * A failing gate's reason with the Spaces it failed in, inside the sentence:
      * "…has no live status (in [dev] and [canary])." The reason is the server's or
@@ -189,7 +192,7 @@ export const stageCardCopy = {
       if (spaces.length === 0) return [seg.text(trimmed)];
       const stop = /[.!?]$/.test(trimmed) ? trimmed.slice(-1) : '.';
       const body = /[.!?]$/.test(trimmed) ? trimmed.slice(0, -1) : trimmed;
-      return [seg.text(`${body} (in `), ...listSegments(spaces.map((s) => [spaceLink(s)])), seg.text(`)${stop}`)];
+      return [seg.text(`${body} (in `), ...spaceListSegments(spaces), seg.text(`)${stop}`)];
     },
     /** After a failure: what the other Spaces hold. */
     failedRest: (landed: number, total?: number, failedNames?: string) => {
@@ -234,21 +237,21 @@ export const stageCardCopy = {
     mergeDeclined: (resource: string, spaces: readonly NamedSpace[]): CopySegment[] => [
       seg.code(resource),
       seg.text(' is held under more than one namespace in '),
-      ...listSegments(spaces.map((s) => [spaceLink(s)])),
+      ...spaceListSegments(spaces),
       seg.text('.'),
     ],
     unreadable: (spaces: readonly NamedSpace[]): CopySegment[] => [
       seg.text('A resource in '),
-      ...listSegments(spaces.map((s) => [spaceLink(s)])),
+      ...spaceListSegments(spaces),
       seg.text(' could not be read.'),
     ],
     noResources: (spaces: readonly NamedSpace[]): CopySegment[] => [
-      ...listSegments(spaces.map((s) => [spaceLink(s)])),
+      ...spaceListSegments(spaces),
       seg.text(spaces.length === 1 ? ' holds none of the resources this change touches yet.' : ' hold none of the resources this change touches yet.'),
     ],
     unplanned: (spaces: readonly NamedSpace[]): CopySegment[] => [
       seg.text('The dry run could not plan '),
-      ...listSegments(spaces.map((s) => [spaceLink(s)])),
+      ...spaceListSegments(spaces),
       seg.text('.'),
     ],
     /** One failed item of a promotion: "[space]: [unit] message". */
@@ -293,6 +296,29 @@ export const stageCardCopy = {
           return seg.text(part);
         });
     },
+    /**
+     * A Unit whose release gates refused: "webhook in {Space} is gated: {gate} and {gate}." Each gate by its
+     * Trigger's name. Without a Unit (the answer did not name one), the Space is the subject.
+     */
+    gated: (space: NamedSpace, unit: { unitId?: string; name?: string }, gates: readonly string[]): CopySegment[] => [
+      ...(unit.name === undefined
+        ? []
+        : [
+            unit.unitId === undefined
+              ? seg.text(unit.name)
+              : seg.link(unit.name, { to: 'unit', spaceId: space.spaceId, unitId: unit.unitId, tab: 'config' }),
+            seg.text(' in '),
+          ]),
+      spaceLink(space),
+      ...(gates.length === 0 ? [seg.text(' is gated.')] : [seg.text(' is gated: '), ...listSegments(gates.map((g) => [seg.text(g)])), seg.text('.')]),
+    ],
+    /** The gate set while a Unit's Triggers have not finished, as `gated` names it. */
+    triggersStillRun: 'its Triggers still run',
+    /** The link from a gated Space to its Variant's Gates tab, where its gates are listed and fixed. */
+    openGates: 'Open its Gates tab',
+    openGatesOf: (variant: string) => `Open the Gates tab of ${variant}`,
+    /** A read for the gated line failed: the gates show their Trigger slugs, and the link may be missing. */
+    gateReadFailed: 'The Trigger names or the Variant could not be read.',
     passesNow: (space: NamedSpace): CopySegment[] => [spaceLink(space), seg.text(': the dry run passes now.')],
     andMore: (k: number) => `and ${k} more in the diff`,
   },
@@ -562,7 +588,7 @@ export const stageCardCopy = {
     titleBefore: 'What this promotion writes',
     titleAfter: 'What the change wrote',
     scopeIn: (base: NamedSpace): CopySegment[] => [seg.text('In '), spaceLink(base)],
-    scopeMadeIn: (sources: readonly NamedSpace[]): CopySegment[] => [seg.text('Made in '), ...listSegments(sources.map((s) => [spaceLink(s)]))],
+    scopeMadeIn: (sources: readonly NamedSpace[]): CopySegment[] => [seg.text('Made in '), ...spaceListSegments(sources)],
     scopeSpaces: (n: number) => plural(n, 'Space'),
     scopeSameEverywhere: (n: number) => `Same in all ${plural(n, 'Space')}`,
     scopeWritten: (written: number, total: number) => `Written to ${written} of ${plural(total, 'Space')}`,

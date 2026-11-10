@@ -7,6 +7,8 @@ import type { BoxProps } from '@mui/material/Box';
 import { skippedUnitReasonText } from '../../x/apps/change-order/changeOrderCopy';
 import { changeOrderInk, changeOrderType } from '../changeOrdersTokens';
 import { CollapsibleUnitGroup } from './CollapsibleUnitGroup';
+import { MoreRowsButton } from './SpaceListing';
+import { useCappedRows } from './useCappedRows';
 import { FactLink } from './SummaryFacts';
 
 export interface PassedOverProps {
@@ -45,6 +47,8 @@ export function PassedOver({
   sx,
 }: PassedOverProps) {
   const skippedEntries = Object.entries(skippedUnits);
+  // Each row carries its reason, so "more" shows the rest in place; a name-only list would open the shared Space list.
+  const rows = useCappedRows(skippedEntries);
   if (skippedEntries.length === 0) return null;
   return (
     <CollapsibleUnitGroup
@@ -57,7 +61,7 @@ export function PassedOver({
       sx={sx}
     >
       <Box component="dl" sx={{ margin: 0, fontSize: changeOrderType.size.body }}>
-        {skippedEntries.map(([unitId, reason]) => {
+        {rows.visible.map(([unitId, reason]) => {
           const skippedSpaceId = spaceIdByUnitId.get(unitId);
           const skippedName = slugByUnitId.get(unitId) ?? fallbackLabel;
           return (
@@ -76,6 +80,7 @@ export function PassedOver({
             </Box>
           );
         })}
+        <MoreRowsButton total={skippedEntries.length} more={rows.more} onShow={rows.showAll} />
       </Box>
     </CollapsibleUnitGroup>
   );

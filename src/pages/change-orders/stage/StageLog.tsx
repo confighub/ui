@@ -12,7 +12,7 @@
  *
  * The log adds no live region: outcomes go through the page's `announce`.
  */
-import { type ReactNode, type RefObject, useState } from 'react';
+import { type ReactNode, type RefObject, useId, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -23,12 +23,15 @@ import Paper from '@mui/material/Paper';
 import Skeleton from '@mui/material/Skeleton';
 import { alpha } from '@mui/material/styles';
 
-import { clockTime } from '../changeOrderHistory';
+import { clockTime, plural } from '../changeOrderHistory';
+import { SpaceNameList, SpacesMoreButton } from '../components/SpaceListing';
+import { namesText, NAMES_SHOWN } from '../components/spaceListLogic';
 import { COMPLETE_STAGE_ID, COMPLETE_STEP_LABEL } from '../changeOrderCompleteStep';
 import type { GateReviewSummary } from '../reviews/changeOrderReviewTypes';
 import { REVIEW_PANEL_ID } from '../reviews/reviewAnchor';
-import { listText } from '../reviews/reviewCopy';
 import { MergeButton } from './MergeButton';
+import { ReleaseFixOffer } from './ReleaseFixDialog';
+import { fixOfferPlace } from './stageFix';
 import { CopyText } from './StageBoxParts';
 import {
   AutoBadge,
@@ -44,7 +47,9 @@ import { ProblemList } from './StageProblem';
 import { StageReviewBox } from './StageReviewActions';
 import { StageReviewDetails } from './StageReviewDetails';
 import { stageCardCopy } from './stageCardCopy';
-import { listSegments, spaceLink } from './stageCopyParts';
+import { spaceLink, spaceListSegments } from './stageCopyParts';
+import { gateLabels, splitGatedItems } from './stageFailure';
+import { hasTheChangeIds } from './stageHasTheChange';
 import {
   type StageLogLine as LogLine,
   type StageLogOpen,
@@ -52,10 +57,13 @@ import {
   type StageLogWait,
   gateDetail,
   personName,
+  warnProblemsOf,
 } from './stageLogModel';
 import { valuePillSx } from './stageLogStyles';
 import { acknowledgementSegments, propagationHeadline } from './stagePropagation';
+import type { StageFailure } from './stageTypes';
 import type { StageCardModel } from './useStageCardModel';
+import { useGateReasons } from './useGateReasons';
 
 const copy = stageCardCopy.log;
 
@@ -144,6 +152,133 @@ function waitStatus(waits: readonly StageLogWait[], model: StageCardModel, after
   );
 }
 
+/** The server's own words, closed by default: the line above says them plainly. */
+function ServerText({ messages }: { messages: readonly string[] }) {
+  const [open, setOpen] = useState(false);
+  const detailsId = useId();
+  const text = messages.map((m) => m.trim()).filter((m) => m !== '');
+  if (text.length === 0) return null;
+  return (
+    <>
+      {' '}
+      <Button
+        variant='text'
+        aria-expanded={open}
+        aria-controls={detailsId}
+        onClick={() => setOpen((v) => !v)}
+        data-testid='stage-failure-details-toggle'
+        endIcon={
+          <ExpandMoreIcon
+            sx={{
+              fontSize: '14px !important',
+              transform: open ? 'rotate(180deg)' : 'none',
+              transition: 'transform .15s',
+              '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+            }}
+          />
+        }
+        sx={{
+          height: 'auto',
+          minWidth: 0,
+          p: 0,
+          font: 'inherit',
+          color: 'text.secondary',
+          verticalAlign: 'baseline',
+          '& .MuiButton-endIcon': { ml: '2px', mr: 0 },
+          '&:hover': { bgcolor: 'transparent', color: 'text.primary' },
+          '&:focus-visible': { outline: '2px solid var(--rust)', outlineOffset: '2px' },
+        }}
+      >
+        {stageCardCopy.body.serverMessage}
+      </Button>
+      <Box
+        component='span'
+        id={detailsId}
+        hidden={!open}
+        data-testid='stage-failure-details'
+        sx={{ display: open ? 'block' : 'none', mt: '2px', fontFamily: 'var(--font-mono)', fontSize: '12px', whiteSpace: 'pre-wrap' }}
+      >
+        {text.join('\n')}
+      </Box>
+    </>
+  );
+}
+
+/**
+ * The failed Spaces of a promotion or release, one line per item. A Unit refused
+ * because gates hold it reads as one line that names the Unit and its gates and
+ * links to the Variant's Gates tab, where its gates are fixed; the gates' detail is
+ * there, not in the log.
+ */
+function FailedSpaceLines({ failure, model }: { failure: StageFailure; model: StageCardModel }) {
+  const reasons = useGateReasons(failure);
+  const links = model.links;
+  const anyGated = failure.failedSpaces.some((space) => splitGatedItems(space.items).gated.length > 0);
+  return (
+    <>
+      {failure.failedSpaces.flatMap((space) => {
+        const named = {
+          spaceId: space.spaceId,
+          name: space.spaceId === '' ? space.slug : model.nameOfSpace(space.spaceId),
+        };
+        const { gated, others } = splitGatedItems(space.items.length === 0 ? [{ message: '' }] : space.items);
+        const href = space.spaceId === '' ? undefined : reasons.gatesHrefOf(space.spaceId);
+        return [
+          ...others.map((item, i) => (
+            <LogSub key={`${named.name}-${i}`}>
+              {/* Said once: a server sentence that names the Space keeps its words, with the names as links. */}
+              <CopyText
+                parts={stageCardCopy.problem.failedMessage(
+                  named,
+                  {
+                    ...(item.unitId === undefined ? {} : { unitId: item.unitId }),
+                    ...(item.unitSlug === undefined ? {} : { name: item.unitSlug }),
+                  },
+                  item.message,
+                )}
+                links={links}
+              />
+            </LogSub>
+          )),
+          ...gated.map((unit) => (
+            <LogSub key={`${named.name}-gated-${unit.unitSlug ?? ''}`} testId='stage-failure-gated'>
+              <CopyText
+                parts={stageCardCopy.problem.gated(
+                  named,
+                  {
+                    ...(unit.unitId === undefined ? {} : { unitId: unit.unitId }),
+                    ...(unit.unitSlug === undefined ? {} : { name: unit.unitSlug }),
+                  },
+                  gateLabels(unit.gates, reasons.triggerNameOf),
+                )}
+                links={links}
+              />
+              {href === undefined ? null : (
+                <>
+                  {' '}
+                  <Link
+                    component={RouterLink}
+                    to={href}
+                    sx={logLinkSx}
+                    aria-label={stageCardCopy.problem.openGatesOf(named.name)}
+                    data-testid='stage-failure-gates-link'
+                  >
+                    {stageCardCopy.problem.openGates}
+                  </Link>
+                </>
+              )}
+              <ServerText messages={unit.messages} />
+            </LogSub>
+          )),
+        ];
+      })}
+      {anyGated && reasons.readFailed ? (
+        <LogSub testId='stage-failure-gates-unread'>{stageCardCopy.problem.gateReadFailed}</LogSub>
+      ) : null}
+    </>
+  );
+}
+
 interface LineTextProps {
   line: LogLine;
   model: StageCardModel;
@@ -192,32 +327,12 @@ function LineText({ line, model, dryRunStatus }: LineTextProps) {
           </>
         );
       }
-      const shown = gate.failedIn.slice(0, SPACES_SHOWN);
-      const more = gate.failedIn.length - shown.length;
       return (
         <>
           <LogName>{gate.name}</LogName>
           <LogStatus>
-            {shown.length > 0 ? copy.failedIn : copy.failed}
-            {shown.length > 0 ? (
-              <CopyText
-                parts={
-                  more > 0
-                    ? [
-                        ...shown.flatMap((s, i) => [
-                          ...(i > 0 ? [{ kind: 'text' as const, text: ', ' }] : []),
-                          spaceLink(s),
-                        ]),
-                        {
-                          kind: 'text',
-                          text: ` ${stageCardCopy.problem.andMore(more).replace(' in the diff', '')}`,
-                        },
-                      ]
-                    : listSegments(shown.map((s) => [spaceLink(s)]))
-                }
-                links={links}
-              />
-            ) : null}
+            {gate.failedIn.length > 0 ? copy.failedIn : copy.failed}
+            {gate.failedIn.length > 0 ? <CopyText parts={spaceListSegments(gate.failedIn, SPACES_SHOWN)} links={links} /> : null}
           </LogStatus>
           {gate.description !== undefined ? (
             <LogSub>{copy.needs(gate.description)}</LogSub>
@@ -297,33 +412,7 @@ function LineText({ line, model, dryRunStatus }: LineTextProps) {
             data-failure-source={failure.source}
             sx={{ display: 'block' }}
           >
-            {failure.failedSpaces.flatMap((space) => {
-              const named = {
-                spaceId: space.spaceId,
-                name: space.spaceId === '' ? space.slug : model.nameOfSpace(space.spaceId),
-              };
-              const items = space.items.length === 0 ? [{ message: '' }] : space.items;
-              return items.map((item, i) => (
-                <LogSub key={`${named.name}-${i}`}>
-                  {/* Said once: a server sentence that names the Space keeps its words, with the names as links. */}
-                  <CopyText
-                    parts={stageCardCopy.problem.failedMessage(
-                      named,
-                      {
-                        ...('unitId' in item && item.unitId !== undefined
-                          ? { unitId: item.unitId }
-                          : {}),
-                        ...('unitSlug' in item && item.unitSlug !== undefined
-                          ? { name: item.unitSlug }
-                          : {}),
-                      },
-                      item.message,
-                    )}
-                    links={links}
-                  />
-                </LogSub>
-              ));
-            })}
+            <FailedSpaceLines failure={failure} model={model} />
             {/* The server's whole answer, when it says more than the items above ("partly failed … Promote again to finish."). */}
             {/* A recorded failure's message is built from these items (stageFailure), so only a session's server answer adds to them. */}
             {failure.source === 'session' &&
@@ -349,7 +438,7 @@ function LineText({ line, model, dryRunStatus }: LineTextProps) {
         <>
           <LogName>{copy.releasedTo(stage)}</LogName>
           {body.targetCount > 0 ? (
-            <LogStatus>{copy.targetsRanIt(body.targetCount)}</LogStatus>
+            <LogStatus>{copy.releasedStatus(body.ranCount, body.targetCount)}</LogStatus>
           ) : null}
         </>
       );
@@ -394,16 +483,9 @@ function LineText({ line, model, dryRunStatus }: LineTextProps) {
         </>
       );
     case 'warn': {
-      // Compared and found to hold it already, or taken already while the stage is not promoted as a whole.
-      const hasItIds = [
-        ...new Set([
-          ...[...model.marks.entries()]
-            .filter(([, mark]) => mark.kind === 'hasIt')
-            .map(([id]) => id),
-          ...model.takenSpaceIds,
-        ]),
-      ];
-      const hasIt = hasItIds.map((spaceId) => ({ spaceId, name: model.nameOfSpace(spaceId) }));
+      const hasIt = hasTheChangeIds(model.marks, model.takenSpaceIds, body.problems).map(
+        (spaceId) => ({ spaceId, name: model.nameOfSpace(spaceId) }),
+      );
       return (
         <>
           <LogName>{propagationHeadline(body.problems, model.spaceCount)}</LogName>
@@ -425,9 +507,17 @@ function LineText({ line, model, dryRunStatus }: LineTextProps) {
               limit={SPACES_SHOWN}
             />
           </Box>
+          {model.releaseFix.offer !== undefined && fixOfferPlace(model.releaseFix.offer, true) === 'problem' ? (
+            <ReleaseFixOffer offer={model.releaseFix.offer} place='problem' nameOfSpace={model.nameOfSpace} onOpen={model.releaseFix.open} />
+          ) : null}
           {hasIt.length > 0 ? (
             <LogSub>
-              <CopyText parts={listSegments(hasIt.map((s) => [spaceLink(s)]))} links={links} />
+              {hasIt.length > NAMES_SHOWN ? (
+                // The Spaces that took the change as written are the normal case: a count, with the names behind a button.
+                <SpacesMoreButton spaces={hasIt}>{plural(hasIt.length, 'Space')}</SpacesMoreButton>
+              ) : (
+                <CopyText parts={spaceListSegments(hasIt)} links={links} />
+              )}
               {copy.hasTheChange(hasIt.length)}
             </LogSub>
           ) : null}
@@ -651,7 +741,7 @@ function OpenLine({
     const failedNames =
       failure === undefined
         ? ''
-        : listText(
+        : namesText(
             failure.failedSpaces.map((f) =>
               f.spaceId === '' ? f.slug : model.nameOfSpace(f.spaceId),
             ),
@@ -906,11 +996,13 @@ function OpenLine({
       <LogStatus>{copy.yourTurn}</LogStatus>
       {releaseFailure !== undefined ? (
         <LogSub>
-          {listText(
-            releaseFailure.failedSpaces.map((f) =>
-              f.spaceId === '' ? f.slug : model.nameOfSpace(f.spaceId),
-            ),
-          )}
+          <SpaceNameList
+            spaces={releaseFailure.failedSpaces.map((f) => ({
+              spaceId: f.spaceId === '' ? f.slug : f.spaceId,
+              name: f.spaceId === '' ? f.slug : model.nameOfSpace(f.spaceId),
+            }))}
+            plain={releaseFailure.failedSpaces.some((f) => f.spaceId === '')}
+          />
         </LogSub>
       ) : open.targetCount > 0 ? (
         <LogInfo
@@ -918,6 +1010,10 @@ function OpenLine({
           label={copy.releaseInfoLabel}
           testId='release-info'
         />
+      ) : null}
+      {model.releaseFix.offer !== undefined &&
+      fixOfferPlace(model.releaseFix.offer, warnProblemsOf(state, model.dryRunLine.mode === 'held', model.problems).length > 0) === 'release' ? (
+        <ReleaseFixOffer offer={model.releaseFix.offer} place='release' nameOfSpace={model.nameOfSpace} onOpen={model.releaseFix.open} />
       ) : null}
     </StageLogLine>
   );

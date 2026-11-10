@@ -615,6 +615,7 @@ export const AppsComponentLayout = ({
                 compareDeploymentIds={compareDeploymentIds}
                 onCompareSelectionChange={handleCompareSelectionChange}
                 initialFocusDeploymentId={spaceParam ?? undefined}
+                initialTab={searchParams.get('tab') === 'gates' ? 'gates' : undefined}
                 displayMode={componentDisplayMode}
                 groupParam={graphGroupParam}
                 onViewParamsChange={handleViewParamsChange}

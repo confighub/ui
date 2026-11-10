@@ -201,6 +201,16 @@ export interface StageFailure {
 export type UnknownCause = 'mergeDeclined' | 'unreadable' | 'noResources' | 'unplanned';
 
 /**
+ * Which resource of a Unit a problem is about, as the server's diff names it: `type` is its
+ * `ResourceType` (`apps/v1/Deployment`), `name` its `ResourceNameWithoutScope`. A Unit can
+ * hold two resources with the same path, so a value is read from the document of this one.
+ */
+export interface ResourceRef {
+  type: string;
+  name: string;
+}
+
+/**
  * One way the change reaches a Space differently from the reference Space.
  * `spaceId` and `unitId` are what links are built from; the slugs are what is read.
  */
@@ -222,6 +232,8 @@ export type PropagationProblem =
       refTo: string;
       /** The reference Space the difference is measured against. */
       refSpaceId: string;
+      /** The resource the path is in, when the server's diff named it. */
+      resource?: ResourceRef;
     }
   | {
       kind: 'kept';
@@ -237,6 +249,8 @@ export type PropagationProblem =
       incoming?: string;
       /** `ProtectedPath` (kept on merge) or `Subtracted` (a local override). */
       reason: string;
+      /** The resource the path is in, when the server's diff named it. */
+      resource?: ResourceRef;
     }
   | { kind: 'refused'; spaceId: string; unitId: string; resourceName: string; reason: string; path?: string; details?: string }
   | { kind: 'adds'; spaceId: string; resourceName: string; unitId?: string }
@@ -446,4 +460,6 @@ export type CopyLinkRef =
 export type CopySegment =
   | { kind: 'text'; text: string }
   | { kind: 'code'; text: string }
-  | { kind: 'link'; text: string; ref: CopyLinkRef; code?: boolean; title?: string };
+  | { kind: 'link'; text: string; ref: CopyLinkRef; code?: boolean; title?: string }
+  /** "51 more": a button that opens the whole list of Spaces, those named before it included. */
+  | { kind: 'spaces'; text: string; shown: number; spaces: readonly { spaceId: string; name: string }[] };

@@ -45,6 +45,7 @@ import type {
   DraftVariant,
   DraftWorkflow,
 } from './draftTypes';
+import { namesText } from '../components/spaceListLogic';
 
 /** `end=head`: each Unit's head. A ChangeSet slug ends at that ChangeSet's end Tag instead. */
 export const DRAFT_END_HEAD = 'head';
@@ -919,7 +920,7 @@ export function outsideEveryStageProblem(input: {
     row: 'where',
     code: 'outside-every-stage',
     message: draftCopy.problems.outsideEveryStage(
-      outside.map((variant) => variant.name).join(', '),
+      namesText(outside.map((variant) => variant.name)),
       workflow.name,
     ),
     source: 'client',

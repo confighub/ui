@@ -143,6 +143,7 @@ export const useAddTrigger = (
       argumentValues,
       { spaceId, orgID },
       !!selectedFunction.Validating && !selectedFunction.Mutating,
+      existingTrigger,
     );
 
     // Submit to API - create or update based on mode

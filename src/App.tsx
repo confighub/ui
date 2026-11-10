@@ -258,7 +258,7 @@ const routes = [
         ),
       },
       {
-        path: '/x/initiatives',
+        path: '/validation',
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <InitiativesPage />
@@ -266,7 +266,7 @@ const routes = [
         ),
       },
       {
-        path: '/x/initiatives/new',
+        path: '/validation/:triggerId',
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <InitiativesPage />
@@ -274,20 +274,9 @@ const routes = [
         ),
       },
       {
-        path: '/x/initiatives/:id',
-        element: (
-          <Suspense fallback={<Loader isLoading={true} />}>
-            <InitiativesPage />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/x/initiatives/:id/edit',
-        element: (
-          <Suspense fallback={<Loader isLoading={true} />}>
-            <InitiativesPage />
-          </Suspense>
-        ),
+        // The page's former place, when it tracked initiatives stored in Views.
+        path: '/x/initiatives/*',
+        element: <Navigate to='/validation' replace />,
       },
       {
         // Authoring a ChangeWorkflow. The bare path lists them; the id names one.

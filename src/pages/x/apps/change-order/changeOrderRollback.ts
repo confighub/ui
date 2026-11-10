@@ -138,6 +138,76 @@ export interface SpaceOutcome {
   message: string;
 }
 
+/** Whether every Space has an answer: none is waiting or restoring. */
+export function runReported(outcomes: readonly SpaceOutcome[] | null): outcomes is readonly SpaceOutcome[] {
+  return outcomes !== null && !outcomes.some((o) => o.phase === 'pending' || o.phase === 'running');
+}
+
+/** More successful Spaces than this are said as a count, not named. */
+export const SUCCESS_ROWS_SHOWN = 3;
+
+/** What `endDialogRows` keeps from one render to the next. */
+export interface EndDialogMemory {
+  /** The order of the Spaces, as ids. */
+  order: string[];
+  /** Whether a run has reported at least once, so a later run is a retry. */
+  reported: boolean;
+}
+
+export interface EndDialogRows<T> {
+  /** The Spaces drawn as rows, in order. */
+  rows: T[];
+  /** The Spaces that went through, past `SUCCESS_ROWS_SHOWN`: said as one line that opens their list. */
+  collapsed: T[];
+  /** Whether any Space failed: the line for the others says "had no failure" only then. */
+  anyFailed: boolean;
+  /** To pass back as `previous` on the next render. */
+  memory: EndDialogMemory | null;
+}
+
+/**
+ * What the End dialog draws. Before a run: every Space, in the order given. While the first run
+ * goes, every Space too. Once a run has reported, the failed Spaces move first, so a failure is
+ * never below the fold, and the Spaces that went through follow in their order; past three of
+ * those, they collapse into one line. A retry keeps that: the order of the last report holds, the
+ * Space being retried (pending or running) keeps its own row, the failed ones keep their rows by
+ * name, and the Spaces that went through stay in the line, so the long list never comes back.
+ *
+ * @param previous the `memory` this returned last time, or null
+ */
+export function endDialogRows<T extends { spaceId: string }>(
+  spaces: readonly T[],
+  outcomes: readonly SpaceOutcome[] | null,
+  previous: EndDialogMemory | null,
+): EndDialogRows<T> {
+  if (outcomes === null) return { rows: [...spaces], collapsed: [], anyFailed: false, memory: null };
+  const byId = new Map(spaces.map((space) => [space.spaceId, space]));
+  const phaseOf = new Map(outcomes.map((o) => [o.spaceId, o.phase]));
+  const anyFailed = outcomes.some((o) => o.phase === 'failed');
+  const reportedNow = runReported(outcomes);
+  let order: string[];
+  if (reportedNow) {
+    const failed = spaces.filter((space) => phaseOf.get(space.spaceId) === 'failed');
+    const rest = spaces.filter((space) => phaseOf.get(space.spaceId) !== 'failed');
+    order = [...failed, ...rest].map((space) => space.spaceId);
+  } else {
+    const known = (previous?.order ?? []).filter((id) => byId.has(id));
+    const seen = new Set(known);
+    order = [...known, ...spaces.map((space) => space.spaceId).filter((id) => !seen.has(id))];
+  }
+  const memory: EndDialogMemory = { order, reported: reportedNow || previous?.reported === true };
+  const ordered = order.flatMap((id) => (byId.has(id) ? [byId.get(id) as T] : []));
+  // The first run shows every Space, so the person sees it go; a report, or a retry after one, collapses.
+  if (!memory.reported) return { rows: ordered, collapsed: [], anyFailed, memory };
+  const wentThrough = (space: T) => {
+    const phase = phaseOf.get(space.spaceId);
+    return phase === 'done' || phase === 'skipped';
+  };
+  const through = ordered.filter(wentThrough);
+  if (through.length <= SUCCESS_ROWS_SHOWN) return { rows: ordered, collapsed: [], anyFailed, memory };
+  return { rows: ordered.filter((space) => !wentThrough(space)), collapsed: through, anyFailed, memory };
+}
+
 export interface RollbackReport {
   ok: boolean;
   /**

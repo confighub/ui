@@ -17,6 +17,7 @@
  *
  * Pure: no React and no MUI (see `stageTypes.ts`).
  */
+import { stageReleaseSpaceIds } from '../../x/apps/change-order/changeOrdersConsoleModel';
 import type { NamedSpace } from './stageCardCopy';
 import type { PropagationProblem, StageCardState, StageFailure } from './stageTypes';
 
@@ -89,6 +90,24 @@ export function warnProblemsOf(
   return holds ? all.filter((p) => !(p.kind === 'unknown' && p.cause === 'unplanned')) : all;
 }
 
+/**
+ * How many Targets ran the stage's release: of the stage's Spaces a release publishes (those with
+ * a release Target, less the one the promotion passes over), those the ChangeOrder reports
+ * released. One Release in the stage is not all of them. `undefined` without progress from the
+ * server: there is nothing to count, and the line keeps the Target count.
+ */
+export function releaseRanCount(
+  stageSpaceIds: readonly string[],
+  skippedSpaceId: string | undefined,
+  releaseTargetOf: (spaceId: string) => string | undefined,
+  progress: { availability: string; releasedSpaceIds: ReadonlySet<string> },
+): number | undefined {
+  if (progress.availability !== 'available') return undefined;
+  return stageReleaseSpaceIds(stageSpaceIds, skippedSpaceId, releaseTargetOf).filter((id) =>
+    progress.releasedSpaceIds.has(id),
+  ).length;
+}
+
 /** A gate line's second line: its author's description first; the server's reason only when there is none. */
 export function gateDetail(gate: Pick<StageLogGate, 'description' | 'reason'>): string | undefined {
   return gate.description ?? gate.reason;
@@ -133,7 +152,11 @@ export interface StageLogInput {
   /** The release prerequisites still open, by name (`release-ok`). */
   releaseReviewOpen: readonly string[];
   promoted?: { at: number; person: StageLogPerson };
-  released?: { at: number; person: StageLogPerson };
+  /**
+   * The newest Release in the stage, and how many of its Targets ran it: the stage's Spaces with a
+   * Target that the ChangeOrder reports released. Without the count, every Target is taken to have.
+   */
+  released?: { at: number; person: StageLogPerson; ranCount?: number };
   /** A failed promotion that a later promotion fixed: kept, quiet. */
   fixedFailure?: StageFailure;
   /** Who made the action that failed (the failure record's UserID). */
@@ -235,7 +258,7 @@ export type StageLogBody =
   | { kind: 'rejected' }
   | { kind: 'promoteFailed'; failure: StageFailure }
   | { kind: 'promoted'; spaceCount: number }
-  | { kind: 'released'; targetCount: number }
+  | { kind: 'released'; targetCount: number; ranCount: number }
   | { kind: 'restored' }
   | { kind: 'restoreReleased'; targetCount: number }
   | { kind: 'aborted'; reason: string }
@@ -586,13 +609,23 @@ export function deriveStageLog(input: StageLogInput): StageLogView {
       meta: { kind: 'person', person: input.promoted.person },
     });
   }
-  if (input.released !== undefined) {
+  /*
+   * A release records its Releases Space by Space, so the first one is there while the rest still
+   * run: the line waits for the release to finish. A release that no Target ran is not one that
+   * happened; the failure line says so instead.
+   */
+  const ranCount = input.released?.ranCount ?? input.targetCount;
+  if (
+    input.released !== undefined &&
+    input.busy?.method !== 'release' &&
+    (ranCount > 0 || input.targetCount === 0)
+  ) {
     lines.push({
       testId: 'log-released',
       at: input.released.at,
       tone: 'ok',
       glyph: '✓',
-      body: { kind: 'released', targetCount: input.targetCount },
+      body: { kind: 'released', targetCount: input.targetCount, ranCount },
       meta: { kind: 'person', person: input.released.person },
     });
   }

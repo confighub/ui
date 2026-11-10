@@ -11,6 +11,7 @@ import { draftCopy } from './draftCopy';
 import type { DraftOutlier } from './draftPreview';
 import type { DraftPreview } from './useDraftPreview';
 import type { DraftProblem } from './draftTypes';
+import { moreText, NAMES_SHOWN } from '../components/spaceListLogic';
 
 export interface OutlierAction {
   outlier: DraftOutlier;
@@ -55,12 +56,15 @@ export function dryRunSentence(preview: DraftPreview, outsideNames: readonly str
   if (preview.totals === undefined) return '';
   const kinds = outcomeKindBySpaceId(preview);
   const parts = [draftCopy.page.side.sentenceSame(preview.totals.same, preview.totals.variants)];
-  for (const outlier of preview.outliers) {
+  // Past three, the rest are counted, so the live region never reads 50 names.
+  for (const outlier of preview.outliers.slice(0, NAMES_SHOWN)) {
     const kind = kinds.get(outlier.spaceId) ?? 'differs';
     // Nothing to change is said as the chip says it: "prod-apac: no payments-worker here".
     parts.push(kind === 'nothing' ? `${outlier.name}: ${outlier.text}` : `${outlier.name} ${draftCopy.page.side.kindWord[kind]}`);
   }
-  for (const name of outsideNames) parts.push(`${name} ${draftCopy.page.outlier.outsideText}`);
+  if (preview.outliers.length > NAMES_SHOWN) parts.push(`${moreText(preview.outliers.length - NAMES_SHOWN)} differ`);
+  for (const name of outsideNames.slice(0, NAMES_SHOWN)) parts.push(`${name} ${draftCopy.page.outlier.outsideText}`);
+  if (outsideNames.length > NAMES_SHOWN) parts.push(`${moreText(outsideNames.length - NAMES_SHOWN)} ${draftCopy.page.outlier.outsideText}`);
   return parts.join(', ');
 }
 

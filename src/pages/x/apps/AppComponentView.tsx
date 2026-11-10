@@ -52,7 +52,13 @@ import { unitHasGuards } from '@/utility/clearance-functions';
 import { useListAllUnitsChunkedQuery } from '@/hooks/chunkedQueriesApi';
 import { buildAllApplyEntries, buildUpgradeEntries, buildVariationEntries, splitDryRunItems } from './entryBuilders';
 import { type SetValueResult } from './configParser';
-import { arrowKey, buildComponentData, unitConfigSignal } from './componentData';
+import {
+  KEPT_PATH_UNITS_WHERE,
+  KEPT_RESOURCE_UNITS_WHERE,
+  arrowKey,
+  buildComponentData,
+  unitConfigSignal,
+} from './componentData';
 import { buildChangeSetsBySpace, changeSetIdsOf, openChangeSetIdOf, upstreamChangeSetBlocking, type WaitingChangeSet } from './changeSets';
 import { useChangeSetEntries } from './useChangeSetEntries';
 import { useUnreleasedDiffs } from './useUnreleasedDiffs';
@@ -115,6 +121,8 @@ interface AppComponentViewProps {
    * click still shouldn't re-pan the graph).
    */
   initialFocusDeploymentId?: string;
+  /** `?tab=gates`: open `initialFocusDeploymentId` on its Gates tab. Mount-only, as that is. */
+  initialTab?: 'gates';
   /**
    * Whether this node graph shows the flow canvas or the Dashboard — CONTROLLED
    * by `AppsComponentLayout`, derived from `?display=`.
@@ -161,6 +169,9 @@ const UNITS_QUERY_SELECT =
   'UnitID,Slug,SpaceID,TargetID,Unreleasable,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ValidationWarnings,ValidationResults,ValidationTriggerIDs,ToolchainType,DataHash,DataSize,ChangeSetID,PathAnnotations,'
   + 'HeadRevision.RevisionID,HeadRevision.CreatedAt,HeadRevision.Description,HeadRevision.ChangeSetID,LastReleasedRevision.RevisionID';
 const UNITS_QUERY_INCLUDE = 'SpaceID,TargetID,UpstreamUnitID,HeadRevisionNum,LastReleasedRevisionNum';
+// The units that keep a value on merge need only their Space: the folded graph shows such a
+// Variant first in its stack.
+const KEPT_VALUE_UNITS_SELECT = 'UnitID,SpaceID';
 
 // ============================================================================
 // STYLED COMPONENTS
@@ -208,7 +219,7 @@ const LoadingContainer = styled(Box)({
 // COMPONENT
 // ============================================================================
 
-export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphKey, selectedDeploymentIds: controlledSelectedIds, onSelectedDeploymentIdsChange, compareDeploymentIds: controlledCompareIds, onCompareSelectionChange, initialFocusDeploymentId, displayMode, groupParam, onViewParamsChange, onComponentSelect }: AppComponentViewProps) => {
+export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphKey, selectedDeploymentIds: controlledSelectedIds, onSelectedDeploymentIdsChange, compareDeploymentIds: controlledCompareIds, onCompareSelectionChange, initialFocusDeploymentId, initialTab, displayMode, groupParam, onViewParamsChange, onComponentSelect }: AppComponentViewProps) => {
   // ── State ──
   const EMPTY_SET = useMemo(() => new Set<string>(), []);
   const selectedDeploymentIds = controlledSelectedIds ?? EMPTY_SET;
@@ -388,6 +399,31 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   );
 
   const unitsPollingInterval = (hasPendingGatesRef.current || upgradingDeploymentIds.size > 0) ? 2000 : 0;
+
+  // Not polled: a value is kept or let go by a write to the unit, which invalidates the Unit tag.
+  // `data`, not `currentData`: a Space added to the Component changes spaceIds, and the
+  // standouts of the stacks on screen would otherwise move until the new lists return. A
+  // Space of another Component in the last result matches no Space on the page.
+  const {
+    data: keptPathUnits,
+    isError: keptPathUnitsIsError,
+    error: keptPathUnitsError,
+  } = useListAllUnitsChunkedQuery(
+    { spaceIds, select: KEPT_VALUE_UNITS_SELECT, where: KEPT_PATH_UNITS_WHERE },
+    { skip: spaceIds.length === 0 },
+  );
+  const {
+    data: keptResourceUnits,
+    isError: keptResourceUnitsIsError,
+    error: keptResourceUnitsError,
+  } = useListAllUnitsChunkedQuery(
+    { spaceIds, select: KEPT_VALUE_UNITS_SELECT, where: KEPT_RESOURCE_UNITS_WHERE },
+    { skip: spaceIds.length === 0 },
+  );
+  const keptValueUnits = useMemo(
+    () => [...(keptPathUnits ?? EMPTY_UNITS), ...(keptResourceUnits ?? EMPTY_UNITS)],
+    [keptPathUnits, keptResourceUnits],
+  );
 
   // Which of the selected Spaces' units the side pane lists. The pane remounts on
   // a node switch, so the choice is kept here to survive one.
@@ -1019,6 +1055,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
         targetSpaceSlugById,
         targetFactsById,
         runningReleaseBySpaceId,
+        keptValueUnits,
       ),
     [
       spaces,
@@ -1029,6 +1066,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
       targetSpaceSlugById,
       targetFactsById,
       runningReleaseBySpaceId,
+      keptValueUnits,
     ],
   );
 
@@ -1179,6 +1217,17 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     }, 350);
     return () => clearTimeout(timer);
   }, [deployments.length]);
+
+  // A link to a Variant's gates opens it on the Gates tab once the Variant is in the graph, so the
+  // pane knows whether it can release (no Gates tab otherwise) when the request reaches it.
+  const initialTabRef = useRef(initialTab);
+  useEffect(() => {
+    const tab = initialTabRef.current;
+    const focusId = initialFocusDeploymentIdRef.current;
+    if (tab === undefined || !focusId || !deployments.some((d) => d.deploymentId === focusId)) return;
+    initialTabRef.current = undefined;
+    setTabFocus((prev) => ({ id: focusId, tab, nonce: (prev?.nonce ?? 0) + 1 }));
+  }, [deployments]);
 
   // ── Variant composer derived data ──
   const flatTargets = useMemo<TargetRead[]>(
@@ -1903,8 +1952,12 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   );
 
   // ── Error state ──
-  if (unitsError || upstreamBatchesError) {
-    const firstError = unitsQueryError ?? upstreamBatchesErrors[0];
+  if (unitsError || upstreamBatchesError || keptPathUnitsIsError || keptResourceUnitsIsError) {
+    const firstError =
+      unitsQueryError ??
+      upstreamBatchesErrors[0] ??
+      keptPathUnitsError ??
+      keptResourceUnitsError;
     return (
       <>
         {batchSubscriptions}

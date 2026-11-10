@@ -10,7 +10,7 @@
  * when the viewer's Space list does not hold one. IDs appear only in hrefs.
  */
 
-import { useId, useState, type ReactNode } from 'react';
+import { useId, useMemo, useState, type ReactNode } from 'react';
 
 import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
@@ -78,6 +78,8 @@ import {
   changeOrderType,
 } from '../changeOrdersTokens';
 import { reviewInitials } from '../reviews/changeOrderReviews';
+import { MoreRowsButton, SpacesMoreButton } from './SpaceListing';
+import { useCappedRows } from './useCappedRows';
 
 /** Avatar fills for people, chosen by a hash of the UserID. Each carries white initials at AA. */
 /** The mockup's own break: below it, two-column rows stack. The theme's breakpoints sit far wider. */
@@ -87,8 +89,8 @@ const AVATAR_COLORS = ['#2f5d9e', '#7a4a9c', '#1f7a6d', '#a2512a', '#55708f', '#
 
 const UNKNOWN_USER_HINT = "This account was removed, or you cannot see it. ConfigHub still keeps what it did.";
 
-/** Shown Spaces before "+N more Spaces". */
-const SPACES_SHOWN = 6;
+/** Shown Spaces before "+N more Spaces": three, as every list of names on these screens. */
+const SPACES_SHOWN = 3;
 /** Shown Unit, or Link, errors before "Show N more". */
 const ITEMS_SHOWN = 3;
 
@@ -378,17 +380,15 @@ function SpaceList({
   tone?: SpaceTone;
   Icon?: SvgIconComponent;
 }) {
-  const [all, setAll] = useState(false);
-  const shown = all ? spaceIds : spaceIds.slice(0, SPACES_SHOWN);
+  const shown = spaceIds.slice(0, SPACES_SHOWN);
+  const listed = useMemo(() => spaceIds.map((spaceId) => ({ spaceId, name: spaceSlugById.get(spaceId) ?? spaceId })), [spaceIds, spaceSlugById]);
   return (
     <>
       {shown.map((spaceId) => (
         <SpaceChip key={spaceId} spaceId={spaceId} slug={spaceSlugById.get(spaceId)} tone={tone} Icon={Icon} />
       ))}
       {spaceIds.length > SPACES_SHOWN ? (
-        <LinkButton onClick={() => setAll((v) => !v)} expanded={all}>
-          {all ? 'Show fewer' : `+${spaceIds.length - SPACES_SHOWN} more Spaces`}
-        </LinkButton>
+        <SpacesMoreButton spaces={listed}>{`+${spaceIds.length - SPACES_SHOWN} more Spaces`}</SpacesMoreButton>
       ) : null}
     </>
   );
@@ -538,6 +538,22 @@ const ACTION_TONE: Record<string, { Icon: SvgIconComponent; fg: string; border: 
   Blocked: { Icon: HourglassDisabledIcon, fg: changeOrderStatus.warn, border: changeOrderStatus.warnLine, bg: changeOrderStatus.warnSoft },
   Promote: { Icon: ErrorOutlineIcon, fg: changeOrderStatus.danger, border: changeOrderStatus.dangerLine, bg: changeOrderSurface.card },
 };
+
+/**
+ * The failed Spaces, three at first. Each row carries the Space's own failures, so "more" shows
+ * the rest in place; a name-only list would open the shared Space list.
+ */
+function FailureSpaces({ spaces }: { spaces: readonly ChangeOrderPromotionFailureSpace[] }) {
+  const rows = useCappedRows(spaces);
+  return (
+    <>
+      {rows.visible.map((space, index) => (
+        <FailureSpace key={`${space.SpaceID ?? ''}-${index}`} space={space} />
+      ))}
+      <MoreRowsButton total={spaces.length} more={rows.more} noun="Space" onShow={rows.showAll} />
+    </>
+  );
+}
 
 function FailureSpace({ space }: { space: ChangeOrderPromotionFailureSpace }) {
   const tone = ACTION_TONE[space.Action ?? ''] ?? ACTION_TONE.Failed;
@@ -902,9 +918,7 @@ function ActionEntry({
             <Box sx={{ padding: '10px 12px 0' }}>
               <SectionLabel>Spaces with failures</SectionLabel>
             </Box>
-            {failedSpaces.map((space, index) => (
-              <FailureSpace key={`${space.SpaceID ?? ''}-${index}`} space={space} />
-            ))}
+            <FailureSpaces spaces={failedSpaces} />
           </Box>
         ) : null}
       </>
@@ -944,12 +958,17 @@ function ActionEntry({
     meta = (
       <>
         {written.length > 0 ? <SpaceList spaceIds={written} spaceSlugById={spaceSlugById} tone="ok" Icon={CheckIcon} /> : null}
-        {failedSpaces.map((space, index) => (
+        {failedSpaces.slice(0, SPACES_SHOWN).map((space, index) => (
           <SpaceChip key={`${space.SpaceID ?? ''}-${index}`} spaceId={space.SpaceID} slug={space.SpaceSlug} tone="bad" Icon={CloseIcon} />
         ))}
+        {failedSpaces.length > SPACES_SHOWN ? (
+          <SpacesMoreButton
+            spaces={failedSpaces.map((space, index) => ({ spaceId: space.SpaceID ?? `${index}`, name: space.SpaceSlug ?? space.SpaceID ?? '' }))}
+          >{`+${failedSpaces.length - SPACES_SHOWN} more Spaces`}</SpacesMoreButton>
+        ) : null}
       </>
     );
-    detail = failedSpaces.map((space, index) => <FailureSpace key={`${space.SpaceID ?? ''}-${index}`} space={space} />);
+    detail = <FailureSpaces spaces={failedSpaces} />;
   } else {
     tone = 'promotion';
     Icon = KeyboardDoubleArrowRightIcon;

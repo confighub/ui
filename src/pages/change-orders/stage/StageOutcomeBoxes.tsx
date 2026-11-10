@@ -1,8 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
-import { Fragment, memo, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Fragment, memo, useMemo, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from 'react';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import Link from '@mui/material/Link';
@@ -18,6 +17,8 @@ import type { MergedUnit } from '../../x/apps/componentTypes';
 import { cardSpaceLabel, type CardSpaceLabelSource } from '../changeOrderCard';
 import { ChangeOrderBlockedResources } from '../changeOrderRefusals';
 import { OutcomeUnitDiff } from '../components/OutcomeUnitDiff';
+import { SameInAllSpaces, SpaceNameList } from '../components/SpaceListing';
+import { NAMES_SHOWN } from '../components/spaceListLogic';
 import type { ReviewDiffTarget } from '../review-comments/reviewCommentsContext';
 import {
   STAGE_DIFF_ID,
@@ -27,7 +28,7 @@ import {
   type StageDiffSection,
 } from './stageDiffSections';
 import type { ChangeOrderOutcomeKind } from '../changeOrderOutcome';
-import { diffAnchorId, spaceHref } from './stageLinks';
+import { diffAnchorId } from './stageLinks';
 import type { StageDiffAnchor, StageDiffHighlight } from './useStageDiff';
 
 /** What the page already holds for drawing one Unit's diff. */
@@ -60,14 +61,6 @@ export interface StageOutcomeBoxesProps {
   /** A same-as line's Unit links jump through this; without it they are plain in-page links. */
   onShowInDiff?: (anchor: StageDiffAnchor) => void;
 }
-
-/** List links: secondary ink, underlined on hover. */
-const LIST_LINK_SX = {
-  color: 'text.secondary',
-  textDecoration: 'none',
-  '&:hover': { color: 'text.primary', textDecoration: 'underline', textUnderlineOffset: '3px' },
-  '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: '2px', borderRadius: '2px' },
-} as const;
 
 /** Links inside a sentence: the sentence's ink, always underlined. */
 const PROSE_LINK_SX = {
@@ -152,23 +145,16 @@ function StageDiffUnit({
   );
 }
 
-function SpaceLinks({ spaceIds, nameOf }: { spaceIds: readonly string[]; nameOf: (spaceId: string) => string }) {
+/**
+ * The Spaces of an outcome box. A box in which every Space took the same change says so
+ * as a count; any other box holds the Spaces that differ, failed or were refused, and
+ * names them. Either way the list is capped, and the rest is behind a button.
+ */
+function SpaceLinks({ kind, spaceIds, nameOf, wholeStage }: { kind: ChangeOrderOutcomeKind; spaceIds: readonly string[]; nameOf: (spaceId: string) => string; wholeStage: boolean }) {
+  const spaces = useMemo(() => spaceIds.map((spaceId) => ({ spaceId, name: nameOf(spaceId) })), [spaceIds, nameOf]);
   return (
     <Box sx={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.8, color: 'text.secondary', px: '12px', pt: 1, pb: 1 }}>
-      {spaceIds.map((spaceId, i) => (
-        <Fragment key={spaceId}>
-          {i > 0 ? ', ' : null}
-          <Link
-            component={RouterLink}
-            to={spaceHref(spaceId)}
-            target="_blank"
-            rel="noopener noreferrer"
-            sx={{ ...LIST_LINK_SX, font: 'inherit', overflowWrap: 'anywhere' }}
-          >
-            {nameOf(spaceId)}
-          </Link>
-        </Fragment>
-      ))}
+      {kind === 'same' && spaces.length > NAMES_SHOWN ? <SameInAllSpaces spaces={spaces} wholeStage={wholeStage} /> : <SpaceNameList spaces={spaces} />}
     </Box>
   );
 }
@@ -442,7 +428,7 @@ function StageOutcomeBoxesView({ model, deps, open, onToggle, highlight, boxesRe
       {model.bar === null ? null : <OutcomeBar segments={model.bar} total={total} />}
       {model.sections.map((section, i) => (
         <OutcomeBox key={section.kind} section={section} open={open} onToggle={onToggle} tinted={groupJump === section.kind} nameOf={nameOf} first={i === 0}>
-          <SpaceLinks spaceIds={section.spaceIds} nameOf={nameOf} />
+          <SpaceLinks kind={section.kind} spaceIds={section.spaceIds} nameOf={nameOf} wholeStage={model.sameEverywhere} />
           <SectionBody section={section} deps={deps} highlight={highlight} onShowInDiff={onShowInDiff} />
         </OutcomeBox>
       ))}

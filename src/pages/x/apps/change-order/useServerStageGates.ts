@@ -36,6 +36,7 @@ import { authFetch } from '@/auth/session';
 import { usePolling } from '@/hooks/usePolling';
 
 import { promoteDryRun } from '../../../change-orders/reviews/quietServerCalls';
+import type { RowsAskedAt } from '../../../change-orders/reviews/rowsAskedAt';
 
 /**
  * How often the verdicts are asked for again with nothing else changed.
@@ -87,6 +88,11 @@ export interface UseServerStageGatesArgs {
    * Release is followed by fresh verdicts rather than ones up to a poll old.
    */
   refreshKey: string;
+  /**
+   * Told when these rows were asked for, so a reader can tell a record the rows have not seen yet
+   * from one they do not list.
+   */
+  askedAt?: RowsAskedAt;
 }
 
 export function useServerStageGates(args: UseServerStageGatesArgs): ServerGatesByStage {
@@ -98,6 +104,7 @@ export function useServerStageGateReads({
   changeOrderId,
   stageNames,
   refreshKey,
+  askedAt: askedAtStore,
 }: UseServerStageGatesArgs): ServerStageGateReads {
   const [gates, setGates] = useState<{
     changeOrderId: string | undefined;
@@ -119,6 +126,7 @@ export function useServerStageGateReads({
     // Times for another ChangeOrder say nothing about this one.
     return times.changeOrderId === currentOrder.current ? times.byStage[stageName] : undefined;
   }, []);
+  const [askedAt, setAskedAt] = useState<number | undefined>(undefined);
   const [tick, setTick] = useState(0);
   const poll = useCallback(() => setTick((t) => t + 1), []);
   usePolling(poll, SERVER_GATES_POLL_INTERVAL_MS);
@@ -146,10 +154,13 @@ export function useServerStageGateReads({
     if (changeOrderId === undefined || stageNames.length === 0) {
       setGates({ changeOrderId, byStage: NO_GATES, refusedByStage: NO_REFUSALS });
       answeredAtRef.current = { changeOrderId, byStage: {} };
+      setAskedAt(undefined);
       settle(call);
       return;
     }
     let cancelled = false;
+    // Taken before the request leaves: the answer reflects the server from this moment or later.
+    const startedAt = Date.now();
     void Promise.all(
       stageNames.map(async (stageName): Promise<[string, readonly PromoteGateResult[] | number]> => {
         const answer = await promoteDryRun(authFetch, { ChangeOrderID: changeOrderId, TargetStage: stageName });
@@ -173,6 +184,7 @@ export function useServerStageGateReads({
         answeredAtByStage[stageName] = at;
       }
       answeredAtRef.current = { changeOrderId, byStage: answeredAtByStage };
+      setAskedAt(startedAt);
       // The same answer keeps its identity, so a poll that changed nothing
       // does not re-derive everything the ChangeOrder page computes from it.
       setGates((previous) =>
@@ -183,6 +195,12 @@ export function useServerStageGateReads({
           : { changeOrderId, byStage, refusedByStage },
       );
       settle(call);
+    }).catch((error: unknown) => {
+      // A read that could not even be arranged: not a held approval. Nothing is waiting on its rows.
+      console.error('Reading the gates of the stages failed:', error);
+      if (cancelled) return;
+      setAskedAt(undefined);
+      settle(call);
     });
     return () => {
       cancelled = true;
@@ -191,6 +209,12 @@ export function useServerStageGateReads({
     // contents do not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [changeOrderId, stagesKey, refreshKey, tick, settle]);
+
+  // Published after the render that holds these rows, so a reader never sees the new moment
+  // beside the old rows.
+  useEffect(() => {
+    askedAtStore?.set('stages', askedAt);
+  }, [askedAtStore, askedAt]);
 
   // Verdicts about another ChangeOrder are never shown for this one, even for
   // the moment before this one's arrive.

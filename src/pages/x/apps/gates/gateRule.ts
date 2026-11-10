@@ -132,3 +132,27 @@ export const ruleParts = (
       return [];
   }
 };
+
+export const NO_DESCRIPTION =
+  'The Trigger has no description. Add one so others know how to fix this gate.';
+
+/** The text of a gate: a lead line, and the Rule behind a details control. */
+export interface GateRuleText {
+  /** The Trigger's Description, or NO_DESCRIPTION when it has none. */
+  lead: string;
+  /** The lead is NO_DESCRIPTION. */
+  noDescription: boolean;
+  /** The Rule. Few people can read a regex or an expression, so it is shown only when asked for. */
+  details: RulePart[];
+}
+
+/** The Description says what is wrong and how to fix it, so it leads; the Rule goes in details. */
+export const gateRuleText = (
+  description: string | undefined,
+  rule: RulePart[],
+): GateRuleText => {
+  const lead = description?.trim();
+  return lead
+    ? { lead, noDescription: false, details: rule }
+    : { lead: NO_DESCRIPTION, noDescription: true, details: rule };
+};

@@ -12,6 +12,9 @@ import {
   changeOrderSurface,
   changeOrderType,
 } from '../changeOrdersTokens';
+import { SpacesMoreButton } from './SpaceListing';
+import { capNames, moreText } from './spaceListLogic';
+import { useMemo } from 'react';
 
 /** A variant the note names. */
 export interface OutcomeUnknownVariant {
@@ -39,6 +42,8 @@ export interface OutcomeUnknownNoteProps {
  * which variants.
  */
 export function OutcomeUnknownNote({ variants, hrefFor }: OutcomeUnknownNoteProps) {
+  const { shown, more } = capNames(variants);
+  const listed = useMemo(() => variants.map(({ spaceId, label }) => ({ spaceId, name: label })), [variants]);
   return (
     <Box
       data-testid="outcome-unknown-note"
@@ -62,7 +67,7 @@ export function OutcomeUnknownNote({ variants, hrefFor }: OutcomeUnknownNoteProp
         </Box>
       </Box>
       <Box sx={{ display: 'flex', gap: '5px', flexWrap: 'wrap', paddingLeft: '24px' }}>
-        {variants.map(({ spaceId, label }) => {
+        {shown.map(({ spaceId, label }) => {
           const href = hrefFor?.(spaceId) ?? null;
           return (
             <Box
@@ -92,6 +97,7 @@ export function OutcomeUnknownNote({ variants, hrefFor }: OutcomeUnknownNoteProp
             </Box>
           );
         })}
+        {more > 0 ? <SpacesMoreButton spaces={listed}>{`+${moreText(more)}`}</SpacesMoreButton> : null}
       </Box>
     </Box>
   );

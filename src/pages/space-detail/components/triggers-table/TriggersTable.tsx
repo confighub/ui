@@ -9,6 +9,7 @@ import { useAttributeColumnManager } from '@/components/entity-data-grid/hooks/u
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { FilteredEmptyState } from '@/components/filtered-empty-state';
 import { SkeletonTable } from '@/components/skeleton-table/SkeletonTable';
+import { triggerPriority } from '@/utility/triggerEnforcement';
 import type { TriggerSelectionStatus } from '@/components/trigger-selection/useTriggerSelection';
 import { useGridPersistence } from '@/components/unit-data-grid/hooks/useGridPersistence';
 import { EmptyTriggers } from '@/pages/space-detail/components/empty-triggers/EmptyTriggers';
@@ -69,13 +70,16 @@ const GRID_DEFAULTS = {
     [PACK_LABEL_FIELD]: true,
     SpaceID: false,
     Selection: false,
-    FunctionName: true,
-    ToolchainType: true,
-    ChannelSlug: true,
+    // What a Trigger runs is in its drawer; the list shows what it is for and how far it is
+    // enforced.
+    FunctionName: false,
+    ToolchainType: false,
+    ChannelSlug: false,
     ChannelID: false,
-    Arguments: true,
-    Event: true,
+    Arguments: false,
+    Event: false,
     Validating: true,
+    Priority: true,
     Disabled: true,
     [HIDDEN_REASON_FIELD]: false,
     CreatedAt: false,
@@ -168,6 +172,7 @@ export const TriggersTable = ({
         Validating: trigger?.Trigger?.Validating || false,
         Disabled: trigger?.Trigger?.Disabled || false,
         Warn: trigger?.Trigger?.Warn || false,
+        Priority: trigger?.Trigger?.Validating ? triggerPriority(trigger.Trigger.Annotations) : undefined,
         CreatedAt: trigger?.Trigger?.CreatedAt || '',
         UpdatedAt: trigger?.Trigger?.UpdatedAt || '',
         HiddenReason: trigger?.Trigger?.HiddenReason || '',

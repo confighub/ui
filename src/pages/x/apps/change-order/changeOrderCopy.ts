@@ -491,7 +491,7 @@ export const changeOrderCopy = {
     /** The source panel's heading: the Invocation is what runs, not a write here. */
     selectedHeading: 'What this change runs',
     /** Which Spaces one "At the source" diff stands for. */
-    groupCaption: (spaces: string[]) => `In ${spaces.join(', ')}`,
+    groupCaptionLead: 'In',
   },
   /**
    * A stage whose selector matched no Space. Nothing can be promoted into it,
@@ -522,20 +522,6 @@ export const changeOrderCopy = {
     /** Section-head count for a stage every Space of which contributed. */
     resourceFieldCount: (resources: number, fields: number) =>
       `${resources} ${resources === 1 ? 'resource' : 'resources'} · ${fields} ${fields === 1 ? 'field' : 'fields'}`,
-    /**
-     * Section-head count for a PART-POPULATED stage, where the resource count
-     * is a floor rather than the stage's total.
-     *
-     * A mid-sequence promote failure leaves some Spaces populated and some not,
-     * and the groups then cover only part of the stage. Presenting the count
-     * bare would describe the whole stage using one Space's contents, so the
-     * clause naming how many Spaces it came from is not decoration.
-     */
-    resourceCountPartial: (resources: number, contributing: number, total: number) =>
-      `${resources} ${resources === 1 ? 'resource' : 'resources'}, from ${contributing} of ${total} Spaces`,
-    /** Names the Spaces the count did NOT come from, so the floor is legible. */
-    partialNote: (emptySpaces: string[], populated: string) =>
-      `Count for ${populated} only. ${emptySpaces.join(' and ')} hold no resources yet.`,
 
     // ── The matrix ──
     matrixResourceHead: 'resource',
@@ -565,15 +551,6 @@ export const changeOrderCopy = {
     showPerVariant: 'Show per variant',
     hidePerVariant: 'Hide per variant',
 
-    /**
-     * Past 8 columns the grid stops being readable, so only the divergent
-     * resources are listed. Never a silent truncation: the line says how many
-     * resources are not shown.
-     */
-    divergentOnly: (divergent: number, total: number) =>
-      `${divergent} of ${total} ${total === 1 ? 'resource differs' : 'resources differ'}`,
-    divergentIn: (variants: string[]) => `differs in ${variants.join(', ')}`,
-
     // ── The scope line above the diff ──
     /**
      * The diff below is ONE variant's, and the pane says which. Never implicit:
@@ -584,12 +561,6 @@ export const changeOrderCopy = {
       differing === 0
         ? `Diff for ${variant}`
         : `Diff for ${variant} · ${differing} ${differing === 1 ? 'variant differs' : 'variants differ'}`,
-    diffScopeOnlyPopulated: (variant: string) =>
-      `Diff for ${variant}`,
-    /** The per-resource marker in the stage tree: where the claim stops being universal. */
-    differsIn: (variants: string[]) => `differs in ${variants.join(', ')}`,
-    /** The same marker in the variant tree, which can name what it differs FROM. */
-    differsFrom: (variant: string) => `differs from ${variant}`,
     /** The roster row's flag, and the node card strip's. */
     differsFlag: (count: number) => `${count} differs`,
 
@@ -806,6 +777,11 @@ export const changeOrderCopy = {
     spacesTitleAbort: (count: number) =>
       count === 1 ? 'The change stays in 1 Space' : `The change stays in ${count} Spaces`,
     spacesNote: 'Spaces already rolled back are not listed.',
+    /** After a run: the Spaces that had no failure, said as a count (past three of them). */
+    spacesThrough: (count: number) => `${count} other ${count === 1 ? 'Space' : 'Spaces'} had no failure.`,
+    seeSpaces: 'See the Spaces',
+    /** After a run with no failure: only the way to the list, as the success line says the rest. */
+    seeAllSpaces: (count: number) => `See the ${count} ${count === 1 ? 'Space' : 'Spaces'}`,
     /** No Space is left to restore — every one that took the change has been rolled back. */
     scopeNone: 'Already rolled back everywhere.',
     /**

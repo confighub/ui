@@ -147,6 +147,37 @@ test.describe('decisions', () => {
     expect(two.decisions).toHaveLength(2);
   });
 
+  // The server writes one call's records a Space at a time, so a call over many Spaces lasts
+  // longer than the window from its first record to its last.
+  const MANY = Array.from({ length: 55 }, (_, i) => ({ spaceId: `sp-m${i}`, spaceSlug: `prod-${i}` }));
+  const call = (user: string, at: number) => MANY.map((space, i) => record(user, space, at + i * 100));
+
+  test('one call over 55 Spaces, 100 ms apart (5.4 s in all), is one decision', () => {
+    const s = derive(call('ana', -H), { gateSpaces: MANY });
+    expect(s.decisions).toHaveLength(1);
+    expect(s.decisions[0].spaceSlugs).toHaveLength(55);
+  });
+
+  test('two calls over 55 Spaces by one person, more than the window apart, are two decisions', () => {
+    const first = call('ana', -H);
+    const second = call('ana', -H + 5_400 + 3_000);
+    const s = derive([...first, ...second], { gateSpaces: MANY });
+    expect(s.decisions).toHaveLength(2);
+    expect(s.decisions.map((d) => d.spaceSlugs.length)).toEqual([55, 55]);
+  });
+
+  test('the window is measured from the record before, not the first: a record just over it after the last starts a new decision', () => {
+    const [a, b, c, d] = MANY;
+    // c is 3 s after a but 1.5 s after b, so a, b and c are one decision; d is 2.5 s after c.
+    const s = derive([record('ana', a, -H), record('ana', b, -H + 1_500), record('ana', c, -H + 3_000), record('ana', d, -H + 5_500)], {
+      gateSpaces: MANY,
+    });
+    expect(s.decisions.map((x) => x.spaceSlugs).sort((x, y) => x.length - y.length)).toEqual([
+      [d.spaceSlug],
+      [a.spaceSlug, b.spaceSlug, c.spaceSlug],
+    ]);
+  });
+
   test('a revoked Fail then a Pass of the same Type: linked, the Fail no longer blocks', () => {
     const fail = decision('ben', -3 * H, { Result: 'Fail' });
     const pass = decision('ben', -2 * H + 5000);

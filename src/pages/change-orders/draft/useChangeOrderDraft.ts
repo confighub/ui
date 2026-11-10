@@ -34,6 +34,7 @@ import { useDraftInvocationCheck } from './useDraftInvocationCheck';
 import { useDraftInvocations } from './useDraftInvocations';
 import { type DraftFanOutRead, useDraftFanOut } from './useDraftFanOut';
 import { type DraftFanOut, FAN_OUT_IDS } from './draftFanOut';
+import { namesText } from '../components/spaceListLogic';
 
 export interface ChangeOrderDraft {
   address: DraftAddress;
@@ -340,13 +341,13 @@ export function useChangeOrderDraft(): ChangeOrderDraft {
       blocks: false,
     });
     if (!runs && reconciliation !== undefined && reconciliation.passedOver.length > 0) {
-      const slugs = reconciliation.passedOver.join(', ');
+      const slugs = namesText(reconciliation.passedOver);
       client.push(
         disagreement('server-passes-over', draftCopy.problems.passedOverByServer(slugs)),
       );
     }
     if (!runs && reconciliation !== undefined && reconciliation.carried.length > 0) {
-      const slugs = reconciliation.carried.join(', ');
+      const slugs = namesText(reconciliation.carried);
       client.push(disagreement('server-carries', draftCopy.problems.carriedByServer(slugs)));
     }
     // Every Unit passed over by the server leaves nothing to promote. Not for MergeUnits, whose

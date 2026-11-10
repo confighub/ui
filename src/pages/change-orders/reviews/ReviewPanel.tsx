@@ -48,7 +48,7 @@ import { ReviewDecisionList } from './ReviewDecisionList';
 import { ReviewRequirementList } from './ReviewRequirementList';
 import { ReviewRequestsSection } from './ReviewRequestsSection';
 import { outOfDateDecisions, reviewInitials } from './changeOrderReviews';
-import { CollapsibleSection, Monogram, Pips, SectionLabel } from './reviewParts';
+import { CollapsibleSection, GateSpaceNames, Monogram, Pips, SectionLabel } from './reviewParts';
 import type {
   ReviewChoice,
   ReviewCoverage,
@@ -679,7 +679,7 @@ export function ReviewPanel({
             {subject.base ? null : (
               <>
                 {' '}
-                (<MonoText>{summary.gateSpaces.map((space) => space.spaceSlug).join(', ')}</MonoText>)
+                (<GateSpaceNames spaces={summary.gateSpaces} />)
               </>
             )}
             <Box component="span" data-testid="review-counts-toward" sx={{ display: 'block' }}>

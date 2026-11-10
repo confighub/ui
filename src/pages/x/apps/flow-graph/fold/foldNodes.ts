@@ -19,6 +19,7 @@ import {
 } from '../flowLayout';
 import {
   type ConditionKind,
+  STANDOUT_LABEL,
   WAVE_CONDITIONS,
   type WaveCondition,
   stripMark,
@@ -39,8 +40,15 @@ export interface StackNodeData {
   /** One per member, in member order. */
   marks: MarkKind[];
   /**
-   * Member names, or for a stack of groups of 1 merged by a Space label, the
-   * label values it holds. Never the stack's own label.
+   * The members that stand out from the rest (`BaseFold.standouts`), worst
+   * first: they lead the stack, so each name is in sight while it is closed.
+   */
+  standouts: { name: string; reason: string }[];
+  /**
+   * Member names after the standouts, or for a stack of groups of 1 merged by
+   * a Space label, the label values it holds. Never the stack's own label.
+   * Empty for a merged stack with standouts, so a line never mixes Variant
+   * names with label values.
    */
   previewNames: string[];
   expanded: boolean;
@@ -266,6 +274,13 @@ export function toFlowElements(
     const group = n.groupId ? groupById.get(n.groupId) : undefined;
     if (!group || !base) continue;
     if (n.kind === 'stack') {
+      const nameOf = (id: string) => deploymentsById.get(id)?.displayName ?? id;
+      // The model sorts a group's standouts first, so they are its first members.
+      const standouts = group.memberIds.flatMap((id) => {
+        const reason = base.standouts.get(id);
+        return reason ? [{ name: nameOf(id), reason: STANDOUT_LABEL[reason] }] : [];
+      });
+      const merged = group.kind === 'other' && group.mergedLabels;
       nodes.push({
         id: n.id,
         type: 'stackNode',
@@ -279,10 +294,12 @@ export function toFlowElements(
           marks: group.memberIds.map((id) =>
             stripMark(model.conditions.get(id) ?? noConditions, base.waveSet),
           ),
-          previewNames:
-            group.kind === 'other' && group.mergedLabels
-              ? group.mergedLabels
-              : group.memberIds.map((id) => deploymentsById.get(id)?.displayName ?? id),
+          standouts,
+          previewNames: merged
+            ? standouts.length > 0
+              ? []
+              : merged
+            : group.memberIds.slice(standouts.length).map(nameOf),
           expanded: ctx.expandedGroupIds.has(group.id),
           componentName: componentNameOf(base.baseId),
           onToggle: ctx.onToggleStack,

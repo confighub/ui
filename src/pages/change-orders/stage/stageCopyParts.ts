@@ -7,6 +7,7 @@
  */
 
 import { plural } from '../changeOrderHistory';
+import { capNames, moreText, NAMES_SHOWN } from '../components/spaceListLogic';
 import type { CopyLinkRef, CopySegment } from './stageTypes';
 
 // ---------------------------------------------------------------------------
@@ -80,6 +81,20 @@ export function differsTail(from: string, to: string, refFrom: string, refTo: st
 }
 
 export const spaceLink = (space: NamedSpace) => seg.link(space.name, { to: 'space', spaceId: space.spaceId });
+
+/**
+ * The Spaces as links, like `listSegments`, but only the first `limit` by name: "a, b, c
+ * and 51 more". "51 more" is a button that opens all of them.
+ */
+export function spaceListSegments(spaces: readonly NamedSpace[], limit: number = NAMES_SHOWN): CopySegment[] {
+  const { shown, more } = capNames(spaces, limit);
+  if (more === 0) return listSegments(shown.map((space) => [spaceLink(space)]));
+  return [
+    ...shown.flatMap((space, i) => [...(i > 0 ? [seg.text(', ')] : []), spaceLink(space)]),
+    seg.text(' and '),
+    { kind: 'spaces', text: moreText(more), shown: limit, spaces },
+  ];
+}
 
 /** "{n} approval" / "{n} approvals". */
 export const approvals = (n: number) => plural(n, 'approval');

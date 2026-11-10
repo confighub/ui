@@ -17,6 +17,8 @@
  */
 import {
   type ListAllReleasesApiArg,
+  type ListAllResourcesApiArg,
+  type ListAllResourcesApiResponse,
   type ListAllReleasesApiResponse,
   type ListAllRevisionsApiResponse,
   type ListAllUnitsApiArg,
@@ -69,6 +71,14 @@ export interface RecentRevisionsArg {
 
 export interface UnitIdsArg {
   unitIds: string[];
+}
+
+export interface ListUnitsByIdChunkedArg extends Pick<ListAllUnitsApiArg, 'select'> {
+  unitIds: string[];
+}
+
+export interface ListResourcesBySpaceChunkedArg extends Pick<ListAllResourcesApiArg, 'select'> {
+  spaceIds: string[];
 }
 
 export interface RevisionIdsArg {
@@ -259,6 +269,45 @@ const chunkedQueriesApi = confighubApi.injectEndpoints({
           queryArgs: { ...queryArgs, spaceIds: idSet(queryArgs.spaceIds) },
         }),
       providesTags: ['Unit'],
+    }),
+    // Units by ID, with the fields asked for: the Units a page already knows it wants, too many
+    // to name in one filter.
+    listUnitsByIdChunked: build.query<ListAllUnitsApiResponse, ListUnitsByIdChunkedArg>({
+      queryFn: (arg, _api, _extra, baseQuery) =>
+        fetchChunks<ListAllUnitsApiResponse[number]>(
+          'UnitID',
+          idSet(arg.unitIds),
+          (where) => ({ url: `/unit`, params: { where, select: arg.select } }),
+          baseQuery,
+        ),
+      serializeQueryArgs: ({ endpointName, endpointDefinition, queryArgs }) =>
+        defaultSerializeQueryArgs({
+          endpointName,
+          endpointDefinition,
+          queryArgs: { ...queryArgs, unitIds: idSet(queryArgs.unitIds) },
+        }),
+      providesTags: ['Unit'],
+    }),
+    // The resources of the Units in some Spaces, with the fields asked for.
+    listResourcesBySpaceChunked: build.query<
+      ListAllResourcesApiResponse,
+      ListResourcesBySpaceChunkedArg
+    >({
+      queryFn: (arg, _api, _extra, baseQuery) =>
+        fetchChunks<ListAllResourcesApiResponse[number]>(
+          'SpaceID',
+          idSet(arg.spaceIds),
+          (where) => ({ url: `/resource`, params: { where, select: arg.select } }),
+          baseQuery,
+          { paged: true },
+        ),
+      serializeQueryArgs: ({ endpointName, endpointDefinition, queryArgs }) =>
+        defaultSerializeQueryArgs({
+          endpointName,
+          endpointDefinition,
+          queryArgs: { ...queryArgs, spaceIds: idSet(queryArgs.spaceIds) },
+        }),
+      providesTags: ['Resource'],
     }),
     // Every published Release of the Spaces, narrowed to what picking each Space's
     // running Release and drawing its live status needs. Releases accumulate with every
@@ -520,6 +569,8 @@ const chunkedQueriesApi = confighubApi.injectEndpoints({
 
 export const {
   useListAllUnitsChunkedQuery,
+  useListUnitsByIdChunkedQuery,
+  useListResourcesBySpaceChunkedQuery,
   useListPublishedReleasesChunkedQuery,
   useListReleasesSinceChunkedQuery,
   useListReleaseDetailsSinceChunkedQuery,

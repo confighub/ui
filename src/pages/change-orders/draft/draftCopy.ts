@@ -156,7 +156,7 @@ export const draftCopy = {
     /** The source node and the stage cards' heading for the change: the detail view's words. */
     changeDefined: 'Change defined',
     /** "In dev, staging-eu, …": which variants one "At the source" diff stands for. */
-    groupCaption: (names: readonly string[]) => `In ${names.join(', ')}`,
+    groupCaptionLead: 'In',
     noFieldsDiffer: 'No fields differ here.',
     inVariants: (n: number) => (n === 1 ? '1 variant' : `${n} variants`),
     imageChange: 'Image change',

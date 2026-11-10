@@ -3,10 +3,14 @@
 import type { ComponentDeployment } from '../../componentTypes';
 import {
   type ConditionKind,
+  type StandoutReason,
   WAVE_CONDITIONS,
   type WaveCondition,
   cardSeverity,
   conditionsOf,
+  keepsValue,
+  standoutOf,
+  standoutRank,
 } from './deploymentCondition';
 import {
   CARD_CAP,
@@ -81,7 +85,17 @@ export interface BaseFold {
   cards: FoldCard[];
   /** Exceptions past the card cap; they stay in stacks with a coloured mark. */
   overCapIds: string[];
+  /**
+   * Each group's members put the standouts first, worst first, then the rest
+   * in the group's own order.
+   */
   groups: QuietGroup[];
+  /**
+   * Members that are not cards but stand out from the rest, and why. They
+   * stay in their stack, first and by name, so the stacks keep their shape
+   * and the Variant that differs is still in sight.
+   */
+  standouts: ReadonlyMap<string, StandoutReason>;
   /** Members that are not cards. */
   quietCount: number;
 }
@@ -218,7 +232,18 @@ export function buildFoldModel({
     overCap = overCap.filter((m) => !isCard.has(m.deploymentId));
 
     const quiet = members.filter((m) => !isCard.has(m.deploymentId));
-    const groups = groupQuiet(baseId, quiet, groupKey);
+    const standouts = new Map<string, StandoutReason>();
+    for (const m of quiet) {
+      const c = conditions.get(m.deploymentId) ?? conditionsOf(m);
+      const reason = standoutOf(c, waveSet, keepsValue(m));
+      if (reason) standouts.set(m.deploymentId, reason);
+    }
+    const rank = (id: string) => standoutRank(standouts.get(id) ?? null);
+    const groups = groupQuiet(baseId, quiet, groupKey).map((g) =>
+      g.memberIds.some((id) => standouts.has(id))
+        ? { ...g, memberIds: [...g.memberIds].sort((a, b) => rank(b) - rank(a)) }
+        : g,
+    );
 
     for (const c of cards) location.set(c.id, { baseId, kind: 'card' });
     for (const g of groups) {
@@ -234,6 +259,7 @@ export function buildFoldModel({
       cards,
       overCapIds: overCap.map((m) => m.deploymentId),
       groups,
+      standouts,
       quietCount: quiet.length,
     });
   }
