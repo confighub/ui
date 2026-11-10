@@ -28,6 +28,7 @@ const KIND_BY_FUNCTION: Record<string, FixKind> = {
   'vet-images': 'set',
   'vet-cel': 'set',
   'vet-pod-security-standard': 'set',
+  'vet-namespace': 'set',
   'vet-immutable': 'restore',
   'vet-disruption': 'undo',
   'vet-merge-keys': 'duplicate',

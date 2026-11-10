@@ -104,6 +104,11 @@ export const ruleParts = (
       ];
     case 'vet-placeholders':
       return [{ text: 'Not allowed: ' }, ...codeList(['confighubplaceholder', '999999999'])];
+    case 'vet-namespace':
+      return [
+        { text: 'Every resource that is not cluster-scoped sets ' },
+        { code: 'metadata.namespace' },
+      ];
     case 'vet-jsonschema':
     case 'vet-schemas': {
       const required = unitMessages.map((m) => /(\S+) is required/.exec(m)?.[1]).find(Boolean);

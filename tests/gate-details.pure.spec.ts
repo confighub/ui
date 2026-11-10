@@ -121,6 +121,16 @@ test('each finding type gets its fix', () => {
   expect(fixKindOf('vet-placeholders', 'resource-name', 'metadata.namespace', undefined)).toBe(
     'set',
   );
+  // A missing namespace is typed in, at the path vet-namespace names.
+  expect(
+    fixKindOf(
+      'vet-namespace',
+      'namespace-name-reference',
+      'metadata.namespace',
+      undefined,
+      'string',
+    ),
+  ).toBe('set');
   expect(
     fixKindOf('vet-pod-security-standard', 'none', 'spec.template.spec', undefined, ''),
   ).toBe('message');
@@ -294,6 +304,10 @@ test('the Rule line says what the Trigger expects', () => {
     { code: 'restricted' },
     { text: ', version ' },
     { code: 'latest' },
+  ]);
+  expect(ruleParts('vet-namespace', [])).toEqual([
+    { text: 'Every resource that is not cluster-scoped sets ' },
+    { code: 'metadata.namespace' },
   ]);
   expect(ruleParts('some-other-function', [])).toEqual([]);
 });

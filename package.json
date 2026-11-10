@@ -22,9 +22,9 @@
     "playwright:debug": "playwright test --debug"
   },
   "dependencies": {
-    "@confighub/api": "0.10.12",
-    "@confighub/react-auth": "0.10.12",
-    "@confighub/rtk-query": "0.10.12",
+    "@confighub/api": "0.10.13",
+    "@confighub/react-auth": "0.10.13",
+    "@confighub/rtk-query": "0.10.13",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
@@ -45,7 +45,7 @@
     "@tanstack/react-table": "^9.3.1",
     "@tanstack/react-virtual": "^3.14.21",
     "dayjs": "^1.11.13",
-    "framer-motion": "^12.6.3",
+    "framer-motion": "^14.6.0",
     "fuse.js": "^7.3.0",
     "js-base64": "^3.7.7",
     "js-yaml": "^4.2.0",
@@ -72,7 +72,7 @@
     "reactflow": "^11.11.4",
     "remark-gfm": "^4.0.1",
     "styled-components": "^6.1.13",
-    "uuid": "^11.0.3",
+    "uuid": "^14.0.3",
     "yaml": "^2.7.0"
   },
   "devDependencies": {
