@@ -127,6 +127,8 @@ export interface UnsatisfiedRevision {
   counted: number;
   reason: GateReasonCode;
   authors: ReviewPerson[];
+  /** The Space's latest Release already has this content: it was released without the approvals. */
+  previouslyReleased?: boolean;
 }
 
 export interface RequirementSpaceProgress {
@@ -142,6 +144,10 @@ export interface RequirementSpaceProgress {
   counted: number;
   revisions: number;
   satisfiedRevisions: number;
+  /** Of `revisions`, those whose content the Space's latest Release already has (a release gate). */
+  previouslyReleased: number;
+  /** Who approved that content: Passes counted on those Revisions. */
+  previousApprovers: ReviewPerson[];
   unsatisfied: UnsatisfiedRevision[];
   /** The server listed at most 100 Revisions. */
   truncated: boolean;
@@ -193,7 +199,7 @@ export interface RequirementProgress {
    */
   heldFor?: { spaceSlug: string; text: string; spaceSlugs: string[] };
   perSpace: RequirementSpaceProgress[];
-  /** From server entries with CountedOn > 0. */
+  /** From server entries counted on a Revision the Space's latest Release does not already have. */
   passers: ReviewPerson[];
   rejecters: ReviewPerson[];
   /** The earliest ValidUntil of a counted Pass. */

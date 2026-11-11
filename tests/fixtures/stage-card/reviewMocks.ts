@@ -63,7 +63,23 @@ export interface Seed {
   revokedAgoMs?: number;
   /** The ChangeOrder it was made on. Default: this one. `null`: outside any ChangeOrder. */
   changeOrderId?: string | null;
+  /**
+   * It approves a Unit the change left alone, as the Space's latest Release has it, as an earlier
+   * ChangeOrder's approval does. Only a release gate, which reads every Unit the Release bundles,
+   * lists it, with `CoversNew` false; it counts on that Unit's Revision alone, never toward the
+   * count of the Revision the change made.
+   */
+  previouslyReleased?: boolean;
+  /**
+   * It approves a change made in the Space outside this ChangeOrder, which the Release carries
+   * with it. Only a release gate lists it, with `CoversNew` true; it counts on that Unit's
+   * Revision alone.
+   */
+  rideAlong?: boolean;
 }
+
+/** Why only a release gate reads what a record approves. */
+type ReleaseOnly = 'previouslyReleased' | 'rideAlong';
 
 const QA: Seed = { id: 'qa', who: 'ines', result: 'Pass', agoMs: 17 * HOUR, note: 'Staging regression run 4471 passed. 0 failures over 1,284 cases.' };
 const LENA: Seed = {
@@ -143,9 +159,12 @@ function attestationRows(fx: ChangeOrderFixture, state: State, now: number, gate
   const gate = gateSpacesOf(fx, gateStage);
   const records: Record<string, unknown>[] = [];
   const revocations: Record<string, unknown>[] = [];
+  const releaseOnly = new Map<string, ReleaseOnly>();
   for (const seed of [...seedsFor(state), ...extraSeeds]) {
     gate.slice(0, seed.spaces ?? gate.length).forEach((space, i) => {
       const id = uuidOf(seed.id, i);
+      if (seed.previouslyReleased === true) releaseOnly.set(id, 'previouslyReleased');
+      else if (seed.rideAlong === true) releaseOnly.set(id, 'rideAlong');
       records.push({
         AttestationID: id,
         ...(seed.changeOrderId === null ? {} : { ChangeOrderID: seed.changeOrderId ?? fx.changeOrderId }),
@@ -173,7 +192,7 @@ function attestationRows(fx: ChangeOrderFixture, state: State, now: number, gate
       }
     });
   }
-  return { records, revocations };
+  return { records, revocations, releaseOnly };
 }
 
 /** A review requirement, as the mocked server evaluates it (the same rules as the real one). */
@@ -214,9 +233,13 @@ function gateRow(
   space: { spaceId: string; slug: string },
   records: Record<string, unknown>[],
   revokedIds: ReadonlySet<string>,
-  ctx: { now: number; authorId: string; caller: MockCaller },
+  ctx: { now: number; authorId: string; caller: MockCaller; release?: boolean; releaseOnly?: ReadonlyMap<string, ReleaseOnly> },
 ) {
-  const mine = records.filter((r) => r.SpaceID === space.spaceId && r.Type === req.type);
+  const onlyRelease = (r: Record<string, unknown>) => ctx.releaseOnly?.get(r.AttestationID as string);
+  const mine = records.filter((r) => r.SpaceID === space.spaceId && r.Type === req.type && (ctx.release === true || onlyRelease(r) === undefined));
+  // One Revision the change made, and one more for each kind of Unit only the Release reads.
+  const extra = new Set(mine.map(onlyRelease).filter((kind) => kind !== undefined));
+  const revisions = 1 + extra.size;
   const counted = new Set<string>();
   let rejected = false;
   const entries = mine.map((r) => {
@@ -227,8 +250,8 @@ function gateRow(
     else if (validUntil !== undefined && Date.parse(validUntil) < ctx.now) reason = 'TooOld';
     else if (!req.eligible.includes(r.UserID as string)) reason = 'NotEligible';
     else if (r.Result === 'Fail' && req.ignoreFail === true) reason = 'FailIgnored';
-    if (reason === undefined && r.Result === 'Pass') counted.add(r.UserID as string);
-    if (reason === undefined && r.Result === 'Fail') rejected = true;
+    if (reason === undefined && r.Result === 'Pass' && onlyRelease(r) === undefined) counted.add(r.UserID as string);
+    if (reason === undefined && r.Result === 'Fail' && onlyRelease(r) === undefined) rejected = true;
     return {
       AttestationID: r.AttestationID,
       UserID: r.UserID,
@@ -236,6 +259,8 @@ function gateRow(
       CreatedAt: r.CreatedAt,
       ...(validUntil === undefined ? {} : { ValidUntil: validUntil }),
       CountedOn: reason === undefined ? 1 : 0,
+      CoversNew: onlyRelease(r) !== 'previouslyReleased',
+      ...(reason === undefined && onlyRelease(r) === 'previouslyReleased' ? { CountedOnPreviouslyReleased: 1 } : {}),
       ...(reason === undefined ? {} : { Reason: reason }),
     };
   });
@@ -256,8 +281,9 @@ function gateRow(
       Type: req.type,
       Required: req.required,
       Counted: counted.size,
-      Revisions: 1,
-      SatisfiedRevisions: satisfied ? 1 : 0,
+      Revisions: revisions,
+      SatisfiedRevisions: satisfied ? revisions : revisions - 1,
+      ...(extra.has('previouslyReleased') ? { PreviouslyReleased: 1 } : {}),
       ...(satisfied ? {} : { AuthorUserIDs: [ctx.authorId] }),
       Attestations: entries,
       ...(satisfied
@@ -442,7 +468,7 @@ export async function mockReviews(
     RequestedAt: new Date(now - r.agoMs).toISOString(),
     ...(r.by === undefined ? {} : { RequestedByUserID: PEOPLE[r.by].id }),
   }));
-  const { records, revocations } = attestationRows(fx, state, now, gateStage, options.extraSeeds);
+  const { records, revocations, releaseOnly } = attestationRows(fx, state, now, gateStage, options.extraSeeds);
 
   // Record what the page copies, without the real clipboard (it needs a permission).
   await page.addInitScript(() => {
@@ -527,7 +553,9 @@ export async function mockReviews(
   const rowsFor = (names: string[], spaces: { spaceId: string; slug: string }[]) => {
     const listed = options.rowsBlindToNewRecords === true ? records.filter((r) => !writtenByPage.has(r.AttestationID as string)) : records;
     return spaces.flatMap((space, i) =>
-      names.map((name) => gateRow(reqNamed(name), space, listed, revokedIds, { now, authorId, caller: callerFor(reqNamed(name), i) })),
+      names.map((name) =>
+        gateRow(reqNamed(name), space, listed, revokedIds, { now, authorId, caller: callerFor(reqNamed(name), i), releaseOnly }),
+      ),
     );
   };
 
@@ -544,7 +572,13 @@ export async function mockReviews(
         if (options.release === 'unchanged') return route.fulfill(json({ Message: 'nothing new to release' }));
         const spaceId = new URL(route.request().url()).pathname.split('/')[3];
         const space = gate.find((g) => g.spaceId === spaceId) ?? gate[0];
-        const row = gateRow(reqNamed('release-ok'), space, records, revokedIds, { now, authorId, caller: callerFor(reqNamed('release-ok'), 0) });
+        const row = gateRow(reqNamed('release-ok'), space, records, revokedIds, {
+          now,
+          authorId,
+          caller: callerFor(reqNamed('release-ok'), 0),
+          release: true,
+          releaseOnly,
+        });
         if (options.release === 'satisfied' || row.Satisfied) {
           return route.fulfill(json({ Release: {}, Gates: [{ ...row, Satisfied: true }] }));
         }
@@ -571,7 +605,10 @@ export async function mockReviews(
       // refused, so a wrong filter fails the test instead of passing on mocked data. Counts
       // come from the gate rows, never from this read.
       if (where.includes('RevokedAttestationID')) return route.fulfill(json(revocations.map((Attestation) => ({ Attestation }))));
-      if (where.includes(`ChangeOrderID = '${fx.changeOrderId}'`)) return route.fulfill(json(records.map((Attestation) => ({ Attestation }))));
+      if (where.includes(`ChangeOrderID = '${fx.changeOrderId}'`)) {
+        const own = records.filter((r) => r.ChangeOrderID === fx.changeOrderId);
+        return route.fulfill(json(own.map((Attestation) => ({ Attestation }))));
+      }
       if (/\bAttestationID IN\b/.test(where)) {
         const named = records.filter((r) => where.includes(r.AttestationID as string));
         return route.fulfill(json(named.map((Attestation) => ({ Attestation }))));

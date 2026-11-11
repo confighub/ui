@@ -57,7 +57,7 @@ import { useGetTaggedRevisionsQuery } from '../../x/apps/change-order/taggedRevi
 import { SERVER_GATES_POLL_INTERVAL_MS } from '../../x/apps/change-order/useServerStageGates';
 import type { ChangeOrderDetail } from '../useChangeOrderDetail';
 import { NOTHING_SEEN, earliestAskedAt, recordsAheadOfRows, recordsSeenAfter, useRowsAskedAt, useSettledStart } from './rowsAskedAt';
-import { DEFAULT_ATTESTATION_TYPE, combineGateReviews, deriveGateReviews, promoteReadiness } from './changeOrderReviews';
+import { DEFAULT_ATTESTATION_TYPE, combineGateReviews, decisionEntriesOf, deriveGateReviews, promoteReadiness } from './changeOrderReviews';
 import type {
   GateReviewSummary,
   PromoteReadiness,
@@ -121,7 +121,9 @@ function errorText(error: unknown, fallback: string): string {
 const promotedSomewhere = (spaceIds: readonly string[], resolved: ReadonlySet<string>) => spaceIds.some((id) => resolved.has(id));
 
 const entryIdsOf = (rows: readonly PromoteGateResult[]) =>
-  rows.flatMap((row) => (row.Attestation?.Attestations ?? []).map((entry) => entry.AttestationID ?? '')).filter(Boolean);
+  decisionEntriesOf(rows)
+    .map((entry) => entry.AttestationID ?? '')
+    .filter(Boolean);
 
 // ---------------------------------------------------------------------------
 // Shared reads
@@ -190,10 +192,12 @@ function useReviewData(detail: ChangeOrderDetail, options: { poll?: boolean } = 
     return Object.fromEntries(gates.map((gate) => [gate.gate.key, gateServerRowsOf(gate, reads)]));
   }, [gates, workflowCompleted, serverGatesByStage, serverGateRefusals, finalAnswer, resolved, released, releaseRuns.data, releaseRuns.isError]);
 
-  // Records: this ChangeOrder's, and those the server entries name; then their revocations.
+  // Records: this ChangeOrder's, and the decisions the rows name; then their revocations. A
+  // release gate's rows also name the approvals of what the latest Release already has, which the
+  // Space's line names without reading their records.
   const namedIds = useMemo(
-    () => [...new Set(Object.values(rowsByGateKey).flatMap((entry) => entryIdsOf(entry.rows)))].sort(),
-    [rowsByGateKey],
+    () => [...new Set(gates.flatMap((gate) => entryIdsOf(rowsByGateKey[gate.gate.key]?.rows ?? [])))].sort(),
+    [gates, rowsByGateKey],
   );
   const recordsRead = useListAttestationRecordsQuery(
     changeOrderId === undefined || gates.length === 0 ? skipToken : { changeOrderId, attestationIds: namedIds },

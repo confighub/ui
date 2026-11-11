@@ -152,6 +152,18 @@ function uniquePeople(people: ReviewPerson[]): ReviewPerson[] {
 const entriesOf = (rows: readonly PromoteGateResult[]): AttestationGateEntry[] =>
   rows.flatMap((row) => row.Attestation?.Attestations ?? []);
 
+/**
+ * The entries that are decisions on the change. A release gate reads every Unit the Release
+ * bundles, so its rows also name approvals of content the Space's latest Release already has,
+ * which the server says with `CoversNew` false. A server that does not say leaves it out: then
+ * every entry is one.
+ */
+export const decisionEntriesOf = (rows: readonly PromoteGateResult[]): AttestationGateEntry[] =>
+  entriesOf(rows).filter((entry) => entry.CoversNew !== false);
+
+/** The Revisions an entry counts on whose content the Space's latest Release does not have. */
+const countedOnNew = (entry: AttestationGateEntry) => (entry.CountedOn ?? 0) - (entry.CountedOnPreviouslyReleased ?? 0);
+
 /** The records that are this gate's decisions: in its Spaces, or named by its server rows. */
 function toRecords(input: DeriveGateReviewsInput): ReviewRecord[] {
   const revoked = new Map<string, { at: string; by?: string }>();
@@ -162,7 +174,7 @@ function toRecords(input: DeriveGateReviewsInput): ReviewRecord[] {
     const known = revoked.get(target);
     if (known === undefined || at < known.at) revoked.set(target, { at, by: revocation.UserID });
   }
-  const named = new Set(entriesOf(input.serverRows).map((entry) => entry.AttestationID ?? ''));
+  const named = new Set(decisionEntriesOf(input.serverRows).map((entry) => entry.AttestationID ?? ''));
   const gateSpaceIds = new Set(input.gateSpaces.map((space) => space.spaceId));
   const seen = new Set<string>();
   const records: ReviewRecord[] = [];
@@ -257,9 +269,9 @@ const NOT_A_COVERAGE_GAP: ReadonlySet<string> = new Set(['NotEligible', 'Author'
 
 /**
  * Whether a server row for a requirement that does not hold yet fails to count a decision
- * on every Revision it reads. A row lists every Attestation of its Type that covers a Revision it reads,
- * so a record absent from an evaluated row, or counted on fewer Revisions than the row
- * reads, does not cover the current change there.
+ * on every Revision it reads that the Space's latest Release does not already have. A row lists
+ * every Attestation of its Type that covers a Revision it reads, so a record absent from an
+ * evaluated row, or counted on fewer of those Revisions, does not cover the current change there.
  */
 function notCoveringRequirement(ids: ReadonlySet<string>, type: string, requirement: Requirement): boolean {
   if (requirement.rules.type !== type) return false;
@@ -271,8 +283,8 @@ function notCoveringRequirement(ids: ReadonlySet<string>, type: string, requirem
     const mine = (result.Attestations ?? []).filter((entry) => ids.has(entry.AttestationID ?? ''));
     if (mine.length === 0) return true;
     if (mine.some((entry) => entry.Reason !== undefined && NOT_A_COVERAGE_GAP.has(entry.Reason))) return false;
-    const counted = Math.max(...mine.map((entry) => entry.CountedOn ?? 0));
-    return counted < (result.Revisions ?? 0);
+    const counted = Math.max(...mine.map(countedOnNew));
+    return counted < (result.Revisions ?? 0) - (result.PreviouslyReleased ?? 0);
   });
 }
 
@@ -366,7 +378,7 @@ function notEvaluatedFor(spaceId: string, input: DeriveGateReviewsInput): NotEva
 function spaceProgress(requirement: Requirement, spaceId: string, spaceSlug: string, input: DeriveGateReviewsInput): RequirementSpaceProgress {
   const person = (userId: string) => personOf(userId, input);
   const row = requirement.rows.find((candidate) => candidate.SpaceID === spaceId);
-  const empty = { unsatisfied: [], truncated: false, authors: [], revisions: 0, satisfiedRevisions: 0 };
+  const empty = { unsatisfied: [], truncated: false, authors: [], revisions: 0, satisfiedRevisions: 0, previouslyReleased: 0, previousApprovers: [] };
   if (row === undefined) {
     // A complete workflow: the server held every Final row (it refuses a promote saying so),
     // and every stage was entered; it asks for no rows any more. A Space the hook gives a
@@ -406,12 +418,19 @@ function spaceProgress(requirement: Requirement, spaceId: string, spaceSlug: str
     counted: result?.Counted ?? 0,
     revisions: result?.Revisions ?? 0,
     satisfiedRevisions: result?.SatisfiedRevisions ?? 0,
+    previouslyReleased: result?.PreviouslyReleased ?? 0,
+    previousApprovers: uniquePeople(
+      (result?.Attestations ?? [])
+        .filter((entry) => entry.Result !== 'Fail' && (entry.CountedOnPreviouslyReleased ?? 0) > 0)
+        .map((entry) => person(entry.UserID ?? '')),
+    ),
     unsatisfied: (result?.Unsatisfied ?? []).map((revision) => ({
       unitSlug: revision.UnitSlug ?? revision.UnitID ?? '',
       revisionNum: revision.RevisionNum ?? 0,
       counted: revision.Counted ?? 0,
       reason: revision.Reason ?? '',
       authors: (revision.AuthorUserIDs ?? []).map(person),
+      ...(revision.PreviouslyReleased === true ? { previouslyReleased: true } : {}),
     })),
     truncated: result?.Truncated === true,
     authors: (result?.AuthorUserIDs ?? []).map(person),
@@ -464,8 +483,10 @@ function requirementProgress(requirement: Requirement, works: DecisionWork[], in
 
   const entries = entriesOf(requirement.rows);
   const person = (userId: string) => personOf(userId, input);
+  // A Pass counted only on what the latest Release already has approved that, not this change;
+  // the Space's line names its attester. A Fail that counts anywhere holds the gate.
   const countedOf = (result: ReviewChoice) =>
-    entries.filter((entry) => (entry.CountedOn ?? 0) > 0 && (entry.Result === 'Fail' ? 'Fail' : 'Pass') === result);
+    entries.filter((entry) => (result === 'Pass' ? countedOnNew(entry) : (entry.CountedOn ?? 0)) > 0 && (entry.Result === 'Fail' ? 'Fail' : 'Pass') === result);
   const validUntil = countedOf('Pass')
     .map((entry) => entry.ValidUntil)
     .filter((until): until is string => !!until)

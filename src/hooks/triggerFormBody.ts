@@ -47,7 +47,6 @@ export interface IAddTriggerFormInput {
   WhereUnit?: string;
   UnitFilterID?: string;
   WhereResource?: string;
-  OtherDataSource?: string;
   Protect?: boolean;
   Guards?: MapRow[];
   Clearance?: ClearanceRow[];
@@ -73,7 +72,6 @@ export const defaultTriggerFormInput = (): IAddTriggerFormInput => ({
   WhereUnit: '',
   UnitFilterID: '',
   WhereResource: '',
-  OtherDataSource: '',
   Protect: false,
   Guards: [],
   Clearance: [],
@@ -105,7 +103,6 @@ export const triggerToFormInput = (trigger: TriggerRead): IAddTriggerFormInput =
   WhereUnit: trigger.WhereUnit || '',
   UnitFilterID: trigger.UnitFilterID || '',
   WhereResource: trigger.WhereResource || '',
-  OtherDataSource: trigger.OtherDataSource || '',
   Protect: trigger.Protect || false,
   Guards: mapToRows(trigger.Guards),
   Clearance: clearanceToRows(trigger.Clearance),
@@ -128,8 +125,11 @@ const optionalMap = <T,>(map: Record<string, T>): Record<string, T> | undefined 
  *
  * A Trigger runs either a function or an Invocation, never both: the server refuses a FunctionName
  * beside an InvocationID, and the Invocation names where its functions run, so a Trigger that runs
- * one has no Channel. Protect is for a function that writes; the server refuses it on a validating
- * one.
+ * one has no Channel, and passes its functions the other Units the Invocation names rather than its own.
+ * Protect is for a function that writes; the server refuses it on a validating one.
+ *
+ * The other Units a Trigger passes its function, OtherUnitIDs, are not in the form, so an edit keeps
+ * the ones the Trigger has.
  */
 export const buildTriggerBody = (
   data: IAddTriggerFormInput,
@@ -167,7 +167,7 @@ export const buildTriggerBody = (
     WhereUnit: optional(data.WhereUnit),
     UnitFilterID: optional(data.UnitFilterID),
     WhereResource: optional(data.WhereResource),
-    OtherDataSource: optional(data.OtherDataSource),
+    OtherUnitIDs: runsInvocation ? undefined : existingTrigger?.OtherUnitIDs,
     Protect: !selectedFunctionValidating && (data.Protect || false),
     Guards: optionalMap(rowsToMap(data.Guards)),
     Clearance: clearance.length > 0 ? clearance : undefined,

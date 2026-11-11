@@ -35,6 +35,7 @@ import {
   STATES,
   type State,
   mockReviews,
+  uuidOf,
 } from './fixtures/stage-card/reviewMocks';
 import { expect, hubApi, newAuthorizedContext, test } from './fixtures/test';
 
@@ -614,6 +615,80 @@ test.describe('ChangeOrder reviews — the six design states', () => {
     await expect(row).toHaveAttribute('data-evaluated', 'true');
     await shoot(page, 'release', 1440);
     await shoot(page, 'release', 1000);
+  });
+
+  test('release review: an approval of what the latest Release already has is named, not listed as a decision', async ({
+    page,
+  }) => {
+    const carriedOn = '1f0c2a9e-55b1-4d0e-9f53-2c7a3e1b9d40';
+    await mockReviews(page, fx, 'pending', {
+      release: 'held',
+      extraSeeds: [
+        {
+          id: 'earlier-release',
+          who: 'priya',
+          result: 'Pass',
+          agoMs: 30 * 24 * HOUR,
+          note: 'Approved the release of an earlier change.',
+          changeOrderId: carriedOn,
+          previouslyReleased: true,
+        },
+      ],
+    });
+    const wheres: string[] = [];
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === '/api/attestation') wheres.push(url.searchParams.get('where') ?? '');
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${fx.changeOrderPath}/staging`);
+    const box = statusBox(page);
+    // The viewer's own earlier approval is not taken for a decision on this change: Approve is offered.
+    await expect(box).toHaveAttribute('data-stage-state', 'reviewNeeded', { timeout: 45000 });
+    await expect(page.getByTestId('review-approve')).toBeVisible();
+    await expect(page.getByTestId('review-out-of-date')).toHaveCount(0);
+    await openReviewDetails(page, { decisions: false });
+    const release = page.getByTestId('review-requirement-release-ok');
+    await expect(release).toContainText(reviewCopy.requirements.needed(1));
+    // Who approved what the change leaves as released is named on the requirement instead.
+    await expect(release.getByTestId('review-requirement-previously-released').first()).toContainText(
+      reviewCopy.space.previouslyReleased(1, 'Priya Nair'),
+    );
+    await expect(details(page).getByTestId('review-decision-origin')).toHaveCount(0);
+    await expect(details(page)).not.toContainText('Approved the release of an earlier change.');
+    // The release row names it, and the page does not read it.
+    const carriedIds = [0, 1].map((space) => uuidOf('earlier-release', space));
+    expect(wheres.some((where) => where.includes(`ChangeOrderID = '${fx.changeOrderId}'`))).toBe(true);
+    expect(wheres.filter((where) => carriedIds.some((id) => where.includes(id)))).toEqual([]);
+    await shoot(page, 'release-previously-released', 1000);
+  });
+
+  test('release review: an approval of a change the Release carries from outside the ChangeOrder is a decision here', async ({
+    page,
+  }) => {
+    await mockReviews(page, fx, 'pending', {
+      release: 'held',
+      extraSeeds: [
+        {
+          id: 'ride-along',
+          who: 'tom',
+          result: 'Pass',
+          agoMs: 2 * HOUR,
+          note: 'Approved the hotfix made directly in staging.',
+          changeOrderId: '1f0c2a9e-55b1-4d0e-9f53-2c7a3e1b9d40',
+          rideAlong: true,
+        },
+      ],
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${fx.changeOrderPath}/staging`);
+    await expect(statusBox(page)).toHaveAttribute('data-stage-state', 'reviewNeeded', { timeout: 45000 });
+    await openReviewDetails(page, { decisions: true });
+    // Only the release rows name it, and it approves something this Release ships for the first time.
+    const list = details(page);
+    await expect(list).toContainText('Approved the hotfix made directly in staging.');
+    await expect(list.locator('[data-testid="review-decision-origin"][data-origin="other"]')).toContainText('Made on another ChangeOrder.');
+    await expect(page.getByTestId('review-requirement-previously-released')).toHaveCount(0);
   });
 
   /*

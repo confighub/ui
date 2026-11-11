@@ -478,28 +478,6 @@ const StatusAndFunctionCard = ({
           />
         </Grid>
 
-        {/* Other data source */}
-        <Grid size={{ xs: 6 }}>
-          <Typography variant='subtitle2' sx={{ fontWeight: 600, mb: 1 }}>
-            Other Data Source
-          </Typography>
-          <Controller
-            name='OtherDataSource'
-            control={control}
-            render={({ field }) => (
-              <TextField
-                {...field}
-                value={field.value ?? ''}
-                label='Revision (Optional)'
-                fullWidth
-                size='small'
-                placeholder='LastReleasedRevisionNum'
-                helperText='Another revision of the Unit to pass to the function, for one that compares against a baseline, such as vet-immutable. Takes what restore takes, such as Before:HeadRevisionNum. Empty uses what the function expects.'
-              />
-            )}
-          />
-        </Grid>
-
         {/* Function Parameters */}
         {!runsInvocation && selectedFunction.Parameters?.map((param) => (
           <Grid size={{ xs: 6 }} key={param.ParameterName}>

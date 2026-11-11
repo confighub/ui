@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDispatch } from 'react-redux';
 
+import { ChangeSetAcknowledgements } from '@/components/change-set-lock/ChangeSetAcknowledgements';
+import { useChangeSetLock } from '@/components/change-set-lock/useChangeSetLock';
 import { validatingTriggerRequest } from '@/hooks/useGateTriggers';
 import { protectionRequest } from '@/pages/unit-detail/components/blame/blameFields';
 import { getApiErrorMessage } from '@/utility/error-functions';
@@ -192,6 +194,18 @@ export const GatesPane = ({
   );
   const shownGates = useMemo(() => withCleared(gates, false), [withCleared, gates]);
   const shownWarnings = useMemo(() => withCleared(warnings, true), [withCleared, warnings]);
+  // A ChangeSet open on a Unit locks it: a fix and its Keep on merge each create a Revision, which
+  // becomes part of the ChangeSet, so each names it once the person has acknowledged that. A save
+  // to a Unit whose ChangeSet is not acknowledged is refused, naming it.
+  const lockUnits = useMemo(
+    () => [
+      ...new Map(
+        [...gates, ...warnings].flatMap((gate) => gate.units).map((u) => [u.unitId, u]),
+      ).values(),
+    ],
+    [gates, warnings],
+  );
+  const lock = useChangeSetLock(lockUnits);
 
   const firstOpen = shownGates.find((g) => !g.cleared);
   const activeKey =
@@ -302,6 +316,7 @@ export const GatesPane = ({
         const answer = await invokeFunctions({
           executorSpace: unit.spaceId,
           where: `UnitID = '${unit.unitId}'`,
+          changeSetId: lock.changeSetFor(unit.unitId),
           functionInvocationsRequest: {
             ToolchainType: unit.toolchainType || 'Kubernetes/YAML',
             FunctionInvocations: invocations,
@@ -344,7 +359,10 @@ export const GatesPane = ({
           await setProtection({
             spaceId: unit.spaceId,
             unitId: unit.unitId,
-            unitProtectionRequest: { ResourceProtection: protectionRequest(keptBlame, true) },
+            unitProtectionRequest: {
+              ResourceProtection: protectionRequest(keptBlame, true),
+              ChangeSetID: lock.changeSetFor(unit.unitId),
+            },
           }).unwrap();
         } catch (err: unknown) {
           notSaved.push(
@@ -584,6 +602,7 @@ export const GatesPane = ({
           segments={[]}
         />
       )}
+      <ChangeSetAcknowledgements lock={lock} testId='gates-change-set' sx={{ my: 1 }} />
       <Box>
         {shownGates.map(({ gate, cleared: c }, i) => {
           const state: GateStepState = c ? 'cleared' : i === activeIndex ? 'open' : 'closed';

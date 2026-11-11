@@ -367,6 +367,15 @@ export function ReviewGateSpaces({ requirement }: { requirement: RequirementProg
               </Box>
             ) : null}
           </Box>
+          {space.evaluated && space.previouslyReleased > 0 ? (
+            <Box
+              component="p"
+              data-testid="review-previously-released"
+              sx={{ margin: '2px 0 0 14px', fontSize: changeOrderType.size.small, color: changeOrderInk.subtle }}
+            >
+              {reviewCopy.space.previouslyReleased(space.previouslyReleased, space.previousApprovers.map((a) => a.name).join(', '))}
+            </Box>
+          ) : null}
           {space.evaluated && space.unsatisfied.length > 0 ? (
             <Box
               component="ul"
@@ -378,6 +387,7 @@ export function ReviewGateSpaces({ requirement }: { requirement: RequirementProg
                     {reviewCopy.space.unsatisfied(rev.unitSlug, rev.revisionNum, rev.counted)}
                   </Box>
                   {rev.authors.length > 0 ? reviewCopy.space.authors(rev.authors.map((a) => a.name).join(', ')) : ''}
+                  {rev.previouslyReleased ? reviewCopy.space.alreadyReleased : ''}
                 </li>
               ))}
               {space.truncated ? <li>{reviewCopy.space.andMore}</li> : null}

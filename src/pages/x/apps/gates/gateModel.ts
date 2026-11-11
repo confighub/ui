@@ -56,6 +56,8 @@ export interface GateUnit {
   toolchainType?: string;
   headRevisionNum: number;
   lastReleasedRevisionNum?: number;
+  /** The ChangeSet open on the Unit, which a write to it has to name. */
+  changeSetId?: string;
 }
 
 /**
@@ -144,6 +146,7 @@ export const buildGates = (
       toolchainType: unit.ToolchainType,
       headRevisionNum: unit.HeadRevisionNum ?? 0,
       lastReleasedRevisionNum: unit.LastReleasedRevisionNum ?? undefined,
+      changeSetId: unit.ChangeSetID ?? undefined,
     };
     const named: [string, boolean][] = [
       ...Object.keys(unit.ValidationErrors ?? {}).map((name): [string, boolean] => [

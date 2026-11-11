@@ -87,7 +87,7 @@ export function sortVariants(
 export function policyOf(component: ComponentRead): DraftPolicy {
   return {
     allowedWorkflowIds: component.AllowedChangeWorkflowIDs ?? [],
-    required: component.ChangeWorkflowRequired === true,
+    required: component.RequireChangeWorkflow === true,
   };
 }
 

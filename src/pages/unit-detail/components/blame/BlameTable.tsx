@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import { ChangeSetAcknowledgements } from '@/components/change-set-lock/ChangeSetAcknowledgements';
+import { useChangeSetLock } from '@/components/change-set-lock/useChangeSetLock';
 import { ConfigDiffView } from '@/components/config-diff/ConfigDiffView';
 import { EntityDataGrid } from '@/components/entity-data-grid/EntityDataGrid';
 import { ErrorBox } from '@/components/error-box/ErrorBox';
@@ -404,6 +406,15 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
     { skip: !spaceId || !unitId },
   );
   const unitRead = unitData?.Unit;
+  // A ChangeSet open on the Unit locks it: every action here creates a Revision, which becomes part
+  // of the ChangeSet, so each names it once the person has acknowledged that, and none is offered
+  // until they have.
+  const lockUnits = useMemo(
+    () => [{ unitId, changeSetId: unitRead?.ChangeSetID }],
+    [unitId, unitRead?.ChangeSetID],
+  );
+  const lock = useChangeSetLock(lockUnits);
+  const changeSetId = lock.changeSetFor(unitId);
   const annotations = useMemo<PathAnnotationList | undefined>(
     () => (unitRead ? (unitRead.PathAnnotations ?? []) : undefined),
     [unitRead],
@@ -441,6 +452,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
   const [resolveConflicts, { isLoading: isResolving }] = useResolveUnitConflictsMutation();
   const [invokeFunctions, { isLoading: isInvoking }] = useInvokeFunctionsOnOrgMutation();
   const busy = isProtecting || isGuarding || isResolving || isInvoking;
+  const blocked = busy || lock.unacknowledged;
 
   const done = (message: string) => {
     setDialog('');
@@ -457,6 +469,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
         unitId,
         unitProtectionRequest: {
           ResourceProtection: protectionRequest(selectedFields, protect),
+          ChangeSetID: changeSetId,
         },
       }).unwrap();
       done(
@@ -479,8 +492,13 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
               Action: 'Dismiss',
               Permanent: true,
               Select: permanentDismissalSelectors(selectedFields),
+              ChangeSetID: changeSetId,
             }
-          : { Action: 'Dismiss', Select: conflictSelectors(selectedFields) },
+          : {
+              Action: 'Dismiss',
+              Select: conflictSelectors(selectedFields),
+              ChangeSetID: changeSetId,
+            },
       }).unwrap();
       const dismissed = `Dismissed ${result.Dismissed ?? 0} conflict${result.Dismissed === 1 ? '' : 's'}`;
       done(permanent ? `${dismissed}, and later merges will dismiss them too` : dismissed);
@@ -497,6 +515,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
         unitConflictsRequest: {
           Action: 'Undismiss',
           Select: undismissSelectors(selectedFields),
+          ChangeSetID: changeSetId,
         },
       }).unwrap();
       const removed = result.Removed ?? 0;
@@ -514,7 +533,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
         <span>
           <Button
             size='small'
-            disabled={busy || !blameActionApplies.protect(selectedFields)}
+            disabled={blocked || !blameActionApplies.protect(selectedFields)}
             onClick={() => onProtect(true)}
           >
             Keep on merge
@@ -523,21 +542,21 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
       </Tooltip>
       <Button
         size='small'
-        disabled={busy || !blameActionApplies.unprotect(selectedFields)}
+        disabled={blocked || !blameActionApplies.unprotect(selectedFields)}
         onClick={() => onProtect(false)}
       >
         Let merges update this
       </Button>
       <Button
         size='small'
-        disabled={busy || !blameActionApplies.guard(selectedFields)}
+        disabled={blocked || !blameActionApplies.guard(selectedFields)}
         onClick={() => setDialog('guard')}
       >
         Set guard
       </Button>
       <Button
         size='small'
-        disabled={busy || !blameActionApplies.removeGuard(selectedFields)}
+        disabled={blocked || !blameActionApplies.removeGuard(selectedFields)}
         onClick={() => setDialog('removeGuard')}
       >
         Remove guard
@@ -546,7 +565,9 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
         <span>
           <Button
             size='small'
-            disabled={busy || !blameActionApplies.makeInherited(selectedFields, annotations)}
+            disabled={
+              blocked || !blameActionApplies.makeInherited(selectedFields, annotations)
+            }
             onClick={() => setDialog('makeInherited')}
           >
             Make inherited
@@ -557,7 +578,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
         <span>
           <Button
             size='small'
-            disabled={busy || !blameActionApplies.makeLocal(selectedFields, annotations)}
+            disabled={blocked || !blameActionApplies.makeLocal(selectedFields, annotations)}
             onClick={() => setDialog('makeLocal')}
           >
             Make local
@@ -566,28 +587,28 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
       </Tooltip>
       <Button
         size='small'
-        disabled={busy || !blameActionApplies.conflicts(selectedFields)}
+        disabled={blocked || !blameActionApplies.conflicts(selectedFields)}
         onClick={() => setDialog('applyConflicts')}
       >
         Apply conflicts
       </Button>
       <Button
         size='small'
-        disabled={busy || !blameActionApplies.conflicts(selectedFields)}
+        disabled={blocked || !blameActionApplies.conflicts(selectedFields)}
         onClick={() => setDialog('dismissConflicts')}
       >
         Dismiss conflicts
       </Button>
       <Button
         size='small'
-        disabled={busy || !blameActionApplies.undismiss(selectedFields)}
+        disabled={blocked || !blameActionApplies.undismiss(selectedFields)}
         onClick={() => setDialog('undismissConflicts')}
       >
         Undismiss conflicts
       </Button>
       <Button
         size='small'
-        disabled={busy || !blameActionApplies.setValue(selectedFields)}
+        disabled={blocked || !blameActionApplies.setValue(selectedFields)}
         onClick={() => setDialog('setValue')}
       >
         Set value
@@ -654,6 +675,12 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
           label='Show comments'
         />
       </Stack>
+      <ChangeSetAcknowledgements
+        lock={lock}
+        disabled={busy}
+        testId='blame-change-set'
+        sx={{ mb: 1 }}
+      />
       <Stack direction='row' spacing={0.5} flexWrap='wrap' useFlexGap sx={{ mb: 1 }}>
         {BLAME_FLAGS.map((flag) => {
           const on = flags.includes(flag.code);
@@ -713,6 +740,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
               unitGuardRequest: {
                 ResourceGuards: guardSetRequest(selectedFields, key, value, inherited),
                 Clearance: clearance,
+                ChangeSetID: changeSetId,
               },
             }).unwrap();
             done(`Guard ${key} set on the selected fields`);
@@ -736,6 +764,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
               unitGuardRequest: {
                 ResourceGuards: guardRemoveRequest(selectedFields, key),
                 Clearance: clearance,
+                ChangeSetID: changeSetId,
               },
             }).unwrap();
             done(`Guard ${key} removed from the selected fields`);
@@ -764,6 +793,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
                   inherited,
                 ),
                 Clearance: clearance,
+                ChangeSetID: changeSetId,
               },
             }).unwrap();
             done(
@@ -798,6 +828,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
                 DryRun: true,
                 Select: conflictSelectors(selectedFields),
                 Clearance: applyClearance,
+                ChangeSetID: changeSetId,
               },
             }).unwrap()
           ).Diff
@@ -811,6 +842,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
                 Action: 'Apply',
                 Select: conflictSelectors(selectedFields),
                 Clearance: applyClearance,
+                ChangeSetID: changeSetId,
               },
             }).unwrap();
             done(
@@ -847,6 +879,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
             const results = await invokeFunctions({
               executorSpace: spaceId,
               where: `UnitID = '${unitId}'`,
+              changeSetId,
               protect: keep || undefined,
               ...guardParams(guardValues),
               clearance: clearance ? JSON.stringify(clearance) : undefined,

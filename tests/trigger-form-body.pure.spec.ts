@@ -27,7 +27,6 @@ test('every field the form shows reaches the Trigger', () => {
       WhereUnit: "Space.Labels.Environment = 'prod'",
       UnitFilterID: 'filter-1',
       WhereResource: "ConfigHub.ResourceType = 'apps/v1/Deployment'",
-      OtherDataSource: 'LastReleasedRevisionNum',
       Protect: true,
       Guards: [{ key: 'owner', value: 'platform' }],
       Clearance: [
@@ -48,7 +47,6 @@ test('every field the form shows reaches the Trigger', () => {
     WhereUnit: "Space.Labels.Environment = 'prod'",
     UnitFilterID: 'filter-1',
     WhereResource: "ConfigHub.ResourceType = 'apps/v1/Deployment'",
-    OtherDataSource: 'LastReleasedRevisionNum',
     Protect: true,
     Guards: { owner: 'platform' },
     Clearance: [
@@ -86,6 +84,21 @@ test('a Trigger that runs an Invocation names no function, arguments or Channel'
   expect(body.ChannelID).toBeUndefined();
 });
 
+test('an edit keeps the other Units the form does not show, unless the Trigger runs an Invocation', () => {
+  const existingTrigger = {
+    Slug: 'check-policy',
+    FunctionName: 'vet-validating-admission-policy',
+    OtherUnitIDs: { policy: 'unit-1' },
+  };
+  const input = triggerToFormInput(existingTrigger);
+  const body = buildTriggerBody(input, {}, ids, true, existingTrigger);
+  expect(body.OtherUnitIDs).toEqual({ policy: 'unit-1' });
+
+  // One that runs an Invocation passes the Invocation's, and the server refuses its own.
+  const runsInvocation = buildTriggerBody({ ...input, Source: 'Invocation', InvocationID: 'inv-1' }, {}, ids, true, existingTrigger);
+  expect(runsInvocation.OtherUnitIDs).toBeUndefined();
+});
+
 test('switching back to a function drops the Invocation', () => {
   const body = buildTriggerBody(form({ Source: 'Function', InvocationID: 'inv-1' }), {}, ids);
   expect(body.InvocationID).toBeUndefined();
@@ -107,7 +120,6 @@ test('an existing Trigger round-trips through the form', () => {
     WhereUnit: "Slug = 'web'",
     UnitFilterID: 'filter-1',
     WhereResource: '',
-    OtherDataSource: 'Before:HeadRevisionNum',
     Protect: true,
     Guards: { owner: 'platform' },
     Clearance: [{ Key: 'owner', Operator: 'NotIn', Values: ['legacy'] }],
@@ -128,7 +140,6 @@ test('an existing Trigger round-trips through the form', () => {
     InvocationID: 'inv-1',
     WhereUnit: "Slug = 'web'",
     UnitFilterID: 'filter-1',
-    OtherDataSource: 'Before:HeadRevisionNum',
     Protect: true,
     Guards: { owner: 'platform' },
     Clearance: [{ Key: 'owner', Operator: 'NotIn', Values: ['legacy'] }],

@@ -1667,7 +1667,12 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
         await setUnitProtection({
           spaceId,
           unitId,
-          unitProtectionRequest: { ResourceProtection: protection },
+          // Part of the same staged commit as the values, so it names the ChangeSet open on the
+          // Unit as the value write does: a write that creates a Revision of it has to.
+          unitProtectionRequest: {
+            ResourceProtection: protection,
+            ChangeSetID: openChangeSetIdOf(unitById, unitId),
+          },
         }).unwrap();
         setDeploymentErrors((prev) => {
           if (!prev.has(spaceId)) return prev;
@@ -1682,7 +1687,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
         return false;
       }
     },
-    [setUnitProtection, setErrorsForDeployments],
+    [setUnitProtection, setErrorsForDeployments, unitById],
   );
 
   // Clear upgradingDeploymentIds once each pending commit's unit shows a newer

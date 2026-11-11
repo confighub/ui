@@ -414,4 +414,57 @@ test.describe('Gates tab', () => {
       await c.cleanup();
     }
   });
+  test('a fix to a Unit in a ChangeSet is refused until the ChangeSet is acknowledged, then names it', async ({
+    page,
+  }) => {
+    const c = await makeGatedComponent(page, { web: deployment('web') });
+    const devUnit = c.units.web;
+    try {
+      const created = await hubApi.post(`/api/space/${c.dev.SpaceID}/change_set`, {
+        data: { Slug: 'hold', DisplayName: 'hold' },
+      });
+      expect(created.ok(), await created.text()).toBe(true);
+      const changeSetId = ((await created.json()) as { ChangeSetID: string }).ChangeSetID;
+      const attach = await hubApi.patch(`/api/space/${c.dev.SpaceID}/unit/${devUnit.devId}`, {
+        params: { change_set_id: changeSetId },
+        headers: { 'Content-Type': 'application/merge-patch+json' },
+        data: { ChangeSetID: changeSetId },
+      });
+      expect(attach.ok(), await attach.text()).toBe(true);
+
+      await openGates(page, c);
+      const acknowledgement = page.getByTestId('gates-change-set');
+      await expect(acknowledgement).toContainText(
+        'This Unit is in a ChangeSet, which locks it.',
+      );
+
+      await page.getByTestId('fix-here-1-1').click();
+      await page.getByTestId('fix-input-1-1').fill('web-dev');
+      const save = page.getByTestId('gate-save-1');
+      await save.click();
+      // A ChangeSet locks the Units it is open on; the refusal names it, and the fix stays staged.
+      await expect(page.getByText(/is in change set hold, which locks it/)).toBeVisible({
+        timeout: 30000,
+      });
+      expect(await devHead(c, 'web')).toBe(devUnit.devHead);
+
+      await acknowledgement.getByRole('checkbox', { name: `${c.slug}-dev/hold` }).check();
+      await save.click();
+      await expect(page.getByTestId('gate-cleared-1')).toBeVisible({ timeout: 30000 });
+
+      // The fix and its Keep on merge, both in the ChangeSet.
+      expect(await devHead(c, 'web')).toBe(devUnit.devHead + 2);
+      const unit = (await (
+        await hubApi.get(`/api/space/${c.dev.SpaceID}/unit/${devUnit.devId}`)
+      ).json()) as { Unit: { HeadRevisionID: string } };
+      const revision = (await (
+        await hubApi.get(
+          `/api/space/${c.dev.SpaceID}/unit/${devUnit.devId}/revision/${unit.Unit.HeadRevisionID}`,
+        )
+      ).json()) as { Revision: { ChangeSetID?: string } };
+      expect(revision.Revision.ChangeSetID).toBe(changeSetId);
+    } finally {
+      await c.cleanup();
+    }
+  });
 });

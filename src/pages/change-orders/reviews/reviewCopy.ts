@@ -214,6 +214,11 @@ export const reviewCopy = {
     revisions: (satisfied: number, total: number) => `${satisfied} of ${plural(total, 'Unit')} satisfied`,
     unsatisfied: (unit: string, rev: number, counted: number) => `${unit}@r${rev}: ${counted} counted`,
     authors: (names: string) => `, written by ${names}`,
+    /** An unsatisfied Revision whose content the latest Release already has. */
+    alreadyReleased: ', already in the latest Release',
+    /** The Revisions a Release bundles again as the latest Release has them, and who approved them. */
+    previouslyReleased: (units: number, approvers: string) =>
+      `${plural(units, 'Unit')} as in the latest Release${approvers ? `, approved by ${approvers}` : ''}`,
     andMore: 'and more',
   },
   /** ChangeOrder.ReviewRequests. */

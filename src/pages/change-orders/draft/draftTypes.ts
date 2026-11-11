@@ -113,7 +113,7 @@ export interface DraftVariant {
 export interface DraftPolicy {
   /** `Component.AllowedChangeWorkflowIDs`. Empty allows every workflow. */
   allowedWorkflowIds: string[];
-  /** `Component.ChangeWorkflowRequired`. */
+  /** `Component.RequireChangeWorkflow`. */
   required: boolean;
 }
 

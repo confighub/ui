@@ -114,6 +114,18 @@ function RequirementRow({
           {req.heldFor.text}
         </Box>
       ) : null}
+      {req.perSpace
+        .filter((space) => space.evaluated && space.previouslyReleased > 0)
+        .map((space) => (
+          <Box
+            key={space.spaceId}
+            data-testid="review-requirement-previously-released"
+            sx={{ marginTop: '2px', fontSize: changeOrderType.size.small, color: changeOrderInk.muted }}
+          >
+            {req.perSpace.length > 1 ? `${space.spaceSlug}: ` : ''}
+            {reviewCopy.space.previouslyReleased(space.previouslyReleased, space.previousApprovers.map((a) => a.name).join(', '))}
+          </Box>
+        ))}
       {showGate && gateLabel === undefined ? (
         <Box data-testid="review-requirement-gate" sx={{ marginTop: '2px', fontSize: changeOrderType.size.small, color: changeOrderInk.muted }}>
           {copy.forGate(gateThing(req.gate))}

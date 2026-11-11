@@ -7,8 +7,9 @@
  * counts come only from the server's gate rows (#5788).
  *
  * - `listAttestationRecords`: this ChangeOrder's records (`ChangeOrderID =`),
- *   and the records the server's gate entries name (`AttestationID IN`), which
- *   include approvals made without the ChangeOrder and carried forward.
+ *   and the records the caller names (`AttestationID IN`): the gate entries that
+ *   cover something new (`CoversNew`), which include approvals made without the
+ *   ChangeOrder, of the same change or of one its Release carries.
  * - `listRevocations`: the records that revoke any of the given ones
  *   (`RevokedAttestationID IN`), of ANY Type, for the revoker's name.
  * - `attestDryRunsByType`: `POST /attest?dry_run=true`, one per Type, as one

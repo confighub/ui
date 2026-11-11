@@ -283,7 +283,7 @@ async function seedDraft(page: Page): Promise<DraftSeed> {
     await api.uploadUnitData({ spaceId: baseSpaceId, unitId: baseUnits.api, body: deployment('1.1.0', '768Mi') });
 
     // Last: a ChangeSet cannot be opened in a Component that requires a workflow.
-    await patchOrThrow(`/api/component/${componentId}`, { AllowedChangeWorkflowIDs: [workflowId, hotfixId], ChangeWorkflowRequired: true });
+    await patchOrThrow(`/api/component/${componentId}`, { AllowedChangeWorkflowIDs: [workflowId, hotfixId], RequireChangeWorkflow: true });
 
     return { label, componentId, baseSlug, baseSpaceId, lastSlug, releaseSlug, workflowSlug, hotfixSlug, variants, spaceIds, imageInvocation, factsSlug };
   } catch (error) {
