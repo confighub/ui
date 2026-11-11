@@ -41,8 +41,6 @@ import {
   type ValidationResultList,
   useInvokeFunctionsOnOrgMutation,
   useLazyListAllResourcesQuery,
-  usePatchSpaceMutation,
-  usePatchTargetMutation,
   usePatchTriggerMutation,
 } from '@confighub/rtk-query';
 import CloseIcon from '@mui/icons-material/Close';
@@ -92,15 +90,6 @@ const EVALUATE_CHUNK = 100;
 
 const quoted = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
-/** What selects a policy: "3 Spaces", "1 Space and 2 Targets". */
-const scopeText = (policy: ValidationPolicy): string =>
-  [
-    policy.spaces.length > 0 ? plural(policy.spaces.length, 'Space') : '',
-    policy.targets.length > 0 ? plural(policy.targets.length, 'Target') : '',
-  ]
-    .filter(Boolean)
-    .join(' and ');
-
 interface PolicyDetailProps {
   policy: ValidationPolicy;
   spaceById: Map<string, ScopeSpace>;
@@ -128,8 +117,6 @@ export const PolicyDetail = ({
 }: PolicyDetailProps) => {
   const { trigger } = policy;
   const [patchTrigger, { isLoading: isPatching }] = usePatchTriggerMutation();
-  const [patchSpace] = usePatchSpaceMutation();
-  const [patchTarget] = usePatchTargetMutation();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmWarn, setConfirmWarn] = useState<boolean | null>(null);
@@ -210,7 +197,7 @@ export const PolicyDetail = ({
    * Runs the Trigger on Units and records what it finds, so a Unit it has no verdict on gets one.
    * This is what a Unit's Triggers do when it changes, run for this Trigger alone.
    */
-  const evaluate = async (units: PolicyUnit[]) => {
+  const evaluate = async (units: PolicyUnit[], failedPrefix = 'Not evaluated') => {
     setIsEvaluating(true);
     setError(null);
     setNotice(null);
@@ -239,7 +226,7 @@ export const PolicyDetail = ({
       }
       if (failed.length > 0) {
         setError(
-          `Not evaluated: ${failed.slice(0, 3).join('; ')}${failed.length > 3 ? ` and ${failed.length - 3} more` : ''}`,
+          `${failedPrefix}: ${failed.slice(0, 3).join('; ')}${failed.length > 3 ? ` and ${failed.length - 3} more` : ''}`,
         );
       } else {
         setNotice(`Evaluated ${plural(units.length, 'Unit')}.`);
@@ -418,10 +405,11 @@ export const PolicyDetail = ({
   };
 
   /**
-   * Enforces the Trigger, or returns it to audit, and refreshes the Trigger lists of what selects
-   * it. A Space or Target re-evaluates its Units when the Triggers it selects change, but a change
-   * to a Trigger refreshes only the Space it is in, so without this its Units would keep their old
-   * verdicts until each of them next changed.
+   * Enforces the Trigger, or returns it to audit, and runs it again on the Units it fails, so that
+   * each failure moves between the Unit's warnings and the gates that block its release. A Unit it
+   * passes has neither, so nothing about it changes. Without the run, the failing Units would keep
+   * their old verdicts until each of them next changed, since a change to a Trigger re-evaluates
+   * only the Units of its own Space.
    */
   const changeMode = async (warn: boolean) => {
     setIsChangingMode(true);
@@ -433,37 +421,13 @@ export const PolicyDetail = ({
         },
       });
       if (!ok) return;
-      const failed: string[] = [];
-      for (const s of policy.spaces) {
-        try {
-          await patchSpace({ spaceId: s.id, refreshTriggers: true, body: {} }).unwrap();
-        } catch (err) {
-          failed.push(`${s.slug}: ${getApiErrorMessage(err, 'not refreshed')}`);
-        }
-      }
-      for (const t of policy.targets) {
-        try {
-          await patchTarget({
-            spaceId: t.spaceId,
-            targetId: t.id,
-            refreshTriggers: true,
-            body: {},
-          }).unwrap();
-        } catch (err) {
-          failed.push(`${t.slug}: ${getApiErrorMessage(err, 'not refreshed')}`);
-        }
-      }
-      if (failed.length > 0) {
-        setError(
-          `The Trigger changed, but these did not re-evaluate their Units: ${failed.slice(0, 3).join('; ')}${failed.length > 3 ? ` and ${failed.length - 3} more` : ''}`,
+      // The Trigger has changed by now, so a failure here is only that some Units keep their
+      // old verdicts.
+      if (failingUnits.length > 0)
+        await evaluate(
+          failingUnits,
+          'The Trigger changed, but it did not run again on these Units',
         );
-      } else if (policy.spaces.length + policy.targets.length > 0) {
-        setNotice(
-          `Re-evaluating the Units of ${scopeText(policy)}. Results arrive as each Unit is evaluated; Refresh to read them.`,
-        );
-      }
-      // The verdicts come back asynchronously; read them again once the first are in.
-      setTimeout(onRefresh, 4000);
     } finally {
       setIsChangingMode(false);
       setConfirmWarn(null);
@@ -868,9 +832,9 @@ export const PolicyDetail = ({
                 )}
               </>
             )}
-            {policy.spaces.length + policy.targets.length > 0 && (
+            {failingUnits.length > 0 && (
               <Box sx={{ mt: 1.5 }}>
-                The Units of the {scopeText(policy)} that select it are evaluated again.
+                The Trigger runs again on the {plural(failingUnits.length, 'Unit')} it fails.
               </Box>
             )}
           </DialogContentText>

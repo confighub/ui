@@ -175,6 +175,18 @@ test.describe('the Validation page', () => {
     await expect(detail.getByTestId('validation-stage')).toHaveText('Enforced', {
       timeout: 20000,
     });
+
+    // Returning to audit runs the Trigger again on the Unit it fails, which turns the gate
+    // blocking it back into a warning.
+    await detail.getByTestId('validation-mode-audit').click();
+    const auditDialog = page.getByRole('dialog', { name: 'Return to audit?' });
+    await expect(auditDialog).toContainText('The Trigger runs again on the 1 Unit it fails.');
+    await auditDialog.getByTestId('validation-mode-confirm').click();
+    await expect.poll(async () => (await trigger()).Warn ?? false).toBe(true);
+    await expect
+      .poll(async () => (await unitGates()).warnings.length, { timeout: 20000 })
+      .toBe(1);
+    expect((await unitGates()).errors).toEqual([]);
   });
 
   test('excepts a failing resource, and removes the exception', async ({ page }) => {
