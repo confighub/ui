@@ -10,6 +10,7 @@ import {
   type BlameOrigin,
   type BlamePathChange,
   type UnitPathReport,
+  type UnitPathReportRead,
   useGetUnitPathQuery,
 } from '@confighub/rtk-query';
 import CloseIcon from '@mui/icons-material/Close';
@@ -266,7 +267,61 @@ const FieldSummary = ({ report }: { report: UnitPathReport }) => {
           {provided.AttributeName || '(unnamed attribute)'}
         </Line>
       ))}
+      <Line label='Comment above'>{commentText(report.ConfigComments?.Head)}</Line>
+      <Line label='Line comment'>{commentText(report.ConfigComments?.Line)}</Line>
+      <Line label='Comment below'>{commentText(report.ConfigComments?.Foot)}</Line>
     </Stack>
+  );
+};
+
+/** A configuration comment, its lines kept. */
+const commentText = (text?: string) =>
+  text ? (
+    <Typography variant='body2' sx={{ whiteSpace: 'pre-wrap' }}>
+      {text}
+    </Typography>
+  ) : undefined;
+
+/** The latest thread of review comments about the field: each comment's author, when, and text. */
+const ReviewThreadSection = ({ report }: { report: UnitPathReportRead }) => {
+  const thread = report.ReviewThread;
+  const comments = thread?.Comments ?? [];
+  if (comments.length === 0) return null;
+  const names = report.Names ?? {};
+  const count = report.ReviewThreads ?? 1;
+  const changeOrder = thread?.ChangeOrderID ? names[thread.ChangeOrderID] : undefined;
+  return (
+    <>
+      <Heading>
+        {count > 1 ? `Latest of ${count} review threads` : 'Review thread'}
+        {changeOrder ? `, in the review of ChangeOrder ${changeOrder}` : ''}
+      </Heading>
+      <Stack spacing={1} data-testid='blame-review-thread'>
+        {comments.map((comment) => (
+          <Box
+            key={comment.ReviewCommentID}
+            sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5 }}
+          >
+            <Stack direction='row' spacing={1} alignItems='baseline' flexWrap='wrap'>
+              <Typography variant='body2' sx={{ fontWeight: 600 }}>
+                {(comment.UserID && names[comment.UserID]) || 'Unknown user'}
+              </Typography>
+              <Typography variant='body2'>revision {comment.RevisionNum}</Typography>
+              {comment.CreatedAt && (
+                <Tooltip title={dayjs(comment.CreatedAt).format('YYYY-MM-DD HH:mm:ss')}>
+                  <Typography variant='caption' color='text.secondary'>
+                    {dayjs(comment.CreatedAt).fromNow()}
+                  </Typography>
+                </Tooltip>
+              )}
+            </Stack>
+            <Typography variant='body2' sx={{ mt: 0.5, whiteSpace: 'pre-wrap' }}>
+              {comment.Text}
+            </Typography>
+          </Box>
+        ))}
+      </Stack>
+    </>
   );
 };
 
@@ -314,6 +369,7 @@ export const BlamePathDrawer = ({ spaceId, unitId, field, onClose }: BlamePathDr
         {data && (
           <>
             <FieldSummary report={data} />
+            <ReviewThreadSection report={data} />
             <Heading>
               {data.Field?.Deleted
                 ? 'Changes, from this Unit out to where it was deleted'

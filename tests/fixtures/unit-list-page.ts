@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 
 import { Role } from '../types';
 import { ApiHelper } from './api-helper';
+import { addBulkRows } from './bulk-metadata';
 import { EntityGridFixture } from './entity-grid-fixture';
 import { hubApi } from './test';
 
@@ -276,32 +277,9 @@ export class UnitListPage extends EntityGridFixture {
         .click();
     }
 
-    // Add labels if provided
-    if (labels) {
-      for (const [key, value] of Object.entries(labels)) {
-        await this.page.getByRole('combobox', { name: 'key' }).fill(key);
-        await this.page.getByRole('textbox', { name: 'value' }).fill(value);
-        await this.page.getByTestId('add-label-button').click();
-      }
-    }
-
-    // Add delete gates if provided
-    if (deleteGates) {
-      for (const gate of deleteGates) {
-        await this.page.getByRole('combobox', { name: 'e.g., manual-review' }).fill(gate);
-        await this.page.getByTestId('add-delete-gate-button').click();
-      }
-    }
-
-    // Add destroy gates if provided
-    if (destroyGates) {
-      for (const gate of destroyGates) {
-        await this.page
-          .getByRole('combobox', { name: 'e.g., production-protection' })
-          .fill(gate);
-        await this.page.getByTestId('add-destroy-gate-button').click();
-      }
-    }
+    if (labels) await addBulkRows(this.page, 'labels', labels);
+    if (deleteGates) await addBulkRows(this.page, 'delete-gates', deleteGates);
+    if (destroyGates) await addBulkRows(this.page, 'destroy-gates', destroyGates);
 
     if (!skipUpdate) {
       // Wait for the API call to complete by intercepting the network request

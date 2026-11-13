@@ -7,6 +7,7 @@ import {
   type EnablementRule,
   createEnablementRule,
 } from '@/components/action-button/ActionButton';
+import { BulkMetadataDrawer } from '@/components/bulk-edit/BulkMetadataDrawer';
 import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { FilteredEmptyState } from '@/components/filtered-empty-state';
@@ -18,12 +19,11 @@ import { Main } from '@/components/styled';
 import { useBulkApiErrorMessage } from '@/hooks/useBulkApiErrorMessages';
 import { useEditDrawerUrl } from '@/hooks/useEditDrawerUrl';
 import { AddTargetDrawer } from '@/pages/target-list/components/add-target-drawer/AddTargetDrawer';
-import { BulkEditTargetsDrawer } from '@/pages/target-list/components/bulk-edit-targets-drawer/BulkEditTargetsDrawer';
 import { EmptyTargetList } from '@/pages/target-list/components/empty-target-list/EmptyTargetList';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import {
-  TargetRead,
   useBulkDeleteTargetsMutation,
+  useBulkPatchTargetsMutation,
   useListAllTargetsQuery,
   useListSpacesQuery,
 } from '@confighub/rtk-query';
@@ -168,14 +168,22 @@ export const TargetListPage = () => {
     [selectedTargetIds.length],
   );
 
-  // Get targets for bulk editing
+  const updateEnablementRules = useMemo<EnablementRule[]>(
+    () => [
+      createEnablementRule(
+        selectedTargetIds.length === 0,
+        'You need to select at least one target to update.',
+      ),
+    ],
+    [selectedTargetIds.length],
+  );
+
+  const [bulkPatchTargets] = useBulkPatchTargetsMutation();
   const targetsToEdit = useMemo(() => {
-    return selectedTargetIds
-      .map((targetId) => {
-        const target = targets.find((t) => t.Target?.TargetID === targetId);
-        return target?.Target;
-      })
-      .filter(Boolean) as TargetRead[];
+    const selected = new Set(selectedTargetIds);
+    return targets.flatMap((t) =>
+      t.Target?.TargetID && selected.has(t.Target.TargetID) ? [{ ...t.Target, id: t.Target.TargetID }] : [],
+    );
   }, [selectedTargetIds, targets]);
 
   // Modal handlers
@@ -232,6 +240,13 @@ export const TargetListPage = () => {
             Add Target
           </Button>
         }
+        editButton={
+          <ActionButton
+            buttonText='Update'
+            onButtonClick={() => updateModal('bulkEditTarget', true)}
+            enablementRules={updateEnablementRules}
+          />
+        }
         deleteButton={
           <ActionButton
             buttonText='Delete'
@@ -272,11 +287,15 @@ export const TargetListPage = () => {
           onClose={handleCloseDrawer}
           existingTarget={targetToEdit}
         />
-        <BulkEditTargetsDrawer
+        <BulkMetadataDrawer
           isOpen={modals.bulkEditTarget}
           onClose={() => updateModal('bulkEditTarget', false)}
-          targetsToEdit={targetsToEdit}
           refresh={refetch}
+          entityName='Targets'
+          idColumn='TargetID'
+          entities={targetsToEdit}
+          // The selection names each Target by ID, so a hidden one shown in the list is written too.
+          patch={(where, body) => bulkPatchTargets({ where, body, includeHidden: '*' }).unwrap()}
         />
       </Main>
     </Container>

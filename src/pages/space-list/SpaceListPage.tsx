@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { ActionContextButton } from '@/components/action-context-button/ActionContextButton';
+import { BulkMetadataDrawer } from '@/components/bulk-edit/BulkMetadataDrawer';
 import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { FilteredEmptyState } from '@/components/filtered-empty-state';
@@ -17,8 +18,11 @@ import { AddSpacePage } from '@/pages/add-space/AddSpacePage';
 import { EmptySpaceList } from '@/pages/space-list/components/empty-space-list/EmptySpaceList';
 import { SpaceSettingsDrawer } from '@/pages/space-list/components/space-settings-drawer/SpaceSettingsDrawer';
 import { SpacesTable } from '@/pages/space-list/components/spaces-table/SpacesTable';
-import { useListSpacesQuery } from '@confighub/rtk-query';
-import { useBulkDeleteSpacesMutation } from '@confighub/rtk-query';
+import {
+  useBulkDeleteSpacesMutation,
+  useBulkPatchSpacesMutation,
+  useListSpacesQuery,
+} from '@confighub/rtk-query';
 import RefreshIcon from '@mui/icons-material/Cached';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
@@ -35,6 +39,7 @@ export const SpaceListPage = () => {
   const [isAddSpacePageOpen, setIsAddSpacePageOpen] = useState(false);
   const [serverErrors, setServerErrors] = useState<Array<string>>([]);
   const [isDeleteSpacesModalOpen, setIsDeleteSpacesModalOpen] = useState(false);
+  const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
   const [selectedSpaces, setSelectedSpaces] = useState<Array<string>>([]);
   const { editEntityId, closeEditDrawer } = useEditDrawerUrl();
 
@@ -120,7 +125,15 @@ export const SpaceListPage = () => {
     setIsDeleteSpacesModalOpen(false);
   };
 
-  const disableDelete = selectedSpaces.length === 0;
+  const noneSelected = selectedSpaces.length === 0;
+
+  const [bulkPatchSpaces] = useBulkPatchSpacesMutation();
+  const spacesToEdit = useMemo(() => {
+    const selected = new Set(selectedSpaces);
+    return displayedSpaces.flatMap((s) =>
+      s.Space?.SpaceID && selected.has(s.Space.SpaceID) ? [{ ...s.Space, id: s.Space.SpaceID }] : [],
+    );
+  }, [displayedSpaces, selectedSpaces]);
 
   return (
     <Container>
@@ -148,16 +161,29 @@ export const SpaceListPage = () => {
           </Tooltip>
         }
         onAddButtonClick={() => setIsAddSpacePageOpen(true)}
+        editButton={
+          <ActionContextButton
+            label='Update'
+            conditions={[
+              {
+                condition: noneSelected,
+                message: 'Select at least one space to update.',
+              },
+            ]}
+            disabled={noneSelected}
+            onActionSelected={() => setIsBulkEditOpen(true)}
+          />
+        }
         deleteButton={
           <ActionContextButton
             label='Delete'
             conditions={[
               {
-                condition: disableDelete,
+                condition: noneSelected,
                 message: 'Select at least one space to delete.',
               },
             ]}
-            disabled={disableDelete}
+            disabled={noneSelected}
             onActionSelected={() => setIsDeleteSpacesModalOpen(true)}
           />
         }
@@ -180,6 +206,16 @@ export const SpaceListPage = () => {
         />
         <AddSpacePage open={isAddSpacePageOpen} onClose={() => setIsAddSpacePageOpen(false)} />
         <SpaceSettingsDrawer spaceId={editEntityId} onClose={closeEditDrawer} />
+        <BulkMetadataDrawer
+          isOpen={isBulkEditOpen}
+          onClose={() => setIsBulkEditOpen(false)}
+          refresh={refetch}
+          entityName='Spaces'
+          idColumn='SpaceID'
+          entities={spacesToEdit}
+          // The selection names each Space by ID, so a hidden one shown in the list is written too.
+          patch={(where, body) => bulkPatchSpaces({ where, body, includeHidden: '*' }).unwrap()}
+        />
         <ConfirmationModal
           isOpen={isDeleteSpacesModalOpen}
           onClose={() => setIsDeleteSpacesModalOpen(false)}

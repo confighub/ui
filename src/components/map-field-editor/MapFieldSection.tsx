@@ -19,18 +19,6 @@ import {
 } from 'react-hook-form';
 
 import { SectionCard } from '@/components/styled';
-import {
-  ANNOTATION_KEY_MAX_LENGTH,
-  ANNOTATION_KEY_PATTERN,
-  ANNOTATION_KEY_PATTERN_MESSAGE,
-  ANNOTATION_VALUE_MAX_LENGTH,
-  LABEL_KEY_MAX_LENGTH,
-  LABEL_KEY_PATTERN,
-  LABEL_KEY_PATTERN_MESSAGE,
-  LABEL_VALUE_MAX_LENGTH,
-  LABEL_VALUE_PATTERN,
-  LABEL_VALUE_PATTERN_MESSAGE,
-} from '@confighub/api';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import Autocomplete from '@mui/material/Autocomplete';
@@ -41,54 +29,17 @@ import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 
+import {
+  KEY_FIELD_SX,
+  type MapFieldValidation,
+  VALUE_FIELD_SX,
+  checkKey,
+  checkValue,
+} from './map-field-rules';
 import type { MapRow } from './map-rows';
 
-// The key column holds keys such as `Cluster.NamespaceScopedResourceTypes` without truncating
-// them, and gives the rest of the row to the value, which wraps rather than being cut off.
-const KEY_FIELD_SX = { flex: '0 1 34%', minWidth: 160 } as const;
-// The theme pads both a multiline field and its textarea, which would set a value further in
-// than its key.
-const VALUE_FIELD_SX = {
-  flex: '1 1 240px',
-  minWidth: 180,
-  '& .MuiInputBase-inputMultiline': { px: 0 },
-} as const;
+export type { MapFieldValidation } from './map-field-rules';
 
-/**
- * The server's rules for the entries of a map, so a bad entry is marked before Save. Gate keys
- * follow the label key rules.
- */
-export type MapFieldValidation = 'label' | 'annotation';
-
-const KEY_RULES = {
-  label: { maxLength: LABEL_KEY_MAX_LENGTH, pattern: LABEL_KEY_PATTERN, message: LABEL_KEY_PATTERN_MESSAGE },
-  annotation: {
-    maxLength: ANNOTATION_KEY_MAX_LENGTH,
-    pattern: ANNOTATION_KEY_PATTERN,
-    message: ANNOTATION_KEY_PATTERN_MESSAGE,
-  },
-} as const;
-
-const checkKey = (key: string, validation?: MapFieldValidation): string | true => {
-  if (!validation) return true;
-  const rules = KEY_RULES[validation];
-  if (key.length > rules.maxLength) return `Key must be ${rules.maxLength} characters or less`;
-  return rules.pattern.test(key) || rules.message;
-};
-
-const checkValue = (value: string, validation?: MapFieldValidation): string | true => {
-  if (validation === 'label') {
-    if (!value) return 'Value is required';
-    if (value.length > LABEL_VALUE_MAX_LENGTH) {
-      return `Value must be ${LABEL_VALUE_MAX_LENGTH} characters or less`;
-    }
-    return LABEL_VALUE_PATTERN.test(value) || LABEL_VALUE_PATTERN_MESSAGE;
-  }
-  if (validation === 'annotation' && value.length > ANNOTATION_VALUE_MAX_LENGTH) {
-    return `Value must be ${ANNOTATION_VALUE_MAX_LENGTH} characters or less`;
-  }
-  return true;
-};
 
 export interface MapFieldSectionProps<TFieldValues extends FieldValues> {
   control: Control<TFieldValues>;
