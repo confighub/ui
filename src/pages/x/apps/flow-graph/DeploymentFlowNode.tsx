@@ -314,8 +314,8 @@ const NodeContainer = styled(Box, {
   boxSizing: 'border-box',
   width: $density === 'tree' ? TREE_WIDTH : ($width ?? 240),
   // A calm minimum so a quiet (healthy, all-clear) card keeps presence and all
-  // cards read as a tidy row; busier cards grow past this. The graph reserves a
-  // fixed NODE_HEIGHT slot regardless, so growth here never shifts the layout.
+  // cards read as a tidy row; busier cards grow past this. A card that grows
+  // past the graph's NODE_HEIGHT slot is laid out again at its measured height.
   // A folded graph packs its cards in rows, so there the height is fixed and
   // extra content is clipped instead.
   ...($density === 'full'
@@ -884,21 +884,21 @@ const SourceKnob = styled(Box, {
 // ICONS
 // ============================================================================
 
-const PendingIcon = () => (
+export const PendingIcon = () => (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <path d="M3 4.5l4 3.5-4 3.5" />
     <path d="M9 4.5l4 3.5-4 3.5" />
   </svg>
 );
 
-const GatedIcon = () => (
+export const GatedIcon = () => (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
     <rect x="4" y="7" width="8" height="6" rx="1" />
     <path d="M6 7V5a2 2 0 014 0v2" />
   </svg>
 );
 
-const WarningIcon = () => (
+export const WarningIcon = () => (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round">
     <path d="M8 2.5l6 11H2z" />
     <path d="M8 7v2.5" />
@@ -906,7 +906,7 @@ const WarningIcon = () => (
   </svg>
 );
 
-const UpgradingIcon = () => (
+export const UpgradingIcon = () => (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5">
     <path d="M8 12V4M4 8l4-4 4 4" />
   </svg>

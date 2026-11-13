@@ -1,12 +1,11 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 import { DATE_TIME_GRID_SLOTS } from '@/components/data-grid/cells';
 import { EntityDataGrid } from '@/components/entity-data-grid/EntityDataGrid';
 import { HIDDEN_REASON_FIELD, hiddenReasonColumn } from '@/components/hidden-entities/hiddenReasonColumn';
 import { useAttributeColumnManager } from '@/components/entity-data-grid/hooks/useAttributeColumnManager';
-import { ErrorList } from '@/components/error-list/ErrorList';
 import { FilteredEmptyState } from '@/components/filtered-empty-state';
 import { SkeletonTable } from '@/components/skeleton-table/SkeletonTable';
 import { triggerPriority } from '@/utility/triggerEnforcement';
@@ -15,6 +14,8 @@ import { useGridPersistence } from '@/components/unit-data-grid/hooks/useGridPer
 import { EmptyTriggers } from '@/pages/space-detail/components/empty-triggers/EmptyTriggers';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import { useListAllTriggersQuery } from '@confighub/rtk-query';
+import Alert from '@mui/material/Alert';
+import Typography from '@mui/material/Typography';
 import { GridColDef, GridRowSelectionModel } from '@mui/x-data-grid';
 
 import {
@@ -118,7 +119,7 @@ export const TriggersTable = ({
   customToolbarActions,
 }: TriggersTableProps) => {
   const {
-    data: extendedTriggers,
+    currentData: extendedTriggers,
     isLoading,
     error: queryError,
   } = useListAllTriggersQuery(
@@ -126,22 +127,15 @@ export const TriggersTable = ({
     { skip, refetchOnMountOrArgChange: true, refetchOnFocus: true },
   );
 
-  const filterError = queryError ? getApiErrorMessage(queryError) : undefined;
+  // The Triggers read for these arguments: none while a new filter's read is on its way, rather
+  // than the last filter's, and kept when a later read of the same arguments fails, as a refetch
+  // on focus can, so a list that was right a moment ago stays, with the error above it.
+  const triggers = useMemo(() => (skip ? [] : extendedTriggers || []), [skip, extendedTriggers]);
+  const readKnown = skip || extendedTriggers !== undefined;
 
-  // Track dismissed error so user can dismiss without clearing filter inputs
-  const [dismissedError, setDismissedError] = useState<string | null>(null);
-
-  // Reset dismissed state when a new error comes in
-  useEffect(() => {
-    if (filterError && filterError !== dismissedError) {
-      setDismissedError(null);
-    }
-  }, [filterError, dismissedError]);
-
-  const triggers = useMemo(
-    () => (skip ? [] : extendedTriggers || []),
-    [skip, extendedTriggers],
-  );
+  // A read that failed is not the same as there being no Triggers: it says so instead of an empty
+  // state, and the grid and its filters stay, so a Where the server refused can be corrected.
+  const readErrorMessage = queryError ? getApiErrorMessage(queryError, 'The Triggers could not be read.') : '';
 
   // Convert triggers to row items
   const rows = useMemo<TriggerRowItem[]>(() => {
@@ -273,15 +267,8 @@ export const TriggersTable = ({
     return <SkeletonTable />;
   }
 
-  // Check if error should be shown (not dismissed)
-  const showError = filterError && filterError !== dismissedError;
-
-  if (triggers.length === 0) {
-    if (showError) {
-      return (
-        <ErrorList errors={[filterError]} onClose={() => setDismissedError(filterError)} />
-      );
-    }
+  // Only a read that succeeded can say there are no Triggers.
+  if (triggers.length === 0 && readKnown && !readErrorMessage) {
     if (isFiltered && onClearFilter) {
       return <FilteredEmptyState entityName='triggers' onClearFilters={onClearFilter} />;
     }
@@ -296,13 +283,15 @@ export const TriggersTable = ({
 
   return (
     <>
-      {showError && (
-        <ErrorList errors={[filterError]} onClose={() => setDismissedError(filterError)} />
+      {readErrorMessage && (
+        <Alert severity='error' sx={{ mb: 1 }} data-testid='triggers-read-error'>
+          {readErrorMessage}
+        </Alert>
       )}
       <EntityDataGrid
         rows={rows}
         columns={allColumns}
-        loading={isLoading}
+        loading={!readKnown && !readErrorMessage}
         checkboxSelection={!!onRowSelected}
         rowSelectionModel={selectedRows}
         onRowSelectionModelChange={handleRowSelectionChange}
@@ -316,6 +305,13 @@ export const TriggersTable = ({
         dynamicGroups={TRIGGER_DYNAMIC_GROUPS}
         filterElement={filterElement}
         customToolbarActions={customToolbarActions}
+        noRowsOverlay={
+          readErrorMessage ? (
+            <Typography variant='body2' color='error' sx={{ p: 2 }}>
+              {readErrorMessage}
+            </Typography>
+          ) : undefined
+        }
         slots={DATE_TIME_GRID_SLOTS}
       />
     </>

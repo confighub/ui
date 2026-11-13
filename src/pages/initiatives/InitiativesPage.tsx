@@ -178,6 +178,8 @@ export const InitiativesPage = () => {
               maxWidth: 1400,
               mx: 'auto',
               width: '100%',
+              // Its padding inside its width, so it fits the page rather than scrolling it sideways.
+              boxSizing: 'border-box',
             }}
           >
             <TextField
@@ -240,7 +242,7 @@ export const InitiativesPage = () => {
           {selected && (
             <Box
               ref={detailRef}
-              sx={{ px: 3, pb: 4, maxWidth: 1400, mx: 'auto', width: '100%' }}
+              sx={{ px: 3, pb: 4, maxWidth: 1400, mx: 'auto', width: '100%', boxSizing: 'border-box' }}
             >
               <PolicyDetail
                 key={selected.id}

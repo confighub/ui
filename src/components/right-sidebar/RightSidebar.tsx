@@ -35,14 +35,11 @@ import {
   selectCreateTriggerInSpaceId,
   selectInvokerRequestSeq,
 } from '@/state/slices/invokerRequest';
-import { selectInvocationInitiativeId } from '@/state/slices/selectedUnits';
+import { selectInvocationInitiativeId, selectInvocationTriggerRef } from '@/state/slices/selectedUnits';
 import { useInvokeInChangeSet } from '@/components/invoker/hooks/useInvokeInChangeSet';
-import {
-  LockedUnitsError,
-  useInitiativeChangeSetLifecycle,
-} from '@/components/invoker/hooks/useInitiativeChangeSetLifecycle';
-import { useForceUnlockUnits } from '@/components/invoker/hooks/useForceUnlockUnits';
-import { LockedUnitsDialog } from '@/components/invoker/components/LockedUnitsDialog';
+import { useInitiativeChangeSetLifecycle } from '@/components/invoker/hooks/useInitiativeChangeSetLifecycle';
+import { ChangeSetSpaceDialog } from '@/components/invoker/components/ChangeSetSpaceDialog';
+import { type ChangeSetSpace, RunCancelled } from '@/components/invoker/utils/triggerChangeSet';
 import { useInvocationHistory } from '../invoker/hooks/useInvocationHistory';
 import {
   FunctionParameterFormData,
@@ -459,18 +456,33 @@ export const InvokerSidebar = ({
   );
   const [createInvocationMutation] = useCreateInvocationMutation();
 
-  // When the Invoker is running in an initiative's context, each invocation is
-  // wrapped in a per-run ChangeSet labeled with that initiative. Otherwise
-  // invocations go through the normal stateless `invokeFunctions` path.
+  // When the Invoker runs for a Validation Trigger, each write is made in the Trigger's ChangeSet,
+  // which is left open for the change to be reviewed. Otherwise invocations go through the
+  // normal stateless `invokeFunctions` path.
   const initiativeId = useAppSelector(selectInvocationInitiativeId);
+  const triggerRef = useAppSelector(selectInvocationTriggerRef);
+  const forTrigger = Boolean(initiativeId && triggerRef);
   const { invoke: invokeInChangeSet } = useInvokeInChangeSet();
-  const { joinChangeSet } = useInitiativeChangeSetLifecycle();
-  const [lockedUnitIds, setLockedUnitIds] = useState<string[]>([]);
-  const pendingInvokeRef = useRef<(() => void) | null>(null);
-  const { holders: lockHolders, forceUnlock } = useForceUnlockUnits({
-    spaceId: spaceId ?? '',
-    lockedUnitIds,
-  });
+  const { joinChangeSet, triggerChangeSetSpaceFor } = useInitiativeChangeSetLifecycle();
+  // The question of where a run's ChangeSet goes, when the Units are in several Spaces and none
+  // is theirs, and how it is answered.
+  const [spaceQuestion, setSpaceQuestion] = useState<{
+    choices: ChangeSetSpace[];
+    answer: (spaceId: string | undefined) => void;
+  } | null>(null);
+  const askChangeSetSpace = useCallback(
+    (choices: ChangeSetSpace[]) =>
+      new Promise<string | undefined>((resolve) =>
+        setSpaceQuestion({
+          choices,
+          answer: (chosen) => {
+            setSpaceQuestion(null);
+            resolve(chosen);
+          },
+        }),
+      ),
+    [],
+  );
   const [createTriggerMutation] = useCreateTriggerMutation();
   const [patchInvocationMutation] = usePatchInvocationMutation();
   const [deleteInvocationMutation] = useDeleteInvocationMutation();
@@ -664,8 +676,8 @@ export const InvokerSidebar = ({
           );
         // One invocation, on the Units given. A parameterized Invocation sends the declared
         // parameter values, referencing the stored Invocation, and the server expands its
-        // templated arguments. In an initiative's context the write is made in a ChangeSet of its
-        // own (not yet for a parameterized Invocation).
+        // templated arguments. For a Validation Trigger the write is made in the Trigger's
+        // ChangeSet (not yet for a parameterized Invocation).
         // The clearance is what the person stated, plus the guards they acknowledged at the write
         // (requirements of one key are alternatives, so the two add up), plus the guard the write
         // records, which the server refuses to record otherwise. A dry run sends the same, so it
@@ -681,11 +693,21 @@ export const InvokerSidebar = ({
             clearance: clearance ? JSON.stringify(clearance) : undefined,
             ...guardParams(guardValues),
           };
-          if (initiativeId && !parameterizedInvocationId) {
+          if (initiativeId && triggerRef && !parameterizedInvocationId) {
+            // Where a write's ChangeSet goes when none of the Trigger's holds the Units: their
+            // Space, the root Space of their Component, or one the person chooses.
+            const chooseSpace = async () => {
+              const unitSpaceIds = enrichedContext.selectedUnits
+                .filter((unit) => unitIdsToRun.includes(unit.id))
+                .map((unit) => unit.spaceId);
+              const choice = await triggerChangeSetSpaceFor(unitSpaceIds);
+              return 'spaceId' in choice ? choice.spaceId : askChangeSetSpace(choice.ask);
+            };
             const { responses } = await invokeInChangeSet({
-              spaceId,
+              chooseSpace,
               executorSpaceId,
               initiativeId,
+              triggerRef,
               unitIds: unitIdsToRun,
               toolchainType: enrichedContext.primaryToolchainType || '',
               functionInvocation: { FunctionName: functionName, Arguments: functionArgs },
@@ -742,7 +764,7 @@ export const InvokerSidebar = ({
               }
               // A ChangeSet the person chose is joined only for the write itself, so a dry run or
               // a cancelled one leaves the Units as they were.
-              if (writeOptions?.changeSetId && !(initiativeId && !parameterizedInvocationId)) {
+              if (writeOptions?.changeSetId && !(forTrigger && !parameterizedInvocationId)) {
                 await joinChangeSet({ unitIds: selectedUnitIds, changeSetId: writeOptions.changeSetId });
               }
               result = await invokeOn(selectedUnitIds, { dryRun: false, clearance });
@@ -783,11 +805,7 @@ export const InvokerSidebar = ({
 
         setInvokeResult(invokeResultObj);
       } catch (error) {
-        if (error instanceof LockedUnitsError) {
-          pendingInvokeRef.current = () => {
-            void handleInvoke(functionName, parameters, dryRun, parameterizedInvocationId, writeOptions);
-          };
-          setLockedUnitIds(error.lockedUnitIds);
+        if (error instanceof RunCancelled) {
           setIsInvoking(false);
           return;
         }
@@ -818,7 +836,7 @@ export const InvokerSidebar = ({
         setIsInvoking(false);
       }
     },
-    [spaceId, executorSpaceId, enrichedContext, invokeFunctionMutation, initiativeId, invokeInChangeSet, joinChangeSet, addInvocation, guardedUnitIds, startGuardedWrite]
+    [spaceId, executorSpaceId, enrichedContext, invokeFunctionMutation, initiativeId, triggerRef, forTrigger, triggerChangeSetSpaceFor, askChangeSetSpace, invokeInChangeSet, joinChangeSet, addInvocation, guardedUnitIds, startGuardedWrite]
   );
 
   // Handle save invocation or trigger
@@ -1142,29 +1160,15 @@ export const InvokerSidebar = ({
             onSaveAttributes={handleSaveAttributes}
             isSavingAttributes={isSavingAttributes}
             saveAsTrigger={saveAsTrigger}
-            changeSetChoice={!initiativeId}
+            changeSetChoice={!forTrigger}
           />
         </SidebarContent>
       </SidebarPanel>
       {guardedWriteDialog}
-      <LockedUnitsDialog
-        open={lockedUnitIds.length > 0}
-        holders={lockHolders}
-        onClose={() => {
-          setLockedUnitIds([]);
-          pendingInvokeRef.current = null;
-        }}
-        onRetry={() => {
-          const retry = pendingInvokeRef.current;
-          setLockedUnitIds([]);
-          retry?.();
-        }}
-        onForceUnlock={async () => {
-          await forceUnlock();
-          const retry = pendingInvokeRef.current;
-          setLockedUnitIds([]);
-          retry?.();
-        }}
+      <ChangeSetSpaceDialog
+        choices={spaceQuestion?.choices}
+        triggerRef={triggerRef ?? ''}
+        onChoose={(chosen) => spaceQuestion?.answer(chosen)}
       />
     </SidebarContainer>
   );

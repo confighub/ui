@@ -86,7 +86,7 @@ export const MultiSelectInput = ({
   autoFocus = false,
   focusTrigger = 0,
 }: MultiSelectInputProps) => {
-  const { spaces, targets, toolchainTypes, slugs, resourceTypes, openAddMenu } = useQueryBuilderContext();
+  const { spaces, targets, toolchainTypes, slugs, resourceTypes, fieldOptions, openAddMenu } = useQueryBuilderContext();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -139,7 +139,7 @@ export const MultiSelectInput = ({
     }
 
     // Common fields shared with SelectInput
-    return buildCommonFieldOptions(field, config, { spaces, targets, toolchainTypes, resourceTypes }) || [];
+    return buildCommonFieldOptions(field, config, { spaces, targets, toolchainTypes, resourceTypes, fieldOptions }) || [];
   };
 
   const options = getOptions();

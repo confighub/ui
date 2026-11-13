@@ -16,6 +16,7 @@ const UnitDetailPage = lazy(() => import('./pages/unit-detail/UnitDetailPage'));
 const FunctionListPage = lazy(() => import('./pages/function-list/FunctionListPage'));
 const TargetListPage = lazy(() => import('./pages/target-list/TargetListPage'));
 const TriggerListPage = lazy(() => import('./pages/trigger-list/TriggerListPage'));
+const LinkListPage = lazy(() => import('./pages/link-list/LinkListPage'));
 const FunctionBrowserPage = lazy(() => import('./pages/function-browser/FunctionBrowserPage'));
 const ChangeReviewPage = lazy(() => import('./pages/change-review/ChangeReviewPage'));
 const AppsComponentPage = lazy(() => import('./pages/x/apps/AppsComponentPage'));
@@ -145,6 +146,14 @@ const routes = [
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <TriggerListPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/links',
+        element: (
+          <Suspense fallback={<Loader isLoading={true} />}>
+            <LinkListPage />
           </Suspense>
         ),
       },

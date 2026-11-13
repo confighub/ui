@@ -16,10 +16,7 @@ import {
   useInvokeFunctionsOnOrgMutation,
 } from '@confighub/rtk-query';
 
-import {
-  INVOCATION_ANNOTATION_KEY,
-  useInitiativeChangeSetLifecycle,
-} from './useInitiativeChangeSetLifecycle';
+import { useInitiativeChangeSetLifecycle } from './useInitiativeChangeSetLifecycle';
 
 /** What the invocation is cleared for and the guards it records, as the invoke API takes them. */
 export type InvokeGuardParams = Pick<
@@ -28,11 +25,13 @@ export type InvokeGuardParams = Pick<
 >;
 
 export interface InvokeInChangeSetArgs extends InvokeGuardParams {
-  // The Space the ChangeSet is created in.
-  spaceId: string;
+  /** The Space the ChangeSet is found or made in, when none of the Trigger's holds the Units; undefined cancels */
+  chooseSpace: () => Promise<string | undefined>;
   // The Space whose executor runs the function, when the Units share one.
   executorSpaceId?: string;
   initiativeId: string;
+  /** The Trigger as `<space slug>/<trigger slug>`, which annotates its ChangeSet */
+  triggerRef: string;
   unitIds: string[];
   toolchainType: string;
   functionInvocation: FunctionInvocation;
@@ -51,7 +50,7 @@ const unitIdsWhere = (unitIds: string[]): string =>
   `UnitID IN (${unitIds.map((id) => `'${id}'`).join(',')})`;
 
 export const useInvokeInChangeSet = () => {
-  const { openChangeSet, closeChangeSet } = useInitiativeChangeSetLifecycle();
+  const { prepareTriggerChangeSet } = useInitiativeChangeSetLifecycle();
   const [invokeFunctions] = useInvokeFunctionsOnOrgMutation();
   const dispatch = useAppDispatch();
   const [isInvoking, setIsInvoking] = useState(false);
@@ -59,9 +58,10 @@ export const useInvokeInChangeSet = () => {
   const invoke = useCallback(
     async (args: InvokeInChangeSetArgs): Promise<InvokeInChangeSetResult> => {
       const {
-        spaceId,
+        chooseSpace,
         executorSpaceId,
         initiativeId,
+        triggerRef,
         unitIds,
         toolchainType,
         functionInvocation,
@@ -102,45 +102,15 @@ export const useInvokeInChangeSet = () => {
 
       setIsInvoking(true);
       dispatch(invocationStarted({ initiativeId }));
-      let changeSetId: string | undefined;
       let completed = false;
       try {
-        const opened = await openChangeSet({
-          spaceId,
-          initiativeId,
-          unitIds,
-          displayName: functionInvocation.FunctionName ?? 'invocation',
-          annotations: {
-            [INVOCATION_ANNOTATION_KEY]: JSON.stringify({
-              FunctionName: functionInvocation.FunctionName,
-              Arguments: functionInvocation.Arguments ?? [],
-            }),
-          },
-          extraLabels: {},
-        });
-        changeSetId = opened.changeSetId;
-
+        // The Trigger's open ChangeSet holding the Units, or its open one in the Space chosen, or
+        // a new one there, with the Units in it; Units in another ChangeSet are refused before
+        // anything is written. It stays open after the run, for the change to be reviewed there.
+        const changeSetId = await prepareTriggerChangeSet({ triggerRef, unitIds, chooseSpace });
         const responses = await run(changeSetId);
-
-        await closeChangeSet({ spaceId, unitIds });
-
         completed = true;
         return { changeSetId, responses };
-      } catch (err) {
-        // If CS is already open, try to close it so units aren't stranded. We
-        // accept orphans as an explicit design decision (force-unlock UX
-        // handles them), so failure of the close is swallowed here.
-        if (changeSetId) {
-          try {
-            await closeChangeSet({ spaceId, unitIds });
-          } catch (closeErr) {
-            console.error(
-              `[useInvokeInChangeSet] orphan changeset ${changeSetId} could not be closed:`,
-              closeErr,
-            );
-          }
-        }
-        throw err;
       } finally {
         // invokeFunctions' generated invalidatesTags only covers `Function`, so
         // the Revision list and ChangeSet transitions stay stale after invoke.
@@ -155,7 +125,7 @@ export const useInvokeInChangeSet = () => {
         setIsInvoking(false);
       }
     },
-    [openChangeSet, closeChangeSet, invokeFunctions, dispatch],
+    [prepareTriggerChangeSet, invokeFunctions, dispatch],
   );
 
   return { invoke, isInvoking };

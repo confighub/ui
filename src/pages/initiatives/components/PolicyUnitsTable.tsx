@@ -416,6 +416,8 @@ export const PolicyUnitsTable = ({
       <TableContainer
         sx={{
           maxHeight: 640,
+          // Its border inside its width, so it fits the page rather than scrolling it sideways.
+          boxSizing: 'border-box',
           border: '1px solid',
           borderColor: 'divider',
           borderRadius: 1,

@@ -9,6 +9,7 @@ import CheckBoxOutlined from '@mui/icons-material/CheckBoxOutlined';
 import CodeOutlined from '@mui/icons-material/CodeOutlined';
 import DescriptionOutlined from '@mui/icons-material/DescriptionOutlined';
 import FactCheckOutlined from '@mui/icons-material/FactCheckOutlined';
+import FilterAltOutlined from '@mui/icons-material/FilterAltOutlined';
 import FlashOnOutlined from '@mui/icons-material/FlashOnOutlined';
 import FolderOutlined from '@mui/icons-material/FolderOutlined';
 import FunctionsOutlined from '@mui/icons-material/FunctionsOutlined';
@@ -37,7 +38,7 @@ import type { FilterFieldType } from './types';
  * instead of the generic 'labels' one (`componentGroupFields.ts`'s
  * `SPECIAL_LABEL_ICONS`) — a later icon-selector UI replaces this fixed set.
  */
-export type SpecialLabelIconKey = 'component' | 'owner' | 'stage' | 'region' | 'department';
+export type SpecialLabelIconKey = 'owner' | 'stage' | 'region' | 'department';
 
 /** Every key `FIELD_ICONS`/`getChipIcon`'s `iconMap` can resolve. */
 export type FieldIconKey = FilterFieldType | SpecialLabelIconKey;
@@ -52,6 +53,7 @@ export const FIELD_ICONS: Record<FieldIconKey, React.ReactNode> = {
   createdAt: <CalendarTodayOutlined fontSize="small" />,
   updatedAt: <UpdateOutlined fontSize="small" />,
   labels: <LocalOfferOutlined fontSize="small" />,
+  annotations: <DescriptionOutlined fontSize="small" />,
   // Unit-specific fields
   toolchainType: <SettingsOutlined fontSize="small" />,
   target: <TrackChangesOutlined fontSize="small" />,
@@ -75,8 +77,18 @@ export const FIELD_ICONS: Record<FieldIconKey, React.ReactNode> = {
   disabled: <CheckBoxOutlined fontSize="small" />,
   validating: <CheckBoxOutlined fontSize="small" />,
   triggerId: <FlashOnOutlined fontSize="small" />,
-  // Special Space label keys (Components page only)
+  // Space-specific fields
+  spaceId: <NumbersOutlined fontSize="small" />,
+  releaseTarget: <TrackChangesOutlined fontSize="small" />,
   component: <WidgetsOutlined fontSize="small" />,
+  triggerFilter: <FilterAltOutlined fontSize="small" />,
+  upstreamSpace: <FolderOutlined fontSize="small" />,
+  // Link-specific fields
+  updateType: <SettingsOutlined fontSize="small" />,
+  autoUpdate: <CheckBoxOutlined fontSize="small" />,
+  stale: <ChangeHistoryOutlined fontSize="small" />,
+  toSpace: <FolderOutlined fontSize="small" />,
+  // Special Space label keys (Components page only)
   owner: <PersonOutlineOutlined fontSize="small" />,
   stage: <LayersOutlined fontSize="small" />,
   region: <PublicOutlined fontSize="small" />,

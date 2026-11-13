@@ -162,63 +162,6 @@ const buttonGhost = {
 } as const;
 
 // ============================================================================
-// SIZE CHIP
-// ============================================================================
-
-export interface UnitSizeChipProps {
-  /** The unit's configuration. Never parsed. */
-  data: string | undefined;
-  /**
-   * True while the unit's fields are being withheld. Renders the attention-toned
-   * "· not loaded" variant; once rendered, the chip drops to a neutral size label
-   * and stays as the standing explanation for why the unit felt slow.
-   */
-  held?: boolean;
-}
-
-/**
- * The `4.9 MB` / `4.9 MB · not loaded` chip that sits next to a unit's slug in
- * the pane's unit header row. Taken from design direction 02 — worth having on
- * every oversized unit, gated or not, because it explains slowness before the
- * user has to ask.
- *
- * It is a SIZE, never a change count: components.md explicitly rejected a
- * per-unit-row "N changes" counter, and this must not drift into one.
- */
-export const UnitSizeChip = memo(function UnitSizeChip({ data, held = false }: UnitSizeChipProps) {
-  return (
-    <Box
-      component='span'
-      data-testid='unit-size-chip'
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '5px',
-        height: 18,
-        px: '7px',
-        borderRadius: `${componentTheme.radiusMd}px`,
-        border: `1px solid ${held ? 'rgba(180,83,9,0.25)' : componentTheme.borderMuted}`,
-        background: held ? componentTheme.attentionMuted : componentTheme.bgDefault,
-        fontFamily: componentTheme.fontMono,
-        fontSize: 10,
-        fontWeight: 700,
-        color: held ? componentTheme.attentionEmphasis : componentTheme.fgMuted,
-        flexShrink: 0,
-      }}
-    >
-      {held && (
-        <Box
-          component='span'
-          sx={{ width: 5, height: 5, borderRadius: '50%', background: componentTheme.attention }}
-        />
-      )}
-      {formatUnitDataSize(data)}
-      {held ? ' · not loaded' : ''}
-    </Box>
-  );
-});
-
-// ============================================================================
 // LOADING PLACEHOLDER
 // ============================================================================
 

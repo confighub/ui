@@ -202,7 +202,7 @@ test.describe('link drawer', () => {
 
   test('a Link is created from the Links tab to a Unit picked by name', async ({ page }) => {
     await page.goto(`/units/${spaceId}/${appId}?tab=${LINKS_TAB}`);
-    await page.getByTestId('links-new-link').click();
+    await page.getByTestId('links-add-link').click();
     const drawer = page.getByTestId('link-drawer');
     await expect(drawer.getByRole('heading', { name: 'New Link', exact: true })).toBeVisible();
 

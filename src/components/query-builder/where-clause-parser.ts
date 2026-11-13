@@ -8,8 +8,9 @@
  * This is the "read" path: API query strings → UI filters.
  */
 
-import type { FilterCondition, FilterFieldType } from './types';
-import { FIELD_TO_API_MAPPING } from './where-clause-builder';
+import type { FilterCondition, FilterFieldType, FilterOperator } from './types';
+import { FIELD_CONFIGS } from './operators';
+import { FIELD_TO_API_MAPPING, isUnquotedField } from './where-clause-builder';
 
 /**
  * Reverse mapping from API attribute names to filter field types (multi-value).
@@ -41,9 +42,12 @@ const resolveField = (apiField: string, availableFields?: FilterFieldType[]): Fi
   return candidates[0];
 };
 
+/** The key-value field of each map a filter names one key of */
+const KEY_VALUE_FIELDS: Record<string, FilterFieldType> = { labels: 'labels', annotations: 'annotations' };
+
 /**
- * Parse a label filter fragment (Labels.Key OPERATOR value)
- * Returns null if not a label filter
+ * Parse a key-value filter fragment (Labels.Key OPERATOR value, or Annotations.Key ...)
+ * Returns null if not one
  */
 const parseLabelFragment = (
   fragment: string,
@@ -51,76 +55,41 @@ const parseLabelFragment = (
 ): FilterCondition | null => {
   const trimmed = fragment.trim();
 
-  // Label key pattern: alphanumeric, underscore, dot, hyphen, and forward slash
-  // This supports keys like "env", "app.kubernetes.io/name", "team-owner"
-  const labelKeyPattern = '[a-zA-Z0-9_./-]+';
-
-  // Match Labels.Key = 'value'
-  const equalsMatch = trimmed.match(new RegExp(`^Labels\\.(${labelKeyPattern})\\s*=\\s*'([^']*(?:''[^']*)*)'`, 'i'));
-  if (equalsMatch) {
-    const [, labelKey, value] = equalsMatch;
+  // The map, then the key: alphanumeric, underscore, dot, hyphen, and forward slash, which
+  // covers keys like "env", "app.kubernetes.io/name" and "team-owner"
+  const keyPath = '^(Labels|Annotations)\\.([a-zA-Z0-9_./-]+)';
+  const quotedValue = "'([^']*(?:''[^']*)*)'";
+  const forms: Array<{ pattern: RegExp; operator: FilterCondition['operator']; hasValue: boolean }> = [
+    { pattern: new RegExp(`${keyPath}\\s*=\\s*${quotedValue}`, 'i'), operator: 'equals', hasValue: true },
+    { pattern: new RegExp(`${keyPath}\\s*!=\\s*${quotedValue}`, 'i'), operator: 'notEquals', hasValue: true },
+    { pattern: new RegExp(`${keyPath}\\s+ILIKE\\s+'%([^']*(?:''[^']*)*)%'`, 'i'), operator: 'contains', hasValue: true },
+    { pattern: new RegExp(`${keyPath}\\s+IS\\s+NOT\\s+NULL$`, 'i'), operator: 'exists', hasValue: false },
+    { pattern: new RegExp(`${keyPath}\\s+IS\\s+NULL$`, 'i'), operator: 'notExists', hasValue: false },
+  ];
+  for (const { pattern, operator, hasValue } of forms) {
+    const match = trimmed.match(pattern);
+    if (!match) continue;
+    const [, map, labelKey, value] = match;
     return {
       id: generateId(),
-      field: 'labels',
-      operator: 'equals',
-      value: value.replace(/''/g, "'"),
-      labelKey,
-    };
-  }
-
-  // Match Labels.Key != 'value'
-  const notEqualsMatch = trimmed.match(new RegExp(`^Labels\\.(${labelKeyPattern})\\s*!=\\s*'([^']*(?:''[^']*)*)'`, 'i'));
-  if (notEqualsMatch) {
-    const [, labelKey, value] = notEqualsMatch;
-    return {
-      id: generateId(),
-      field: 'labels',
-      operator: 'notEquals',
-      value: value.replace(/''/g, "'"),
-      labelKey,
-    };
-  }
-
-  // Match Labels.Key ILIKE '%value%' (contains)
-  const containsMatch = trimmed.match(new RegExp(`^Labels\\.(${labelKeyPattern})\\s+ILIKE\\s+'%([^']*(?:''[^']*)*)%'`, 'i'));
-  if (containsMatch) {
-    const [, labelKey, value] = containsMatch;
-    return {
-      id: generateId(),
-      field: 'labels',
-      operator: 'contains',
-      value: value.replace(/''/g, "'"),
-      labelKey,
-    };
-  }
-
-  // Match Labels.Key IS NOT NULL (exists)
-  const existsMatch = trimmed.match(new RegExp(`^Labels\\.(${labelKeyPattern})\\s+IS\\s+NOT\\s+NULL$`, 'i'));
-  if (existsMatch) {
-    const [, labelKey] = existsMatch;
-    return {
-      id: generateId(),
-      field: 'labels',
-      operator: 'exists',
-      value: '',
-      labelKey,
-    };
-  }
-
-  // Match Labels.Key IS NULL (notExists)
-  const notExistsMatch = trimmed.match(new RegExp(`^Labels\\.(${labelKeyPattern})\\s+IS\\s+NULL$`, 'i'));
-  if (notExistsMatch) {
-    const [, labelKey] = notExistsMatch;
-    return {
-      id: generateId(),
-      field: 'labels',
-      operator: 'notExists',
-      value: '',
+      field: KEY_VALUE_FIELDS[map.toLowerCase()],
+      operator,
+      value: hasValue ? value.replace(/''/g, "'") : '',
       labelKey,
     };
   }
 
   return null;
+};
+
+/** The operators of a comparison with an unquoted literal, a boolean or a number */
+const UNQUOTED_OPERATORS: Record<string, FilterOperator> = {
+  '=': 'equals',
+  '!=': 'notEquals',
+  '>': 'greaterThan',
+  '<': 'lessThan',
+  '>=': 'greaterOrEqual',
+  '<=': 'lessOrEqual',
 };
 
 /**
@@ -154,6 +123,38 @@ const parseWhereFragment = (
   const labelCondition = parseLabelFragment(trimmed, generateId);
   if (labelCondition) {
     return labelCondition;
+  }
+
+  // Try a null test: Field IS NULL / Field IS NOT NULL, for the fields that offer one
+  const nullTestMatch = trimmed.match(/^(\w+)\s+IS\s+(NOT\s+)?NULL$/i);
+  if (nullTestMatch) {
+    const [, apiField, not] = nullTestMatch;
+    const field = resolveField(apiField, availableFields);
+    const operator = not ? 'exists' : 'notExists';
+    if (field && FIELD_CONFIGS[field].operators.some((op) => op.value === operator)) {
+      return {
+        id: generateId(),
+        field,
+        operator,
+        value: '',
+      };
+    }
+  }
+
+  // Try an unquoted literal: Field = true, Field != false, Field > 3, ... for boolean and number fields
+  const unquotedMatch = trimmed.match(/^(\w+)\s*(>=|<=|!=|=|>|<)\s*(true|false|-?\d+)$/i);
+  if (unquotedMatch) {
+    const [, apiField, symbol, literal] = unquotedMatch;
+    const field = resolveField(apiField, availableFields);
+    const operator = UNQUOTED_OPERATORS[symbol];
+    if (field && isUnquotedField(field) && FIELD_CONFIGS[field].operators.some((op) => op.value === operator)) {
+      return {
+        id: generateId(),
+        field,
+        operator,
+        value: literal.toLowerCase(),
+      };
+    }
   }
 
   // Try IN clause: Field IN ('value1', 'value2', ...)

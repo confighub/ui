@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: MIT
 //
 // The ChangeSet page: the list, one open ChangeSet's change, a review requested and given,
-// the review going out of date when the change moves, and closing the ChangeSet.
+// review comments on its diff, the review going out of date when the change moves, and closing
+// the ChangeSet.
 
 import { type Page } from '@playwright/test';
 
+import { reviewCommentCopy as copy } from '../src/pages/change-orders/review-comments/reviewCommentCopy';
 import { test, expect, newAuthorizedContext, hubApi } from './fixtures/test';
 import { ApiHelper } from './fixtures/api-helper';
 import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
@@ -164,6 +166,40 @@ test.describe('ChangeSet page', () => {
     await expect(row.getByTestId('change-sets-row-reviews')).toHaveText('1 approval', { timeout: 30000 });
     await expect(row.getByTestId('change-sets-row-reviewers')).toContainText('(you)');
     await expect(row.getByTestId('change-sets-row-action')).toHaveText('Open');
+  });
+
+  test('a comment on a line of the diff starts a thread, which a reply follows and the conversation lists', async ({ page }) => {
+    await page.goto(`/change-sets/${spaceSlug}/${slug}`);
+    const line = page.locator('[data-comment-path="spec.replicas"]').first();
+    await expect(line).toBeVisible({ timeout: 30000 });
+    await line.hover();
+    await line.getByTestId('review-add-line').click();
+    const composer = page.getByTestId('review-new-thread-composer');
+    await composer.getByRole('textbox').fill('Why 3 replicas?');
+    await composer.getByRole('button', { name: copy.comment, exact: true }).click();
+    await expect(composer).toHaveCount(0);
+
+    // On the Revision the diff shows, naming no ChangeOrder: the Revision carries the ChangeSet.
+    const stored = async () =>
+      ((await (await hubApi.get('/api/review_comment', { params: { where: `UnitID = '${unitId}'` } })).json()) as {
+        ReviewComment: { Text: string; RevisionNum: number; ChangeOrderID?: string; ReplyToID?: string };
+      }[]).map((row) => row.ReviewComment);
+    const head = ((await (await hubApi.get(`/api/space/${spaceId}/unit/${unitId}`)).json()) as { Unit: { HeadRevisionNum: number } }).Unit
+      .HeadRevisionNum;
+    await expect.poll(async () => (await stored()).map((c) => [c.Text, c.RevisionNum, c.ChangeOrderID ?? ''])).toEqual([
+      ['Why 3 replicas?', head, ''],
+    ]);
+
+    const thread = page.getByTestId('review-thread').filter({ hasText: 'Why 3 replicas?' }).first();
+    await thread.getByTestId('review-reply-open').click();
+    await page.getByTestId('review-reply-composer').getByRole('textbox').fill('The load test needs 3.');
+    await page.getByTestId('review-reply-composer').getByRole('button', { name: copy.reply, exact: true }).click();
+    await expect(thread.getByTestId('review-comment')).toHaveCount(2);
+    await expect.poll(async () => (await stored()).filter((c) => c.ReplyToID).map((c) => c.Text)).toEqual(['The load test needs 3.']);
+
+    const conversation = page.getByTestId('review-conversation');
+    await expect(conversation.getByTestId('review-conversation-thread')).toHaveCount(1);
+    await expect(conversation).toContainText('Why 3 replicas?');
   });
 
   test('a later change leaves the approval out of date', async ({ page }) => {

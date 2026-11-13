@@ -31,7 +31,7 @@ import {
 } from '@confighub/rtk-query';
 
 import { FIELD_ICONS } from '../field-icons';
-import { FIELD_CONFIGS, FIELD_DESCRIPTIONS, getAvailableFieldsForEntity } from '../operators';
+import { FIELD_CONFIGS, FIELD_DESCRIPTIONS, getOfferedFieldsForEntity } from '../operators';
 import { useQueryBuilderContext } from '../QueryBuilderContext';
 import { DropdownMenu, MenuSection, SubmenuContainer } from '../shared-styles';
 import type { FilterFieldType } from '../types';
@@ -53,7 +53,7 @@ export const FieldDropdown = ({
   onChange,
   disabled = false,
 }: FieldDropdownProps) => {
-  const { entityType, onSelectSavedView } = useQueryBuilderContext();
+  const { entityType, fieldOptions, onSelectSavedView } = useQueryBuilderContext();
   const config = FIELD_CONFIGS[currentField];
 
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
@@ -172,7 +172,7 @@ export const FieldDropdown = ({
     }
   }, [itemToDelete, deleteView]);
 
-  const availableFields = getAvailableFieldsForEntity(entityType);
+  const availableFields = getOfferedFieldsForEntity(entityType, fieldOptions);
 
   return (
     <>

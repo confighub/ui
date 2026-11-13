@@ -92,9 +92,9 @@ export const exploreAndInspectSteps: TourStep[] = [
     // The whole values list, NOT `component-leaf-row`: that testid is stamped
     // once per row, so this step's spotlight resolved to whichever row matched
     // first (`apiVersion: apps/v1`) and ringed a single arbitrary value while
-    // the copy described the entire Configuration view. `component-values-list`
-    // was added to ComponentSidePane.tsx's PaneContent for exactly this.
-    anchor: { kind: 'selector', css: '[data-testid="component-values-list"]' },
+    // the copy described the entire Configuration view. `unit-list`
+    // is ComponentSidePane.tsx's PaneContent, the list that holds every Unit.
+    anchor: { kind: 'selector', css: '[data-testid="unit-list"]' },
     title: 'See its configuration',
     body: (
       <>

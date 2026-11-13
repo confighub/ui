@@ -22,15 +22,25 @@ import type { PromotionEdgeData } from './PromotionEdge';
 export const NODE_WIDTH = 260;
 // Vertical slot reserved per node in the layout (and used for edge/centering
 // math in ComponentFlowGraph). The card has a min-height of 84 and grows with
-// its status content: the signal chips (Stale / Unreleased changes / Gated /
-// live status) are compact single-line chips that wrap, so even a busy card
-// stays modest. Sized (with NODE_GAP) to clear the next stacked sibling.
+// its status content: live status plus several wrapped config chips (Stale /
+// Unreleased changes / Warnings / Gated) make it taller than this slot. Such a
+// card, once measured, is laid out at its own height (`nodeHeightById`).
 export const NODE_HEIGHT = 112;
 export const STAGE_GAP = 100;
 // Exported so composerLayout.ts can use the exact same vertical spacing unit
 // when computing landing-slot/composer positions from already-computed node
 // positions — it must match this module's own math pixel-for-pixel.
 export const NODE_GAP = 30;
+
+/**
+ * The height a card takes in the layout: its measured height (from
+ * `nodeHeightById`, else React Flow's own measurement), never less than
+ * NODE_HEIGHT.
+ */
+export const layoutHeightOf = (
+  node: { id: string; height?: number | null },
+  nodeHeightById?: ReadonlyMap<string, number>,
+): number => Math.max(NODE_HEIGHT, nodeHeightById?.get(node.id) ?? node.height ?? 0);
 
 /**
  * Whether an edge draws its sync badge: only when the node-to-node gap is the
@@ -178,6 +188,8 @@ export function computeLayout(
   /** The Components of a graph of two or more: each tree is laid out in its own frame. */
   components?: readonly ComponentGroup[],
   frameActions?: ComponentFrameActions,
+  /** Measured card heights. A card taller than NODE_HEIGHT gets its own height, so it cannot cover the card below it. */
+  nodeHeightById?: ReadonlyMap<string, number>,
 ): LayoutResult {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
@@ -200,6 +212,7 @@ export function computeLayout(
     currentX += NODE_WIDTH + STAGE_GAP;
   });
 
+  const heightOf = (id: string) => layoutHeightOf({ id }, nodeHeightById);
   const nodePositions = new Map<string, { x: number; y: number }>();
   const framed = components !== undefined && components.length > 0;
 
@@ -213,6 +226,7 @@ export function computeLayout(
       NODE_HEIGHT,
       NODE_GAP,
       20,
+      heightOf,
     );
     deployments.forEach((d) => {
       const x = stageX.get(d.stage) ?? 0;
@@ -235,11 +249,12 @@ export function computeLayout(
         NODE_HEIGHT,
         NODE_GAP,
         0,
+        heightOf,
       );
       let bottom = 0;
       let right = 0;
       for (const id of c.deploymentIds) {
-        bottom = Math.max(bottom, (y.get(id) ?? 0) + NODE_HEIGHT);
+        bottom = Math.max(bottom, (y.get(id) ?? 0) + heightOf(id));
         const d = deploymentById.get(id);
         right = Math.max(right, (stageX.get(d?.stage ?? 0) ?? 0) + NODE_WIDTH);
       }

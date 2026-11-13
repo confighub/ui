@@ -28,4 +28,6 @@ export type {
   NumberOperator,
   LabelOperator,
   LabelOptions,
+  FieldOptions,
+  NamedEntity,
 } from './types';

@@ -8,7 +8,7 @@
  * This is the "write" path: UI filters → API query strings.
  */
 
-import { FIELD_CONFIGS } from './operators';
+import { FIELD_CONFIGS, isNoValueOperator, keyValueAttribute } from './operators';
 import type { FilterCondition, FilterOperator } from './types';
 
 /**
@@ -31,6 +31,17 @@ export const FIELD_TO_API_MAPPING: Record<string, string> = {
   lastChangeDescription: 'LastChangeDescription',
   // Target-specific fields
   targetId: 'TargetID',
+  // Space-specific fields
+  spaceId: 'SpaceID',
+  releaseTarget: 'ReleaseTargetID',
+  component: 'ComponentID',
+  triggerFilter: 'TriggerFilterID',
+  upstreamSpace: 'UpstreamSpaceID',
+  // Link-specific fields
+  updateType: 'UpdateType',
+  autoUpdate: 'AutoUpdate',
+  stale: 'Stale',
+  toSpace: 'ToSpaceID',
   // Trigger-specific fields
   event: 'Event',
   functionName: 'FunctionName',
@@ -43,7 +54,10 @@ export const FIELD_TO_API_MAPPING: Record<string, string> = {
 const NUMERIC_FIELDS = new Set(['headRevisionNum', 'lastReleasedRevisionNum']);
 
 /** Fields that use boolean values (no quotes in WHERE clause) */
-const BOOLEAN_FIELDS = new Set(['disabled', 'validating']);
+const BOOLEAN_FIELDS = new Set(['disabled', 'validating', 'autoUpdate', 'stale']);
+
+/** Whether a field's values are written unquoted, as numbers or booleans */
+export const isUnquotedField = (field: string): boolean => NUMERIC_FIELDS.has(field) || BOOLEAN_FIELDS.has(field);
 
 /**
  * Escape a string value for use in a WHERE clause.
@@ -69,7 +83,7 @@ const escapeIlikeValue = (value: string): string => {
  * Prevents injection via dynamic field names (e.g., label keys).
  */
 const isValidFieldName = (value: string): boolean => {
-  return /^[a-zA-Z0-9_.-]+$/.test(value);
+  return /^[a-zA-Z0-9_./-]+$/.test(value);
 };
 
 /**
@@ -209,29 +223,30 @@ const sanitizeRawWhereClause = (value: string): string => {
 const conditionToWhereFragment = (condition: FilterCondition): string | null => {
   const { field, operator, value, labelKey } = condition;
 
-  // Handle labels field specially - it uses key-value structure
-  if (field === 'labels') {
+  // A key-value field (Labels, Annotations) filters one key of its map.
+  const mapAttribute = keyValueAttribute(field);
+  if (mapAttribute) {
     if (!labelKey) {
       return null; // No key selected
     }
 
-    // Validate label key against the server-side allowlist.
-    // Server regex: ^[A-Za-z0-9]([\-_\./A-Za-z0-9]*[A-Za-z0-9])?
-    // The frontend isValidFieldName covers the same safe character set.
-    // Single quotes are NOT valid in label key names — reject them so we
-    // never produce syntactically invalid SQL like `Labels.key''name`.
+    // Validate the key against the server's key syntax,
+    // ^[A-Za-z0-9]([\-_\./A-Za-z0-9]*[A-Za-z0-9])?, whose character set isValidFieldName
+    // allows. Single quotes are not valid in a key, so a key with one is rejected rather than
+    // written as invalid SQL like `Labels.key''name`.
     const trimmedKey = labelKey.trim();
     if (!isValidFieldName(trimmedKey)) {
-      console.warn('[QueryBuilder] Invalid label key rejected:', trimmedKey.slice(0, 50));
+      console.warn('[QueryBuilder] Invalid key rejected:', trimmedKey.slice(0, 50));
       return null;
     }
+    const keyPath = `${mapAttribute}.${trimmedKey}`;
 
     // Handle exists/notExists operators (no value needed)
     if (operator === 'exists') {
-      return `Labels.${trimmedKey} IS NOT NULL`;
+      return `${keyPath} IS NOT NULL`;
     }
     if (operator === 'notExists') {
-      return `Labels.${trimmedKey} IS NULL`;
+      return `${keyPath} IS NULL`;
     }
 
     // Other operators require a value
@@ -243,15 +258,20 @@ const conditionToWhereFragment = (condition: FilterCondition): string | null => 
 
     switch (operator) {
       case 'equals':
-        return `Labels.${trimmedKey} = '${escapedValue}'`;
+        return `${keyPath} = '${escapedValue}'`;
       case 'notEquals':
-        return `Labels.${trimmedKey} != '${escapedValue}'`;
+        return `${keyPath} != '${escapedValue}'`;
       case 'contains':
         // Use ILIKE-specific escaping for pattern matching
-        return `Labels.${trimmedKey} ILIKE '%${escapeIlikeValue(value.trim())}%'`;
+        return `${keyPath} ILIKE '%${escapeIlikeValue(value.trim())}%'`;
       default:
         return null;
     }
+  }
+
+  if (isNoValueOperator(operator)) {
+    const apiField = FIELD_TO_API_MAPPING[field];
+    return apiField ? `${apiField} ${operator === 'exists' ? 'IS NOT NULL' : 'IS NULL'}` : null;
   }
 
   if (!value || value.trim() === '') {

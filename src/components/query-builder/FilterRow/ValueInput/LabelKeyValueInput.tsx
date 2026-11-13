@@ -77,7 +77,10 @@ export const LabelKeyValueInput = ({
   autoFocus = false,
   focusTrigger = 0,
 }: LabelKeyValueInputProps) => {
-  const { labelOptions, openAddMenu } = useQueryBuilderContext();
+  const context = useQueryBuilderContext();
+  const { openAddMenu } = context;
+  // The keys and values of the map this filter names a key of
+  const labelOptions = condition.field === 'annotations' ? context.annotationOptions : context.labelOptions;
   const keyInputRef = useRef<HTMLInputElement>(null);
   const valueInputRef = useRef<HTMLInputElement>(null);
   const [keyOpen, setKeyOpen] = useState(false);

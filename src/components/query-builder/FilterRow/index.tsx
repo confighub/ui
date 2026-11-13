@@ -5,7 +5,7 @@ import { useCallback, useRef, useState } from 'react';
 
 import CloseIcon from '@mui/icons-material/Close';
 
-import { FIELD_CONFIGS, getDefaultOperator, isMultiSelectConfig } from '../operators';
+import { FIELD_CONFIGS, getDefaultOperator, isMultiSelectConfig, isNoValueOperator, keyValueAttribute } from '../operators';
 import type { FilterFieldType, FilterOperator, FilterRowProps } from '../types';
 
 import { FieldDropdown } from './FieldDropdown';
@@ -19,8 +19,8 @@ import { ValueInput } from './ValueInput';
  * Used to determine if the filter should be cancelled on blur
  */
 const isFilterIncomplete = (condition: FilterRowProps['condition']): boolean => {
-  // For labels field, we need to check both labelKey and value
-  if (condition.field === 'labels') {
+  // For a key-value field (labels, annotations), we need to check both labelKey and value
+  if (keyValueAttribute(condition.field)) {
     // If no labelKey, it's incomplete
     if (!condition.labelKey) return true;
     // For exists/notExists operators, only labelKey is needed
@@ -29,6 +29,9 @@ const isFilterIncomplete = (condition: FilterRowProps['condition']): boolean => 
     }
     // For other operators, value is required
     return !condition.value;
+  }
+  if (isNoValueOperator(condition.operator)) {
+    return false;
   }
   // For all other fields, just check value
   return !condition.value;
@@ -146,7 +149,7 @@ export const FilterRow = ({
       field: newField,
       operator: newOperator,
       value: '',
-      labelKey: newField === 'labels' ? condition.labelKey : undefined,
+      labelKey: keyValueAttribute(newField) ? condition.labelKey : undefined,
     });
 
     // Trigger focus on value input after field change
@@ -155,7 +158,9 @@ export const FilterRow = ({
 
   const handleOperatorChange = (operator: FilterOperator) => {
     recentlyCommittedRef.current = true;
-    onUpdate({ ...condition, operator });
+    // A key-value filter's no-value operators still take its key, which is kept apart from its value.
+    const clearsValue = isNoValueOperator(operator) && !keyValueAttribute(condition.field);
+    onUpdate({ ...condition, operator, value: clearsValue ? '' : condition.value });
     // Trigger focus on value input after operator change
     setFocusTrigger(prev => prev + 1);
   };
@@ -181,17 +186,20 @@ export const FilterRow = ({
         multiSelectCount={multiSelectCount}
       />
 
-      <ValueSection>
-        <ValueInput
-          condition={condition}
-          config={config}
-          onUpdate={handleValueUpdate}
-          onRemove={onRemove}
-          disabled={disabled}
-          autoFocus={autoFocus}
-          focusTrigger={focusTrigger}
-        />
-      </ValueSection>
+      {/* A key-value filter's key is entered in its value section, so it is shown for every operator. */}
+      {(keyValueAttribute(condition.field) || !isNoValueOperator(condition.operator)) && (
+        <ValueSection>
+          <ValueInput
+            condition={condition}
+            config={config}
+            onUpdate={handleValueUpdate}
+            onRemove={onRemove}
+            disabled={disabled}
+            autoFocus={autoFocus}
+            focusTrigger={focusTrigger}
+          />
+        </ValueSection>
+      )}
 
       <RemoveButton
         onClick={onRemove}

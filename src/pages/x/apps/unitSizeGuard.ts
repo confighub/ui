@@ -91,13 +91,6 @@ export const HEAVY_UNIT_BYTES = 1_572_864; // 1.5 MiB
 export const DEFERRED_PAINT_BYTES = 262_144; // 256 KB
 
 /**
- * Payload size at or above which a unit's header row carries a size
- * chip. Below this, size is not the interesting thing about a unit and the chip
- * is noise.
- */
-export const UNIT_SIZE_CHIP_BYTES = 524_288; // 512 KB
-
-/**
  * Byte size of a configuration payload, from its LENGTH alone.
  *
  * The data endpoints serve the configuration as text, so its length IS its size —
@@ -130,11 +123,6 @@ export function isHeavyUnitData(data: string | undefined): boolean {
  */
 export function shouldDeferUnitPaint(data: string | undefined): boolean {
   return payloadBytes(data) >= DEFERRED_PAINT_BYTES;
-}
-
-/** Whether a unit is big enough to be worth labelling with a size chip. */
-export function shouldShowUnitSizeChip(data: string | undefined): boolean {
-  return payloadBytes(data) >= UNIT_SIZE_CHIP_BYTES;
 }
 
 /**

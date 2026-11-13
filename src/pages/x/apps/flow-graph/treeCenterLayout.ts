@@ -32,6 +32,11 @@ export function computeSubtreeCenteredY(
   nodeHeight: number,
   nodeGap: number,
   topMargin: number,
+  /**
+   * A node's own height. A node taller than `nodeHeight` (a busy Deployment
+   * card, once measured) pushes the nodes below it down by the difference.
+   */
+  heightOf: (id: string) => number = () => nodeHeight,
 ): Map<string, number> {
   // ── Pass 1: subtree heights (in "number of leaf rows") ──
   const subtreeHeight = new Map<string, number>();
@@ -60,8 +65,10 @@ export function computeSubtreeCenteredY(
   function positionNode(id: string, minY: number, ancestors: Set<string>): number {
     const children = (childrenOf.get(id) ?? []).filter((cid) => !ancestors.has(cid));
     const height = subtreeHeight.get(id) ?? 1;
+    const ownHeight = heightOf(id);
 
     let y: number;
+    let childrenEnd = minY;
     if (children.length === 0) {
       y = minY;
     } else {
@@ -71,18 +78,26 @@ export function computeSubtreeCenteredY(
       children.forEach((cid) => {
         childY = positionNode(cid, childY, nextAncestors);
       });
+      childrenEnd = childY;
 
-      const firstChildY = yById.get(children[0]);
-      const lastChildY = yById.get(children[children.length - 1]);
+      const first = children[0];
+      const last = children[children.length - 1];
+      const firstChildY = yById.get(first);
+      const lastChildY = yById.get(last);
       if (firstChildY !== undefined && lastChildY !== undefined) {
-        y = (firstChildY + lastChildY) / 2;
+        // Centre on the children's centres. A parent taller than its
+        // children's span starts at minY rather than reaching above it.
+        const mid = (firstChildY + heightOf(first) / 2 + lastChildY + heightOf(last) / 2) / 2;
+        y = Math.max(minY, mid - ownHeight / 2);
       } else {
         y = minY + ((height - 1) * (nodeHeight + nodeGap)) / 2;
       }
     }
 
     yById.set(id, y);
-    return minY + height * (nodeHeight + nodeGap);
+    // The subtree ends below its lowest child, or below the node itself when
+    // the node is the taller of the two.
+    return Math.max(childrenEnd, y + ownHeight + nodeGap);
   }
 
   let nextY = topMargin;
@@ -97,7 +112,7 @@ export function computeSubtreeCenteredY(
   ids.forEach((id) => {
     if (!yById.has(id)) {
       yById.set(id, nextY);
-      nextY += nodeHeight + nodeGap;
+      nextY += heightOf(id) + nodeGap;
     }
   });
 

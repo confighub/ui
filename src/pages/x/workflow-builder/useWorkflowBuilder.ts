@@ -16,6 +16,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { useSpaceParam } from '@/hooks/useSpaceParam';
+
 import {
   attestationById,
   customById,
@@ -80,16 +82,6 @@ interface BuilderState {
   reorder: ReorderNote | null;
   dirty: boolean;
   search: string;
-  /**
-   * The Space to filter rows by, or `null` for every Space.
-   *
-   * ⚠️ NOT A STRING WITH A SENTINEL. `'all'` was overloaded to mean both "no
-   * filter" and "the literal value some Space is slugged", which are not the
-   * same fact -- a Space named `all` is a legal slug, and selecting it read
-   * back exactly like selecting nothing. `null` cannot collide with anything a
-   * Space is ever named, which a string sentinel can never guarantee.
-   */
-  spaceFilter: string | null;
 }
 
 function emptyState(): BuilderState {
@@ -105,11 +97,21 @@ function emptyState(): BuilderState {
     reorder: null,
     dirty: false,
     search: '',
-    spaceFilter: null,
   };
 }
 
 export interface BuilderApi extends BuilderState {
+  /**
+   * The Space to filter rows by, or `null` for every Space. Kept in the URL, so a link can open
+   * the list filtered to a Space.
+   *
+   * ⚠️ NOT A STRING WITH A SENTINEL. `'all'` was overloaded to mean both "no
+   * filter" and "the literal value some Space is slugged", which are not the
+   * same fact -- a Space named `all` is a legal slug, and selecting it read
+   * back exactly like selecting nothing. `null` cannot collide with anything a
+   * Space is ever named, which a string sentinel can never guarantee.
+   */
+  spaceFilter: string | null;
   selectStage: (id: string) => void;
   selectFinal: () => void;
   clearSelection: () => void;
@@ -329,14 +331,11 @@ export function useWorkflowBuilder(
   }, []);
 
   const setSearch = useCallback((v: string) => setS((p) => ({ ...p, search: v })), []);
-  const setSpaceFilter = useCallback(
-    (v: string | null) => setS((p) => ({ ...p, spaceFilter: v })),
-    [],
-  );
-  const clearFilters = useCallback(
-    () => setS((p) => ({ ...p, search: '', spaceFilter: null })),
-    [],
-  );
+  const [spaceFilter, setSpaceFilter] = useSpaceParam();
+  const clearFilters = useCallback(() => {
+    setS((p) => ({ ...p, search: '' }));
+    setSpaceFilter(null);
+  }, [setSpaceFilter]);
 
   const addStage = useCallback(() => {
     const created = nextId('s');
@@ -664,6 +663,7 @@ export function useWorkflowBuilder(
   return useMemo<BuilderApi>(
     () => ({
       ...s,
+      spaceFilter,
       revealNonce,
       customRevealNonce,
       focusCustomId,
@@ -708,6 +708,7 @@ export function useWorkflowBuilder(
     }),
     [
       s,
+      spaceFilter,
       revealNonce,
       customRevealNonce,
       focusCustomId,

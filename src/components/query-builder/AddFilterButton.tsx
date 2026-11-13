@@ -13,7 +13,8 @@ import Tooltip from '@mui/material/Tooltip';
 import { styled } from '@mui/material/styles';
 
 import { FIELD_ICONS } from './field-icons';
-import { FIELD_CONFIGS, FIELD_DESCRIPTIONS, getAvailableFieldsForEntity } from './operators';
+import { FIELD_CONFIGS, FIELD_DESCRIPTIONS, getOfferedFieldsForEntity } from './operators';
+import { useQueryBuilderContext } from './QueryBuilderContext';
 import { DropdownMenu, MenuSection } from './shared-styles';
 import type { AddFilterButtonProps, FilterFieldType } from './types';
 
@@ -60,6 +61,7 @@ export const AddFilterButton = forwardRef<AddFilterButtonHandle, AddFilterButton
   disabled = false,
   hasFilters = false,
 }, ref) => {
+  const { fieldOptions } = useQueryBuilderContext();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
   const menuListRef = useRef<HTMLUListElement>(null);
@@ -197,7 +199,7 @@ export const AddFilterButton = forwardRef<AddFilterButtonHandle, AddFilterButton
   }, [disabled, open]);
 
   // Get available fields for this entity type
-  const availableFields = getAvailableFieldsForEntity(entityType);
+  const availableFields = getOfferedFieldsForEntity(entityType, fieldOptions);
 
   // Separate fields into categories
   const standardFields = availableFields.filter(
@@ -233,8 +235,8 @@ export const AddFilterButton = forwardRef<AddFilterButtonHandle, AddFilterButton
     });
 
   // Filter out fields that can only be added once
-  // Note: 'labels' can be added multiple times (for different label keys)
-  const MULTI_INSTANCE_FIELDS: FilterFieldType[] = ['labels'];
+  // Note: a key-value field (labels, annotations) can be added once per key
+  const MULTI_INSTANCE_FIELDS: FilterFieldType[] = ['labels', 'annotations'];
   const availableStandardFields = standardFields.filter((field) => {
     if (MULTI_INSTANCE_FIELDS.includes(field)) {
       return true; // Always allow adding another label filter

@@ -25,10 +25,9 @@ import {
 import { type RevisionRow } from '@/types';
 import { isIDInvalid } from '@/utility/validation-functions';
 
-import { LinkRow } from '../components/links-table/LinksTable';
+import { LINK_INCLUDE, LinkRow } from '../components/links-table/LinksTable';
 
 const EMPTY_LINKS: ExtendedLinkRead[] = [];
-const LINK_INCLUDE = 'FromUnitID,ToUnitID,SpaceID,ToSpaceID,TransformInvocationID';
 
 export interface IUseUnitDetailDataProps {
   id: string;

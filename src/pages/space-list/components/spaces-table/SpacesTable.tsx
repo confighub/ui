@@ -61,6 +61,8 @@ export const SpacesTable = ({ spaces = [], onRowSelected, filterElement, noRowsO
       Component: true,
       SpaceID: false,
       'Labels.Environment': true,
+      'Labels.Variant': true,
+      'Labels.Namespace': true,
       // The summary counts other than these are offered in the column picker
       ...Object.fromEntries(SPACE_SUMMARY_COUNTS.map((c) => [c.field, DEFAULT_COUNT_COLUMNS.has(c.field)])),
       WhereTrigger: false,
@@ -69,7 +71,7 @@ export const SpacesTable = ({ spaces = [], onRowSelected, filterElement, noRowsO
       ReleaseTarget: false,
       [HIDDEN_REASON_FIELD]: false,
       CreatedAt: false,
-      UpdatedAt: true,
+      UpdatedAt: false,
     } as Record<string, boolean>,
   }), []);
 

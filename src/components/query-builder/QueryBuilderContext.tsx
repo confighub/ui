@@ -5,7 +5,7 @@ import { createContext, useContext } from 'react';
 
 import type { ExtendedViewRead } from '@confighub/rtk-query';
 
-import type { EntityType, LabelOptions } from './types';
+import type { EntityType, FieldOptions, LabelOptions } from './types';
 
 /**
  * Context value for QueryBuilder
@@ -26,6 +26,10 @@ export interface QueryBuilderContextValue {
   resourceTypes: string[];
   /** Available label keys and values */
   labelOptions: LabelOptions;
+  /** Available annotation keys and values */
+  annotationOptions: LabelOptions;
+  /** Options for the fields that name entities by ID */
+  fieldOptions: FieldOptions;
   /** Whether the component is disabled */
   disabled: boolean;
   /** Callback when a saved view is selected */

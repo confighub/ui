@@ -15,6 +15,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useListUsersQuery } from '@confighub/rtk-query';
 
 import { authFetch } from '@/auth/session';
+import { isBotUser } from '@/utility/bot-users';
 import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
 import { useListUsersByIdChunkedQuery } from '@/hooks/chunkedQueriesApi';
 
@@ -95,8 +96,11 @@ export function useChangeSetReviews(detail: ChangeSetDetail): UseChangeSetReview
   );
   const candidates = useMemo(
     () =>
+      // People only: bots outnumber them and do not review.
       (everyone.data ?? [])
-        .flatMap((entry) => (entry.User?.UserID ? [reviewPersonOf(entry.User.UserID, userNames, viewerUserId)] : []))
+        .flatMap((entry) =>
+          entry.User?.UserID && !isBotUser(entry.User) ? [reviewPersonOf(entry.User.UserID, userNames, viewerUserId)] : [],
+        )
         .sort((a, b) => a.name.localeCompare(b.name)),
     [everyone.data, userNames, viewerUserId],
   );

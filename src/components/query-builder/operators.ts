@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import type { EntityType, FieldConfig, FilterFieldType, FilterOperator } from './types';
+import type { EntityType, FieldConfig, FieldOptions, FilterFieldType, FilterOperator, NamedEntity } from './types';
 
 /**
  * Returns true when a field config supports both single-select (equals/notEquals)
@@ -36,6 +36,13 @@ const IN_OPERATORS: FieldConfig['operators'] = [
 const MULTI_SELECT_OPERATORS: FieldConfig['operators'] = [
   ...IN_OPERATORS,
   ...SELECT_OPERATORS,
+];
+
+// For an optional reference to another entity: which one, or whether there is one.
+const REFERENCE_OPERATORS: FieldConfig['operators'] = [
+  ...MULTI_SELECT_OPERATORS,
+  { value: 'exists', label: 'is set' },
+  { value: 'notExists', label: 'is not set' },
 ];
 
 const DATE_OPERATORS: FieldConfig['operators'] = [
@@ -229,6 +236,13 @@ export const FIELD_CONFIGS: Record<FilterFieldType, FieldConfig> = {
     valueType: 'labelKeyValue',
     placeholder: 'Select label...',
   },
+  annotations: {
+    type: 'annotations',
+    label: 'Annotations',
+    operators: LABEL_OPERATORS,
+    valueType: 'labelKeyValue',
+    placeholder: 'Select annotation...',
+  },
   // Target-specific fields
   targetId: {
     type: 'targetId',
@@ -236,6 +250,85 @@ export const FIELD_CONFIGS: Record<FilterFieldType, FieldConfig> = {
     operators: SELECT_OPERATORS,
     valueType: 'text',
     placeholder: 'Enter target ID...',
+  },
+  // Space-specific fields
+  spaceId: {
+    type: 'spaceId',
+    label: 'Space ID',
+    operators: SELECT_OPERATORS,
+    valueType: 'text',
+    placeholder: 'Enter space ID...',
+  },
+  releaseTarget: {
+    type: 'releaseTarget',
+    label: 'Release Target',
+    operators: REFERENCE_OPERATORS,
+    valueType: 'select',
+    placeholder: 'Select targets...',
+    requiresFieldOptions: true,
+  },
+  component: {
+    type: 'component',
+    label: 'Component',
+    operators: REFERENCE_OPERATORS,
+    valueType: 'select',
+    placeholder: 'Select components...',
+    requiresFieldOptions: true,
+  },
+  triggerFilter: {
+    type: 'triggerFilter',
+    label: 'Trigger Filter',
+    operators: REFERENCE_OPERATORS,
+    valueType: 'select',
+    placeholder: 'Select filters...',
+    requiresFieldOptions: true,
+  },
+  upstreamSpace: {
+    type: 'upstreamSpace',
+    label: 'Upstream Space',
+    operators: REFERENCE_OPERATORS,
+    valueType: 'select',
+    placeholder: 'Select spaces...',
+    requiresFieldOptions: true,
+  },
+  // Link-specific fields
+  updateType: {
+    type: 'updateType',
+    label: 'Update Type',
+    operators: MULTI_SELECT_OPERATORS,
+    valueType: 'select',
+    placeholder: 'Select update types...',
+    requiresFieldOptions: true,
+  },
+  autoUpdate: {
+    type: 'autoUpdate',
+    label: 'Auto Update',
+    operators: BOOLEAN_OPERATORS,
+    valueType: 'select',
+    placeholder: 'Select...',
+    options: [
+      { value: 'true', label: 'True' },
+      { value: 'false', label: 'False' },
+    ],
+  },
+  stale: {
+    type: 'stale',
+    label: 'Stale',
+    operators: BOOLEAN_OPERATORS,
+    valueType: 'select',
+    placeholder: 'Select...',
+    options: [
+      { value: 'true', label: 'True' },
+      { value: 'false', label: 'False' },
+    ],
+  },
+  toSpace: {
+    type: 'toSpace',
+    label: 'To Space',
+    operators: MULTI_SELECT_OPERATORS,
+    valueType: 'select',
+    placeholder: 'Select spaces...',
+    requiresFieldOptions: true,
   },
   // Trigger-specific fields
   event: {
@@ -372,6 +465,47 @@ export const ENTITY_AVAILABLE_FIELDS: Record<EntityType, FilterFieldType[]> = {
     'labels',
     'createdAt',
     'updatedAt',
+    // Entity-specific fields
+    'component',
+    'releaseTarget',
+    'triggerFilter',
+    'upstreamSpace',
+    'spaceId',
+    // Advanced filters
+    'where',
+  ],
+  Link: [
+    // Common fields
+    'space',
+    'slug',
+    'labels',
+    'createdAt',
+    'updatedAt',
+    // Entity-specific fields
+    'updateType',
+    'autoUpdate',
+    'stale',
+    'toSpace',
+    // Advanced filters
+    'where',
+  ],
+  ChangeSet: [
+    // Common fields (the page filters by Space and State itself)
+    'slug',
+    'labels',
+    'annotations',
+    'createdAt',
+    'updatedAt',
+    // Advanced filters
+    'where',
+  ],
+  ChangeOrder: [
+    // Common fields (the page filters by Space and State itself)
+    'slug',
+    'labels',
+    'annotations',
+    'createdAt',
+    'updatedAt',
     // Advanced filters
     'where',
   ],
@@ -405,6 +539,7 @@ export const FIELD_DESCRIPTIONS: Record<FilterFieldType, string> = {
   createdAt: 'Filter by when the resource was created',
   updatedAt: 'Filter by when the resource was last modified',
   labels: 'Filter by label key-value pairs (e.g., env=production)',
+  annotations: 'Filter by annotation key-value pairs (e.g., Trigger=my-space/my-trigger)',
 
   // Unit-specific fields
   toolchainType: 'Filter by the toolchain type (Kubernetes, Terraform, etc.)',
@@ -427,6 +562,18 @@ export const FIELD_DESCRIPTIONS: Record<FilterFieldType, string> = {
   // Target-specific fields
   targetId: 'Filter by the unique target identifier',
 
+  // Space-specific fields
+  spaceId: 'Filter by the unique space identifier',
+  releaseTarget: 'Filter by the Target the space releases its units to',
+  component: 'Filter by the Component the space is a Variant of',
+  triggerFilter: 'Filter by the Filter that selects the Triggers applied to the space',
+  upstreamSpace: 'Filter by the space this space takes its configuration from',
+
+  // Link-specific fields
+  updateType: 'Filter by how the link carries configuration from its To unit to its From unit',
+  autoUpdate: 'Filter by whether the link updates its From unit when its To unit changes',
+  stale: 'Filter by whether its To unit has finished a change the link has not taken',
+  toSpace: 'Filter by the space of the unit the link is to (its upstream)',
 
   // Trigger-specific fields
   event: 'Filter by the trigger event type',
@@ -444,6 +591,42 @@ export const getAvailableFieldsForEntity = (
 ): FilterFieldType[] => {
   return ENTITY_AVAILABLE_FIELDS[entityType] || AVAILABLE_FIELDS;
 };
+
+/**
+ * The fields offered for an entity type: those needing options only when the caller passed them
+ */
+export const getOfferedFieldsForEntity = (
+  entityType: EntityType = 'Unit',
+  fieldOptions?: FieldOptions,
+): FilterFieldType[] =>
+  getAvailableFieldsForEntity(entityType).filter(
+    (field) => !FIELD_CONFIGS[field].requiresFieldOptions || fieldOptions?.[field] !== undefined,
+  );
+
+/**
+ * The entities a field's values name by ID, or undefined if its values are not IDs
+ */
+export const getEntityOptionsForField = (
+  field: FilterFieldType,
+  sources: { spaces?: NamedEntity[]; targets?: NamedEntity[]; fieldOptions?: FieldOptions },
+): NamedEntity[] | undefined => {
+  if (field === 'space') return sources.spaces;
+  if (field === 'target' || field === 'targetId') return sources.targets;
+  return sources.fieldOptions?.[field];
+};
+
+/**
+ * The map a key-value field filters one key of, as `where` names it, or undefined for any other
+ * field. Such a field's filter carries the key in `labelKey`, and can be added once per key.
+ */
+export const keyValueAttribute = (field: FilterFieldType): 'Labels' | 'Annotations' | undefined =>
+  field === 'labels' ? 'Labels' : field === 'annotations' ? 'Annotations' : undefined;
+
+/**
+ * Operators that test whether a field has a value rather than compare it, so take none
+ */
+export const isNoValueOperator = (operator: FilterOperator): boolean =>
+  operator === 'exists' || operator === 'notExists';
 
 /**
  * Generate a unique ID for a filter condition

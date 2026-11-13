@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { buildColumns, LinkCell } from '@/components/data-grid/cells';
-import { SPACE_SUMMARY_COUNTS } from '@/utility/space-summary-counts';
-import { GridColDef, GridSortCellParams } from '@mui/x-data-grid';
+import { SPACE_SUMMARY_COUNTS, spaceCountLink, spaceTriggersHref } from '@/utility/space-summary-counts';
+import { GridColDef, GridRenderCellParams, GridSortCellParams } from '@mui/x-data-grid';
 import { SpaceRow } from '../SpacesTable';
 
 // Spaces in no Component sort after those in one, whichever the direction, and Spaces of one
@@ -121,7 +121,18 @@ export const createSpaceTableColumns = (): GridColDef<SpaceRow>[] => {
     },
   });
 
-  return columns.map((col) =>
-    col.field === 'Component' ? { ...col, type: 'string', sortComparator: compareByComponent } : col,
-  );
+  return columns.map((col) => {
+    if (col.field === 'Component') {
+      return { ...col, type: 'string', sortComparator: compareByComponent };
+    }
+    // A count links to the page listing what it counts in the Space, and stays a number to sort.
+    const count = SPACE_SUMMARY_COUNTS.find((c) => c.field === col.field);
+    const linkTo: ((row: SpaceRow) => string) | undefined =
+      col.field === 'AppliedTriggerCount'
+        ? (row) => spaceTriggersHref(row.SpaceID, 'applied')
+        : count && spaceCountLink(count);
+    return linkTo
+      ? { ...col, renderCell: (params: GridRenderCellParams<SpaceRow>) => <LinkCell params={params} linkTo={linkTo} /> }
+      : col;
+  });
 };

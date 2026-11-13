@@ -3,12 +3,17 @@
 import { useCallback, useMemo } from 'react';
 
 import {
+  confighubApi,
+  type ExtendedReviewCommentRead,
   useCreateReviewCommentMutation,
   useDeleteReviewCommentMutation,
   useListAllReviewCommentsQuery,
   usePatchReviewCommentMutation,
 } from '@confighub/rtk-query';
+import { defaultSerializeQueryArgs } from '@reduxjs/toolkit/query';
+
 import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
+import { fetchChunks } from '@/hooks/chunkedQueriesApi';
 import { getApiErrorMessage } from '@/utility/error-functions';
 
 import type { HistoryPerson } from '../changeOrderHistory';
@@ -44,6 +49,35 @@ export interface ChangeOrderReviewComments {
 
 const failure = (error: unknown): ReviewWriteResult => ({ ok: false, message: getApiErrorMessage(error) });
 
+const reviewCommentsOfRevisionsApi = confighubApi.injectEndpoints({
+  endpoints: (build) => ({
+    // A ChangeSet's comments are on its Revisions and name no ChangeOrder, whose own review of
+    // the same Revisions is the ChangeOrder's.
+    listChangeSetReviewComments: build.query<ExtendedReviewCommentRead[], { revisionIds: string[] }>({
+      queryFn: async ({ revisionIds }, _api, _extra, baseQuery) => {
+        const read = await fetchChunks<ExtendedReviewCommentRead>(
+          'RevisionID',
+          revisionIds,
+          (where) => ({ url: '/review_comment', params: { where: `${where} AND ChangeOrderID IS NULL` } }),
+          baseQuery,
+          { paged: true },
+        );
+        return 'error' in read ? { error: read.error } : { data: read.data };
+      },
+      serializeQueryArgs: ({ endpointName, endpointDefinition, queryArgs }) =>
+        defaultSerializeQueryArgs({ endpointName, endpointDefinition, queryArgs: { revisionIds: [...(queryArgs?.revisionIds ?? [])].sort() } }),
+      providesTags: ['ReviewComment'],
+    }),
+  }),
+  overrideExisting: false,
+});
+
+interface CommentsRead {
+  currentData?: readonly ExtendedReviewCommentRead[];
+  isError: boolean;
+  refetch: () => unknown;
+}
+
 /**
  * A ChangeOrder's review comments: one read of every comment that names it, wherever its Unit
  * is, as threads; and the writes that start a thread, reply, edit and delete. Each write goes to
@@ -54,6 +88,29 @@ const failure = (error: unknown): ReviewWriteResult => ({ ok: false, message: ge
  */
 export function useChangeOrderReviewComments(changeOrderId: string | undefined): ChangeOrderReviewComments {
   const read = useListAllReviewCommentsQuery({ where: `ChangeOrderID = '${changeOrderId ?? ''}'` }, { skip: changeOrderId === undefined });
+  return useReviewComments(read, changeOrderId !== undefined, changeOrderId);
+}
+
+/**
+ * A ChangeSet's review comments, as a ChangeOrder's are: those on the Revisions it made, which
+ * name no ChangeOrder, since the Revisions already carry the ChangeSet. `revisionIds` is
+ * undefined until the ChangeSet's Revisions are read.
+ */
+export function useChangeSetReviewComments(revisionIds: readonly string[] | undefined): ChangeOrderReviewComments {
+  const ids = useMemo(() => (revisionIds === undefined ? undefined : [...new Set(revisionIds)].sort()), [revisionIds]);
+  const read = reviewCommentsOfRevisionsApi.useListChangeSetReviewCommentsQuery(
+    { revisionIds: ids ?? [] },
+    { skip: ids === undefined || ids.length === 0 },
+  );
+  // A ChangeSet that has made no Revision yet has nothing to comment on, and nothing to read.
+  const none = ids !== undefined && ids.length === 0;
+  return useReviewComments(none ? NO_COMMENTS_READ : read, ids !== undefined, undefined);
+}
+
+const NO_COMMENTS_READ: CommentsRead = { currentData: [], isError: false, refetch: () => undefined };
+
+/** The threads of the comments read, and the writes, a new thread naming `changeOrderId` when there is one. */
+function useReviewComments(read: CommentsRead, loaded: boolean, changeOrderId: string | undefined): ChangeOrderReviewComments {
   const [createComment] = useCreateReviewCommentMutation();
   const [patchComment] = usePatchReviewCommentMutation();
   const [deleteComment] = useDeleteReviewCommentMutation();
@@ -70,7 +127,7 @@ export function useChangeOrderReviewComments(changeOrderId: string | undefined):
 
   const start = useCallback(
     async ({ anchor, spaceId, revisionNum, text }: NewThread): Promise<ReviewWriteResult> => {
-      if (changeOrderId === undefined) return { ok: false, message: reviewCommentCopy.notLoaded };
+      if (!loaded) return { ok: false, message: reviewCommentCopy.notLoaded };
       const resource =
         anchor.resourceType === undefined && anchor.resourceName === undefined
           ? undefined
@@ -82,7 +139,7 @@ export function useChangeOrderReviewComments(changeOrderId: string | undefined):
           reviewComment: {
             RevisionNum: revisionNum,
             Text: text,
-            ChangeOrderID: changeOrderId,
+            ...(changeOrderId === undefined ? {} : { ChangeOrderID: changeOrderId }),
             ...(resource === undefined ? {} : { Resource: resource }),
             ...(anchor.path === undefined ? {} : { Path: anchor.path }),
           },
@@ -92,7 +149,7 @@ export function useChangeOrderReviewComments(changeOrderId: string | undefined):
         return failure(error);
       }
     },
-    [changeOrderId, createComment],
+    [loaded, changeOrderId, createComment],
   );
 
   const reply = useCallback(

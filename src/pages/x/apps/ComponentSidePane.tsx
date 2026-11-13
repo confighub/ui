@@ -14,7 +14,6 @@ import {
 } from 'react';
 
 import { isKubernetesToolchain } from '@/components/code-editor/language';
-import { highlightText } from '@/components/entity-data-grid/utils/highlightText';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CloseIcon from '@mui/icons-material/Close';
@@ -28,7 +27,6 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
-import Fade from '@mui/material/Fade';
 import IconButton from '@mui/material/IconButton';
 import Link from '@mui/material/Link';
 import Skeleton from '@mui/material/Skeleton';
@@ -67,15 +65,13 @@ import {
   PaneContent,
   PaneHeader,
   ResizeHandle,
-  UnitHeaderRow,
   UnitRow,
-  UnitSlug,
   bottomBarPrimaryButtonSx,
   bottomBarTextButtonSx,
 } from './diffStyles';
 import { formatTimeAgo } from './diffTree';
-import { HeavyUnitGate, HeavyUnitLoading, UnitSizeChip, UnitSourceOverrideBar } from './HeavyUnitGate';
-import { isHeavyUnitData, shouldDeferUnitPaint, shouldShowUnitSizeChip } from './unitSizeGuard';
+import { HeavyUnitGate, HeavyUnitLoading, UnitSourceOverrideBar } from './HeavyUnitGate';
+import { isHeavyUnitData, shouldDeferUnitPaint } from './unitSizeGuard';
 import { computeTotalAllFields, countLogicalChanges, countSelectableUpgradeFields, countUpgradableBadgeFields, fieldDiffKey, hasRealUpgrade } from './entryBuilders';
 import { upgradeButtonState } from './upgradeButtonState';
 import { buildDeploymentMap } from './componentData';
@@ -90,7 +86,7 @@ import { RELEASE_DIFF_HEAD, useReleaseDiff } from './useReleaseDiff';
 import type { ReleaseUnitRef } from './useReleaseMagnitudes';
 import { RELEASE_FRESH_SETTLE_MS, useFreshSignal } from './useFreshSignal';
 import { UnitDetailsPane } from './UnitDetailsPane';
-import { ValidationGateChip } from './ValidationGateChip';
+import { UnitHeader } from './UnitHeader';
 import type { UnitMetaPatch } from './unit-details/types';
 import type {
   ApplyEntryWithGates,
@@ -2558,12 +2554,16 @@ export const ComponentSidePane = memo(
           </Box>
         )}
 
-        {/* `component-values-list` is pure instrumentation: it gives the guided
-            tour a stable handle for "the Configuration view" as a whole. Its
+        {/* `unit-list` is also the guided
+            tour's stable handle for "the Configuration view" as a whole. Its
             only alternative, `component-leaf-row`, is stamped per row, so a
             tour anchor resolved to whichever row happened to match first
             (`apiVersion`) while the copy described the entire view. */}
-        <PaneContent data-testid='component-values-list'>
+        <PaneContent
+          data-testid='unit-list'
+          // The container the Unit cards' narrow-pane rules read, on the quiet ground the cards sit on.
+          sx={{ containerType: 'inline-size', background: componentTheme.bgSubtle }}
+        >
           {selectedDeployment && (
             <ChangeSetWaitNotice
               deployment={selectedDeployment}
@@ -2654,6 +2654,14 @@ export const ComponentSidePane = memo(
               </Button>
             </Box>
           )}
+          {filteredUnits.length === 0 && !filterText && !hasUnreleasableUnitsOnly && !isUnitDataFetching && (
+            <Box
+              data-testid='unit-list-empty'
+              sx={{ py: 6, px: 3, textAlign: 'center', fontFamily: componentTheme.fontSans, fontSize: 13, color: componentTheme.fgMuted }}
+            >
+              This Space has no Units.
+            </Box>
+          )}
           {filteredUnits.length === 0 && filterText && (
             <Box
               sx={{
@@ -2683,11 +2691,6 @@ export const ComponentSidePane = memo(
             const upgradeError = unit.upgradeEntry ? undefined : unit.upgradeError;
             const unitKey = unit.unitId;
             const isUnitExpanded = isUnitExpandedInPane(unit, expansionState);
-            const revisionLabel = unit.upgradeEntry
-              ? `r${unit.upgradeEntry.upstreamRevisionNum}→r${unit.upgradeEntry.upstreamHeadRevisionNum}`
-              : unit.applyEntry
-                ? `r${unit.applyEntry.appliedRevision}→r${unit.applyEntry.headRevision}`
-                : null;
             // A unit is "changed" by an upgrade if at least one upstream field
             // would ACTUALLY upgrade — including brand-new paths. Only paths the
             // unit overrides with a local value set are excluded. A unit whose
@@ -2727,14 +2730,21 @@ export const ComponentSidePane = memo(
             return (
               <UnitRow
                 key={unit.unitId}
+                data-testid='unit-card'
                 // The source view is always rendered fully opaque, so we only
                 // tag unchanged units with the dim class in diff view. The
                 // upgrade-preview dim (.pane-upgrade-preview .unit-unchanged)
                 // therefore never affects the source view.
                 className={viewMode === 'diff' && !isUpgradeChanged ? 'unit-unchanged' : undefined}
               >
-                <UnitHeaderRow
-                  onClick={() => {
+                <UnitHeader
+                  unit={unit}
+                  spaceSlug={deploymentMap.get(unit.spaceId)?.slug ?? unit.spaceId}
+                  expanded={isUnitExpanded}
+                  held={isUnitGated(unit, materializedUnitIds)}
+                  filterText={filterText}
+                  canOpenDetails={!!onUpdateUnitMeta}
+                  onToggle={() => {
                     // A click has to reconcile BOTH sets to invert the effective
                     // state, because each one alone can only move it in a single
                     // direction: `forcedExpandedGroups` is the only thing that
@@ -2744,121 +2754,19 @@ export const ComponentSidePane = memo(
                     // other pinning the row, so a click on some units would do
                     // nothing.
                     if (isUnitExpanded) {
-                      // Collapse: force-collapse via the override and drop any
-                      // forced-expand so it can't immediately re-open.
                       setCollapsedGroups((prev) => setSetMember(prev, unitKey, true));
                       setForcedExpandedGroups((prev) => setSetMember(prev, unitKey, false));
                     } else {
-                      // Expand: clear the collapse override and add the
-                      // forced-expand, which is the expand path for any unit the
-                      // pane wouldn't have opened on its own.
                       setCollapsedGroups((prev) => setSetMember(prev, unitKey, false));
                       setForcedExpandedGroups((prev) => setSetMember(prev, unitKey, true));
                     }
                   }}
-                >
-                  <ChevronIcon $expanded={isUnitExpanded}>
-                    <ChevronRightIcon />
-                  </ChevronIcon>
-                  <DataObjectIcon
-                    sx={{ fontSize: 15, color: componentTheme.fgMuted, flexShrink: 0 }}
-                  />
-                  <UnitSlug
-                    href={`/units/${unit.spaceId}/${unit.unitId}`}
-                    // Keep the real href so middle-click / cmd-click / context
-                    // menu still open the full unit page in a new tab and for
-                    // accessibility. A plain left-click is intercepted to open
-                    // the inline details pane instead.
-                    target='_blank'
-                    rel='noopener noreferrer'
-                    onClick={(e: React.MouseEvent) => {
-                      e.stopPropagation();
-                      // Let the browser handle modified clicks (new tab) and
-                      // non-primary buttons; only intercept a plain left-click.
-                      // Also bail out if the inline details pane can't render
-                      // (onUpdateUnitMeta absent) so the link stays functional.
-                      if (!onUpdateUnitMeta || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
-                        return;
-                      }
-                      e.preventDefault();
-                      setDetailsUnit({ unitId: unit.unitId, spaceId: unit.spaceId, slug: unit.slug });
-                    }}
-                  >
-                    {filterText ? highlightText(unit.slug, filterText) : unit.slug}
-                  </UnitSlug>
-                  {/* Size chip — explains slowness before the user has to ask,
-                      and survives after the tree renders as the standing
-                      explanation. A SIZE, never a change count: a per-unit-row
-                      "N changes" counter was removed and must not come back
-                      (components.md, Rejected approaches). */}
-                  {shouldShowUnitSizeChip(unit.data) && (
-                    <UnitSizeChip
-                      data={unit.data}
-                      held={isUnitGated(unit, materializedUnitIds)}
-                    />
-                  )}
-                  {upgradeLoading && (
-                    <CircularProgress
-                      size={12}
-                      sx={{ color: componentTheme.upgrade, flexShrink: 0 }}
-                    />
-                  )}
-                  {upgradeError && (
-                    <Tooltip title={upgradeError} placement='left' arrow>
-                      <ErrorOutlineIcon
-                        data-testid='component-unit-entry-error-icon'
-                        sx={{ fontSize: 14, color: componentTheme.danger, flexShrink: 0 }}
-                      />
-                    </Tooltip>
-                  )}
-                  {unit.variationError && (
-                    <Tooltip title={`The local overrides could not be read: ${unit.variationError}`} placement='left' arrow>
-                      <ErrorOutlineIcon
-                        data-testid='component-unit-variation-error-icon'
-                        sx={{ fontSize: 14, color: componentTheme.danger, flexShrink: 0 }}
-                      />
-                    </Tooltip>
-                  )}
-                  <Fade
-                    in={Object.keys(unit.validationErrors ?? {}).length > 0}
-                    timeout={300}
-                    unmountOnExit
-                  >
-                    <span>
-                      <ValidationGateChip
-                        kind='errors'
-                        gates={Object.keys(unit.validationErrors ?? {})}
-                        results={unit.validationResults}
-                        spaceId={unit.spaceId}
-                        unitId={unit.unitId}
-                      />
-                    </span>
-                  </Fade>
-                  {Object.keys(unit.validationWarnings ?? {}).length > 0 && (
-                    <ValidationGateChip
-                      kind='warnings'
-                      gates={Object.keys(unit.validationWarnings ?? {})}
-                      results={unit.validationResults}
-                      spaceId={unit.spaceId}
-                      unitId={unit.unitId}
-                    />
-                  )}
-                  <Box sx={{ display: 'flex', gap: '8px', alignItems: 'center', ml: 'auto' }}>
-                    {revisionLabel && (
-                      <Typography
-                        sx={{
-                          fontSize: 10,
-                          fontWeight: 500,
-                          fontFamily: componentTheme.fontMono,
-                          color: componentTheme.fgSubtle,
-                          flexShrink: 0,
-                        }}
-                      >
-                        {revisionLabel}
-                      </Typography>
-                    )}
-                  </Box>
-                </UnitHeaderRow>
+                  onOpenDetails={() => setDetailsUnit({ unitId: unit.unitId, spaceId: unit.spaceId, slug: unit.slug })}
+                  onReview={() => {
+                    setCollapsedGroups((prev) => setSetMember(prev, unitKey, false));
+                    setForcedExpandedGroups((prev) => setSetMember(prev, unitKey, true));
+                  }}
+                />
                 {isUnitExpanded && (
                   <>
                     {upgradeError && (

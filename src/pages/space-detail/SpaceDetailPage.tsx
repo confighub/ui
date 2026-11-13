@@ -29,6 +29,7 @@ import { BulkEditTriggersDrawer } from '@/pages/space-detail/components/bulk-edi
 import { requestTriggerCreation } from '@/state/slices/invokerRequest';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import { sumMap } from '@/utility/object-functions';
+import { SPACE_TRIGGER_VIEW_PARAM, SPACE_TRIGGERS_TAB } from '@/utility/space-summary-counts';
 import {
   type SpaceRead,
   type TriggerRead,
@@ -76,12 +77,12 @@ export interface ISpaceSettingsUpdateInput {
 // Constants
 const TABS = ['Overview', 'Triggers', 'Settings'];
 const DEFAULT_TAB = '0';
-const TRIGGERS_TAB = 1;
+const TRIGGERS_TAB = SPACE_TRIGGERS_TAB;
 const SETTINGS_TAB = 2;
 
 // The Triggers tab lists either the Triggers that reside in the Space or those that apply to its
 // Units, which the Space selects from any Space.
-const TRIGGER_VIEW_PARAM = 'triggers';
+const TRIGGER_VIEW_PARAM = SPACE_TRIGGER_VIEW_PARAM;
 type TriggerView = 'space' | 'applied';
 
 const andWhere = (base: string, extra: string) => (extra ? `${base} AND ${extra}` : base);
@@ -363,7 +364,7 @@ export const SpaceDetailPage = () => {
             <SpaceDashboard
               extendedSpace={data}
               isLoading={isSpaceLoading}
-              onShowAppliedTriggers={() => setTriggerView('applied')}
+              onShowTriggers={() => setTriggerView('space')}
             />
           )}
         </Section>

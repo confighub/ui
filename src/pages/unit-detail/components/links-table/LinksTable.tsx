@@ -3,9 +3,11 @@
 import { useMemo, useState } from 'react';
 
 import { DATE_TIME_GRID_SLOTS, DateTimeCell } from '@/components/data-grid/cells';
+import { type ColumnGroup, type DynamicGroupConfig } from '@/components/entity-data-grid/column-groups-types';
+import { EntityDataGrid } from '@/components/entity-data-grid/EntityDataGrid';
+import { useAttributeColumnManager } from '@/components/entity-data-grid/hooks/useAttributeColumnManager';
 import { NavLink } from '@/components/nav-link/NavLink';
-import { CenteredTableCell, StripedDataGrid } from '@/components/styled';
-import { DataGridToolbar } from '@/components/unit-data-grid/components/DataGridToolbar';
+import { CenteredTableCell } from '@/components/styled';
 import { useGridPersistence } from '@/components/unit-data-grid/hooks/useGridPersistence';
 import { ExtendedLinkRead, Space, Unit } from '@confighub/rtk-query';
 import { CmpProps } from '@/types';
@@ -15,13 +17,16 @@ import { GridColDef, GridRowSelectionModel } from '@mui/x-data-grid';
 
 import { LinkDrawer } from '../link-drawer/LinkDrawer';
 
+/** The entities a Links list includes, which the table's columns and the Link drawer name */
+export const LINK_INCLUDE = 'FromUnitID,ToUnitID,SpaceID,ToSpaceID,TransformInvocationID';
+
 /**
  * LinkRow represents a single row in the links table, combining link data with a unique ID
  */
 export type LinkRow = { id: string } & ExtendedLinkRead;
 
 // Define all possible column fields for type safety
-type LinkColumnFields = 'slug' | 'from' | 'fromSpace' | 'to' | 'toSpace' | 'updateType' | 'autoUpdate' | 'stale' | 'useLiveState' | 'whereMutation' | 'whereResource' | 'upstreamLastMergedRev' | 'downstreamLastMergedRev' | 'hiddenReason' | 'createdAt' | 'updatedAt';
+type LinkColumnFields = 'slug' | 'from' | 'fromSpace' | 'to' | 'toSpace' | 'updateType' | 'autoUpdate' | 'stale' | 'whereMutation' | 'whereResource' | 'upstreamLastMergedRev' | 'downstreamLastMergedRev' | 'hiddenReason' | 'createdAt' | 'updatedAt';
 
 // Create a type that requires all columns to be specified
 type LinkColumnVisibility = Record<LinkColumnFields, boolean>;
@@ -29,17 +34,59 @@ type LinkColumnVisibility = Record<LinkColumnFields, boolean>;
 export interface LinksTableProps extends CmpProps {
   rows: Array<LinkRow> | undefined;
   onLinkAction?: () => void;
-  /** The LinkIDs checked in the table's first column, which the tab deletes. */
+  /** The LinkIDs checked in the table's first column, which Update and Delete act on. */
   selectedRows?: string[];
   onRowSelected?: (linkIds: string[]) => void;
+  /** Where the grid keeps its column choices; each page that lists Links has its own. */
+  persistenceKey?: string;
+  isLoading?: boolean;
+  /** The filters, rendered below the toolbar */
+  filterElement?: React.ReactNode;
+  /** Controls for the toolbar, before its Columns button */
+  customToolbarActions?: React.ReactNode;
+  /** Shown in the grid when Links exist but none is shown */
+  noRowsOverlay?: React.ReactNode;
+  /** Shown instead of the grid when there are no Links at all */
+  emptyState?: React.ReactNode;
+  hasNoData?: boolean;
 }
 
+/** The column picker's groups; the Labels group lists the label keys of the Links shown. */
+const LINK_COLUMN_GROUPS: ColumnGroup[] = [
+  { header: 'Core Identity', columns: ['slug', 'from', 'fromSpace', 'to', 'toSpace', 'hiddenReason'] },
+  {
+    header: 'Updates',
+    columns: ['updateType', 'autoUpdate', 'stale', 'whereMutation', 'whereResource', 'upstreamLastMergedRev', 'downstreamLastMergedRev'],
+  },
+  { header: 'Timestamps', columns: ['createdAt', 'updatedAt'] },
+];
+const LINK_DYNAMIC_GROUPS: DynamicGroupConfig[] = [{ name: 'Labels', columnPrefix: 'Labels.' }];
+
+const LINK_LABELS = {
+  fieldName: 'Labels',
+  columnPrefix: 'Labels.',
+  getAttributes: (row: LinkRow) => row.Link?.Labels,
+};
+
 /**
- * LinksTable displays a data grid of links between units. A Link's name opens its drawer, which
- * shows and edits it; the checked rows are what the tab's Delete deletes.
+ * LinksTable displays a data grid of links between units, with the same columns wherever Links are
+ * listed. A Link's name opens its drawer, which shows and edits it; the checked rows are what the
+ * page's Update and Delete act on.
  */
 export const LinksTable = (props: LinksTableProps) => {
-  const { rows = [], onLinkAction, selectedRows = [], onRowSelected } = props;
+  const {
+    rows = [],
+    onLinkAction,
+    selectedRows = [],
+    onRowSelected,
+    persistenceKey = 'links-table',
+    isLoading,
+    filterElement,
+    customToolbarActions,
+    noRowsOverlay,
+    emptyState,
+    hasNoData,
+  } = props;
   const {
     handleColumnResize,
     applyStoredWidths,
@@ -47,13 +94,9 @@ export const LinksTable = (props: LinksTableProps) => {
     onColumnVisibilityModelChange,
     sortModel,
     onSortModelChange,
-    filterModel,
-    onFilterModelChange,
-    paginationModel,
-    onPaginationModelChange,
     clearStoredState,
     hasStateChanged,
-  } = useGridPersistence('links-table', {
+  } = useGridPersistence(persistenceKey, {
     sortModel: [{ field: 'updatedAt', sort: 'desc' }],
     columnVisibility: {
       slug: true,
@@ -64,7 +107,6 @@ export const LinksTable = (props: LinksTableProps) => {
       updateType: true,
       autoUpdate: false,
       stale: true,
-      useLiveState: false,
       whereMutation: false,
       whereResource: false,
       upstreamLastMergedRev: false,
@@ -322,49 +364,52 @@ export const LinksTable = (props: LinksTableProps) => {
     },
   ], [setDetailsLinkID]);
 
-  // Apply stored widths to columns
-  const columns = useMemo(
-    () => applyStoredWidths(baseColumns),
-    [applyStoredWidths, baseColumns]
+  // A column for each label key of the Links shown, hidden unless chosen
+  const { availableAttributeKeys, createAttributeColumn } = useAttributeColumnManager(rows, {
+    attributeConfigs: [LINK_LABELS],
+  });
+  const labelColumns = useMemo(
+    () => (availableAttributeKeys.get('Labels') || []).map((label) => createAttributeColumn(LINK_LABELS, label)),
+    [availableAttributeKeys, createAttributeColumn],
   );
 
-  const Toolbar = () => (
-    <DataGridToolbar hasStateChanged={hasStateChanged} onResetState={clearStoredState} />
+  // Apply stored widths to columns
+  const columns = useMemo(
+    () => applyStoredWidths([...baseColumns, ...labelColumns] as GridColDef<Record<string, unknown>>[]),
+    [applyStoredWidths, baseColumns, labelColumns]
   );
+
+  const effectiveColumnVisibilityModel = useMemo(() => {
+    const labelVisibility = Object.fromEntries(labelColumns.map((col) => [col.field, false]));
+    return { ...labelVisibility, ...columnVisibilityModel };
+  }, [labelColumns, columnVisibilityModel]);
 
   return (
     <>
-      <StripedDataGrid
-        rows={[...rows]}
-        // @ts-expect-error I don't know
+      <EntityDataGrid
+        rows={rows}
         columns={columns}
+        loading={isLoading}
         onColumnWidthChange={handleColumnResize}
-        columnVisibilityModel={columnVisibilityModel}
+        columnVisibilityModel={effectiveColumnVisibilityModel}
         onColumnVisibilityModelChange={onColumnVisibilityModelChange}
         sortModel={sortModel}
         onSortModelChange={onSortModelChange}
-        filterModel={filterModel}
-        onFilterModelChange={onFilterModelChange}
-        paginationModel={paginationModel}
-        onPaginationModelChange={onPaginationModelChange}
-        slots={{
-          ...DATE_TIME_GRID_SLOTS,
-          toolbar: Toolbar,
-        }}
-        initialState={{
-          pagination: {
-            paginationModel: { page: 0, pageSize: 10 },
-          },
-        }}
+        onClearState={clearStoredState}
+        hasStateChanged={hasStateChanged}
+        columnGroups={LINK_COLUMN_GROUPS}
+        dynamicGroups={LINK_DYNAMIC_GROUPS}
+        filterElement={filterElement}
+        customToolbarActions={customToolbarActions}
+        noRowsOverlay={noRowsOverlay}
+        emptyState={emptyState}
+        hasNoData={hasNoData}
+        slots={DATE_TIME_GRID_SLOTS}
         disableRowSelectionOnClick
         checkboxSelection={!!onRowSelected}
         rowSelectionModel={selectedRows}
         // The grid's model is the row IDs, which are LinkIDs.
         onRowSelectionModelChange={(model: GridRowSelectionModel) => onRowSelected?.(model.map(String))}
-        getRowClassName={(params) =>
-          params.indexRelativeToCurrentPage % 2 === 0 ? 'even' : 'odd'
-        }
-        rowHeight={40}
       />
       <LinkDrawer
         subject={detailsLink ? { mode: 'edit', link: detailsLink } : undefined}

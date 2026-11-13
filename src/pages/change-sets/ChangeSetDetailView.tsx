@@ -13,7 +13,7 @@
  * image summary, the full diff and its Unit rows.
  */
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
@@ -42,6 +42,11 @@ import {
 import { FullDiffDisclosure, ImageChangeSummary } from '../change-orders/components/ImageChangeHero';
 import { Fact, FactLink, OpenedAt, StateChip, SummaryCard } from '../change-orders/components/SummaryFacts';
 import { UnitDiffRow } from '../change-orders/components/UnitDiffRow';
+import { ReviewCommentsProvider } from '../change-orders/review-comments/ReviewCommentsProvider';
+import { ReviewConversation } from '../change-orders/review-comments/ReviewConversation';
+import { useChangeSetReviewComments } from '../change-orders/review-comments/useChangeOrderReviewComments';
+import { useReviewDiffComments } from '../change-orders/review-comments/useReviewDiffComments';
+import { AnnounceContext } from '../change-orders/reviews/announceContext';
 import { onlyChangesHint, type ImageChangeSubject } from '../change-orders/imageChangeCopy';
 import { useSharedDiffColumns } from '../change-orders/useSharedDiffColumns';
 import { ChangeSetGatesSection, ForceCloseChangeSetDialog } from './ChangeSetGatesSection';
@@ -150,6 +155,27 @@ export function ChangeSetDetailView({ detail, onNotice }: { detail: ChangeSetDet
   );
   const closeGates = useChangeSetCloseGates({ changeSet, open: detail.open, refreshKey: gatesKey });
 
+  // Review comments, as on a ChangeOrder's page: on the rows of each Unit's diff, and all of them
+  // in the conversation. A Unit's diff shows its last Revision in the ChangeSet, which a new
+  // thread is anchored to and an older one is Outdated against.
+  const revisionIds = useMemo(
+    () => detail.revisions?.flatMap((entry) => (entry.Revision?.RevisionID ? [entry.Revision.RevisionID] : [])),
+    [detail.revisions],
+  );
+  const reviewComments = useChangeSetReviewComments(revisionIds);
+  const revisionNumByUnitId = useMemo(() => {
+    const latest = new Map<string, number>();
+    for (const entry of detail.revisions ?? []) {
+      const unitId = entry.Revision?.UnitID;
+      const num = entry.Revision?.RevisionNum;
+      if (unitId !== undefined && num !== undefined && num > (latest.get(unitId) ?? 0)) latest.set(unitId, num);
+    }
+    return latest;
+  }, [detail.revisions]);
+  const slugByUnitId = useMemo(() => new Map(detail.diff.rows.map((row) => [row.unit.unitId, row.unit.slug])), [detail.diff.rows]);
+  const diffCommentsFor = useReviewDiffComments(changeSet !== undefined);
+  const noVariant = useCallback(() => undefined, []);
+
   if (changeSet === undefined) return null;
   const slug = changeSet.Slug;
   const changeSetId = changeSet.ChangeSetID ?? '';
@@ -187,7 +213,8 @@ export function ChangeSetDetailView({ detail, onNotice }: { detail: ChangeSetDet
   };
 
   return (
-    <>
+    <ReviewCommentsProvider reviews={reviewComments} revisionNumByUnitId={revisionNumByUnitId} variantNameOf={noVariant}>
+    <AnnounceContext.Provider value={onNotice}>
       <SummaryCard label="ChangeSet summary">
         <Box sx={{ padding: '18px 20px', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 220px', gap: '0 32px' }}>
           <Box sx={{ minWidth: 0 }}>
@@ -322,6 +349,7 @@ export function ChangeSetDetailView({ detail, onNotice }: { detail: ChangeSetDet
                         changed
                         diff={row.diff}
                         columns={columns.columns}
+                        comments={diffCommentsFor({ unitId: row.unit.unitId, spaceId: row.unit.spaceId })}
                       />
                     ))}
                     {diff.unchangedCount > 0 ? (
@@ -357,6 +385,8 @@ export function ChangeSetDetailView({ detail, onNotice }: { detail: ChangeSetDet
           onNotice={onNotice}
         />
       </SectionCard>
+
+      <ReviewConversation slugOf={(unitId) => slugByUnitId.get(unitId)} revealDiffs={() => setDiffOpen(true)} />
 
       {detail.changeOrders.length > 0 ? (
         <SectionCard label="ChangeOrders carrying this change" title="ChangeOrders carrying this change">
@@ -396,7 +426,8 @@ export function ChangeSetDetailView({ detail, onNotice }: { detail: ChangeSetDet
           onConfirm={(reason) => void close(reason)}
         />
       ) : null}
-    </>
+    </AnnounceContext.Provider>
+    </ReviewCommentsProvider>
   );
 }
 

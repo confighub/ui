@@ -69,7 +69,8 @@ import { MakeCurrentDialog } from './MakeCurrentDialog';
 
 /**
  * What the drawer shows: a Link to edit, or the Links to create, one from each `from` Unit to each
- * `to` Unit. A create with no `to` picks the one upstream Unit in the drawer.
+ * `to` Unit. A create with no `to` picks the one upstream Unit in the drawer, and one with no
+ * `from` the one downstream Unit.
  */
 export type LinkDrawerSubject =
   | { mode: 'edit'; link: ExtendedLinkRead }
@@ -166,6 +167,7 @@ function LinkForm({
   const [editingDocument, setEditingDocument] = useState(false);
   const [makingCurrent, setMakingCurrent] = useState(false);
   const [pickedTo, setPickedTo] = useState<ExtendedUnitRead | null>(null);
+  const [pickedFrom, setPickedFrom] = useState<ExtendedUnitRead | null>(null);
   // The pairs a create has already written, so trying again after some failed writes the rest.
   const [created, setCreated] = useState<ReadonlySet<string>>(new Set());
 
@@ -193,7 +195,12 @@ function LinkForm({
   const takes = linkTypeFields(updateType);
   const notCleared = takes.protectAndGuards ? guardsNotCleared(rowsToMap(guards), rowsToClearance(clearance)) : [];
 
-  const fromEnds = subject.mode === 'create' ? subject.from : [];
+  const fromEnds = useMemo(() => {
+    if (subject.mode !== 'create') return [];
+    if (subject.from.length > 0) return subject.from;
+    const end = pickedFrom ? linkEnd(pickedFrom) : undefined;
+    return end ? [end] : [];
+  }, [subject, pickedFrom]);
   const toEnds = useMemo(() => {
     if (subject.mode !== 'create') return [];
     if (subject.to) return subject.to;
@@ -229,7 +236,7 @@ function LinkForm({
     }
 
     if (pairs.length === 0) {
-      onError('Pick the upstream Unit to link to.');
+      onError(fromEnds.length === 0 ? 'Pick the downstream Unit to link from.' : 'Pick the upstream Unit to link to.');
       return;
     }
     const remaining = pairs.filter(({ from, to }) => !created.has(pairKey(from, to)));
@@ -286,8 +293,10 @@ function LinkForm({
             <LinkFacts extendedLink={extendedLink} />
           ) : (
             <CreateEnds
-              from={fromEnds}
+              from={subject.mode === 'create' && subject.from.length > 0 ? subject.from : undefined}
               to={subject.mode === 'create' ? subject.to : undefined}
+              pickedFrom={pickedFrom}
+              onPickFrom={setPickedFrom}
               pickedTo={pickedTo}
               onPickTo={setPickedTo}
             />
@@ -478,27 +487,41 @@ function LinkFacts({ extendedLink }: { extendedLink: ExtendedLinkRead }) {
   );
 }
 
-/** The Units a create connects: given, or the upstream one picked here. */
+/** The Units a create connects: given, or picked here. */
 function CreateEnds({
   from,
   to,
+  pickedFrom,
+  onPickFrom,
   pickedTo,
   onPickTo,
 }: {
-  from: LinkEnd[];
+  from?: LinkEnd[];
   to?: LinkEnd[];
+  pickedFrom: ExtendedUnitRead | null;
+  onPickFrom: (unit: ExtendedUnitRead | null) => void;
   pickedTo: ExtendedUnitRead | null;
   onPickTo: (unit: ExtendedUnitRead | null) => void;
 }) {
   const names = (ends: LinkEnd[]) => ends.map(endName).join(', ');
+  const given: Array<[string, ReactNode]> = [
+    ...(from ? ([[from.length > 1 ? 'From units' : 'From unit', names(from)]] as Array<[string, ReactNode]>) : []),
+    ...(to ? ([[to.length > 1 ? 'To units' : 'To unit', names(to)]] as Array<[string, ReactNode]>) : []),
+  ];
   return (
     <Stack spacing={2}>
-      <DetailsFields
-        fields={[
-          [from.length > 1 ? 'From units' : 'From unit', names(from)],
-          ...(to ? ([[to.length > 1 ? 'To units' : 'To unit', names(to)]] as Array<[string, ReactNode]>) : []),
-        ]}
-      />
+      {given.length > 0 && <DetailsFields fields={given} />}
+      {!from && (
+        <Box sx={{ maxWidth: 520 }}>
+          <UnitRefSelect
+            label='From unit'
+            value={pickedFrom}
+            onChange={onPickFrom}
+            helperText='The downstream Unit, which the Link carries configuration to. The Link is created in its Space.'
+            testId='link-from-unit'
+          />
+        </Box>
+      )}
       {!to && (
         <Box sx={{ maxWidth: 520 }}>
           <UnitRefSelect

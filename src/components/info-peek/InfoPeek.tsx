@@ -161,6 +161,7 @@ export const InfoPeekTooltip = ({
   onAction,
   placement = 'bottom-start',
   testId,
+  maxWidth,
   describeChild,
   children,
 }: {
@@ -170,6 +171,8 @@ export const InfoPeekTooltip = ({
   placement?: TooltipProps['placement'];
   /** `data-testid` of the card. */
   testId?: string;
+  /** Caps the card's width in px and wraps a longer line, even inside a word; unset, the card is as wide as its longest line. */
+  maxWidth?: number;
   /**
    * The open card describes the trigger instead of naming it, so a trigger
    * with its own `aria-label` keeps that name while the card is open.
@@ -191,7 +194,9 @@ export const InfoPeekTooltip = ({
       leaveDelay={interactive ? 150 : 0}
       disableInteractive={!interactive}
       slotProps={{
-        tooltip: { sx: INFO_PEEK_TOOLTIP_SX },
+        tooltip: {
+          sx: maxWidth === undefined ? INFO_PEEK_TOOLTIP_SX : { ...INFO_PEEK_TOOLTIP_SX, maxWidth, overflowWrap: 'anywhere' },
+        },
         transition: { timeout: { enter: 120, exit: interactive ? 100 : 0 } },
       }}
       title={

@@ -138,7 +138,10 @@ export function ConsoleSearch({ value, onChange, placeholder }: { value: string;
   );
 }
 
-/** A labelled native select whose first option, `all`, is no filter. */
+/**
+ * A labelled native select whose first option, `all`, is no filter. The value is listed even when
+ * no option names it, as when a link filters to something no row has, so the select shows it.
+ */
 export function ConsoleSelectFilter({
   label,
   value,
@@ -164,7 +167,7 @@ export function ConsoleSelectFilter({
         sx={FILTER_SELECT_SX}
       >
         <option value="all">{allLabel}</option>
-        {options.map((option) => (
+        {(value === 'all' || options.includes(value) ? options : [...options, value]).map((option) => (
           <option key={option} value={option}>
             {option}
           </option>

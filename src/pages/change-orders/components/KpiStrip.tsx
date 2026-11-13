@@ -27,7 +27,8 @@ export interface KpiCard {
   label: string;
   /** A second line under the label; omitted, the card shows the label alone. */
   hint?: string;
-  count: number;
+  /** `null` while it is still being counted, which is shown as such rather than as 0, and cannot be picked. */
+  count: number | null;
   status: 'on' | 'partial' | 'off';
   /** The figure's colour. */
   tone: string;
@@ -72,7 +73,8 @@ export function KpiStrip({
         const status = card.status;
         const isActive = status === 'on';
         const isPartial = status === 'partial';
-        const isDisabled = card.count === 0 && status === 'off';
+        const counting = card.count === null;
+        const isDisabled = (counting || card.count === 0) && status === 'off';
         return (
           <Box
             key={card.key}
@@ -81,6 +83,8 @@ export function KpiStrip({
             data-testid={`${testIdPrefix}-${card.key}`}
             aria-pressed={ARIA_PRESSED[status]}
             aria-disabled={isDisabled}
+            aria-busy={counting || undefined}
+            title={counting ? 'Still counting' : undefined}
             disabled={isDisabled}
             onClick={isDisabled ? undefined : () => onSelect(card.key)}
             sx={{
@@ -109,7 +113,7 @@ export function KpiStrip({
               component='span'
               sx={{ color: isDisabled ? 'text.disabled' : card.tone, lineHeight: 1, ...numSx }}
             >
-              {card.count}
+              {counting ? '…' : card.count}
             </Typography>
             <Stack>
               <Typography

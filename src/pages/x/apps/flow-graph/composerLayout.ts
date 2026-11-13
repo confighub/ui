@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 import type { Node } from 'reactflow';
 
-import { NODE_GAP, NODE_HEIGHT, NODE_WIDTH, STAGE_GAP } from './flowLayout';
+import { NODE_GAP, NODE_WIDTH, STAGE_GAP, layoutHeightOf } from './flowLayout';
 import type { DeploymentFlowNodeData } from './DeploymentFlowNode';
 
 // ============================================================================
@@ -63,15 +63,21 @@ function deploymentNodes(nodes: Node[]): Node<DeploymentFlowNodeData>[] {
  *
  * Returns null when `parentId` isn't found among the already-rendered nodes
  * (e.g. it was removed from the graph while the composer was open).
+ * `nodeHeightById` is the measured height of each card taller than
+ * NODE_HEIGHT, as the layout used it.
  */
-export function computeLandingSlotPosition(nodes: Node[], parentId: string): Point | null {
+export function computeLandingSlotPosition(
+  nodes: Node[],
+  parentId: string,
+  nodeHeightById?: ReadonlyMap<string, number>,
+): Point | null {
   const flowNodes = deploymentNodes(nodes);
   const parent = flowNodes.find((n) => n.id === parentId);
   if (!parent) return null;
 
   const siblings = flowNodes.filter((n) => n.data.deployment.parentDeploymentId === parentId);
   const y = siblings.length
-    ? Math.max(...siblings.map((s) => s.position.y)) + NODE_HEIGHT + NODE_GAP
+    ? Math.max(...siblings.map((s) => s.position.y + layoutHeightOf(s, nodeHeightById))) + NODE_GAP
     : parent.position.y;
 
   return { x: parent.position.x + NODE_WIDTH + STAGE_GAP, y };
@@ -91,12 +97,13 @@ export function computeComposerPosition(
   nodes: Node[],
   landingSlot: Point,
   composerHeight: number = COMPOSER_DEFAULT_HEIGHT,
+  nodeHeightById?: ReadonlyMap<string, number>,
 ): Point & { yielded: boolean } {
   const boxes = deploymentNodes(nodes).map((n) => ({
     l: n.position.x,
     r: n.position.x + NODE_WIDTH,
     t: n.position.y,
-    b: n.position.y + NODE_HEIGHT,
+    b: n.position.y + layoutHeightOf(n, nodeHeightById),
   }));
 
   const x = landingSlot.x;

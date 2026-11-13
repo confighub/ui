@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { FixedSubmitContainer } from '@/components/styled';
@@ -25,6 +25,7 @@ import {
 } from './bulkMetadataEdit';
 
 const NO_CHANGE: BulkMetadataChange = { edit: {}, valid: true };
+const NO_EXTRA_PATCH: Record<string, unknown> = {};
 
 export interface BulkMetadataDrawerProps {
   isOpen: boolean;
@@ -40,11 +41,22 @@ export interface BulkMetadataDrawerProps {
   /** Sends one bulk patch of the entities `where` selects. */
   patch: (
     where: string,
-    body: BulkMetadataPatch,
+    body: BulkMetadataPatch & Record<string, unknown>,
   ) => Promise<readonly BulkItemResult[] | undefined>;
+  /** A card for fields of the entity type's own, shown above the labels and delete gates */
+  extraCard?: ReactNode;
+  /** What `extraCard` sets, merged into the patch; empty when it sets nothing */
+  extraPatch?: Record<string, unknown>;
+  /** Clears `extraCard` when the drawer closes */
+  onResetExtra?: () => void;
+  /** What the drawer updates, as "Labels and delete gates" */
+  updatesDescription?: string;
 }
 
-/** Adds, changes and removes the labels and delete gates of the selected entities. */
+/**
+ * Adds, changes and removes the labels and delete gates of the selected entities, and sets any
+ * fields of their type's own that `extraCard` offers.
+ */
 export const BulkMetadataDrawer = ({
   isOpen,
   onClose,
@@ -53,6 +65,10 @@ export const BulkMetadataDrawer = ({
   idColumn,
   entities,
   patch,
+  extraCard,
+  extraPatch = NO_EXTRA_PATCH,
+  onResetExtra,
+  updatesDescription = 'Labels and delete gates',
 }: BulkMetadataDrawerProps) => {
   const [change, setChange] = useState(NO_CHANGE);
   const [errorMessages, setErrorMessages] = useState<string[]>([]);
@@ -61,13 +77,15 @@ export const BulkMetadataDrawer = ({
   const handleClose = () => {
     setChange(NO_CHANGE);
     setErrorMessages([]);
+    onResetExtra?.();
     onClose();
   };
+  const hasExtra = Object.keys(extraPatch).length > 0;
 
   const submit = async () => {
     setIsSubmitting(true);
     try {
-      const body = bulkMetadataPatch(change.edit);
+      const body = { ...extraPatch, ...bulkMetadataPatch(change.edit) };
       // A selection can be every entity in the organization, so it is patched in chunks.
       const failures = await runChunkedBulkWrite(
         idColumn,
@@ -109,7 +127,7 @@ export const BulkMetadataDrawer = ({
               Update {entityName}
             </Typography>
             <Typography variant='body1' color='text.secondary'>
-              Labels and delete gates of {entities.length} selected {entityName}
+              {updatesDescription} of {entities.length} selected {entityName}
             </Typography>
           </Stack>
         </Box>
@@ -117,7 +135,10 @@ export const BulkMetadataDrawer = ({
           sx={{ flex: 1, p: 3, backgroundColor: 'rgb(249, 250, 251)', paddingBottom: '100px' }}
         >
           <ErrorList errors={errorMessages} onClose={() => setErrorMessages([])} />
-          <BulkMetadataCard entities={entities} onChange={setChange} />
+          <Stack spacing={1}>
+            {extraCard}
+            <BulkMetadataCard entities={entities} onChange={setChange} />
+          </Stack>
         </Box>
         <FixedSubmitContainer>
           <Button
@@ -125,7 +146,7 @@ export const BulkMetadataDrawer = ({
             fullWidth
             disabled={
               !change.valid ||
-              isBulkMetadataEditEmpty(change.edit) ||
+              (isBulkMetadataEditEmpty(change.edit) && !hasExtra) ||
               isSubmitting ||
               entities.length === 0
             }

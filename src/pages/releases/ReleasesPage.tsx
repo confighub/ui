@@ -8,6 +8,7 @@ import { NavLink } from '@/components/nav-link/NavLink';
 import { useListReleaseDetailsSinceChunkedQuery } from '@/hooks/chunkedQueriesApi';
 import { useComponentSlugs } from '@/hooks/useComponentSlugs';
 import { usePolling } from '@/hooks/usePolling';
+import { SPACE_PARAM } from '@/hooks/useSpaceParam';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import CloseIcon from '@mui/icons-material/Close';
 import Alert from '@mui/material/Alert';
@@ -25,6 +26,7 @@ import { COMPONENT_SPACE_SELECT } from '../x/apps/useComponentSpaces';
 import { ReleaseDetailsDrawer } from './ReleaseDetailsDrawer';
 import { ComponentReleaseHeatmap } from './ComponentReleaseHeatmap';
 import { dayKey, heatmapDays, heatmapSince, type HeatmapRow } from './releaseHeatmap';
+import { releaseScope } from './releaseScope';
 import { type ReleaseRow, ReleasesTable } from './ReleasesTable';
 
 const RANGE_OPTIONS = [14, 30, 90] as const;
@@ -52,32 +54,37 @@ function readRange(value: string | null): RangeDays {
  * Spaces, and the details `cub release get`.
  *
  * Selecting a Component narrows the heatmap to its row and its neighbours,
- * which leaves the room to the table.
+ * which leaves the room to the table. A Space in the URL (`?space=<slug>`)
+ * narrows the table to that Space's Releases, and selects its Component, if it
+ * has one, in the heatmap.
  */
 export default function ReleasesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const componentSlug = searchParams.get(COMPONENT_PARAM) ?? '';
+  const spaceSlug = searchParams.get(SPACE_PARAM) ?? '';
+  const componentParam = searchParams.get(COMPONENT_PARAM) ?? '';
   const rangeDays = readRange(searchParams.get(DAYS_PARAM));
   const [selectedReleaseId, setSelectedReleaseId] = useState('');
 
   const { data: spaces, error: spacesError } = useListComponentSpacesQuery({ select: COMPONENT_SPACE_SELECT });
-  const { idBySlug, isLoaded: componentsLoaded } = useComponentSlugs();
-  const selectedComponentId = idBySlug.get(componentSlug);
+  const { idBySlug, slugById, isLoaded: componentsLoaded } = useComponentSlugs();
+  const scope = useMemo(
+    () =>
+      releaseScope({
+        spaces: (spaces ?? []).map((s) => s.Space),
+        spaceSlug,
+        componentSlug: componentParam,
+        componentIdBySlug: idBySlug,
+        componentSlugById: slugById,
+      }),
+    [spaces, spaceSlug, componentParam, idBySlug, slugById],
+  );
+  const { space: selectedSpace, componentId: selectedComponentId, componentSlug, spaceIds: selectedSpaceIds } = scope;
 
   // Recomputed when the day changes, not on every render.
   const today = dayKey(new Date());
   const days = useMemo(() => heatmapDays(rangeDays, dayjs(today).toDate()), [rangeDays, today]);
   const since = useMemo(() => heatmapSince(rangeDays, dayjs(today).toDate()), [rangeDays, today]);
 
-  const selectedSpaceIds = useMemo(
-    () =>
-      selectedComponentId
-        ? (spaces ?? []).flatMap((s) =>
-            s.Space?.SpaceID && s.Space.ComponentID === selectedComponentId ? [s.Space.SpaceID] : [],
-          )
-        : [],
-    [spaces, selectedComponentId],
-  );
   const skipReleases = selectedSpaceIds.length === 0;
   const {
     data: releases,
@@ -109,10 +116,21 @@ export default function ReleasesPage() {
     [setSearchParams],
   );
   const selectComponent = useCallback(
-    (row: HeatmapRow) => updateParams((next) => next.set(COMPONENT_PARAM, row.componentName)),
+    (row: HeatmapRow) =>
+      updateParams((next) => {
+        next.set(COMPONENT_PARAM, row.componentName);
+        next.delete(SPACE_PARAM);
+      }),
     [updateParams],
   );
-  const clearComponent = useCallback(() => updateParams((next) => next.delete(COMPONENT_PARAM)), [updateParams]);
+  const clearSelection = useCallback(
+    () =>
+      updateParams((next) => {
+        next.delete(COMPONENT_PARAM);
+        next.delete(SPACE_PARAM);
+      }),
+    [updateParams],
+  );
   const setRange = useCallback(
     (value: RangeDays) =>
       updateParams((next) => {
@@ -155,19 +173,26 @@ export default function ReleasesPage() {
           />
         )}
 
-        {selectedComponentId ? (
+        {selectedSpace || selectedComponentId ? (
           <Box sx={{ mt: 3 }} data-testid='component-releases'>
             <Stack direction='row' alignItems='center' spacing={2} sx={{ mb: 1.5 }}>
-              <Typography variant='h6'>{componentSlug}</Typography>
+              <Typography variant='h6'>{selectedSpace ? spaceSlug : componentSlug}</Typography>
               <Typography variant='body2' color='text.secondary'>
                 {releases ? `${rows.length} ${rows.length === 1 ? 'Release' : 'Releases'} in the last ${rangeDays} days` : ''}
               </Typography>
-              <NavLink to={`/components?app=${encodeURIComponent(componentSlug)}`} style={linkStyle}>
-                <Typography variant='body2'>Open Component</Typography>
-              </NavLink>
+              {selectedSpace ? (
+                <NavLink to={`/spaces/${selectedSpace.SpaceID}`} style={linkStyle}>
+                  <Typography variant='body2'>Open Space</Typography>
+                </NavLink>
+              ) : null}
+              {componentSlug ? (
+                <NavLink to={`/components?app=${encodeURIComponent(componentSlug)}`} style={linkStyle}>
+                  <Typography variant='body2'>Open Component</Typography>
+                </NavLink>
+              ) : null}
               <Box sx={{ flex: 1 }} />
               <Tooltip title='Show every Component'>
-                <IconButton size='small' aria-label='Show every Component' onClick={clearComponent}>
+                <IconButton size='small' aria-label='Show every Component' onClick={clearSelection}>
                   <CloseIcon fontSize='small' />
                 </IconButton>
               </Tooltip>
@@ -184,9 +209,11 @@ export default function ReleasesPage() {
           </Box>
         ) : (
           <Typography variant='body2' color='text.secondary' sx={{ mt: 2 }}>
-            {componentSlug && componentsLoaded
-              ? `No Component is named ${componentSlug}.`
-              : 'Select a Component to list its Releases.'}
+            {spaceSlug && spaces
+              ? `No Space is named ${spaceSlug}.`
+              : componentParam && componentsLoaded
+                ? `No Component is named ${componentParam}.`
+                : 'Select a Component to list its Releases.'}
           </Typography>
         )}
       </Box>

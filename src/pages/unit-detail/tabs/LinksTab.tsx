@@ -36,6 +36,7 @@ import {
   writeLinkFilter,
 } from '../unitDetailHrefs';
 import { LinkDrawer } from '../components/link-drawer/LinkDrawer';
+import { BulkEditLinksDrawer } from '../components/links-table/BulkEditLinksDrawer';
 import { linkEnd } from '../components/link-drawer/linkForm';
 
 export interface ILinksTabProps {
@@ -65,16 +66,16 @@ export const LinksTab = ({ selectedTab, linkRows, unitId, spaceId, unit, onLinkA
   const [searchParams, setSearchParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
   const from = unit ? linkEnd(unit) : undefined;
-  const newLinkButton = (
+  const addLinkButton = (
     <Button
       variant='outlined'
       size='small'
       startIcon={<AddIcon />}
       onClick={() => setCreating(true)}
       disabled={!from}
-      data-testid='links-new-link'
+      data-testid='links-add-link'
     >
-      New Link
+      Add Link
     </Button>
   );
   const { includeHidden, setIncludeHidden, includeHiddenParam } = useIncludeHidden();
@@ -135,6 +136,18 @@ export const LinksTab = ({ selectedTab, linkRows, unitId, spaceId, unit, onLinkA
   };
 
   const selectedCount = selectedLinkIds.length;
+  const selectedLinks = useMemo(() => {
+    const selected = new Set(selectedLinkIds);
+    return filteredRows.flatMap((row) => (row.Link && selected.has(row.id) ? [row.Link] : []));
+  }, [filteredRows, selectedLinkIds]);
+  const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
+  const updateButton = (
+    <ActionButton
+      buttonText={selectedCount > 1 ? `Update ${selectedCount} Links` : 'Update Link'}
+      onButtonClick={() => setIsBulkEditOpen(true)}
+      enablementRules={[createEnablementRule(selectedCount === 0, 'Select at least one Link to update.')]}
+    />
+  );
   const deleteButton = (
     <ActionButton
       buttonText={selectedCount > 1 ? `Delete ${selectedCount} Links` : 'Delete Link'}
@@ -197,9 +210,9 @@ export const LinksTab = ({ selectedTab, linkRows, unitId, spaceId, unit, onLinkA
                 }
                 label='Other spaces only'
               />
-              <IncludeHiddenToggle includeHidden={includeHidden} onChange={setIncludeHidden} entities='Links' />
               <Box sx={{ flex: 1 }} />
-              {newLinkButton}
+              {addLinkButton}
+              <Box data-testid='links-update'>{updateButton}</Box>
               <Box data-testid='links-delete'>{deleteButton}</Box>
             </Stack>
             <ErrorList errors={deleteErrors} onClose={() => setDeleteErrors([])} />
@@ -208,10 +221,13 @@ export const LinksTab = ({ selectedTab, linkRows, unitId, spaceId, unit, onLinkA
               onLinkAction={onLinkAction}
               selectedRows={selectedLinkIds}
               onRowSelected={setSelectedLinkIds}
+              customToolbarActions={
+                <IncludeHiddenToggle includeHidden={includeHidden} onChange={setIncludeHidden} entities='Links' />
+              }
             />
           </>
         ) : (
-          <EmptyLinks action={newLinkButton} />
+          <EmptyLinks action={addLinkButton} />
         ))}
       <ConfirmationModal
         isOpen={isDeleteConfirmOpen}
@@ -225,6 +241,12 @@ export const LinksTab = ({ selectedTab, linkRows, unitId, spaceId, unit, onLinkA
                 filteredRows.find((row) => row.id === selectedLinkIds[0])?.Link?.Slug ?? 'the selected Link'
               }?`
         }
+      />
+      <BulkEditLinksDrawer
+        isOpen={isBulkEditOpen}
+        onClose={() => setIsBulkEditOpen(false)}
+        links={selectedLinks}
+        refresh={onLinkAction}
       />
       <LinkDrawer
         subject={creating && from ? { mode: 'create', from: [from] } : undefined}

@@ -32,7 +32,7 @@ import type { TargetRead } from '@confighub/rtk-query';
 import type { ComponentDeployment, Stage } from '../componentTypes';
 import { componentTheme } from '../componentTheme';
 import type { OverallPhase, PerSpaceStatus } from '../useCreateVariantMutation';
-import { computeLayout, NODE_WIDTH, NODE_HEIGHT } from './flowLayout';
+import { computeLayout, layoutHeightOf, NODE_WIDTH, NODE_HEIGHT } from './flowLayout';
 import { DeploymentFlowNode, type NodeUnitSummary } from './DeploymentFlowNode';
 import { ComposerNode, type ComposerNodeData, type ComposerSubmitValues } from './ComposerNode';
 import { LandingSlotNode } from './LandingSlotNode';
@@ -298,6 +298,10 @@ const EmptyState = styled(Box)({
 const EMPTY_SET = new Set<string>();
 const NO_GROUPS: ReadonlySet<string> = new Set();
 const NO_RECTS: ReadonlyMap<string, Rect> = new Map();
+const NO_HEIGHTS: ReadonlyMap<string, number> = new Map();
+
+const sameHeights = (a: ReadonlyMap<string, number>, b: ReadonlyMap<string, number>): boolean =>
+  a.size === b.size && [...a].every(([id, h]) => b.get(id) === h);
 // Auto mode: the wheel pans and a held Cmd or Ctrl turns it into zoom. A
 // trackpad pinch arrives as a wheel event with ctrlKey set, so it zooms too.
 const ZOOM_KEY_CODES = ['Meta', 'Control'];
@@ -467,6 +471,28 @@ function ComponentFlowGraphInner({
   });
   const foldModelRef = useRef(foldModel);
   foldModelRef.current = foldModel;
+
+  // Cards that React Flow measured taller than the NODE_HEIGHT slot (live
+  // status plus wrapped config chips). The unfolded layout runs again with
+  // these heights, so a busy card moves the card below it down instead of
+  // covering it. A folded graph's cards have a fixed height.
+  const [tallNodeHeights, setTallNodeHeights] = useState<ReadonlyMap<string, number>>(NO_HEIGHTS);
+  const folded = foldModel != null;
+  useEffect(() => {
+    if (folded) return;
+    setTallNodeHeights((prev) => {
+      const next = new Map<string, number>();
+      for (const node of nodes) {
+        if (node.type !== 'deploymentNode') continue;
+        // A rebuilt node is unmeasured until its next frame: keep its last
+        // height, so the layout does not drop back and jump again.
+        const height = node.height ?? prev.get(node.id);
+        if (height !== undefined && height > NODE_HEIGHT) next.set(node.id, height);
+      }
+      return sameHeights(prev, next) ? prev : next;
+    });
+  }, [nodes, folded]);
+
   const [expandedGroupIds, setExpandedGroupIds] = useState<ReadonlySet<string>>(NO_GROUPS);
   const expandedGroupIdsRef = useRef(expandedGroupIds);
   expandedGroupIdsRef.current = expandedGroupIds;
@@ -879,9 +905,9 @@ function ComponentFlowGraphInner({
   // per open (or per switch to a different parent), not on every rebuild.
   useEffect(() => {
     if (!composerParentId) return;
-    const landingSlot = computeLandingSlotPosition(nodesRef.current, composerParentId);
+    const landingSlot = computeLandingSlotPosition(nodesRef.current, composerParentId, tallNodeHeights);
     if (!landingSlot) return;
-    const composerPos = computeComposerPosition(nodesRef.current, landingSlot);
+    const composerPos = computeComposerPosition(nodesRef.current, landingSlot, undefined, tallNodeHeights);
     const container = flowContainerRef.current;
     if (!container) return;
     const nudged = computeNudgeIntoView(
@@ -924,6 +950,7 @@ function ComponentFlowGraphInner({
         deploymentSpaceIdsKey,
         components,
         frameActions,
+        tallNodeHeights,
       );
     }
 
@@ -1015,9 +1042,9 @@ function ComponentFlowGraphInner({
     // while composing" true regardless of how many roots the component has.
     const ghostNodes: Node[] = [];
     if (composerParentId && composerData) {
-      const landingSlot = computeLandingSlotPosition(nodesToRender, composerParentId);
+      const landingSlot = computeLandingSlotPosition(nodesToRender, composerParentId, tallNodeHeights);
       if (landingSlot) {
-        const composerPos = computeComposerPosition(nodesToRender, landingSlot);
+        const composerPos = computeComposerPosition(nodesToRender, landingSlot, undefined, tallNodeHeights);
         ghostNodes.push({
           // Keyed by parent, not a fixed constant: switching which parent
           // the composer is anchored to (e.g. via the 'V' key on a
@@ -1093,6 +1120,7 @@ function ComponentFlowGraphInner({
     runningWaveKeys,
     components,
     frameActions,
+    tallNodeHeights,
     setNodes,
     setEdges,
     setPendingFitView,
@@ -1214,14 +1242,15 @@ function ComponentFlowGraphInner({
               const sx = n.position.x * zoom + x;
               const sy = n.position.y * zoom + y;
               const sr = (n.position.x + NODE_WIDTH) * zoom + x;
-              const sb = (n.position.y + NODE_HEIGHT) * zoom + y;
+              const sb = (n.position.y + layoutHeightOf(n)) * zoom + y;
               return sr > 0 && sx < cw && sb > 0 && sy < ch;
             };
 
             if (isVisible(node) && isVisible(parentNode)) {
               // Both visible — just pan to center the midpoint
               const centerX = (parentNode.position.x + node.position.x + NODE_WIDTH) / 2;
-              const centerY = (parentNode.position.y + node.position.y + NODE_HEIGHT) / 2;
+              const centerY =
+                (parentNode.position.y + layoutHeightOf(parentNode) / 2 + node.position.y + layoutHeightOf(node) / 2) / 2;
               setCenter(centerX, centerY, { zoom, duration: 300 });
             } else {
               // One or both off-screen — fit both nodes into view
@@ -1235,7 +1264,7 @@ function ComponentFlowGraphInner({
             // No parent (root node) — center on the node itself
             setCenter(
               node.position.x + NODE_WIDTH / 2,
-              node.position.y + NODE_HEIGHT / 2,
+              node.position.y + layoutHeightOf(node) / 2,
               { zoom, duration: 300 },
             );
           }

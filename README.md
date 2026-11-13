@@ -63,6 +63,10 @@ entrypoint writes `/config.json` from the environment at start:
 Build it with `docker build .`. The image serves static files only: the UI calls the instance
 at `CONFIGHUB_URL` directly, which the API's CORS allows.
 
+The container writes only to `/tmp`: `config.json`, nginx's pid file and its temp directories.
+So it can run with a read-only root filesystem, given a writable `/tmp`, such as an emptyDir
+mounted there in Kubernetes.
+
 ## Scripts
 
 | Script | What it does |

@@ -20,7 +20,7 @@ import { requestInvokerOpen } from '@/state/slices/invokerRequest';
 import {
   selectSelectedUnits,
   setSelectedUnits as setGlobalSelectedUnits,
-  setInvocationInitiativeId,
+  setInvocationTrigger,
 } from '@/state/slices/selectedUnits';
 import { FILTER_URL_PARAMS } from '@/utility/constants/url-params';
 import { getApiErrorMessage } from '@/utility/error-functions';
@@ -66,7 +66,7 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import dayjs from 'dayjs';
 
-import { spaceLink, targetLink } from '../validationLinks';
+import { spaceLink, targetLink, triggerChangeOrdersLink, triggerChangeSetsLink } from '../validationLinks';
 import {
   type OutcomeCounts,
   type PolicyUnit,
@@ -163,12 +163,16 @@ export const PolicyDetail = ({
         ),
       }),
     );
-    dispatch(setInvocationInitiativeId(selectedUnits.length > 0 ? policy.id : undefined));
-  }, [selectedUnits, policy.id, spaceById, dispatch]);
+    dispatch(
+      setInvocationTrigger(
+        selectedUnits.length > 0 ? { id: policy.id, ref: `${policy.spaceSlug}/${policy.trigger.Slug}` } : undefined,
+      ),
+    );
+  }, [selectedUnits, policy.id, policy.spaceSlug, policy.trigger.Slug, spaceById, dispatch]);
   useEffect(
     () => () => {
       dispatch(setGlobalSelectedUnits({ units: [] }));
-      dispatch(setInvocationInitiativeId(undefined));
+      dispatch(setInvocationTrigger(undefined));
     },
     [dispatch],
   );
@@ -694,7 +698,10 @@ export const PolicyDetail = ({
       )}
 
       <Box>
-        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2, mb: 1, flexWrap: 'wrap' }}>
+        <Paper
+          variant='outlined'
+          sx={{ p: 2, borderRadius: 2, mb: 1, display: 'flex', alignItems: 'baseline', gap: 2, flexWrap: 'wrap' }}
+        >
           <Typography variant='subtitle2' fontWeight={600}>
             Units
           </Typography>
@@ -709,7 +716,7 @@ export const PolicyDetail = ({
               Open the Units with {l.field} from it in the Units list
             </Link>
           ))}
-        </Box>
+        </Paper>
         <Box
           sx={{
             display: 'flex',
@@ -726,7 +733,7 @@ export const PolicyDetail = ({
               <Typography variant='body2' fontWeight={600}>
                 {plural(selectedIds.length, 'Unit')} selected
               </Typography>
-              <Tooltip title='Opens the function invoker on the selected Units. Each run is made in a ChangeSet of its own, labeled with this Trigger.'>
+              <Tooltip title={"Opens the function invoker on the selected Units. Its runs are made in this Trigger's open ChangeSet, or a new one named after the Trigger, which is left open for the change to be reviewed."}>
                 <Button
                   size='small'
                   variant='outlined'
@@ -789,6 +796,36 @@ export const PolicyDetail = ({
           onExcept={exceptionKey ? (u) => void openAddException(u) : undefined}
         />
       </Box>
+
+      {policy.spaceSlug && trigger.Slug && (
+        <Paper variant='outlined' sx={{ p: 2, borderRadius: 2 }} data-testid='validation-trigger-changes'>
+          <Typography variant='subtitle2' fontWeight={600} sx={{ mb: 1 }}>
+            ChangeSets and ChangeOrders
+          </Typography>
+          <Typography variant='body2' color='text.secondary' sx={{ mb: 1.5 }}>
+            The changes made for this Trigger, which are annotated{' '}
+            <code>{`Trigger=${policy.spaceSlug}/${trigger.Slug}`}</code>.
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Button
+              size='small'
+              variant='outlined'
+              component={RouterLink}
+              to={triggerChangeSetsLink(policy.spaceSlug, trigger.Slug)}
+            >
+              Open its ChangeSets
+            </Button>
+            <Button
+              size='small'
+              variant='outlined'
+              component={RouterLink}
+              to={triggerChangeOrdersLink(policy.spaceSlug, trigger.Slug)}
+            >
+              Open its ChangeOrders
+            </Button>
+          </Box>
+        </Paper>
+      )}
 
       {exceptionKey && (
         <ExceptionDialog

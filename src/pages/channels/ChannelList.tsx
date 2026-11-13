@@ -24,6 +24,7 @@ import { HiddenReasonTag } from '@/components/hidden-entities/HiddenReasonTag';
 import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
 import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { usePrincipalNames } from '@/hooks/usePrincipalNames';
+import { useConsoleSpaceFilter } from '@/hooks/useSpaceParam';
 
 import {
   ConsoleClearButton,
@@ -230,14 +231,14 @@ export function ChannelList() {
 
   const [search, setSearch] = useState('');
   const [connectionFilter, setConnectionFilter] = useState<string>('all');
-  const [spaceFilter, setSpaceFilter] = useState<string>('all');
+  const [spaceFilter, setSpaceFilter] = useConsoleSpaceFilter();
   const [creating, setCreating] = useState(false);
   const filtersActive = search !== '' || connectionFilter !== 'all' || spaceFilter !== 'all';
   const clearFilters = useCallback(() => {
     setSearch('');
     setConnectionFilter('all');
     setSpaceFilter('all');
-  }, []);
+  }, [setSpaceFilter]);
 
   const spaceSlugs = useMemo(() => [...new Set(channels.flatMap((c) => (c.SpaceSlug ? [c.SpaceSlug] : [])))].sort(), [channels]);
 

@@ -13,8 +13,8 @@
  * - utils.ts (this file): Re-exports and miscellaneous utilities
  */
 
-import { FIELD_CONFIGS } from './operators';
-import type { FilterCondition, FilterFieldType, LabelOptions } from './types';
+import { FIELD_CONFIGS, getEntityOptionsForField, isNoValueOperator, keyValueAttribute } from './operators';
+import type { FieldOptions, FilterCondition, FilterFieldType, LabelOptions } from './types';
 import { parseWhereClausesToFilters as parseFilters } from './where-clause-parser';
 
 // Re-export from specialized modules
@@ -47,6 +47,7 @@ interface FilterInfo {
 interface FilterDescriptionLookups {
   spaces?: Array<{ id: string; name: string }>;
   targets?: Array<{ id: string; name: string }>;
+  fieldOptions?: FieldOptions;
 }
 
 /**
@@ -84,19 +85,15 @@ export const getFilterDescription = (
     const fieldConfig = FIELD_CONFIGS[c.field];
     const label = fieldConfig?.label || c.field;
 
-    // Resolve IDs to names for space/target fields
+    // Resolve IDs to names for fields whose values name entities
     let displayValue = c.value;
-    if (c.field === 'space' && lookups?.spaces) {
-      const space = lookups.spaces.find((s) => s.id === c.value);
-      if (space) displayValue = space.name;
-    } else if ((c.field === 'target' || c.field === 'targetId') && lookups?.targets) {
-      const target = lookups.targets.find((t) => t.id === c.value);
-      if (target) displayValue = target.name;
-    }
+    const entity = getEntityOptionsForField(c.field, lookups ?? {})?.find((e) => e.id === c.value);
+    if (entity) displayValue = entity.name;
 
-    if (c.field === 'labels' && c.labelKey) {
-      if (!displayValue) return `Labels.${c.labelKey}`;
-      return `Labels.${c.labelKey} = ${displayValue}`;
+    const mapAttribute = keyValueAttribute(c.field);
+    if (mapAttribute && c.labelKey) {
+      if (!displayValue) return `${mapAttribute}.${c.labelKey}`;
+      return `${mapAttribute}.${c.labelKey} = ${displayValue}`;
     }
 
     if (c.operator === 'raw') {
@@ -109,6 +106,9 @@ export const getFilterDescription = (
     }
 
     const opLabel = fieldConfig?.operators.find((o) => o.value === c.operator)?.label || c.operator;
+    if (isNoValueOperator(c.operator)) {
+      return `${label} ${opLabel.toLowerCase()}`;
+    }
     return `${label} ${opLabel.toLowerCase()} ${displayValue}`;
   });
 

@@ -1,12 +1,8 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
-import type { FieldConfig, FilterFieldType } from '../../types';
-
-interface NamedEntity {
-  id: string;
-  name: string;
-}
+import { getEntityOptionsForField } from '../../operators';
+import type { FieldConfig, FieldOptions, FilterFieldType, NamedEntity } from '../../types';
 
 interface SlugOption {
   slug: string;
@@ -24,6 +20,7 @@ interface FieldOptionContext {
   targets: NamedEntity[];
   toolchainTypes: string[];
   resourceTypes: string[];
+  fieldOptions?: FieldOptions;
   slugs?: SlugOption[];
 }
 
@@ -36,17 +33,12 @@ export const buildCommonFieldOptions = (
   config: FieldConfig,
   context: FieldOptionContext,
 ): FieldOption[] | null => {
-  if (field === 'space') {
-    return context.spaces.map((space) => ({
-      value: space.id,
-      label: space.name,
-    }));
-  }
-
-  if (field === 'target') {
-    return context.targets.map((target) => ({
-      value: target.id,
-      label: target.name,
+  const entities = getEntityOptionsForField(field, context);
+  if (entities) {
+    return entities.map((entity) => ({
+      value: entity.id,
+      label: entity.name,
+      group: entity.group,
     }));
   }
 

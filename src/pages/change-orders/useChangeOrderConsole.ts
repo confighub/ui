@@ -51,7 +51,7 @@
 import { useCallback, useMemo } from 'react';
 
 import { useComponentSlugs } from '@/hooks/useComponentSlugs';
-import { useListAllChangeOrdersQuery, useListSpacesQuery } from '@confighub/rtk-query';
+import { type ChangeOrderRead, useListAllChangeOrdersQuery, useListSpacesQuery } from '@confighub/rtk-query';
 
 import {
   buildConsoleRow,
@@ -136,11 +136,19 @@ export interface ChangeOrderConsoleData {
    */
   lastLoadedAt: number | null;
   refetch: () => void;
+  /**
+   * Each ChangeOrder as read, by its id, for the writes a row's own model has no need of, such as
+   * its labels and review requests. Absent from data a caller injects.
+   */
+  ordersById?: ReadonlyMap<string, ChangeOrderRead>;
 }
 
-/** `includeHidden` is the list's include_hidden, naming the hidden ChangeOrders to list too. */
-export function useChangeOrderConsole(includeHidden?: string): ChangeOrderConsoleData {
-  const orders = useListAllChangeOrdersQuery({ includeHidden });
+/**
+ * `includeHidden` is the list's include_hidden, naming the hidden ChangeOrders to list too, and
+ * `where` the expression naming the ChangeOrders to list, which the server applies.
+ */
+export function useChangeOrderConsole(includeHidden?: string, where?: string): ChangeOrderConsoleData {
+  const orders = useListAllChangeOrdersQuery({ includeHidden, where: where || undefined });
   const spaces = useListSpacesQuery({});
   const { componentById } = useComponentSlugs();
 
@@ -271,6 +279,16 @@ export function useChangeOrderConsole(includeHidden?: string): ChangeOrderConsol
     return rows;
   }, [built, spacesWithReleases, stageSpacesByClause]);
 
+  const ordersById = useMemo(
+    () =>
+      new Map(
+        (orders.data ?? []).flatMap((entry) =>
+          entry.ChangeOrder?.ChangeOrderID ? [[entry.ChangeOrder.ChangeOrderID, entry.ChangeOrder] as const] : [],
+        ),
+      ),
+    [orders.data],
+  );
+
   const unreadable = useMemo(
     () => ({ orders: unreadableOrders, spaces: unreadableSpaces }),
     [unreadableOrders, unreadableSpaces],
@@ -340,8 +358,10 @@ export function useChangeOrderConsole(includeHidden?: string): ChangeOrderConsol
       error: orders.error ?? spaces.error ?? releases.error,
       lastLoadedAt,
       refetch,
+      ordersById,
     }),
     [
+      ordersById,
       rows,
       stateCounts,
       groupCounts,

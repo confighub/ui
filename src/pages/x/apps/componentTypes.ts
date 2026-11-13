@@ -366,6 +366,8 @@ export interface MergedUnit {
   validationErrors?: { [key: string]: boolean };
   validationWarnings?: { [key: string]: boolean };
   validationResults?: { [gate: string]: ValidationResult[] };
+  /** Unit.TargetID: a Unit with none is never released. */
+  targetId?: string;
   upgradeEntry?: UpgradeEntry;
   applyEntry?: ApplyEntryWithGates;
   variationEntry?: VariationEntry;

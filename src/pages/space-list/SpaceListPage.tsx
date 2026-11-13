@@ -11,6 +11,7 @@ import { Header } from '@/components/header/Header';
 import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
 import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { extractLabelOptions, useQueryBuilder } from '@/components/query-builder';
+import type { FieldOptions, NamedEntity } from '@/components/query-builder';
 import { Main } from '@/components/styled';
 import { useBulkApiErrorMessage } from '@/hooks/useBulkApiErrorMessages';
 import { useEditDrawerUrl } from '@/hooks/useEditDrawerUrl';
@@ -23,13 +24,42 @@ import {
   useBulkPatchSpacesMutation,
   useListSpacesQuery,
 } from '@confighub/rtk-query';
+import { getApiErrorMessage } from '@/utility/error-functions';
 import RefreshIcon from '@mui/icons-material/Cached';
+import Alert from '@mui/material/Alert';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
+import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
 
-// The entities the Component, Trigger Filter and Release Target columns name.
-const SPACE_LIST_INCLUDE = 'ComponentID,TriggerFilterID,ReleaseTargetID';
+// The entities the Component, Trigger Filter and Release Target columns name, and the
+// filters on those and on the Upstream Space name.
+const SPACE_LIST_INCLUDE = 'ComponentID,TriggerFilterID,ReleaseTargetID,UpstreamSpaceID';
+
+type SpaceListItem = NonNullable<ReturnType<typeof useListSpacesQuery>['data']>[number];
+
+type Reference = { id?: string; slug?: string; spaceId?: string };
+
+// The entities the Spaces name through one reference, each once, by slug. A slug is unique only
+// within its Space for an entity that belongs to one, so those are grouped by that Space's slug.
+const referencedEntities = (
+  spaces: SpaceListItem[],
+  pick: (space: SpaceListItem) => Reference | undefined,
+): NamedEntity[] => {
+  const spaceSlugs = new Map(spaces.map((s) => [s.Space?.SpaceID, s.Space?.Slug]));
+  const byId = new Map<string, NamedEntity>();
+  for (const space of spaces) {
+    const ref = pick(space);
+    if (!ref?.id || byId.has(ref.id)) continue;
+    const group = ref.spaceId ? spaceSlugs.get(ref.spaceId) || ref.spaceId : undefined;
+    byId.set(ref.id, { id: ref.id, name: ref.slug || ref.id, group });
+  }
+  return [...byId.values()].sort(
+    (a, b) => (a.group ?? '').localeCompare(b.group ?? '') || a.name.localeCompare(b.name),
+  );
+};
+
+const EMPTY_SPACES: SpaceListItem[] = [];
 
 const Container = styled('div')`
   width: 100%;
@@ -46,7 +76,8 @@ export const SpaceListPage = () => {
   const { includeHidden, setIncludeHidden, includeHiddenParam } = useIncludeHidden();
 
   // Fetch all spaces first (without filter) to get label options
-  const { data: allSpaces = [], isFetching: isFetchingAll, refetch: refetchAll } = useListSpacesQuery({ summary: true, include: SPACE_LIST_INCLUDE, includeHidden: includeHiddenParam }, { refetchOnFocus: true });
+  const { data: allSpacesData, error: allSpacesError, isFetching: isFetchingAll, refetch: refetchAll } = useListSpacesQuery({ summary: true, include: SPACE_LIST_INCLUDE, includeHidden: includeHiddenParam }, { refetchOnFocus: true });
+  const allSpaces = allSpacesData ?? EMPTY_SPACES;
 
   // Extract label options from all spaces for the Labels filter dropdown
   const labelOptions = useMemo(() => {
@@ -72,16 +103,28 @@ export const SpaceListPage = () => {
     [allSpaces],
   );
 
+  // Only the entities some Space refers to: any other would match nothing.
+  const fieldOptions = useMemo<FieldOptions>(
+    () => ({
+      releaseTarget: referencedEntities(allSpaces, (s) => s.ReleaseTarget && { id: s.ReleaseTarget.TargetID, slug: s.ReleaseTarget.Slug, spaceId: s.ReleaseTarget.SpaceID }),
+      component: referencedEntities(allSpaces, (s) => s.Component && { id: s.Component.ComponentID, slug: s.Component.Slug }),
+      triggerFilter: referencedEntities(allSpaces, (s) => s.TriggerFilter && { id: s.TriggerFilter.FilterID, slug: s.TriggerFilter.Slug, spaceId: s.TriggerFilter.SpaceID }),
+      upstreamSpace: referencedEntities(allSpaces, (s) => s.UpstreamSpace && { id: s.UpstreamSpace.SpaceID, slug: s.UpstreamSpace.Slug }),
+    }),
+    [allSpaces],
+  );
+
   const { QueryBuilderElement, whereClause, clearFilters } = useQueryBuilder({
     entityType: 'Space',
     spaces,
     slugs: slugOptions,
     labelOptions,
+    fieldOptions,
     syncToUrl: true,
   });
 
   // Fetch filtered spaces (skip if no filter applied to avoid duplicate query)
-  const { data: filteredSpaces = [], isFetching: isFetchingFiltered, refetch: refetchFiltered } = useListSpacesQuery(
+  const { data: filteredSpaces = EMPTY_SPACES, error: filteredSpacesError, isFetching: isFetchingFiltered, refetch: refetchFiltered } = useListSpacesQuery(
     {
       summary: true,
       include: SPACE_LIST_INCLUDE,
@@ -103,6 +146,10 @@ export const SpaceListPage = () => {
 
   // Display filtered spaces if filter is applied, otherwise all spaces
   const displayedSpaces = whereClause ? filteredSpaces : allSpaces;
+  // A read that failed lists nothing, which is not the same as there being no Spaces: it says so
+  // instead, and the filters stay, so a Where the server refused can be corrected.
+  const readError = whereClause ? filteredSpacesError : allSpacesError;
+  const readErrorMessage = readError ? getApiErrorMessage(readError, 'The Spaces could not be read.') : '';
   const isLoading = isFetchingAll || isFetchingFiltered;
 
   const [
@@ -190,6 +237,11 @@ export const SpaceListPage = () => {
       />
       <Main>
         <ErrorList errors={serverErrors} onClose={() => setServerErrors([])} />
+        {readErrorMessage && (
+          <Alert severity='error' sx={{ mb: 1 }} data-testid='spaces-read-error'>
+            {readErrorMessage}
+          </Alert>
+        )}
         <SpacesTable
           onRowSelected={(selectedRows) => setSelectedSpaces(selectedRows)}
           spaces={displayedSpaces}
@@ -199,10 +251,17 @@ export const SpaceListPage = () => {
             <IncludeHiddenToggle includeHidden={includeHidden} onChange={setIncludeHidden} entities='spaces' />
           }
           noRowsOverlay={
-            <FilteredEmptyState entityName='spaces' onClearFilters={clearFilters} />
+            readErrorMessage ? (
+              <Typography variant='body2' color='error' sx={{ p: 2 }}>
+                {readErrorMessage}
+              </Typography>
+            ) : (
+              <FilteredEmptyState entityName='spaces' onClearFilters={clearFilters} />
+            )
           }
           emptyState={<EmptySpaceList onAddSpace={() => setIsAddSpacePageOpen(true)} />}
-          hasNoData={allSpaces.length === 0}
+          // Only a read that succeeded can say there are no Spaces.
+          hasNoData={allSpacesData?.length === 0}
         />
         <AddSpacePage open={isAddSpacePageOpen} onClose={() => setIsAddSpacePageOpen(false)} />
         <SpaceSettingsDrawer spaceId={editEntityId} onClose={closeEditDrawer} />

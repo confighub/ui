@@ -154,6 +154,10 @@ export function WorkflowsConsole({
       spaces.push(r.entity.workflow.space);
     }
   });
+  // A link can filter to a Space that holds none of them; the select still has to show it.
+  if (api.spaceFilter !== null && !spaces.includes(api.spaceFilter)) {
+    spaces.push(api.spaceFilter);
+  }
 
   const filtersActive = api.spaceFilter !== null || api.search !== '';
 

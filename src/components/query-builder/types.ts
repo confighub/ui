@@ -8,7 +8,7 @@ import type {
 /**
  * Entity types supported by the QueryBuilder
  */
-export type EntityType = 'Unit' | 'Target' | 'Space' | 'Trigger';
+export type EntityType = 'Unit' | 'Target' | 'Space' | 'Trigger' | 'Link' | 'ChangeSet' | 'ChangeOrder';
 
 /**
  * Available filter field types
@@ -20,6 +20,7 @@ export type FilterFieldType =
   | 'createdAt'
   | 'updatedAt'
   | 'labels'
+  | 'annotations'
   // Unit-specific fields
   | 'toolchainType'
   | 'target'
@@ -37,6 +38,17 @@ export type FilterFieldType =
   | 'checkResult'
   // Target-specific fields
   | 'targetId'
+  // Space-specific fields
+  | 'spaceId'
+  | 'releaseTarget'
+  | 'component'
+  | 'triggerFilter'
+  | 'upstreamSpace'
+  // Link-specific fields
+  | 'updateType'
+  | 'autoUpdate'
+  | 'stale'
+  | 'toSpace'
   // Trigger-specific fields
   | 'event'
   | 'functionName'
@@ -156,7 +168,7 @@ export interface FilterCondition {
   field: FilterFieldType;
   operator: FilterOperator;
   value: string;
-  /** For labels filter: the label key being filtered */
+  /** For a key-value filter (labels, annotations): the key being filtered */
   labelKey?: string;
   /** Whether this filter is locked and cannot be removed or changed */
   locked?: boolean;
@@ -175,7 +187,23 @@ export interface FieldConfig {
   options?: Array<{ value: string; label: string }>;
   /** If true, this field is computed client-side and should not generate WHERE clauses */
   computedField?: boolean;
+  /**
+   * If true, the field's values are those the caller lists in `fieldOptions`, such as the IDs of
+   * the entities it can name, and the field is offered only to a caller that passes them.
+   */
+  requiresFieldOptions?: boolean;
 }
+
+/** A value a filter can take, such as an entity's ID, with the name to show for it */
+export interface NamedEntity {
+  id: string;
+  name: string;
+  /** What the name is unique within, such as the Space of a Target; options are headed by it */
+  group?: string;
+}
+
+/** The values of the fields whose values the caller lists, keyed by field */
+export type FieldOptions = Partial<Record<FilterFieldType, NamedEntity[]>>;
 
 /**
  * Props for the QueryBuilder component
@@ -201,6 +229,10 @@ export interface QueryBuilderProps {
   resourceTypes?: string[];
   /** Available label keys and values for the labels filter */
   labelOptions?: LabelOptions;
+  /** Available annotation keys and values for the annotations filter */
+  annotationOptions?: LabelOptions;
+  /** Options for the fields that name entities by ID (see `FieldConfig.requiresFieldOptions`) */
+  fieldOptions?: FieldOptions;
   /** Whether the component is disabled */
   disabled?: boolean;
   /** Callback when a saved view is selected */

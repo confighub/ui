@@ -74,7 +74,7 @@ import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { ROUTE_COMPONENTS } from '../x/apps/appTypes';
 import { EndChangeOrderDialog } from '../x/apps/change-order/EndChangeOrderDialog';
 import { ChangeOrderStageStrip } from '../x/apps/change-order/ChangeOrderStageStrip';
-import { actionFor, promotionFor, changeOrderIntents } from '../x/apps/change-order/changeOrdersConsoleModel';
+import { actionFor, consoleGroupOf, promotionFor, changeOrderIntents } from '../x/apps/change-order/changeOrdersConsoleModel';
 import type { SegmentTone } from '../x/apps/change-order/changeOrdersConsoleModel';
 import {
   NO_STATES,
@@ -100,16 +100,26 @@ import { promoteAnnouncement, useChangeOrderActions } from '../x/apps/change-ord
 import { changeWorkflowLabel, useChangeWorkflowNames } from './useChangeWorkflowNames';
 import { changeOrdersConsoleCopy } from '../x/apps/change-order/changeOrdersConsoleCopy';
 import { changeOrderCopy, stageDisplayName } from '../x/apps/change-order/changeOrderCopy';
+import { useBulkPatchChangeOrdersMutation, useListAllChangeOrdersQuery } from '@confighub/rtk-query';
+
+import { authFetch } from '@/auth/session';
 import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
+import { BulkMetadataDrawer } from '@/components/bulk-edit/BulkMetadataDrawer';
+import { extractLabelOptions, useQueryBuilder } from '@/components/query-builder';
 import { ConsoleTable, ConsoleTableRow, type ConsoleTableColumn } from '@/components/console-table/ConsoleTable';
 import { HiddenReasonTag } from '@/components/hidden-entities/HiddenReasonTag';
 import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
 import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { LiveRegion } from '@/components/live-region/LiveRegion';
 import { useListUsersByIdChunkedQuery } from '@/hooks/chunkedQueriesApi';
+import { useConsoleSpaceFilter } from '@/hooks/useSpaceParam';
 import { reviewPersonOf } from '../change-sets/changeSetReviewModel';
 import { PromoteDialog } from './components/PromoteDialog';
 import { ChangeOrderExceptions } from './components/ChangeOrderExceptions';
+import { BulkRequestReviewDialog, ConsoleBulkButtons } from './components/ConsoleBulkActions';
+import type { KpiCard } from './components/KpiStrip';
+import { useChangeOrderApprovals } from './changeOrderApprovals';
+import { changeReviewRequests } from './reviews/quietServerCalls';
 import { buildCompleteConsoleStage } from './changeOrderCompleteStep';
 import { ImageChangeCell } from './components/ImageChangeCell';
 import { draftCopy } from './draft/draftCopy';
@@ -972,6 +982,7 @@ function FilterBar({
   onClear,
   clearDisabled,
   hiddenToggle,
+  filterElement,
 }: {
   search: string;
   onSearch: (v: string) => void;
@@ -996,10 +1007,13 @@ function FilterBar({
   clearDisabled: boolean;
   /** The toggle that lists hidden ChangeOrders too */
   hiddenToggle?: ReactNode;
+  /** The filter builder, whose Where the server applies */
+  filterElement?: ReactNode;
 }) {
   return (
     <ConsoleFilterBar>
       <ConsoleSearch value={search} onChange={onSearch} placeholder={changeOrdersConsoleCopy.filters.searchPlaceholder} />
+      {filterElement}
       <StateFilter selection={selectedStates} onChange={onSelectedStates} counts={stateCounts} />
       <ConsoleSelectFilter
         label={changeOrdersConsoleCopy.filters.space}
@@ -1147,10 +1161,26 @@ export function ChangeOrdersConsoleView({
   onEndRequest,
   onAnnounce,
   hiddenToggle,
+  filterElement,
+  whereActive = false,
+  onClearWhere,
+  approvals,
+  bulk,
 }: ChangeOrdersConsoleProps & {
   data: ChangeOrderConsoleData;
   /** The filter bar's toggle that lists hidden ChangeOrders too */
   hiddenToggle?: ReactNode;
+  /** The filter builder, whose Where the server applies; `whereActive` when it has one */
+  filterElement?: ReactNode;
+  whereActive?: boolean;
+  onClearWhere?: () => void;
+  /**
+   * Each unfinished ChangeOrder's approvals, for the No approvals card: `byId` is undefined while
+   * they are being counted. Absent, the card is not shown.
+   */
+  approvals?: { byId: ReadonlyMap<string, number> | undefined };
+  /** Checkboxes on the rows, and the buttons that act on the rows checked */
+  bulk?: { onRequestReview: (rows: ConsoleRow[]) => void; onUpdate: (rows: ConsoleRow[]) => void };
   /**
    * Opens the promote confirmation for one row. Supplied by the fetching
    * wrapper below; absent leaves the row's action rendered and disabled rather
@@ -1206,12 +1236,13 @@ export function ChangeOrdersConsoleView({
     (group: ConsoleGroup) => setSelectedStates((current) => selectionAfterCardClick(current, group)),
     [],
   );
-  const [spaceFilter, setSpaceFilter] = useState<'all' | string>('all');
+  const [spaceFilter, setSpaceFilter] = useConsoleSpaceFilter();
   const [componentFilter, setComponentFilter] = useState<'all' | string>('all');
   const [updateTypeFilter, setUpdateTypeFilter] = useState<'all' | string>('all');
   // `YYYY-MM-DD` days, as `<input type="date">` gives them; `''` is an open end.
   const [createdFrom, setCreatedFrom] = useState('');
   const [createdTo, setCreatedTo] = useState('');
+  const [unapprovedOnly, setUnapprovedOnly] = useState(false);
   const filtersActive =
     search !== '' ||
     selectedStates.size > 0 ||
@@ -1219,7 +1250,9 @@ export function ChangeOrdersConsoleView({
     componentFilter !== 'all' ||
     updateTypeFilter !== 'all' ||
     createdFrom !== '' ||
-    createdTo !== '';
+    createdTo !== '' ||
+    unapprovedOnly ||
+    whereActive;
   const clearFilters = useCallback(() => {
     setSearch('');
     setSelectedStates(NO_STATES);
@@ -1228,7 +1261,29 @@ export function ChangeOrdersConsoleView({
     setUpdateTypeFilter('all');
     setCreatedFrom('');
     setCreatedTo('');
-  }, []);
+    setUnapprovedOnly(false);
+    onClearWhere?.();
+  }, [setSpaceFilter, onClearWhere]);
+
+  // An unfinished ChangeOrder with no approval at any of its gates: what is still to be reviewed.
+  const approvalsById = approvals?.byId;
+  const unapproved = useCallback(
+    (row: ConsoleRow) => consoleGroupOf(row.state) !== 'finished' && approvalsById?.get(row.changeOrderId) === 0,
+    [approvalsById],
+  );
+  const approvalCards: KpiCard[] =
+    approvals === undefined
+      ? []
+      : [
+          {
+            key: 'unapproved',
+            label: 'No approvals',
+            hint: 'unfinished, none approved',
+            count: approvalsById === undefined ? null : rows.filter(unapproved).length,
+            status: unapprovedOnly ? 'on' : 'off',
+            tone: T.wait,
+          },
+        ];
 
   /*
    * Whether the READER has done anything yet.
@@ -1286,6 +1341,7 @@ export function ChangeOrdersConsoleView({
     const needle = search.trim().toLowerCase();
     return rows.filter((row) => {
       if (!rowMatchesStates(selectedStates, row.state)) return false;
+      if (unapprovedOnly && !unapproved(row)) return false;
       if (spaceFilter !== 'all' && row.spaceSlug !== spaceFilter) return false;
       if (componentFilter !== 'all' && row.appName !== componentFilter) return false;
       if (updateTypeFilter !== 'all' && row.updateType !== updateTypeFilter) return false;
@@ -1294,7 +1350,11 @@ export function ChangeOrdersConsoleView({
       const creator = row.userId ? (userNames.get(row.userId) ?? '') : '';
       return `${row.slug} ${row.spaceSlug ?? ''} ${row.appName ?? ''} ${creator}`.toLowerCase().includes(needle);
     });
-  }, [rows, search, selectedStates, spaceFilter, componentFilter, updateTypeFilter, createdFrom, createdTo, userNames]);
+  }, [rows, search, selectedStates, unapprovedOnly, unapproved, spaceFilter, componentFilter, updateTypeFilter, createdFrom, createdTo, userNames]);
+
+  // The checked rows, of those shown: a row filtered out leaves the selection.
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(() => new Set());
+  const checked = useMemo(() => matched.filter((row) => checkedIds.has(row.changeOrderId)), [matched, checkedIds]);
 
   const headingId = 'change-orders-console-heading';
   const freshness = freshnessFrom(lastLoadedAt, now);
@@ -1364,6 +1424,16 @@ export function ChangeOrdersConsoleView({
             freshness={freshness}
             refreshing={isFetching}
             onRefresh={refreshNow}
+            actions={
+              bulk === undefined ? undefined : (
+                <ConsoleBulkButtons
+                  count={checked.length}
+                  plural="ChangeOrders"
+                  onRequestReview={() => bulk.onRequestReview(checked)}
+                  onUpdate={() => bulk.onUpdate(checked)}
+                />
+              )
+            }
             note={
               /*
                 ⚠️ A SHORT LIST MUST SAY SO. Records the server sent that could not
@@ -1415,6 +1485,8 @@ export function ChangeOrdersConsoleView({
           cardSx={KPI_CARD_SX}
           activeCardSx={KPI_ACTIVE_CARD_SX}
           partialCardSx={KPI_PARTIAL_CARD_SX}
+          extraCards={approvalCards}
+          onSelectExtra={(key) => key === 'unapproved' && setUnapprovedOnly((on) => !on)}
         />
       </Box>
       <FilterBar
@@ -1439,6 +1511,7 @@ export function ChangeOrdersConsoleView({
         onClear={clearFilters}
         clearDisabled={!filtersActive}
         hiddenToggle={hiddenToggle}
+        filterElement={filterElement}
       />
       <Legend />
 
@@ -1474,6 +1547,11 @@ export function ChangeOrdersConsoleView({
         isLoading={isLoading}
         loadingTestId="change-orders-loading"
         renderRow={renderRow}
+        selection={
+          bulk === undefined
+            ? undefined
+            : { selectedIds: checkedIds, onChange: setCheckedIds, rowLabel: (row) => `Select ChangeOrder ${row.spaceSlug ?? ''}/${row.slug}` }
+        }
         empty={
           /*
             Two distinct empty claims: "nothing exists" and "your filters matched
@@ -1541,9 +1619,71 @@ export function ChangeOrdersConsoleView({
  */
 export function ChangeOrdersConsole(props: ChangeOrdersConsoleProps) {
   const { includeHidden, setIncludeHidden, includeHiddenParam } = useIncludeHidden();
-  const fetched = useChangeOrderConsole(includeHiddenParam);
-  const data = props.data ?? fetched;
+
+  // Every ChangeOrder's labels, annotations and name, for the filter builder's options.
+  const everyOrder = useListAllChangeOrdersQuery({ includeHidden: includeHiddenParam });
+  const allOrders = useMemo(
+    () => (everyOrder.data ?? []).flatMap((entry) => (entry.ChangeOrder === undefined ? [] : [entry.ChangeOrder])),
+    [everyOrder.data],
+  );
+  const labelOptions = useMemo(() => extractLabelOptions(allOrders), [allOrders]);
+  const annotationOptions = useMemo(() => extractLabelOptions(allOrders.map((order) => ({ Labels: order.Annotations }))), [allOrders]);
+  const slugOptions = useMemo(() => allOrders.map((order) => ({ slug: order.Slug, spaceName: order.SpaceSlug ?? '' })), [allOrders]);
+  const {
+    QueryBuilderElement,
+    whereClause,
+    clearFilters: clearWhere,
+  } = useQueryBuilder({ entityType: 'ChangeOrder', slugs: slugOptions, labelOptions, annotationOptions, syncToUrl: true });
+
+  const fetched = useChangeOrderConsole(includeHiddenParam, whereClause);
+  const listed = props.data ?? fetched;
   const { onAnnounce } = props;
+
+  // The approvals of the ChangeOrders still under way, which the No approvals card counts.
+  const unfinishedIds = useMemo(
+    () => listed.rows.flatMap((row) => (consoleGroupOf(row.state) === 'finished' ? [] : [row.changeOrderId])),
+    [listed.rows],
+  );
+  const approvals = useChangeOrderApprovals(unfinishedIds);
+  const refetchApprovals = approvals.refetch;
+  const data = useMemo(
+    () => ({
+      ...listed,
+      refetch: () => {
+        listed.refetch();
+        refetchApprovals();
+      },
+    }),
+    [listed, refetchApprovals],
+  );
+
+  // The rows checked when Request review or Update was clicked, which the dialog acts on.
+  const [bulkAction, setBulkAction] = useState<{ kind: 'review' | 'update'; rows: ConsoleRow[] } | null>(null);
+  const bulkOrders = useMemo(
+    () => (bulkAction?.rows ?? []).flatMap((row) => data.ordersById?.get(row.changeOrderId) ?? []),
+    [bulkAction, data.ordersById],
+  );
+  const [bulkPatchChangeOrders] = useBulkPatchChangeOrdersMutation();
+  // A request names the stage whose Spaces are to be reviewed: the one the ChangeOrder has
+  // reached, which is the stage every gate waiting on it reviews, or its own Space before it has
+  // reached one. A Completed ChangeOrder has no gate left to review.
+  const completedCount = bulkOrders.filter((order) => order.Stage === 'Completed').length;
+  const requestReviews = async (userIds: string[]) => {
+    const failures: string[] = [];
+    for (const order of bulkOrders) {
+      if (order.Stage === 'Completed' || !order.SpaceID || !order.ChangeOrderID) continue;
+      const outcome = await changeReviewRequests(authFetch, {
+        spaceId: order.SpaceID,
+        changeOrderId: order.ChangeOrderID,
+        current: order.ReviewRequests ?? [],
+        version: order.Version,
+        edit: { add: { stage: order.Stage ?? '', userIds } },
+      });
+      if (!outcome.ok) failures.push(`${order.SpaceSlug ?? ''}/${order.Slug}: ${outcome.message}`);
+    }
+    data.refetch();
+    return failures;
+  };
 
   const [ownAnnouncement, setOwnAnnouncement] = useState('');
   const announce = useCallback(
@@ -1642,6 +1782,36 @@ export function ChangeOrdersConsole(props: ChangeOrdersConsoleProps) {
         hiddenToggle={
           <IncludeHiddenToggle includeHidden={includeHidden} onChange={setIncludeHidden} entities='ChangeOrders' />
         }
+        filterElement={QueryBuilderElement}
+        whereActive={whereClause !== ''}
+        onClearWhere={clearWhere}
+        approvals={{ byId: approvals.approvals }}
+        bulk={{
+          onRequestReview: (rows) => setBulkAction({ kind: 'review', rows }),
+          onUpdate: (rows) => setBulkAction({ kind: 'update', rows }),
+        }}
+      />
+      <BulkRequestReviewDialog
+        open={bulkAction?.kind === 'review'}
+        count={bulkOrders.length}
+        plural="ChangeOrders"
+        onClose={() => setBulkAction(null)}
+        request={requestReviews}
+        note={
+          completedCount > 0
+            ? `${completedCount} of them ${completedCount === 1 ? 'is' : 'are'} Completed, with no gate left to review, and ${completedCount === 1 ? 'is' : 'are'} skipped.`
+            : undefined
+        }
+      />
+      <BulkMetadataDrawer
+        isOpen={bulkAction?.kind === 'update'}
+        onClose={() => setBulkAction(null)}
+        refresh={data.refetch}
+        entityName="ChangeOrders"
+        idColumn="ChangeOrderID"
+        entities={bulkOrders.flatMap((order) => (order.ChangeOrderID ? [{ ...order, id: order.ChangeOrderID }] : []))}
+        // The selection names each ChangeOrder by ID, so a hidden one shown in the list is written too.
+        patch={(where, body) => bulkPatchChangeOrders({ where, body, includeHidden: '*' }).unwrap()}
       />
       <PromoteDialog
         open={promoteRow !== null}

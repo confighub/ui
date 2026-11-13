@@ -36,7 +36,7 @@
  * call site; a shared-token change costs a blast-radius argument every time.
  */
 
-import { KpiStrip } from './KpiStrip';
+import { type KpiCard, KpiStrip } from './KpiStrip';
 import { CONSOLE_GROUPS, type ConsoleGroup } from '../../x/apps/change-order/changeOrdersConsoleModel';
 import { changeOrdersConsoleCopy } from '../../x/apps/change-order/changeOrdersConsoleCopy';
 import { groupCardStatus, type StateSelection } from '../../x/apps/change-order/changeOrdersConsoleStateFilter';
@@ -52,6 +52,8 @@ export function ChangeOrderExceptions({
   cardSx,
   activeCardSx,
   partialCardSx,
+  extraCards = [],
+  onSelectExtra,
 }: {
   counts: Readonly<Record<ConsoleGroup, number>>;
   /** The State filter's selection, shared with the dropdown. */
@@ -78,17 +80,26 @@ export function ChangeOrderExceptions({
   activeCardSx: Record<string, unknown>;
   /** A card whose group is only partly selected, or selected alongside other states. */
   partialCardSx: Record<string, unknown>;
+  /** Cards after the groups' that filter by something other than the state, such as the approvals */
+  extraCards?: readonly KpiCard[];
+  /** One of `extraCards` was clicked */
+  onSelectExtra?: (key: string) => void;
 }) {
   return (
     <KpiStrip
-      cards={CONSOLE_GROUPS.map((group) => ({
-        key: group,
-        label: changeOrdersConsoleCopy.groups[group].label,
-        count: counts[group],
-        status: groupCardStatus(selection, group),
-        tone: tones[group],
-      }))}
-      onSelect={(key) => onSelect(key as ConsoleGroup)}
+      cards={[
+        ...CONSOLE_GROUPS.map((group) => ({
+          key: group,
+          label: changeOrdersConsoleCopy.groups[group].label,
+          count: counts[group],
+          status: groupCardStatus(selection, group),
+          tone: tones[group],
+        })),
+        ...extraCards,
+      ]}
+      onSelect={(key) =>
+        (CONSOLE_GROUPS as readonly string[]).includes(key) ? onSelect(key as ConsoleGroup) : onSelectExtra?.(key)
+      }
       testIdPrefix="change-order-exception"
       numSx={numSx}
       labelSx={labelSx}

@@ -78,6 +78,16 @@ export const PaneContent = styled(Box)({
 // mode (the user is hovering the Upgrade button), units that won't be affected
 // by the upgrade are dimmed so the user can preview what will change.
 export const UnitRow = styled(Box)({
+  position: 'relative',
+  background: componentTheme.bgDefault,
+  border: `1px solid ${componentTheme.borderDefault}`,
+  borderRadius: componentTheme.radiusMd,
+  // The pane's list (PaneContent, a container) adds 4px between children; the card's own 6px
+  // makes the 10px between cards. The gutter at the pane's edge narrows with the pane.
+  '--unit-gutter': '12px',
+  '@container (max-width: 340px)': { '--unit-gutter': '8px' },
+  margin: '0 var(--unit-gutter) 6px',
+  '&:last-child': { marginBottom: 0 },
   transition: 'opacity 0.15s ease',
   '.pane-upgrade-preview &.unit-unchanged': {
     opacity: 0.4,

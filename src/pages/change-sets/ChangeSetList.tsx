@@ -21,14 +21,18 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import CheckIcon from '@mui/icons-material/Check';
 
-import { useListAllChangeSetsQuery, type ChangeSetRead } from '@confighub/rtk-query';
+import { useBulkPatchChangeSetsMutation, useListAllChangeSetsQuery, type ChangeSetRead } from '@confighub/rtk-query';
 
+import { authFetch } from '@/auth/session';
 import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
+import { BulkMetadataDrawer } from '@/components/bulk-edit/BulkMetadataDrawer';
+import { extractLabelOptions, useQueryBuilder } from '@/components/query-builder';
 import { ConsoleTable, ConsoleTableRow, type ConsoleTableColumn } from '@/components/console-table/ConsoleTable';
 import { HiddenReasonTag } from '@/components/hidden-entities/HiddenReasonTag';
 import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
 import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { useInViewport } from '@/hooks/useInViewport';
+import { useConsoleSpaceFilter } from '@/hooks/useSpaceParam';
 import { useListUsersByIdChunkedQuery } from '@/hooks/chunkedQueriesApi';
 
 import {
@@ -42,6 +46,7 @@ import {
   ConsoleSelectFilter,
   ConsoleTitleRow,
 } from '../change-orders/components/ConsoleParts';
+import { BulkRequestReviewDialog, ConsoleBulkButtons } from '../change-orders/components/ConsoleBulkActions';
 import { ImageChangesView } from '../change-orders/components/ImageChangeCell';
 import { KpiStrip, type KpiCard } from '../change-orders/components/KpiStrip';
 import {
@@ -62,7 +67,9 @@ import {
 import { imageChangesOfRead } from '../change-orders/imageChange';
 import { useListRevocationsQuery } from '../change-orders/reviews/reviewAttestationsApi';
 import { createdWithin } from '../x/apps/change-order/changeOrdersConsoleFilters';
+import { RECENTLY_CLOSED_DAYS, hasChangeToApprove, useChangeSetApprovals } from './changeSetApprovals';
 import { changeSetPath } from './changeSetAddress';
+import { changeChangeSetReviewRequests } from './changeSetServerCalls';
 import { approvalRecords, deriveChangeSetReviews, reviewPersonOf, reviewStatusText } from './changeSetReviewModel';
 import { useGetChangeSetRowDiffQuery, useGetChangeSetRowRevisionsQuery } from './changeSetListApi';
 
@@ -112,7 +119,11 @@ function changeSetColumns(userNames: ReadonlyMap<string, string>): ConsoleTableC
 
 const changeSetRowId = (cs: ChangeSetRead) => cs.ChangeSetID ?? `${cs.SpaceSlug ?? ''}/${cs.Slug}`;
 
-type CardKey = 'requested' | 'open' | 'closed';
+type CardKey = 'requested' | 'unapproved' | 'open' | 'closed';
+
+const EMPTY_CHANGE_SETS: ChangeSetRead[] = [];
+const changeSetsOf = (data: ReadonlyArray<{ ChangeSet?: ChangeSetRead }> | undefined) =>
+  (data ?? []).flatMap((entry) => (entry.ChangeSet === undefined ? [] : [entry.ChangeSet]));
 
 const firstLine = (text: string | undefined) => (text ?? '').split('\n')[0].trim();
 const requestedOf = (changeSet: ChangeSetRead, userId: string | undefined) =>
@@ -291,11 +302,29 @@ export function ChangeSetList() {
   const { userInfo } = useUserInfo();
   const viewerUserId = userInfo?.UserID;
   const { includeHidden, setIncludeHidden, includeHiddenParam } = useIncludeHidden();
-  const { data, isLoading, isFetching, isError, fulfilledTimeStamp, refetch } = useListAllChangeSetsQuery({
-    includeHidden: includeHiddenParam,
-  });
-  const changeSets = useMemo(() => (data ?? []).flatMap((entry) => (entry.ChangeSet === undefined ? [] : [entry.ChangeSet])), [data]);
+
+  // Every ChangeSet, for the filter builder's options, and the list when it has no filter.
+  const all = useListAllChangeSetsQuery({ includeHidden: includeHiddenParam });
+  const allChangeSets = useMemo(() => (all.data === undefined ? EMPTY_CHANGE_SETS : changeSetsOf(all.data)), [all.data]);
+  const labelOptions = useMemo(() => extractLabelOptions(allChangeSets), [allChangeSets]);
+  const annotationOptions = useMemo(() => extractLabelOptions(allChangeSets.map((cs) => ({ Labels: cs.Annotations }))), [allChangeSets]);
+  const slugOptions = useMemo(() => allChangeSets.map((cs) => ({ slug: cs.Slug, spaceName: cs.SpaceSlug ?? '' })), [allChangeSets]);
+  const {
+    QueryBuilderElement,
+    whereClause,
+    clearFilters: clearBuilderFilters,
+  } = useQueryBuilder({ entityType: 'ChangeSet', slugs: slugOptions, labelOptions, annotationOptions, syncToUrl: true });
+  // The ChangeSets the filter builder's Where names, which the server picks.
+  const filtered = useListAllChangeSetsQuery({ includeHidden: includeHiddenParam, where: whereClause }, { skip: !whereClause });
+  const { data, isLoading, isFetching, isError, fulfilledTimeStamp } = whereClause ? filtered : all;
+  const changeSets = useMemo(() => changeSetsOf(data), [data]);
   const loadedAt = fulfilledTimeStamp ?? 0;
+  const approvals = useChangeSetApprovals(changeSets, loadedAt);
+  const refetch = useCallback(() => {
+    if (whereClause) void filtered.refetch();
+    void all.refetch();
+    approvals.refetch();
+  }, [whereClause, filtered, all, approvals]);
 
   const userIds = useMemo(() => {
     const ids = new Set<string>();
@@ -318,19 +347,36 @@ export function ChangeSetList() {
   const [search, setSearch] = useState('');
   const [stateFilter, setStateFilter] = useState<string>('all');
   const [requestedOnly, setRequestedOnly] = useState(false);
-  const [spaceFilter, setSpaceFilter] = useState<string>('all');
+  const [unapprovedOnly, setUnapprovedOnly] = useState(false);
+  const [spaceFilter, setSpaceFilter] = useConsoleSpaceFilter();
   const [createdFrom, setCreatedFrom] = useState('');
   const [createdTo, setCreatedTo] = useState('');
   const filtersActive =
-    search !== '' || stateFilter !== 'all' || requestedOnly || spaceFilter !== 'all' || createdFrom !== '' || createdTo !== '';
+    search !== '' ||
+    stateFilter !== 'all' ||
+    requestedOnly ||
+    unapprovedOnly ||
+    spaceFilter !== 'all' ||
+    createdFrom !== '' ||
+    createdTo !== '' ||
+    whereClause !== '';
   const clearFilters = useCallback(() => {
     setSearch('');
     setStateFilter('all');
     setRequestedOnly(false);
+    setUnapprovedOnly(false);
     setSpaceFilter('all');
     setCreatedFrom('');
     setCreatedTo('');
-  }, []);
+    clearBuilderFilters();
+  }, [setSpaceFilter, clearBuilderFilters]);
+
+  // A ChangeSet open or closed lately with no live approval of its change: what is still to be
+  // reviewed, before it is promoted.
+  const unapproved = useCallback(
+    (cs: ChangeSetRead) => hasChangeToApprove(cs, loadedAt) && approvals.approvals?.get(cs.ChangeSetID ?? '') === 0,
+    [approvals.approvals, loadedAt],
+  );
 
   // The Age column and the freshness line move on their own between reads.
   const [now, setNow] = useState(() => Date.now());
@@ -347,6 +393,7 @@ export function ChangeSetList() {
       changeSets.filter((cs) => {
         if (stateFilter !== 'all' && cs.State !== stateFilter) return false;
         if (requestedOnly && !(requestedOf(cs, viewerUserId) && cs.State !== 'Closed')) return false;
+        if (unapprovedOnly && !unapproved(cs)) return false;
         if (spaceFilter !== 'all' && cs.SpaceSlug !== spaceFilter) return false;
         if (!createdWithin(cs.CreatedAt, createdFrom, createdTo)) return false;
         if (needle === '') return true;
@@ -354,7 +401,7 @@ export function ChangeSetList() {
         return [cs.Slug, cs.SpaceSlug ?? '', cs.Description ?? '', creator].some((field) => field.toLowerCase().includes(needle));
       }),
     );
-  }, [changeSets, search, stateFilter, requestedOnly, spaceFilter, createdFrom, createdTo, viewerUserId, userNames]);
+  }, [changeSets, search, stateFilter, requestedOnly, unapprovedOnly, unapproved, spaceFilter, createdFrom, createdTo, viewerUserId, userNames]);
 
   const cards: KpiCard[] = [
     {
@@ -364,6 +411,14 @@ export function ChangeSetList() {
       count: changeSets.filter((cs) => requestedOf(cs, viewerUserId) && cs.State !== 'Closed').length,
       status: requestedOnly ? 'on' : 'off',
       tone: T.progress,
+    },
+    {
+      key: 'unapproved',
+      label: 'No approvals',
+      hint: `open or closed in ${RECENTLY_CLOSED_DAYS} days, none approved`,
+      count: approvals.approvals === undefined ? null : changeSets.filter(unapproved).length,
+      status: unapprovedOnly ? 'on' : 'off',
+      tone: T.wait,
     },
     {
       key: 'open',
@@ -384,10 +439,39 @@ export function ChangeSetList() {
   ];
   const selectCard = (key: string) => {
     if ((key as CardKey) === 'requested') setRequestedOnly((on) => !on);
+    else if ((key as CardKey) === 'unapproved') setUnapprovedOnly((on) => !on);
     else {
       const state = key === 'open' ? 'Open' : 'Closed';
       setStateFilter((current) => (current === state ? 'all' : state));
     }
+  };
+
+  // The checked rows, of those shown: a row filtered out leaves the selection.
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(() => new Set());
+  const checked = useMemo(() => matched.filter((cs) => checkedIds.has(changeSetRowId(cs))), [matched, checkedIds]);
+  const [requestingReview, setRequestingReview] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [bulkPatchChangeSets] = useBulkPatchChangeSetsMutation();
+  const checkedEntities = useMemo(
+    () => checked.flatMap((cs) => (cs.ChangeSetID ? [{ ...cs, id: cs.ChangeSetID }] : [])),
+    [checked],
+  );
+  // Each ChangeSet's requests are replaced whole, so each is written on its own, with its own.
+  const requestReviews = async (userIds: string[]) => {
+    const failures: string[] = [];
+    for (const cs of checked) {
+      if (!cs.SpaceID || !cs.ChangeSetID) continue;
+      const outcome = await changeChangeSetReviewRequests(authFetch, {
+        spaceId: cs.SpaceID,
+        changeSetId: cs.ChangeSetID,
+        current: cs.ReviewRequests ?? [],
+        version: cs.Version,
+        edit: { add: userIds },
+      });
+      if (!outcome.ok) failures.push(`${cs.SpaceSlug ?? ''}/${cs.Slug}: ${outcome.message}`);
+    }
+    refetch();
+    return failures;
   };
 
   const columns = useMemo(() => changeSetColumns(userNames), [userNames]);
@@ -406,7 +490,15 @@ export function ChangeSetList() {
         count={matched.length}
         freshness={freshnessFrom(fulfilledTimeStamp ?? null, now)}
         refreshing={isFetching}
-        onRefresh={() => void refetch()}
+        onRefresh={refetch}
+        actions={
+          <ConsoleBulkButtons
+            count={checked.length}
+            plural="ChangeSets"
+            onRequestReview={() => setRequestingReview(true)}
+            onUpdate={() => setUpdating(true)}
+          />
+        }
       />
       <ConsoleIntro>
         A ChangeSet groups the changes made to a set of Units, so they can be reviewed together and promoted as one change.
@@ -427,6 +519,7 @@ export function ChangeSetList() {
       </Box>
       <ConsoleFilterBar>
         <ConsoleSearch value={search} onChange={setSearch} placeholder="Search ChangeSets" />
+        {QueryBuilderElement}
         <ConsoleSelectFilter label="State" value={stateFilter} onChange={setStateFilter} allLabel="All" options={STATES} />
         <ConsoleSelectFilter label="Space" value={spaceFilter} onChange={setSpaceFilter} allLabel="All Spaces" options={spaceSlugs} />
         <ConsoleDateRange fromLabel="Created from" toLabel="to" from={createdFrom} onFrom={setCreatedFrom} to={createdTo} onTo={setCreatedTo} />
@@ -454,6 +547,7 @@ export function ChangeSetList() {
         isLoading={isLoading}
         loadingTestId="change-sets-loading"
         renderRow={renderRow}
+        selection={{ selectedIds: checkedIds, onChange: setCheckedIds, rowLabel: (cs) => `Select ChangeSet ${cs.SpaceSlug ?? ''}/${cs.Slug}` }}
         empty={
           <ConsoleEmpty
             message={changeSets.length === 0 ? 'No ChangeSets yet.' : 'No ChangeSet matches these filters.'}
@@ -473,6 +567,23 @@ export function ChangeSetList() {
             hint="Select a row to open its change and reviews."
           />
         }
+      />
+      <BulkRequestReviewDialog
+        open={requestingReview}
+        count={checked.length}
+        plural="ChangeSets"
+        onClose={() => setRequestingReview(false)}
+        request={requestReviews}
+      />
+      <BulkMetadataDrawer
+        isOpen={updating}
+        onClose={() => setUpdating(false)}
+        refresh={refetch}
+        entityName="ChangeSets"
+        idColumn="ChangeSetID"
+        entities={checkedEntities}
+        // The selection names each ChangeSet by ID, so a hidden one shown in the list is written too.
+        patch={(where, body) => bulkPatchChangeSets({ where, body, includeHidden: '*' }).unwrap()}
       />
     </Box>
   );

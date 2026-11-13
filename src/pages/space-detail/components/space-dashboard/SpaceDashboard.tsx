@@ -4,8 +4,7 @@ import { Link as RouterLink } from 'react-router-dom';
 
 import { BorderedAccordion } from '@/components/styled';
 import { ExtendedSpaceRead } from '@confighub/rtk-query';
-import { FILTER_URL_PARAMS } from '@/utility/constants/url-params';
-import { SPACE_SUMMARY_COUNTS, type SpaceSummaryCount } from '@/utility/space-summary-counts';
+import { SPACE_SUMMARY_COUNTS, spaceCountLink, type SpaceSummaryCount } from '@/utility/space-summary-counts';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import AccordionSummary from '@mui/material/AccordionSummary';
@@ -23,8 +22,8 @@ export interface SpaceDashboardProps {
   /** The Space with its summary counts */
   extendedSpace: ExtendedSpaceRead;
   isLoading?: boolean;
-  /** Switch to the Triggers tab, showing the Triggers applied to the Space */
-  onShowAppliedTriggers: () => void;
+  /** Switch to the Triggers tab, showing the Triggers that reside in the Space */
+  onShowTriggers: () => void;
 }
 
 const StatCard = ({
@@ -101,33 +100,18 @@ const StatCard = ({
 export const SpaceDashboard = ({
   extendedSpace,
   isLoading = false,
-  onShowAppliedTriggers,
+  onShowTriggers,
 }: SpaceDashboardProps) => {
   const space = extendedSpace.Space;
 
-  const unitsHref = (whereClause: string) => {
-    const params = new URLSearchParams();
-    const spaceFilter = `SpaceID = '${space?.SpaceID}'`;
-    const fullWhere = whereClause ? `${spaceFilter} AND ${whereClause}` : spaceFilter;
-    params.set(FILTER_URL_PARAMS.WHERE, fullWhere);
-    return `/units?${params.toString()}`;
-  };
-
-  const targetsHref = () => {
-    const params = new URLSearchParams();
-    params.set(FILTER_URL_PARAMS.WHERE, `SpaceID = '${space?.SpaceID}'`);
-    return `/targets?${params.toString()}`;
-  };
-
-  // A Unit count links to the Units it counts and Targets to their list. Triggers
-  // stays a button, because it changes the tab on this page.
+  // A count links to the page listing what it counts. Triggers stays a button,
+  // because its tab is on this page.
+  const isTriggers = (c: SpaceSummaryCount) => c.field === 'TriggerCountByEventType';
   const statTo = (c: SpaceSummaryCount): string | undefined => {
-    if (c.unitWhere !== undefined) return unitsHref(c.unitWhere || '');
-    if (c.field === 'TotalTargetCount') return targetsHref();
-    return undefined;
+    const link = isTriggers(c) ? undefined : spaceCountLink(c);
+    return link && space?.SpaceID && space.Slug ? link({ SpaceID: space.SpaceID, Slug: space.Slug }) : undefined;
   };
-  const statClickHandler = (c: SpaceSummaryCount): (() => void) | undefined =>
-    c.field === 'TriggerCountByEventType' ? onShowAppliedTriggers : undefined;
+  const statClickHandler = (c: SpaceSummaryCount): (() => void) | undefined => (isTriggers(c) ? onShowTriggers : undefined);
 
   return (
     <BorderedAccordion expanded>

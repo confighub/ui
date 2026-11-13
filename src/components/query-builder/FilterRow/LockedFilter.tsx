@@ -4,7 +4,7 @@
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 
 import { FIELD_ICONS } from '../field-icons';
-import { FIELD_CONFIGS } from '../operators';
+import { FIELD_CONFIGS, getEntityOptionsForField } from '../operators';
 import { isInOperator, type FilterCondition } from '../types';
 import { useQueryBuilderContext } from '../QueryBuilderContext';
 
@@ -25,7 +25,7 @@ interface LockedFilterProps {
  * Used for filters that should always be visible but cannot be modified
  */
 export const LockedFilter = ({ condition }: LockedFilterProps) => {
-  const { spaces, targets } = useQueryBuilderContext();
+  const { spaces, targets, fieldOptions } = useQueryBuilderContext();
   const config = FIELD_CONFIGS[condition.field];
 
   const currentOperator = config.operators.find(op => op.value === condition.operator);
@@ -33,14 +33,9 @@ export const LockedFilter = ({ condition }: LockedFilterProps) => {
 
   // Helper to get label for a single value
   const getLabelForValue = (value: string): string => {
-    if (condition.field === 'space') {
-      const space = spaces.find(s => s.id === value);
-      return space?.name || value;
-    }
-
-    if (condition.field === 'target') {
-      const target = targets.find(t => t.id === value);
-      return target?.name || value;
+    const entities = getEntityOptionsForField(condition.field, { spaces, targets, fieldOptions });
+    if (entities) {
+      return entities.find(e => e.id === value)?.name || value;
     }
 
     // For fields with predefined options

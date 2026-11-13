@@ -36,7 +36,7 @@ import {
   mergeGroupByAnnotation,
 } from './groupBy-annotation';
 import { generateFilterId, getAvailableFieldsForEntity } from './operators';
-import type { EntityType, FilterCondition, LabelOptions } from './types';
+import type { EntityType, FieldOptions, FilterCondition, LabelOptions } from './types';
 import { deleteViewDraft, readViewDraft, scanDraftedTabIds, writeViewDraft } from './view-draft-storage';
 import type { ViewDraft } from './view-draft-storage';
 import { compareDraftToView } from './view-comparison';
@@ -50,6 +50,7 @@ const EMPTY_SLUG_OPTIONS: Array<{ slug: string; spaceName: string }> = [];
 const EMPTY_STRING_ARRAY: string[] = [];
 const EMPTY_FILTER_CONDITIONS: FilterCondition[] = [];
 const EMPTY_LABEL_OPTIONS: LabelOptions = { keys: [], valuesByKey: {}, countByKey: {}, countByKeyValue: {} };
+const EMPTY_FIELD_OPTIONS: FieldOptions = {};
 
 /** Returns the localStorage key for persisting the open tabs list, namespaced by entity type
  * (or `entityType:viewKind` — see `useQueryBuilder`'s `storageNamespace`). */
@@ -156,6 +157,10 @@ export interface UseQueryBuilderOptions {
   resourceTypes?: string[];
   /** Available label keys and values for the labels filter */
   labelOptions?: LabelOptions;
+  /** Available annotation keys and values for the annotations filter */
+  annotationOptions?: LabelOptions;
+  /** Options for the fields that name entities by ID; each such field is offered only when given */
+  fieldOptions?: FieldOptions;
   /** Locked filters that are always shown and cannot be removed */
   lockedFilters?: FilterCondition[];
   /** Whether the component is disabled */
@@ -336,6 +341,8 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
     slugs = EMPTY_SLUG_OPTIONS,
     resourceTypes = EMPTY_STRING_ARRAY,
     labelOptions = EMPTY_LABEL_OPTIONS,
+    annotationOptions = EMPTY_LABEL_OPTIONS,
+    fieldOptions = EMPTY_FIELD_OPTIONS,
     lockedFilters = EMPTY_FILTER_CONDITIONS,
     disabled = false,
     syncToUrl = false,
@@ -1965,6 +1972,8 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
         slugs={slugs}
         resourceTypes={resourceTypes}
         labelOptions={labelOptions}
+        annotationOptions={annotationOptions}
+        fieldOptions={fieldOptions}
         disabled={disabled}
       />
     ),
@@ -1979,6 +1988,8 @@ export const useQueryBuilder = (options: UseQueryBuilderOptions): UseQueryBuilde
       slugs,
       resourceTypes,
       labelOptions,
+      annotationOptions,
+      fieldOptions,
       disabled,
     ]
   );

@@ -21,4 +21,10 @@ test.describe('space list page', () => {
 
     await expect(page.getByRole('textbox', { name: 'Name', exact: true })).toHaveValue(spaceName);
   });
+
+  test('a read the server refuses is shown as an error, not as no Spaces', async ({ page }) => {
+    await page.goto(`/spaces?${new URLSearchParams({ filterWhere: "NoSuchAttribute = 'x'" }).toString()}`);
+    await expect(page.getByTestId('spaces-read-error')).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(/No matching spaces/i)).toHaveCount(0);
+  });
 });

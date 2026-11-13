@@ -9,6 +9,7 @@ import MenuItem from '@mui/material/MenuItem';
 import MenuList from '@mui/material/MenuList';
 import Popper from '@mui/material/Popper';
 
+import { getEntityOptionsForField } from '../../operators';
 import { useQueryBuilderContext } from '../../QueryBuilderContext';
 import { DropdownMenu } from '../../shared-styles';
 import { buildCommonFieldOptions, type FieldOption } from './buildFieldOptions';
@@ -42,7 +43,7 @@ export const SelectInput = ({
   autoFocus = false,
   focusTrigger = 0,
 }: SelectInputProps) => {
-  const { spaces, targets, toolchainTypes, resourceTypes, openAddMenu } = useQueryBuilderContext();
+  const { spaces, targets, toolchainTypes, resourceTypes, fieldOptions, openAddMenu } = useQueryBuilderContext();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -94,8 +95,8 @@ export const SelectInput = ({
 
   // Build data array of options for filtering and rendering
   const optionItems = useMemo(
-    (): FieldOption[] => buildCommonFieldOptions(field, config, { spaces, targets, toolchainTypes, resourceTypes }) || [],
-    [field, config, spaces, targets, toolchainTypes, resourceTypes]
+    (): FieldOption[] => buildCommonFieldOptions(field, config, { spaces, targets, toolchainTypes, resourceTypes, fieldOptions }) || [],
+    [field, config, spaces, targets, toolchainTypes, resourceTypes, fieldOptions]
   );
 
   // Filter options by search query
@@ -164,14 +165,9 @@ export const SelectInput = ({
   const getDisplayValue = (): string | null => {
     if (!value) return null;
 
-    if (field === 'space') {
-      const space = spaces.find(s => s.id === value);
-      return space?.name || value;
-    }
-
-    if (field === 'target') {
-      const target = targets.find(t => t.id === value);
-      return target?.name || value;
+    const entities = getEntityOptionsForField(field, { spaces, targets, fieldOptions });
+    if (entities) {
+      return entities.find(e => e.id === value)?.name || value;
     }
 
     // For fields with predefined options

@@ -1,7 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
-/** The words of review comments on a ChangeOrder's diffs. Sentence case; "resource", never "Unit". */
+/** The words of review comments on a ChangeOrder's or ChangeSet's diffs. Sentence case; "resource", never "Unit". */
 export const reviewCommentCopy = {
   add: 'Add a comment on this line',
   addResource: 'Add a comment on this resource',
@@ -21,7 +21,7 @@ export const reviewCommentCopy = {
   deleteBody: 'This cannot be undone.',
   deleteRepliesBody: (n: number) =>
     `This cannot be undone. Its ${n === 1 ? 'reply stays' : `${n} replies stay`} in the conversation list.`,
-  notLoaded: 'The ChangeOrder is not loaded yet',
+  notLoaded: 'The change is not loaded yet',
   retry: 'Retry',
   copyLink: 'Copy link',
   linkCopied: 'Link copied',

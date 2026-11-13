@@ -11,8 +11,11 @@ import {
   FiltersWrapper,
 } from './QueryBuilder.styles';
 import { QueryBuilderProvider, type QueryBuilderContextValue } from './QueryBuilderContext';
-import type { FilterCondition, FilterFieldType, QueryBuilderProps } from './types';
-import { generateFilterId, getDefaultOperator } from './operators';
+import type { FieldOptions, FilterCondition, FilterFieldType, LabelOptions, QueryBuilderProps } from './types';
+import { generateFilterId, getDefaultOperator, keyValueAttribute } from './operators';
+
+const EMPTY_FIELD_OPTIONS: FieldOptions = {};
+const EMPTY_LABEL_OPTIONS: LabelOptions = { keys: [], valuesByKey: {}, countByKey: {}, countByKeyValue: {} };
 
 /**
  * Group filters so that label filters are always rendered together.
@@ -29,7 +32,7 @@ const groupFiltersForDisplay = (
   const labelFilters: { filter: FilterCondition; originalIndex: number }[] = [];
 
   filters.forEach((filter, index) => {
-    if (filter.field === 'labels') {
+    if (keyValueAttribute(filter.field)) {
       labelFilters.push({ filter, originalIndex: index });
     } else {
       nonLabelFilters.push({ filter, originalIndex: index });
@@ -55,7 +58,9 @@ export const QueryBuilder = ({
   toolchainTypes,
   slugs = [],
   resourceTypes = [],
-  labelOptions = { keys: [], valuesByKey: {}, countByKey: {}, countByKeyValue: {} },
+  labelOptions = EMPTY_LABEL_OPTIONS,
+  annotationOptions = EMPTY_LABEL_OPTIONS,
+  fieldOptions = EMPTY_FIELD_OPTIONS,
   disabled = false,
   onSelectSavedView,
 }: QueryBuilderProps) => {
@@ -192,6 +197,8 @@ export const QueryBuilder = ({
     slugs,
     resourceTypes,
     labelOptions,
+    annotationOptions,
+    fieldOptions,
     disabled,
     onSelectSavedView,
     openAddMenu,
@@ -203,6 +210,8 @@ export const QueryBuilder = ({
     slugs,
     resourceTypes,
     labelOptions,
+    annotationOptions,
+    fieldOptions,
     disabled,
     onSelectSavedView,
     openAddMenu,

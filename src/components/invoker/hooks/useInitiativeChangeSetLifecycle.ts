@@ -4,107 +4,78 @@
 import { useCallback } from 'react';
 
 import {
-  type UnitCreateOrUpdateResponseRead,
+  type ChangeSetRead,
   useBulkPatchUnitsMutation,
   useCreateChangeSetMutation,
+  useLazyListAllChangeSetsQuery,
+  useLazyListAllUnitsQuery,
+  useLazyListChangeSetsQuery,
+  useLazyListSpacesQuery,
 } from '@confighub/rtk-query';
 
 import {
-  INITIATIVE_LABEL_KEY,
-  INVOCATION_ANNOTATION_KEY,
-  initiativeToLabel,
-  mintChangeSetSlug,
-} from '../utils/changeset-run';
+  type ChangeSetSpace,
+  type ChangeSetSpaceChoice,
+  RunCancelled,
+  TRIGGER_ANNOTATION_KEY,
+  heldUnitsRefusal,
+  splitAcrossTriggerChangeSetsRefusal,
+  nextTriggerChangeSetSlug,
+  openTriggerChangeSet,
+  triggerChangesWhere,
+  triggerChangeSetSpace,
+  triggerSlugOf,
+} from '../utils/triggerChangeSet';
 
-export interface OpenChangeSetArgs {
-  spaceId: string;
-  initiativeId: string;
+export interface PrepareTriggerChangeSetArgs {
+  /** The Trigger, as `<space slug>/<trigger slug>` */
+  triggerRef: string;
+  /** The Units the run writes */
   unitIds: string[];
-  /** User-visible CS name — typically the function name. */
-  displayName: string;
-  /** Raw annotation map. The hook JSON-encodes the invocation descriptor
-   *  at INVOCATION_ANNOTATION_KEY if you include it in `annotations`. */
-  annotations: Record<string, string>;
-  extraLabels: Record<string, string>;
+  /**
+   * The Space a ChangeSet is found or made in, asked only when none of the Trigger's open
+   * ChangeSets holds any of the Units. Undefined stops the run: `RunCancelled` is thrown.
+   */
+  chooseSpace: () => Promise<string | undefined>;
 }
-
-export interface CloseChangeSetArgs {
-  spaceId: string;
-  unitIds: string[];
-}
-
-export class LockedUnitsError extends Error {
-  override name = 'LockedUnitsError';
-  constructor(public readonly lockedUnitIds: string[]) {
-    super(`Units locked by another ChangeSet: ${lockedUnitIds.join(', ')}`);
-  }
-}
-
-const OPEN_CHANGESET_ERROR_TYPE = 'https://docs.confighub.com/errors/open-changeset';
-
-const extractLockedUnitIds = (
-  responses: UnitCreateOrUpdateResponseRead[],
-): string[] =>
-  responses
-    .filter((r) => r.Error?.Type === OPEN_CHANGESET_ERROR_TYPE)
-    .map((r) => r.Unit?.UnitID)
-    .filter((id): id is string => Boolean(id));
 
 const unitIdsWhere = (unitIds: string[]): string =>
   `UnitID IN (${unitIds.map((id) => `'${id}'`).join(',')})`;
 
 export const useInitiativeChangeSetLifecycle = () => {
+  const [listChangeSets] = useLazyListChangeSetsQuery();
+  const [listAllChangeSets] = useLazyListAllChangeSetsQuery();
+  const [listAllUnits] = useLazyListAllUnitsQuery();
   const [createChangeSet] = useCreateChangeSetMutation();
   const [bulkPatchUnits] = useBulkPatchUnitsMutation();
+  const [listSpaces] = useLazyListSpacesQuery();
 
-  const openChangeSet = useCallback(
-    async ({
-      spaceId,
-      initiativeId,
-      unitIds,
-      displayName,
-      annotations,
-      extraLabels,
-    }: OpenChangeSetArgs): Promise<{ changeSetId: string; slug: string }> => {
-      const slug = mintChangeSetSlug(initiativeId);
-      const created = await createChangeSet({
-        spaceId,
-        changeSet: {
-          Slug: slug,
-          DisplayName: displayName,
-          Labels: {
-            [INITIATIVE_LABEL_KEY]: initiativeToLabel(initiativeId),
-            ...extraLabels,
-          },
-          Annotations: annotations,
-        },
-      }).unwrap();
-
-      const changeSetId = created.ChangeSetID;
-      if (!changeSetId) throw new Error('CreateChangeSet did not return a ChangeSetID');
-
-      const assignResponses = await bulkPatchUnits({
-        where: unitIdsWhere(unitIds),
-        body: { ChangeSetID: changeSetId },
-      }).unwrap();
-
-      const locked = extractLockedUnitIds(assignResponses);
-      if (locked.length > 0) throw new LockedUnitsError(locked);
-
-      return { changeSetId, slug };
+  /** Where the ChangeSet of a run on Units in these Spaces goes, read from the Spaces (`triggerChangeSetSpace`). */
+  const triggerChangeSetSpaceFor = useCallback(
+    async (unitSpaceIds: string[]): Promise<ChangeSetSpaceChoice> => {
+      const ids = [...new Set(unitSpaceIds)];
+      if (ids.length === 1) return { spaceId: ids[0] };
+      const read = async (where: string): Promise<ChangeSetSpace[]> =>
+        (await listSpaces({ where, select: 'SpaceID,Slug,ComponentID,UpstreamSpaceID', includeHidden: '*' }).unwrap()).flatMap(
+          (entry) =>
+            entry.Space?.SpaceID
+              ? [
+                  {
+                    spaceId: entry.Space.SpaceID,
+                    slug: entry.Space.Slug ?? entry.Space.SpaceID,
+                    componentId: entry.Space.ComponentID,
+                    upstreamSpaceId: entry.Space.UpstreamSpaceID,
+                  },
+                ]
+              : [],
+        );
+      const unitSpaces = await read(`SpaceID IN (${ids.map((id) => `'${id}'`).join(',')})`);
+      const componentIds = new Set(unitSpaces.map((space) => space.componentId));
+      const [componentId] = [...componentIds];
+      const componentSpaces = componentIds.size === 1 && componentId ? await read(`ComponentID = '${componentId}'`) : undefined;
+      return triggerChangeSetSpace(unitSpaces, componentSpaces);
     },
-    [createChangeSet, bulkPatchUnits],
-  );
-
-  const closeChangeSet = useCallback(
-    async ({ unitIds }: CloseChangeSetArgs): Promise<void> => {
-      if (unitIds.length === 0) return;
-      await bulkPatchUnits({
-        where: unitIdsWhere(unitIds),
-        body: { ChangeSetID: null },
-      }).unwrap();
-    },
-    [bulkPatchUnits],
+    [listSpaces],
   );
 
   // Puts the Units in no ChangeSet into one that is already open, for a write made in it; they
@@ -126,8 +97,86 @@ export const useInitiativeChangeSetLifecycle = () => {
     [bulkPatchUnits],
   );
 
-  return { openChangeSet, closeChangeSet, joinChangeSet };
-};
+  /**
+   * The ChangeSet a run for a Trigger is made in, with the Units in it. When some of the Units
+   * are already in one of the Trigger's open ChangeSets, in whatever Space, it is that one;
+   * otherwise the Trigger's open ChangeSet in the Space chosen, or a new one there named after
+   * the Trigger. A Unit in any ChangeSet not the Trigger's, or Units in two of the Trigger's, are
+   * refused before anything is written, with an Error saying which. The ChangeSet is left open
+   * after the run, for the change to be reviewed in it.
+   */
+  const prepareTriggerChangeSet = useCallback(
+    async ({ triggerRef, unitIds, chooseSpace }: PrepareTriggerChangeSetArgs): Promise<string> => {
+      const where = triggerChangesWhere(triggerRef);
+      const changeSetsOf = (rows: ReadonlyArray<{ ChangeSet?: ChangeSetRead }>) =>
+        rows.flatMap((entry) => (entry.ChangeSet ? [entry.ChangeSet] : []));
+      const nameOf = (cs: ChangeSetRead) => `${cs.SpaceSlug ?? ''}/${cs.Slug}`;
 
-// Re-export key constants so callers don't need to reach into utils.
-export { INVOCATION_ANNOTATION_KEY };
+      // The Trigger's open ChangeSets wherever they are, since an earlier run may have put the
+      // ChangeSet in another Space than this one would.
+      const openForTrigger = changeSetsOf(
+        await listAllChangeSets({ where: `${where} AND State != 'Closed'`, includeHidden: '*' }).unwrap(),
+      );
+      const openById = new Map(openForTrigger.flatMap((cs) => (cs.ChangeSetID ? [[cs.ChangeSetID, cs] as const] : [])));
+
+      const inChangeSets = (
+        await listAllUnits({ where: `${unitIdsWhere(unitIds)} AND ChangeSetID IS NOT NULL`, select: 'UnitID,Slug,SpaceID,ChangeSetID' }).unwrap()
+      ).flatMap((entry) => (entry.Unit ? [entry.Unit] : []));
+      const held = inChangeSets.filter((unit) => !openById.has(unit.ChangeSetID as string));
+      if (held.length > 0) {
+        const heldIds = [...new Set(held.map((unit) => unit.ChangeSetID as string))];
+        const holders = new Map(
+          changeSetsOf(
+            await listAllChangeSets({
+              where: `ChangeSetID IN (${heldIds.map((id) => `'${id}'`).join(',')})`,
+              includeHidden: '*',
+            }).unwrap(),
+          ).flatMap((cs) => (cs.ChangeSetID ? [[cs.ChangeSetID, nameOf(cs)] as const] : [])),
+        );
+        throw new Error(
+          heldUnitsRefusal(
+            held.map((unit) => ({
+              unitSlug: unit.Slug,
+              changeSetName: holders.get(unit.ChangeSetID as string) ?? (unit.ChangeSetID as string),
+            })),
+          ),
+        );
+      }
+      const holding = [...new Set(inChangeSets.map((unit) => unit.ChangeSetID as string))];
+      if (holding.length > 1) {
+        throw new Error(splitAcrossTriggerChangeSetsRefusal(holding.map((id) => nameOf(openById.get(id) as ChangeSetRead))));
+      }
+
+      let changeSetId: string | undefined = holding[0];
+      if (changeSetId === undefined) {
+        const spaceId = await chooseSpace();
+        if (spaceId === undefined) throw new RunCancelled();
+        changeSetId = openTriggerChangeSet(openForTrigger.filter((cs) => cs.SpaceID === spaceId))?.ChangeSetID;
+        if (changeSetId === undefined) {
+          const madeForTrigger = changeSetsOf(await listChangeSets({ spaceId, where, includeHidden: '*' }).unwrap()).length;
+          const triggerSlug = triggerSlugOf(triggerRef);
+          const taken = new Set(
+            changeSetsOf(
+              await listChangeSets({ spaceId, where: `Slug LIKE '${triggerSlug}%'`, select: 'Slug', includeHidden: '*' }).unwrap(),
+            ).map((cs) => cs.Slug),
+          );
+          const created = await createChangeSet({
+            spaceId,
+            changeSet: {
+              Slug: nextTriggerChangeSetSlug(triggerSlug, madeForTrigger, taken),
+              Annotations: { [TRIGGER_ANNOTATION_KEY]: triggerRef },
+            },
+          }).unwrap();
+          if (!created.ChangeSetID) throw new Error('The ChangeSet was created without a ChangeSetID.');
+          changeSetId = created.ChangeSetID;
+        }
+      }
+
+      await joinChangeSet({ unitIds, changeSetId });
+      return changeSetId;
+    },
+    [listChangeSets, listAllUnits, listAllChangeSets, createChangeSet, joinChangeSet],
+  );
+
+  return { prepareTriggerChangeSet, triggerChangeSetSpaceFor, joinChangeSet };
+};

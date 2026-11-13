@@ -151,6 +151,36 @@ test.describe('Triggers of every Space', () => {
       await removeSpaces(spaces);
     }
   });
+
+  test('a refetch that fails keeps the Triggers it listed, with the error above them', async ({ page }) => {
+    const api = new ApiHelper(page);
+    const slug = `trgkeep-${RandomSlugGenerator.randomSlugName()}`;
+    const spaceId = (await api.createSpace({ space: { Slug: slug } })).SpaceID!;
+    try {
+      await createTrigger(spaceId, { Slug: `${slug}-one`, FunctionName: 'vet-schemas' });
+      await page.goto(`/triggers?${new URLSearchParams({ filterWhere: `SpaceID = '${spaceId}'` }).toString()}`);
+      await expect(rowOf(page, `${slug}-one`)).toBeVisible({ timeout: 15000 });
+
+      // The next read of the same list fails, as one on returning to the tab can.
+      await page.route(/\/api\/trigger\?/, (route) =>
+        route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'read failed' }) }),
+      );
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await expect(page.getByTestId('triggers-read-error')).toBeVisible({ timeout: 15000 });
+      await expect(rowOf(page, `${slug}-one`)).toBeVisible();
+    } finally {
+      await page.unroute(/\/api\/trigger\?/);
+      await removeSpaces([spaceId]);
+    }
+  });
+
+  test('a read the server refuses is shown as an error, with the filters to correct it', async ({ page }) => {
+    await page.goto(`/triggers?${new URLSearchParams({ filterWhere: "NoSuchAttribute = 'x'" }).toString()}`);
+    await expect(page.getByTestId('triggers-read-error')).toBeVisible({ timeout: 20000 });
+    // The Where stays as a filter block, and nothing reads as no Triggers.
+    await expect(page.getByTestId('query-builder').getByRole('textbox').first()).toHaveValue("NoSuchAttribute = 'x'");
+    await expect(page.getByText(/No matching triggers|No Space has any Triggers/i)).toHaveCount(0);
+  });
 });
 
 const deployment = (name: string, replicas: number) => `apiVersion: apps/v1
@@ -217,8 +247,8 @@ test.describe('validation errors and warnings on a Component', () => {
 
       // The card's Gated chip opens the Variant's pane, where the Unit carries both chips.
       await card.getByText('Gated', { exact: true }).click();
-      const gatedChip = page.getByTestId('component-unit-gated-chip');
-      const warningsChip = page.getByTestId('component-unit-warnings-chip');
+      const gatedChip = page.getByTestId('unit-status-gated');
+      const warningsChip = page.getByTestId('unit-status-warnings');
       await expect(gatedChip).toBeVisible({ timeout: 15000 });
       await expect(warningsChip).toBeVisible();
 

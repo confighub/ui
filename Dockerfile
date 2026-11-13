@@ -28,19 +28,15 @@ FROM nginx:alpine
 RUN addgroup -g 1000 appgroup && \
     adduser -D -u 1000 -G appgroup appuser
 
-# Create and set up directories with proper permissions
-RUN mkdir -p /var/cache/nginx /var/log/nginx /tmp /usr/share/nginx/html && \
-    chown -R appuser:appgroup /var/cache/nginx /var/log/nginx /tmp /usr/share/nginx/html /etc/nginx && \
-    chmod -R 755 /var/cache/nginx /var/log/nginx
-
-# Copy built files and config
+# Copy built files and config. They stay owned by root: the container writes only
+# to /tmp (config.json, nginx's pid file and its temp directories), which is
+# writable by every user.
 COPY --from=builder /app/ui/dist /usr/share/nginx/html
 # The license, and the notices for the npm packages bundled into the app.
 COPY LICENSE THIRD_PARTY_LICENSES.txt /licenses/
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chown -R appuser:appgroup /usr/share/nginx/html /etc/nginx && \
-    chmod +x /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
 # Switch to non-root user
 USER 1000
