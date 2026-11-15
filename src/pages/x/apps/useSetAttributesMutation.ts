@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { confighubApi, useInvokeFunctionsOnOrgMutation } from '@confighub/rtk-query';
 import { useUnitDataMap } from '@/hooks/useUnitData';
+import { nonMergeClearanceParam } from '@/utility/clearance-functions';
 import { useAppDispatch } from '@/hooks/useApp';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import type { ExtendedUnitRead } from '@confighub/rtk-query';
@@ -307,6 +308,7 @@ export function useSetAttributesMutation({
           executorSpace: spaceId,
           where: `UnitID='${unitId}'`,
           changeSetId: openChangeSetIdOf(unitById, unitId),
+          clearance: nonMergeClearanceParam(),
           functionInvocationsRequest: {
             FunctionInvocations: [
               {
@@ -382,6 +384,7 @@ export function useSetAttributesMutation({
             executorSpace: spaceId,
             where: `UnitID='${unitId}'`,
             changeSetId: openChangeSetIdOf(unitById, unitId),
+            clearance: nonMergeClearanceParam(),
             functionInvocationsRequest: {
               FunctionInvocations: [
                 {
@@ -420,6 +423,7 @@ export function useSetAttributesMutation({
               executorSpace: spaceId,
               where: `UnitID='${unitId}'`,
               changeSetId: openChangeSetIdOf(unitById, unitId),
+              clearance: nonMergeClearanceParam(),
               functionInvocationsRequest: {
                 FunctionInvocations: [
                   {

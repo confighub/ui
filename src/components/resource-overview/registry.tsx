@@ -21,6 +21,7 @@ import {
   FluxSourceView,
   HelmReleaseView,
 } from './FluxViews';
+import { InstallerRecordView } from './InstallerRecordView';
 import { IngressView, NetworkPolicyView } from './NetworkingViews';
 import { RoleBindingView, RoleView } from './RbacViews';
 import { FriendlyViewProps } from './helpers';
@@ -113,6 +114,17 @@ const REGISTRY: Record<string, ComponentType<FriendlyViewProps>> = {
 };
 
 /**
+ * Views of configuration other than Kubernetes resources, by ResourceType. Such
+ * a ResourceType has no '/': an AppConfig document's is its
+ * configHub.configSchema. Kept apart from REGISTRY so that a schema named like
+ * a core Kind ("Service") does not get that Kind's view. Its keys are
+ * NON_KUBERNETES_OVERVIEW_TYPES, which pages read without loading the views.
+ */
+const NON_KUBERNETES_REGISTRY = new Map<string, ComponentType<FriendlyViewProps>>([
+  ['InstallerRecord', InstallerRecordView],
+]);
+
+/**
  * Reduce a ResourceType ("group/version/Kind" or "version/Kind" for the core
  * group) to the registry key "group/Kind" (bare "Kind" for core).
  */
@@ -128,6 +140,7 @@ function registryKey(resourceType: string): string {
 export function lookupFriendlyView(
   resourceType: string,
 ): ComponentType<FriendlyViewProps> | undefined {
+  if (!resourceType.includes('/')) return NON_KUBERNETES_REGISTRY.get(resourceType);
   return REGISTRY[registryKey(resourceType)];
 }
 
@@ -139,3 +152,4 @@ export function lookupFriendlyView(
 export function hasFriendlyView(resourceType: string): boolean {
   return lookupFriendlyView(resourceType) !== undefined;
 }
+

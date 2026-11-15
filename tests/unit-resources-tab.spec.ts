@@ -49,6 +49,53 @@ data:
   greeting: hello
 `;
 
+// The record ConfigHub's installer keeps of an install: AppConfig/YAML, not Kubernetes, with an
+// Overview of its own.
+const installerRecord = `configHub:
+  configSchema: InstallerRecord
+  configName: installer
+package:
+  name: web-app
+  installerMetadata:
+    version: 1.2.0
+  spec:
+    bases:
+    - name: default
+      path: bases/default
+      default: true
+    components:
+    - name: ingress
+      path: components/ingress
+      description: |
+        Serve the app at the hostname.
+    - name: metrics
+      path: components/metrics
+    inputs:
+    - name: hostname
+      type: string
+      default: ""
+    - name: region
+      type: string
+      default: us-east-1
+selection:
+  base: default
+  components:
+  - ingress
+inputs:
+  namespace: web
+  values:
+    hostname: web.example.com
+    region: us-west-2
+source:
+  ref: oci://ghcr.io/example/packages/web-app:1.2.0
+`;
+
+const appSettings = `configHub:
+  configSchema: AppSettings
+  configName: settings
+greeting: hello
+`;
+
 test.describe('unit resources tab', () => {
   test.use({ storageState: 'authentication.json' });
 
@@ -151,5 +198,48 @@ test.describe('unit resources tab', () => {
     const items = page.getByRole('list', { name: 'Resources' }).getByRole('button');
     await expect(items).toHaveCount(2, { timeout: 15000 });
     await expect(items.nth(0)).toContainText('another');
+  });
+
+  test('an installer record has an Overview; other AppConfig is shown as YAML', async ({
+    page,
+  }) => {
+    const api = new ApiHelper(page);
+    const record = await api.createUnit({
+      spaceId,
+      unit: { Slug: 'installer', ToolchainType: 'AppConfig/YAML' },
+    });
+    await api.uploadUnitData({ spaceId, unitId: record.UnitID!, body: installerRecord });
+    const settings = await api.createUnit({
+      spaceId,
+      unit: { Slug: 'settings', ToolchainType: 'AppConfig/YAML' },
+    });
+    await api.uploadUnitData({ spaceId, unitId: settings.UnitID!, body: appSettings });
+
+    await page.goto(`/units/${spaceId}/${record.UnitID}?tab=${RESOURCES_TAB}`);
+    const tab = page.getByTestId('unit-resources');
+    await expect(tab.getByRole('button', { name: 'Overview' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+      { timeout: 15000 },
+    );
+    await expect(tab.getByText('Installed Package', { exact: true })).toBeVisible();
+    await expect(tab.getByText('oci://ghcr.io/example/packages/web-app:1.2.0')).toBeVisible();
+    // Every package component, with the selected one marked.
+    const ingress = tab.getByRole('row').filter({ hasText: 'ingress' });
+    await expect(ingress).toContainText('yes');
+    await expect(ingress).toContainText('Serve the app at the hostname.');
+    await expect(tab.getByRole('row').filter({ hasText: 'metrics' })).not.toContainText('yes');
+    // Each input's answer beside its default.
+    const region = tab.getByRole('row').filter({ hasText: 'region' });
+    await expect(region).toContainText('us-west-2');
+    await expect(region).toContainText('us-east-1');
+    // A record has no Kubernetes metadata to show.
+    await expect(tab.getByText('Metadata', { exact: true })).toHaveCount(0);
+
+    await page.goto(`/units/${spaceId}/${settings.UnitID}?tab=${RESOURCES_TAB}`);
+    await expect(page.locator('div.monaco-editor')).toContainText('greeting: hello', {
+      timeout: 15000,
+    });
+    await expect(tab.getByRole('button', { name: 'Overview' })).toHaveCount(0);
   });
 });

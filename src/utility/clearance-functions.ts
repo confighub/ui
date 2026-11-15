@@ -13,6 +13,65 @@ import type {
   WithheldGuard,
 } from '@confighub/rtk-query';
 
+/**
+ * The clearance a change that is not a merge is sent with when it states none: cleared for
+ * Override guards, whatever their value. An Override guard (Override=External, Override=Upstream)
+ * keeps a merge -- an upgrade, a promotion of an UpgradeUnit or MergeUnits ChangeOrder, an upload
+ * -- from replacing a value someone set on purpose, as protection does, and like protection it
+ * does not stand in the way of the next edit. Every write that is not a merge takes its clearance
+ * from `nonMergeClearance`, so this is the one place to change what they are cleared for.
+ */
+export const DEFAULT_CLEARANCE: Clearance = [{ Key: 'Override', Operator: 'Exists' }];
+
+/**
+ * The clearance of a change that is not a merge: the clearance stated, or `DEFAULT_CLEARANCE`
+ * where none is, with what the person acknowledged at the write added. A clearance stated
+ * replaces the default, as `cub --clearance` does; an acknowledgement adds to it, since it answers
+ * a dry run that was sent with the default.
+ */
+export function nonMergeClearance(
+  stated?: Clearance | null,
+  acknowledged?: Clearance | null,
+): Clearance {
+  const base = stated && stated.length > 0 ? stated : DEFAULT_CLEARANCE;
+  return [...base, ...(acknowledged ?? [])];
+}
+
+/**
+ * The guards among those given that `DEFAULT_CLEARANCE` does not clear: those a person has to
+ * acknowledge before a change that is not a merge overwrites, or edits the guards of, the paths
+ * they are on.
+ */
+export const guardsNotClearedByDefault = (guards: readonly WithheldGuard[]): WithheldGuard[] =>
+  guards.filter(
+    (guard) =>
+      !guard.Key ||
+      guardsNotCleared({ [guard.Key]: guard.Value ?? '' }, DEFAULT_CLEARANCE).length > 0,
+  );
+
+/**
+ * The UpdateTypes of a ChangeOrder or Link that merge: they take the change from Revisions of a
+ * source Unit, where the others resolve Links or run an Invocation. An empty UpdateType is
+ * UpgradeUnit, the default.
+ */
+const MERGE_UPDATE_TYPES: ReadonlySet<string> = new Set(['', 'UpgradeUnit', 'MergeUnits']);
+
+/**
+ * The clearance a promotion of a ChangeOrder of the given UpdateType sends: `DEFAULT_CLEARANCE`
+ * for one that runs an Invocation or resolves Links, which is not a merge, and none for one that
+ * merges, or whose UpdateType is not known yet. It is the line the server draws for `Protect`.
+ */
+export const promotionClearance = (updateType: string | undefined): Clearance | undefined =>
+  updateType === undefined || MERGE_UPDATE_TYPES.has(updateType)
+    ? undefined
+    : nonMergeClearance();
+
+/** `nonMergeClearance` as the `clearance` query parameter of a write takes it: JSON. */
+export const nonMergeClearanceParam = (
+  stated?: Clearance | null,
+  acknowledged?: Clearance | null,
+): string => JSON.stringify(nonMergeClearance(stated, acknowledged));
+
 /** The reasons whose conflicts name the guards that withheld the change. */
 export const GUARD_CONFLICT_REASONS: ReadonlySet<string> = new Set([
   'Guarded',

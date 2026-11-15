@@ -20,6 +20,7 @@ import Typography from '@mui/material/Typography';
 import { ResourceRow } from '../../hooks/useResourceRows';
 import { ResourceContext } from '@/components/resource-overview/ResourceContext';
 import { ResourceOverview } from '@/components/resource-overview/ResourceOverview';
+import { offersOverview } from '@/components/resource-overview/overviewAvailability';
 import { hasFriendlyView } from '@/components/resource-overview/registry';
 
 interface ResourceDrawerProps {
@@ -109,8 +110,15 @@ export function ResourceDrawer({ row, onClose }: ResourceDrawerProps) {
           if (row) {
             fetchBody(row);
             // Default to the friendly view for types we render well; fall
-            // back to raw YAML for everything else.
-            setTab(hasFriendlyView(row.ResourceType) ? 'overview' : 'yaml');
+            // back to raw YAML for everything else. The toolchain comes from
+            // the Units, which may not have loaded; until then, trust the type.
+            setTab(
+              hasFriendlyView(row.ResourceType) &&
+                (row.ToolchainType === undefined ||
+                  offersOverview(row.ToolchainType, row.ResourceType))
+                ? 'overview'
+                : 'yaml',
+            );
           }
         },
       }}

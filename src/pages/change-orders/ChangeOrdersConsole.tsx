@@ -1730,6 +1730,7 @@ export function ChangeOrdersConsole(props: ChangeOrdersConsoleProps) {
     changeOrderId: promoteRow?.changeOrderId,
     baseSpaceId: promoteRow?.spaceId,
     onSettled: data.refetch,
+    updateType: promoteRow?.updateType,
   });
 
   /*

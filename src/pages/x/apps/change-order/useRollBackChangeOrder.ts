@@ -50,6 +50,7 @@ import {
   type RollbackReport,
   type SpaceOutcome,
 } from './changeOrderRollback';
+import { nonMergeClearanceParam } from '@/utility/clearance-functions';
 
 export interface UseRollBackChangeOrderArgs {
   /** The Space the ChangeOrder resides in — the PATCH's path parameter. */
@@ -149,6 +150,7 @@ export function useRollBackChangeOrder(args: UseRollBackChangeOrderArgs): RollBa
         const results: UnitCreateOrUpdateResponseRead[] = await restorePatch({
           where: `SpaceID = '${spaceId}' AND UnitID IN (${quoted})`,
           restore: `Before:ChangeOrder:${changeOrderId}`,
+          clearance: nonMergeClearanceParam(),
           changeOrder: changeOrderId,
           include: 'UnitEventID,TargetID,UpstreamUnitID,SpaceID',
           // @ts-expect-error RTK Query merge-patch+json content type requires pre-stringified body

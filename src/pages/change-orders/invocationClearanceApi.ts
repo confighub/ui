@@ -17,6 +17,7 @@ import { confighubApi, type FunctionInvocationsResponse } from '@confighub/rtk-q
 
 import { authFetch } from '@/auth/session';
 import { chunkInClause } from '@/hooks/inClauseChunks';
+import { nonMergeClearanceParam } from '@/utility/clearance-functions';
 
 import { answerOf } from './reviews/quietServerCalls';
 
@@ -34,7 +35,13 @@ const invocationClearanceApi = confighubApi.injectEndpoints({
       queryFn: async ({ changeOrderId, spaceIds }) => {
         const responses: FunctionInvocationsResponse[] = [];
         for (const where of chunkInClause('SpaceID', [...spaceIds].sort())) {
-          const params = new URLSearchParams({ dry_run: 'true', change_order: changeOrderId, where });
+          // Cleared as the promotion is, so it names only what a promotion would withhold.
+          const params = new URLSearchParams({
+            dry_run: 'true',
+            change_order: changeOrderId,
+            where,
+            clearance: nonMergeClearanceParam(),
+          });
           const answer = await answerOf(authFetch, `/api/function/invoke?${params.toString()}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

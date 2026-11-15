@@ -13,7 +13,6 @@ import {
   useTransition,
 } from 'react';
 
-import { isKubernetesToolchain } from '@/components/code-editor/language';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CloseIcon from '@mui/icons-material/Close';
@@ -40,6 +39,7 @@ import { styled } from '@mui/material/styles';
 import { useListAllUnitsQuery, type ExtendedTargetRead, type ResourceProtection } from '@confighub/rtk-query';
 import { Link as RouterLink } from 'react-router-dom';
 
+import { unitOffersOverview } from '@/components/resource-overview/overviewAvailability';
 import { useUnitMutationSourcesMap } from '@/hooks/useUnitData';
 
 import type { FieldPathMeta } from './configParser';
@@ -2881,10 +2881,10 @@ export const ComponentSidePane = memo(
                         carries its own "back to tree view" strip so the action
                         is never a one-way door — the pane toggle still says
                         Tree, and without a way back that reads as a bug. */}
-                    {/* Overview: the friendly view of each resource. It is of
-                        Kubernetes resources, so other configuration is shown
-                        as written, as the Unit's Resources tab does. */}
-                    {!upgradeLoading && viewMode === 'overview' && isKubernetesToolchain(unit.toolchainType) && (
+                    {/* Overview: the friendly view of each resource.
+                        Configuration with no friendly view is shown as
+                        written, as the Unit's Resources tab does. */}
+                    {!upgradeLoading && viewMode === 'overview' && unitOffersOverview(unit.toolchainType, unit.data) && (
                       <Suspense
                         fallback={
                           <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
@@ -2899,7 +2899,7 @@ export const ComponentSidePane = memo(
                         />
                       </Suspense>
                     )}
-                    {!upgradeLoading && (viewMode === 'source' || isSourceOverridden || (viewMode === 'overview' && !isKubernetesToolchain(unit.toolchainType))) && (
+                    {!upgradeLoading && (viewMode === 'source' || isSourceOverridden || (viewMode === 'overview' && !unitOffersOverview(unit.toolchainType, unit.data))) && (
                       <>
                         {isSourceOverridden && (
                           <UnitSourceOverrideBar

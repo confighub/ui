@@ -11,7 +11,7 @@ import { BorderedAccordion, fadeIn } from '@/components/styled';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
 import { useEditableUnitData, useUploadUnitData } from '@/hooks/useUnitData';
 import { Direction } from '@/types/enums';
-import { unitHasGuards } from '@/utility/clearance-functions';
+import { nonMergeClearanceParam, unitHasGuards } from '@/utility/clearance-functions';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import { guardOnLineText, guardedLines } from '@/utility/guard-line-functions';
 import { UnitRead } from '@confighub/rtk-query';
@@ -161,7 +161,7 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
             lastChangeDescription,
             'If-Match': etag || undefined,
             dryRun: dryRun || undefined,
-            clearance: clearance ? JSON.stringify(clearance) : undefined,
+            clearance: nonMergeClearanceParam(undefined, clearance),
           }).unwrap();
           dryRunFailed = false;
           return guardedChanges(response.Conflicts, unit.Slug ?? '', {

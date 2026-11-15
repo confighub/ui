@@ -73,6 +73,8 @@ import { useStageDiff } from './useStageDiff';
 import { useStageDryRun } from './useStageDryRun';
 import { useStagePreload } from './useStagePreload';
 
+const NO_SPACE_IDS: string[] = [];
+
 type Changes = ReturnType<typeof useChangeOrderConsoleChanges>;
 
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
@@ -109,6 +111,7 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     changeOrderId: detail.changeOrderId,
     baseSpaceId: detail.baseSpaceId,
     onSettled: detail.refetch,
+    updateType: detail.updateType,
   });
 
   // ── Names ────────────────────────────────────────────────────────────────
@@ -392,6 +395,7 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     forcedDryRunSettled: changes.stageChangesStatus !== 'loading',
     refreshKey: dryRunRefreshKey(detail),
     adoptPlan: actions.adoptPlan,
+    updateType: detail.updateType,
   });
   const classified = useMemo(
     () => (dryRun.answer === undefined ? undefined : classifyDryRunAnswer({ status: dryRun.answer.status, body: dryRun.answer.body }, detail.baseSpaceId)),
@@ -589,6 +593,8 @@ export function useStageCardModel(args: UseStageCardModelArgs) {
     /** The quiet dry run's HTTP status, when it answered. */
     dryRunStatus: dryRun.answer?.status,
     previousStage,
+    /** The Spaces of the stage before, which this stage's gates are evaluated over. */
+    previousSpaceIds: previousSeq?.spaceIds ?? NO_SPACE_IDS,
   };
 }
 

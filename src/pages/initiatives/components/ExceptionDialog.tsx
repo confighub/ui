@@ -14,6 +14,7 @@ import {
 import { guardedChanges, withheldSummary } from '@/components/guarded-write/guardedWrite';
 import { useGuardedWrite } from '@/components/guarded-write/useGuardedWrite';
 import { useAppDispatch } from '@/hooks/useApp';
+import { nonMergeClearanceParam } from '@/utility/clearance-functions';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import {
   type Clearance,
@@ -175,13 +176,14 @@ export const ExceptionDialog = ({
         // so every exception is asked about first.
         guarded: true,
         run: async ({ dryRun, clearance }: { dryRun: boolean; clearance?: Clearance }) => {
-          const recording = clearanceRecording(clearance, guards);
           const responses = await invoke({
             where: `UnitID = ${quoted(unit.unitId)}`,
             executorSpace: unit.spaceId,
             dryRun: dryRun ? 'true' : undefined,
-            clearance:
-              recording && recording.length > 0 ? JSON.stringify(recording) : undefined,
+            clearance: nonMergeClearanceParam(
+              undefined,
+              clearanceRecording(clearance, guards),
+            ),
             ...guardParams(guards),
             functionInvocationsRequest: {
               ToolchainType: unit.toolchainType,

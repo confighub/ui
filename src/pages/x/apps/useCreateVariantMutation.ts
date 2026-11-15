@@ -11,6 +11,7 @@ import {
   type BulkCreateUnitsApiResponse,
 } from '@confighub/rtk-query';
 import { useAppDispatch } from '@/hooks/useApp';
+import { nonMergeClearanceParam } from '@/utility/clearance-functions';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import { LABEL_VARIANT } from './componentData';
 
@@ -232,6 +233,7 @@ export function useCreateVariantMutation(): UseCreateVariantMutationResult {
         await invokeFunctions({
           executorSpace: spaceId,
           where: `SpaceID='${spaceId}'`,
+          clearance: nonMergeClearanceParam(),
           functionInvocationsRequest: {
             FunctionInvocations: [
               {

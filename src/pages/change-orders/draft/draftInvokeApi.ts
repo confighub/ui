@@ -20,6 +20,7 @@ import {
 import { defaultSerializeQueryArgs } from '@reduxjs/toolkit/query';
 
 import { fetchChunks } from '@/hooks/chunkedQueriesApi';
+import { nonMergeClearanceParam } from '@/utility/clearance-functions';
 
 export interface DraftFunctionDryRunArg {
   spaceIds: string[];
@@ -45,7 +46,8 @@ const draftInvokeApi = confighubApi.injectEndpoints({
             url: '/function/invoke',
             method: 'POST',
             body: arg.request,
-            params: { dry_run: true, include: 'Diff', where: withWhereUnit(where, arg.whereUnit) },
+            // Cleared as a promotion of the Invoke ChangeOrder it drafts will be.
+            params: { dry_run: true, include: 'Diff', where: withWhereUnit(where, arg.whereUnit), clearance: nonMergeClearanceParam() },
           }),
           baseQuery,
         ),

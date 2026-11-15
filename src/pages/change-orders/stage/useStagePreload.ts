@@ -108,6 +108,7 @@ export function useStagePreload(args: {
             stageId: next.id,
             targetSpaceIds: promotionTargets(next.spaceIds, detail.skippedSpaceId),
             refreshKey,
+            updateType: detail.updateType,
           });
         }
       }

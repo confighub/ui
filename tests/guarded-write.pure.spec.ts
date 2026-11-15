@@ -20,7 +20,13 @@ import {
   guardedChanges,
   withheldSummary,
 } from '../src/components/guarded-write/guardedWrite';
-import { unitHasGuards } from '../src/utility/clearance-functions';
+import {
+  DEFAULT_CLEARANCE,
+  guardsNotClearedByDefault,
+  nonMergeClearance,
+  promotionClearance,
+  unitHasGuards,
+} from '../src/utility/clearance-functions';
 
 const DEPLOYMENT = { ResourceType: 'apps/v1/Deployment', ResourceName: 'prod/web' };
 
@@ -190,4 +196,35 @@ test('a guard change a guard withheld is asked about too, as a change to the pat
   expect(change.value).toBeUndefined();
   expect(change.guards).toEqual([{ Key: 'Scale', Value: 'RegionSpecific' }]);
   expect(guardedChanges([{ ...guardWithheld, Reason: 'ProtectedPath' }], 'prod/web')).toEqual([]);
+});
+
+test('a write that is not a merge is cleared for Override guards unless a clearance is stated', () => {
+  expect(DEFAULT_CLEARANCE).toEqual([{ Key: 'Override', Operator: 'Exists' }]);
+  expect(nonMergeClearance()).toEqual(DEFAULT_CLEARANCE);
+  expect(nonMergeClearance([])).toEqual(DEFAULT_CLEARANCE);
+  // A clearance stated replaces the default, as cub --clearance does.
+  const scale = [{ Key: 'Scale', Operator: 'In', Values: ['RegionSpecific'] }];
+  expect(nonMergeClearance(scale)).toEqual(scale);
+  // What was acknowledged at the write answers a dry run sent with the default, so it adds to it.
+  expect(nonMergeClearance(undefined, scale)).toEqual([...DEFAULT_CLEARANCE, ...scale]);
+});
+
+test('only guards the default does not clear are asked about', () => {
+  expect(
+    guardsNotClearedByDefault([
+      { Key: 'Override', Value: 'External' },
+      { Key: 'Override', Value: 'Upstream' },
+      { Key: 'Scale', Value: 'RegionSpecific' },
+    ]),
+  ).toEqual([{ Key: 'Scale', Value: 'RegionSpecific' }]);
+});
+
+test('a promotion is cleared by default only for a ChangeOrder that does not merge', () => {
+  expect(promotionClearance('Invoke')).toEqual(DEFAULT_CLEARANCE);
+  expect(promotionClearance('Upsert')).toEqual(DEFAULT_CLEARANCE);
+  expect(promotionClearance('UpgradeUnit')).toBeUndefined();
+  expect(promotionClearance('MergeUnits')).toBeUndefined();
+  // An empty UpdateType is UpgradeUnit, and one not loaded yet is not assumed to be anything else.
+  expect(promotionClearance('')).toBeUndefined();
+  expect(promotionClearance(undefined)).toBeUndefined();
 });

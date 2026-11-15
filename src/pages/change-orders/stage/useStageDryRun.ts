@@ -44,6 +44,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PromoteResult } from '@confighub/rtk-query';
 
 import { authFetch } from '@/auth/session';
+import { promotionClearance } from '@/utility/clearance-functions';
 
 import {
   promoteHasNothingToDo,
@@ -97,6 +98,11 @@ export interface UseStageDryRunArgs {
   adoptPlan: (planned: PlannedPromote | null) => void;
   /** The request sender; `authFetch` unless a caller has reason to pass another. */
   send?: Send;
+  /**
+   * `ChangeOrder.UpdateType`, which decides the clearance the dry run sends, as the promote it
+   * plans does (`promotionClearance`): a plan adopted from it has to be the plan of that promote.
+   */
+  updateType?: string;
 }
 
 export interface StageDryRun {
@@ -136,10 +142,18 @@ export function stageDryRunScope(
   baseSpaceId: string | undefined,
   stageId: string | undefined,
   targetSpaceIds: readonly string[],
+  updateType?: string,
 ): string {
   if (stageId === undefined || promoteHasNothingToDo(changeOrderId, baseSpaceId, targetSpaceIds)) return '';
-  return `${changeOrderId}|${stageId}|${whereSpaceOf(targetSpaceIds)}`;
+  // The UpdateType decides the clearance sent, so an answer asked before it was known is another question.
+  return `${changeOrderId}|${stageId}|${whereSpaceOf(targetSpaceIds)}|${updateType ?? ''}`;
 }
+
+/** The body of a stage's promote dry run: exactly what Promote sends, less the plan. */
+const stageDryRunBody = (changeOrderId: string | undefined, selector: string, updateType: string | undefined): string => {
+  const clearance = promotionClearance(updateType);
+  return JSON.stringify({ ChangeOrderID: changeOrderId, WhereSpace: selector, DryRun: true, ...(clearance && { Clearance: clearance }) });
+};
 
 /*
  * ANSWERS KEPT ACROSS CARDS, by scope. The page asks the next stage's quiet dry run ahead of time
@@ -197,9 +211,10 @@ export function preloadStageDryRun(args: {
   targetSpaceIds: readonly string[];
   refreshKey: string;
   send?: Send;
+  updateType?: string;
 }): Promise<void> {
-  const { changeOrderId, baseSpaceId, stageId, targetSpaceIds, refreshKey, send = authFetch } = args;
-  const scope = stageDryRunScope(changeOrderId, baseSpaceId, stageId, targetSpaceIds);
+  const { changeOrderId, baseSpaceId, stageId, targetSpaceIds, refreshKey, send = authFetch, updateType } = args;
+  const scope = stageDryRunScope(changeOrderId, baseSpaceId, stageId, targetSpaceIds, updateType);
   if (scope === '' || cachedStageDryRun(scope, refreshKey) !== undefined) return Promise.resolve();
   const key = `${scope}#${refreshKey}`;
   const already = preloading.get(key);
@@ -212,7 +227,7 @@ export function preloadStageDryRun(args: {
   const promise = answerOf(send, '/api/promote?dry_run=true', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ChangeOrderID: changeOrderId, WhereSpace: selector, DryRun: true }),
+    body: stageDryRunBody(changeOrderId, selector, updateType),
     signal: controller.signal,
   })
     .then((reply) => {
@@ -254,12 +269,13 @@ export function useStageDryRun(args: UseStageDryRunArgs): StageDryRun {
     refreshKey,
     adoptPlan,
     send = authFetch,
+    updateType,
   } = args;
 
   const selector = whereSpaceOf(targetSpaceIds);
   const nothingToPlan = stageId === undefined || promoteHasNothingToDo(changeOrderId, baseSpaceId, targetSpaceIds);
   /** What an answer is about. One stage, its Spaces, one ChangeOrder: anything else is another question. */
-  const scope = stageDryRunScope(changeOrderId, baseSpaceId, stageId, targetSpaceIds);
+  const scope = stageDryRunScope(changeOrderId, baseSpaceId, stageId, targetSpaceIds, updateType);
 
   const [state, setState] = useState<{ scope: string; answer?: StageDryRunAnswer; running: boolean }>({
     scope: '',
@@ -270,8 +286,8 @@ export function useStageDryRun(args: UseStageDryRunArgs): StageDryRun {
    * Refs for what the callbacks read when they run, not when they were made: a
    * focus event or a confirm arrives long after the render that bound it.
    */
-  const live = useRef({ scope, selector, refreshKey, changeOrderId, baseSpaceId, adoptPlan, send, nothingToPlan });
-  live.current = { scope, selector, refreshKey, changeOrderId, baseSpaceId, adoptPlan, send, nothingToPlan };
+  const live = useRef({ scope, selector, refreshKey, changeOrderId, baseSpaceId, adoptPlan, send, nothingToPlan, updateType });
+  live.current = { scope, selector, refreshKey, changeOrderId, baseSpaceId, adoptPlan, send, nothingToPlan, updateType };
   const generation = useRef(0);
   const inflight = useRef<Inflight | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -345,8 +361,8 @@ export function useStageDryRun(args: UseStageDryRunArgs): StageDryRun {
     const promise = answerOf(now.send, '/api/promote?dry_run=true', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      // Exactly what Promote sends, less the plan: the same selector, no Force.
-      body: JSON.stringify({ ChangeOrderID: now.changeOrderId, WhereSpace: askedSelector, DryRun: true }),
+      // Exactly what Promote sends, less the plan: the same selector and clearance, no Force.
+      body: stageDryRunBody(now.changeOrderId, askedSelector, now.updateType),
       signal: controller.signal,
     })
       // `answerOf` already turns a failed request into status 0; this is the net under it, so

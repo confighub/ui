@@ -34,13 +34,15 @@
  * `/release/publish`, because the promote API does not publish.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import {
   usePromoteMutation,
   usePublishReleaseMutation,
   type PromoteResult,
 } from '@confighub/rtk-query';
+
+import { promotionClearance } from '@/utility/clearance-functions';
 
 import { gatesBlockPromotion } from './changeOrderFooterModel';
 import { changeOrderCopy } from './changeOrderCopy';
@@ -649,6 +651,11 @@ export interface UseChangeOrderActionsArgs {
   baseSpaceId: string | undefined;
   /** Called after any action settles, so the caller can refetch. */
   onSettled?: () => void;
+  /**
+   * `ChangeOrder.UpdateType`, which decides the clearance a promotion sends
+   * (`promotionClearance`). Undefined while the ChangeOrder loads.
+   */
+  updateType?: string;
 }
 
 export interface ChangeOrderActions {
@@ -728,7 +735,8 @@ export interface ChangeOrderActions {
 }
 
 export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOrderActions {
-  const { changeOrderId, baseSpaceId, onSettled } = args;
+  const { changeOrderId, baseSpaceId, onSettled, updateType } = args;
+  const clearance = useMemo(() => promotionClearance(updateType), [updateType]);
 
   const [runPromote] = usePromoteMutation();
   const [publishRelease] = usePublishReleaseMutation();
@@ -792,7 +800,11 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
       try {
         const result = await runPromote({
           dryRun: true,
-          promoteRequest: { ChangeOrderID: changeOrderId, WhereSpace: selector },
+          promoteRequest: {
+            ChangeOrderID: changeOrderId,
+            WhereSpace: selector,
+            ...(clearance && { Clearance: clearance }),
+          },
         }).unwrap();
 
         const plan = result.Plan;
@@ -821,7 +833,7 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
         });
       }
     },
-    [changeOrderId, baseSpaceId, runPromote],
+    [changeOrderId, baseSpaceId, clearance, runPromote],
   );
 
   const promote = useCallback(
@@ -864,6 +876,7 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
           promoteRequest: {
             ChangeOrderID: changeOrderId,
             WhereSpace: selector,
+            ...(clearance && { Clearance: clearance }),
             // Apply exactly what was previewed. Without this a plan that moved
             // between the preview and the click — a resource added upstream, a
             // gate that stopped holding — is promoted silently, and the dialog's
@@ -911,7 +924,7 @@ export function useChangeOrderActions(args: UseChangeOrderActionsArgs): ChangeOr
         onSettled?.();
       }
     },
-    [changeOrderId, baseSpaceId, runPromote, setLastResult, onSettled],
+    [changeOrderId, baseSpaceId, clearance, runPromote, setLastResult, onSettled],
   );
 
   /** Publish one Space, waiting out a gate re-evaluation but nothing else. */

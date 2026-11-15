@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Control, Controller, FieldErrors, useForm } from 'react-hook-form';
 
 import { DEFAULT_TOOLCHAIN_TYPES } from '@/components/query-builder';
+import { nonMergeClearanceParam } from '@/utility/clearance-functions';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import {
   FunctionArgument,
@@ -266,6 +267,7 @@ export const InvokeUnitFunctionsModal = ({
           executorSpace: unit?.SpaceID || undefined,
           where: `UnitID='${unit.UnitID}'`,
           dryRun: isDryRun ? 'true' : undefined,
+          clearance: nonMergeClearanceParam(),
           ...(selectedChangeSet ? { changeSetId: selectedChangeSet } : {}),
           functionInvocationsRequest: {
             ToolchainType: toolchainType,

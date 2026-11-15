@@ -23,9 +23,9 @@ import {
 } from '@confighub/rtk-query';
 import { GroupNavRow, getCellValue } from '../../cell-value';
 import { CodeEditor } from '@/components/code-editor/CodeEditor';
-import { isKubernetesToolchain } from '@/components/code-editor/language';
 import { ResourceContext } from '@/components/resource-overview/ResourceContext';
 import { ResourceOverview } from '@/components/resource-overview/ResourceOverview';
+import { offersOverview } from '@/components/resource-overview/overviewAvailability';
 import { TOP_NAV_HEIGHT } from '@/utility/constants';
 import { resourceDisplayName } from '@/utility/resource-type-functions';
 
@@ -201,10 +201,11 @@ const DrawerBody = memo(function DrawerBody({
   };
   const href = rowHref ?? adapter.getRowHref(row);
   const resourceBody = useResourceBody(isResource ? (row as ResourceViewRow) : null);
-  // The friendly views are of Kubernetes resources; other configuration is
-  // shown as written. Until the toolchain is known, the Overview is offered.
+  // Configuration with no friendly view is shown as written. Until the
+  // toolchain is known, the Overview is offered.
   const hasOverview =
-    resourceBody.toolchainType === undefined || isKubernetesToolchain(resourceBody.toolchainType);
+    resourceBody.toolchainType === undefined ||
+    offersOverview(resourceBody.toolchainType, isResource ? (row as ResourceViewRow).ResourceType : undefined);
   const shownTab = activeTab === 'overview' && !hasOverview ? 'yaml' : activeTab;
 
   // Header title varies by entity type. Resource rows show ResourceName +

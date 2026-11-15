@@ -22,7 +22,12 @@ import { useGuardAcknowledgements } from '@/components/guarded-write/useGuardAck
 import { NavLink } from '@/components/nav-link/NavLink';
 import { useAppDispatch } from '@/hooks/useApp';
 import { setAlert } from '@/state/slices/alert';
-import { clearanceCovering } from '@/utility/clearance-functions';
+import {
+  clearanceCovering,
+  guardsNotClearedByDefault,
+  nonMergeClearance,
+  nonMergeClearanceParam,
+} from '@/utility/clearance-functions';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import {
   type BlameField,
@@ -739,7 +744,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
               unitId,
               unitGuardRequest: {
                 ResourceGuards: guardSetRequest(selectedFields, key, value, inherited),
-                Clearance: clearance,
+                Clearance: nonMergeClearance(undefined, clearance),
                 ChangeSetID: changeSetId,
               },
             }).unwrap();
@@ -763,7 +768,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
               unitId,
               unitGuardRequest: {
                 ResourceGuards: guardRemoveRequest(selectedFields, key),
-                Clearance: clearance,
+                Clearance: nonMergeClearance(undefined, clearance),
                 ChangeSetID: changeSetId,
               },
             }).unwrap();
@@ -792,7 +797,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
                   key,
                   inherited,
                 ),
-                Clearance: clearance,
+                Clearance: nonMergeClearance(undefined, clearance),
                 ChangeSetID: changeSetId,
               },
             }).unwrap();
@@ -882,7 +887,7 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
               changeSetId,
               protect: keep || undefined,
               ...guardParams(guardValues),
-              clearance: clearance ? JSON.stringify(clearance) : undefined,
+              clearance: nonMergeClearanceParam(undefined, clearance),
               functionInvocationsRequest: setValueRequest(field, value, description),
             }).unwrap();
             const unitError = results?.find((result) => result.Error)?.Error;
@@ -915,8 +920,8 @@ const clearanceFor = (guards: readonly WithheldGuard[]): Clearance | undefined =
 
 /**
  * Sets one guard on the selected fields' paths. A path that already has guards of its own has its
- * reasons changed, which the server refuses unless the edit is cleared for them, so each is
- * acknowledged and the edit is cleared for exactly those.
+ * reasons changed, which the server refuses unless the edit is cleared for them, so each the
+ * default clearance does not cover is acknowledged and the edit is cleared for exactly those.
  */
 const GuardDialog = ({
   open,
@@ -945,10 +950,12 @@ const GuardDialog = ({
   }, [open]);
   const guards = useMemo(
     () =>
-      guardEditGuardsToClear(
-        fields.filter(guardSettable),
-        annotations,
-        guardSetChanges(key, value, inherited),
+      guardsNotClearedByDefault(
+        guardEditGuardsToClear(
+          fields.filter(guardSettable),
+          annotations,
+          guardSetChanges(key, value, inherited),
+        ),
       ),
     [fields, annotations, key, value, inherited],
   );
@@ -1038,10 +1045,12 @@ const RemoveGuardDialog = ({
     () =>
       key === null
         ? []
-        : guardEditGuardsToClear(
-            fields.filter((field) => field.Guards?.[key] !== undefined),
-            annotations,
-            (own) => own.guards[key] !== undefined,
+        : guardsNotClearedByDefault(
+            guardEditGuardsToClear(
+              fields.filter((field) => field.Guards?.[key] !== undefined),
+              annotations,
+              (own) => own.guards[key] !== undefined,
+            ),
           ),
     [fields, annotations, key],
   );
@@ -1120,10 +1129,12 @@ const GuardInheritanceDialog = ({
     () =>
       key === null
         ? []
-        : guardEditGuardsToClear(
-            fields.filter((field) => ownGuards(annotations, field) !== undefined),
-            annotations,
-            (own) => own.guards[key] !== undefined && own.inherited.has(key) !== inherited,
+        : guardsNotClearedByDefault(
+            guardEditGuardsToClear(
+              fields.filter((field) => ownGuards(annotations, field) !== undefined),
+              annotations,
+              (own) => own.guards[key] !== undefined && own.inherited.has(key) !== inherited,
+            ),
           ),
     [fields, annotations, key, inherited],
   );
@@ -1396,10 +1407,14 @@ const SetValueDialog = ({
     clearance?: Clearance,
   ) => void;
 }) => {
-  // Setting the value writes the field, so it is cleared for every guard on it. There is no
-  // partial write to offer: without them all the value is withheld.
+  // Setting the value writes the field, so it is cleared for every guard on it: the default
+  // clearance covers some, and the person acknowledges the rest. There is no partial write to
+  // offer: without them all the value is withheld.
   const guards = useMemo(
-    () => Object.entries(field?.Guards ?? {}).map(([Key, Value]) => ({ Key, Value })),
+    () =>
+      guardsNotClearedByDefault(
+        Object.entries(field?.Guards ?? {}).map(([Key, Value]) => ({ Key, Value })),
+      ),
     [field?.Guards],
   );
   const {

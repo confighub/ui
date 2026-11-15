@@ -1479,6 +1479,9 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
         } else {
           // Configuration goes to the Unit's data endpoint. A Unit body has nowhere to put
           // one, so a PATCH carrying Data would report success and write nothing.
+          // Sent without the default clearance other edits get (nonMergeClearance): this
+          // page is for upgrading, so an Override guard on a path it writes, whether the
+          // value is upstream's or typed, is asked about rather than cleared silently.
           const upload = (options: { dryRun: boolean; clearance?: string }) =>
             uploadUnitData({
               spaceId,

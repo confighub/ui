@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import { ErrorList } from '@/components/error-list/ErrorList';
+import { nonMergeClearanceParam } from '@/utility/clearance-functions';
 import { HoverCard } from '@/components/styled';
 import { useAppDispatch } from '@/hooks/useApp';
 import { useBulkApiErrorMessage } from '@/hooks/useBulkApiErrorMessages';
@@ -66,6 +67,7 @@ export const BulkRestoreModal = ({
       await bulkPatchUnits({
         where,
         restore,
+        clearance: nonMergeClearanceParam(),
         // @ts-expect-error https://stackoverflow.com/questions/68283492/rtk-query-merge-patchjson-content-type-ruins-request-body
         body: JSON.stringify({}),
       });

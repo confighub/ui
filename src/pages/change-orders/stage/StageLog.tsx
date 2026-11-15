@@ -12,6 +12,8 @@
  *
  * The log adds no live region: outcomes go through the page's `announce`.
  */
+import { ValidationNote } from '../components/ValidationNote';
+import { hasValidationNote } from '../releaseValidation';
 import { type ReactNode, type RefObject, useId, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 
@@ -51,6 +53,7 @@ import { spaceLink, spaceListSegments } from './stageCopyParts';
 import { gateLabels, splitGatedItems } from './stageFailure';
 import { hasTheChangeIds } from './stageHasTheChange';
 import {
+  type StageLogGate,
   type StageLogLine as LogLine,
   type StageLogOpen,
   type StageLogView,
@@ -285,6 +288,16 @@ interface LineTextProps {
   dryRunStatus?: number;
 }
 
+/** A gate's validation, on a second line that takes the line's own colors, as its band sets them. */
+function GateValidation({ gate }: { gate: StageLogGate }) {
+  if (!hasValidationNote(gate.validation)) return null;
+  return (
+    <LogSub>
+      <ValidationNote validation={gate.validation} testId={`stage-log-validation-${gate.id}`} inherit />
+    </LogSub>
+  );
+}
+
 /** The words of one history line, as a check row: the name first, then its status, the detail below. */
 function LineText({ line, model, dryRunStatus }: LineTextProps) {
   const { body } = line;
@@ -324,6 +337,7 @@ function LineText({ line, model, dryRunStatus }: LineTextProps) {
             <LogName>{gate.name}</LogName>
             <LogStatus>{copy.passed}</LogStatus>
             {gate.description !== undefined ? <LogDim>— {gate.description}</LogDim> : null}
+            <GateValidation gate={gate} />
           </>
         );
       }
@@ -339,6 +353,7 @@ function LineText({ line, model, dryRunStatus }: LineTextProps) {
           ) : gate.reason !== undefined ? (
             <LogSub>{gate.reason}</LogSub>
           ) : null}
+          <GateValidation gate={gate} />
         </>
       );
     }
@@ -350,6 +365,7 @@ function LineText({ line, model, dryRunStatus }: LineTextProps) {
           {gateDetail(body.gate) !== undefined ? (
             <LogSub>{gateDetail(body.gate)}</LogSub>
           ) : null}
+          <GateValidation gate={body.gate} />
         </>
       );
     case 'gateUnread':
@@ -362,6 +378,7 @@ function LineText({ line, model, dryRunStatus }: LineTextProps) {
           ) : body.gate.reason !== undefined ? (
             <LogSub>{body.gate.reason}</LogSub>
           ) : null}
+          <GateValidation gate={body.gate} />
         </>
       );
     case 'approval': {

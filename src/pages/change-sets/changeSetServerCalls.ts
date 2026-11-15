@@ -126,3 +126,15 @@ export function closeChangeSetDryRun(send: Send, changeSetId: string) {
     body: JSON.stringify({ ChangeSetID: null }),
   });
 }
+
+/**
+ * A dry run of releasing the ChangeSet in one Space: a publish at its end Tag that
+ * writes nothing, answered as the publish would be (`changeSetRelease.ts` reads it).
+ */
+export function releaseChangeSetDryRun(send: Send, spaceId: string, endTagId: string) {
+  return answerOf(send, `/api/space/${spaceId}/release`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ TagID: endTagId, DryRun: true }),
+  });
+}

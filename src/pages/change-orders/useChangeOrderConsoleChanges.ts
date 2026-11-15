@@ -400,6 +400,8 @@ export function useChangeOrderConsoleChanges(args: {
   skip: boolean;
   /** The Invocation's Version, for an Invoke ChangeOrder: an edit to it plans the dry runs again. */
   invocationVersion?: number;
+  /** `ChangeOrder.UpdateType`, which decides the clearance the dry runs send. */
+  updateType?: string;
 }): ChangeOrderConsoleChanges {
   const {
     changeOrderId,
@@ -413,6 +415,7 @@ export function useChangeOrderConsoleChanges(args: {
     resolvedSpaceIds,
     skip,
     invocationVersion,
+    updateType,
   } = args;
 
   const spaceIds = useMemo(() => (scopedSpaces ?? []).map((s) => s.spaceId), [scopedSpaces]);
@@ -507,6 +510,7 @@ export function useChangeOrderConsoleChanges(args: {
     takenSpaceIds: resolvedSpaceIds,
     currentDataByUnitId,
     skip: skip || currentDataByUnitId.size === 0,    refreshKey: invocationVersion === undefined ? undefined : String(invocationVersion),
+    updateType,
   });
 
   /*
@@ -544,6 +548,7 @@ export function useChangeOrderConsoleChanges(args: {
     takenSpaceIds: resolvedSpaceIds,
     currentDataByUnitId,
     skip: skip || invocationStage === null || currentDataByUnitId.size === 0,    refreshKey: invocationVersion === undefined ? undefined : String(invocationVersion),
+    updateType,
   });
 
   const baseline = useChangeOrderBaseline({

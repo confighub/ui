@@ -29,18 +29,21 @@ export function MetadataSection({ doc }: FriendlyViewProps) {
     ),
   );
 
+  const fields = [
+    { label: 'Name', value: asScalar(metadata?.name) },
+    { label: 'Namespace', value: asScalar(metadata?.namespace) },
+    { label: 'API Version', value: asScalar(doc.apiVersion) },
+    { label: 'Kind', value: asScalar(doc.kind) },
+  ];
+
   return (
     <>
-      <Section title='Metadata'>
-        <FieldList
-          fields={[
-            { label: 'Name', value: asScalar(metadata?.name) },
-            { label: 'Namespace', value: asScalar(metadata?.namespace) },
-            { label: 'API Version', value: asScalar(doc.apiVersion) },
-            { label: 'Kind', value: asScalar(doc.kind) },
-          ]}
-        />
-      </Section>
+      {/* Configuration other than Kubernetes resources has none of these. */}
+      {fields.some((f) => f.value) && (
+        <Section title='Metadata'>
+          <FieldList fields={fields} />
+        </Section>
+      )}
       {labels && Object.keys(labels).length > 0 && (
         <Section title='Labels'>
           <SelectorChips map={labels} />

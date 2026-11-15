@@ -70,6 +70,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useListAllRevisionsQuery, usePromoteMutation, type ConfigDiff } from '@confighub/rtk-query';
 import { useRevisionDataMap } from '@/hooks/useUnitData';
+import { promotionClearance } from '@/utility/clearance-functions';
 
 import { useGetChangeOrderUnitDiffQuery } from '../../../change-orders/changeOrderImageDiffApi';
 
@@ -105,6 +106,11 @@ export interface UseChangeOrderChangesArgs {
    * ChangeOrder's Invocation edited, its clearance included. A new value plans again.
    */
   refreshKey?: string;
+  /**
+   * `ChangeOrder.UpdateType`, which decides the clearance the dry run sends
+   * (`promotionClearance`), so it plans what a promotion would write.
+   */
+  updateType?: string;
 }
 
 const EMPTY_GROUPS: ReadonlyMap<string, ChangeOrderChangeGroup[]> = new Map();
@@ -143,7 +149,7 @@ export function useChangeOrderChanges(args: UseChangeOrderChangesArgs): Readonly
 
 /** {@link useChangeOrderChanges}, with whether the groups can be trusted yet. */
 export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs): ChangeOrderChangesResult {
-  const { changeOrderId, stages, selectedStageId, takenSpaceIds, currentDataByUnitId, skip, refreshKey } = args;
+  const { changeOrderId, stages, selectedStageId, takenSpaceIds, currentDataByUnitId, skip, refreshKey, updateType } = args;
 
   const selectedStage = useMemo(
     () => stages.find((s) => s.id === selectedStageId),
@@ -223,7 +229,7 @@ export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs)
 
   useEffect(() => {
     if (skip || changeOrderId === undefined || pendingKey === '') return;
-    const scopeKey = `${changeOrderId}|${pendingKey}|${refreshKey ?? ''}`;
+    const scopeKey = `${changeOrderId}|${pendingKey}|${refreshKey ?? ''}|${updateType ?? ''}`;
     if (lastDryRunKeyRef.current === scopeKey) return;
     lastDryRunKeyRef.current = scopeKey;
     const markOutcome = (outcome: 'succeeded' | 'failed') =>
@@ -233,6 +239,7 @@ export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs)
         return next;
       });
 
+    const clearance = promotionClearance(updateType);
     const where = `SpaceID IN (${pendingKey
       .split(',')
       .map((id) => `'${id}'`)
@@ -250,6 +257,7 @@ export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs)
         DryRun: true,
         Force: true,
         ForceReason: PREVIEW_FORCE_REASON,
+        ...(clearance && { Clearance: clearance }),
       },
     })
       .unwrap()
@@ -317,7 +325,7 @@ export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs)
          */
         markOutcome('failed');
       });
-  }, [skip, changeOrderId, pendingKey, refreshKey, runPromote]);
+  }, [skip, changeOrderId, pendingKey, refreshKey, updateType, runPromote]);
 
   // ── Written: the Revisions that carry the ChangeOrder, for the Spaces that
   //    have actually taken it (plus the source, which always has) ───────────
@@ -486,7 +494,7 @@ export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs)
     const writtenPending =
       writtenSpaceIds.length > 0 &&
       (revisionsLoading || carryingDataFetching || priorRevisionsLoading || priorDataPending || writtenDiffPending);
-    const scopeKey = `${changeOrderId}|${pendingKey}|${refreshKey ?? ''}`;
+    const scopeKey = `${changeOrderId}|${pendingKey}|${refreshKey ?? ''}|${updateType ?? ''}`;
     const dryRunOutcome = pendingKey === '' ? undefined : dryRunOutcomeByKey.get(scopeKey);
     const dryRunPending = pendingKey !== '' && dryRunOutcome === undefined;
     if (writtenPending || dryRunPending) return LOADING_RESULT;
@@ -584,5 +592,6 @@ export function useChangeOrderChangesWithStatus(args: UseChangeOrderChangesArgs)
     dryRunOutcomeByKey,
     pendingKey,
     refreshKey,
+    updateType,
   ]);
 }

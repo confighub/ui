@@ -65,7 +65,7 @@ import {
   storedClearance,
 } from '@/components/invoker/utils/invocation-write-options';
 import { chunkInClause, inClause } from '@/hooks/inClauseChunks';
-import { unitHasGuards } from '@/utility/clearance-functions';
+import { nonMergeClearance, unitHasGuards } from '@/utility/clearance-functions';
 
 export type ListOrgFunctionsApiResponse = {
   [key: string]: {
@@ -678,17 +678,19 @@ export const InvokerSidebar = ({
         // parameter values, referencing the stored Invocation, and the server expands its
         // templated arguments. For a Validation Trigger the write is made in the Trigger's
         // ChangeSet (not yet for a parameterized Invocation).
-        // The clearance is what the person stated, plus the guards they acknowledged at the write
-        // (requirements of one key are alternatives, so the two add up), plus the guard the write
-        // records, which the server refuses to record otherwise. A dry run sends the same, so it
-        // previews what the write would withhold.
+        // The clearance is what the person stated, or the default where they stated none, plus
+        // the guards they acknowledged at the write (requirements of one key are alternatives, so
+        // the two add up), plus the guard the write records, which the server refuses to record
+        // otherwise. A dry run sends the same, so it previews what the write would withhold.
         const guardValues = writeOptions?.guardValues ?? NO_GUARD_VALUES;
         const invokeOn = async (
           unitIdsToRun: string[],
           options: { dryRun: boolean; clearance?: Clearance },
         ): Promise<FunctionInvocationsResponse[]> => {
-          const cleared = [...(writeOptions?.clearance ?? []), ...(options.clearance ?? [])];
-          const clearance = clearanceRecording(cleared.length > 0 ? cleared : undefined, guardValues);
+          const clearance = clearanceRecording(
+            nonMergeClearance(writeOptions?.clearance, options.clearance),
+            guardValues,
+          );
           const guardOptions = {
             clearance: clearance ? JSON.stringify(clearance) : undefined,
             ...guardParams(guardValues),

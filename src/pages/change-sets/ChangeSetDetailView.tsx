@@ -9,6 +9,10 @@
  * Close is disabled while a gate does not hold, the Close gates section says which
  * and where, and Force close… closes it anyway with a reason it records.
  *
+ * Validation says whether what a Release of it would bundle has ValidationErrors,
+ * which refuse a Release with or without a ChangeWorkflow. When a Space it changed
+ * has a release Target, Release publishes a Release of it there once it is closed.
+ *
  * Built from the ChangeOrder page's parts: the summary card and its facts, the
  * image summary, the full diff and its Unit rows.
  */
@@ -50,12 +54,16 @@ import { AnnounceContext } from '../change-orders/reviews/announceContext';
 import { onlyChangesHint, type ImageChangeSubject } from '../change-orders/imageChangeCopy';
 import { useSharedDiffColumns } from '../change-orders/useSharedDiffColumns';
 import { ChangeSetGatesSection, ForceCloseChangeSetDialog } from './ChangeSetGatesSection';
+import { ChangeSetReleaseSection, ChangeSetValidationSection, ReleaseChangeSetDialog } from './ChangeSetReleaseSection';
 import { ChangeSetReviews } from './ChangeSetReviews';
 import { closeGatesSummaryText, type ChangeSetCloseGates } from './changeSetCloseGates';
+import { validationSummaryText } from '../change-orders/releaseValidation';
+import { releasableSpaces, releaseSummaryText, type ReleaseSpace } from './changeSetRelease';
 import { CHANGE_SETS_PATH, changeSetStateTone } from './changeSetAddress';
 import { reviewStatusText } from './changeSetReviewModel';
 import type { ChangeSetDetail } from './useChangeSetDetail';
 import { useChangeSetCloseGates } from './useChangeSetCloseGates';
+import { useChangeSetRelease } from './useChangeSetRelease';
 import { useChangeSetReviews } from './useChangeSetReviews';
 
 const CHANGE_SET_IMAGE_SUBJECT: ImageChangeSubject = { noun: 'ChangeSet', unitsWhere: '', idPrefix: 'change-set' };
@@ -154,6 +162,9 @@ export function ChangeSetDetailView({ detail, onNotice }: { detail: ChangeSetDet
     [detail.revisions, detail.openUnitIds],
   );
   const closeGates = useChangeSetCloseGates({ changeSet, open: detail.open, refreshKey: gatesKey });
+  const releaseReads = useChangeSetRelease({ changeSet, open: detail.open, refreshKey: gatesKey });
+  const [releaseDialog, setReleaseDialog] = useState<ReleaseSpace[] | undefined>(undefined);
+  const [releaseError, setReleaseError] = useState<string | undefined>(undefined);
 
   // Review comments, as on a ChangeOrder's page: on the rows of each Unit's diff, and all of them
   // in the conversation. A Unit's diff shows its last Revision in the ChangeSet, which a new
@@ -188,6 +199,21 @@ export function ChangeSetDetailView({ detail, onNotice }: { detail: ChangeSetDet
   const gates: ChangeSetCloseGates = closeGates.gates;
   const held = gates.status === 'held';
   const gatesStatus = governed ? closeGatesSummaryText(gates) : undefined;
+  const { validation, release } = releaseReads;
+  const releaseReady = releasableSpaces(release);
+  const releaseStatus = releaseSummaryText(release);
+  const validationFailing = validation.status === 'read' && validation.failures.length > 0;
+
+  const publishRelease = async () => {
+    setReleaseError(undefined);
+    const outcome = await releaseReads.publish();
+    if (outcome.ok) {
+      setReleaseDialog(undefined);
+      onNotice(outcome.message);
+    } else {
+      setReleaseError(outcome.message);
+    }
+  };
 
   const close = async (forceReason?: string) => {
     setClosing(true);
@@ -304,13 +330,38 @@ export function ChangeSetDetailView({ detail, onNotice }: { detail: ChangeSetDet
                 Force close…
               </Button>
             ) : null}
+            {release.status !== 'none' ? (
+              <Button
+                variant={detail.open ? 'outlined' : 'contained'}
+                size="small"
+                data-testid="change-set-release-button"
+                disabled={releaseReady.length === 0 || releaseReads.releasing}
+                onClick={() => {
+                  setReleaseError(undefined);
+                  setReleaseDialog(releaseReady);
+                }}
+              >
+                Release
+              </Button>
+            ) : null}
             <Box sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted }}>Reviews: {status}</Box>
+            <Box
+              data-testid="change-set-validation-status"
+              sx={{ fontSize: changeOrderType.size.body, color: validationFailing ? changeOrderStatus.danger : changeOrderInk.muted }}
+            >
+              Validation: {validationSummaryText(validation)}
+            </Box>
             {detail.open && gatesStatus !== undefined ? (
               <Box
                 data-testid="change-set-gates-status"
                 sx={{ fontSize: changeOrderType.size.body, color: held ? changeOrderStatus.warn : changeOrderInk.muted }}
               >
                 {gatesStatus}
+              </Box>
+            ) : null}
+            {releaseStatus !== undefined ? (
+              <Box data-testid="change-set-release-status" sx={{ fontSize: changeOrderType.size.body, color: changeOrderInk.muted }}>
+                {releaseStatus}
               </Box>
             ) : null}
           </Box>
@@ -376,6 +427,16 @@ export function ChangeSetDetailView({ detail, onNotice }: { detail: ChangeSetDet
         </SectionCard>
       ) : null}
 
+      <SectionCard label="ChangeSet validation" title="Validation">
+        <ChangeSetValidationSection validation={validation} open={detail.open} />
+      </SectionCard>
+
+      {release.status !== 'none' ? (
+        <SectionCard label="ChangeSet release" title="Release">
+          <ChangeSetReleaseSection release={release} />
+        </SectionCard>
+      ) : null}
+
       <SectionCard label="ChangeSet reviews" title="Reviews">
         <ChangeSetReviews
           reviews={reviews}
@@ -413,6 +474,17 @@ export function ChangeSetDetailView({ detail, onNotice }: { detail: ChangeSetDet
           closing={closing}
           onCancel={() => setCloseDialog(false)}
           onConfirm={() => void close()}
+        />
+      ) : null}
+
+      {releaseDialog !== undefined ? (
+        <ReleaseChangeSetDialog
+          slug={slug}
+          spaces={releaseDialog}
+          releasing={releaseReads.releasing}
+          error={releaseError}
+          onCancel={() => setReleaseDialog(undefined)}
+          onConfirm={() => void publishRelease()}
         />
       ) : null}
 

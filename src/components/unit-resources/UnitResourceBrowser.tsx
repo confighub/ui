@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 import { Suspense, lazy, useMemo, useState } from 'react';
 
-import { isKubernetesToolchain } from '@/components/code-editor/language';
 import { ResourceOverview } from '@/components/resource-overview/ResourceOverview';
+import { offersOverview } from '@/components/resource-overview/overviewAvailability';
 import { UnitResourceRow, useUnitResources } from '@/hooks/useUnitResources';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -177,8 +177,8 @@ function ResourceDetail({
   view: ResourceView;
   onViewChange: (view: ResourceView) => void;
 }) {
-  // The friendly views are of Kubernetes resources; other configuration is shown as written.
-  const hasOverview = isKubernetesToolchain(row.ToolchainType);
+  // Configuration with no friendly view is shown as written.
+  const hasOverview = offersOverview(row.ToolchainType, row.ResourceType);
   const shown: ResourceView = hasOverview ? view : 'yaml';
   const body = row.ResourceBody;
 

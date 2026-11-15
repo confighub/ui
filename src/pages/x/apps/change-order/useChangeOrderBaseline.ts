@@ -30,6 +30,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useBulkPatchUnitsMutation, type UnitCreateOrUpdateResponseRead } from '@confighub/rtk-query';
+import { nonMergeClearanceParam } from '@/utility/clearance-functions';
 
 export interface UseChangeOrderBaselineArgs {
   changeOrderId: string | undefined;
@@ -98,6 +99,7 @@ export function useChangeOrderBaseline(args: UseChangeOrderBaselineArgs): Change
     restorePatch({
       where: `SpaceID = '${baseSpaceId}'`,
       restore: `Before:ChangeOrder:${changeOrderId}`,
+      clearance: nonMergeClearanceParam(),
       dryRun: true,
       // A dry run stores nothing, so the resolved configuration comes back on
       // the response only when asked for — it is no longer a field of Unit

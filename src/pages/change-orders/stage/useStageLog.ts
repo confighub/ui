@@ -34,6 +34,11 @@ import {
 import { propagationHeadline } from './stagePropagation';
 import { flowShowsForm, namedApprovers } from './stageReviewModel';
 import type { StageCardModel } from './useStageCardModel';
+import { useReleaseValidation } from '../useReleaseValidation';
+import { BUILT_IN_PREREQUISITES } from '../../x/apps/change-order/changeOrderWorkflow';
+
+const VALIDATED: string = BUILT_IN_PREREQUISITES.validated;
+const RELEASED: string = BUILT_IN_PREREQUISITES.released;
 
 function approvalsOf(
   summary: GateReviewSummary | undefined,
@@ -98,6 +103,27 @@ export function useStageLog({ model, detail, stage, history, coReviews }: StageL
   const summaries = useMemo(() => Object.values(coReviews.byGateKey), [coReviews.byGateKey]);
   const entrySummary = coReviews.byGateKey[`entry:${stageId}`];
   const releaseSummary = coReviews.byGateKey[`release:${stageId}`];
+
+  /*
+   * A Release is refused while what it would bundle has ValidationErrors, so a stage gated on
+   * the stage before being validated, or released, says which of its Units have them: all
+   * its Spaces for Validated, and for Released those with a release Target.
+   */
+  const prerequisites = stage.gates.map((g) => g.prerequisite);
+  const validates = prerequisites.includes(VALIDATED);
+  const releases = prerequisites.includes(RELEASED);
+  const { previousSpaceIds } = model;
+  const { releaseTargetOf } = detail;
+  const validationSpaceIds = useMemo(
+    () => (validates ? previousSpaceIds : releases ? previousSpaceIds.filter((id) => releaseTargetOf(id) !== undefined) : []),
+    [validates, releases, previousSpaceIds, releaseTargetOf],
+  );
+  const validation = useReleaseValidation({
+    releaseTagId: detail.releaseTagId,
+    endTagId: detail.endTagId,
+    spaceIds: validationSpaceIds,
+    enabled: validationSpaceIds.length > 0,
+  });
 
   /*
    * The last view with lines, for this stage. The skeleton is for the first read only: after an action
@@ -184,6 +210,7 @@ export function useStageLog({ model, detail, stage, history, coReviews }: StageL
           : { description: g.description }),
         ...(g.reason.trim() === '' ? {} : { reason: g.reason }),
         failedIn: g.evaluated && !g.ok ? model.gateSpaces(g.id) : [],
+        ...(validation !== undefined && (g.prerequisite === VALIDATED || g.prerequisite === RELEASED) ? { validation } : {}),
       }));
     // Release stays locked while a declared release requirement is unmet or not checked yet (fail closed).
     const promotedHere = stage.verdict === 'promoted';
@@ -276,6 +303,7 @@ export function useStageLog({ model, detail, stage, history, coReviews }: StageL
     releaseSummary,
     stageId,
     shownBefore,
+    validation,
   ]);
   // A stage read again (its state "loading" for a moment) keeps the lines it showed.
   const view = derived.loading && shownBefore && shown.current !== undefined ? shown.current.view : derived;

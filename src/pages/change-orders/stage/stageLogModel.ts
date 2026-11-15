@@ -17,6 +17,7 @@
  *
  * Pure: no React and no MUI (see `stageTypes.ts`).
  */
+import type { ReleaseValidation } from '../releaseValidation';
 import { stageReleaseSpaceIds } from '../../x/apps/change-order/changeOrdersConsoleModel';
 import type { NamedSpace } from './stageCardCopy';
 import type { PropagationProblem, StageCardState, StageFailure } from './stageTypes';
@@ -46,6 +47,11 @@ export interface StageLogGate {
   reason?: string;
   /** The Spaces the server named for a failure. */
   failedIn: readonly NamedSpace[];
+  /**
+   * For `Validated` and `Released`: the ValidationErrors of what a Release would bundle
+   * in the Spaces the gate is evaluated over, since they refuse a Release.
+   */
+  validation?: ReleaseValidation;
 }
 
 /** A person as a line names them. */

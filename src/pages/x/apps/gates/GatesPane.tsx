@@ -7,6 +7,7 @@ import { ChangeSetAcknowledgements } from '@/components/change-set-lock/ChangeSe
 import { useChangeSetLock } from '@/components/change-set-lock/useChangeSetLock';
 import { validatingTriggerRequest } from '@/hooks/useGateTriggers';
 import { protectionRequest } from '@/pages/unit-detail/components/blame/blameFields';
+import { nonMergeClearanceParam } from '@/utility/clearance-functions';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import { parseGateName } from '@/utility/name-format-functions';
 import {
@@ -317,6 +318,7 @@ export const GatesPane = ({
           executorSpace: unit.spaceId,
           where: `UnitID = '${unit.unitId}'`,
           changeSetId: lock.changeSetFor(unit.unitId),
+          clearance: nonMergeClearanceParam(),
           functionInvocationsRequest: {
             ToolchainType: unit.toolchainType || 'Kubernetes/YAML',
             FunctionInvocations: invocations,

@@ -15,7 +15,7 @@ import {
 import { chunkInClause } from '@/hooks/inClauseChunks';
 import { useAppDispatch } from '@/hooks/useApp';
 import { setAlert } from '@/state/slices/alert';
-import { unitHasGuards } from '@/utility/clearance-functions';
+import { nonMergeClearanceParam, unitHasGuards } from '@/utility/clearance-functions';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import {
   DeleteUnitApiArg,
@@ -352,6 +352,7 @@ export const useUnitActions = ({
           ...common,
           executorSpace: spaceId,
           where: `UnitID='${currentUnit?.UnitID || unitId}'`,
+          clearance: nonMergeClearanceParam(),
         });
 
     // Pass the function to handleFunctionInvocation so it can update selectedFunction after success

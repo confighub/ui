@@ -28,7 +28,7 @@ import {
 } from '@confighub/rtk-query';
 import { CmpProps, type RevisionRow } from '@/types';
 import { Direction } from '@/types/enums';
-import { unitHasGuards } from '@/utility/clearance-functions';
+import { nonMergeClearanceParam, unitHasGuards } from '@/utility/clearance-functions';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import { isIDInvalid } from '@/utility/validation-functions';
 import CompareArrowsOutlinedIcon from '@mui/icons-material/CompareArrowsOutlined';
@@ -187,7 +187,7 @@ export const RevisionsTable = ({
             unit: { ...unit },
             revisionId,
             dryRun: dryRun || undefined,
-            clearance: clearance ? JSON.stringify(clearance) : undefined,
+            clearance: nonMergeClearanceParam(undefined, clearance),
           };
           dryRunFailed = dryRun;
           const response = await (dryRun ? previewUpdateUnit : updateUnit)(input).unwrap();

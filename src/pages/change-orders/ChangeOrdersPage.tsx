@@ -25,6 +25,10 @@
  * full beside the action, in `stage/useStageConfirm.ts`.
  */
 
+import { ValidationNote } from './components/ValidationNote';
+import type { ReleaseValidation } from './releaseValidation';
+import { useReleaseValidation } from './useReleaseValidation';
+import { BUILT_IN_PREREQUISITES } from '../x/apps/change-order/changeOrderWorkflow';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link as RouterLink, useLocation, useNavigate, useParams } from 'react-router-dom';
 
@@ -311,6 +315,30 @@ function ScopeSpaces({ spaces }: { spaces: ChangeOrderSpace[] }) {
   );
 }
 
+/** Each Validated and Released gate's extras, with the validation note below anything else there. */
+function validationExtras(
+  gates: readonly ChangeOrderGate[],
+  validation: ReleaseValidation | undefined,
+  extras: Record<string, ChangeOrderGateExtra> | undefined,
+): Record<string, ChangeOrderGateExtra> | undefined {
+  if (validation === undefined) return extras;
+  const out = { ...extras };
+  for (const gate of gates) {
+    if (gate.prerequisite !== BUILT_IN_PREREQUISITES.validated && gate.prerequisite !== BUILT_IN_PREREQUISITES.released) continue;
+    const had = out[gate.id];
+    out[gate.id] = {
+      ...had,
+      below: (
+        <>
+          {had?.below}
+          <ValidationNote validation={validation} testId={`complete-validation-${gate.id}`} />
+        </>
+      ),
+    };
+  }
+  return out;
+}
+
 /**
  * The Complete step's own panel: what the ChangeWorkflow's `Final` checklist
  * says, and nothing else.
@@ -329,10 +357,13 @@ function ScopeSpaces({ spaces }: { spaces: ChangeOrderSpace[] }) {
 function CompleteStepDetail({
   label,
   gates,
+  validation,
   signOff,
 }: {
   label: string;
   gates: ChangeOrderGate[];
+  /** The ValidationErrors of what a Release would bundle, when Final names Validated or Released. */
+  validation?: ReleaseValidation;
   /**
    * The Final sign-off, when `Final.Prerequisites` names a review: its chip,
    * the gate rows' reviewer extras, and the panel. The card then has the same
@@ -345,6 +376,7 @@ function CompleteStepDetail({
   };
 }) {
   const listGates = signOff === undefined ? gates : reviewGatesForList(gates, signOff.summary);
+  const extras = validationExtras(gates, validation, signOff?.extras);
   return (
     <Box
       component="section"
@@ -436,7 +468,7 @@ function CompleteStepDetail({
               stageId={COMPLETE_STAGE_ID}
               gates={listGates}
               isSource={false}
-              extras={signOff?.extras}
+              extras={extras}
             />
           </Box>
         )}
@@ -673,6 +705,27 @@ export default function ChangeOrdersPage() {
         : detail.finalGates,
     [completedByServer, detail.finalGates],
   );
+  /*
+   * Final is checked over the last stage's own Spaces. A Release is refused while what it would
+   * bundle has ValidationErrors, so a Final naming Validated or Released says which Units have
+   * them: in every one of those Spaces for Validated, and for Released in those with a release Target.
+   */
+  const finalPrerequisites = detail.finalGates.map((gate) => gate.prerequisite);
+  const finalValidates = finalPrerequisites.includes(BUILT_IN_PREREQUISITES.validated);
+  const finalReleases = finalPrerequisites.includes(BUILT_IN_PREREQUISITES.released);
+  const { releaseTargetOf } = detail;
+  const finalValidationSpaceIds = useMemo(() => {
+    const stages = detail.sequence.stages.filter((stage) => !stage.isSource);
+    const last = stages[stages.length - 1]?.spaceIds ?? [];
+    if (finalValidates) return last;
+    return finalReleases ? last.filter((id) => releaseTargetOf(id) !== undefined) : [];
+  }, [detail.sequence, finalValidates, finalReleases, releaseTargetOf]);
+  const finalValidation = useReleaseValidation({
+    releaseTagId: detail.releaseTagId,
+    endTagId: detail.endTagId,
+    spaceIds: finalValidationSpaceIds,
+    enabled: completeShown && finalValidationSpaceIds.length > 0,
+  });
   const completeAbandoned =
     detail.consoleRow !== undefined && isCompleteStepAbandoned(detail.consoleRow);
   /** Gated stages whose gates only wait: the rail and its chips draw them calm, as their cards do. */
@@ -697,6 +750,7 @@ export default function ChangeOrdersPage() {
     resolvedSpaceIds,
     skip: !detail.found,
     invocationVersion: detail.invocation?.Version,
+    updateType: detail.updateType,
   });
 
   const { changeSets } = useChangeOrderChangeSets({
@@ -1879,6 +1933,7 @@ export default function ChangeOrdersPage() {
             <CompleteStepDetail
               label={completeLabel}
               gates={finalGates}
+              validation={finalValidation}
               signOff={
                 signOffSelected
                   ? {

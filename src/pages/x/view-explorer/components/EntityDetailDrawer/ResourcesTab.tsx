@@ -4,6 +4,7 @@ import { type KeyboardEvent, Suspense, lazy, useMemo, useRef, useState } from 'r
 
 import { isKubernetesToolchain } from '@/components/code-editor/language';
 import { ResourceOverview } from '@/components/resource-overview/ResourceOverview';
+import { offersOverview } from '@/components/resource-overview/overviewAvailability';
 import type { ResourceView } from '@/components/unit-resources/UnitResourceBrowser';
 import {
   compareResources,
@@ -347,8 +348,8 @@ export function ResourcesTab({
     }
   };
 
-  // The friendly views are of Kubernetes resources; other configuration is shown as written.
-  const hasOverview = isKubernetesToolchain(selected.ToolchainType);
+  // Configuration with no friendly view is shown as written.
+  const hasOverview = offersOverview(selected.ToolchainType, selected.ResourceType);
   const shown: ResourceView = hasOverview ? view : 'yaml';
   const body = selected.ResourceBody;
 
