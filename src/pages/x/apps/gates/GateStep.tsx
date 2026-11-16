@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 import { Fragment, useId, useState } from 'react';
 
+import { TriggerRuleDetails } from '@/components/trigger-rule/TriggerRuleDetails';
+import { IssueCheck } from '@/pages/unit-detail/components/action-side-bar/IssueCheck';
+import { issueCheck } from '@/pages/unit-detail/components/action-side-bar/validationFindings';
 import { parseGateName } from '@/utility/name-format-functions';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
@@ -15,9 +18,8 @@ import { UnitLink } from './UnitLink';
 import { isFixableKind } from './gateFixKinds';
 import { type Gate, type GateField } from './gateModel';
 import { type FieldOrigin } from './gateOrigin';
-import { gateRuleText, ruleParts } from './gateRule';
+import { gateRuleText } from './gateRule';
 import {
-  Code,
   Hint,
   LinkButton,
   MonoBox,
@@ -331,13 +333,6 @@ export const GateStep = (props: GateStepProps) => {
   const [ruleToggled, setRuleToggled] = useState<boolean>();
   const ruleDetailsId = useId();
   const trigger = gate.trigger;
-  // A gate's Trigger is in the Space its name starts with: the gate's own Space, unless the read
-  // of the Trigger says otherwise.
-  const triggerSpaceId =
-    gate.triggerSpaceId ??
-    (parseGateName(gate.gateName).spaceSlug === spaceSlug
-      ? gate.units[0]?.spaceId
-      : undefined);
   // A Trigger created without a display name gets its slug as one: that is no display name.
   const displayName =
     trigger?.DisplayName && trigger.DisplayName !== trigger.Slug
@@ -368,14 +363,7 @@ export const GateStep = (props: GateStepProps) => {
     const fix = staged.get(f.key);
     return fix?.op === 'set' && !!typedValueProblem(f, fix.value);
   }).length;
-  const ruleText = gateRuleText(
-    trigger?.Description,
-    ruleParts(
-      gate.functionName,
-      trigger?.Arguments,
-      gate.unitFindings.flatMap((u) => u.messages),
-    ),
-  );
+  const ruleText = gateRuleText(trigger?.Description);
   const warning = gate.warning;
   const statusTone = state === 'cleared' ? 'success' : warning ? 'muted' : 'attention';
 
@@ -402,9 +390,9 @@ export const GateStep = (props: GateStepProps) => {
       <Status $tone={statusTone} data-testid={`gate-status-${label}`}>
         {state === 'cleared' ? 'Cleared' : `${gate.findingCount} to fix`}
       </Status>
-      {trigger?.TriggerID && triggerSpaceId && (
+      {trigger?.TriggerID && (
         <Link
-          href={`/triggers/${triggerSpaceId}/${trigger.TriggerID}`}
+          href={`/validation/${trigger.TriggerID}`}
           target='_blank'
           rel='noopener noreferrer'
           data-testid={`gate-trigger-link-${label}`}
@@ -459,8 +447,9 @@ export const GateStep = (props: GateStepProps) => {
   );
   // With no Description, the Rule is the only text that says what failed, so it starts open.
   const ruleOpen = ruleToggled ?? ruleText.noDescription;
+  // Something to show: a function of the Trigger's own, or the Invocation it runs.
   const ruleLine =
-    ruleText.details.length > 0 ? (
+    trigger && (trigger.FunctionName || gate.invocation) ? (
       <Rule data-testid={`gate-rule-${label}`}>
         <RuleLabel>Rule</RuleLabel>
         <span>
@@ -477,19 +466,19 @@ export const GateStep = (props: GateStepProps) => {
           >
             {ruleOpen ? 'Hide details' : 'Show details'}
           </LinkButton>
-          <span
+          <Box
             id={ruleDetailsId}
             data-testid={`gate-rule-details-${label}`}
-            style={{ display: ruleOpen ? 'block' : 'none' }}
+            sx={{ display: ruleOpen ? 'block' : 'none', mt: 0.75 }}
           >
-            {ruleText.details.map((part, i) =>
-              'code' in part ? (
-                <Code key={i}>{part.code}</Code>
-              ) : (
-                <span key={i}>{part.text}</span>
-              ),
+            {ruleOpen && (
+              <TriggerRuleDetails
+                trigger={trigger}
+                invocation={gate.invocation}
+                describeFunctions={ruleText.noDescription}
+              />
             )}
-          </span>
+          </Box>
         </span>
       </Rule>
     ) : null;
@@ -692,8 +681,16 @@ export const GateStep = (props: GateStepProps) => {
               Trigger.
             </Box>
             <MonoBox data-testid={`gate-unit-finding-${label}`}>
-              {finding.messages.map((m, i) => (
-                <Box key={i}>{m}</Box>
+              {finding.issues.map((issue, i) => (
+                <Box key={i}>
+                  <IssueCheck
+                    check={issueCheck(
+                      issue,
+                      gate.trigger?.Slug ?? parseGateName(gate.gateName).triggerSlug,
+                    )}
+                  />
+                  {issue.message}
+                </Box>
               ))}
             </MonoBox>
           </Box>

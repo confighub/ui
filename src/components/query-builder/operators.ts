@@ -514,6 +514,7 @@ export const ENTITY_AVAILABLE_FIELDS: Record<EntityType, FilterFieldType[]> = {
     'space',
     'slug',
     'labels',
+    'annotations',
     'createdAt',
     'updatedAt',
     // Entity-specific fields

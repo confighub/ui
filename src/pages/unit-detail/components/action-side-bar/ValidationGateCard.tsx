@@ -4,16 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 
 import { HoverCard } from '@/components/styled';
-import { functionListArgs } from '@/hooks/useFunctionChannels';
+import { TriggerRuleDetails } from '@/components/trigger-rule/TriggerRuleDetails';
 import { parseGateName } from '@/utility/name-format-functions';
 import { parseValidationResult } from '@/utility/object-functions';
 import { decodeBase64 } from '@/utility/string-functions';
-import { isIDInvalid } from '@/utility/validation-functions';
 import {
   ExtendedTriggerRead,
-  FunctionSignature,
   ValidationResult as GateValidationResult,
-  useListFunctionsQuery,
 } from '@confighub/rtk-query';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
@@ -83,10 +80,8 @@ interface ValidationGateCardProps {
   gateName: string;
   trigger: ExtendedTriggerRead | undefined;
   validation: ValidationResult | undefined;
-  selectedFunction: FunctionSignature | undefined;
   isValidating: boolean;
   isWarning?: boolean;
-  spaceId: string | undefined;
   /**
    * The gate's failed results as the Unit records them: what the Trigger found when it last ran
    * on the Unit's configuration. Shown until a live run of the gate replaces them.
@@ -103,10 +98,8 @@ export const ValidationGateCard = ({
   gateName,
   trigger,
   validation,
-  selectedFunction,
   isValidating,
   isWarning = false,
-  spaceId,
   storedResults,
   fieldHref,
   focused = false,
@@ -123,30 +116,8 @@ export const ValidationGateCard = ({
   const description = trigger?.Trigger?.Description?.trim();
   // Which of the Trigger's results is this gate's: a numbered gate names its function's position.
   const resultIndex = (parseGateName(gateName).functionIndex ?? 1) - 1;
-
-  // A Trigger's function runs on the Channel the Trigger itself names, which is independent of
-  // the Unit's Target. Fetch what that Channel serves to resolve the signature (e.g.
-  // Description). Skipped for builtin triggers, which name none and are covered by the
-  // passed-in `selectedFunction`.
-  const channelID = trigger?.Trigger?.ChannelID;
-  const toolchainType = trigger?.Trigger?.ToolchainType;
-  const functionName = trigger?.Trigger?.FunctionName;
-  const { data: channelFunctions } = useListFunctionsQuery(
-    {
-      spaceId: spaceId || '',
-      ...functionListArgs(channelID ?? undefined),
-    },
-    {
-      skip: isIDInvalid(spaceId) || isIDInvalid(channelID),
-    },
-  );
-  // The function name is carried directly on the Trigger; the signature (for Description)
-  // comes from the builtin catalog or, for custom functions, the Trigger's Channel.
-  const resolvedFunction =
-    selectedFunction ||
-    (toolchainType && functionName
-      ? channelFunctions?.[toolchainType]?.[functionName]
-      : undefined);
+  // An issue naming the rule itself says nothing the card's title does not.
+  const ruleSlug = trigger?.Trigger?.Slug ?? parseGateName(gateName).triggerSlug;
 
   // Determine validation state for visual indicators
   const getValidationState = () => {
@@ -250,10 +221,11 @@ export const ValidationGateCard = ({
         }}
       >
         <Stack direction='column' spacing={0.5} alignItems='start' sx={{ flex: 1 }}>
-          {spaceId ? (
+          {trigger?.Trigger?.TriggerID ? (
             <Link
               component={RouterLink}
-              to={`/spaces/${spaceId}?tab=1`}
+              // The Trigger's page: where it stands, the Units it fails, its exceptions, and Edit.
+              to={`/validation/${trigger.Trigger.TriggerID}`}
               // RouterLink takes only a plain left click; the browser keeps every modified click.
               onClick={(e: React.MouseEvent) => e.stopPropagation()}
               sx={{
@@ -362,6 +334,7 @@ export const ValidationGateCard = ({
               results={shownResults}
               isWarning={isWarning}
               fieldHref={fieldHref}
+              ruleSlug={ruleSlug}
             />
           )}
           {validationState === 'error' && !(liveResult && hasFindings) && (
@@ -413,6 +386,7 @@ export const ValidationGateCard = ({
             results={shownResults}
             isWarning={isWarning}
             fieldHref={fieldHref}
+            ruleSlug={ruleSlug}
           />
         </Box>
       )}
@@ -448,7 +422,7 @@ export const ValidationGateCard = ({
       <Collapse in={expanded} timeout='auto' unmountOnExit>
         <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
           <Stack spacing={2}>
-            {/* Function Information Section */}
+            {/* What the Trigger runs */}
             <Box>
               <Typography
                 variant='caption'
@@ -458,91 +432,18 @@ export const ValidationGateCard = ({
                   fontSize: '0.65rem',
                   fontWeight: 600,
                   letterSpacing: '0.5px',
+                  display: 'block',
+                  mb: 1,
                 }}
               >
-                Function Details
+                Rule
               </Typography>
-              <Stack spacing={0.75} sx={{ mt: 1 }}>
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                  <Typography
-                    variant='body2'
-                    sx={{ fontSize: '0.75rem', fontWeight: 600, minWidth: '100px' }}
-                  >
-                    Name:
-                  </Typography>
-                  <Typography
-                    variant='body2'
-                    sx={{
-                      fontSize: '0.75rem',
-                      color: 'text.secondary',
-                      wordBreak: 'break-word',
-                    }}
-                  >
-                    {functionName || resolvedFunction?.FunctionName || 'N/A'}
-                  </Typography>
-                </Box>
-                {resolvedFunction?.Description && (
-                  <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Typography
-                      variant='body2'
-                      sx={{ fontSize: '0.75rem', fontWeight: 600, minWidth: '100px' }}
-                    >
-                      Description:
-                    </Typography>
-                    <Typography
-                      variant='body2'
-                      sx={{
-                        fontSize: '0.75rem',
-                        color: 'text.secondary',
-                        wordBreak: 'break-word',
-                      }}
-                    >
-                      {resolvedFunction.Description}
-                    </Typography>
-                  </Box>
-                )}
-              </Stack>
+              <TriggerRuleDetails
+                trigger={trigger?.Trigger}
+                invocation={trigger?.Invocation}
+                describeFunctions={!description}
+              />
             </Box>
-
-            {/* Parameters Section */}
-            {trigger?.Trigger?.Arguments && trigger.Trigger.Arguments.length > 0 && (
-              <Box>
-                <Typography
-                  variant='caption'
-                  sx={{
-                    color: 'text.secondary',
-                    textTransform: 'uppercase',
-                    fontSize: '0.65rem',
-                    fontWeight: 600,
-                    letterSpacing: '0.5px',
-                  }}
-                >
-                  Parameters
-                </Typography>
-                <Stack spacing={0.75} sx={{ mt: 1 }}>
-                  {trigger.Trigger.Arguments.map((argument) => (
-                    <Box key={argument.ParameterName} sx={{ display: 'flex', gap: 1 }}>
-                      <Typography
-                        variant='body2'
-                        sx={{ fontSize: '0.75rem', fontWeight: 600, minWidth: '100px' }}
-                      >
-                        {argument.ParameterName}:
-                      </Typography>
-                      <Typography
-                        variant='body2'
-                        sx={{
-                          fontSize: '0.75rem',
-                          color: 'text.secondary',
-                          wordBreak: 'break-word',
-                        }}
-                      >
-                        {argument.Value}
-                      </Typography>
-                    </Box>
-                  ))}
-                </Stack>
-              </Box>
-            )}
 
             {/* Validation Results Section */}
             {!(isValidating && validation && !validation.loading) && hasFindings && (
@@ -565,6 +466,7 @@ export const ValidationGateCard = ({
                   results={shownResults}
                   isWarning={isWarning}
                   fieldHref={fieldHref}
+                  ruleSlug={ruleSlug}
                   showAll
                 />
               </Box>
@@ -617,6 +519,7 @@ export const ValidationGateCard = ({
                     results={shownResults}
                     isWarning={isWarning}
                     fieldHref={fieldHref}
+                    ruleSlug={ruleSlug}
                     showAll
                   />
                 ) : validation.result?.Outputs?.['ValidationResult'] ||

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import { Box } from '@mui/material';
 import { styled } from '@mui/material/styles';
 
@@ -69,20 +70,29 @@ export const GatesSummary = ({
   segments,
 }: GatesSummaryProps) => {
   const ok = variant === 'ok';
+  // Nothing blocks, but warnings are left: in the warning tone, as the graph's Warnings chip is,
+  // not the green of nothing to look at.
+  const warned = ok && warnings > 0;
   return (
-    <Root $ok={ok} data-testid='gates-summary'>
+    <Root
+      $ok={ok && !warned}
+      data-testid='gates-summary'
+      data-tone={!ok ? 'blocked' : warned ? 'warned' : 'ok'}
+    >
       <Box
         sx={{
-          color: ok ? componentTheme.success : componentTheme.attention,
+          color: ok && !warned ? componentTheme.success : componentTheme.attention,
           flexShrink: 0,
           display: 'flex',
           mt: '1px',
         }}
       >
-        {ok ? (
-          <CheckRoundedIcon sx={{ fontSize: 18 }} />
-        ) : (
+        {!ok ? (
           <LockOutlinedIcon sx={{ fontSize: 18 }} />
+        ) : warned ? (
+          <WarningAmberRoundedIcon sx={{ fontSize: 18 }} />
+        ) : (
+          <CheckRoundedIcon sx={{ fontSize: 18 }} />
         )}
       </Box>
       <Box sx={{ minWidth: 0, flex: 1 }}>

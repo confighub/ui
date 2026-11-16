@@ -48,6 +48,8 @@ test.describe('the Validation page', () => {
   let triggerId = '';
   let unitId = '';
   let ruleSlug = '';
+  // A rule the Trigger honors the exceptions of, as one overlapping it does.
+  let honoredRule = '';
 
   const trigger = async () =>
     (
@@ -74,6 +76,7 @@ test.describe('the Validation page', () => {
     policySlug = `validation-policy-${suffix}`;
     // Unique, so the cards of tests running at once are told apart.
     ruleSlug = `needs-limits-${suffix}`;
+    honoredRule = `honored-${suffix}`;
     policySpaceId = (
       await body<{ SpaceID: string }>(
         await hubApi.post('/api/space', {
@@ -93,8 +96,10 @@ test.describe('the Validation page', () => {
             FunctionName: 'vet-cel',
             Arguments: [{ ParameterName: 'expression', Value: LIMITS }],
             Warn: true,
-            Annotations: { Priority: 'High' },
-            WhereResource: `metadata.annotations.exceptions~1guardrails~1confighub~1com/${ruleSlug} IS NULL`,
+            Annotations: { Priority: 'High', Controls: 'CH-0340,CH-0341,CH-0342' },
+            WhereResource:
+              `metadata.annotations.exceptions~1guardrails~1confighub~1com/${ruleSlug} IS NULL AND ` +
+              `metadata.annotations.exceptions~1guardrails~1confighub~1com/${honoredRule} IS NULL`,
           },
         }),
         'trigger',
@@ -143,12 +148,16 @@ test.describe('the Validation page', () => {
     await page.goto(`/validation/${triggerId}`);
 
     // In Audit, with its card on the board and the failing Unit listed.
-    await expect(
-      page.getByTestId('validation-column-Audited').getByTestId(`validation-card-${ruleSlug}`),
-    ).toBeVisible({
+    const card = page
+      .getByTestId('validation-column-Audited')
+      .getByTestId(`validation-card-${ruleSlug}`);
+    await expect(card).toBeVisible({
       timeout: 20000,
     });
+    // The controls the Trigger covers, a run of them written as its first and last.
+    await expect(card.getByTestId('validation-card-controls')).toHaveText('CH-0340–CH-0342');
     const detail = page.getByTestId('validation-detail');
+    await expect(detail.getByTestId('validation-controls')).toContainText('CH-0340–CH-0342');
     await expect(detail.getByTestId('validation-stage')).toHaveText('Audited');
     await expect(detail.getByRole('button', { name: 'Failing (1)' })).toBeVisible();
     await expect(
@@ -335,6 +344,85 @@ test.describe('the Validation page', () => {
     } finally {
       await hubApi.delete(`/api/space/${otherSpaceId}`, { params: { recursive: 'true' } }).catch(() => undefined);
     }
+  });
+
+  test('lists the resources excepted from a rule whose exceptions the Trigger honors', async ({ page }) => {
+    const excepted = deployment.replace(
+      'name: web\n  namespace',
+      `name: api\n  annotations:\n    exceptions.guardrails.confighub.com/${honoredRule}: Runs as root by design\n  namespace`,
+    );
+    const { Unit } = await body<{ Unit: { UnitID: string } }>(
+      await hubApi.post(`/api/space/${appSpaceId}/unit`, {
+        data: { Slug: 'api', ToolchainType: 'Kubernetes/YAML' },
+      }),
+      'unit',
+    );
+    await body(
+      await hubApi.put(`/api/space/${appSpaceId}/unit/${Unit.UnitID}/data`, { data: excepted }),
+      'unit data',
+    );
+
+    await page.goto(`/validation/${triggerId}`);
+    const honored = page.getByTestId('validation-honored-exceptions');
+    await expect(honored).toContainText(honoredRule, { timeout: 20000 });
+    await expect(honored).toContainText('Runs as root by design');
+    await expect(honored).toContainText('default/api');
+    // Removed on that rule's page, not this one.
+    await expect(honored.getByRole('button', { name: 'Remove…' })).toHaveCount(0);
+  });
+
+  test('a Unit with nothing for a rule to check is not counted, nor shown as not evaluated', async ({ page }) => {
+    test.setTimeout(90000);
+    // A rule that checks only ConfigMaps, which the app Space's one Unit, a Deployment, has none
+    // of: the server skips it there and records that, so the page leaves the Unit out.
+    const configMapRule = `configmaps-${ruleSlug}`;
+    const configMapTriggerId = (
+      await body<{ TriggerID: string }>(
+        await hubApi.post(`/api/space/${policySpaceId}/trigger`, {
+          data: {
+            Slug: configMapRule,
+            Event: 'Mutation',
+            ToolchainType: 'Kubernetes/YAML',
+            FunctionName: 'vet-cel',
+            Arguments: [{ ParameterName: 'expression', Value: 'has(r.data)' }],
+            Warn: true,
+            WhereResource: "ConfigHub.ResourceType = 'v1/ConfigMap'",
+          },
+        }),
+        'trigger',
+      )
+    ).TriggerID;
+    // A Trigger created in the policy Space re-evaluates only that Space's Units, so the app's
+    // are evaluated against it here, as the page's Evaluate does.
+    await body(
+      await hubApi.post('/api/function/invoke', {
+        params: { where: `UnitID = '${unitId}'` },
+        data: {
+          ToolchainType: 'Kubernetes/YAML',
+          Triggers: [configMapTriggerId],
+          UpdateValidationResults: true,
+          FunctionInvocations: null,
+        },
+      }),
+      'evaluate',
+    );
+    await expect
+      .poll(
+        async () =>
+          (
+            await body<{ Unit: { ValidationSkipped?: Record<string, boolean> } }>(
+              await hubApi.get(`/api/space/${appSpaceId}/unit/${unitId}`),
+              'unit',
+            )
+          ).Unit.ValidationSkipped ?? {},
+        { timeout: 20000 },
+      )
+      .toEqual({ [`${policySlug}/${configMapRule}/vet-cel`]: true });
+
+    await page.goto(`/validation/${configMapTriggerId}`);
+    const detail = page.getByTestId('validation-detail');
+    await expect(detail.getByRole('button', { name: 'All (0)' })).toBeVisible({ timeout: 20000 });
+    await expect(detail.getByRole('button', { name: 'Not evaluated (0)' })).toBeVisible();
   });
 
   test('excepts a failing resource, and removes the exception', async ({ page }) => {

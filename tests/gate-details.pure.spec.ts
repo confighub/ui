@@ -17,7 +17,7 @@ import {
   hopDescription,
   originForFinding,
 } from '../src/pages/x/apps/gates/gateOrigin';
-import { NO_DESCRIPTION, gateRuleText, ruleParts } from '../src/pages/x/apps/gates/gateRule';
+import { NO_DESCRIPTION, gateRuleText } from '../src/pages/x/apps/gates/gateRule';
 import {
   duplicateEntryPath,
   fixInvocations,
@@ -139,6 +139,12 @@ test('each finding type gets its fix', () => {
     fixKindOf('vet-placeholders', 'none', 'metadata.annotations.owner', undefined, 'string'),
   ).toBe('set');
   expect(fixKindOf('vet-immutable', 'immutable', 'spec.selector', undefined)).toBe('restore');
+  // A missing required field is a value to add; any other schema finding is fixed by hand.
+  expect(fixKindOf('vet-schemas', 'none', 'spec.selector', 'required')).toBe('schema');
+  expect(fixKindOf('vet-schemas', 'none', 'spec.ports.0.extra', 'additionalProperties')).toBe(
+    'message',
+  );
+  expect(fixKindOf('vet-schemas', 'none', 'spec.replicas', 'type')).toBe('message');
   expect(fixKindOf('vet-disruption', 'disruption-medium', 'spec.x', undefined)).toBe('undo');
   expect(
     fixKindOf('vet-merge-keys', 'none', 'spec.template.spec.containers.2.name', undefined),
@@ -291,59 +297,16 @@ test('the same finding on its source is named, and the fix there clears both', (
   );
 });
 
-test('the Rule line says what the Trigger expects', () => {
+test('the Trigger Description leads a gate; with none, the gate asks for one', () => {
   expect(
-    ruleParts('vet-images', [
-      { ParameterName: 'image-filter', Value: '{"AllowRegexp":"^ghcr\\\\.io/"}' },
-    ]),
-  ).toEqual([{ text: 'Allowed: values that match ' }, { code: '^ghcr\\.io/' }]);
-  expect(
-    ruleParts('vet-pod-security-standard', [{ ParameterName: 'level', Value: 'restricted' }]),
-  ).toEqual([
-    { text: 'Pod Security Standard, level ' },
-    { code: 'restricted' },
-    { text: ', version ' },
-    { code: 'latest' },
-  ]);
-  expect(ruleParts('vet-namespace', [])).toEqual([
-    { text: 'Every resource that is not cluster-scoped sets ' },
-    { code: 'metadata.namespace' },
-  ]);
-  expect(ruleParts('some-other-function', [])).toEqual([]);
-});
-
-test('the Trigger Description leads a gate, and the regex of its Rule is only in details', () => {
-  const rule = ruleParts('vet-images', [
-    { ParameterName: 'image-filter', Value: '{"DenyRegexp":":v1\\\\.([0-9]|1[0-6])\\\\."}' },
-  ]);
-  expect(rule).toEqual([
-    { text: 'Not allowed: values that match ' },
-    { code: ':v1\\.([0-9]|1[0-6])\\.' },
-  ]);
-  const text = gateRuleText(
-    'Prod runs cert-manager v1.17 or later. Set the image tag to v1.17.2.',
-    rule,
-  );
-  expect(text).toEqual({
+    gateRuleText('Prod runs cert-manager v1.17 or later. Set the image tag to v1.17.2.'),
+  ).toEqual({
     lead: 'Prod runs cert-manager v1.17 or later. Set the image tag to v1.17.2.',
     noDescription: false,
-    details: rule,
   });
-});
-
-test('a gate whose Trigger has no Description asks for one, and keeps its Rule in details', () => {
-  const rule = ruleParts('vet-images', [
-    { ParameterName: 'image-filter', Value: '{"DenyRegexp":":latest$"}' },
-  ]);
   for (const description of [undefined, '', '  ']) {
-    expect(gateRuleText(description, rule)).toEqual({
-      lead: NO_DESCRIPTION,
-      noDescription: true,
-      details: rule,
-    });
+    expect(gateRuleText(description)).toEqual({ lead: NO_DESCRIPTION, noDescription: true });
   }
-  // A function with no Rule line has no details either.
-  expect(gateRuleText(undefined, ruleParts('some-other-function', [])).details).toEqual([]);
 });
 
 test('the origin of a value names the person who set it, and the function they ran', () => {

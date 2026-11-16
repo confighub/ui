@@ -5,6 +5,12 @@ import { Link as RouterLink } from 'react-router-dom';
 
 import { plural } from '@/pages/change-orders/changeOrderHistory';
 import { NameList } from '@/pages/change-orders/components/SpaceListing';
+import { IssueCheck } from '@/pages/unit-detail/components/action-side-bar/IssueCheck';
+import {
+  type FindingIssue,
+  issueCheck,
+  issueMessage,
+} from '@/pages/unit-detail/components/action-side-bar/validationFindings';
 import type { ComponentRead, ValidationResultList } from '@confighub/rtk-query';
 import ChevronRight from '@mui/icons-material/ChevronRight';
 import ExpandMore from '@mui/icons-material/ExpandMore';
@@ -25,7 +31,6 @@ import TableRow from '@mui/material/TableRow';
 import TextField from '@mui/material/TextField';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
-import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 
 import { componentLink, spaceLink, targetLink, unitLink } from '../validationLinks';
@@ -40,7 +45,7 @@ import {
   emptyCounts,
   failedResources,
   failingOf,
-  failureMessages,
+  failureIssues,
 } from '../validationModel';
 
 export type UnitFilter = 'Failing' | 'Passed' | 'NotEvaluated' | 'All';
@@ -144,8 +149,8 @@ interface PolicyUnitsTableProps {
 
 /**
  * The Units a validating Trigger applies to, grouped by Component and Space, with how each fared
- * and, for a failing one, the resources it failed on. The details of a failure are on the Unit's
- * own page, which each row opens in a new tab.
+ * and, for a failing one, the resources it failed on and what was found wrong. The fields of a
+ * failure are on the Unit's own page, which each row opens in a new tab.
  */
 export const PolicyUnitsTable = ({
   policy,
@@ -238,7 +243,7 @@ export const PolicyUnitsTable = ({
     const target = u.unit.targetId ? targetById.get(u.unit.targetId) : undefined;
     const results = resultsByUnit.get(u.unit.id);
     const resources = failedResources(results);
-    const messages = failureMessages(results);
+    const issues = failureIssues(results);
     const chip = OUTCOME_CHIP[u.outcome];
     const failing = u.outcome === 'Error' || u.outcome === 'Warning';
     return (
@@ -290,9 +295,10 @@ export const PolicyUnitsTable = ({
         </TableCell>
         <TableCell sx={{ maxWidth: 420 }}>
           {failing && (
-            <ResourcesCell
+            <FailureCell
               resources={resources.map((r) => r.name)}
-              messages={messages}
+              issues={issues}
+              ruleSlug={policy.trigger.Slug}
               loaded={!!results}
               unavailable={resultsUnavailable}
             />
@@ -469,18 +475,28 @@ export const PolicyUnitsTable = ({
   );
 };
 
-/** A failing Unit's resources, the first few by name and the rest behind "+N more", with why. */
-const ResourcesCell = ({
+/** How many issues a failing Unit's row shows before a button shows the rest. */
+const ISSUE_LIMIT = 3;
+
+/**
+ * Why a Unit failed: the resources its results name, then what was found wrong, each with the
+ * check that found it when the rule runs several.
+ */
+const FailureCell = ({
   resources,
-  messages,
+  issues,
+  ruleSlug,
   loaded,
   unavailable,
 }: {
   resources: string[];
-  messages: string[];
+  issues: FindingIssue[];
+  ruleSlug?: string;
   loaded: boolean;
   unavailable: boolean;
 }) => {
+  const [expanded, setExpanded] = useState(false);
+  const listId = useId();
   if (!loaded) {
     return (
       <Typography variant='body2' fontSize='0.75rem' color='text.disabled'>
@@ -488,23 +504,44 @@ const ResourcesCell = ({
       </Typography>
     );
   }
-  if (resources.length === 0) {
+  if (resources.length === 0 && issues.length === 0) {
     return (
       <Typography variant='body2' fontSize='0.75rem' color='text.secondary'>
-        {messages[0] ?? 'Failed as a whole'}
+        Failed as a whole
       </Typography>
     );
   }
-  const tooltip = messages.join('\n');
+  const shown = expanded ? issues : issues.slice(0, ISSUE_LIMIT);
   return (
-    <Tooltip
-      title={tooltip ? <Box sx={{ whiteSpace: 'pre-line' }}>{tooltip}</Box> : ''}
-      placement='top-start'
-    >
-      <Box component='span' sx={{ fontSize: '0.75rem' }}>
-        <NameList names={resources} noun='resource' />
+    <Box sx={{ fontSize: '0.75rem' }}>
+      {resources.length > 0 && <NameList names={resources} noun='resource' />}
+      <Box id={listId}>
+        {shown.map((issue, i) => (
+          <Typography
+            key={i}
+            variant='body2'
+            fontSize='0.75rem'
+            color='text.secondary'
+            data-testid='validation-unit-issue'
+            sx={{ overflowWrap: 'anywhere' }}
+          >
+            <IssueCheck check={issueCheck(issue, ruleSlug)} />
+            {issueMessage(issue.message)}
+          </Typography>
+        ))}
       </Box>
-    </Tooltip>
+      {issues.length > ISSUE_LIMIT && (
+        <Button
+          size='small'
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          aria-controls={listId}
+          sx={{ textTransform: 'none', p: 0, minWidth: 0, fontSize: '0.75rem' }}
+        >
+          {expanded ? 'Show fewer' : `Show ${issues.length - ISSUE_LIMIT} more`}
+        </Button>
+      )}
+    </Box>
   );
 };
 

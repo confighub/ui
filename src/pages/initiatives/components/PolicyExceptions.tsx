@@ -37,8 +37,13 @@ export interface ExceptedResource {
 interface PolicyExceptionsProps {
   /** The annotation path the Trigger's WhereResource skips resources by. */
   annotationPath: string;
+  /** The annotation paths of other rules whose exceptions the Trigger also honors. */
+  honoredPaths?: string[];
   onRemove: (excepted: ExceptedResource) => void;
 }
+
+/** The rule an exception annotation names, as exceptions.guardrails.confighub.com/<rule>. */
+const ruleOfKey = (key: string): string => key.slice(key.lastIndexOf('/') + 1);
 
 /** How many annotations a resource has. */
 const annotationCount = (data: unknown): number => {
@@ -60,9 +65,46 @@ const annotationValue = (data: unknown, key: string): string => {
 /**
  * The resources excepted from a validating Trigger, and why: those carrying the annotation its
  * WhereResource skips. An exception is part of the resource's configuration, so this reads the
- * configuration rather than anything stored about the Trigger.
+ * configuration rather than anything stored about the Trigger. A Trigger that honors the
+ * exceptions of rules it overlaps skips their excepted resources too; those are listed after its
+ * own, by rule, and are removed on that rule's page.
  */
-export const PolicyExceptions = ({ annotationPath, onRemove }: PolicyExceptionsProps) => {
+export const PolicyExceptions = ({
+  annotationPath,
+  honoredPaths = [],
+  onRemove,
+}: PolicyExceptionsProps) => {
+  const key = annotationKeyOfPath(annotationPath);
+  return (
+    <Box data-testid='validation-exceptions'>
+      <Typography variant='body2' color='text.secondary' sx={{ mb: 1 }}>
+        A resource annotated <code>{key}</code> is skipped by this Trigger; the value says why.
+      </Typography>
+      <ExceptionTable annotationPath={annotationPath} onRemove={onRemove} />
+      {honoredPaths.map((path) => {
+        const honoredKey = annotationKeyOfPath(path);
+        return (
+          <Box key={path} sx={{ mt: 2 }} data-testid='validation-honored-exceptions'>
+            <Typography variant='body2' color='text.secondary' sx={{ mb: 1 }}>
+              It also skips the resources excepted from <code>{ruleOfKey(honoredKey)}</code>,
+              annotated <code>{honoredKey}</code>.
+            </Typography>
+            <ExceptionTable annotationPath={path} />
+          </Box>
+        );
+      })}
+    </Box>
+  );
+};
+
+/** The resources carrying one exception annotation; removable when onRemove is given. */
+const ExceptionTable = ({
+  annotationPath,
+  onRemove,
+}: {
+  annotationPath: string;
+  onRemove?: (excepted: ExceptedResource) => void;
+}) => {
   const key = annotationKeyOfPath(annotationPath);
   const {
     data = [],
@@ -81,10 +123,7 @@ export const PolicyExceptions = ({ annotationPath, onRemove }: PolicyExceptionsP
     );
 
   return (
-    <Box data-testid='validation-exceptions'>
-      <Typography variant='body2' color='text.secondary' sx={{ mb: 1 }}>
-        A resource annotated <code>{key}</code> is skipped by this Trigger; the value says why.
-      </Typography>
+    <>
       {error ? (
         <Typography variant='body2' color='error'>
           {getApiErrorMessage(error, 'Could not read the exceptions.')}
@@ -113,7 +152,7 @@ export const PolicyExceptions = ({ annotationPath, onRemove }: PolicyExceptionsP
                 <TableCell>Unit</TableCell>
                 <TableCell>Resource</TableCell>
                 <TableCell>Reason</TableCell>
-                <TableCell />
+                {onRemove && <TableCell />}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -148,34 +187,36 @@ export const PolicyExceptions = ({ annotationPath, onRemove }: PolicyExceptionsP
                     {r.ResourceType} {r.ResourceName}
                   </TableCell>
                   <TableCell>{annotationValue(r.Data, key) || '(no reason given)'}</TableCell>
-                  <TableCell align='right'>
-                    <Button
-                      size='small'
-                      sx={{ textTransform: 'none' }}
-                      onClick={() =>
-                        onRemove({
-                          resourceId: r.ResourceID ?? '',
-                          unitId: r.UnitID ?? '',
-                          unitSlug: r.UnitSlug ?? '',
-                          spaceId: r.SpaceID ?? '',
-                          spaceSlug: r.SpaceSlug ?? '',
-                          toolchainType: r.ToolchainType ?? 'Kubernetes/YAML',
-                          type: r.ResourceType ?? '',
-                          name: r.ResourceName ?? '',
-                          reason: annotationValue(r.Data, key),
-                          onlyAnnotation: annotationCount(r.Data) === 1,
-                        })
-                      }
-                    >
-                      Remove…
-                    </Button>
-                  </TableCell>
+                  {onRemove && (
+                    <TableCell align='right'>
+                      <Button
+                        size='small'
+                        sx={{ textTransform: 'none' }}
+                        onClick={() =>
+                          onRemove({
+                            resourceId: r.ResourceID ?? '',
+                            unitId: r.UnitID ?? '',
+                            unitSlug: r.UnitSlug ?? '',
+                            spaceId: r.SpaceID ?? '',
+                            spaceSlug: r.SpaceSlug ?? '',
+                            toolchainType: r.ToolchainType ?? 'Kubernetes/YAML',
+                            type: r.ResourceType ?? '',
+                            name: r.ResourceName ?? '',
+                            reason: annotationValue(r.Data, key),
+                            onlyAnnotation: annotationCount(r.Data) === 1,
+                          })
+                        }
+                      >
+                        Remove…
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </TableContainer>
       )}
-    </Box>
+    </>
   );
 };

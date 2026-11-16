@@ -13,14 +13,18 @@ import {
   buildPolicies,
   exceptionAnnotationPath,
   failedResources,
+  failureIssues,
   groupCounts,
+  honoredExceptionPaths,
   notEvaluatedReason,
 } from '../src/pages/initiatives/validationModel';
 import {
   enforcedAtAfter,
   enforcementDate,
   enforcementStage,
+  formatControls,
   toEnforcementTime,
+  triggerControls,
   triggerPriority,
   unitVerdicts,
 } from '../src/utility/triggerEnforcement';
@@ -109,6 +113,20 @@ test.describe('unit verdicts', () => {
     expect(v.get('t1')?.gates.sort()).toEqual(['p/new/vet-cel', 'p/old/vet-cel']);
     expect(v.get('t2')?.verdict).toBe('Passed');
   });
+
+  test('a Trigger with nothing to check in the Unit is skipped there, and a failure still wins', () => {
+    const v = unitVerdicts({
+      ValidationTriggerIDs: {
+        'p/skips/vet-cel': 't1',
+        'p/old/vet-cel': 't2',
+        'p/new/vet-cel': 't2',
+      },
+      ValidationSkipped: { 'p/skips/vet-cel': true, 'p/old/vet-cel': true },
+      ValidationErrors: { 'p/new/vet-cel': true },
+    });
+    expect(v.get('t1')?.verdict).toBe('Skipped');
+    expect(v.get('t2')?.verdict).toBe('Error');
+  });
 });
 
 test.describe('policies', () => {
@@ -155,6 +173,24 @@ test.describe('policies', () => {
       warning: 1,
     });
   });
+
+  test('a Unit in which the Trigger had nothing to check is not in its scope', () => {
+    const gate = `${POLICY}/t1/vet-cel`;
+    const [p] = buildPolicies(
+      [trigger('t1')],
+      [space(POLICY, ['t1']), space(APP, ['t1'])],
+      [],
+      [
+        unit('passes', APP, { [gate]: 't1' }),
+        {
+          ...unit('no-workloads', APP, { [gate]: 't1' }),
+          validationSkipped: { [gate]: true },
+        },
+      ],
+    );
+    expect(p.units.map((u) => u.unit.id)).toEqual(['passes']);
+    expect(p.unitCounts).toMatchObject({ total: 1, passed: 1, notEvaluated: 0 });
+  });
 });
 
 test.describe('results', () => {
@@ -183,6 +219,20 @@ test.describe('results', () => {
     );
     expect(exceptionAnnotationPath("metadata.namespace = 'x'")).toBeUndefined();
   });
+
+  test("a rule honoring another's exceptions has its own annotation, then the other's", () => {
+    const prefix = 'metadata.annotations.exceptions~1guardrails~1confighub~1com/';
+    const where = `ConfigHub.ResourceType IN ('apps/v1/Deployment') AND ${prefix}workload-runs-nonroot IS NULL AND ${prefix}workload-pod-security-restricted IS NULL`;
+    expect(exceptionAnnotationPath(where, 'workload-pod-security-restricted')).toBe(
+      `${prefix}workload-pod-security-restricted`,
+    );
+    expect(honoredExceptionPaths(where, 'workload-pod-security-restricted')).toEqual([
+      `${prefix}workload-runs-nonroot`,
+    ]);
+    // A rule named otherwise reads its first clause as its own, as before.
+    expect(exceptionAnnotationPath(where, 'renamed')).toBe(`${prefix}workload-runs-nonroot`);
+    expect(honoredExceptionPaths(`${prefix}only IS NULL`, 'only')).toEqual([]);
+  });
 });
 
 test.describe('why a Unit is not evaluated', () => {
@@ -208,4 +258,78 @@ test.describe('why a Unit is not evaluated', () => {
       'NotRunSince',
     );
   });
+});
+
+test("a Trigger's controls are read from its Controls annotation and written as the CLI writes them", () => {
+  expect(triggerControls({ Controls: 'CH-0301, CH-0302,,CH-0310' })).toEqual([
+    'CH-0301',
+    'CH-0302',
+    'CH-0310',
+  ]);
+  expect(triggerControls(undefined)).toEqual([]);
+  expect(formatControls([])).toBe('');
+  expect(formatControls(['CH-0385', 'CH-0386'])).toBe('CH-0385,CH-0386');
+  expect(formatControls(['CH-0201', 'CH-0202', 'CH-0203', 'CH-0204'])).toBe('CH-0201–CH-0204');
+  expect(formatControls(['CH-0312', 'CH-0313', 'CH-0315', 'CH-0316', 'CH-0317'])).toBe(
+    'CH-0312,CH-0313,CH-0315–CH-0317',
+  );
+  expect(formatControls(['CH-0999', 'CH-1000', 'CH-1001'])).toBe('CH-0999–CH-1001');
+  expect(formatControls(['CH-099', 'CH-0100', 'CH-0101'])).toBe('CH-099,CH-0100,CH-0101');
+  expect(formatControls(['C-0012', 'custom', 'C-0013'])).toBe('C-0012,custom,C-0013');
+});
+
+test('a policy carries the controls its Trigger covers', () => {
+  const [policy] = buildPolicies(
+    [
+      {
+        TriggerID: 't1',
+        SpaceID: POLICY,
+        Slug: 'correctness',
+        Validating: true,
+        Annotations: { Controls: 'CH-0201,CH-0202' },
+      },
+    ],
+    [],
+    [],
+    [],
+  );
+  expect(policy.controls).toEqual(['CH-0201', 'CH-0202']);
+});
+
+test("a Unit's failure issues are each listed once, with their checks, and details that only repeat them are left out", () => {
+  expect(
+    failureIssues([
+      {
+        Passed: false,
+        Index: 0,
+        Details: ['volumeMounts 0 names the volume "data", which the pod does not have'],
+        FailedAttributes: [
+          {
+            ResourceName: 'temporal/temporal-postgres',
+            Issues: [
+              {
+                Identifier: 'volume-references',
+                Message: 'volumeMounts 0 names the volume "data", which the pod does not have',
+              },
+            ],
+          },
+          {
+            ResourceName: 'temporal/temporal-postgres-2',
+            Issues: [
+              {
+                Identifier: 'volume-references',
+                Message: 'volumeMounts 0 names the volume "data", which the pod does not have',
+              },
+            ],
+          },
+        ],
+      },
+      { Passed: true, Index: 1, Issues: [{ Identifier: 'x', Message: 'passed' }] },
+    ]),
+  ).toEqual([
+    {
+      identifier: 'volume-references',
+      message: 'volumeMounts 0 names the volume "data", which the pod does not have',
+    },
+  ]);
 });

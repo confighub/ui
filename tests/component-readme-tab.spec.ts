@@ -126,13 +126,16 @@ test('a Space with only a Readme annotation shows it in a Readme tab', async ({ 
   await expect(page.getByText('README.md is empty.')).toHaveCount(0);
 });
 
-test('a Space with no README.md Unit, Readme annotation or release target has no tab bar', async ({ page }) => {
+test('a Space with no README.md Unit, Readme annotation or release target has the Configuration tab only', async ({ page }) => {
   await page.goto(`/components?app=${COMPONENT_SLUG}`);
   const node = page.getByTestId(`rf__node-${spaceIds[1]}`);
   await expect(node).toBeVisible({ timeout: 20000 });
   await node.click();
 
   await expect(page.getByText('web', { exact: true }).first()).toBeVisible({ timeout: 10000 });
-  await expect(page.getByTestId('component-pane-tab-config')).toHaveCount(0);
+  await expect(page.getByTestId('component-pane-tab-config')).toBeVisible();
+  // Its Triggers found nothing, so there is no Gates tab.
+  await expect(page.getByTestId('component-pane-tab-gates')).toHaveCount(0);
+  await expect(page.getByTestId('component-pane-tab-releases')).toHaveCount(0);
   await expect(page.getByTestId('component-pane-tab-readme')).toHaveCount(0);
 });

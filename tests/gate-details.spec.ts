@@ -162,6 +162,72 @@ const row = (page: Page, resourceName: string, path: string) =>
     .filter({ has: page.locator(`[data-testid^="fix-path-"]:text-is("${path}")`) });
 
 test.describe('Gates tab', () => {
+  test('a gate whose Trigger runs an Invocation shows the functions of the Invocation', async ({
+    page,
+  }) => {
+    const api = new ApiHelper(page);
+    const holder = await api.createSpace({
+      space: { Slug: `gates-inv-${Date.now().toString(36)}`, Labels: { Owner: 'E2E' } },
+    });
+    const invocation = await hubApi.post(`/api/space/${holder.SpaceID}/invocation`, {
+      data: {
+        Slug: 'at-most-two',
+        ToolchainType: 'Kubernetes/YAML',
+        FunctionInvocations: [
+          {
+            FunctionName: 'vet-celexpr',
+            Arguments: [
+              { ParameterName: 'validation-expr', Value: "r.kind != 'Deployment' || r.spec.replicas <= 2" },
+            ],
+          },
+        ],
+      },
+    });
+    expect(invocation.ok(), await invocation.text()).toBe(true);
+    const invocationId = ((await invocation.json()) as { InvocationID: string }).InvocationID;
+    // No Description, so the Rule details start open.
+    const c = await makeGatedComponent(
+      page,
+      { web: deployment('web').replace('replicas: 1', 'replicas: 3') },
+      { triggers: [{ Slug: 'via-invocation', InvocationID: invocationId }] },
+    );
+    try {
+      await openGates(page, c);
+      const details = page.getByTestId('gate-rule-details-1');
+      await expect(details).toBeVisible();
+      await expect(details.getByTestId('trigger-rule-details')).toContainText('vet-celexpr');
+      await expect(details.getByTestId('trigger-rule-argument-validation-expr')).toContainText(
+        'r.spec.replicas <= 2',
+      );
+    } finally {
+      await c.cleanup();
+      await api.deleteSpace(holder.SpaceID, true).catch(() => {});
+    }
+  });
+
+  test('a Space with warnings and no gate says nothing blocks it, in the warning tone', async ({
+    page,
+  }) => {
+    const c = await makeGatedComponent(
+      page,
+      { web: deployment('web').replace('replicas: 1', 'replicas: 3') },
+      { triggers: [{ ...REPLICAS_TRIGGER, Warn: true }] },
+    );
+    try {
+      await page.goto(`/components?app=${c.slug}`);
+      const chip = page.getByTestId(`flow-node-${c.dev.SpaceID}`).getByTestId('warnings-chip');
+      await expect(chip).toBeVisible({ timeout: 30000 });
+      await chip.click();
+      // Warnings alone give the Variant a Gates tab.
+      await page.getByTestId('component-pane-tab-gates').click();
+      const summary = page.getByTestId('gates-summary');
+      await expect(page.getByTestId('gates-summary-title')).toHaveText(`Nothing blocks ${c.slug}-dev`);
+      await expect(summary).toHaveAttribute('data-tone', 'warned');
+    } finally {
+      await c.cleanup();
+    }
+  });
+
   test('opens from the Gated chip, fixes a field here and clears the gate', async ({
     page,
   }) => {
@@ -356,7 +422,13 @@ test.describe('Gates tab', () => {
 
       await toggle.click();
       await expect(details).toBeVisible();
-      await expect(details).not.toBeEmpty();
+      // What the Trigger runs, read from its function's signature.
+      await expect(details.getByTestId('trigger-rule-details')).toContainText('Runs');
+      // The Trigger's own page, where it stands and can be edited.
+      await expect(page.getByTestId('gate-trigger-link-2')).toHaveAttribute(
+        'href',
+        /^\/validation\/[0-9a-f-]{36}$/,
+      );
       await expect(toggle).toHaveText('Hide details');
       await expect(toggle).toHaveAttribute('aria-expanded', 'true');
       // The click shows the Rule only: the gate stays closed.

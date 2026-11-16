@@ -7,7 +7,6 @@ import { Section } from '@/components/styled';
 import { BorderedAccordion } from '@/components/styled';
 import { usePageHeight } from '@/hooks/usePageHeight';
 import {
-  ListFunctionsApiResponse,
   ExtendedUnitRead,
   UnitRead,
 } from '@confighub/rtk-query';
@@ -123,7 +122,6 @@ export interface DashboardProps {
   currentUnitExtended: ExtendedUnitRead;
   setRefresh: () => void;
   onApplyGateClicked: (gateName: string) => void;
-  functions: ListFunctionsApiResponse;
   upstreamUnit?: UnitRead;
   onUpgrade: () => void;
   isFetchingUnit?: boolean;
@@ -163,7 +161,6 @@ export const Dashboard = ({
   currentUnitExtended,
   setRefresh,
   onApplyGateClicked,
-  functions,
   upstreamUnit,
   onUpgrade,
   isFetchingUnit,
@@ -454,7 +451,6 @@ export const Dashboard = ({
               <ActionSidebar
                 unit={currentUnitExtended}
                 onApplyGateClicked={onApplyGateClicked}
-                functions={functions}
                 onRefresh={setRefresh}
                 isFetchingUnit={isFetchingUnit}
                 lastPollTimestamp={lastPollTimestamp}

@@ -2,6 +2,15 @@
 // SPDX-License-Identifier: MIT
 import type { Issue, ValidationResult } from '@confighub/rtk-query';
 
+/**
+ * One thing a function found wrong: the check that found it, when the function names one, and
+ * what it says.
+ */
+export interface FindingIssue {
+  identifier?: string;
+  message: string;
+}
+
 /** A failed check that names one field of the Unit's configuration. */
 export interface FieldFinding {
   key: string;
@@ -9,7 +18,7 @@ export interface FieldFinding {
   resourceName?: string;
   path?: string;
   score?: string;
-  messages: string[];
+  issues: FindingIssue[];
   /** What the function found at the path, as text, when it reported it. */
   value?: string;
 }
@@ -19,7 +28,7 @@ export interface UnitFinding {
   key: string;
   functionName?: string;
   score?: string;
-  messages: string[];
+  issues: FindingIssue[];
 }
 
 export interface ValidationFindings {
@@ -27,14 +36,47 @@ export interface ValidationFindings {
   unit: UnitFinding[];
 }
 
-const issueMessages = (issues: Issue[] | undefined): string[] =>
-  (issues ?? []).map((issue) => issue.Message ?? '').filter((message) => message !== '');
+export const findingIssues = (issues: Issue[] | undefined): FindingIssue[] =>
+  (issues ?? [])
+    .filter((issue) => !!issue.Message)
+    .map((issue) => ({ identifier: issue.Identifier || undefined, message: issue.Message ?? '' }));
+
+/**
+ * The check an issue names, for showing beside its message: none when it is the rule's own name,
+ * as it is for a rule that runs one check and is named after it.
+ */
+export const issueCheck = (issue: FindingIssue, ruleSlug?: string): string | undefined =>
+  issue.identifier && issue.identifier !== ruleSlug ? issue.identifier : undefined;
+
+const POD_SECURITY_PREFIX = /^violates PodSecurity "[^"]+": /;
+
+/**
+ * An issue's message as shown beside its check: without the `violates PodSecurity "<level>": `
+ * that vet-pod-security-standard starts each with, as the PodSecurity admission controller
+ * does, since the check and the rule already say it.
+ */
+export const issueMessage = (message: string): string => message.replace(POD_SECURITY_PREFIX, '');
+
+/**
+ * The details of a failed result that say more than its failed attributes do. Functions that
+ * report failed attributes also write each attribute's message as a detail, alone or after the
+ * resource it is in (vet-cel, vet-validating-admission-policy), for clients that read only the
+ * details; those are left out, so a finding is not shown twice.
+ */
+export const extraDetails = (result: ValidationResult): string[] => {
+  const messages = (result.FailedAttributes ?? []).flatMap((attribute) =>
+    (attribute.Issues ?? []).map((issue) => issue.Message ?? '').filter((m) => m !== ''),
+  );
+  return (result.Details ?? []).filter(
+    (detail) => !messages.some((m) => detail === m || detail.endsWith(`: ${m}`)),
+  );
+};
 
 const MAX_VALUE_LENGTH = 200;
 
 /** Renders a value a function reported as one line of text, shortened if long. */
 export const formatFoundValue = (value: unknown): string | undefined => {
-  if (value === undefined || value === null) {
+  if (value === undefined || value === null || value === '') {
     return undefined;
   }
   const text = typeof value === 'string' ? value : JSON.stringify(value);
@@ -63,17 +105,20 @@ export const validationFindings = (
         resourceName: attribute.ResourceName || undefined,
         path: attribute.Path || undefined,
         score: attribute.Score || result.MaxScore || undefined,
-        messages: issueMessages(attribute.Issues),
+        issues: findingIssues(attribute.Issues),
         value: formatFoundValue(attribute.Value),
       });
     });
-    const messages = [...issueMessages(result.Issues), ...(result.Details ?? [])];
-    if (messages.length > 0 || (result.FailedAttributes ?? []).length === 0) {
+    const issues = [
+      ...findingIssues(result.Issues),
+      ...extraDetails(result).map((message) => ({ message })),
+    ];
+    if (issues.length > 0 || (result.FailedAttributes ?? []).length === 0) {
       findings.unit.push({
         key: `${resultIndex}`,
         functionName: result.FunctionName || undefined,
         score: result.MaxScore || undefined,
-        messages,
+        issues,
       });
     }
   });

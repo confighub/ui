@@ -24,6 +24,49 @@ export const ENFORCEMENT_ANNOTATIONS = [
   ENFORCED_AT_ANNOTATION,
 ];
 
+/** The numbers of the controls a validating Trigger's policy covers, such as CH-0301, comma-separated. */
+export const CONTROLS_ANNOTATION = 'Controls';
+
+/** The control numbers a Trigger's Controls annotation lists, in its order. */
+export const triggerControls = (annotations?: Record<string, string> | null): string[] =>
+  (annotations?.[CONTROLS_ANNOTATION] ?? '')
+    .split(',')
+    .map((control) => control.trim())
+    .filter((control) => control !== '');
+
+const CONTROL_NUMBER = /^(.*?)(\d+)$/;
+
+/**
+ * Control numbers as one short line, as the CLI writes them: comma-separated, with each run of three
+ * or more consecutive numbers of one prefix written as its first and last, as CH-0301–CH-0311.
+ */
+export const formatControls = (controls: string[]): string => {
+  const parse = (s: string) => {
+    const m = CONTROL_NUMBER.exec(s);
+    return m ? { prefix: m[1], digits: m[2], number: Number(m[2]) } : undefined;
+  };
+  const parts: string[] = [];
+  for (let i = 0; i < controls.length; ) {
+    const first = parse(controls[i]);
+    let j = i + 1;
+    while (first && j < controls.length) {
+      const next = parse(controls[j]);
+      if (
+        !next ||
+        next.prefix !== first.prefix ||
+        next.digits.length !== first.digits.length ||
+        next.number !== first.number + (j - i)
+      )
+        break;
+      j++;
+    }
+    if (j - i >= 3) parts.push(`${controls[i]}–${controls[j - 1]}`);
+    else parts.push(...controls.slice(i, j));
+    i = j;
+  }
+  return parts.join(',');
+};
+
 export type TriggerPriority = 'High' | 'Medium' | 'Low' | 'Unspecified';
 
 /** Most urgent first. Unspecified is not stored: choosing it removes the annotation. */
@@ -125,20 +168,24 @@ export const enforcedAtAfter = (
 };
 
 /** The verdict of a validating Trigger on a Unit's head Revision. */
-export type UnitVerdict = 'Error' | 'Warning' | 'Passed';
+/** Skipped: the Trigger had nothing to check in the Unit, so it neither passed nor failed there. */
+export type UnitVerdict = 'Error' | 'Warning' | 'Passed' | 'Skipped';
 
-const VERDICT_RANK: Record<UnitVerdict, number> = { Passed: 0, Warning: 1, Error: 2 };
+const VERDICT_RANK: Record<UnitVerdict, number> = { Skipped: -1, Passed: 0, Warning: 1, Error: 2 };
 
 /**
  * The verdict of each Trigger that ran on a Unit, by Trigger ID, with the gate names it ran under.
  *
  * ValidationTriggerIDs maps each gate in ValidationErrors and ValidationWarnings, and in the head
- * Revision's ValidationPassed, to the Trigger that wrote it, so a gate in neither of the first two
- * passed. A Trigger renamed since can have passed under its old name and fail under its new one, so
- * a failure under any of its names wins.
+ * Revision's ValidationPassed and ValidationSkipped, to the Trigger that wrote it, so a gate in none
+ * of the others passed. A Trigger renamed since can have passed under its old name and fail under
+ * its new one, so a failure under any of its names wins.
  */
 export const unitVerdicts = (
-  unit: Pick<UnitRead, 'ValidationTriggerIDs' | 'ValidationErrors' | 'ValidationWarnings'>,
+  unit: Pick<
+    UnitRead,
+    'ValidationTriggerIDs' | 'ValidationErrors' | 'ValidationWarnings' | 'ValidationSkipped'
+  >,
 ): Map<string, { verdict: UnitVerdict; gates: string[] }> => {
   const out = new Map<string, { verdict: UnitVerdict; gates: string[] }>();
   for (const [gate, triggerId] of Object.entries(unit.ValidationTriggerIDs ?? {})) {
@@ -146,7 +193,9 @@ export const unitVerdicts = (
       ? 'Error'
       : unit.ValidationWarnings?.[gate]
         ? 'Warning'
-        : 'Passed';
+        : unit.ValidationSkipped?.[gate]
+          ? 'Skipped'
+          : 'Passed';
     const seen = out.get(triggerId);
     if (!seen) {
       out.set(triggerId, { verdict, gates: [gate] });

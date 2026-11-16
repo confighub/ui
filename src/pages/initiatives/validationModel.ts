@@ -9,12 +9,19 @@
 import type { TriggerRead, ValidationResultList } from '@confighub/rtk-query';
 
 import {
+  type FindingIssue,
+  extraDetails,
+  findingIssues,
+} from '../unit-detail/components/action-side-bar/validationFindings';
+
+import {
   ENFORCED_AT_ANNOTATION,
   ENFORCED_BY_ANNOTATION,
   type EnforcementStage,
   type TriggerPriority,
   type UnitVerdict,
   enforcementStage,
+  triggerControls,
   triggerPriority,
   unitVerdicts,
 } from '../../utility/triggerEnforcement';
@@ -47,13 +54,18 @@ export interface ScopeUnit {
   toolchainType?: string;
   validationErrors?: Record<string, boolean>;
   validationWarnings?: Record<string, boolean>;
+  /** The gates of the Triggers that had nothing to check in the Unit. */
+  validationSkipped?: Record<string, boolean>;
   validationTriggerIds?: Record<string, string>;
   headRevisionNum?: number;
   lastChangeDescription?: string;
 }
 
-/** A Unit's outcome under one Trigger: its verdict, or NotEvaluated when the Trigger has none. */
-export type UnitOutcome = UnitVerdict | 'NotEvaluated';
+/**
+ * A Unit's outcome under one Trigger: its verdict, or NotEvaluated when the Trigger has none. A
+ * Unit the Trigger skipped, having nothing to check in it, has no outcome: it is not in scope.
+ */
+export type UnitOutcome = Exclude<UnitVerdict, 'Skipped'> | 'NotEvaluated';
 
 /**
  * Why a Unit in a Trigger's scope has no verdict from it.
@@ -133,6 +145,8 @@ export interface ValidationPolicy {
   priority: TriggerPriority;
   enforcedBy?: string;
   enforcedAt?: string;
+  /** The numbers of the controls the Trigger's policy covers, from its Controls annotation. */
+  controls: string[];
   /** The Spaces and Targets whose Trigger lists include this Trigger. */
   spaces: ScopeSpace[];
   targets: ScopeTarget[];
@@ -191,7 +205,9 @@ export const groupCounts = (
  * A Unit is in a Trigger's scope when the Trigger has a verdict on it, or when its Space, or the
  * Target it is bound to, selects the Trigger and the Unit is of the Trigger's toolchain. A Trigger
  * narrowed further by WhereUnit or a Unit Filter applies to fewer of those, so some of them stay
- * NotEvaluated; the page says so.
+ * NotEvaluated; the page says so. A Unit in which the Trigger had nothing to check -- its
+ * WhereResource selects no resource there -- is not in scope, as `cub manage guardrails status`
+ * does not count it.
  */
 export const buildPolicies = (
   triggers: TriggerRead[],
@@ -217,6 +233,7 @@ export const buildPolicies = (
         ValidationTriggerIDs: u.validationTriggerIds,
         ValidationErrors: u.validationErrors,
         ValidationWarnings: u.validationWarnings,
+        ValidationSkipped: u.validationSkipped,
       }),
     ]),
   );
@@ -252,6 +269,8 @@ export const buildPolicies = (
         (spaceIds.has(unit.spaceId) || (!!unit.targetId && targetIds.has(unit.targetId))) &&
         (!trigger.ToolchainType || unit.toolchainType === trigger.ToolchainType);
       if (!verdict && !selected) continue;
+      // Nothing for the Trigger to check in the Unit: it is not one the Trigger applies to.
+      if (verdict?.verdict === 'Skipped') continue;
       const outcome: UnitOutcome = verdict?.verdict ?? 'NotEvaluated';
       policyUnits.push({
         unit,
@@ -272,6 +291,7 @@ export const buildPolicies = (
         priority: triggerPriority(trigger.Annotations),
         enforcedBy: trigger.Annotations?.[ENFORCED_BY_ANNOTATION] || undefined,
         enforcedAt: trigger.Annotations?.[ENFORCED_AT_ANNOTATION] || undefined,
+        controls: triggerControls(trigger.Annotations),
         spaces: policySpaces,
         targets: policyTargets,
         units: policyUnits,
@@ -356,32 +376,57 @@ export const failedResources = (
   return [...seen.values()];
 };
 
-/** The messages a Trigger's results on a Unit carry, for a one-line summary of why it failed. */
-export const failureMessages = (results: ValidationResultList | undefined): string[] => {
-  const out: string[] = [];
+/**
+ * What a Trigger's results on a Unit found wrong, each once: the issues of the results and of their
+ * failed attributes, with the check that found each, and the details that do not repeat them.
+ */
+export const failureIssues = (results: ValidationResultList | undefined): FindingIssue[] => {
+  const seen = new Map<string, FindingIssue>();
+  const add = (issue: FindingIssue) =>
+    seen.set(`${issue.identifier ?? ''}\u0000${issue.message}`, issue);
   for (const result of results ?? []) {
     if (result.Passed) continue;
-    for (const issue of result.Issues ?? []) if (issue.Message) out.push(issue.Message);
-    for (const attr of result.FailedAttributes ?? []) {
-      for (const issue of attr.Issues ?? []) if (issue.Message) out.push(issue.Message);
-    }
-    out.push(...(result.Details ?? []));
+    findingIssues(result.Issues).forEach(add);
+    for (const attr of result.FailedAttributes ?? []) findingIssues(attr.Issues).forEach(add);
+    extraDetails(result).forEach((message) => add({ message }));
   }
-  return [...new Set(out)];
+  return [...seen.values()];
 };
 
 /**
+ * The annotations a Trigger's WhereResource excepts resources by: each clause
+ * `metadata.annotations.<key> IS NULL`, as guardrail rules are written, in the order written.
+ */
+const exceptionAnnotationPaths = (whereResource?: string): string[] =>
+  (whereResource ?? '').split(/\s+AND\s+/i).flatMap((clause) => {
+    const m = /^\s*(metadata\.annotations\.\S+)\s+IS\s+NULL\s*$/i.exec(clause);
+    return m ? [m[1]] : [];
+  });
+
+/**
  * The annotation a Trigger's WhereResource excepts resources by, when it skips every resource
- * carrying one: the clause `metadata.annotations.<key> IS NULL`, as guardrail rules are written.
+ * carrying one: its own, named after the Trigger as guardrail rules name it, else the first.
  * Returns the annotation path as the WhereResource writes it, or undefined.
  */
-export const exceptionAnnotationPath = (whereResource?: string): string | undefined => {
-  if (!whereResource) return undefined;
-  for (const clause of whereResource.split(/\s+AND\s+/i)) {
-    const m = /^\s*(metadata\.annotations\.\S+)\s+IS\s+NULL\s*$/i.exec(clause);
-    if (m) return m[1];
-  }
-  return undefined;
+export const exceptionAnnotationPath = (
+  whereResource?: string,
+  triggerSlug?: string,
+): string | undefined => {
+  const paths = exceptionAnnotationPaths(whereResource);
+  return (
+    paths.find((path) => !!triggerSlug && annotationKeyOfPath(path).endsWith(`/${triggerSlug}`)) ??
+    paths[0]
+  );
+};
+
+/**
+ * The annotations of other rules a Trigger's WhereResource also skips resources by: a rule that
+ * overlaps another honors its exceptions, so a resource excepted from that rule is not failed
+ * by this one either.
+ */
+export const honoredExceptionPaths = (whereResource?: string, triggerSlug?: string): string[] => {
+  const own = exceptionAnnotationPath(whereResource, triggerSlug);
+  return exceptionAnnotationPaths(whereResource).filter((path) => path !== own);
 };
 
 /** The annotation key an exception path names, with its escaped dots restored. */

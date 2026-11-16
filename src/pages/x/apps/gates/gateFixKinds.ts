@@ -44,8 +44,8 @@ const FORMAT_KIND_BY_IDENTIFIER: Record<string, FixKind> = {
 };
 
 /**
- * A path set-attributes cannot write: a vet-schemas path with a leading dot, or a vet-values path
- * with a `#uri` suffix. Such a row gets the messages and "Open in Configuration".
+ * A path set-attributes cannot write: one with a leading dot, or a vet-values path with a `#uri`
+ * suffix. Such a row gets the messages and "Open in Configuration".
  */
 export const isUnwritablePath = (path: string | undefined): boolean =>
   !path || path.startsWith('.') || path.includes('#');
@@ -60,6 +60,9 @@ export const fixKindOf = (
   if (isUnwritablePath(path)) return 'message';
   if (functionName === 'vet-format')
     return FORMAT_KIND_BY_IDENTIFIER[identifier ?? ''] ?? 'message';
+  // A schema finding is identified by the keyword that failed. Only a missing required field is a
+  // value to add; a field the schema does not have, or one of the wrong type, is fixed by hand.
+  if (functionName === 'vet-schemas' && identifier !== 'required') return 'message';
   const kind = KIND_BY_FUNCTION[functionName ?? ''] ?? 'message';
   // A check that reports a whole block (pod security on spec.template.spec) names no attribute and
   // no type: there is no value to type. A placeholder on any path is "none" too, but has a type.

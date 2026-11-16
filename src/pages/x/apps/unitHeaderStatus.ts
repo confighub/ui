@@ -51,11 +51,13 @@ export const gateFindingLines = (results: ValidationResult[] | undefined): strin
   const lines = [
     ...findings.fields.map((finding) => {
       const where = [finding.resourceType, finding.resourceName, finding.path].filter(Boolean).join(' ');
-      const what = finding.messages.join('; ');
+      const what = finding.issues.map((issue) => issue.message).join('; ');
       return [where, what].filter(Boolean).join(': ') || 'Did not pass';
     }),
     ...findings.unit.map(
-      (finding) => finding.messages.join('; ') || `${finding.functionName ?? 'The function'} did not pass`,
+      (finding) =>
+        finding.issues.map((issue) => issue.message).join('; ') ||
+        `${finding.functionName ?? 'The function'} did not pass`,
     ),
   ];
   if (lines.length <= FINDING_LIMIT) return lines;

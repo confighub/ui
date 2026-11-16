@@ -45,11 +45,12 @@ export const useComponentGates = (
   componentSpaceIds: string[],
 ): ComponentGates => {
   const unitsQuery = useListUnitsQuery(spaceId ? { spaceId } : skipToken);
+  // The selected Space's own Units: none, rather than the last Space's, while a switch is read.
   const units = useMemo(
     () =>
-      (unitsQuery.data ?? []).map((u) => u.Unit).filter((u): u is UnitRead => !!u) ??
+      (unitsQuery.currentData ?? []).map((u) => u.Unit).filter((u): u is UnitRead => !!u) ??
       EMPTY_UNITS,
-    [unitsQuery.data],
+    [unitsQuery.currentData],
   );
   const awaiting = awaitingUnit(units);
   // While a Revision is being checked, read again until its Triggers have run. A write that
@@ -101,9 +102,11 @@ export const useComponentGates = (
   );
 
   const isLoading =
-    !!spaceId && (unitsQuery.isLoading || (triggerIDs.length > 0 && triggersQuery.isLoading));
+    !!spaceId &&
+    ((unitsQuery.currentData === undefined && !unitsQuery.error) ||
+      (triggerIDs.length > 0 && triggersQuery.isLoading));
   const error = unitsQuery.error ?? triggersQuery.error;
-  const known = !isLoading && !error && !!unitsQuery.data && !awaiting;
+  const known = !isLoading && !error && !!unitsQuery.currentData && !awaiting;
   return {
     isLoading,
     error,

@@ -91,6 +91,10 @@ export const TriggerListPage = () => {
     () => extractLabelOptions(allTriggers.map((t) => t.Trigger)),
     [allTriggers],
   );
+  const annotationOptions = useMemo(
+    () => extractLabelOptions(allTriggers.map((t) => ({ Labels: t.Trigger?.Annotations }))),
+    [allTriggers],
+  );
   const slugOptions = useMemo(
     () =>
       allTriggers
@@ -104,6 +108,7 @@ export const TriggerListPage = () => {
     spaces,
     slugs: slugOptions,
     labelOptions,
+    annotationOptions,
     syncToUrl: true,
   });
 

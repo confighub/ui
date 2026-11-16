@@ -11,6 +11,7 @@ import {
 } from '@/components/trigger-selection/useTriggerSelection';
 import {
   PRIORITY_COLORS,
+  formatControls,
   TRIGGER_PRIORITIES,
   type TriggerPriority,
 } from '@/utility/triggerEnforcement';
@@ -41,7 +42,7 @@ export const TRIGGER_COLUMN_GROUPS: ColumnGroup[] = [
   },
   {
     header: 'Status',
-    columns: ['Validating', 'Disabled', 'Warn', 'Priority'],
+    columns: ['Validating', 'Disabled', 'Warn', 'Priority', 'Controls'],
   },
   {
     header: 'Timestamps',
@@ -77,6 +78,8 @@ export interface TriggerRowItem {
   Warn: boolean;
   /** The priority of a validating Trigger's policy; none for another Trigger */
   Priority?: TriggerPriority;
+  /** The controls a validating Trigger's policy covers, in full */
+  Controls: string[];
   HiddenReason: string;
   CreatedAt: string;
   UpdatedAt: string;
@@ -233,6 +236,18 @@ export const createTriggerStaticColumns = () =>
           </CenteredTableCell>
         );
       },
+    },
+
+    Controls: {
+      type: 'custom',
+      headerName: 'Controls',
+      minWidth: 120,
+      flex: 1,
+      // Every control, so that the grid's search finds one inside a run the cell shortens.
+      valueGetter: (row) => row.Controls.join(','),
+      renderCell: (params) => (
+        <CenteredTableCell>{formatControls(params.row.Controls)}</CenteredTableCell>
+      ),
     },
 
     CreatedAt: {

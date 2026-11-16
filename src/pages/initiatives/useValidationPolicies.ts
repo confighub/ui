@@ -20,9 +20,9 @@ import {
 } from './validationModel';
 
 // Only what the page computes from: a Unit's verdicts come from ValidationTriggerIDs, which maps
-// every gate, passed ones included, to the Trigger that wrote it.
+// every gate, passed and skipped ones included, to the Trigger that wrote it.
 const UNIT_SELECT =
-  'UnitID,Slug,SpaceID,TargetID,ToolchainType,ValidationErrors,ValidationWarnings,ValidationTriggerIDs,HeadRevisionNum,LastChangeDescription';
+  'UnitID,Slug,SpaceID,TargetID,ToolchainType,ValidationErrors,ValidationWarnings,ValidationSkipped,ValidationTriggerIDs,HeadRevisionNum,LastChangeDescription';
 
 export interface ValidationData {
   policies: ValidationPolicy[];
@@ -102,6 +102,7 @@ export const useValidationPolicies = (): ValidationData => {
             toolchainType: u.ToolchainType,
             validationErrors: u.ValidationErrors,
             validationWarnings: u.ValidationWarnings,
+            validationSkipped: u.ValidationSkipped,
             validationTriggerIds: u.ValidationTriggerIDs,
             headRevisionNum: u.HeadRevisionNum,
             lastChangeDescription: u.LastChangeDescription,

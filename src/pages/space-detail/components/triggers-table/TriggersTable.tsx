@@ -8,7 +8,7 @@ import { HIDDEN_REASON_FIELD, hiddenReasonColumn } from '@/components/hidden-ent
 import { useAttributeColumnManager } from '@/components/entity-data-grid/hooks/useAttributeColumnManager';
 import { FilteredEmptyState } from '@/components/filtered-empty-state';
 import { SkeletonTable } from '@/components/skeleton-table/SkeletonTable';
-import { triggerPriority } from '@/utility/triggerEnforcement';
+import { triggerControls, triggerPriority } from '@/utility/triggerEnforcement';
 import type { TriggerSelectionStatus } from '@/components/trigger-selection/useTriggerSelection';
 import { useGridPersistence } from '@/components/unit-data-grid/hooks/useGridPersistence';
 import { EmptyTriggers } from '@/pages/space-detail/components/empty-triggers/EmptyTriggers';
@@ -81,6 +81,7 @@ const GRID_DEFAULTS = {
     Event: false,
     Validating: true,
     Priority: true,
+    Controls: true,
     Disabled: true,
     [HIDDEN_REASON_FIELD]: false,
     CreatedAt: false,
@@ -167,6 +168,7 @@ export const TriggersTable = ({
         Disabled: trigger?.Trigger?.Disabled || false,
         Warn: trigger?.Trigger?.Warn || false,
         Priority: trigger?.Trigger?.Validating ? triggerPriority(trigger.Trigger.Annotations) : undefined,
+        Controls: triggerControls(trigger?.Trigger?.Annotations),
         CreatedAt: trigger?.Trigger?.CreatedAt || '',
         UpdatedAt: trigger?.Trigger?.UpdatedAt || '',
         HiddenReason: trigger?.Trigger?.HiddenReason || '',

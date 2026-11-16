@@ -1436,6 +1436,7 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
           tone="warned"
           leading={<WarningIcon />}
           label="Warnings"
+          testId="warnings-chip"
           spec={warningsSpec}
           onGo={openTab}
         />

@@ -6,7 +6,14 @@ import { Link as RouterLink } from 'react-router-dom';
 import { ValidationResult } from '@confighub/rtk-query';
 import { Box, Chip, Link, Stack, Typography } from '@mui/material';
 
-import { FieldFinding, validationFindings } from './validationFindings';
+import { IssueCheck } from './IssueCheck';
+import {
+  FieldFinding,
+  FindingIssue,
+  issueCheck,
+  issueMessage,
+  validationFindings,
+} from './validationFindings';
 
 const COLLAPSED_COUNT = 3;
 
@@ -20,18 +27,39 @@ export interface ValidationFindingsListProps {
    * is shown as text.
    */
   fieldHref?: (finding: FieldFinding) => string | undefined;
+  /** The rule's slug: an issue's check is shown unless it is the rule itself. */
+  ruleSlug?: string;
 }
 
-const findingTextSx = { fontSize: '0.7rem', wordBreak: 'break-word' } as const;
+const findingTextSx = { fontSize: '0.75rem', lineHeight: 1.5, wordBreak: 'break-word' } as const;
+
+const IssueLines = ({ issues, ruleSlug }: { issues: FindingIssue[]; ruleSlug?: string }) => (
+  <Stack spacing={0.5} sx={{ mt: 0.5 }}>
+    {issues.map((issue, index) => (
+      <Typography
+        key={index}
+        variant='body2'
+        color='text.primary'
+        data-testid='validation-finding-issue'
+        sx={findingTextSx}
+      >
+        <IssueCheck check={issueCheck(issue, ruleSlug)} />
+        {issueMessage(issue.message)}
+      </Typography>
+    ))}
+  </Stack>
+);
 
 const FieldFindingRow = ({
   finding,
   isWarning,
   fieldHref,
+  ruleSlug,
 }: {
   finding: FieldFinding;
   isWarning: boolean;
   fieldHref?: (finding: FieldFinding) => string | undefined;
+  ruleSlug?: string;
 }) => {
   const resource = [finding.resourceType, finding.resourceName].filter(Boolean).join('/');
   const href = fieldHref?.(finding);
@@ -69,22 +97,13 @@ const FieldFindingRow = ({
         )}
       </Stack>
       {resource && (
-        <Typography
-          variant='caption'
-          display='block'
-          color='text.secondary'
-          sx={findingTextSx}
-        >
+        <Typography variant='body2' color='text.secondary' sx={findingTextSx}>
           {resource}
         </Typography>
       )}
-      {finding.messages.map((message, index) => (
-        <Typography key={index} variant='caption' display='block' sx={findingTextSx}>
-          {message}
-        </Typography>
-      ))}
+      <IssueLines issues={finding.issues} ruleSlug={ruleSlug} />
       {finding.value !== undefined && (
-        <Typography variant='caption' display='block' sx={findingTextSx}>
+        <Typography variant='body2' color='text.secondary' sx={{ ...findingTextSx, mt: 0.5 }}>
           Found:{' '}
           <Box component='span' sx={{ fontFamily: 'monospace' }}>
             {finding.value}
@@ -104,6 +123,7 @@ export const ValidationFindingsList = ({
   isWarning = false,
   showAll = false,
   fieldHref,
+  ruleSlug,
 }: ValidationFindingsListProps) => {
   const [expanded, setExpanded] = useState(false);
   const findings = useMemo(() => validationFindings(results), [results]);
@@ -125,6 +145,7 @@ export const ValidationFindingsList = ({
           finding={finding}
           isWarning={isWarning}
           fieldHref={fieldHref}
+          ruleSlug={ruleSlug}
         />
       ))}
       {unit.map((finding) => (
@@ -149,11 +170,7 @@ export const ValidationFindingsList = ({
               />
             )}
           </Stack>
-          {finding.messages.map((message, index) => (
-            <Typography key={index} variant='caption' display='block' sx={findingTextSx}>
-              {message}
-            </Typography>
-          ))}
+          <IssueLines issues={finding.issues} ruleSlug={ruleSlug} />
         </Box>
       ))}
       {!showAll && (hidden > 0 || expanded) && (

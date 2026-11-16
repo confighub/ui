@@ -87,6 +87,42 @@ test.describe('Triggers of every Space', () => {
     }
   });
 
+  test('a validating Trigger shows its controls, which the search and the Annotations filter find', async ({ page }) => {
+    const api = new ApiHelper(page);
+    const base = `trgctl-${RandomSlugGenerator.randomSlugName()}`;
+    const spaces: string[] = [];
+    try {
+      spaces.push((await api.createSpace({ space: { Slug: base } })).SpaceID!);
+      await createTrigger(spaces[0], {
+        Slug: `${base}-checks`,
+        FunctionName: 'vet-schemas',
+        Annotations: { Controls: 'CH-0201,CH-0202,CH-0203,CH-0207' },
+      });
+      await createTrigger(spaces[0], { Slug: `${base}-other`, FunctionName: 'vet-schemas' });
+
+      // A run of controls is shortened in the cell.
+      await openTriggerList(page, base);
+      const row = rowOf(page, `${base}-checks`);
+      await expect(row.locator('[data-field="Controls"]')).toHaveText('CH-0201–CH-0203,CH-0207', { timeout: 15000 });
+
+      // The search finds a control inside the run.
+      await page.getByPlaceholder('Search…').fill('CH-0202');
+      await expect(row).toBeVisible();
+      await expect(rowOf(page, `${base}-other`)).toHaveCount(0);
+
+      // The filter offers Annotations, and filters by one.
+      await page.getByRole('button', { name: 'Filter', exact: true }).click();
+      await expect(page.getByRole('menuitem').filter({ hasText: /^Annotations$/ })).toBeVisible();
+      await page.keyboard.press('Escape');
+      const where = `Annotations.Controls LIKE '%CH-0207%' AND Space.Slug = '${base}'`;
+      await page.goto(`/triggers?${new URLSearchParams({ filterWhere: where })}`);
+      await expect(rowOf(page, `${base}-checks`)).toBeVisible({ timeout: 15000 });
+      await expect(rowOf(page, `${base}-other`)).toHaveCount(0);
+    } finally {
+      await removeSpaces(spaces);
+    }
+  });
+
   test('creates a Trigger with the form in the Space picked on it', async ({ page }) => {
     const api = new ApiHelper(page);
     const base = `trgform-${RandomSlugGenerator.randomSlugName()}`;

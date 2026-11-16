@@ -197,6 +197,10 @@ export const SpaceDetailPage = () => {
     const triggerEntities = (allTriggersData || []).map((t) => t.Trigger);
     return extractLabelOptions(triggerEntities);
   }, [allTriggersData]);
+  const triggerAnnotationOptions = useMemo(
+    () => extractLabelOptions((allTriggersData || []).map((t) => ({ Labels: t.Trigger?.Annotations }))),
+    [allTriggersData],
+  );
 
   // Applied Triggers may reside in any Space, so the Space filter offers them all.
   const { data: spacesData = [] } = useListSpacesQuery({});
@@ -223,6 +227,7 @@ export const SpaceDetailPage = () => {
     spaces: spacesForFilter,
     slugs: triggerSlugOptions,
     labelOptions: triggerLabelOptions,
+    annotationOptions: triggerAnnotationOptions,
     syncToUrl: true,
   });
 

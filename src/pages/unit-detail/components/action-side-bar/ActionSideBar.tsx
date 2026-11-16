@@ -7,12 +7,10 @@ import { ProgressRefreshButton } from '@/components/progress-refresh-button/Prog
 import { HoverCard } from '@/components/styled';
 import { findTriggerForGate, useGateTriggers, validatingTriggerRequest } from '@/hooks/useGateTriggers';
 import { getApiErrorMessage } from '@/utility/error-functions';
-import { parseGateName } from '@/utility/name-format-functions';
 import {
   ExtendedTriggerRead,
   ExtendedUnitRead,
   FunctionInvocationsResponse,
-  ListFunctionsApiResponse,
   useInvokeFunctionsOnOrgMutation,
   useLazyGetSpaceQuery,
   useLazyListAllTargetsQuery,
@@ -34,7 +32,6 @@ import type { FieldFinding } from './validationFindings';
 export interface IActionSideBarProps {
   unit: ExtendedUnitRead;
   onApplyGateClicked: (gateName: string) => void;
-  functions: ListFunctionsApiResponse;
   onRefresh?: () => void;
   isFetchingUnit?: boolean;
   lastPollTimestamp?: number;
@@ -56,7 +53,6 @@ export interface ValidationResult {
 export const ActionSidebar = ({
   unit,
   onApplyGateClicked,
-  functions,
   onRefresh,
   isFetchingUnit = false,
   lastPollTimestamp, // Used passively to trigger re-renders - changes every ~5s when polling occurs
@@ -100,11 +96,6 @@ export const ActionSidebar = ({
       value,
     }),
   );
-
-  const getSelectedFunction = (functionName: string) => {
-    const toolchainType = unit?.Unit?.ToolchainType;
-    return toolchainType ? functions?.[toolchainType]?.[functionName] : undefined;
-  };
 
   // Invoke function for validating triggers
   const invokeValidatingTrigger = useCallback(
@@ -369,9 +360,6 @@ export const ActionSidebar = ({
         {validationErrors.map((gate) => {
           const trigger = findTriggerByGateName(gate.name);
           const isValidating = trigger?.Trigger?.Validating;
-          const selectedFunction = getSelectedFunction(
-            trigger?.Trigger?.FunctionName || parseGateName(gate.name).functionName,
-          );
           const validation = getValidationResult(gate.name);
           const isAwaitingTriggers = gate.name === 'awaiting/triggers' && gate.value === true;
 
@@ -408,9 +396,7 @@ export const ActionSidebar = ({
               gateName={gate.name}
               trigger={trigger}
               validation={validation}
-              selectedFunction={selectedFunction}
               isValidating={isValidating || false}
-              spaceId={unit?.Unit?.SpaceID}
               storedResults={unit?.Unit?.ValidationResults?.[gate.name]}
               fieldHref={fieldHref}
               focused={gate.name === focusedGate}
@@ -443,9 +429,6 @@ export const ActionSidebar = ({
             {validationWarnings.map((warning) => {
               const trigger = findTriggerByGateName(warning.name);
               const isValidating = trigger?.Trigger?.Validating;
-              const selectedFunction = getSelectedFunction(
-                trigger?.Trigger?.FunctionName || parseGateName(warning.name).functionName,
-              );
               const validation = getValidationResult(warning.name);
 
               return (
@@ -454,10 +437,8 @@ export const ActionSidebar = ({
                   gateName={warning.name}
                   trigger={trigger}
                   validation={validation}
-                  selectedFunction={selectedFunction}
                   isValidating={isValidating || false}
                   isWarning
-                  spaceId={unit?.Unit?.SpaceID}
                   storedResults={unit?.Unit?.ValidationResults?.[warning.name]}
                   fieldHref={fieldHref}
                   focused={warning.name === focusedGate}

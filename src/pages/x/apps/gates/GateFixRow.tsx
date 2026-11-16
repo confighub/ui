@@ -1,6 +1,12 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { tokens } from '@/components/theme-provider/ThemeProvider';
+import { IssueCheck } from '@/pages/unit-detail/components/action-side-bar/IssueCheck';
+import {
+  issueCheck,
+  issueMessage,
+} from '@/pages/unit-detail/components/action-side-bar/validationFindings';
+import { parseGateName } from '@/utility/name-format-functions';
 import { Box, Checkbox, Skeleton, TextField } from '@mui/material';
 import { styled } from '@mui/material/styles';
 
@@ -169,7 +175,6 @@ export interface GateFixRowProps {
   onOpenConfiguration: () => void;
 }
 
-const PodSecurityPrefix = /^violates PodSecurity "[^"]+": /;
 
 const OriginLine = ({
   id,
@@ -522,7 +527,8 @@ export const GateFixRow = ({
         <Issues data-testid={`fix-issues-${id}`}>
           {field.issues.map((issue, i) => (
             <IssueItem key={i}>
-              {isFormat ? issue.message : issue.message.replace(PodSecurityPrefix, '')}
+              <IssueCheck check={issueCheck(issue, parseGateName(field.gateName).triggerSlug)} />
+              {isFormat ? issue.message : issueMessage(issue.message)}
             </IssueItem>
           ))}
         </Issues>

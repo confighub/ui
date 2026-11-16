@@ -32,6 +32,7 @@ import {
   TRIGGER_PRIORITIES,
   type TriggerPriority,
   enforcementDate,
+  formatControls,
   toEnforcementTime,
 } from '@/utility/triggerEnforcement';
 import {
@@ -76,6 +77,7 @@ import {
   annotationKeyOfPath,
   emptyCounts,
   exceptionAnnotationPath,
+  honoredExceptionPaths,
   failedResources,
   failingOf,
   groupCounts,
@@ -241,7 +243,8 @@ export const PolicyDetail = ({
     }
   };
 
-  const exceptionPath = exceptionAnnotationPath(trigger.WhereResource);
+  const exceptionPath = exceptionAnnotationPath(trigger.WhereResource, trigger.Slug);
+  const honoredPaths = honoredExceptionPaths(trigger.WhereResource, trigger.Slug);
   const exceptionKey = exceptionPath ? annotationKeyOfPath(exceptionPath) : undefined;
   const openAddException = async (u: PolicyUnit) => {
     setError(null);
@@ -494,6 +497,9 @@ export const PolicyDetail = ({
               </Link>
               /{trigger.Slug} · {trigger.FunctionName || 'Invocation'} ·{' '}
               {trigger.ToolchainType}
+              {policy.controls.length > 0 && (
+                <span data-testid='validation-controls'> · {formatControls(policy.controls)}</span>
+              )}
             </Typography>
             {trigger.Description && (
               <Typography
@@ -679,6 +685,7 @@ export const PolicyDetail = ({
           </Typography>
           <PolicyExceptions
             annotationPath={exceptionPath}
+            honoredPaths={honoredPaths}
             onRemove={(e) =>
               setExceptionRequest({
                 mode: 'remove',

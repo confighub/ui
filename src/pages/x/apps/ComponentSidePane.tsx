@@ -866,13 +866,32 @@ export const ComponentSidePane = memo(
     const multiComponent = useMemo(() => isMultiComponent(deployments), [deployments]);
     const headerComponent = multiComponent ? selectedDeployment?.componentName : undefined;
     const canRelease = !!selectedDeployment?.releaseTargetId;
-    // The Gates tab shows exactly where Releases shows. Its count is read for the tab badge even
+    // The Gates tab is for any Variant whose Triggers found something, released or not: what fails
+    // them is wrong with its configuration either way. Its count is read for the tab badge even
     // while another tab is showing.
     const componentSpaceIds = useMemo(() => deployments.map((d) => d.deploymentId), [deployments]);
-    const componentGates = useComponentGates(
-      canRelease && release ? selectedDeployment?.deploymentId : undefined,
-      componentSpaceIds,
-    );
+    const componentGates = useComponentGates(selectedDeployment?.deploymentId, componentSpaceIds);
+    // Whether there is anything for the Gates tab: a gate, a warning, a Unit still being checked,
+    // or a read that failed, which is not "nothing". Undefined while it is being read.
+    const hasGates = componentGates.isLoading
+      ? undefined
+      : !!componentGates.error ||
+        componentGates.gates.length > 0 ||
+        componentGates.warnings.length > 0 ||
+        !!componentGates.awaiting;
+    // The tab shows while it is open, too: a Variant whose last gate was just fixed keeps it, to
+    // say so. Arriving at a Variant on the Gates tab, from another's or by a link, with nothing
+    // there opens Configuration instead -- once its gates are read, and only on arriving.
+    const showGatesTab = hasGates === true || activeTab === 'gates';
+    const gatesCheckedFor = useRef<string | undefined>(undefined);
+    useEffect(() => {
+      const id = selectedDeployment?.deploymentId;
+      if (hasGates === undefined || gatesCheckedFor.current === id) return;
+      gatesCheckedFor.current = id;
+      if (activeTab === 'gates' && !hasGates) setActiveTab('config');
+      // Only arriving at a Variant, or its gates being read, decides: not a click on the tab.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedDeployment?.deploymentId, hasGates]);
     const componentGateUnits = useMemo(
       () =>
         deployments.flatMap((d) =>
@@ -1066,7 +1085,7 @@ export const ComponentSidePane = memo(
     // (e.g. from a release-enabled Space to a plain one) — reset rather than
     // render a tab bar showing something else selected.
     useEffect(() => {
-      if ((activeTab === 'releases' || activeTab === 'gates') && !(canRelease && release)) setActiveTab('config');
+      if (activeTab === 'releases' && !(canRelease && release)) setActiveTab('config');
       if (activeTab === 'readme' && !hasReadme) setActiveTab('config');
       // Only the current node's own capabilities matter here — a node SWITCH
       // is what can invalidate the current tab, not activeTab itself
@@ -1771,13 +1790,12 @@ export const ComponentSidePane = memo(
       tabFocusWaitingOnRef.current = undefined;
       if (tabFocus.id !== selectedId) return;
       // 'changeset' is the Configuration tab on the ChangeSet filter. A Deployment
-      // that cannot release has no Releases tab, and no Gates tab, so a request for
-      // either opens Configuration rather than an empty pane. Whether it can is known
-      // before its Releases have loaded, which a request often arrives ahead of.
+      // that cannot release has no Releases tab, so a request for it opens
+      // Configuration rather than an empty pane. Whether it can is known before its
+      // Releases have loaded, which a request often arrives ahead of.
       const hasReleasesTab = canRelease;
       setActiveTab(
-        tabFocus.tab === 'changeset' ||
-          ((tabFocus.tab === 'releases' || tabFocus.tab === 'gates') && !hasReleasesTab)
+        tabFocus.tab === 'changeset' || (tabFocus.tab === 'releases' && !hasReleasesTab)
           ? 'config'
           : tabFocus.tab,
       );
@@ -2335,11 +2353,9 @@ export const ComponentSidePane = memo(
             the sheet. Isolating guarantees the sheet (below) only has to out-
             rank whatever is used inside this band, never anything outside it. */}
         <Box sx={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', isolation: 'isolate' }}>
-        {/* Only a Space with something besides plain config to switch between
-            renders a tab bar — release capability, or a README.md Unit or
-            Readme annotation.
-            A plain Space's pane stays byte-identical to before this feature. */}
-        {((canRelease && release) || hasReadme) && (
+        {/* Every Variant has Configuration; Releases when it has a release Target, Readme when
+            it has a README.md Unit or Readme annotation, and Gates when its Triggers found
+            something. */}
           <PaneTabs
             value={activeTab}
             onChange={(_, v: PaneContentTab) => setActiveTab(v)}
@@ -2359,7 +2375,7 @@ export const ComponentSidePane = memo(
               />
             )}
             {hasReadme && <PaneTab label='Readme' value='readme' data-testid='component-pane-tab-readme' />}
-            {canRelease && release && (
+            {showGatesTab && (
               <PaneTab
                 value='gates'
                 data-testid='component-pane-tab-gates'
@@ -2372,7 +2388,6 @@ export const ComponentSidePane = memo(
               />
             )}
           </PaneTabs>
-        )}
 
         {/* Pane-wide, not tab-scoped: a Release/Withdraw error (Releases tab
             action) and an Apply/Upgrade error (Configuration tab action)
@@ -2445,7 +2460,7 @@ export const ComponentSidePane = memo(
           </PaneContent>
         )}
 
-        {canRelease && release && activeTab === 'gates' && selectedDeployment && (
+        {activeTab === 'gates' && selectedDeployment && (
           <PaneContent sx={{ padding: 0, gap: 0 }}>
             <GatesPane
               key={selectedDeployment.deploymentId}

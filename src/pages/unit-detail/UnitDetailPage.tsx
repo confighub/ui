@@ -496,8 +496,6 @@ export const UnitDetailPage = () => {
             <Dashboard
               currentUnitExtended={polledUnit ?? currentUnitExtended}
               setRefresh={() => setRefresh(!refresh)}
-              // @ts-expect-error TODO:
-              functions={functions}
               upstreamUnit={upstreamUnit}
               onUpgrade={() => onModalTypeSelected('upgrade')}
               isFetchingUnit={isFetchingUnit}

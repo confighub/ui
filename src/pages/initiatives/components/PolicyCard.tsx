@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: MIT
 import { NavLink } from '@/components/nav-link/NavLink';
 import { plural } from '@/pages/change-orders/changeOrderHistory';
-import { PRIORITY_COLORS, formatEnforcementDate } from '@/utility/triggerEnforcement';
+import {
+  PRIORITY_COLORS,
+  formatControls,
+  formatEnforcementDate,
+} from '@/utility/triggerEnforcement';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -26,6 +30,18 @@ const scopeText = (policy: ValidationPolicy): string => {
   if (policy.targets.length > 0) parts.push(plural(policy.targets.length, 'Target'));
   return parts.length > 0 ? parts.join(', ') : 'Not selected';
 };
+
+/** The scope, at the end of the card's last row. */
+const ScopeText = ({ policy }: { policy: ValidationPolicy }) => (
+  <Typography
+    variant='body2'
+    fontSize='0.75rem'
+    color='text.secondary'
+    sx={{ ml: 'auto', whiteSpace: 'nowrap' }}
+  >
+    {scopeText(policy)}
+  </Typography>
+);
 
 /**
  * A validating Trigger on the Validation board: its name, priority, due date and how the Units it
@@ -111,44 +127,49 @@ export const PolicyCard = ({ policy, isSelected = false }: PolicyCardProps) => {
           </Typography>
         )}
 
-        <Box
-          sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, mb: 1 }}
-        >
-          {policy.priority !== 'Unspecified' && (
-            <Chip
-              label={policy.priority.toUpperCase()}
-              size='small'
-              sx={{
-                fontWeight: 700,
-                fontSize: '0.65rem',
-                letterSpacing: 0.5,
-                height: 20,
-                bgcolor: priorityStyle.bg,
-                color: priorityStyle.color,
-              }}
-            />
-          )}
-          {dateLabel && (
-            <Typography
-              variant='body2'
-              fontSize='0.75rem'
-              sx={{
-                color: overdue ? 'error.main' : 'text.secondary',
-                fontWeight: overdue ? 600 : 400,
-              }}
-            >
-              {dateLabel}
-            </Typography>
-          )}
-          <Typography
-            variant='body2'
-            fontSize='0.75rem'
-            color='text.secondary'
-            sx={{ ml: 'auto' }}
+        {(policy.priority !== 'Unspecified' || policy.controls.length > 0 || dateLabel) && (
+          <Box
+            sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, mb: 1 }}
           >
-            {scopeText(policy)}
-          </Typography>
-        </Box>
+            {policy.priority !== 'Unspecified' && (
+              <Chip
+                label={policy.priority.toUpperCase()}
+                size='small'
+                sx={{
+                  fontWeight: 700,
+                  fontSize: '0.65rem',
+                  letterSpacing: 0.5,
+                  height: 20,
+                  bgcolor: priorityStyle.bg,
+                  color: priorityStyle.color,
+                }}
+              />
+            )}
+            {policy.controls.length > 0 && (
+              <Typography
+                variant='body2'
+                fontSize='0.75rem'
+                color='text.secondary'
+                data-testid='validation-card-controls'
+                sx={{ fontFamily: 'monospace', overflowWrap: 'anywhere' }}
+              >
+                {formatControls(policy.controls)}
+              </Typography>
+            )}
+            {dateLabel && (
+              <Typography
+                variant='body2'
+                fontSize='0.75rem'
+                sx={{
+                  color: overdue ? 'error.main' : 'text.secondary',
+                  fontWeight: overdue ? 600 : 400,
+                }}
+              >
+                {dateLabel}
+              </Typography>
+            )}
+          </Box>
+        )}
 
         {c.total > 0 && (
           <>
@@ -177,7 +198,7 @@ export const PolicyCard = ({ policy, isSelected = false }: PolicyCardProps) => {
                 {c.passed} / {evaluated}
               </Typography>
             </Box>
-            <Box sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 1, mt: 0.5 }}>
               {c.error > 0 && (
                 <Typography
                   variant='body2'
@@ -206,8 +227,14 @@ export const PolicyCard = ({ policy, isSelected = false }: PolicyCardProps) => {
                   {c.notEvaluated} not evaluated
                 </Typography>
               )}
+              <ScopeText policy={policy} />
             </Box>
           </>
+        )}
+        {c.total === 0 && (
+          <Box sx={{ display: 'flex' }}>
+            <ScopeText policy={policy} />
+          </Box>
         )}
       </CardContent>
     </Card>

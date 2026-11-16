@@ -1,10 +1,14 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { validationFindings } from '@/pages/unit-detail/components/action-side-bar/validationFindings';
+import {
+  type FindingIssue,
+  findingIssues,
+  validationFindings,
+} from '@/pages/unit-detail/components/action-side-bar/validationFindings';
 import { parseGateName } from '@/utility/name-format-functions';
 import type {
-  AttributeValue,
   ExtendedTriggerRead,
+  InvocationRead,
   Trigger,
   UnitRead,
 } from '@confighub/rtk-query';
@@ -14,10 +18,7 @@ import { FixKind, fixKindOf, isFixableKind } from './gateFixKinds';
 /** The gate a Unit carries while its Triggers still run on a new Revision. It has no Trigger. */
 export const AWAITING_GATE = 'awaiting/triggers';
 
-export interface GateIssue {
-  identifier?: string;
-  message: string;
-}
+export type GateIssue = FindingIssue;
 
 /** One failed field of a gate, on one Unit. */
 export interface GateField {
@@ -46,7 +47,7 @@ export interface GateField {
 export interface GateUnitFinding {
   key: string;
   unitSlug: string;
-  messages: string[];
+  issues: GateIssue[];
 }
 
 export interface GateUnit {
@@ -75,6 +76,8 @@ export interface Gate {
   warning: boolean;
   units: GateUnit[];
   trigger?: Trigger;
+  /** The Invocation the Trigger runs, when it runs one rather than a function of its own. */
+  invocation?: InvocationRead;
   triggerSpaceId?: string;
   functionName: string;
   fields: GateField[];
@@ -98,14 +101,6 @@ const triggerKey = (gateName: string, unit: UnitRead): string => {
   const { spaceSlug, triggerSlug } = parseGateName(gateName);
   return `${spaceSlug ?? ''}/${triggerSlug}`;
 };
-
-const attributeIssues = (attribute: AttributeValue | undefined): GateIssue[] =>
-  (attribute?.Issues ?? [])
-    .filter((issue) => issue.Message)
-    .map((issue) => ({
-      identifier: issue.Identifier || undefined,
-      message: issue.Message ?? '',
-    }));
 
 const triggerFor = (
   gateName: string,
@@ -181,6 +176,7 @@ export const buildGates = (
           warning,
           units: [],
           trigger: trigger?.Trigger,
+          invocation: trigger?.Invocation,
           triggerSpaceId: trigger?.Space?.SpaceID ?? trigger?.Trigger?.SpaceID,
           functionName,
           fields: [],
@@ -196,7 +192,7 @@ export const buildGates = (
         const [resultIndex, attributeIndex] = finding.key.split('/').map(Number);
         const attribute = results?.[resultIndex]?.FailedAttributes?.[attributeIndex];
         const path = attribute?.Path ?? finding.path ?? '';
-        const issues = attributeIssues(attribute);
+        const issues = findingIssues(attribute?.Issues);
         gate.fields.push({
           key: fieldKey(
             unit.UnitID,
@@ -232,7 +228,7 @@ export const buildGates = (
         gate.unitFindings.push({
           key: `${unit.UnitID}/${gateName}/${finding.key}`,
           unitSlug: unit.Slug,
-          messages: finding.messages,
+          issues: finding.issues,
         });
       }
       gate.findingCount = gate.fields.length + gate.unitFindings.length;
