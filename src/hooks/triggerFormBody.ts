@@ -20,6 +20,7 @@ import {
   type TriggerPriority,
   triggerPriority,
 } from '@/utility/triggerEnforcement';
+import { TRIGGER_GUARD_KEY, joinKeepGuard, splitKeepGuard } from '@/utility/override-guard';
 
 /** Whether a Trigger runs a function it names or a stored Invocation. */
 export type TriggerSource = 'Function' | 'Invocation';
@@ -47,7 +48,8 @@ export interface IAddTriggerFormInput {
   WhereUnit?: string;
   UnitFilterID?: string;
   WhereResource?: string;
-  Protect?: boolean;
+  /** The Trigger states the guard Trigger=<Slug>, which Guards and Clearance then leave out. */
+  KeepOnMerge?: boolean;
   Guards?: MapRow[];
   Clearance?: ClearanceRow[];
 }
@@ -72,51 +74,50 @@ export const defaultTriggerFormInput = (): IAddTriggerFormInput => ({
   WhereUnit: '',
   UnitFilterID: '',
   WhereResource: '',
-  Protect: false,
+  KeepOnMerge: false,
   Guards: [],
   Clearance: [],
 });
 
 /** The form's values for a Trigger being edited. */
-export const triggerToFormInput = (trigger: TriggerRead): IAddTriggerFormInput => ({
-  ...defaultTriggerFormInput(),
-  Slug: trigger.Slug || '',
-  DisplayName: trigger.DisplayName || '',
-  Description: trigger.Description || '',
-  Labels: mapToRows(trigger.Labels),
-  Annotations: mapToRows(
-    Object.fromEntries(
-      Object.entries(trigger.Annotations ?? {}).filter(([key]) => !ENFORCEMENT_ANNOTATIONS.includes(key)),
+export const triggerToFormInput = (trigger: TriggerRead): IAddTriggerFormInput => {
+  const kept = splitKeepGuard(trigger.Guards, trigger.Clearance, TRIGGER_GUARD_KEY, trigger.Slug);
+  return {
+    ...defaultTriggerFormInput(),
+    Slug: trigger.Slug || '',
+    DisplayName: trigger.DisplayName || '',
+    Description: trigger.Description || '',
+    Labels: mapToRows(trigger.Labels),
+    Annotations: mapToRows(
+      Object.fromEntries(
+        Object.entries(trigger.Annotations ?? {}).filter(([key]) => !ENFORCEMENT_ANNOTATIONS.includes(key)),
+      ),
     ),
-  ),
-  Priority: triggerPriority(trigger.Annotations),
-  EnforcedBy: enforcementDate(trigger.Annotations?.[ENFORCED_BY_ANNOTATION]),
-  DeleteGates: mapToRows(trigger.DeleteGates),
-  EventType: (trigger.Event as 'Mutation' | 'PostClone') || 'Mutation',
-  ToolchainType: trigger.ToolchainType || 'Kubernetes/YAML',
-  Source: trigger.InvocationID ? 'Invocation' : 'Function',
-  FunctionName: trigger.FunctionName || '',
-  InvocationID: trigger.InvocationID || '',
-  ChannelID: trigger.ChannelID || '',
-  Disabled: trigger.Disabled || false,
-  Warn: trigger.Warn || false,
-  WhereUnit: trigger.WhereUnit || '',
-  UnitFilterID: trigger.UnitFilterID || '',
-  WhereResource: trigger.WhereResource || '',
-  Protect: trigger.Protect || false,
-  Guards: mapToRows(trigger.Guards),
-  Clearance: clearanceToRows(trigger.Clearance),
-});
+    Priority: triggerPriority(trigger.Annotations),
+    EnforcedBy: enforcementDate(trigger.Annotations?.[ENFORCED_BY_ANNOTATION]),
+    DeleteGates: mapToRows(trigger.DeleteGates),
+    EventType: (trigger.Event as 'Mutation' | 'PostClone') || 'Mutation',
+    ToolchainType: trigger.ToolchainType || 'Kubernetes/YAML',
+    Source: trigger.InvocationID ? 'Invocation' : 'Function',
+    FunctionName: trigger.FunctionName || '',
+    InvocationID: trigger.InvocationID || '',
+    ChannelID: trigger.ChannelID || '',
+    Disabled: trigger.Disabled || false,
+    Warn: trigger.Warn || false,
+    WhereUnit: trigger.WhereUnit || '',
+    UnitFilterID: trigger.UnitFilterID || '',
+    WhereResource: trigger.WhereResource || '',
+    KeepOnMerge: kept.keep,
+    Guards: mapToRows(kept.guards),
+    Clearance: clearanceToRows(kept.clearance),
+  };
+};
 
 /** The text of an optional field, or undefined when it is blank, so it is left out. */
 const optional = (value: string | undefined): string | undefined => {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
 };
-
-/** A map, or undefined when it is empty. */
-const optionalMap = <T,>(map: Record<string, T>): Record<string, T> | undefined =>
-  Object.keys(map).length > 0 ? map : undefined;
 
 /**
  * The fields of the Trigger the form writes. Every field the form shows is set, to undefined when
@@ -126,7 +127,8 @@ const optionalMap = <T,>(map: Record<string, T>): Record<string, T> | undefined 
  * A Trigger runs either a function or an Invocation, never both: the server refuses a FunctionName
  * beside an InvocationID, and the Invocation names where its functions run, so a Trigger that runs
  * one has no Channel, and passes its functions the other Units the Invocation names rather than its own.
- * Protect is for a function that writes; the server refuses it on a validating one.
+ * Keep on merge is for a function that writes: it is the guard naming the Trigger, with the
+ * clearance to write over it again, and a validating function writes nothing.
  *
  * The other Units a Trigger passes its function, OtherUnitIDs, are not in the form, so an edit keeps
  * the ones the Trigger has.
@@ -139,7 +141,15 @@ export const buildTriggerBody = (
   existingTrigger?: TriggerRead,
 ): TriggerRead => {
   const runsInvocation = data.Source === 'Invocation';
-  const clearance = rowsToClearance(data.Clearance);
+  const written = joinKeepGuard(
+    {
+      keep: !selectedFunctionValidating && !!data.KeepOnMerge,
+      guards: rowsToMap(data.Guards),
+      clearance: rowsToClearance(data.Clearance),
+    },
+    TRIGGER_GUARD_KEY,
+    data.Slug,
+  );
   return {
     Slug: data.Slug,
     DisplayName: optional(data.DisplayName),
@@ -168,9 +178,8 @@ export const buildTriggerBody = (
     UnitFilterID: optional(data.UnitFilterID),
     WhereResource: optional(data.WhereResource),
     OtherUnitIDs: runsInvocation ? undefined : existingTrigger?.OtherUnitIDs,
-    Protect: !selectedFunctionValidating && (data.Protect || false),
-    Guards: optionalMap(rowsToMap(data.Guards)),
-    Clearance: clearance.length > 0 ? clearance : undefined,
+    Guards: written.guards,
+    Clearance: written.clearance,
   };
 };
 

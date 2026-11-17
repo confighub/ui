@@ -575,15 +575,18 @@ test.describe('view explorer compare mode', () => {
 
   test('a Properties Unit is named by its slug, and the one-Unit state offers the suggestion', async ({ page }) => {
     const api = new ApiHelper(page);
+    // The suggestion is the first Unit with the same slug anywhere in the Organization, so the
+    // slug is this test's own: another spec's Unit of the same slug could otherwise be first.
+    const slug = `settings-${RandomSlugGenerator.randomSlugName()}`;
     const ids: string[] = [];
     for (const [seed, value] of [[one, '1'], [two, '2']] as const) {
-      const unit = await api.createUnit({ spaceId: seed.spaceId, unit: { Slug: 'settings', ToolchainType: 'AppConfig/Properties' } });
+      const unit = await api.createUnit({ spaceId: seed.spaceId, unit: { Slug: slug, ToolchainType: 'AppConfig/Properties' } });
       await api.uploadUnitData({ spaceId: seed.spaceId, unitId: unit.UnitID!, body: `mode=fast\nretries=${value}\n` });
       ids.push(unit.UnitID!);
     }
     const viewId = await view({ groupBy: 'Space' });
     await openComparing(page, `/x/view-explorer?view=${viewId}&compare=${ids[0]}`, 1);
-    await expect(page.getByTestId('vx-compare-one')).toContainText('Pick a second Unit to compare with settings');
+    await expect(page.getByTestId('vx-compare-one')).toContainText(`Pick a second Unit to compare with ${slug}`);
     await expect(page.getByTestId('vx-compare-one')).toContainText('Choose one from the list of Units on the left, or from the empty slot above.');
     // "Choose another Unit…" opens the picker for slot B; Esc gives focus back to it.
     const choose = page.getByTestId('vx-compare-choose');
@@ -597,7 +600,7 @@ test.describe('view explorer compare mode', () => {
     await page.getByTestId('vx-compare-suggested').click();
     await expect.poll(() => slotIds(page)).toEqual(ids);
     await expect(page.getByTestId('compare-document-group')).toHaveCount(1);
-    await expect(page.getByTestId('compare-document-group')).toContainText('settings');
+    await expect(page.getByTestId('compare-document-group')).toContainText(slug);
     await expect(page.getByTestId('compare-document-count')).toHaveText('1 differing');
     // The compare model has no Properties parser: the file is compared as text, which still shows the difference.
     await expect(page.locator('[data-testid="compare-leaf-row"] [data-column]')).toHaveText([/retries=1/, /retries=2/]);

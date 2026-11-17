@@ -72,7 +72,7 @@ export type UnitOutcome = Exclude<UnitVerdict, 'Skipped'> | 'NotEvaluated';
  *
  * - TriggerDisabled: the Trigger is disabled, so it runs nowhere.
  * - NoResults: the Unit's head Revision recorded no Trigger results at all. A Revision made
- *   without running Triggers, such as one setting path protection, starts with none.
+ *   without running Triggers, such as one setting path guards, starts with none.
  * - OnlyFailures: the head Revision kept the failing results of other Triggers and no passes,
  *   the same loss: passes are not carried to a Revision made without running Triggers.
  * - NotRunSince: other Triggers have results and this one has none. It was selected, enabled or
@@ -88,7 +88,7 @@ export type NotEvaluatedReason =
 export const NOT_EVALUATED_TEXT: Record<NotEvaluatedReason, string> = {
   TriggerDisabled: 'The Trigger is disabled.',
   NoResults:
-    'Its head Revision recorded no Trigger results: it was made without running Triggers, such as by setting path protection.',
+    'Its head Revision recorded no Trigger results: it was made without running Triggers, such as by setting path guards.',
   OnlyFailures:
     'Its head Revision kept only the failing results of other Triggers: it was made without running Triggers, which drops passes.',
   NotRunSince:

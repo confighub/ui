@@ -13,7 +13,7 @@ export const OWNERSHIP_AND_PROD_TOUR_ID = 'ownership-and-prod';
 // link to base, and was just upgraded once. From here:
 //
 //   Chapter 9  (`edit-`)   — override one value directly on dev, then mark it
-//                            kept on merge. Protection is opt-in, not
+//                            kept on merge. Keep on merge is opt-in, not
 //                            automatic — a staged edit alone is still
 //                            override-blind — but once kept, an upgrade from
 //                            base will never overwrite it again.
@@ -188,7 +188,7 @@ const chapter9: TourStep[] = [
       <>
         <TourCommand>Type</TourCommand> <TourCue>debug</TourCue>, then{' '}
         <TourCommand>press</TourCommand> <TourCue>Enter</TourCue>. The edit is staged — nothing is
-        saved yet, and staging it does not protect it by itself. A future upgrade from base would
+        saved yet, and staging it does not keep it by itself. A future upgrade from base would
         still overwrite it, unless you tell ConfigHub to keep it — that is the next step.
       </>
     ),
@@ -203,17 +203,17 @@ const chapter9: TourStep[] = [
     advance: { on: 'selector', css: '[data-testid="component-keep-staged-edits-button"]' },
   },
   {
-    // Protection is opt-in, not automatic: a staged edit is just a staged
+    // Keep on merge is opt-in, not automatic: a staged edit is just a staged
     // edit until something marks it "kept on merge" — the same
     // onToggleProtection stagedProtection state ComponentValuesSection.tsx's
     // row kebab ("Keep on merge" / "Let merges update this") and the value
-    // tooltip's Protect/Unprotect toggle both write to. This footer button
+    // tooltip's toggle both write to. This footer button
     // (`barKeepState.showKeepButton`, kind 'editsUnkept') is the
     // one-click version of the same action for every currently
     // staged-but-unkept edit — here, just LOG_LEVEL — and reads "Keep 1 on
-    // merge" for exactly that case. It only STAGES the protection; the next
-    // step's commit click is what actually writes it, in the same call that
-    // saves the edit.
+    // merge" for exactly that case. It only STAGES the keep; the next step's
+    // commit click is what writes it, as an Override guard on the path, in the
+    // same commit that saves the edit.
     id: 'edit-keep-on-merge',
     anchor: { kind: 'selector', css: '[data-testid="component-keep-staged-edits-button"]' },
     title: 'Keep it on merge',
@@ -251,11 +251,11 @@ const chapter9: TourStep[] = [
 // This chapter's payoff — an override you made on dev survives later upgrades
 // from base — now holds for real, because chapter 9's last two steps staged
 // AND kept LOG_LEVEL on merge before committing (`edit-keep-on-merge`,
-// `edit-commit`). Protection is opt-in, not automatic: a plain staged edit
+// `edit-commit`). Keep on merge is opt-in, not automatic: a plain staged edit
 // with nothing marking it "kept" is override-blind on the next upgrade, the
 // same replay-onto-dev behaviour this chapter used to have to warn about.
 // Chapter 9 is what makes this chapter's claims true — do not skip it, and do
-// not re-add automatic-protection language here without re-verifying chapter
+// not re-add automatic-keep language here without re-verifying chapter
 // 9 still stages the keep before its own commit.
 // ----------------------------------------------------------------------------
 

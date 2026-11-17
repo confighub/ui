@@ -193,7 +193,7 @@ function LinkForm({
   const guards = useWatch({ control, name: 'Guards' });
   const clearance = useWatch({ control, name: 'Clearance' });
   const takes = linkTypeFields(updateType);
-  const notCleared = takes.protectAndGuards ? guardsNotCleared(rowsToMap(guards), rowsToClearance(clearance)) : [];
+  const notCleared = takes.keepAndGuards ? guardsNotCleared(rowsToMap(guards), rowsToClearance(clearance)) : [];
 
   const fromEnds = useMemo(() => {
     if (subject.mode !== 'create') return [];

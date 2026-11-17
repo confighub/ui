@@ -24,9 +24,9 @@ import {
   guardSetChanges,
   guardSetRequest,
   originUnitLabel,
+  overrideGuardRequest,
   ownGuards,
   permanentDismissalSelectors,
-  protectionRequest,
   setInThisUnit,
   setValueRequest,
   undismissSelectors,
@@ -51,8 +51,7 @@ const replicas: BlameField = {
   ResourceName: 'confighubplaceholder/web',
   Path: 'spec.replicas',
   Value: '3\n',
-  Flags: ['Protected', 'Conflict'],
-  Protected: true,
+  Flags: ['Guarded', 'Conflict'],
   Conflicts: [
     {
       Reason: 'ProtectedPath',
@@ -83,9 +82,7 @@ const service: BlameField = {
   ResourceName: 'confighubplaceholder/web',
   Path: 'spec.ports.?port=80.targetPort',
   Value: '8080',
-  ResourceProtected: true,
-  Protected: true,
-  Flags: ['Protected'],
+  Flags: ['Guarded'],
 };
 
 // The rows about the resources as a whole, which have no path.
@@ -94,9 +91,7 @@ const deployment: BlameField = {
   ResourceType: DEPLOYMENT,
   ResourceName: 'confighubplaceholder/web',
   Path: '',
-  Flags: ['Protected', 'ValidationError'],
-  Protected: true,
-  ResourceProtected: true,
+  Flags: ['Guarded', 'ValidationError'],
   Validation: [
     { Gate: 'dev/cel/vet-cel', Issues: [{ Message: 'needs a PodDisruptionBudget' }] },
   ],
@@ -108,9 +103,7 @@ const worker: BlameField = {
   ResourceType: DEPLOYMENT,
   ResourceName: 'confighubplaceholder/worker',
   Path: '',
-  Flags: ['Protected', 'Deleted'],
-  Protected: true,
-  ResourceProtected: true,
+  Flags: ['Guarded', 'Deleted'],
   Deleted: true,
   Chain: [{ SpaceSlug: 'dev', UnitSlug: 'web', RevisionNum: 3, SetBy: 'delete-resource' }],
 };
@@ -175,7 +168,7 @@ test('the filters keep a path, a resource, and any of the flags chosen, under th
   expect(refs({ path: '', resource: '', flags: ['Deleted'] })).toEqual(['e1e1e1e']);
   // A made-up heading is kept only to head a field, and is not kept above for a flag the
   // Service's own row might have had.
-  expect(refs({ path: '', resource: '', flags: ['Protected'] })).toEqual([
+  expect(refs({ path: '', resource: '', flags: ['Guarded'] })).toEqual([
     'd0d0d0d',
     '7253c88',
     'e1e1e1e',
@@ -184,33 +177,43 @@ test('the filters keep a path, a resource, and any of the flags chosen, under th
   ]);
 });
 
-test('a resource is protected and unprotected as a whole on its own row', () => {
+/** A field with an Override guard, its own or an ancestor's or its resource's. */
+const kept = (field: BlameField): BlameField => ({
+  ...field,
+  Guards: { ...field.Guards, Override: 'Upstream' },
+});
+
+const WEB = { ResourceType: DEPLOYMENT, ResourceName: 'confighubplaceholder/web' };
+const WORKER = { ResourceType: DEPLOYMENT, ResourceName: 'confighubplaceholder/worker' };
+const SERVICE = { ResourceType: 'v1/Service', ResourceName: 'confighubplaceholder/web' };
+
+// The Override guards the Unit holds: on the web Deployment as a whole and at its spec.replicas,
+// on the deleted worker, and on the Service as a whole.
+const keptAnnotations: PathAnnotationList = [
+  {
+    Resource: WEB,
+    ResourceAnnotations: { Guard: { Override: 'Upstream' } },
+    PathAnnotationMap: { 'spec.replicas': { Guard: { Override: 'Upstream' } } },
+  },
+  { Resource: WORKER, ResourceAnnotations: { Guard: { Override: 'Upstream' } } },
+  { Resource: SERVICE, ResourceAnnotations: { Guard: { Override: 'Upstream' } } },
+];
+
+test('a resource is kept on merge, and let go, as a whole on its own row', () => {
+  expect(overrideGuardRequest([deployment], true, 'Upstream')).toEqual([
+    { Resource: WEB, Set: { '': { Override: 'Upstream' } } },
+  ]);
+  expect(blameActionApplies.letMergesUpdate([kept(deployment)], keptAnnotations)).toBe(true);
+  // A deleted resource is let go on its own row, which is what lets a merge from upstream add it
+  // back; a deleted field is kept on its own.
   expect(
-    protectionRequest([{ ...deployment, Protected: false, ResourceProtected: false }], true),
+    overrideGuardRequest([kept(worker), kept(replicas)], false, 'Upstream', keptAnnotations),
   ).toEqual([
-    {
-      Resource: { ResourceType: DEPLOYMENT, ResourceName: 'confighubplaceholder/web' },
-      Protected: { '': true },
-    },
+    { Resource: WORKER, Remove: { '': ['Override'] } },
+    { Resource: WEB, Remove: { 'spec.replicas': ['Override'] } },
   ]);
-  expect(blameActionApplies.unprotect([deployment])).toBe(true);
-  // A deleted resource is unprotected on its own row, which is what lets a merge from upstream
-  // add it back; a deleted field is protected on its own.
-  expect(protectionRequest([worker, replicas], false)).toEqual([
-    {
-      Resource: { ResourceType: DEPLOYMENT, ResourceName: 'confighubplaceholder/worker' },
-      Protected: { '': false },
-    },
-    {
-      Resource: { ResourceType: DEPLOYMENT, ResourceName: 'confighubplaceholder/web' },
-      Protected: { 'spec.replicas': false },
-    },
-  ]);
-  expect(protectionRequest([deletedPort], true)).toEqual([
-    {
-      Resource: { ResourceType: 'v1/Service', ResourceName: 'confighubplaceholder/web' },
-      Protected: { 'spec.ports.?port=443': true },
-    },
+  expect(overrideGuardRequest([deletedPort], true, 'External')).toEqual([
+    { Resource: SERVICE, Set: { 'spec.ports.?port=443': { Override: 'External' } } },
   ]);
   // A guard on a resource is on its own row; a field with no value takes none, nor a value.
   expect(guardSetRequest([deployment, deletedPort], 'owner', 'platform')).toEqual([
@@ -238,22 +241,20 @@ test('every flag has a label and a meaning, and the needs-attention ones are tho
   expect(blameFlagMeta('SomethingNew').label).toBe('SomethingNew');
 });
 
-test('protection is set per resource, on the paths it changes', () => {
-  expect(protectionRequest([replicas, namespace], true)).toEqual([
-    {
-      Resource: { ResourceType: DEPLOYMENT, ResourceName: 'confighubplaceholder/web' },
-      Protected: { 'metadata.namespace': true },
-    },
+test('Keep on merge is set per resource, on the paths it changes', () => {
+  expect(overrideGuardRequest([kept(replicas), namespace], true, 'Upstream')).toEqual([
+    { Resource: WEB, Set: { 'metadata.namespace': { Override: 'Upstream' } } },
   ]);
-  // A field protected as part of its resource is not unprotected by selecting it.
-  expect(protectionRequest([replicas, service], false)).toEqual([
-    {
-      Resource: { ResourceType: DEPLOYMENT, ResourceName: 'confighubplaceholder/web' },
-      Protected: { 'spec.replicas': false },
-    },
-  ]);
-  expect(blameActionApplies.unprotect([service])).toBe(false);
-  expect(blameActionApplies.protect([replicas])).toBe(false);
+  // A field kept as part of its resource is not let go by selecting it.
+  expect(
+    overrideGuardRequest([kept(replicas), kept(service)], false, 'Upstream', keptAnnotations),
+  ).toEqual([{ Resource: WEB, Remove: { 'spec.replicas': ['Override'] } }]);
+  expect(blameActionApplies.letMergesUpdate([kept(service)], keptAnnotations)).toBe(false);
+  expect(blameActionApplies.keep([kept(replicas)])).toBe(false);
+  expect(blameActionApplies.keep([replicas])).toBe(true);
+  // Until the Unit's annotations say whose guard it is, nothing is let go.
+  expect(blameActionApplies.letMergesUpdate([kept(replicas)], undefined)).toBe(false);
+  expect(overrideGuardRequest([kept(replicas)], false, 'Upstream')).toEqual([]);
 });
 
 test('a guard is set on each selected path, and removed only where the field holds it', () => {

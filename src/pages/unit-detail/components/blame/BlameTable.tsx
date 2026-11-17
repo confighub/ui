@@ -29,6 +29,7 @@ import {
   nonMergeClearanceParam,
 } from '@/utility/clearance-functions';
 import { getApiErrorMessage } from '@/utility/error-functions';
+import { OVERRIDE_GUARD_KEY, overrideGuardValue } from '@/utility/override-guard';
 import {
   type BlameField,
   type Clearance,
@@ -41,7 +42,6 @@ import {
   useInvokeFunctionsOnOrgMutation,
   useResolveUnitConflictsMutation,
   useSetUnitGuardMutation,
-  useSetUnitProtectionMutation,
 } from '@confighub/rtk-query';
 import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
@@ -91,9 +91,9 @@ import {
   guardSetRequest,
   guardSettable,
   originUnitLabel,
+  overrideGuardRequest,
   ownGuards,
   permanentDismissalSelectors,
-  protectionRequest,
   setInThisUnit,
   setValueRequest,
   undismissSelectors,
@@ -259,7 +259,7 @@ function buildColumns(onValidationClick: (field: BlameField) => void): GridColDe
     },
     {
       field: 'setBy',
-      headerName: 'Set by',
+      headerName: 'Set By',
       flex: 1,
       minWidth: 140,
       valueGetter: (_, row) => row.origin?.SetBy ?? '',
@@ -452,11 +452,12 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
     return clearance.length > 0 ? clearance : undefined;
   }, [applyGuards]);
 
-  const [setProtection, { isLoading: isProtecting }] = useSetUnitProtectionMutation();
   const [setGuard, { isLoading: isGuarding }] = useSetUnitGuardMutation();
   const [resolveConflicts, { isLoading: isResolving }] = useResolveUnitConflictsMutation();
   const [invokeFunctions, { isLoading: isInvoking }] = useInvokeFunctionsOnOrgMutation();
-  const busy = isProtecting || isGuarding || isResolving || isInvoking;
+  const busy = isGuarding || isResolving || isInvoking;
+  // The Override guard Keep on merge records: what this Unit's value is kept against.
+  const overrideValue = overrideGuardValue(unitRead?.UpstreamUnitID);
   const blocked = busy || lock.unacknowledged;
 
   const done = (message: string) => {
@@ -467,23 +468,31 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
   const failed = (err: unknown, fallback: string) =>
     setErrorMessage(getApiErrorMessage(err, fallback));
 
-  const onProtect = async (protect: boolean) => {
+  // A path with guards of its own other than Override needs a clearance covering them, which
+  // the server names when it refuses the edit.
+  const onKeep = async (keep: boolean) => {
     try {
-      await setProtection({
+      await setGuard({
         spaceId,
         unitId,
-        unitProtectionRequest: {
-          ResourceProtection: protectionRequest(selectedFields, protect),
+        unitGuardRequest: {
+          ResourceGuards: overrideGuardRequest(
+            selectedFields,
+            keep,
+            overrideValue,
+            annotations,
+          ),
+          Clearance: nonMergeClearance(),
           ChangeSetID: changeSetId,
         },
       }).unwrap();
       done(
-        protect
+        keep
           ? 'The selected fields and resources are kept on merge'
           : 'Merges may update the selected fields and resources',
       );
     } catch (err) {
-      failed(err, 'Failed to set protection');
+      failed(err, keep ? 'Failed to keep them on merge' : 'Failed to let merges update them');
     }
   };
 
@@ -538,8 +547,8 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
         <span>
           <Button
             size='small'
-            disabled={blocked || !blameActionApplies.protect(selectedFields)}
-            onClick={() => onProtect(true)}
+            disabled={blocked || !blameActionApplies.keep(selectedFields)}
+            onClick={() => onKeep(true)}
           >
             Keep on merge
           </Button>
@@ -547,8 +556,8 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
       </Tooltip>
       <Button
         size='small'
-        disabled={blocked || !blameActionApplies.unprotect(selectedFields)}
-        onClick={() => onProtect(false)}
+        disabled={blocked || !blameActionApplies.letMergesUpdate(selectedFields, annotations)}
+        onClick={() => onKeep(false)}
       >
         Let merges update this
       </Button>
@@ -885,8 +894,10 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
               executorSpace: spaceId,
               where: `UnitID = '${unitId}'`,
               changeSetId,
-              protect: keep || undefined,
-              ...guardParams(guardValues),
+              ...guardParams(
+                guardValues,
+                keep ? { [OVERRIDE_GUARD_KEY]: overrideValue } : undefined,
+              ),
               clearance: nonMergeClearanceParam(undefined, clearance),
               functionInvocationsRequest: setValueRequest(field, value, description),
             }).unwrap();

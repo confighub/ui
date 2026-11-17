@@ -227,7 +227,7 @@ test.describe('a refusal that is a kept value', () => {
   };
 
   test('a protected path is a row: kept on merge, with the value kept and the value refused', () => {
-    expect(keptValueOf({ ...base, reason: 'ProtectedPath', targetProtected: true })).toMatchObject({
+    expect(keptValueOf({ ...base, reason: 'ProtectedPath', targetKept: true })).toMatchObject({
       resourceName: 'payments/payments-api',
       path: base.path,
       value: '1Gi',

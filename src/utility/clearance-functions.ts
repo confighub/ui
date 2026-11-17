@@ -17,7 +17,7 @@ import type {
  * The clearance a change that is not a merge is sent with when it states none: cleared for
  * Override guards, whatever their value. An Override guard (Override=External, Override=Upstream)
  * keeps a merge -- an upgrade, a promotion of an UpgradeUnit or MergeUnits ChangeOrder, an upload
- * -- from replacing a value someone set on purpose, as protection does, and like protection it
+ * -- from replacing a value someone set on purpose, which is what Keep on merge records, and it
  * does not stand in the way of the next edit. Every write that is not a merge takes its clearance
  * from `nonMergeClearance`, so this is the one place to change what they are cleared for.
  */
@@ -59,7 +59,8 @@ const MERGE_UPDATE_TYPES: ReadonlySet<string> = new Set(['', 'UpgradeUnit', 'Mer
 /**
  * The clearance a promotion of a ChangeOrder of the given UpdateType sends: `DEFAULT_CLEARANCE`
  * for one that runs an Invocation or resolves Links, which is not a merge, and none for one that
- * merges, or whose UpdateType is not known yet. It is the line the server draws for `Protect`.
+ * merges, or whose UpdateType is not known yet: a merge has to respect the Override guards that
+ * keep a value on merge, and a change that is not a merge writes over them.
  */
 export const promotionClearance = (updateType: string | undefined): Clearance | undefined =>
   updateType === undefined || MERGE_UPDATE_TYPES.has(updateType)
@@ -140,6 +141,33 @@ export function unitHasGuards(annotations: PathAnnotationList | null | undefined
       guarded(resource.ResourceAnnotations) ||
       Object.values(resource.PathAnnotationMap ?? {}).some(guarded),
   );
+}
+
+/**
+ * The clearance with one guard admitted, as the server widens a clearance for a guard it is to
+ * record: unchanged when it already admits the guard, else with the value added to the key's In
+ * requirement, or with an In requirement of its own when the key has none.
+ */
+export function clearanceAdmitting(clearance: Clearance, key: string, value: string): Clearance {
+  if (guardsNotCleared({ [key]: value }, clearance).length === 0) return clearance;
+  const index = clearance.findIndex((r) => r.Key === key && r.Operator === 'In');
+  if (index < 0) return [...clearance, { Key: key, Operator: 'In', Values: [value] }];
+  return clearance.map((r, i) =>
+    i === index ? { ...r, Values: [...(r.Values ?? []), value] } : r,
+  );
+}
+
+/**
+ * The clearance without what `clearanceAdmitting` adds for one guard: the value taken out of the
+ * key's In requirements, and a requirement left with no value dropped. Any other requirement that
+ * admits the guard, such as Exists, is the person's own and stays.
+ */
+export function clearanceWithout(clearance: Clearance, key: string, value: string): Clearance {
+  return clearance.flatMap((r) => {
+    if (r.Key !== key || r.Operator !== 'In' || !(r.Values ?? []).includes(value)) return [r];
+    const values = (r.Values ?? []).filter((v) => v !== value);
+    return values.length > 0 ? [{ ...r, Values: values }] : [];
+  });
 }
 
 /** Whether any requirement of the clearance clears one guard. */

@@ -158,7 +158,7 @@ export const CurrentPill = ({
   differsFromUpstream?: boolean;
   /**
    * True when this path is protected — "kept on merge" — either committed
-   * (the current effective MutationSources protection) or freshly staged via
+   * (an Override guard in the unit's PathAnnotations) or freshly staged via
    * the kebab. Firms the pill's border from dashed to SOLID, in the SAME
    * `borderEdge` colour as the dashed stroke — only the style changes, not
    * the colour. Solid REPLACES dashed rather than composing with it: a kept

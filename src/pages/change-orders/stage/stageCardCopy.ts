@@ -216,7 +216,7 @@ export const stageCardCopy = {
     ],
     kept: (space: NamedSpace, unit: { unitId: string; name: string }, path: string, value: string, override: boolean, label: string = path): CopySegment[] => [
       spaceLink(space),
-      seg.text(override ? ': a local override in ' : ': a protected field in '),
+      seg.text(override ? ': a local override in ' : ': a field kept on merge in '),
       seg.link(unit.name, { to: 'unit', spaceId: space.spaceId, unitId: unit.unitId, tab: 'links' }),
       seg.text(' keeps '),
       seg.link(label, { to: 'field', spaceId: space.spaceId, unitId: unit.unitId, path }, true, path),

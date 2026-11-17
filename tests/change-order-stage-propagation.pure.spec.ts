@@ -296,7 +296,7 @@ test.describe('stagePropagation: the box names fields as the change lines do', (
     expect(p.problems[0]).toMatchObject({ kind: 'kept', label: 'image tag', value: 'ghcr.io/acme/api:v0.1.9', valueText: 'v0.1.9' });
     expect(p.marks.get('c')).toEqual({ kind: 'keeps', value: 'v0.1.9', title: 'ghcr.io/acme/api:v0.1.9' });
     const parts = problemSegments(p.problems[0], (spaceId) => ({ spaceId, name: spaceId }), (id) => id);
-    expect(segmentsText(parts)).toBe('c: a protected field in c/api keeps image tag at v0.1.9.');
+    expect(segmentsText(parts)).toBe('c: a field kept on merge in c/api keeps image tag at v0.1.9.');
     expect(acknowledgementText(p.problems, (id) => id)).toBe('I understand that c keeps image tag at v0.1.9.');
   });
 

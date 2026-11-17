@@ -128,11 +128,11 @@ export function deploymentTargetId(
 
 /**
  * The `where`s of the two unit lists that find the units keeping a value on
- * merge: a path, or a whole resource, that a merge from upstream must not
- * overwrite. Two lists, because a `where` has no `OR`.
+ * merge: a path, or a whole resource, with an Override guard, which a merge from
+ * upstream must not overwrite. Two lists, because a `where` has no `OR`.
  */
-export const KEPT_PATH_UNITS_WHERE = 'MutationSources.*.PathMutationMap.*.Protected = true';
-export const KEPT_RESOURCE_UNITS_WHERE = 'MutationSources.*.ResourceMutationInfo.Protected = true';
+export const KEPT_PATH_UNITS_WHERE = 'PathAnnotations.*.PathAnnotationMap.*.Guard.Override IS NOT NULL';
+export const KEPT_RESOURCE_UNITS_WHERE = 'PathAnnotations.*.ResourceAnnotations.Guard.Override IS NOT NULL';
 
 const NO_CONFIG_SIGNALS: ConfigSignals = Object.freeze({
   staleUnits: 0,

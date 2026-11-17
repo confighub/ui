@@ -21,6 +21,7 @@ import {
   rowsToClearance,
 } from '@/components/clearance-field/clearanceRows';
 import { type MapRow, mapToRows, rowsToGates, rowsToMap } from '@/components/map-field-editor/map-rows';
+import { LINK_GUARD_KEY, joinKeepGuard, splitKeepGuard } from '@/utility/override-guard';
 
 /** A Unit at one end of a Link, with its Space's slug to name it by. */
 export interface LinkEnd {
@@ -63,8 +64,8 @@ export interface LinkTypeFields {
   whereResource: boolean;
   /** WhereMutation, Squash and MergeEnableSubtraction: how a range of upstream Revisions merges */
   merge: boolean;
-  /** Protect and Guards: what the Link says about the paths it writes */
-  protectAndGuards: boolean;
+  /** Keep on merge and Guards: what the Link says about the paths it writes */
+  keepAndGuards: boolean;
   clearance: boolean;
   manualBindings: boolean;
   /** Insert's one binding names only the needed place */
@@ -82,8 +83,8 @@ export function linkTypeFields(type: string | undefined): LinkTypeFields {
     // An upgrade tracks the whole upstream Unit; taking part of one is what MergeUnits is for.
     whereResource: resolves && type !== 'UpgradeUnit',
     merge: merges,
-    // A merge's guards arrive from upstream, and protecting what it delivered would freeze it.
-    protectAndGuards: resolves && !merges,
+    // A merge's guards arrive from upstream, and keeping what it delivered would freeze it.
+    keepAndGuards: resolves && !merges,
     clearance: resolves,
     manualBindings: type === 'NeedsProvides' || type === 'Insert',
     oneNeededBinding: type === 'Insert',
@@ -143,7 +144,8 @@ export interface LinkFormInput {
   WhereMutation: string;
   Squash: boolean;
   MergeEnableSubtraction: boolean;
-  Protect: boolean;
+  /** The Link states the guard Link=<UpdateType>, which Guards and Clearance then leave out. */
+  KeepOnMerge: boolean;
   Guards: MapRow[];
   Clearance: ClearanceRow[];
   TransformInvocationID: string;
@@ -165,7 +167,7 @@ export const defaultLinkFormInput = (): LinkFormInput => ({
   WhereMutation: '',
   Squash: false,
   MergeEnableSubtraction: false,
-  Protect: false,
+  KeepOnMerge: false,
   Guards: [],
   Clearance: [],
   TransformInvocationID: '',
@@ -219,42 +221,45 @@ const bindingToRow = (binding: Binding): BindingRow => ({
 });
 
 /** The form's values for a stored Link. */
-export const linkToFormInput = (link: Link): LinkFormInput => ({
-  ...defaultLinkFormInput(),
-  Slug: link.Slug ?? '',
-  // A Link given no display name shows its slug as one; the form leaves it blank then, so a
-  // renamed Link does not keep the old name as its display name.
-  DisplayName: link.DisplayName && link.DisplayName !== link.Slug ? link.DisplayName : '',
-  UpdateType: isUpdateType(link.UpdateType) ? link.UpdateType : 'NeedsProvides',
-  AutoUpdate: !!link.AutoUpdate,
-  WhereResource: link.WhereResource ?? '',
-  WhereMutation: link.WhereMutation ?? '',
-  Squash: !!link.Squash,
-  MergeEnableSubtraction: !!link.MergeEnableSubtraction,
-  Protect: !!link.Protect,
-  Guards: mapToRows(link.Guards),
-  Clearance: clearanceToRows(link.Clearance),
-  TransformInvocationID: link.TransformInvocationID ?? '',
-  ManualBindings: (link.ManualBindings ?? []).map(bindingToRow),
-  UpstreamPaths: (link.UpstreamPaths ?? []).map((p) => ({
-    Name: p.Name ?? '',
-    ResourceType: p.Resource?.ResourceType ?? '',
-    ResourceName: p.Resource?.ResourceName ?? '',
-    Path: p.Path ?? '',
-  })),
-  DownstreamPaths: (link.DownstreamPaths ?? []).map((p) => ({
-    Key: p.Key ?? '',
-    ResourceType: p.Resource?.ResourceType ?? '',
-    ResourceName: p.Resource?.ResourceName ?? '',
-    Path: p.Path ?? '',
-    Expression: p.Expression ?? '',
-    Evaluator: p.Evaluator || 'template',
-    DataType: p.DataType || 'string',
-  })),
-  Labels: mapToRows(link.Labels),
-  Annotations: mapToRows(link.Annotations),
-  DeleteGates: mapToRows(link.DeleteGates),
-});
+export const linkToFormInput = (link: Link): LinkFormInput => {
+  const kept = splitKeepGuard(link.Guards, link.Clearance, LINK_GUARD_KEY, link.UpdateType ?? '');
+  return {
+    ...defaultLinkFormInput(),
+    Slug: link.Slug ?? '',
+    // A Link given no display name shows its slug as one; the form leaves it blank then, so a
+    // renamed Link does not keep the old name as its display name.
+    DisplayName: link.DisplayName && link.DisplayName !== link.Slug ? link.DisplayName : '',
+    UpdateType: isUpdateType(link.UpdateType) ? link.UpdateType : 'NeedsProvides',
+    AutoUpdate: !!link.AutoUpdate,
+    WhereResource: link.WhereResource ?? '',
+    WhereMutation: link.WhereMutation ?? '',
+    Squash: !!link.Squash,
+    MergeEnableSubtraction: !!link.MergeEnableSubtraction,
+    KeepOnMerge: kept.keep,
+    Guards: mapToRows(kept.guards),
+    Clearance: clearanceToRows(kept.clearance),
+    TransformInvocationID: link.TransformInvocationID ?? '',
+    ManualBindings: (link.ManualBindings ?? []).map(bindingToRow),
+    UpstreamPaths: (link.UpstreamPaths ?? []).map((p) => ({
+      Name: p.Name ?? '',
+      ResourceType: p.Resource?.ResourceType ?? '',
+      ResourceName: p.Resource?.ResourceName ?? '',
+      Path: p.Path ?? '',
+    })),
+    DownstreamPaths: (link.DownstreamPaths ?? []).map((p) => ({
+      Key: p.Key ?? '',
+      ResourceType: p.Resource?.ResourceType ?? '',
+      ResourceName: p.Resource?.ResourceName ?? '',
+      Path: p.Path ?? '',
+      Expression: p.Expression ?? '',
+      Evaluator: p.Evaluator || 'template',
+      DataType: p.DataType || 'string',
+    })),
+    Labels: mapToRows(link.Labels),
+    Annotations: mapToRows(link.Annotations),
+    DeleteGates: mapToRows(link.DeleteGates),
+  };
+};
 
 /**
  * The names of the upstream values an expression refers to, sorted: `.Params.<name>` in a
@@ -324,10 +329,6 @@ const rowToDownstreamPath = (row: DownstreamPathRow, stored?: PathExpression): P
 /** A list, or undefined when it is empty, so the Link is written without it. */
 const optionalList = <T>(list: T[]): T[] | undefined => (list.length > 0 ? list : undefined);
 
-/** A map, or undefined when it is empty. */
-const optionalMap = <T>(map: Record<string, T>): Record<string, T> | undefined =>
-  Object.keys(map).length > 0 ? map : undefined;
-
 /** The text of an optional field, or undefined when it is blank. */
 const optional = (value: string): string | undefined => (value.trim() ? value.trim() : undefined);
 
@@ -362,7 +363,16 @@ export function formInputToLink(input: LinkFormInput, base: Link): Link {
   const downstream = input.DownstreamPaths.filter(
     (row) => !isBlank(row.Key, row.ResourceType, row.ResourceName, row.Path, row.Expression),
   );
-  const clearance = rowsToClearance(input.Clearance);
+  // Keep on merge is the guard naming the Link's type, with the clearance to write over it again.
+  const written = joinKeepGuard(
+    {
+      keep: takes.keepAndGuards && input.KeepOnMerge,
+      guards: takes.keepAndGuards ? rowsToMap(input.Guards) : undefined,
+      clearance: rowsToClearance(input.Clearance),
+    },
+    LINK_GUARD_KEY,
+    input.UpdateType,
+  );
 
   // A field the form does not show for the type keeps what the Link has: nothing, on a create.
   // The server is what refuses a field on a type, so a Link it accepted is written back as it
@@ -378,9 +388,8 @@ export function formInputToLink(input: LinkFormInput, base: Link): Link {
     WhereMutation: takes.merge ? optional(input.WhereMutation) : base.WhereMutation,
     Squash: takes.merge ? input.Squash : base.Squash,
     MergeEnableSubtraction: takes.merge ? input.MergeEnableSubtraction : base.MergeEnableSubtraction,
-    Protect: takes.protectAndGuards ? input.Protect : base.Protect,
-    Guards: takes.protectAndGuards ? optionalMap(rowsToMap(input.Guards)) : base.Guards,
-    Clearance: takes.clearance ? optionalList(clearance) : base.Clearance,
+    Guards: takes.keepAndGuards ? written.guards : base.Guards,
+    Clearance: takes.clearance ? written.clearance : base.Clearance,
     TransformInvocationID: takes.transformInvocation ? optional(input.TransformInvocationID) : base.TransformInvocationID,
     ManualBindings: takes.manualBindings
       ? optionalList(bindings.map((row, i) => rowToBinding(row, takes.oneNeededBinding, storedBindings[i])))

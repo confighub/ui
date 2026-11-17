@@ -699,7 +699,7 @@ const WritesCard = ({
     <SectionCard title='Writes'>
       <Stack spacing={2}>
         <Controller
-          name='Protect'
+          name='KeepOnMerge'
           control={control}
           render={({ field }) => (
             <Box>
@@ -716,7 +716,7 @@ const WritesCard = ({
               <FormHelperText sx={{ mt: 0 }}>
                 {validating
                   ? 'A validating function writes nothing to keep.'
-                  : 'Record the paths the function writes as kept on merge, so a merge from upstream does not overwrite them. For a Trigger that decides a value once, such as a Post-Clone Trigger customizing a variant.'}
+                  : 'Record the guard Trigger=<its slug> on the paths the function writes, so a merge from upstream does not overwrite them. For a Trigger that decides a value once, such as a Post-Clone Trigger customizing a variant.'}
               </FormHelperText>
             </Box>
           )}

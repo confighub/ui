@@ -27,7 +27,7 @@ test('every field the form shows reaches the Trigger', () => {
       WhereUnit: "Space.Labels.Environment = 'prod'",
       UnitFilterID: 'filter-1',
       WhereResource: "ConfigHub.ResourceType = 'apps/v1/Deployment'",
-      Protect: true,
+      KeepOnMerge: true,
       Guards: [{ key: 'owner', value: 'platform' }],
       Clearance: [
         { Key: 'owner', Operator: 'In', Values: 'platform, sre' },
@@ -47,17 +47,19 @@ test('every field the form shows reaches the Trigger', () => {
     WhereUnit: "Space.Labels.Environment = 'prod'",
     UnitFilterID: 'filter-1',
     WhereResource: "ConfigHub.ResourceType = 'apps/v1/Deployment'",
-    Protect: true,
-    Guards: { owner: 'platform' },
+    // Keep on merge is the guard naming the Trigger, with the clearance to write over it again.
+    Guards: { owner: 'platform', Trigger: 'check-placeholders' },
     Clearance: [
       { Key: 'owner', Operator: 'In', Values: ['platform', 'sre'] },
       { Key: 'policy-exception', Operator: 'DoesNotExist' },
+      { Key: 'Trigger', Operator: 'In', Values: ['check-placeholders'] },
     ],
     SpaceID: 'space-1',
     OrganizationID: 'org-1',
   });
   // DoesNotExist takes no values.
   expect(body.Clearance?.[1]).not.toHaveProperty('Values');
+  expect(body).not.toHaveProperty('Protect');
 });
 
 test('a blank optional field is left out, so an edit that clears it removes it', () => {
@@ -106,7 +108,9 @@ test('switching back to a function drops the Invocation', () => {
 });
 
 test('keep on merge is not sent for a validating function', () => {
-  expect(buildTriggerBody(form({ Protect: true }), {}, ids, true).Protect).toBe(false);
+  const body = buildTriggerBody(form({ KeepOnMerge: true }), {}, ids, true);
+  expect(body.Guards).toBeUndefined();
+  expect(body.Clearance).toBeUndefined();
 });
 
 test('an existing Trigger round-trips through the form', () => {
@@ -120,11 +124,15 @@ test('an existing Trigger round-trips through the form', () => {
     WhereUnit: "Slug = 'web'",
     UnitFilterID: 'filter-1',
     WhereResource: '',
-    Protect: true,
-    Guards: { owner: 'platform' },
-    Clearance: [{ Key: 'owner', Operator: 'NotIn', Values: ['legacy'] }],
+    Guards: { owner: 'platform', Trigger: 'stamp' },
+    Clearance: [
+      { Key: 'owner', Operator: 'NotIn', Values: ['legacy'] },
+      { Key: 'Trigger', Operator: 'In', Values: ['stamp'] },
+    ],
   });
+  // Keep on merge stands for the guard naming the Trigger and the clearance admitting it.
   expect(input).toMatchObject({
+    KeepOnMerge: true,
     Source: 'Invocation',
     InvocationID: 'inv-1',
     EventType: 'PostClone',
@@ -140,8 +148,10 @@ test('an existing Trigger round-trips through the form', () => {
     InvocationID: 'inv-1',
     WhereUnit: "Slug = 'web'",
     UnitFilterID: 'filter-1',
-    Protect: true,
-    Guards: { owner: 'platform' },
-    Clearance: [{ Key: 'owner', Operator: 'NotIn', Values: ['legacy'] }],
+    Guards: { owner: 'platform', Trigger: 'stamp' },
+    Clearance: [
+      { Key: 'owner', Operator: 'NotIn', Values: ['legacy'] },
+      { Key: 'Trigger', Operator: 'In', Values: ['stamp'] },
+    ],
   });
 });

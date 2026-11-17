@@ -10,7 +10,7 @@ import type { GuardValues } from './guardValues';
 /**
  * Asks whether to guard the values a write writes, and with what: a key and a value, the reason
  * they hold what they hold, and whether the guard is inherited. Sits beside Keep on merge, which
- * claims the values; this says why.
+ * records one such guard, Override, that a merge from upstream is not cleared for.
  */
 export const GuardValuesSection = ({
   values,

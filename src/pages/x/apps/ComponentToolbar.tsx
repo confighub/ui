@@ -109,20 +109,13 @@ export interface ComponentToolbarProps {
   totalLocalOnly?: number;
 
   /**
-   * The "Kept on merge N of M" chip — L2's protection audit. A THIRD, optional
-   * member of the scope row: omitted whenever `totalCheckableM` is 0 or
-   * `hasProtectionData` is false, same "never a fabricated answer" rule the
-   * other two chips already follow, just per-chip instead of per-row (a caller
-   * with local-override data but no protection data yet still gets the first
-   * two chips). `hasProtectionData` stands in for "the protection lookup has
-   * actually returned" — the caller owns what `MutationSources` looks like,
-   * this component only needs to know whether it may trust the counts yet.
+   * The "Kept on merge N of M" chip — L2's Keep on merge audit. A THIRD,
+   * optional member of the scope row: omitted whenever `totalCheckableM` is 0.
    */
   totalCheckableM?: number;
   totalKeptOnMergeN?: number;
   /** Every live-diverged path, arrays included — the tooltip's "M of L" denominator. */
   totalLiveL?: number;
-  hasProtectionData?: boolean;
 
   /**
    * The Units row: whether the pane lists only the units a Release publishes
@@ -191,7 +184,6 @@ export function ComponentToolbar({
   totalCheckableM,
   totalKeptOnMergeN,
   totalLiveL,
-  hasProtectionData = false,
   unitScope = 'releasable',
   onUnitScopeChange,
   includeHiddenUnits = false,
@@ -551,11 +543,10 @@ export function ComponentToolbar({
               to the checkable, currently-kept paths, exactly as the Incoming
               filter already does — the bulk-reverse surface ("Stop keeping N
               keys") lives in that flattened view's own footer, not on this
-              chip. Two render gates, both required: totalCheckableM > 0
-              (nothing to say if no checkable local override exists), and
-              hasProtectionData (never a fabricated "0 of M" while the fetch
-              is in flight). */}
-          {(totalCheckableM ?? 0) > 0 && hasProtectionData && (() => {
+              chip. Rendered only when totalCheckableM > 0: nothing to say if
+              no checkable local override exists. The count is known with the
+              units, whose PathAnnotations say what is kept. */}
+          {(totalCheckableM ?? 0) > 0 && (() => {
             const M = totalCheckableM ?? 0;
             const N = totalKeptOnMergeN ?? 0;
             const L = totalLiveL ?? M;

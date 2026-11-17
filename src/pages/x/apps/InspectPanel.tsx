@@ -180,8 +180,8 @@ export interface InspectPanelProps {
   upgradeSourceSpaceId?: string;
   /** Unit ID of the upstream unit driving the upgrade — used to link to its revision. */
   upgradeSourceUnitId?: string;
-  /** Whether this path is currently protected (staged-toggle-aware — mirrors the
-   *  row's own `effectiveKept`). Undefined/false renders the toggle as "Protect". */
+  /** Whether this path is currently kept on merge (staged-toggle-aware — mirrors the
+   *  row's own `effectiveKept`). Undefined/false renders the toggle as "Keep on merge". */
   isKept?: boolean;
   /** Whether this path is eligible for protection at all — false for a path that
    *  doesn't exist downstream yet, or is array-indexed (mirrors the kebab menu's
@@ -340,7 +340,7 @@ export const InspectPanel = memo(({
         >
           {shortPath}
         </Box>
-        {/* Protect/Unprotect — same staged-toggle action as the treeview row's
+        {/* Keep on merge / Let merges update this — same staged-toggle action as the treeview row's
             kebab item and hover tooltip (onToggleProtection is passed through
             unchanged from the row; this panel only triggers it, never stages
             anything itself). Omitted when the caller didn't wire a handler
@@ -372,7 +372,7 @@ export const InspectPanel = memo(({
               },
             }}
           >
-            {isKept ? 'Unprotect' : 'Protect'}
+            {isKept ? 'Let merges update this' : 'Keep on merge'}
           </Box>
         )}
         <IconButton

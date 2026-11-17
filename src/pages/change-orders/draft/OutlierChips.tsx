@@ -134,9 +134,10 @@ function FactLine({ fact }: FactLineProps) {
     );
   }
   const path = <Code>{shortPath(fact.path)}</Code>;
-  // The server's reason decides the words: a protected path is kept on merge, never a "local override".
+  // The server's reason decides the words: a path its Override guard holds is kept on merge,
+  // never a "local override".
   const kept =
-    fact.reason === 'ProtectedPath' ? (
+    fact.keptOnMerge ? (
       <>
         {path} {copy.keptOnMerge}
       </>

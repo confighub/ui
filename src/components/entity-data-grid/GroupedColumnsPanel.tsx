@@ -28,6 +28,7 @@ import { TreeItem } from '@mui/x-tree-view/TreeItem';
 import { Stack } from '@mui/system';
 
 import { ColumnGroup, DynamicGroupConfig } from './column-groups-types';
+import { formatColumnFieldName } from './utils/formatColumnFieldName';
 
 export interface GroupedColumnsPanelProps extends GridColumnsPanelProps {
   /** Static column groups configuration */
@@ -114,27 +115,8 @@ export const GroupedColumnsPanel = ({
     setExpandedItems([]);
   };
 
-  /**
-   * Format field names for human-readable display
-   * 1. Removes dynamic column prefixes (Labels., Values., etc.)
-   * 2. Handles acronyms by preserving grouping (WorkerID -> Worker ID)
-   * 3. Converts camelCase to space-separated words (upstreamUnit -> upstream Unit)
-   */
-  const formatFieldName = (field: string): string => {
-    // Check all dynamic group prefixes first
-    for (const group of dynamicGroups) {
-      if (field.startsWith(group.columnPrefix)) {
-        return field.replace(group.columnPrefix, '');
-      }
-    }
-
-    // Convert camelCase to Title Case with spaces
-    // Handle acronyms by not adding space between consecutive capitals
-    return field
-      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2') // Handle acronyms followed by word (e.g., "WorkerID" -> "Worker ID")
-      .replace(/([a-z\d])([A-Z])/g, '$1 $2') // Handle normal camelCase (e.g., "upstreamUnit" -> "upstream Unit")
-      .trim();
-  };
+  const formatFieldName = (field: string): string =>
+    formatColumnFieldName(field, dynamicGroups.map((group) => group.columnPrefix));
 
   // Filter groups and columns based on search query
   const filteredGroups = useMemo(() => {

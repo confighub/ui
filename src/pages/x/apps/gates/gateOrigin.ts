@@ -1,5 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
+import { hasOverrideGuard } from '@/utility/override-guard';
 import type { BlameField, BlameOrigin, UnitBlame } from '@confighub/rtk-query';
 
 import type { GateField } from './gateModel';
@@ -14,7 +15,8 @@ export interface FieldOrigin {
   via: string[];
   /** The value came from another Unit, by a merge or a Link. */
   upstream: boolean;
-  protected: boolean;
+  /** An Override guard on the field, its ancestors or its resource keeps the value on merge. */
+  kept: boolean;
 }
 
 /**
@@ -65,7 +67,7 @@ const originOfField = (field: BlameField): FieldOrigin | undefined => {
       .map((hop) => hop.SpaceSlug ?? '')
       .filter(Boolean),
     upstream,
-    protected: !!field.Protected,
+    kept: hasOverrideGuard(field.Guards),
   };
 };
 

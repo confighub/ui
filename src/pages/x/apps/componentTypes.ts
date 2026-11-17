@@ -1,7 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
-import type { ValidationResult } from '@confighub/rtk-query';
+import type { PathAnnotationList, ValidationResult } from '@confighub/rtk-query';
 
 import type { LiveStatus, RunningRelease } from './liveStatus';
 import type { DeploymentChangeSet, WaitingChangeSet } from './changeSets';
@@ -354,6 +354,8 @@ export interface PaneUnit {
   targetId?: string;
   /** Not Unit.Unreleasable: a Release of the Space publishes the unit. */
   releasable: boolean;
+  /** Unit.PathAnnotations: its guards, an Override guard among them keeping a value on merge. */
+  pathAnnotations?: PathAnnotationList;
 }
 
 export interface MergedUnit {
@@ -368,6 +370,7 @@ export interface MergedUnit {
   validationResults?: { [gate: string]: ValidationResult[] };
   /** Unit.TargetID: a Unit with none is never released. */
   targetId?: string;
+  pathAnnotations?: PathAnnotationList;
   upgradeEntry?: UpgradeEntry;
   applyEntry?: ApplyEntryWithGates;
   variationEntry?: VariationEntry;

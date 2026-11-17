@@ -14,9 +14,13 @@
  * unknown case is shown rather than hidden.
  */
 
+import { isKeptOnMergeConflict } from '@/utility/override-guard';
+
 export interface ConflictLike {
   Reason?: string;
   Path?: string;
+  Guards?: readonly { Key?: string }[] | null;
+  Guard?: { Key?: string } | null;
 }
 
 export type ConflictClass = 'kept' | 'withheld';
@@ -24,7 +28,9 @@ export type ConflictClass = 'kept' | 'withheld';
 const KEPT_REASONS: ReadonlySet<string> = new Set(['ProtectedPath', 'Subtracted']);
 
 export function conflictClass(conflict: ConflictLike): ConflictClass {
-  return conflict.Reason && KEPT_REASONS.has(conflict.Reason) ? 'kept' : 'withheld';
+  return (conflict.Reason && KEPT_REASONS.has(conflict.Reason)) || isKeptOnMergeConflict(conflict)
+    ? 'kept'
+    : 'withheld';
 }
 
 export function splitConflicts<C extends ConflictLike>(conflicts: readonly C[] | null | undefined): { kept: C[]; withheld: C[] } {

@@ -94,14 +94,14 @@ test('clearing a field in the form clears it on the Link', () => {
 });
 
 test('a create leaves off the fields the form hides for its type', () => {
-  // A merge Link is not given Protect or Guards (a merge carries only inherited guards), and a
+  // A merge Link is not given Keep on merge or Guards (a merge carries only inherited guards), and a
   // non-merge is not given Squash or WhereMutation, even when the form held them before its type
   // was changed.
   const merge = formInputToLink(
     {
       ...defaultLinkFormInput(),
       UpdateType: 'UpgradeUnit',
-      Protect: true,
+      KeepOnMerge: true,
       Guards: [{ key: 'owner', value: 'x' }],
       Squash: true,
       WhereResource: 'x',
@@ -109,7 +109,6 @@ test('a create leaves off the fields the form hides for its type', () => {
     },
     { Slug: '', FromUnitID: 'a', ToUnitID: 'b', ToSpaceID: 's' },
   );
-  expect(merge.Protect).toBeFalsy();
   expect(merge.Guards).toBeUndefined();
   expect(merge.Squash).toBe(true);
   // UpgradeUnit tracks the whole upstream Unit; WhereResource is MergeUnits'.
@@ -131,7 +130,7 @@ test('a create leaves off the fields the form hides for its type', () => {
 test('an edit writes back the fields the form hides for its type as the Link has them', () => {
   // The form's idea of which fields a type takes is a copy of the server's rule, so a field it
   // hides is not cleared on that copy's word: what the server accepted is written back.
-  const link = stored({ UpdateType: 'MergeUnits', Protect: true, Guards: { owner: 'platform' } });
+  const link = stored({ UpdateType: 'MergeUnits', Guards: { owner: 'platform' } });
   const body = formInputToLink(
     edited(link, (input) => {
       input.Squash = true;
@@ -139,8 +138,34 @@ test('an edit writes back the fields the form hides for its type as the Link has
     link,
   );
   expect(body.Squash).toBe(true);
-  expect(body.Protect).toBe(true);
   expect(body.Guards).toEqual({ owner: 'platform' });
+});
+
+test('Keep on merge is the guard naming the Link type, with the clearance admitting it', () => {
+  const link = stored({ Guards: { owner: 'platform' }, Clearance: [{ Key: 'owner', Operator: 'Exists' }] });
+  const kept = formInputToLink(
+    edited(link, (input) => {
+      input.KeepOnMerge = true;
+    }),
+    link,
+  );
+  expect(kept.Guards).toEqual({ owner: 'platform', Link: 'NeedsProvides' });
+  expect(kept.Clearance).toEqual([
+    { Key: 'owner', Operator: 'Exists' },
+    { Key: 'Link', Operator: 'In', Values: ['NeedsProvides'] },
+  ]);
+  expect(guardsNotCleared(kept.Guards, kept.Clearance ?? [])).toEqual([]);
+
+  // Read back, the checkbox stands for the guard and its clearance, which the rows leave out.
+  const input = linkToFormInput({ ...link, ...kept });
+  expect(input.KeepOnMerge).toBe(true);
+  expect(input.Guards).toEqual([{ key: 'owner', value: 'platform' }]);
+  expect(input.Clearance).toEqual([{ Key: 'owner', Operator: 'Exists', Values: '' }]);
+
+  // Unchecked, both go.
+  const released = formInputToLink({ ...input, KeepOnMerge: false }, { ...link, ...kept });
+  expect(released.Guards).toEqual({ owner: 'platform' });
+  expect(released.Clearance).toEqual([{ Key: 'owner', Operator: 'Exists' }]);
 });
 
 test("an Insert Link's binding names only the place to insert at", () => {

@@ -11,6 +11,11 @@ import {
   guardText,
   withheldGuards,
 } from '@/utility/clearance-functions';
+import {
+  type OverrideGuardValue,
+  hasOverrideGuard,
+  overrideGuardEdit,
+} from '@/utility/override-guard';
 import type {
   BlameConflictDismissal,
   BlameField,
@@ -19,7 +24,6 @@ import type {
   PathAnnotationList,
   ResourceGuards,
   ResourcePathAnnotations,
-  ResourceProtection,
   UnitConflictSelector,
   WithheldGuard,
 } from '@confighub/rtk-query';
@@ -39,13 +43,6 @@ export interface BlameFlagMeta {
 
 /** Every flag, in the order the server lists them. */
 const BLAME_FLAG_TEXT: readonly Omit<BlameFlagMeta, 'color'>[] = [
-  {
-    code: 'Protected',
-    label: 'Kept on merge',
-    meaning:
-      'Protected: an override a merge from upstream leaves alone, by itself or as part of a resource protected as a whole. On a resource, the resource is protected as a whole; on what was deleted, a merge leaves it deleted',
-    attention: false,
-  },
   {
     code: 'Guarded',
     label: 'Guarded',
@@ -148,7 +145,6 @@ const BLAME_FLAG_TEXT: readonly Omit<BlameFlagMeta, 'color'>[] = [
  * hue of their own, so that two flags side by side are told apart without reading them.
  */
 const BLAME_FLAG_COLORS: Readonly<Record<string, string>> = {
-  Protected: '#1e88e5',
   Guarded: '#5e35b1',
   Conflict: '#d84315',
   ConflictDismissed: '#ad1457',
@@ -359,12 +355,12 @@ export function blameResources(rows: readonly BlameRow[]): string[] {
 const hasFlag = (field: BlameField, code: string) => (field.Flags ?? []).includes(code);
 
 /**
- * Whether a field's protection is its own to clear. A field protected because its resource is,
- * as a whole, is unprotected by unprotecting the resource, on the resource's own row, which is
- * not what selecting the field asks for.
+ * Whether a field is kept on merge by an Override guard of its own path, which is what Let merges
+ * update this removes. A field kept because an ancestor or its resource has the guard is let go
+ * on that row, which is not what selecting the field asks for.
  */
-const ownProtection = (f: BlameField) =>
-  !!f.Protected && (!f.ResourceProtected || isResourceField(f));
+const ownOverride = (annotations: PathAnnotationList | undefined, f: BlameField) =>
+  hasOverrideGuard(ownGuards(annotations, f)?.guards);
 
 /** Whether Set guard writes a field: a guard records why a value is what it is, so a field with
  * no value takes none. */
@@ -372,8 +368,12 @@ export const guardSettable = (field: BlameField) => !field.Absent && !field.Dele
 
 /** Whether an action applies to at least one of the selected fields. */
 export const blameActionApplies = {
-  protect: (fields: readonly BlameField[]) => fields.some((f) => !f.Absent && !f.Protected),
-  unprotect: (fields: readonly BlameField[]) => fields.some(ownProtection),
+  keep: (fields: readonly BlameField[]) =>
+    fields.some((f) => !f.Absent && !hasOverrideGuard(f.Guards)),
+  letMergesUpdate: (
+    fields: readonly BlameField[],
+    annotations: PathAnnotationList | undefined,
+  ) => fields.some((f) => ownOverride(annotations, f)),
   guard: (fields: readonly BlameField[]) => fields.some(guardSettable),
   removeGuard: (fields: readonly BlameField[]) =>
     fields.some((f) => Object.keys(f.Guards ?? {}).length > 0),
@@ -412,22 +412,32 @@ function byResource<T>(
 }
 
 /**
- * The SetUnitProtection edits that protect, or unprotect, the selected fields' paths. The row
- * about a resource has no path, which is how the request addresses the resource as a whole.
+ * The SetUnitGuard edits that keep the selected fields on merge, with the Override guard of the
+ * given value, or let merges update them, by removing the Override guard of their own paths. A
+ * field already kept, by its own guard or an ancestor's or its resource's, is not guarded again.
+ * The row about a resource has no path, which is how the request addresses the resource as a
+ * whole; a deleted field is kept deleted.
  */
-export function protectionRequest(
+export function overrideGuardRequest(
   fields: readonly BlameField[],
-  protect: boolean,
-): ResourceProtection[] {
+  keep: boolean,
+  value: OverrideGuardValue,
+  annotations?: PathAnnotationList,
+): ResourceGuards[] {
   return byResource(fields, (field) => {
     if (field.Absent) return undefined;
-    if (!protect && !ownProtection(field)) return undefined;
-    if (protect && field.Protected) return undefined;
-    return [field.Path ?? '', protect];
-  }).map(({ field, entries }) => ({
-    Resource: { ResourceType: field.ResourceType, ResourceName: field.ResourceName },
-    Protected: Object.fromEntries(entries),
-  }));
+    if (keep ? hasOverrideGuard(field.Guards) : !ownOverride(annotations, field))
+      return undefined;
+    return [field.Path ?? '', true];
+  }).map(({ field, entries }) => {
+    const paths = entries.map(([path]) => path);
+    return overrideGuardEdit(
+      { ResourceType: field.ResourceType, ResourceName: field.ResourceName },
+      keep ? paths : [],
+      keep ? [] : paths,
+      value,
+    );
+  });
 }
 
 /** The guards to set, as guards of this Unit alone or as inherited ones. */

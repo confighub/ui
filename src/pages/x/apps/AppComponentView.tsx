@@ -11,14 +11,14 @@ import {
   type ListAllUnitsApiArg,
   type ConfigDiff,
   type MutationConflict,
-  type ResourceProtection,
+  type ResourceGuards,
   type TargetRead,
   type UnitCreateOrUpdateResponseRead,
   useBulkPatchUnitsMutation,
   useLazyGetUnitQuery,
   useListAllChangeSetsQuery,
   useListAllUnitsQuery,
-  useSetUnitProtectionMutation,
+  useSetUnitGuardMutation,
   useUpdateUnitMutation,
 } from '@confighub/rtk-query';
 import type { UnitMetaPatch } from './unit-details/types';
@@ -48,7 +48,7 @@ import { resolveConflictPath } from './configDiffFieldDiffs';
 import { useUnitDataMap, useUploadUnitData } from '@/hooks/useUnitData';
 import { guardedChanges } from '@/components/guarded-write/guardedWrite';
 import { useGuardedWrite } from '@/components/guarded-write/useGuardedWrite';
-import { unitHasGuards } from '@/utility/clearance-functions';
+import { nonMergeClearance, unitHasGuards } from '@/utility/clearance-functions';
 import { useListAllUnitsChunkedQuery } from '@/hooks/chunkedQueriesApi';
 import { buildAllApplyEntries, buildUpgradeEntries, buildVariationEntries, splitDryRunItems } from './entryBuilders';
 import { type SetValueResult } from './configParser';
@@ -381,6 +381,8 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     isFetching: unitsFetching,
     isError: unitsError,
     error: unitsQueryError,
+    startedTimeStamp: unitsFetchStartedAt,
+    refetch: refetchUnits,
   } = useListAllUnitsChunkedQuery(
     {
       spaceIds,
@@ -399,6 +401,21 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   );
 
   const unitsPollingInterval = (hasPendingGatesRef.current || upgradingDeploymentIds.size > 0) ? 2000 : 0;
+
+  // The time of a write the unit list has to show, until a fetch of it starts after then. A write
+  // invalidates the list, but an invalidation that arrives while the list is being fetched is
+  // dropped, and the list then shows the state from before the write until something else
+  // refetches it. Keep on merge is written right after the values committed with it, while
+  // their refetch is in flight, so it is the write this waits on.
+  const [unitsStaleSince, setUnitsStaleSince] = useState<number | null>(null);
+  useEffect(() => {
+    if (unitsStaleSince === null || unitsFetching) return;
+    if ((unitsFetchStartedAt ?? 0) > unitsStaleSince) {
+      setUnitsStaleSince(null);
+      return;
+    }
+    void refetchUnits();
+  }, [unitsStaleSince, unitsFetching, unitsFetchStartedAt, refetchUnits]);
 
   // Not polled: a value is kept or let go by a write to the unit, which invalidates the Unit tag.
   // `data`, not `currentData`: a Space added to the Component changes spaceIds, and the
@@ -501,7 +518,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   const { start: startGuardedWrite, dialog: guardedWriteDialog } = useGuardedWrite('Upgrade');
   const guardedCommitQueueRef = useRef<Promise<unknown>>(Promise.resolve());
   const [getUnit] = useLazyGetUnitQuery();
-  const [setUnitProtection] = useSetUnitProtectionMutation();
+  const [setUnitGuard] = useSetUnitGuardMutation();
 
   // ── Success feedback (per-deployment) ──
   const [deploymentSuccessMessages, setDeploymentSuccessMessages] = useState<Map<string, string>>(() => new Map());
@@ -675,6 +692,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
       // ReleaseTargetID — this is the same filter the "Unreleased changes"
       // section uses to decide which units to diff against the last release).
       const targetId = u.Unit?.TargetID;
+      const pathAnnotations = u.Unit?.PathAnnotations;
       const item = {
         slug, spaceId: sid, unitId,
         hasUpstream: !!u.Unit?.UpstreamUnitID,
@@ -685,6 +703,7 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
         ...(validationWarnings ? { validationWarnings } : {}),
         ...(validationResults ? { validationResults } : {}),
         ...(targetId ? { targetId } : {}),
+        ...(pathAnnotations ? { pathAnnotations } : {}),
       };
       const list = m.get(sid);
       if (list) list.push(item);
@@ -1611,15 +1630,15 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     return new Set([...releasingDeploymentIds, ...waveActions.releasingIds]);
   }, [releasingDeploymentIds, waveActions.releasingIds]);
 
-  // Commit ONE unit's STAGED PROTECTION batch via the dedicated SetUnitProtection
-  // endpoint — a SEPARATE revision from handleCommitStaged above (see
-  // ComponentValuesSection's commit-signal effect: protection commits FIRST,
-  // and never rolled back if a subsequent value write fails). Returns true on
-  // success so the section can clear its staged protection set.
-  // `invalidatesTags: ['Unit']` on the mutation (confighubapi.gen.ts) means a
-  // success here already triggers a refetch of every unit query with that
-  // tag, including the lazily-fetched MutationSources query in
-  // ComponentSidePane — no manual cache-poking needed here.
+  // Commit ONE unit's STAGED Keep on merge batch, as Override guards set or
+  // removed through SetUnitGuard — a SEPARATE revision from handleCommitStaged
+  // above (see ComponentValuesSection's commit-signal effect: Keep on merge
+  // commits after the values committed with it, or before a wholesale upgrade, and is never
+  // rolled back if the other write fails).
+  // Returns true on success so the section can clear its staged set. The write
+  // invalidates the Unit tag (invalidationMap.ts), so the unit queries that
+  // carry PathAnnotations refetch; unitsStaleSince covers the invalidation that
+  // arrives while the list is still fetching what the values wrote.
   // Close a ChangeSet: take every unit it is open on out of it, wherever they are, which is
   // what closes it and marks each unit's head with its end Tag. The Deployments waiting on
   // it can upgrade from then on, so a refusal they recorded while it was open is cleared.
@@ -1665,18 +1684,22 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
   );
 
   const handleCommitProtection = useCallback(
-    async (unitId: string, spaceId: string, protection: ResourceProtection[]): Promise<boolean> => {
+    async (unitId: string, spaceId: string, guards: ResourceGuards[]): Promise<boolean> => {
       try {
-        await setUnitProtection({
+        await setUnitGuard({
           spaceId,
           unitId,
           // Part of the same staged commit as the values, so it names the ChangeSet open on the
-          // Unit as the value write does: a write that creates a Revision of it has to.
-          unitProtectionRequest: {
-            ResourceProtection: protection,
+          // Unit as the value write does: a write that creates a Revision of it has to. A path
+          // with guards of its own other than Override needs a clearance covering them, which the
+          // server names when it refuses the edit.
+          unitGuardRequest: {
+            ResourceGuards: guards,
+            Clearance: nonMergeClearance(),
             ChangeSetID: openChangeSetIdOf(unitById, unitId),
           },
         }).unwrap();
+        setUnitsStaleSince(Date.now());
         setDeploymentErrors((prev) => {
           if (!prev.has(spaceId)) return prev;
           const next = new Map(prev);
@@ -1686,11 +1709,11 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
         return true;
       } catch (err: unknown) {
         const detail = getApiErrorMessage(err);
-        setErrorsForDeployments(new Set([spaceId]), { title: 'Could not save protection change', detail, timestamp: new Date() });
+        setErrorsForDeployments(new Set([spaceId]), { title: 'Could not save the Keep on merge change', detail, timestamp: new Date() });
         return false;
       }
     },
-    [setUnitProtection, setErrorsForDeployments, unitById],
+    [setUnitGuard, setErrorsForDeployments, unitById],
   );
 
   // Clear upgradingDeploymentIds once each pending commit's unit shows a newer

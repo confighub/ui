@@ -229,7 +229,7 @@ const OriginLine = ({
     return (
       <Origin data-testid={`fix-origin-${id}`}>
         Set here by {tail}
-        {o.protected ? '. Kept on merge' : ''}
+        {o.kept ? '. Kept on merge' : ''}
       </Origin>
     );
   }
@@ -369,7 +369,7 @@ export const GateFixRow = ({
           <Arrow>→</Arrow>
           {input('New value')}
         </Vals>
-        {upstream && o && !o.protected && (
+        {upstream && o && !o.kept && (
           <Keep data-testid={`fix-keep-${id}`}>
             <Checkbox
               size='small'

@@ -114,7 +114,7 @@ you can cite them in review.
 | **Upgrade** | Merging the upstream HEAD revision into a downstream unit. Backend: `upgrade=true` → `mergeUnits` → `SourceTypeUpgradeUnit`. "Upgradable" unit = `UpstreamRevisionNum < upstream.HeadRevisionNum`. |
 | **Release** | Publishing a Space's Units to its Target. "Unreleased" = `LastReleasedRevisionNum < HeadRevisionNum`. |
 | **Override / local override** | The child's locally-changed value at a path; it supersedes the upstream value and *blocks* that path from being "upgradable". |
-| **Protected / Kept on merge** | A path whose `MutationSources.PathMutationMap[path].Protected` is `true` (or inherited from the closest protected ancestor, or the resource-level default) — a merge from upstream must not overwrite it. Committed via the `SetUnitProtection` endpoint (`SourceTypeSetProtection`), a **separate revision** from any value write. Read ladder: `protectedPaths.ts`'s `buildProtectedPathLookup` (exact path → ancestor → resource-level default → `false`). Toggled per-row via the leaf/folder kebab (`Keep on merge` / `Let merges update this`); staged the same way as everything else (`stagedProtection`, below) before commit. Array-indexed paths (`spec.containers.0.image`) are excluded from both read and write — `MutationSources` keys array elements associatively (`ResolvedPath`, e.g. `spec.containers.?name=nginx;@0.image`) and there is no parser in `src` to translate the tree's positional notation into it, so guessing would risk silently mismatching the merge engine's own lookup. |
+| **Kept on merge** | A path with an Override guard (`Override=Upstream` on a Unit with an upstream Unit, `Override=External` on one without) on itself, an ancestor, or its resource, in the Unit's `PathAnnotations` — a merge must not overwrite it. Committed via `SetUnitGuard` (`SourceTypeSetGuard`), a **separate revision** from any value write. Read ladder: `protectedPaths.ts`'s `buildProtectedPathLookup` (`overrideGuardAt`: exact path → ancestors → resource → `false`). A row kept by an enclosing guard cannot be let go on its own: removing a guard at the row would remove nothing. Toggled per-row via the leaf/folder kebab (`Keep on merge` / `Let merges update this`); staged the same way as everything else (`stagedProtection`, below) before commit. Array-indexed paths (`spec.containers.0.image`) are excluded from both read and write — `MutationSources` keys array elements associatively (`ResolvedPath`, e.g. `spec.containers.?name=nginx;@0.image`) and there is no parser in `src` to translate the tree's positional notation into it, so guessing would risk silently mismatching the merge engine's own lookup. |
 | **Value treeview** | The default diff UI: field-level tree, one row per dot-path key, with colored state checkboxes. NOT a text diff. `ComponentValuesSection.tsx`. |
 | **Source view** | Monaco editor of the full raw decoded `unit.Data` (`ComponentSourceSection.tsx`). Opt-in alternative to the treeview (shipped #4538). |
 | **Units row** | The toolbar row above Scope (`ComponentToolbar.tsx`), in every view: **Releasable** (the default) lists the units a Release of their Space publishes, by the server's `Unit.Releasable`; **All units** lists every unit; **Include hidden** adds the units with a `HiddenReason`, such as the ConfigHub/YAML units behind entities. `PaneUnitScope` and `includeHiddenUnits` live in `AppComponentView`, so they survive a node switch, and filter `mergedUnits`, so the counts and the lone-unit rule follow them. Hidden units are read only when asked for, only in the selected Spaces (`include_hidden=*`, `HiddenReason != ''`), and go into `unitsByDeployment` alone, never into `allUnits`: the graph, its counts and the upgrade machinery do not see them. |
@@ -185,7 +185,7 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
 | `componentData.ts` | `buildComponentData(spaces, units, …)` → `{deployments, stages}`; parent/child edges from `UpstreamUnitID`; label consts `Component`/`Owner`/`Variant`; `arrowKey`. |
 | `componentKeyUtils.ts` | **Dot-index path helpers**: `validateKey`, `isArrayIndexSegment`, `isArrayElementPath`, `pathContainsArrayIndex`. Fixes dormant bracket-vs-dot-index bugs — use these, don't write ad-hoc regex. |
 | `configParser.ts` | `parseUnitData` (base64 → JSON/YAML/multi-YAML/INI/Properties/line-fallback → flat `Map<path,value>`), `flattenObject`, `setValueAtPath`/`deleteValueAtPath`, `mapPathsToLines`. |
-| `protectedPaths.ts` | `buildProtectedPathLookup(mutationSources, fieldPathMeta)` — the read-side "is this path protected" lookup (exact `PathMutationMap` entry → closest ancestor → resource-level default → `false`), mirroring the server's own `previousPathProtection` walk. Array-indexed paths always answer `false` (no `ResolvedPath` translator in `src` — see Terminology → Protected). |
+| `protectedPaths.ts` | `buildProtectedPathLookup(pathAnnotations, fieldPathMeta)` — the read-side "is this path kept on merge" lookup (its Override guard: exact path → ancestors → resource → `false`), mirroring the server's `GuardsForPath`. Array-indexed paths always answer `false` (no `ResolvedPath` translator in `src` — see Terminology → Protected). |
 | `diffTree.ts` | `DiffTreeNode` build/collapse/context/key-injection; `formatTimeAgo`. |
 | `componentTypes.ts` | All TS interfaces (below). |
 | `componentValues.ts` | `ABSENT='—'`, `NO_VALUE_LABEL='no value'`, `isRemovalSentinel`, `isEmptyValue`. |
@@ -811,18 +811,17 @@ list's `confighub:unit:openViewTabs`.
   border firms from dashed to SOLID when a path is effectively kept (`kept` prop on `CurrentPill`) —
   solid REPLACES dashed, never composes with it — and a protection-only staged row gets the lowest-
   precedence `'protect'` rail (`ROW_TYPE_TOKENS.protect`, `componentTheme.accent`). **Commit is TWO
-  calls, protection first**: `ComponentValuesSection`'s commit-signal effect calls `onCommitProtection`
-  (→ `SetUnitProtection`, its own revision, `SourceTypeSetProtection`) BEFORE building/sending the value
+  calls, Keep on merge first**: `ComponentValuesSection`'s commit-signal effect calls `onCommitProtection`
+  (→ `SetUnitGuard` with the Override guard, its own revision, `SourceTypeSetGuard`) BEFORE building/sending the value
   `StagedCommitPayload`; if the protection write fails, the value write is never attempted; if the
   protection write succeeds and the SUBSEQUENT value write fails, the protection write is **not** rolled
   back (over-protected is the safe direction to fail in). A folder's "Keep group" writes N individual
-  leaf entries via `collectLeafPaths`, never one ancestor-path write — an ancestor write would silently
-  fail to protect a leaf that already carries its own exact `PathMutationMap` entry (the normal case for
-  anything ever edited/overridden). `MutationSources` (the read-side data) is fetched lazily via
-  `onRequestProtectionData`, only when a kebab is actually opened for a unit that hasn't been fetched yet
-  (or the Scope chip's own count needs it) — never unconditionally; unfetched/unknown reads as
-  **unprotected** (`isProtected` defaults to `() => false`), so the worst-case failure mode is a
-  redundant (no-op) protect, never a silent unprotect. The bar (footer) discloses staged protection
+  leaf entries via `collectLeafPaths`, never one ancestor-path write, so that each leaf can be let go
+  on its own later: a guard on the ancestor keeps every leaf under it, and none of them could be. The
+  read-side data is
+  the Unit's `PathAnnotations`, which arrives with the Units; unknown reads as **not kept**
+  (`isProtected` defaults to `() => false`), so the worst-case failure mode is a redundant (no-op)
+  Keep on merge, never a silent release. The bar (footer) discloses staged protection
   SEPARATELY from the value-staged count (card 8's rule: never `2 staged · 2 locks`) — see
   `barKeepState` in `ComponentSidePane.tsx` for the five derived states (edits-none-kept /
   edits-all-kept / pure-scope-uniform / pure-scope-mixed / values-and-scope) and their lead

@@ -306,8 +306,8 @@ export interface ChangeOrderResourceConflict {
   targetValue?: string;
   /** The value the change would have written at `path`, when the server said. */
   sourceValue?: string;
-  /** The target's value at `path` is protected: kept on merge. */
-  targetProtected?: boolean;
+  /** The target's value at `path` is kept on merge: Override guards alone withheld the change. */
+  targetKept?: boolean;
   /** For a reason a guard caused, the guards that withheld the change, as `key=value`. */
   guards?: string[];
   /**

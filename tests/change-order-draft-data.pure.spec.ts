@@ -887,6 +887,7 @@ test.describe('readUpgradePreview', () => {
         value: '1Gi',
         incoming: '768Mi',
         reason: 'ProtectedPath',
+        keptOnMerge: true,
       },
     ]);
     // Both conflicts reach the stage tree; only the blocking one is a kept value.

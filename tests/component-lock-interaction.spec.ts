@@ -1,6 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { type Page } from '@playwright/test';
+import type { UnitGuardRequest } from '@confighub/rtk-query';
 import { test, expect, newAuthorizedContext, hubApi } from './fixtures/test';
 
 import { ApiHelper } from './fixtures/api-helper';
@@ -19,10 +20,10 @@ import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
 // upstream link, then prod diverges at several paths (unprotected, plain
 // write — protection is never assumed from setup, same convention as
 // component-provenance-border.spec.ts). Where a test needs a path ALREADY
-// protected with no staged interaction — a state `uploadUnitData({protect:
-// true})` (write-time protect) cannot represent — it goes through
-// `api.setUnitProtection` directly, the same endpoint the UI's kebab/commit
-// flow calls.
+// kept with no staged interaction — a state `uploadUnitData({protect:
+// true})` (write-time keep) cannot represent — it goes through
+// `api.setUnitGuard` directly, the same endpoint the UI's kebab/commit flow
+// calls to set the Override guard.
 // ============================================================================
 
 const RESOURCE_TYPE = 'apps/v1/Deployment';
@@ -349,7 +350,7 @@ test.describe.serial('Lock/unlock interaction — commit flows', () => {
 
     const upgradeButton = page.getByTestId('component-upgrade-button');
     await expect(upgradeButton).toBeEnabled({ timeout: 10000 });
-    const protectionResponse = page.waitForResponse((r) => r.url().includes('/protection') && r.request().method() === 'POST');
+    const protectionResponse = page.waitForResponse((r) => r.url().includes('/guard') && r.request().method() === 'POST');
     await upgradeButton.click();
     await protectionResponse;
 
@@ -370,9 +371,11 @@ test.describe.serial('Lock/unlock interaction — commit flows', () => {
     // Pre-protect ONE of the two `limits` leaves directly — the folder menu
     // must show "1 already kept, this changes 1" and its commit must send
     // exactly ONE new protection entry (spec.limits.memory), never both.
-    await api.setUnitProtection(fx.prodSpaceId, fx.prodUnitId, [
-      { Resource: { ResourceType: RESOURCE_TYPE, ResourceName: RESOURCE_NAME }, Protected: { 'spec.limits.cpu': true } },
-    ]);
+    await api.setUnitGuard(fx.prodSpaceId, fx.prodUnitId, {
+      ResourceGuards: [
+        { Resource: { ResourceType: RESOURCE_TYPE, ResourceName: RESOURCE_NAME }, Set: { 'spec.limits.cpu': { Override: 'Upstream' } } },
+      ],
+    });
     await waitForResolved(page, fx.prodSpaceId, fx.prodUnitId);
 
     await openPane(page);
@@ -385,7 +388,7 @@ test.describe.serial('Lock/unlock interaction — commit flows', () => {
     await expect(page.getByText('Keep group & 2 keys on merge')).toBeVisible();
     await expect(page.getByText('1 is already kept. This changes 1.')).toBeVisible();
 
-    const protectionRequestPromise = page.waitForRequest((r) => r.url().includes('/protection') && r.method() === 'POST');
+    const protectionRequestPromise = page.waitForRequest((r) => r.url().includes('/guard') && r.method() === 'POST');
     await page.getByText('Keep group & 2 keys on merge').click();
 
     // The Upgrade-slot button relabels to "Keep 1 key" — a pure scope batch,
@@ -395,12 +398,15 @@ test.describe.serial('Lock/unlock interaction — commit flows', () => {
     await commitButton.click();
 
     const protectionRequest = await protectionRequestPromise;
-    const body = protectionRequest.postDataJSON() as { ResourceProtection: Array<{ Protected: Record<string, boolean> }> };
-    const allProtectedPaths = body.ResourceProtection.flatMap((rp) => Object.keys(rp.Protected));
-    expect(allProtectedPaths).toEqual(['spec.limits.memory']);
+    const body = protectionRequest.postDataJSON() as UnitGuardRequest;
+    const keptPaths = (body.ResourceGuards ?? []).flatMap((rg) => Object.keys(rg.Set ?? {}));
+    expect(keptPaths).toEqual(['spec.limits.memory']);
+    expect(body.ResourceGuards?.[0]?.Set?.['spec.limits.memory']).toEqual({ Override: 'Upstream' });
   });
 
-  test('commit order is protection-first: an independent lock always lands before a staged value edit', async ({ page }) => {
+  // A value write goes first: a lock set before it would withhold a staged edit of the path it
+  // keeps. Both land either way.
+  test('commit order: a staged value edit lands before the locks committed with it', async ({ page }) => {
     await openPane(page);
 
     // Independently lock `strategy` (unmodified, unedited) via its own kebab.
@@ -432,12 +438,12 @@ test.describe.serial('Lock/unlock interaction — commit flows', () => {
     // PATCH of the Unit itself — see AppComponentView's uploadUnitData call.
     const requestOrder: string[] = [];
     const trackRequest = (r: import('@playwright/test').Request) => {
-      if (r.method() === 'POST' && r.url().includes('/protection')) requestOrder.push('protection');
+      if (r.method() === 'POST' && r.url().includes('/guard')) requestOrder.push('protection');
       else if (r.method() === 'PUT' && /\/unit\/[^/]+\/data(\?|$)/.test(r.url())) requestOrder.push('value');
     };
     page.on('request', trackRequest);
 
-    const protectionResponse = page.waitForResponse((r) => r.url().includes('/protection') && r.request().method() === 'POST');
+    const protectionResponse = page.waitForResponse((r) => r.url().includes('/guard') && r.request().method() === 'POST');
     const valueResponse = page.waitForResponse(
       (r) => r.request().method() === 'PUT' && /\/unit\/[^/]+\/data(\?|$)/.test(r.url()),
     );
@@ -446,8 +452,8 @@ test.describe.serial('Lock/unlock interaction — commit flows', () => {
     await valueResponse;
     page.off('request', trackRequest);
 
-    expect(requestOrder[0]).toBe('protection');
-    expect(requestOrder).toContain('value');
+    expect(requestOrder[0]).toBe('value');
+    expect(requestOrder).toContain('protection');
 
     await expect(editRow).toHaveAttribute('data-differs-upstream', 'true', { timeout: 10000 });
     // Re-filter to "strategy" — the search box currently shows

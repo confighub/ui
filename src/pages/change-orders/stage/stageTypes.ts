@@ -247,7 +247,7 @@ export type PropagationProblem =
       /** What the box shows of `value`: the image tag for an image reference. */
       valueText: string;
       incoming?: string;
-      /** `ProtectedPath` (kept on merge) or `Subtracted` (a local override). */
+      /** `Guarded` by an Override guard or `ProtectedPath` (kept on merge), or `Subtracted` (a local override). */
       reason: string;
       /** The resource the path is in, when the server's diff named it. */
       resource?: ResourceRef;

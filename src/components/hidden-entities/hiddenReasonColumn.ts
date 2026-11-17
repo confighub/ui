@@ -6,7 +6,7 @@ import { GridColDef, GridValidRowModel } from '@mui/x-data-grid';
 export const HIDDEN_REASON_FIELD = 'HiddenReason';
 
 /**
- * The Hidden reason column of an entity grid. It is hidden by default: an entity has a
+ * The Hidden Reason column of an entity grid. It is hidden by default: an entity has a
  * HiddenReason only when it is hidden, and a list shows hidden entities only on request.
  */
 export function hiddenReasonColumn<Row extends GridValidRowModel>(
@@ -14,7 +14,7 @@ export function hiddenReasonColumn<Row extends GridValidRowModel>(
 ): GridColDef<Row> {
   return {
     field: HIDDEN_REASON_FIELD,
-    headerName: 'Hidden reason',
+    headerName: 'Hidden Reason',
     minWidth: 140,
     flex: 0.5,
     valueGetter: (_value, row) => hiddenReason(row) ?? '',

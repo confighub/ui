@@ -36,7 +36,7 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
 
-import { useListAllUnitsQuery, type ExtendedTargetRead, type ResourceProtection } from '@confighub/rtk-query';
+import { useListAllUnitsQuery, type ExtendedTargetRead, type PathAnnotationList, type ResourceGuards } from '@confighub/rtk-query';
 import { Link as RouterLink } from 'react-router-dom';
 
 import { unitOffersOverview } from '@/components/resource-overview/overviewAvailability';
@@ -447,11 +447,11 @@ export interface ComponentSidePaneProps {
    */
   onCommitStaged?: (unitId: string, spaceId: string, payload: StagedCommitPayload) => Promise<StagedCommitResult>;
   /**
-   * Commit a single unit's STAGED protection batch (a separate revision from
-   * onCommitStaged — see ComponentValuesSection's commit-signal effect,
-   * protection first). Resolves true on success.
+   * Commit a single unit's STAGED Keep on merge batch, as Override guard edits
+   * (a separate revision from onCommitStaged — see ComponentValuesSection's
+   * commit-signal effect, Keep on merge first). Resolves true on success.
    */
-  onCommitProtection?: (unitId: string, spaceId: string, protection: ResourceProtection[]) => Promise<boolean>;
+  onCommitProtection?: (unitId: string, spaceId: string, guards: ResourceGuards[]) => Promise<boolean>;
   /**
    * Persist a unit's Labels/Annotations (full-map replacement) for the inline
    * unit details pane. Resolves true on success.
@@ -710,7 +710,7 @@ export const ComponentSidePane = memo(
     const [stagedCountByUnit, setStagedCountByUnit] = useState<Map<string, number>>(new Map());
     // Per-unit staged-PROTECTION counts, reported up separately from the value
     // count above (card 8: "N staged" and "N kept" are distinct numbers).
-    // `protectCount` (of `total`) is how many target Protected:true — tells a
+    // `protectCount` (of `total`) is how many keep their path — tells a
     // uniform "will be kept" batch from a mixed "Update N keys" one.
     const [stagedProtectionCountByUnit, setStagedProtectionCountByUnit] = useState<Map<string, { total: number; protectCount: number }>>(new Map());
     // Per-unit staged-edit "keep" summary: of this unit's staged MANUAL edits
@@ -719,14 +719,6 @@ export const ComponentSidePane = memo(
     // Drives the "N staged · both may be overwritten" / "both kept on merge"
     // bar disclosure (Section 6).
     const [stagedEditKeepSummaryByUnit, setStagedEditKeepSummaryByUnit] = useState<Map<string, { total: number; unkept: number }>>(new Map());
-    // Unit ids whose MutationSources a leaf/folder kebab has actually asked
-    // for (Finding 2's lazy fetch) — grows via requestProtectionData, never
-    // shrinks within a pane session. Fetched ALONGSIDE (not instead of) the
-    // Scope chip's own contributing-unit set below, in one combined query.
-    const [protectionRequestedUnitIds, setProtectionRequestedUnitIds] = useState<Set<string>>(new Set());
-    const requestProtectionData = useCallback((unitId: string) => {
-      setProtectionRequestedUnitIds((prev) => (prev.has(unitId) ? prev : new Set([...prev, unitId])));
-    }, []);
     // Monotonic signals bridged down to each section (mirrors the old accept-all signal).
     const [commitStagedSignal, setCommitStagedSignal] = useState(0);
     const [clearStagedSignal, setClearStagedSignal] = useState(0);
@@ -789,12 +781,6 @@ export const ComponentSidePane = memo(
     // rows + pill scaling) whenever the Upgradable tab is active, not just while
     // the footer Upgrade-all button is hovered.
     const showUpgradePreview = upgradeHovered || filterMode !== 'all';
-    // Hoisted so the Scope row's render gate and the protection-lookup fetch's
-    // skip condition read the IDENTICAL predicate — they must never disagree
-    // about whether the "Kept on merge" chip exists (the fetch would either run
-    // pointlessly with no row to show its answer, or the row would render before
-    // its data could ever arrive).
-    const scopeRowVisible = viewMode === 'diff' && filterMode === 'all';
     const isDragging = useRef(false);
     const dragStartPos = useRef(0);
     const dragStartSize = useRef(0);
@@ -1539,21 +1525,12 @@ export const ComponentSidePane = memo(
       () => mergedUnits.filter((u) => (u.variationEntry?.liveFieldDiffs.length ?? 0) > 0),
       [mergedUnits],
     );
-    // .sort() matters: mergedUnits is re-sorted by hasAction then slug on every
-    // render (see `units.sort` above), so an unsorted id list would change this
-    // query's cache key on every dry-run poll and refetch a multi-MB
-    // MutationSources payload each time. Same reasoning as the `spaceIds` sort
-    // in AppComponentView.tsx, ahead of ITS useListAllUnitsQuery call.
-    const protectionUnitIds = useMemo(
-      () => contributingUnits.map((u) => u.unitId).sort(),
-      [contributingUnits],
-    );
-    // Per unit, the live-diverged paths a protection lookup can actually answer
-    // for — array-indexed paths excluded (see protectedPaths.ts's module
-    // comment for why: MutationSources keys array elements associatively,
-    // ResolvedPath, while the tree addresses them positionally, and there is no
-    // parser in ui/src to translate between the two, so guessing would risk
-    // reporting "will be overwritten" about a value a merge in fact protects).
+    // Per unit, the live-diverged paths a Keep on merge lookup can actually
+    // answer for — array-indexed paths excluded (see protectedPaths.ts's module
+    // comment for why: PathAnnotations keys array elements by merge key, while
+    // the tree addresses them positionally, and there is no parser in ui/src to
+    // translate between the two, so guessing would risk reporting "will be
+    // overwritten" about a value a merge in fact keeps).
     const checkablePathsByUnit = useMemo(() => {
       const m = new Map<string, string[]>();
       for (const u of contributingUnits) {
@@ -1575,71 +1552,59 @@ export const ComponentSidePane = memo(
       () => Array.from(checkablePathsByUnit.values()).reduce((n, paths) => n + paths.length, 0),
       [checkablePathsByUnit],
     );
-    // Union of the Scope chip's own contributing-unit set (while the Scope row
-    // is on screen) with whatever units a leaf/folder kebab has actually asked
-    // for (Finding 2's lazy fetch, ANY tab) — one combined query rather than
-    // two separately-gated ones, so the same MutationSources payload for a
-    // unit is never fetched twice.
-    const protectionFetchUnitIds = useMemo(() => {
-      const ids = new Set<string>(protectionRequestedUnitIds);
-      if (scopeRowVisible) for (const id of protectionUnitIds) ids.add(id);
-      // While comparing, every column's unit needs its own answer: protection is
-      // a property of a path in a UNIT, so two deployments can disagree about
-      // whether the same field is kept. Fetched only while the comparison is on
-      // screen, and it is the same handful of units the grid is already showing
-      // — the cost this query is careful about is asking for the whole app, not
-      // for the units in front of the user.
+    // Only the compared units need their MutationSources, for the names their
+    // resources had before (below): the pane's main units query leaves it out
+    // (AppComponentView.tsx's useListAllUnitsQuery `select` — its own comment
+    // explains the ~5MB/revision cost), and this asks only for the handful of
+    // units the comparison is showing, sorted so the cache key is stable.
+    const compareSourceUnitIds = useMemo(() => {
+      const ids = new Set<string>();
       for (const unit of compareUnits) {
         for (const column of unit.columns) if (column.unitId) ids.add(column.unitId);
       }
       return Array.from(ids).sort();
-    }, [protectionRequestedUnitIds, scopeRowVisible, protectionUnitIds, compareUnits]);
-    // MutationSources is deliberately absent from the pane's main units query
-    // (AppComponentView.tsx's useListAllUnitsQuery `select` — its own comment
-    // explains the ~5MB/revision cost, 14MB to 50MB for the whole app). It is
-    // affordable HERE because this asks only for the handful of units that
-    // actually need it — either they contribute to the Scope chip's count
-    // (only while that row is on screen) or a kebab was opened for them (any
-    // tab, lazily, never unconditionally for every unit — Finding 2).
-    const { sourcesFor: mutationSourcesFor, isFetching: protectionDataFetching } =
-      useUnitMutationSourcesMap(protectionFetchUnitIds);
-    const hasProtectionData = protectionFetchUnitIds.length > 0 && !protectionDataFetching;
+    }, [compareUnits]);
+    const { sourcesFor: mutationSourcesFor } = useUnitMutationSourcesMap(compareSourceUnitIds);
     const mutationSourcesByUnitId = useMemo(
-      () => new Map(protectionFetchUnitIds.map((id) => [id, mutationSourcesFor(id)])),
-      [protectionFetchUnitIds, mutationSourcesFor],
+      () => new Map(compareSourceUnitIds.map((id) => [id, mutationSourcesFor(id)])),
+      [compareSourceUnitIds, mutationSourcesFor],
     );
+    // Each unit's PathAnnotations come with the unit list, so whether a path is
+    // kept on merge is known as soon as the unit is.
+    const pathAnnotationsByUnitId = useMemo(() => {
+      const m = new Map<string, PathAnnotationList | undefined>();
+      for (const deploymentUnits of unitsByDeployment.values()) {
+        for (const u of deploymentUnits) m.set(u.unitId, u.pathAnnotations);
+      }
+      return m;
+    }, [unitsByDeployment]);
     const totalKeptOnMergeN = useMemo(() => {
-      if (!hasProtectionData) return 0;
       let n = 0;
       for (const u of contributingUnits) {
         const paths = checkablePathsByUnit.get(u.unitId);
         if (!paths) continue;
         const fieldPathMeta = buildFieldPathMeta(u.data);
-        const isProtected = buildProtectedPathLookup(mutationSourcesByUnitId.get(u.unitId), fieldPathMeta);
+        const isProtected = buildProtectedPathLookup(u.pathAnnotations, fieldPathMeta);
         n += paths.filter(isProtected).length;
       }
       return n;
-    }, [hasProtectionData, contributingUnits, checkablePathsByUnit, mutationSourcesByUnitId]);
-    // Per-unit CURRENT effective protection lookup, handed to each
+    }, [contributingUnits, checkablePathsByUnit]);
+    // Per-unit CURRENT effective Keep on merge lookup, handed to each
     // ComponentValuesSection instance as `isProtected` (see NodeRowProps).
-    // Unfetched → buildProtectedPathLookup(undefined, ...) → () => false,
-    // Finding 2's safe default (unknown reads as unprotected).
     const isProtectedByUnit = useMemo(() => {
       const m = new Map<string, (path: string) => boolean>();
       for (const u of mergedUnits) {
         const fieldPathMeta = buildFieldPathMeta(u.data);
-        m.set(u.unitId, buildProtectedPathLookup(mutationSourcesByUnitId.get(u.unitId), fieldPathMeta));
+        m.set(u.unitId, buildProtectedPathLookup(u.pathAnnotations, fieldPathMeta));
       }
       return m;
-    }, [mergedUnits, mutationSourcesByUnitId]);
+    }, [mergedUnits]);
     /**
      * Per-unit kept-on-merge lookups for the compared deployments.
      *
      * Same source the single-deployment tree reads —
-     * `buildProtectedPathLookup(mutationSources, fieldPathMeta)` — so the two
-     * surfaces cannot disagree about what is kept. Unfetched resolves to
-     * `() => false`, which is the shipped safe default: unknown reads as
-     * unprotected rather than inventing a lock.
+     * `buildProtectedPathLookup(pathAnnotations, fieldPathMeta)` — so the two
+     * surfaces cannot disagree about what is kept.
      */
     const compareProtectionByUnitId = useMemo(() => {
       const lookups = new Map<string, (path: string) => boolean>();
@@ -1649,14 +1614,14 @@ export const ComponentSidePane = memo(
           lookups.set(
             column.unitId,
             buildProtectedPathLookup(
-              mutationSourcesByUnitId.get(column.unitId),
+              pathAnnotationsByUnitId.get(column.unitId),
               buildFieldPathMeta(column.data),
             ),
           );
         }
       }
       return lookups;
-    }, [compareUnits, mutationSourcesByUnitId]);
+    }, [compareUnits, pathAnnotationsByUnitId]);
 
     // The names each compared unit's resources had before, from the same
     // MutationSources, so a resource renamed in one deployment still joins its
@@ -1684,14 +1649,6 @@ export const ComponentSidePane = memo(
         })),
       [compareUnits, compareProtectionByUnitId, compareAliasesByUnitId],
     );
-
-    // Stable per-unit callback so a kebab click can lazily request this unit's
-    // protection data without breaking ComponentValuesSection's memo.
-    const requestProtectionDataByUnit = useMemo(() => {
-      const m = new Map<string, () => void>();
-      for (const u of mergedUnits) m.set(u.unitId, () => requestProtectionData(u.unitId));
-      return m;
-    }, [mergedUnits, requestProtectionData]);
 
     const prevSelectedIdRef = useRef<string | undefined>(undefined);
     const prevTabFocusNonceRef = useRef<number | undefined>(undefined);
@@ -1906,9 +1863,9 @@ export const ComponentSidePane = memo(
     // commitStagedByUnit (see Section 9 / ComponentValuesSectionProps.onCommitProtection).
     const commitProtectionByUnit = useMemo(() => {
       if (!onCommitProtection) return null;
-      const m = new Map<string, (protection: ResourceProtection[]) => Promise<boolean>>();
+      const m = new Map<string, (guards: ResourceGuards[]) => Promise<boolean>>();
       for (const u of mergedUnits) {
-        m.set(u.unitId, (protection) => onCommitProtection(u.unitId, u.spaceId, protection));
+        m.set(u.unitId, (guards) => onCommitProtection(u.unitId, u.spaceId, guards));
       }
       return m;
     }, [mergedUnits, onCommitProtection]);
@@ -2542,7 +2499,6 @@ export const ComponentSidePane = memo(
           totalCheckableM={totalCheckableM}
           totalKeptOnMergeN={totalKeptOnMergeN}
           totalLiveL={totalLiveL}
-          hasProtectionData={hasProtectionData}
           unitScope={unitScope}
           onUnitScopeChange={onUnitScopeChange}
           includeHiddenUnits={includeHiddenUnits}
@@ -2884,7 +2840,6 @@ export const ComponentSidePane = memo(
                         onCommitStaged={commitStagedByUnit?.get(unit.unitId)}
                         onCommitProtection={commitProtectionByUnit?.get(unit.unitId)}
                         isProtected={isProtectedByUnit.get(unit.unitId)}
-                        onRequestProtectionData={requestProtectionDataByUnit.get(unit.unitId)}
                         onStagedProtectionChange={handleStagedProtectionCountChange}
                         onStagedEditKeepSummaryChange={handleStagedEditKeepSummaryChange}
                         stopKeepingAllSignal={stopKeepingAllSignal}

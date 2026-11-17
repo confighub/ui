@@ -38,16 +38,26 @@ export function guardStamp(values: GuardValues): GuardStamp | undefined {
 export const guardValuesComplete = (values: GuardValues): boolean =>
   !values.enabled || values.key.trim() !== '';
 
-/** The guard as the invoke API takes it: `guards`, or `inheritedGuards` for an inherited one. */
-export function guardParams(values: GuardValues): {
+/**
+ * The guard as the invoke API takes it: `guards`, or `inheritedGuards` for an inherited one. `own`
+ * are further guards of this Unit alone to record, such as the Override guard of Keep on merge;
+ * the form's guard wins on a key both name, being the one the person typed.
+ */
+export function guardParams(
+  values: GuardValues,
+  own?: GuardStamp,
+): {
   guards?: string;
   inheritedGuards?: string;
 } {
   const stamp = guardStamp(values);
-  if (!stamp) return {};
-  return values.inherited
-    ? { inheritedGuards: JSON.stringify(stamp) }
-    : { guards: JSON.stringify(stamp) };
+  const local: GuardStamp = { ...own };
+  for (const key of Object.keys(stamp ?? {})) delete local[key];
+  if (stamp && !values.inherited) Object.assign(local, stamp);
+  return {
+    ...(Object.keys(local).length > 0 ? { guards: JSON.stringify(local) } : {}),
+    ...(stamp && values.inherited ? { inheritedGuards: JSON.stringify(stamp) } : {}),
+  };
 }
 
 /**

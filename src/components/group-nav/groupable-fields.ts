@@ -85,13 +85,13 @@ const FIELD_LABELS: Record<string, string> = {
  */
 const STATIC_CATEGORIES: GroupableCategory[] = [
   {
-    header: 'Core identity',
+    header: 'Core Identity',
     fields: ['Space', 'Target', 'ToolchainType']
       .filter((f) => SUPPORTED_GROUPABLE_FIELDS.includes(f))
       .map((f) => ({ field: f, label: FIELD_LABELS[f] ?? f })),
   },
   {
-    header: 'Status & health',
+    header: 'Status & Health',
     fields: ['UpgradeNeeded', 'UnreleasedChanges']
       .filter((f) => SUPPORTED_GROUPABLE_FIELDS.includes(f))
       .map((f) => ({ field: f, label: FIELD_LABELS[f] ?? f })),
@@ -103,7 +103,7 @@ const STATIC_CATEGORIES: GroupableCategory[] = [
       .map((f) => ({ field: f, label: FIELD_LABELS[f] ?? f })),
   },
   {
-    header: 'Clone & upstream',
+    header: 'Clone & Upstream',
     fields: ['UpstreamUnitSlug', 'UpstreamSpaceSlug']
       .filter((f) => SUPPORTED_GROUPABLE_FIELDS.includes(f))
       .map((f) => ({ field: f, label: FIELD_LABELS[f] ?? f })),

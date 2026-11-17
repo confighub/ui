@@ -409,7 +409,7 @@ test.describe('from the stage groups to the line and the offer', () => {
       path: IMAGE_PATH,
       targetValue: OLD,
       sourceValue: NEW,
-      targetProtected: true,
+      targetKept: true,
       blocks: true,
     };
     const p = propagationOf(

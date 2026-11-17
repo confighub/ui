@@ -174,7 +174,9 @@ test.describe('Blame tab: dismissing a conflict for good', () => {
     const dismissedRow = blame.getByRole('row').filter({ hasText: 'spec.replicas' });
     await expect(dismissedRow.getByText('Conflicts dismissed', { exact: true })).toBeVisible();
     await dismissedRow.getByRole('gridcell').nth(2).click();
-    const drawerLine = page.getByText(/^(ProtectedPath|Subtracted), at spec\.replicas$/);
+    const drawerLine = page.getByText(
+      /^(Guarded by guard Override(=\w+)?|Subtracted), at spec\.replicas$/,
+    );
     await expect(drawerLine).toBeVisible();
     await page.keyboard.press('Escape');
 

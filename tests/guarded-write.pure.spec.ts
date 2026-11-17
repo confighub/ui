@@ -22,11 +22,26 @@ import {
 } from '../src/components/guarded-write/guardedWrite';
 import {
   DEFAULT_CLEARANCE,
+  clearanceAdmitting,
+  clearanceWithout,
+  guardsNotCleared,
   guardsNotClearedByDefault,
   nonMergeClearance,
   promotionClearance,
   unitHasGuards,
 } from '../src/utility/clearance-functions';
+import {
+  LINK_GUARD_KEY,
+  OVERRIDE_GUARD_KEY,
+  TRIGGER_GUARD_KEY,
+  hasOverrideGuard,
+  isKeptOnMergeConflict,
+  joinKeepGuard,
+  overrideGuardAt,
+  overrideGuardEdit,
+  overrideGuardValue,
+  splitKeepGuard,
+} from '../src/utility/override-guard';
 
 const DEPLOYMENT = { ResourceType: 'apps/v1/Deployment', ResourceName: 'prod/web' };
 
@@ -227,4 +242,144 @@ test('a promotion is cleared by default only for a ChangeOrder that does not mer
   // An empty UpdateType is UpgradeUnit, and one not loaded yet is not assumed to be anything else.
   expect(promotionClearance('')).toBeUndefined();
   expect(promotionClearance(undefined)).toBeUndefined();
+});
+
+test('Keep on merge records the Override guard, Upstream on a Unit with an upstream Unit', () => {
+  expect(OVERRIDE_GUARD_KEY).toBe('Override');
+  expect(overrideGuardValue('upstream-unit-id')).toBe('Upstream');
+  expect(overrideGuardValue(true)).toBe('Upstream');
+  expect(overrideGuardValue(null)).toBe('External');
+  expect(overrideGuardValue(undefined)).toBe('External');
+  expect(overrideGuardValue(false)).toBe('External');
+  expect(hasOverrideGuard({ Override: 'External', Scale: 'RegionSpecific' })).toBe(true);
+  expect(hasOverrideGuard({ Scale: 'RegionSpecific' })).toBe(false);
+  expect(hasOverrideGuard(undefined)).toBe(false);
+  // The default clearance of a write that is not a merge covers either value.
+  expect(guardsNotCleared({ Override: overrideGuardValue('u') }, DEFAULT_CLEARANCE)).toEqual([]);
+  expect(guardsNotCleared({ Override: overrideGuardValue(null) }, DEFAULT_CLEARANCE)).toEqual([]);
+});
+
+test('an Override guard edit sets the guard on the paths kept and removes it from those let go', () => {
+  expect(overrideGuardEdit(DEPLOYMENT, ['spec.replicas', ''], ['spec.template'], 'Upstream')).toEqual({
+    Resource: DEPLOYMENT,
+    Set: { 'spec.replicas': { Override: 'Upstream' }, '': { Override: 'Upstream' } },
+    Remove: { 'spec.template': ['Override'] },
+  });
+  expect(overrideGuardEdit(DEPLOYMENT, [], ['spec.replicas'], 'External')).toEqual({
+    Resource: DEPLOYMENT,
+    Remove: { 'spec.replicas': ['Override'] },
+  });
+});
+
+test('the Override guard at a path is its own, else the nearest ancestor, else the resource', () => {
+  const annotations: PathAnnotationList[number] = {
+    Resource: DEPLOYMENT,
+    PathAnnotationMap: {
+      'spec.template.spec': { Guard: { Override: 'Upstream' } },
+      'spec.template.spec.replicas': { Guard: { Scale: 'RegionSpecific' } },
+      'metadata.labels.team': { Guard: { Override: 'External' } },
+    },
+  };
+  expect(overrideGuardAt(annotations, 'metadata.labels.team')).toBe('External');
+  // A path's own entry without an Override does not hide an ancestor's: guards are a union.
+  expect(overrideGuardAt(annotations, 'spec.template.spec.replicas')).toBe('Upstream');
+  expect(overrideGuardAt(annotations, 'spec.template.spec.containers')).toBe('Upstream');
+  expect(overrideGuardAt(annotations, 'spec.strategy')).toBeUndefined();
+  expect(
+    overrideGuardAt(
+      { ...annotations, ResourceAnnotations: { Guard: { Override: 'External' } } },
+      'spec.strategy',
+    ),
+  ).toBe('External');
+  expect(overrideGuardAt(undefined, 'spec.strategy')).toBeUndefined();
+});
+
+test('a clearance admits a guard by its value, and gives back only the value it added', () => {
+  expect(clearanceAdmitting([], 'Link', 'Insert')).toEqual([
+    { Key: 'Link', Operator: 'In', Values: ['Insert'] },
+  ]);
+  const exists = [{ Key: 'Link', Operator: 'Exists' }];
+  expect(clearanceAdmitting(exists, 'Link', 'Insert')).toBe(exists);
+  expect(
+    clearanceAdmitting([{ Key: 'Link', Operator: 'In', Values: ['Upsert'] }], 'Link', 'Insert'),
+  ).toEqual([{ Key: 'Link', Operator: 'In', Values: ['Upsert', 'Insert'] }]);
+  expect(
+    clearanceWithout(
+      [
+        { Key: 'Link', Operator: 'In', Values: ['Upsert', 'Insert'] },
+        { Key: 'Link', Operator: 'In', Values: ['Insert'] },
+        { Key: 'owner', Operator: 'In', Values: ['Insert'] },
+      ],
+      'Link',
+      'Insert',
+    ),
+  ).toEqual([
+    { Key: 'Link', Operator: 'In', Values: ['Upsert'] },
+    { Key: 'owner', Operator: 'In', Values: ['Insert'] },
+  ]);
+  expect(clearanceWithout(exists, 'Link', 'Insert')).toEqual(exists);
+});
+
+test("Keep on merge of a Link or Trigger is the guard naming it, with the clearance admitting it", () => {
+  expect(LINK_GUARD_KEY).toBe('Link');
+  expect(TRIGGER_GUARD_KEY).toBe('Trigger');
+  const stored = {
+    guards: { owner: 'platform', Trigger: 'stamp' },
+    clearance: [
+      { Key: 'owner', Operator: 'Exists' },
+      { Key: 'Trigger', Operator: 'In', Values: ['stamp'] },
+    ],
+  };
+  const form = splitKeepGuard(stored.guards, stored.clearance, TRIGGER_GUARD_KEY, 'stamp');
+  expect(form).toEqual({
+    keep: true,
+    guards: { owner: 'platform' },
+    clearance: [{ Key: 'owner', Operator: 'Exists' }],
+  });
+  expect(joinKeepGuard(form, TRIGGER_GUARD_KEY, 'stamp')).toEqual(stored);
+  expect(joinKeepGuard({ ...form, keep: false }, TRIGGER_GUARD_KEY, 'stamp')).toEqual({
+    guards: { owner: 'platform' },
+    clearance: [{ Key: 'owner', Operator: 'Exists' }],
+  });
+  // Another value of the key is the person's own guard, shown as one; Keep on merge replaces it.
+  const other = splitKeepGuard({ Trigger: 'older' }, undefined, TRIGGER_GUARD_KEY, 'stamp');
+  expect(other).toEqual({ keep: false, guards: { Trigger: 'older' }, clearance: undefined });
+  expect(joinKeepGuard({ ...other, keep: true }, TRIGGER_GUARD_KEY, 'stamp')).toEqual({
+    guards: { Trigger: 'stamp' },
+    clearance: [{ Key: 'Trigger', Operator: 'In', Values: ['stamp'] }],
+  });
+  expect(joinKeepGuard({ keep: false }, LINK_GUARD_KEY, 'Insert')).toEqual({
+    guards: undefined,
+    clearance: undefined,
+  });
+});
+
+test('Keep on merge in a write is sent with the guard the form records, which wins on its key', () => {
+  const local = { enabled: true, key: 'Scale', value: 'RegionSpecific', inherited: false };
+  expect(guardParams(NO_GUARD_VALUES, { Override: 'Upstream' })).toEqual({
+    guards: '{"Override":"Upstream"}',
+  });
+  expect(guardParams(local, { Override: 'Upstream' })).toEqual({
+    guards: '{"Override":"Upstream","Scale":"RegionSpecific"}',
+  });
+  expect(guardParams({ ...local, inherited: true }, { Override: 'Upstream' })).toEqual({
+    guards: '{"Override":"Upstream"}',
+    inheritedGuards: '{"Scale":"RegionSpecific"}',
+  });
+  expect(
+    guardParams({ ...local, key: 'Override', value: 'External' }, { Override: 'Upstream' }),
+  ).toEqual({ guards: '{"Override":"External"}' });
+});
+
+test('a conflict is a value kept on merge when Override guards alone withheld it', () => {
+  expect(isKeptOnMergeConflict({ Reason: 'Guarded', Guards: [{ Key: 'Override' }] })).toBe(true);
+  expect(isKeptOnMergeConflict({ Reason: 'Guarded', Guard: { Key: 'Override' } })).toBe(true);
+  // Another guard held it too, and is the one to explain.
+  expect(
+    isKeptOnMergeConflict({ Reason: 'Guarded', Guards: [{ Key: 'Override' }, { Key: 'owner' }] }),
+  ).toBe(false);
+  expect(isKeptOnMergeConflict({ Reason: 'Guarded', Guards: [{ Key: 'owner' }] })).toBe(false);
+  // As a merge reported a kept value before keeping it became a guard.
+  expect(isKeptOnMergeConflict({ Reason: 'ProtectedPath' })).toBe(true);
+  expect(isKeptOnMergeConflict({ Reason: 'Subtracted' })).toBe(false);
 });

@@ -80,26 +80,32 @@ test.describe('link drawer', () => {
     await expect(drawer.getByTestId('link-clearance-key-0')).toHaveValue('owner');
     await expect(drawer.getByTestId('link-clearance-values-0')).toHaveValue('ns-link');
 
-    await drawer.getByTestId('link-protect').getByRole('checkbox').check();
+    await drawer.getByTestId('link-keep-on-merge').getByRole('checkbox').check();
     await drawer.getByTestId('link-save').click();
     await expect(drawer).toBeHidden();
 
     await expect
       .poll(async () => {
         const link = await getLink(spaceId, linkId);
-        return { Guards: link.Guards, Clearance: link.Clearance, Protect: link.Protect, AutoUpdate: link.AutoUpdate };
+        return { Guards: link.Guards, Clearance: link.Clearance, AutoUpdate: link.AutoUpdate };
       })
       .toEqual({
-        Guards: { owner: 'ns-link' },
-        Clearance: [{ Key: 'owner', Operator: 'In', Values: ['ns-link'] }],
-        Protect: true,
+        // Keep on merge is the guard naming the Link's type, which the Link is cleared for.
+        Guards: { owner: 'ns-link', Link: 'NeedsProvides' },
+        Clearance: [
+          { Key: 'owner', Operator: 'In', Values: ['ns-link'] },
+          { Key: 'Link', Operator: 'In', Values: ['NeedsProvides'] },
+        ],
         AutoUpdate: false,
       });
 
-    // Opened again, the drawer shows what was saved.
+    // Opened again, the drawer shows what was saved, Keep on merge standing for its guard.
     await page.getByTestId('link-details-app-to-ns').click();
+    await expect(drawer.getByTestId('link-keep-on-merge').getByRole('checkbox')).toBeChecked();
     await expect(drawer.getByTestId('link-guards-key-0')).toHaveValue('owner');
+    await expect(drawer.getByTestId('link-guards-key-1')).toHaveCount(0);
     await expect(drawer.getByTestId('link-clearance-operator-0')).toContainText('In');
+    await expect(drawer.getByTestId('link-clearance-key-1')).toHaveCount(0);
   });
 
   test('a merge Link is offered its merge settings and not guards', async ({ page }) => {

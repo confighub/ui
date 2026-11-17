@@ -31,20 +31,21 @@ import { useCappedRows } from './components/useCappedRows';
 
 /** What keeps a field's value, for the two reasons that mean the target kept it. */
 const KEPT_BY: Readonly<Record<string, string>> = {
-  ProtectedPath: 'A protected field',
+  ProtectedPath: 'A field kept on merge',
   Subtracted: 'A local override',
 };
 
 /**
- * A refusal that is a value the target kept, said in plain words: "A protected
- * field in api keeps spec.replicas at 6." `null` for any other refusal, which is
+ * A refusal that is a value the target kept, said in plain words: "A field kept
+ * on merge in api keeps spec.replicas at 6." `null` for any other refusal, which is
  * printed with the server's own reason, since a reason nobody modelled must still
  * be shown as it came.
  */
 function keptSentence(conflict: ChangeOrderResourceConflict): ReactNode {
-  const guarded = guardSentence(conflict);
+  // Held by its Override guard alone: the field is kept on merge, which says more than the guard.
+  const guarded = conflict.targetKept ? null : guardSentence(conflict);
   if (guarded !== null) return guarded;
-  const subject = KEPT_BY[conflict.reason];
+  const subject = conflict.targetKept ? KEPT_BY.ProtectedPath : KEPT_BY[conflict.reason];
   if (subject === undefined || conflict.path === undefined || conflict.path === '') return null;
   return (
     <>

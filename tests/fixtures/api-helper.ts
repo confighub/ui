@@ -24,8 +24,8 @@ import type {
   ComponentRead,
   ExtendedChangeOrderRead,
   ExtendedComponentRead,
-  ResourceProtection,
-  UnitProtectionResponse
+  UnitGuardRequest,
+  UnitGuardResponse
 } from '@confighub/rtk-query';
 import { hubApi } from './test';
 
@@ -341,27 +341,27 @@ export class ApiHelper {
   }
 
   /**
-   * Set a unit's protection directly (POST /api/space/{spaceId}/unit/{unitId}/protection),
+   * Edit a unit's guards directly (POST /api/space/{spaceId}/unit/{unitId}/guard),
    * the SAME endpoint the lock-interaction UI's kebab/commit flow calls
-   * (`useSetUnitProtectionMutation`). Distinct from `protectPath`: that helper
-   * protects whatever paths a VALUE write touches, which cannot represent
-   * "already protected, currently unmodified" — the state a committed
-   * `Keep on merge` leaves a row in. Use this to seed a path as protected
-   * WITHOUT also changing its value, so a test can assert the kebab renders
+   * (`useSetUnitGuardMutation`) to keep a value on merge with the Override guard.
+   * Distinct from `uploadUnitData({ protect })`: that keeps whatever paths a VALUE
+   * write touches, which cannot represent "already kept, currently unmodified" —
+   * the state a committed `Keep on merge` leaves a row in. Use this to seed a path
+   * as kept WITHOUT also changing its value, so a test can assert the kebab renders
    * `Let merges update this` on page load with no staged interaction at all.
    */
-  async setUnitProtection(
+  async setUnitGuard(
     spaceId: string,
     unitId: string,
-    resourceProtection: ResourceProtection[],
-  ): Promise<UnitProtectionResponse> {
+    request: UnitGuardRequest,
+  ): Promise<UnitGuardResponse> {
     const response = await hubApi.post(
-      `/api/space/${spaceId}/unit/${unitId}/protection`,
-      { data: { ResourceProtection: resourceProtection } },
+      `/api/space/${spaceId}/unit/${unitId}/guard`,
+      { data: request },
     );
     if (!response.ok()) {
       throw new Error(
-        `Failed to set unit protection: ${response.status()} ${await response.text()}`
+        `Failed to set unit guards: ${response.status()} ${await response.text()}`
       );
     }
     return response.json();

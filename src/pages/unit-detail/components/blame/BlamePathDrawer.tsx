@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { ErrorBox } from '@/components/error-box/ErrorBox';
 import { NavLink } from '@/components/nav-link/NavLink';
 import { getApiErrorMessage } from '@/utility/error-functions';
+import { hasOverrideGuard } from '@/utility/override-guard';
 import {
   type BlameField,
   type BlameOrigin,
@@ -192,15 +193,13 @@ const FieldSummary = ({ report }: { report: UnitPathReport }) => {
       </Line>
       <Line label='Released'>{report.ReleaseMessage}</Line>
       <Line label='Kept on merge'>
-        {field.Deleted && field.Protected
-          ? 'yes: a merge from upstream leaves it deleted'
-          : field.ResourceProtected && !field.Path
-            ? 'yes: the resource is protected as a whole, so a merge from upstream leaves all of it alone'
-            : field.ResourceProtected
-              ? 'yes: its resource is protected as a whole'
-              : field.Protected
-                ? 'yes: an override a merge from upstream leaves alone'
-                : undefined}
+        {!hasOverrideGuard(field.Guards)
+          ? undefined
+          : field.Deleted
+            ? 'yes: a merge from upstream leaves it deleted'
+            : !field.Path
+              ? 'yes: the resource is kept as a whole, so a merge from upstream leaves all of it alone'
+              : 'yes: an override a merge from upstream leaves alone'}
       </Line>
       <Line label='Guards'>
         {Object.entries(field.Guards ?? {})

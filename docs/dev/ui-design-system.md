@@ -438,6 +438,14 @@ reuse the same "nice popout" recipe instead of re-inventing tooltip styling per 
 
 Active tab: rust indicator (2px), rust text, font-weight 600. Tab height: 40px.
 
+### Data Grid Columns
+
+Column names are Title Case: every word starts with a capital letter, short words such as "by" too
+("Edited By", "Change Set ID", "Hidden Reason"). This applies to each grid's header and to its
+column groups. It also applies to the Columns panel (`GroupedColumnsPanel`), which builds a column's
+name from its field: `changeSet` becomes "Change Set". A label-key column shows the key exactly as
+the user wrote it.
+
 ### Alerts
 
 ```tsx
@@ -490,3 +498,4 @@ Theme adds a 3px colored left border and semantic background tint. Use `standard
 | Custom `borderRadius` numbers | Use `theme.shape.borderRadius` (rSm) or `tokens.rMd` |
 | Nested ternaries in JSX | Early return `null` for conditional rendering |
 | Chips for editable Labels, Annotations, Facts or gates | `MapFieldSection` rows |
+| A lowercase word in a data grid column name (`change Set`, `Set by`) | Title Case (`Change Set`, `Set By`) |

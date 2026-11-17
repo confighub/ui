@@ -121,12 +121,13 @@ const KEPT_LABELS: Readonly<Record<string, string>> = {
 
 /**
  * A refusal that is a value the target kept, as a row for the resource's diff: a
- * path kept on merge, or a local override the merge did not take over. `undefined`
+ * path kept on merge (its Override guard, or ProtectedPath from before keeping was a
+ * guard), or a local override the merge did not take over. `undefined`
  * for every other refusal (and for one the server gave no path or value for), which
  * stays a sentence: it says what stopped the change, not what a field holds.
  */
 export function keptValueOf(conflict: ChangeOrderResourceConflict): KeptValue | undefined {
-  const label = KEPT_LABELS[conflict.reason];
+  const label = conflict.targetKept ? changeOrderCopy.keptValue.keptOnMerge : KEPT_LABELS[conflict.reason];
   if (label === undefined || conflict.path === undefined || conflict.path === '' || conflict.targetValue === undefined) {
     return undefined;
   }

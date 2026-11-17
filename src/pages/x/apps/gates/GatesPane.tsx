@@ -6,14 +6,15 @@ import { useDispatch } from 'react-redux';
 import { ChangeSetAcknowledgements } from '@/components/change-set-lock/ChangeSetAcknowledgements';
 import { useChangeSetLock } from '@/components/change-set-lock/useChangeSetLock';
 import { validatingTriggerRequest } from '@/hooks/useGateTriggers';
-import { protectionRequest } from '@/pages/unit-detail/components/blame/blameFields';
-import { nonMergeClearanceParam } from '@/utility/clearance-functions';
+import { overrideGuardRequest } from '@/pages/unit-detail/components/blame/blameFields';
+import { nonMergeClearance, nonMergeClearanceParam } from '@/utility/clearance-functions';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import { parseGateName } from '@/utility/name-format-functions';
+import { overrideGuardValue } from '@/utility/override-guard';
 import {
   confighubApi,
   useInvokeFunctionsOnOrgMutation,
-  useSetUnitProtectionMutation,
+  useSetUnitGuardMutation,
 } from '@confighub/rtk-query';
 import { Alert, Box, CircularProgress, Skeleton } from '@mui/material';
 import { styled } from '@mui/material/styles';
@@ -121,7 +122,7 @@ export const GatesPane = ({
 }: GatesPaneProps) => {
   const dispatch = useDispatch();
   const [invokeFunctions] = useInvokeFunctionsOnOrgMutation();
-  const [setProtection] = useSetUnitProtectionMutation();
+  const [setGuard] = useSetUnitGuardMutation();
 
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [staged, setStaged] = useState<Map<string, StagedFix>>(new Map());
@@ -354,15 +355,21 @@ export const GatesPane = ({
       );
       const keptBlame = kept.flatMap((f) => {
         const origin = originForFinding(blameFieldsForFinding(blame, f, f.gateName));
-        return origin?.upstream && !origin.protected ? [origin.field] : [];
+        return origin?.upstream && !origin.kept ? [origin.field] : [];
       });
       if (keptBlame.length > 0) {
+        const upstreamUnitId = units.find((u) => u.UnitID === unit.unitId)?.UpstreamUnitID;
         try {
-          await setProtection({
+          await setGuard({
             spaceId: unit.spaceId,
             unitId: unit.unitId,
-            unitProtectionRequest: {
-              ResourceProtection: protectionRequest(keptBlame, true),
+            unitGuardRequest: {
+              ResourceGuards: overrideGuardRequest(
+                keptBlame,
+                true,
+                overrideGuardValue(upstreamUnitId),
+              ),
+              Clearance: nonMergeClearance(),
               ChangeSetID: lock.changeSetFor(unit.unitId),
             },
           }).unwrap();

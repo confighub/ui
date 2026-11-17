@@ -9,7 +9,8 @@ import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Tooltip from '@mui/material/Tooltip';
 import { highlightText } from '@/components/entity-data-grid/utils/highlightText';
-import type { ResourceProtection } from '@confighub/rtk-query';
+import type { ResourceGuards, ResourceInfo } from '@confighub/rtk-query';
+import { overrideGuardEdit, overrideGuardValue, type OverrideGuardValue } from '@/utility/override-guard';
 import { applyConfigWrites, buildFieldPathMeta, parseUnitData, type ArrayInsertion, type ConfigWrite, type LeafValueType } from './configParser';
 import type { FieldEntry, FieldPathMeta } from './configParser';
 import { availableWholeResourceChanges, buildGroupedPaths, buildPaths, countLogicalChanges, fieldDiffKey } from './entryBuilders';
@@ -147,44 +148,47 @@ function withoutUnreachableWholeResources(
 }
 
 /** Stable default for NodeRowProps.isProtected / ComponentValuesSectionProps.isProtected
- *  when the caller hasn't wired real MutationSources-backed data yet — "unknown reads as
- *  unprotected" (Finding 2's safe default). A module-level constant so it never changes
+ *  when the caller hasn't wired the unit's PathAnnotations yet — "unknown reads as not
+ *  kept" (Finding 2's safe default). A module-level constant so it never changes
  *  identity across renders. */
 function isProtectedFallback(): boolean {
   return false;
 }
 
 /**
- * Group staged protection entries (stage key → target Protected value) into
- * the `ResourceProtection[]` shape `SetUnitProtection` expects — one entry per
- * resource, each carrying a `Protected` map of BARE path → target value.
- * Mirrors protectedPaths.ts's own resource-matching scheme: `fieldPathMeta`
- * (built from the unit's own current data, `buildFieldPathMeta`) supplies each
- * path's resource identity, and paths with no resource (a single-document
- * unit) group together under an empty `{}` Resource — matching
- * `buildProtectedPathLookup`'s "single entry answers for every path" rule for
- * the read side, so a write here is found by that same read path later. Every
- * key handed in must already be array-index-free (Finding 1's guard, applied
- * at the kebab item) — a positional array path stored here would be written
- * under a key format the merge engine's own lookup never produces or matches.
+ * Group staged Keep on merge entries (stage key → whether to keep) into the
+ * `ResourceGuards[]` shape `SetUnitGuard` expects — one entry per resource,
+ * setting the Override guard on the BARE paths to keep and removing it from
+ * the paths to let go. Mirrors protectedPaths.ts's own resource-matching
+ * scheme: `fieldPathMeta` (built from the unit's own current data,
+ * `buildFieldPathMeta`) supplies each path's resource identity, and paths with
+ * no resource (a single-document unit) group together with no Resource —
+ * matching `buildProtectedPathLookup`'s rule of reading such a path from the
+ * unit's only annotated resource. Every key handed in must already be
+ * array-index-free (Finding 1's guard, applied at the kebab item) — a
+ * positional array path stored here would be written under a key the merge
+ * engine's own lookup never produces or matches.
  */
-function buildResourceProtectionPayload(
+function buildOverrideGuardEdits(
   staged: Map<string, boolean>,
   fieldPathMeta: Map<string, FieldPathMeta>,
-): ResourceProtection[] {
-  const byResource = new Map<string, ResourceProtection>();
+  value: OverrideGuardValue,
+): ResourceGuards[] {
+  const byResource = new Map<string, { resource?: ResourceInfo; keep: string[]; release: string[] }>();
   for (const [key, target] of staged) {
     const bare = stageKeyPath(key);
     const resource = fieldPathMeta.get(bare)?.resource;
     const resourceKey = JSON.stringify(resource ?? {});
     let entry = byResource.get(resourceKey);
     if (!entry) {
-      entry = { Resource: resource, Protected: {} };
+      entry = { resource, keep: [], release: [] };
       byResource.set(resourceKey, entry);
     }
-    (entry.Protected as Record<string, boolean>)[bare] = target;
+    (target ? entry.keep : entry.release).push(bare);
   }
-  return [...byResource.values()];
+  return [...byResource.values()].map((entry) =>
+    overrideGuardEdit(entry.resource, entry.keep, entry.release, value),
+  );
 }
 
 
@@ -598,7 +602,7 @@ interface MembershipContextValue {
   /** Revert a staged manual edit: discard the edit and unstage the path. */
   onRevertEdit: (path: string) => void;
   /**
-   * Staged PROTECTION changes: stage key → the TARGET `Protected` value the
+   * Staged PROTECTION changes: stage key → whether to keep the path, as the
    * user picked ("Keep on merge" → true, "Let merges update this" → false).
    * A path with no entry here has no staged protection change (its displayed
    * state is whatever `isProtected(path)` reports — the committed baseline).
@@ -694,21 +698,15 @@ interface NodeRowProps {
   /** Remove a created upstream-only key (used by inline edit revert). */
   onDeleteFieldValue?: (path: string, meta?: FieldPathMeta) => Promise<void>;
   /**
-   * CURRENT effective protection for a bare path — the COMMITTED baseline
-   * (independent of anything staged), sourced from the unit's lazily-fetched
-   * `MutationSources` via `buildProtectedPathLookup`. Treats "not yet fetched"
-   * as `false` (not protected) — the safe default per protectedPaths.ts /
-   * lock-interaction Finding 2: worst case is a redundant protect (the
-   * backend no-ops it), never a silent unprotect. Defaults to `() => false`
-   * when the caller hasn't wired real data yet.
+   * CURRENT effective Keep on merge for a bare path — the COMMITTED baseline
+   * (independent of anything staged): an Override guard in the unit's
+   * `PathAnnotations`, via `buildProtectedPathLookup`. Treats "not known" as
+   * `false` (not kept) — the safe default per protectedPaths.ts /
+   * lock-interaction Finding 2: worst case is a redundant keep, never a
+   * silent release. Defaults to `() => false` when the caller hasn't wired
+   * real data yet.
    */
   isProtected?: (path: string) => boolean;
-  /**
-   * Tell the caller this unit's protection data is now needed (a leaf or
-   * folder kebab was opened) so it can lazily fetch `MutationSources` for it
-   * if it hasn't already. Safe to call repeatedly — the caller dedupes.
-   */
-  onRequestProtectionData?: () => void;
   /**
    * The source document this row belongs to, inherited from the nearest
    * ancestor wrapper. Undefined for single-document units (and for every unit
@@ -793,24 +791,22 @@ interface ComponentValuesSectionProps {
   /** Commit this unit's staged batch in ONE call. Resolves true on success (staged set is then cleared). */
   onCommitStaged?: (payload: StagedCommitPayload) => Promise<StagedCommitResult>;
   /**
-   * Commit this unit's staged PROTECTION changes in ONE call, via the
-   * dedicated `SetUnitProtection` endpoint — a SEPARATE revision from the
-   * value-write `onCommitStaged` call, and fired FIRST when both are staged
-   * (see the commit-signal effect: protecting an existing key before an
-   * upgrade lands means the upgrade can't clobber it; a lock on a
-   * same-commit new key is disallowed instead of reordered — you cannot
-   * stage a lock on a key that does not exist yet). Resolves true on
-   * success (this unit's staged protection is then cleared).
+   * Commit this unit's staged PROTECTION changes in ONE call, as Override
+   * guards set and removed through `SetUnitGuard` — a SEPARATE revision from the
+   * value-write `onCommitStaged` call. Fired first before a wholesale upgrade, so
+   * the upgrade can't clobber what is kept, and after any other value write, which
+   * a guard set first would withhold (see the commit-signal effect). A lock on a
+   * same-commit new key is disallowed instead of reordered — you cannot stage a
+   * lock on a key that does not exist yet. Resolves true on success (this unit's
+   * staged protection is then cleared).
    */
-  onCommitProtection?: (protection: ResourceProtection[]) => Promise<boolean>;
+  onCommitProtection?: (guards: ResourceGuards[]) => Promise<boolean>;
   onSetFieldValue?: (path: string, newValue: string, meta?: FieldPathMeta) => Promise<void>;
   onDeleteFieldValue?: (path: string, meta?: FieldPathMeta) => Promise<void>;
   /** CURRENT effective (committed) protection lookup — see NodeRowProps.isProtected. */
   isProtected?: (path: string) => boolean;
-  /** See NodeRowProps.onRequestProtectionData. */
-  onRequestProtectionData?: () => void;
   /** Reports this unit's current staged PROTECTION-change count (total, and of
-   * those how many target `Protected: true`) up to the side pane (for the bar
+   * those how many keep the path) up to the side pane (for the bar
    * disclosure). Counted separately from the value-staged count — see
    * MembershipContextValue.stagedProtection. */
   onStagedProtectionChange?: (unitId: string, total: number, protectCount: number) => void;
@@ -882,12 +878,10 @@ function countLeaves(nodes: DiffTreeNode[]): number {
 /**
  * Collect the BARE dot-paths of every leaf DESCENDANT of `nodes`, prefixed by
  * `prefix` (the folder's own fullPath) — used by the folder kebab's "Keep
- * group & N keys" action (Finding 3 of the lock-interaction plan). A single
- * SetProtection write AT the folder path would only protect leaves that
- * inherit from it (the read ladder's ancestor rung); a leaf that already
- * carries its own EXACT PathMutationMap entry — the normal case for anything
- * ever edited/overridden — is untouched by an ancestor write, so the folder
- * action must enumerate and write each leaf individually. Mirrors NodeRow's
+ * group & N keys" action (Finding 3 of the lock-interaction plan). The folder
+ * action writes each leaf's own Override guard rather than one at the folder
+ * path: a guard at the folder would keep every leaf under it, those added
+ * later included, and no single leaf could then be let go on its own. Mirrors NodeRow's
  * own `fullPath` computation: a path-transparent (document wrapper) node
  * resolves to its parent's prefix rather than extending it.
  */
@@ -967,7 +961,6 @@ const NodeRow = memo(({
   onSetFieldValue,
   onDeleteFieldValue,
   isProtected,
-  onRequestProtectionData,
   valueOverlay,
   fieldPathMeta,
   upgradeCreatedAt,
@@ -1146,6 +1139,15 @@ const NodeRow = memo(({
   const currentlyProtected = (isProtected ?? isProtectedFallback)(fullPath);
   const stagedProtectionForRow = stagedProtection.get(stageKey);
   const effectiveKept = stagedProtectionForRow ?? currentlyProtected;
+  // Kept by an Override guard on an enclosing field or on the resource as a whole, which is
+  // exactly when the field above is kept too (the empty path is the resource). Removing a
+  // guard here would remove nothing, so this row cannot be let go on its own.
+  const keptByEnclosing =
+    currentlyProtected &&
+    stagedProtectionForRow === undefined &&
+    (isProtected ?? isProtectedFallback)(
+      fullPath.includes('.') ? fullPath.slice(0, fullPath.lastIndexOf('.')) : '',
+    );
 
   // Inline edit STAGES (no immediate write): record the typed value and mark the
   // path staged so the row renders its pending current→edited preview. Editing is
@@ -1221,6 +1223,9 @@ const NodeRow = memo(({
     // Array-element rows (e.g. env.0.name, dot-index) — disable Remove: deleting a
     // single key inside an array element would corrupt the array structure.
     const isArrayRow = pathContainsArrayIndex(fullPath);
+    // Keep on merge is not offered where there is nothing to keep, where the guard cannot name
+    // the row, or where the row is kept with what contains it.
+    const cannotKeep = isAbsentCurrent || isArrayRow || keptByEnclosing;
 
     // A just-committed row keeps the correct symbol after refetch clears the
     // upstream diff:
@@ -1424,10 +1429,6 @@ const NodeRow = memo(({
                 onClick={(e: React.MouseEvent<HTMLElement>) => {
                   e.stopPropagation();
                   setLeafMenuAnchorEl(e.currentTarget);
-                  // Lazily fetch this unit's MutationSources the moment its
-                  // protection state is actually needed (Finding 2) — never
-                  // unconditionally, and the caller dedupes repeat calls.
-                  onRequestProtectionData?.();
                 }}
                 sx={{
                   display: 'inline-flex',
@@ -1478,28 +1479,31 @@ const NodeRow = memo(({
                   Inspect value
                 </MenuItem>
                 <Divider sx={{ my: '4px', mx: '2px' }} />
-                {/* Keep on merge / Let merges update this — protection toggle.
+                {/* Keep on merge / Let merges update this — the Override guard toggle.
                     Disabled for a key that doesn't exist yet downstream (nothing
-                    to protect until it's added) and for an array-indexed row
-                    (Finding 1: the write-side path-key format the merge engine's
-                    protection lookup can match doesn't exist for a positional
-                    array path — see buildResourceProtectionPayload's doc comment
-                    and protectedPaths.ts's matching read-side gap). Wording is
-                    D3's shipped prior art, from `Protected`'s own doc comment. */}
+                    to keep until it's added) and for an array-indexed row
+                    (Finding 1: the guard annotations key array elements by merge
+                    key, which a positional array path cannot name — see
+                    buildOverrideGuardEdits's doc comment and protectedPaths.ts's
+                    matching read-side gap). */}
                 <Tooltip
                   title={
                     isAbsentCurrent
                       ? 'Add the key first. A key must exist before merges can be told to leave it alone.'
-                      : isArrayRow ? 'Cannot protect array-indexed rows.' : ''
+                      : isArrayRow
+                        ? 'An array-indexed row cannot be kept on merge.'
+                        : keptByEnclosing
+                          ? 'Kept on merge with the field or resource that contains it. Let merges update that instead.'
+                          : ''
                   }
                   placement="right"
                 >
                   <span>
                     <MenuItem
-                      disabled={isAbsentCurrent || isArrayRow}
+                      disabled={cannotKeep}
                       onClick={() => {
                         setLeafMenuAnchorEl(null);
-                        if (isAbsentCurrent || isArrayRow) return;
+                        if (cannotKeep) return;
                         onToggleProtection(stageKey, !effectiveKept);
                       }}
                       sx={{ fontSize: 14, borderRadius: '6px', gap: '2px', padding: '7px 9px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}
@@ -1762,7 +1766,7 @@ const NodeRow = memo(({
                                 : headRevisionDescription ?? 'no upstream change pending'
                         }
                       />
-                      {/* Protect/Unprotect — a second, deliberately terser affordance
+                      {/* Keep on merge / Let merges update this — a second affordance
                           for the same staged-toggle action as the kebab's "Keep on
                           merge" item (onToggleProtection/stageKey are identical).
                           Guarded by the same isAbsentCurrent/isArrayRow conditions
@@ -1772,7 +1776,7 @@ const NodeRow = memo(({
                           in: the ambient tooltipSx sets pointerEvents:'none' on the
                           whole bubble so it stays click-through to the value beneath
                           everywhere else. */}
-                      {!isAbsentCurrent && !isArrayRow && (
+                      {!cannotKeep && (
                         <Box
                           data-testid="tooltip-protect-toggle"
                           onClick={(e: React.MouseEvent) => {
@@ -1790,7 +1794,7 @@ const NodeRow = memo(({
                             '&:hover': { textDecoration: 'underline' },
                           }}
                         >
-                          {effectiveKept ? 'Unprotect' : 'Protect'}
+                          {effectiveKept ? 'Let merges update this' : 'Keep on merge'}
                         </Box>
                       )}
                     </>
@@ -2158,7 +2162,7 @@ const NodeRow = memo(({
           upgradeSourceSpaceId={upgradeSourceSpaceId}
           upgradeSourceUnitId={upgradeSourceUnitId}
           isKept={effectiveKept}
-          canProtect={!isAbsentCurrent && !isArrayRow}
+          canProtect={!cannotKeep}
           onToggleProtection={readOnly ? undefined : () => onToggleProtection(stageKey, !effectiveKept)}
         />
       )}
@@ -2275,7 +2279,6 @@ const NodeRow = memo(({
     onSetFieldValue,
     onDeleteFieldValue,
     isProtected,
-    onRequestProtectionData,
     valueOverlay,
     fieldPathMeta,
     upgradeCreatedAt,
@@ -2474,7 +2477,6 @@ const NodeRow = memo(({
               onClick={(e: React.MouseEvent<HTMLElement>) => {
                 e.stopPropagation();
                 setFolderMenuAnchorEl(e.currentTarget);
-                onRequestProtectionData?.();
               }}
               sx={{
                 display: 'inline-flex',
@@ -2806,7 +2808,6 @@ export const ComponentValuesSection = memo(({
   onSetFieldValue,
   onDeleteFieldValue,
   isProtected: isProtectedProp,
-  onRequestProtectionData,
   onStagedProtectionChange,
   onStagedEditKeepSummaryChange,
   valueOverlay,
@@ -2819,10 +2820,10 @@ export const ComponentValuesSection = memo(({
   // Build path → FieldPathMeta for resource identity lookup in set-attributes calls.
   const fieldPathMeta = useMemo(() => buildFieldPathMeta(unit.data), [unit.data]);
 
-  // Committed-baseline protection lookup — defaults to "nothing is protected"
-  // until the caller wires real (lazily-fetched) MutationSources data. This is
-  // Finding 2's safe default: unknown reads as unprotected, so the worst case
-  // is a redundant protect (no-op server-side), never a silent unprotect.
+  // Committed-baseline Keep on merge lookup — defaults to "nothing is kept"
+  // until the caller wires the unit's PathAnnotations. This is Finding 2's
+  // safe default: unknown reads as not kept, so the worst case is a redundant
+  // keep, never a silent release.
   const isProtected = isProtectedProp ?? isProtectedFallback;
 
   // Per-document leaves (NOT deduplicated) — the tree-SHAPE source, so a unit holding
@@ -3088,7 +3089,7 @@ export const ComponentValuesSection = memo(({
   // these survive tab switches and the leave-'upgradable' clearStagedSignal — they
   // clear ONLY on explicit Discard, successful commit, or unit identity change.
   const [stagedEditedValues, setStagedEditedValues] = useState<Map<string, string>>(new Map());
-  // STAGED PROTECTION changes: stage key → the TARGET Protected value. NEVER
+  // STAGED PROTECTION changes: stage key → whether to keep the path. NEVER
   // joins stagedPaths (protection is not a value change — see card 8's rule:
   // only a value change adds to the "N staged" count). STICKY across
   // clearStagedSignal, same reasoning as stagedEditedValues; cleared only by
@@ -3468,6 +3469,8 @@ export const ComponentValuesSection = memo(({
   stagedProtectionRef.current = stagedProtection;
   const fieldPathMetaRef = useRef(fieldPathMeta);
   fieldPathMetaRef.current = fieldPathMeta;
+  const hasUpstreamRef = useRef(unit.hasUpstream);
+  hasUpstreamRef.current = unit.hasUpstream;
 
   useEffect(() => {
     if ((commitStagedSignal ?? 0) === lastCommitRef.current) return;
@@ -3487,17 +3490,27 @@ export const ComponentValuesSection = memo(({
     void commitUnitStaged();
 
     async function commitUnitStaged() {
-    // ── Protection commits FIRST, as its OWN revision (card 7 / Finding 3's
-    // write-order settlement) — never rolled back if the value write below
-    // fails; if PROTECTION fails, abort the whole commit for this unit and
-    // never attempt the value write (safe direction to fail in). ──────────
-    if (protectionStaged.size > 0) {
-      if (!onCommitProtection) return;
-      const protectionPayload = buildResourceProtectionPayload(protectionStaged, fieldPathMetaRef.current);
+    // Keep on merge is its own revision, as Override guards (onCommitProtection). Which goes
+    // first depends on the value write. A wholesale upgrade is a merge, so the guards go first
+    // and it cannot overwrite what is being kept; it carries no hand edit. Any other batch is
+    // a document of the values chosen, which a guard set first would withhold: the reader asked
+    // for both the value and its keeping, so the values go first and the guards after.
+    const upgradeAll =
+      staged.size > 0 && isUpgradeAllBatch(staged, upgradableStageKeysRef.current, upgradeKeySetRef.current, edits);
+    const protectionAfterValues = protectionStaged.size > 0 && staged.size > 0 && !upgradeAll && !!onCommitStaged;
+
+    // Never rolled back if a write after it fails. Kept staged when it fails, to try again.
+    async function commitProtection(failure: string): Promise<boolean> {
+      if (!onCommitProtection) return false;
+      const protectionPayload = buildOverrideGuardEdits(
+        protectionStaged,
+        fieldPathMetaRef.current,
+        overrideGuardValue(hasUpstreamRef.current),
+      );
       const protectionOk = await onCommitProtection(protectionPayload);
       if (!protectionOk) {
-        setCommitSerializationError('Could not save the protection change — nothing else in this commit was written. Try again.');
-        return;
+        setCommitSerializationError(failure);
+        return false;
       }
       const committedProtectionKeys = new Set(protectionStaged.keys());
       setStagedProtection((prev) => {
@@ -3506,6 +3519,14 @@ export const ComponentValuesSection = memo(({
         for (const p of committedProtectionKeys) next.delete(p);
         return next.size === prev.size ? prev : next;
       });
+      return true;
+    }
+
+    if (protectionStaged.size > 0 && !protectionAfterValues) {
+      const protectionOk = await commitProtection(
+        'Could not save the Keep on merge change — nothing else in this commit was written. Try again.',
+      );
+      if (!protectionOk) return;
     }
 
     if (staged.size === 0 || !onCommitStaged) return;
@@ -3571,7 +3592,7 @@ export const ComponentValuesSection = memo(({
     // no manual edit is staged → one-shot upgrade:true mutation. ANY staged manual
     // edit forces the patch-data merge (wholesale would discard the user's values).
     let payload: StagedCommitPayload;
-    if (isUpgradeAllBatch(staged, upgradableStageKeysRef.current, upgradeKeySetRef.current, edits)) {
+    if (upgradeAll) {
       payload = { kind: 'upgrade-all' };
     } else {
       // Subset (or any manual edit): merge every staged change into ONE document.
@@ -3682,6 +3703,9 @@ export const ComponentValuesSection = memo(({
         for (const p of committedPaths) if (next.delete(p)) changed = true;
         return changed ? next : prev;
       });
+      if (protectionAfterValues) {
+        void commitProtection('The values were saved, but the Keep on merge change was not. Try again.');
+      }
     });
     }
   }, [commitStagedSignal, onCommitStaged, onCommitProtection]);
@@ -4144,7 +4168,6 @@ export const ComponentValuesSection = memo(({
           onSetFieldValue,
           onDeleteFieldValue,
           isProtected,
-          onRequestProtectionData,
           valueOverlay,
           fieldPathMeta,
           upgradeCreatedAt: unit.upgradeEntry?.upstreamCreatedAt,

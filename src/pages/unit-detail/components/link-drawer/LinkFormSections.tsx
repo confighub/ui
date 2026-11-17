@@ -193,7 +193,7 @@ function SwitchField({
   testId,
 }: {
   control: LinkControl;
-  name: 'AutoUpdate' | 'Squash' | 'MergeEnableSubtraction' | 'Protect';
+  name: 'AutoUpdate' | 'Squash' | 'MergeEnableSubtraction' | 'KeepOnMerge';
   label: string;
   help: ReactNode;
   disabled?: boolean;
@@ -350,14 +350,14 @@ export function WritesCard({
   return (
     <SectionCard title='Writes'>
       <Stack spacing={2}>
-        {takes.protectAndGuards ? (
+        {takes.keepAndGuards ? (
           <>
             <SwitchField
               control={control}
-              name='Protect'
+              name='KeepOnMerge'
               label='Keep on merge'
-              help='Record the paths this Link writes as kept on merge, so a merge from upstream does not overwrite them. For a Link that delivers a value the downstream Unit then owns.'
-              testId='link-protect'
+              help='Record the guard Link=<its UpdateType> on the paths this Link writes, so a merge from upstream does not overwrite them. For a Link that delivers a value the downstream Unit then owns.'
+              testId='link-keep-on-merge'
             />
             <MapFieldSection
               control={control}

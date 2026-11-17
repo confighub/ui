@@ -52,7 +52,7 @@ test.describe('rendering a refusal', () => {
     );
 
     expect(refusalBlockCount(html)).toBe(1);
-    expect(html).toContain('A protected field');
+    expect(html).toContain('A field kept on merge');
     expect(html).toContain('app/api');
     expect(html).toContain('/spec/replicas');
   });

@@ -7,7 +7,7 @@ import { SxProps, Theme } from '@mui/material/styles';
 
 /**
  * Marks a hidden entity, on a line of its own under its name, in a list whose columns are fixed
- * so that no Hidden reason column can be chosen. Renders nothing for an entity that is not
+ * so that no Hidden Reason column can be chosen. Renders nothing for an entity that is not
  * hidden.
  */
 export const HiddenReasonTag = ({

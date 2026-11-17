@@ -1195,7 +1195,7 @@ test.describe('ChangeOrder stage card', () => {
     await expect(heading(page)).toHaveText(stageCardCopy.headline.kept(1));
     await expect(problem(page)).toContainText(odd.slug);
     // The short form: the field's label and the kept image tag, not the whole reference.
-    await expect(problem(page)).toContainText('a protected field in');
+    await expect(problem(page)).toContainText('a field kept on merge in');
     await expect(problem(page)).toContainText('v0.2.19');
     expect(traffic.errors).toEqual([]);
     await shoot(page, '10');

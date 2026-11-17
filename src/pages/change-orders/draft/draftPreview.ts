@@ -33,6 +33,7 @@
  *
  * Pure: no React, no RTK, so the browser-free specs can import it.
  */
+import { isKeptOnMergeConflict } from '@/utility/override-guard';
 import type {
   ConfigDiff,
   MutationConflict,
@@ -88,8 +89,10 @@ export interface DraftKeptValue {
   value: string | undefined;
   /** What the base would write there. */
   incoming: string | undefined;
-  /** The server's reason, verbatim: `ProtectedPath`, `Subtracted`, … */
+  /** The server's reason, verbatim: `Guarded`, `Subtracted`, … */
   reason: string;
+  /** Kept on merge: Override guards alone withheld the change (`isKeptOnMergeConflict`). */
+  keptOnMerge: boolean;
 }
 
 /** `readPromotionPreview`'s shape, plus the conflicts as the server sent them, for the chips. */
@@ -124,6 +127,7 @@ export function draftKeptValueOf(unitId: string, conflict: MutationConflict): Dr
     value: scalarOf(conflict.Target?.Value),
     incoming: scalarOf(conflict.Source?.Value),
     reason: conflict.Reason ?? '',
+    keptOnMerge: isKeptOnMergeConflict(conflict),
   };
 }
 
