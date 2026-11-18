@@ -10,15 +10,37 @@ import { componentTheme } from '../componentTheme';
 import { CHIP_TONE } from '../flow-graph/DeploymentFlowNode';
 import { SUMMARY_BORDER } from './gateStyles';
 
-const Root = styled(Box, { shouldForwardProp: (p) => p !== '$ok' })<{ $ok: boolean }>(
-  ({ $ok }) => ({
+type Tone = 'blocked' | 'warned' | 'ok';
+
+// A gate blocks in the danger tone and a warning in the attention tone, as the graph's Gated and
+// Warnings chips show them.
+const TONE: Record<Tone, { background: string; border: string; icon: string }> = {
+  blocked: {
+    background: componentTheme.dangerMuted,
+    border: componentTheme.dangerEdge,
+    icon: componentTheme.danger,
+  },
+  warned: {
+    background: componentTheme.attentionMuted,
+    border: SUMMARY_BORDER,
+    icon: componentTheme.attention,
+  },
+  ok: {
+    background: componentTheme.successMuted,
+    border: componentTheme.successEdge,
+    icon: componentTheme.success,
+  },
+};
+
+const Root = styled(Box, { shouldForwardProp: (p) => p !== '$tone' })<{ $tone: Tone }>(
+  ({ $tone }) => ({
     display: 'flex',
     gap: 12,
     alignItems: 'flex-start',
     padding: '12px 14px',
     borderRadius: componentTheme.radiusMd,
-    background: $ok ? componentTheme.successMuted : componentTheme.attentionMuted,
-    border: `1px solid ${$ok ? componentTheme.successEdge : SUMMARY_BORDER}`,
+    background: TONE[$tone].background,
+    border: `1px solid ${TONE[$tone].border}`,
     marginBottom: 14,
   }),
 );
@@ -73,15 +95,12 @@ export const GatesSummary = ({
   // Nothing blocks, but warnings are left: in the warning tone, as the graph's Warnings chip is,
   // not the green of nothing to look at.
   const warned = ok && warnings > 0;
+  const tone: Tone = !ok ? 'blocked' : warned ? 'warned' : 'ok';
   return (
-    <Root
-      $ok={ok && !warned}
-      data-testid='gates-summary'
-      data-tone={!ok ? 'blocked' : warned ? 'warned' : 'ok'}
-    >
+    <Root $tone={tone} data-testid='gates-summary' data-tone={tone}>
       <Box
         sx={{
-          color: ok && !warned ? componentTheme.success : componentTheme.attention,
+          color: TONE[tone].icon,
           flexShrink: 0,
           display: 'flex',
           mt: '1px',

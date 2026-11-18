@@ -217,12 +217,32 @@ test.describe('Gates tab', () => {
       await page.goto(`/components?app=${c.slug}`);
       const chip = page.getByTestId(`flow-node-${c.dev.SpaceID}`).getByTestId('warnings-chip');
       await expect(chip).toBeVisible({ timeout: 30000 });
+      // The chip opens the Gates tab, which warnings alone give the Variant, as the Gated chip does.
       await chip.click();
-      // Warnings alone give the Variant a Gates tab.
-      await page.getByTestId('component-pane-tab-gates').click();
       const summary = page.getByTestId('gates-summary');
       await expect(page.getByTestId('gates-summary-title')).toHaveText(`Nothing blocks ${c.slug}-dev`);
       await expect(summary).toHaveAttribute('data-tone', 'warned');
+
+      // While the Unit is read, its Overview says nothing about its gates, rather than that they
+      // are clear; then it heads its warnings as warnings, with nothing about errors.
+      let release = () => {};
+      const held = new Promise<void>((resolve) => (release = resolve));
+      await page.route(
+        new RegExp(`/api/space/${c.dev.SpaceID}/unit/${c.units.web.devId}(\\?|$)`),
+        async (route) => {
+          await held;
+          await route.continue();
+        },
+      );
+      await page.goto(`/units/${c.dev.SpaceID}/${c.units.web.devId}?tab=0`);
+      await expect(page.getByTestId('unit-gates-loading')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('All gates are clear')).toHaveCount(0);
+      release();
+      await expect(page.getByText('Validation Warnings', { exact: true })).toBeVisible({
+        timeout: 15000,
+      });
+      await expect(page.getByText('Validation Errors', { exact: true })).toHaveCount(0);
+      await expect(page.getByText('About validation errors')).toHaveCount(0);
     } finally {
       await c.cleanup();
     }
@@ -243,6 +263,7 @@ test.describe('Gates tab', () => {
       await expect(page.getByTestId('gates-summary-title')).toHaveText(
         `1 gate blocks ${c.slug}-dev`,
       );
+      await expect(page.getByTestId('gates-summary')).toHaveAttribute('data-tone', 'blocked');
       await expect(page.getByTestId('gate-title-1')).toHaveText('Placeholders left');
       await expect(page.getByTestId('gate-status-1')).toHaveText('2 to fix');
 

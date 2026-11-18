@@ -233,6 +233,26 @@ export const PolicyCard = ({ policy, isSelected = false }: PolicyCardProps) => {
         )}
         {c.total === 0 && (
           <Box sx={{ display: 'flex' }}>
+            {/* Selected, yet no Unit has anything for the Trigger to check. */}
+            {(policy.skippedUnits.length > 0 ||
+              policy.spaces.length + policy.targets.length > 0) && (
+              <Tooltip
+                title={
+                  policy.skippedUnits.length > 0
+                    ? `Nothing to check in the ${plural(policy.skippedUnits.length, 'Unit')} it applies to`
+                    : 'No Units to check'
+                }
+              >
+                <Typography
+                  variant='body2'
+                  fontSize='0.75rem'
+                  color='text.disabled'
+                  data-testid='validation-card-not-applicable'
+                >
+                  N/A
+                </Typography>
+              </Tooltip>
+            )}
             <ScopeText policy={policy} />
           </Box>
         )}

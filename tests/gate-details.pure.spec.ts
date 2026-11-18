@@ -33,6 +33,7 @@ import {
   sameFindingElsewhere,
   sentenceText,
 } from '../src/pages/x/apps/gates/sameFindingElsewhere';
+import { gateTitle } from '../src/utility/name-format-functions';
 
 const RESOURCE = {
   ResourceName: 'confighubplaceholder/mydep',
@@ -510,4 +511,16 @@ test('a re-check says when the Trigger did not run on a Unit', () => {
     reason: 'The Trigger did not run.',
   });
   expect(triggerRunOutcome(undefined).ran).toBe(false);
+});
+
+test('a gate is titled as its Trigger is named, else by the Trigger slug in its name', () => {
+  expect(gateTitle('prod/min-replicas/vet-cel', { DisplayName: 'Keep three replicas' })).toBe(
+    'Keep three replicas',
+  );
+  expect(gateTitle('prod/min-replicas/vet-cel', { Slug: 'min-replicas' })).toBe(
+    'min-replicas',
+  );
+  expect(gateTitle('prod/min-replicas/vet-cel:2')).toBe('min-replicas');
+  // An older gate name has no Space.
+  expect(gateTitle('min-replicas/vet-cel')).toBe('min-replicas');
 });

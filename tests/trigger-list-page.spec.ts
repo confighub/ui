@@ -289,12 +289,18 @@ test.describe('validation errors and warnings on a Component', () => {
       await expect(warningsChip).toBeVisible();
 
       // Hovering names the gate; clicking opens the Unit's Overview on it.
+      // The graph card's Gated peek can still be open beside the chip's tooltip, so the one naming
+      // the gate is looked for rather than the only one.
       await gatedChip.hover();
-      await expect(page.getByRole('tooltip')).toContainText(errorGate);
+      await expect(page.getByRole('tooltip').filter({ hasText: errorGate })).toBeVisible();
       await expect(warningsChip).toHaveAttribute('href', new RegExp(`gate=${encodeURIComponent(warningGate)}`));
       await gatedChip.click();
       await expect(page).toHaveURL(new RegExp(`/units/${spaceId}/${unit.UnitID}\\?tab=0&gate=${encodeURIComponent(errorGate)}`));
       await expect(page.getByText('Validation Warnings', { exact: true })).toBeVisible({ timeout: 15000 });
+      // Errors are explained in the danger tone.
+      await expect(page.getByRole('alert').filter({ hasText: 'About validation errors' })).toHaveClass(
+        /MuiAlert-standardError/,
+      );
     } finally {
       await removeSpaces(spaces);
       if (componentId) await hubApi.delete(`/api/component/${componentId}`);

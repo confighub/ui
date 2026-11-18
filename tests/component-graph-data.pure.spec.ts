@@ -183,10 +183,10 @@ test.describe('uniqueTargetLabels', () => {
 
   test('buildComponentData labels each Deployment Target in the Component', () => {
     const spaces: ExtendedSpaceRead[] = ['east', 'west', 'oci'].map((id) => ({
-      Space: { SpaceID: id, Slug: `shop-${id}` } as ExtendedSpaceRead['Space'],
+      Space: { SpaceID: id, Slug: `shop-${id}`, ReleaseTargetID: `t-${id}` } as ExtendedSpaceRead['Space'],
     }));
     const units: ExtendedUnitRead[] = ['east', 'west', 'oci'].map((id) => ({
-      Unit: { UnitID: `u-${id}`, SpaceID: id, TargetID: `t-${id}`, Slug: 'app' } as UnitRead,
+      Unit: { UnitID: `u-${id}`, SpaceID: id, Slug: 'app' } as UnitRead,
     }));
     const { deployments } = buildComponentData(
       spaces,

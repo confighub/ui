@@ -175,7 +175,7 @@ export const ValidationFindingsList = ({
       ))}
       {!showAll && (hidden > 0 || expanded) && (
         <Typography
-          variant='caption'
+          variant='body2'
           role='button'
           onClick={(e) => {
             e.stopPropagation();

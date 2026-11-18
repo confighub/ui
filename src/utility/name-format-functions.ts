@@ -70,3 +70,13 @@ export const parseGateName = (gateName: string): ParsedGateName => {
   }
   return parsed;
 };
+
+/**
+ * A gate's title: its Trigger's DisplayName as written, else the Trigger's slug, from the gate
+ * name when the Trigger is not loaded. Every view of a gate titles it this way.
+ */
+export const gateTitle = (
+  gateName: string,
+  trigger?: { DisplayName?: string; Slug?: string },
+): string =>
+  trigger?.DisplayName || trigger?.Slug || parseGateName(gateName).triggerSlug || gateName;

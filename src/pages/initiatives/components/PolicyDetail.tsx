@@ -67,7 +67,12 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import dayjs from 'dayjs';
 
-import { spaceLink, targetLink, triggerChangeOrdersLink, triggerChangeSetsLink } from '../validationLinks';
+import {
+  spaceLink,
+  targetLink,
+  triggerChangeOrdersLink,
+  triggerChangeSetsLink,
+} from '../validationLinks';
 import {
   type OutcomeCounts,
   type PolicyUnit,
@@ -77,15 +82,17 @@ import {
   annotationKeyOfPath,
   emptyCounts,
   exceptionAnnotationPath,
-  honoredExceptionPaths,
   failedResources,
   failingOf,
   groupCounts,
+  honoredExceptionPaths,
   isOverdue,
+  staleFailures,
 } from '../validationModel';
 import { ExceptionDialog, type ExceptionDialogRequest } from './ExceptionDialog';
 import { PolicyExceptions } from './PolicyExceptions';
 import { PolicyUnitsTable, type UnitFilter } from './PolicyUnitsTable';
+import { TemporaryExceptionsDialog } from './TemporaryExceptionsDialog';
 
 // Units per request when evaluating, so a long list makes several requests rather than one too long.
 const EVALUATE_CHUNK = 100;
@@ -134,6 +141,8 @@ export const PolicyDetail = ({
   const [exceptionRequest, setExceptionRequest] = useState<ExceptionDialogRequest | null>(
     null,
   );
+  // The failing Units whose failures are being excepted temporarily, while the dialog is open.
+  const [temporaryUnits, setTemporaryUnits] = useState<PolicyUnit[] | null>(null);
 
   // The Units checked here are the function invoker's selection, so a fix can be run on them from
   // the invoker; and while some are, the invoker makes each run in a ChangeSet of its own, labeled
@@ -167,7 +176,9 @@ export const PolicyDetail = ({
     );
     dispatch(
       setInvocationTrigger(
-        selectedUnits.length > 0 ? { id: policy.id, ref: `${policy.spaceSlug}/${policy.trigger.Slug}` } : undefined,
+        selectedUnits.length > 0
+          ? { id: policy.id, ref: `${policy.spaceSlug}/${policy.trigger.Slug}` }
+          : undefined,
       ),
     );
   }, [selectedUnits, policy.id, policy.spaceSlug, policy.trigger.Slug, spaceById, dispatch]);
@@ -201,19 +212,30 @@ export const PolicyDetail = ({
 
   /**
    * Runs the Trigger on Units and records what it finds, so a Unit it has no verdict on gets one.
-   * This is what a Unit's Triggers do when it changes, run for this Trigger alone.
+   * This is what a Unit's Triggers do when it changes, run for this Trigger alone. A run names its
+   * Units and does not apply the Trigger's WhereUnit or Unit Filter, so the request carries them,
+   * and a Unit the Trigger excludes is left as it is rather than given a verdict.
    */
-  const evaluate = async (units: PolicyUnit[], failedPrefix = 'Not evaluated') => {
+  const evaluate = async (
+    units: Pick<PolicyUnit, 'unit'>[],
+    failedPrefix = 'Not evaluated',
+  ) => {
     setIsEvaluating(true);
     setError(null);
     setNotice(null);
     const failed: string[] = [];
+    let ran = 0;
+    const whereUnit = trigger.WhereUnit?.trim();
     try {
       for (let i = 0; i < units.length; i += EVALUATE_CHUNK) {
         const chunk = units.slice(i, i + EVALUATE_CHUNK);
         try {
           const responses = await invokeFunctions({
-            where: `UnitID IN (${chunk.map((u) => `'${u.unit.id}'`).join(', ')})`,
+            where: [
+              `UnitID IN (${chunk.map((u) => `'${u.unit.id}'`).join(', ')})`,
+              ...(whereUnit ? [whereUnit] : []),
+            ].join(' AND '),
+            ...(trigger.UnitFilterID ? { filter: trigger.UnitFilterID } : {}),
             functionInvocationsRequest: validatingTriggerRequest(
               trigger.ToolchainType,
               policy.id,
@@ -222,6 +244,7 @@ export const PolicyDetail = ({
               },
             ),
           }).unwrap();
+          ran += responses.length;
           for (const r of responses) {
             if (!r.Success && r.Error)
               failed.push(`${r.SpaceSlug}/${r.UnitSlug}: ${r.Error.Message}`);
@@ -235,7 +258,10 @@ export const PolicyDetail = ({
           `${failedPrefix}: ${failed.slice(0, 3).join('; ')}${failed.length > 3 ? ` and ${failed.length - 3} more` : ''}`,
         );
       } else {
-        setNotice(`Evaluated ${plural(units.length, 'Unit')}.`);
+        const excluded = units.length - ran;
+        setNotice(
+          `Evaluated ${plural(ran, 'Unit')}.${excluded > 0 ? ` The Trigger does not apply to the other ${excluded}.` : ''}`,
+        );
       }
       onRefresh();
     } finally {
@@ -283,6 +309,10 @@ export const PolicyDetail = ({
   const failingUnits = useMemo(
     () => policy.units.filter((u) => u.outcome === 'Error' || u.outcome === 'Warning'),
     [policy.units],
+  );
+  const selectedFailing = useMemo(
+    () => selectedUnits.filter((u) => u.outcome === 'Error' || u.outcome === 'Warning'),
+    [selectedUnits],
   );
   // As many requests as the IDs need, since a Trigger in audit across a fleet can fail on more
   // Units than one filter can name.
@@ -444,6 +474,15 @@ export const PolicyDetail = ({
   const stageInfo = ENFORCEMENT_STAGE_INFO[policy.stage];
   const overdue = isOverdue(policy);
   const narrowed = !!trigger.WhereUnit || !!trigger.UnitFilterID;
+  const stale = staleFailures(policy);
+
+  // What to run the Trigger on again after it or its function changes: every Unit in its scope,
+  // and those it found nothing to check in, since the change may give it something there.
+  // Evaluating applies the Trigger's own selection, so a Unit it now excludes is left out.
+  const reevaluateUnits = useMemo(
+    () => [...policy.units, ...policy.skippedUnits.map((unit) => ({ unit }))],
+    [policy.units, policy.skippedUnits],
+  );
 
   return (
     <Box
@@ -498,7 +537,10 @@ export const PolicyDetail = ({
               /{trigger.Slug} · {trigger.FunctionName || 'Invocation'} ·{' '}
               {trigger.ToolchainType}
               {policy.controls.length > 0 && (
-                <span data-testid='validation-controls'> · {formatControls(policy.controls)}</span>
+                <span data-testid='validation-controls'>
+                  {' '}
+                  · {formatControls(policy.controls)}
+                </span>
               )}
             </Typography>
             {trigger.Description && (
@@ -591,7 +633,24 @@ export const PolicyDetail = ({
               </Typography>
             )}
           </Box>
-          {(isPatching || isChangingMode) && <CircularProgress size={20} sx={{ mt: 1 }} />}
+          {!trigger.Disabled && reevaluateUnits.length > 0 && (
+            <Tooltip title='Runs this Trigger again on the Units it applies to, and records what it finds. Use it after the Trigger or its function changes.'>
+              <span>
+                <Button
+                  variant='outlined'
+                  disabled={isPatching || isChangingMode || isEvaluating}
+                  onClick={() => void evaluate(reevaluateUnits)}
+                  data-testid='validation-reevaluate'
+                  sx={{ textTransform: 'none' }}
+                >
+                  Evaluate
+                </Button>
+              </span>
+            </Tooltip>
+          )}
+          {(isPatching || isChangingMode || isEvaluating) && (
+            <CircularProgress size={20} sx={{ mt: 1 }} />
+          )}
         </Box>
 
         <ErrorBox error={error} onClose={() => setError(null)} sx={{ mt: 2 }} />
@@ -605,6 +664,14 @@ export const PolicyDetail = ({
             No Space or Target selects this Trigger, so it checks nothing yet. A Space or
             Target selects Triggers by its WhereTrigger; the Trigger runs on its Units once its
             Triggers are refreshed.
+          </Alert>
+        )}
+        {stale > 0 && (
+          <Alert severity='warning' sx={{ mt: 2 }} data-testid='validation-stale'>
+            {plural(stale, 'Unit')} {stale === 1 ? 'has' : 'have'}{' '}
+            {policy.stage === 'Audited' ? 'an error' : 'a warning'} from before the Trigger{' '}
+            {policy.stage === 'Audited' ? 'returned to audit' : 'was enforced'}. Evaluate to
+            update {stale === 1 ? 'it' : 'them'}.
           </Alert>
         )}
         {policy.stage === 'Disabled' && (
@@ -680,9 +747,6 @@ export const PolicyDetail = ({
 
       {exceptionPath && (
         <Paper variant='outlined' sx={{ p: 2, borderRadius: 2 }}>
-          <Typography variant='subtitle2' fontWeight={600} sx={{ mb: 1 }}>
-            Exceptions
-          </Typography>
           <PolicyExceptions
             annotationPath={exceptionPath}
             honoredPaths={honoredPaths}
@@ -707,11 +771,34 @@ export const PolicyDetail = ({
       <Box>
         <Paper
           variant='outlined'
-          sx={{ p: 2, borderRadius: 2, mb: 1, display: 'flex', alignItems: 'baseline', gap: 2, flexWrap: 'wrap' }}
+          sx={{
+            p: 2,
+            borderRadius: 2,
+            mb: 1,
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: 2,
+            flexWrap: 'wrap',
+          }}
         >
           <Typography variant='subtitle2' fontWeight={600}>
             Units
           </Typography>
+          {exceptionKey && failingUnits.length > 0 && (
+            <Tooltip title='Excepts each resource failing this Trigger, with a reason starting ToBeFixed, so the Trigger can be enforced before they are fixed.'>
+              <Button
+                size='small'
+                variant='outlined'
+                onClick={() => setTemporaryUnits(failingUnits)}
+                data-testid='validation-except-temporarily'
+                sx={{ textTransform: 'none' }}
+              >
+                {failingUnits.length === 1
+                  ? 'Except the failing Unit temporarily…'
+                  : `Except the ${failingUnits.length} failing Units temporarily…`}
+              </Button>
+            </Tooltip>
+          )}
           {unitListLinks.map((l) => (
             <Link
               key={l.href}
@@ -740,7 +827,11 @@ export const PolicyDetail = ({
               <Typography variant='body2' fontWeight={600}>
                 {plural(selectedIds.length, 'Unit')} selected
               </Typography>
-              <Tooltip title={"Opens the function invoker on the selected Units. Its runs are made in this Trigger's open ChangeSet, or a new one named after the Trigger, which is left open for the change to be reviewed."}>
+              <Tooltip
+                title={
+                  "Opens the function invoker on the selected Units. Its runs are made in this Trigger's open ChangeSet, or a new one named after the Trigger, which is left open for the change to be reviewed."
+                }
+              >
                 <Button
                   size='small'
                   variant='outlined'
@@ -761,6 +852,18 @@ export const PolicyDetail = ({
                       Evaluate
                     </Button>
                   </span>
+                </Tooltip>
+              )}
+              {exceptionKey && selectedFailing.length > 0 && (
+                <Tooltip title='Excepts each resource failing this Trigger in the selected Units, with a reason starting ToBeFixed.'>
+                  <Button
+                    size='small'
+                    variant='outlined'
+                    onClick={() => setTemporaryUnits(selectedFailing)}
+                    data-testid='validation-except-selected-temporarily'
+                  >
+                    Except temporarily…
+                  </Button>
                 </Tooltip>
               )}
               <Button size='small' onClick={() => setSelectedIds([])}>
@@ -805,7 +908,11 @@ export const PolicyDetail = ({
       </Box>
 
       {policy.spaceSlug && trigger.Slug && (
-        <Paper variant='outlined' sx={{ p: 2, borderRadius: 2 }} data-testid='validation-trigger-changes'>
+        <Paper
+          variant='outlined'
+          sx={{ p: 2, borderRadius: 2 }}
+          data-testid='validation-trigger-changes'
+        >
           <Typography variant='subtitle2' fontWeight={600} sx={{ mb: 1 }}>
             ChangeSets and ChangeOrders
           </Typography>
@@ -832,6 +939,27 @@ export const PolicyDetail = ({
             </Button>
           </Box>
         </Paper>
+      )}
+
+      {exceptionKey && exceptionPath && (
+        <TemporaryExceptionsDialog
+          open={temporaryUnits !== null}
+          triggerName={policy.name}
+          toolchainType={trigger.ToolchainType || 'Kubernetes/YAML'}
+          annotationKey={exceptionKey}
+          annotationPath={exceptionPath}
+          units={temporaryUnits ?? []}
+          resultsByUnit={resultsLoaded && !failingError ? resultsByUnit : undefined}
+          resources={resourcesError ? undefined : resourcesData}
+          spaceById={spaceById}
+          onClose={() => setTemporaryUnits(null)}
+          onDone={(message) => {
+            setNotice(
+              `${message} The Units are evaluated again as they change; Refresh to read the results.`,
+            );
+            setTimeout(onRefresh, 3000);
+          }}
+        />
       )}
 
       {exceptionKey && (

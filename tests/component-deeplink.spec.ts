@@ -28,8 +28,8 @@ const APP_LABEL = `e2e-deeplink-${RandomSlugGenerator.randomSlugName()}`;
  * but the header link does, and it names the specific Space id, which is
  * exactly what proves the RIGHT node got selected (not merely "some pane
  * opened"). Nothing else on the page links to `/spaces/<id>` for a
- * target-less, non-Base-badge-only Space (the node's own target-open link
- * only renders when `deployment.targets.length > 0`).
+ * Space with no release Target (the node's own target-open link only
+ * renders for a Space that has one).
  */
 function sidePaneLinkFor(page: Page, id: string) {
   return page.locator(`a[href="/spaces/${id}"]`);

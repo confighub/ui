@@ -405,8 +405,12 @@ test.describe('Upstream revision', () => {
   });
 
   test('a Deployment with several Units takes the most any Unit is behind', () => {
-    const space = (id: string): ExtendedSpaceRead => ({
-      Space: { SpaceID: id, Slug: id } as ExtendedSpaceRead['Space'],
+    const space = (id: string, releaseTargetId?: string): ExtendedSpaceRead => ({
+      Space: {
+        SpaceID: id,
+        Slug: id,
+        ...(releaseTargetId && { ReleaseTargetID: releaseTargetId }),
+      } as ExtendedSpaceRead['Space'],
     });
     const unit = (fields: Partial<UnitRead> & { UnitID: string; SpaceID: string }) =>
       ({ Unit: { Slug: fields.UnitID, ...fields } as UnitRead }) as ExtendedUnitRead;
@@ -444,12 +448,13 @@ test.describe('Upstream revision', () => {
       }),
     ];
     const { deployments } = buildComponentData(
-      [space('base'), space('mixed'), space('fresh')],
+      [space('base'), space('mixed', 't1'), space('fresh', 't2')],
       units,
       new Map(units.map((u) => [u.Unit!.UnitID!, u])),
       new Map(),
     );
     const byId = new Map(deployments.map((d) => [d.deploymentId, d]));
+    expect(byId.get('mixed')!.type).toBe('Deployment');
     expect(revisionCell(byId.get('mixed')!)).toEqual({
       value: '3',
       label: '3 revisions behind',

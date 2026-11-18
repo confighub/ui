@@ -5,7 +5,7 @@ import { Fragment, useId, useState } from 'react';
 import { TriggerRuleDetails } from '@/components/trigger-rule/TriggerRuleDetails';
 import { IssueCheck } from '@/pages/unit-detail/components/action-side-bar/IssueCheck';
 import { issueCheck } from '@/pages/unit-detail/components/action-side-bar/validationFindings';
-import { parseGateName } from '@/utility/name-format-functions';
+import { gateTitle, parseGateName } from '@/utility/name-format-functions';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import { Alert, Box, CircularProgress, Link, Skeleton } from '@mui/material';
@@ -338,7 +338,7 @@ export const GateStep = (props: GateStepProps) => {
     trigger?.DisplayName && trigger.DisplayName !== trigger.Slug
       ? trigger.DisplayName
       : undefined;
-  const title = displayName || trigger?.Slug || gate.gateName.split('/')[1] || gate.gateName;
+  const title = gateTitle(gate.gateName, trigger);
   const unitLabel = gate.units.map((u) => `${spaceSlug}/${u.slug}`).join(', ');
   // Each Unit of the gate as a link to its configuration page; ids `<prefix>-<gate>` for the
   // first, `<prefix>-<gate>-<n>` for the others.

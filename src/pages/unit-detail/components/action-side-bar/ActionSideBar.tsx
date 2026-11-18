@@ -5,7 +5,11 @@ import { useSearchParams } from 'react-router-dom';
 
 import { ProgressRefreshButton } from '@/components/progress-refresh-button/ProgressRefreshButton';
 import { HoverCard } from '@/components/styled';
-import { findTriggerForGate, useGateTriggers, validatingTriggerRequest } from '@/hooks/useGateTriggers';
+import {
+  findTriggerForGate,
+  useGateTriggers,
+  validatingTriggerRequest,
+} from '@/hooks/useGateTriggers';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import {
   ExtendedTriggerRead,
@@ -26,6 +30,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import { styled } from '@mui/material/styles';
 
 import { readOverviewGate, unitBlameHref } from '../../unitDetailHrefs';
+import { UnitExceptions } from './UnitExceptions';
 import { ValidationGateCard } from './ValidationGateCard';
 import type { FieldFinding } from './validationFindings';
 
@@ -63,6 +68,10 @@ export const ActionSidebar = ({
   const [getSpace] = useLazyGetSpaceQuery();
   const [listAllTargets] = useLazyListAllTargetsQuery();
   const [triggers, setTriggers] = useState<ExtendedTriggerRead[]>([]);
+  // Whether the Triggers selected for the Unit have been read, and why not when they could not be.
+  const [triggersRead, setTriggersRead] = useState(false);
+  const [triggersError, setTriggersError] = useState<string | undefined>(undefined);
+  const [spaceSlug, setSpaceSlug] = useState('');
   const gateTriggers = useGateTriggers(unit?.Unit);
   const [validationResults, setValidationResults] = useState<ValidationResult[]>([]);
   // A failed path opens the Blame tab at that field, where it can be acted on.
@@ -113,7 +122,10 @@ export const ActionSidebar = ({
           throw new Error(`Could not find trigger for gate: ${gateName}`);
         }
 
-        const request = validatingTriggerRequest(unit.Unit.ToolchainType, trigger.Trigger.TriggerID);
+        const request = validatingTriggerRequest(
+          unit.Unit.ToolchainType,
+          trigger.Trigger.TriggerID,
+        );
 
         const result = await invokeFunctions({
           executorSpace: unit.Unit.SpaceID,
@@ -160,15 +172,18 @@ export const ActionSidebar = ({
   useEffect(() => {
     const fetchTriggersForUnit = async () => {
       if (!unit?.Unit?.SpaceID) return;
+      setTriggersRead(false);
+      setTriggersError(undefined);
 
       try {
         // First, fetch the space to check if it has a WhereTrigger or TriggerFilterID
         const spaceResult = await getSpace({
           spaceId: unit.Unit.SpaceID,
-          select: 'WhereTrigger,TriggerFilterID',
+          select: 'Slug,WhereTrigger,TriggerFilterID',
         }).unwrap();
 
         const spaceData = spaceResult?.Space;
+        setSpaceSlug(spaceData?.Slug ?? '');
         const hasSpaceFilter = !!(spaceData?.WhereTrigger || spaceData?.TriggerFilterID);
 
         // Check if the Unit has a Target with trigger filter configuration
@@ -241,8 +256,10 @@ export const ActionSidebar = ({
         }
 
         setTriggers(allTriggers);
+        setTriggersRead(true);
       } catch (error) {
         console.error('Error fetching space or triggers:', error);
+        setTriggersError(getApiErrorMessage(error, 'The Triggers could not be read.'));
       }
     };
 
@@ -303,7 +320,30 @@ export const ActionSidebar = ({
     onRefresh?.();
   }, [onRefresh]);
 
-  if (validationErrors.length === 0 && validationWarnings.length === 0) {
+  // Until the Unit is read, nothing is known of its gates, so it is not "clear". A failed read is
+  // the page's to show.
+  if (!unit?.Unit?.UnitID) {
+    return (
+      <Container>
+        <Box textAlign='center' py={3} data-testid='unit-gates-loading'>
+          <CircularProgress size={24} />
+        </Box>
+      </Container>
+    );
+  }
+
+  // The exceptions of the Triggers selected for the Unit now, and of those that ran on it.
+  const exceptions = (
+    <UnitExceptions
+      unit={unit.Unit}
+      spaceSlug={unit.Space?.Slug || spaceSlug}
+      triggers={triggersRead ? [...triggers, ...gateTriggers] : undefined}
+      triggersError={triggersError}
+    />
+  );
+
+  const hasErrors = validationErrors.length > 0;
+  if (!hasErrors && validationWarnings.length === 0) {
     return (
       <Container>
         <Box textAlign='center' py={3}>
@@ -312,6 +352,7 @@ export const ActionSidebar = ({
             All gates are clear
           </Typography>
         </Box>
+        {exceptions}
       </Container>
     );
   }
@@ -321,7 +362,7 @@ export const ActionSidebar = ({
       <Box sx={{ mb: 1 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant='body2' sx={{ fontWeight: 600 }}>
-            Validation Errors
+            {hasErrors ? 'Validation Errors' : 'Validation Warnings'}
           </Typography>
           {onRefresh && (
             <ProgressRefreshButton
@@ -333,94 +374,110 @@ export const ActionSidebar = ({
           )}
         </Box>
       </Box>
-      <Alert severity='info' sx={{ mb: 2 }}>
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            cursor: 'pointer',
-          }}
-          onClick={() => setHelpExpanded(!helpExpanded)}
-        >
-          <Typography variant='body2' sx={{ fontWeight: 600 }}>
-            Validation Errors Overview
-          </Typography>
-          {helpExpanded ? <ExpandLess fontSize='small' /> : <ExpandMore fontSize='small' />}
-        </Box>
-        <Collapse in={helpExpanded} timeout='auto' unmountOnExit>
-          <Typography variant='caption' display='block' sx={{ mt: 0.5 }}>
-            Validation errors are checks that did not pass. They must be cleared before a unit
-            can be included in a published Release. Clearing one usually means updating the
-            configuration it objected to.
-          </Typography>
-        </Collapse>
-      </Alert>
-      <Stack spacing={1.5}>
-        {validationErrors.map((gate) => {
-          const trigger = findTriggerByGateName(gate.name);
-          const isValidating = trigger?.Trigger?.Validating;
-          const validation = getValidationResult(gate.name);
-          const isAwaitingTriggers = gate.name === 'awaiting/triggers' && gate.value === true;
-
-          // Special handling for awaiting/triggers gate
-          if (isAwaitingTriggers) {
-            return (
-              <HoverCard variant='outlined' key={gate.name}>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 1.5,
-                  }}
-                >
-                  <Stack direction='row' spacing={1} alignItems='center'>
-                    <CircularProgress color='primary' size={20} />
-                    <Typography variant='body2' sx={{ fontWeight: 600, fontSize: '0.8rem' }}>
-                      AWAITING GATE VALIDATION
-                    </Typography>
-                  </Stack>
-                  <Alert severity='info' sx={{ py: 0.5 }}>
-                    <Typography variant='caption'>
-                      The system is currently waiting for the validating triggers to complete.
-                    </Typography>
-                  </Alert>
-                </Box>
-              </HoverCard>
-            );
-          }
-
-          return (
-            <ValidationGateCard
-              key={gate.name}
-              gateName={gate.name}
-              trigger={trigger}
-              validation={validation}
-              isValidating={isValidating || false}
-              storedResults={unit?.Unit?.ValidationResults?.[gate.name]}
-              fieldHref={fieldHref}
-              focused={gate.name === focusedGate}
-              onRunClick={() => {
-                if (isValidating && trigger) {
-                  handleGateClick(gate.name || '', trigger);
-                } else {
-                  onApplyGateClicked(gate.name);
-                }
+      {hasErrors && (
+        <>
+          <Alert severity='error' sx={{ mb: 2 }}>
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                cursor: 'pointer',
               }}
-            />
-          );
-        })}
-      </Stack>
+              onClick={() => setHelpExpanded(!helpExpanded)}
+            >
+              <Typography variant='body2' sx={{ fontWeight: 600 }}>
+                About validation errors
+              </Typography>
+              {helpExpanded ? (
+                <ExpandLess fontSize='small' />
+              ) : (
+                <ExpandMore fontSize='small' />
+              )}
+            </Box>
+            <Collapse in={helpExpanded} timeout='auto' unmountOnExit>
+              <Typography variant='body2' sx={{ mt: 0.5 }}>
+                Validation errors are checks that did not pass, and point to a problem. They
+                keep a Unit out of a published Release, and block a promotion when a
+                ChangeWorkflow requires its checks to pass. Clearing one usually means updating
+                the configuration it objected to.
+              </Typography>
+            </Collapse>
+          </Alert>
+          <Stack spacing={1.5}>
+            {validationErrors.map((gate) => {
+              const trigger = findTriggerByGateName(gate.name);
+              const isValidating = trigger?.Trigger?.Validating;
+              const validation = getValidationResult(gate.name);
+              const isAwaitingTriggers =
+                gate.name === 'awaiting/triggers' && gate.value === true;
+
+              // Special handling for awaiting/triggers gate
+              if (isAwaitingTriggers) {
+                return (
+                  <HoverCard variant='outlined' key={gate.name}>
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 1.5,
+                      }}
+                    >
+                      <Stack direction='row' spacing={1} alignItems='center'>
+                        <CircularProgress color='primary' size={20} />
+                        <Typography
+                          variant='body2'
+                          sx={{ fontWeight: 600, fontSize: '0.8rem' }}
+                        >
+                          Awaiting validation
+                        </Typography>
+                      </Stack>
+                      <Alert severity='info' sx={{ py: 0.5 }}>
+                        <Typography variant='body2'>
+                          The validating Triggers are still running on this Unit.
+                        </Typography>
+                      </Alert>
+                    </Box>
+                  </HoverCard>
+                );
+              }
+
+              return (
+                <ValidationGateCard
+                  key={gate.name}
+                  gateName={gate.name}
+                  trigger={trigger}
+                  validation={validation}
+                  isValidating={isValidating || false}
+                  storedResults={unit?.Unit?.ValidationResults?.[gate.name]}
+                  fieldHref={fieldHref}
+                  focused={gate.name === focusedGate}
+                  onRunClick={() => {
+                    if (isValidating && trigger) {
+                      handleGateClick(gate.name || '', trigger);
+                    } else {
+                      onApplyGateClicked(gate.name);
+                    }
+                  }}
+                />
+              );
+            })}
+          </Stack>
+        </>
+      )}
 
       {validationWarnings.length > 0 && (
         <>
-          <Box sx={{ mb: 1, mt: 2 }}>
-            <Typography variant='body2' sx={{ fontWeight: 600 }}>
-              Validation Warnings
-            </Typography>
-          </Box>
+          {/* With no errors, the heading above is this one. */}
+          {hasErrors && (
+            <Box sx={{ mb: 1, mt: 2 }}>
+              <Typography variant='body2' sx={{ fontWeight: 600 }}>
+                Validation Warnings
+              </Typography>
+            </Box>
+          )}
           <Alert severity='warning' sx={{ mb: 2 }}>
-            <Typography variant='caption'>
+            <Typography variant='body2'>
               Validation warnings are non-blocking results. They indicate potential issues but
               block nothing.
             </Typography>
@@ -455,6 +512,7 @@ export const ActionSidebar = ({
           </Stack>
         </>
       )}
+      {exceptions}
     </Container>
   );
 };

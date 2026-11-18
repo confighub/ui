@@ -12,7 +12,7 @@ import type { ArrayInsertion, LeafValueType, ResourceInfo } from './configParser
 // ============================================================================
 
 /**
- * One Target bound to units in a deployment's Space.
+ * The release Target of a deployment's Space.
  *
  * `targetId` is the identity — display names are NOT unique (several Targets
  * commonly share the same `Labels.DisplayName`, e.g. "US - Dev"), so anything
@@ -51,15 +51,15 @@ export interface ComponentDeployment {
   slug: string;
   /** Human-readable label for the node (Space.Labels.Variant if set, else slug) */
   displayName: string;
-  /** Derived: has-target → Deployment, otherwise Base. */
+  /** Deployment when the Space has a release Target (`Space.ReleaseTargetID`), otherwise Base. */
   type: 'Base' | 'Deployment';
   /**
-   * Distinct Targets bound to the units in this Space (usually 0 or 1), sorted
-   * by display name. Two entries may share a `name` — they are still distinct
-   * Targets, so render/key them by `targetId`.
+   * The Space's release Target: one entry for a Deployment, none for a Base.
+   * Targets of different Spaces may share a `name`, so render/key them by
+   * `targetId`.
    */
   targets: DeploymentTarget[];
-  /** Space.ReleaseTargetID, when set — signals this node publishes via Release instead of Apply. */
+  /** Space.ReleaseTargetID, when set: where this node's Releases go. A Base has none. */
   releaseTargetId?: string;
   /** Space.ReleaseURL (readonly) — the OCI URL Releases publish to, when releaseTargetId is set. */
   releaseUrl?: string;

@@ -185,6 +185,9 @@ test.describe('the Validation page', () => {
     await expect(detail.getByTestId('validation-stage')).toHaveText('Enforced', {
       timeout: 20000,
     });
+    // Its failure is now an error, which the Enforced column totals.
+    await page.getByLabel('Search Triggers').fill(ruleSlug);
+    await expect(page.getByTestId('validation-column-Enforced-totals')).toHaveText('1 error');
 
     // Returning to audit runs the Trigger again on the Unit it fails, which turns the gate
     // blocking it back into a warning.
@@ -199,18 +202,148 @@ test.describe('the Validation page', () => {
     expect((await unitGates()).errors).toEqual([]);
   });
 
-  test('function runs on a failing Unit are made in the Trigger\'s ChangeSet, which the page links to', async ({ page }) => {
+  test('totals the failures of a column, and Evaluate runs a changed Trigger again', async ({
+    page,
+  }) => {
+    test.setTimeout(90000);
+    await page.goto(`/validation/${triggerId}`);
+    // Searching for the Trigger leaves its card alone in the column, so the totals are its own.
+    await page.getByLabel('Search Triggers').fill(ruleSlug);
+    const totals = page.getByTestId('validation-column-Audited-totals');
+    await expect(totals).toHaveText('1 warning', { timeout: 20000 });
+    await expect(page.getByTestId('validation-column-Enforced-totals')).toHaveCount(0);
+    // Clicking the count shows only the cards with warnings.
+    const warningsFilter = page.getByTestId('validation-column-Audited-filter-warning');
+    await warningsFilter.click();
+    await expect(warningsFilter).toHaveAttribute('aria-pressed', 'true');
+    const card = page
+      .getByTestId('validation-column-Audited')
+      .getByTestId(`validation-card-${ruleSlug}`);
+    await expect(card).toBeVisible();
+    // A search that leaves no warnings turns the filter off, and it stays off when they return.
+    const search = page.getByLabel('Search Triggers');
+    await search.fill(`${ruleSlug}-none`);
+    await expect(card).toHaveCount(0);
+    await search.fill(ruleSlug);
+    await expect(warningsFilter).toHaveAttribute('aria-pressed', 'false');
+    await warningsFilter.click();
+    await expect(warningsFilter).toHaveAttribute('aria-pressed', 'true');
+
+    // A change to a Trigger re-evaluates only the Units of its own Space, so the Unit keeps its
+    // warning until the Trigger runs on it again.
+    const changed = await hubApi.patch(`/api/space/${policySpaceId}/trigger/${triggerId}`, {
+      headers: { 'Content-Type': 'application/merge-patch+json' },
+      data: { Arguments: [{ ParameterName: 'expression', Value: 'true' }] },
+    });
+    expect(changed.ok(), await changed.text()).toBe(true);
+    expect((await unitGates()).warnings).toHaveLength(1);
+
+    await page.getByTestId('validation-reevaluate').click();
+    await expect(page.getByTestId('validation-detail')).toContainText('Evaluated 1 Unit.');
+    expect((await unitGates()).warnings).toEqual([]);
+    await page.getByRole('button', { name: 'Refresh' }).click();
+    await expect(totals).toHaveText('0 warnings', { timeout: 20000 });
+    // With no warnings left, the filter is off and the card shows again.
+    await expect(warningsFilter).toHaveCount(0);
+    await expect(card).toBeVisible();
+  });
+
+  test('Evaluate runs a Trigger only on the Units its WhereUnit and Unit Filter select', async ({
+    page,
+  }) => {
+    test.setTimeout(90000);
+    const patchTrigger = async (data: Record<string, unknown>) => {
+      const patched = await hubApi.patch(`/api/space/${policySpaceId}/trigger/${triggerId}`, {
+        headers: { 'Content-Type': 'application/merge-patch+json' },
+        data,
+      });
+      expect(patched.ok(), await patched.text()).toBe(true);
+    };
+    // The Trigger now passes everything, so a run on the Unit would clear its warning; and it is
+    // narrowed to Units the Unit is not one of.
+    await patchTrigger({
+      Arguments: [{ ParameterName: 'expression', Value: 'true' }],
+      WhereUnit: "Slug = 'not-web'",
+    });
+
+    await page.goto(`/validation/${triggerId}`);
+    const detail = page.getByTestId('validation-detail');
+    await detail.getByTestId('validation-reevaluate').click();
+    await expect(detail).toContainText(
+      'Evaluated 0 Units. The Trigger does not apply to the other 1.',
+    );
+    expect((await unitGates()).warnings).toHaveLength(1);
+
+    // Selected through a Unit Filter instead, the Unit is evaluated, and passes.
+    const filter = await body<{ FilterID: string }>(
+      await hubApi.post(`/api/space/${policySpaceId}/filter`, {
+        data: { Slug: `web-${ruleSlug}`, From: 'Unit', Where: "Slug = 'web'" },
+      }),
+      'filter',
+    );
+    await patchTrigger({ WhereUnit: null, UnitFilterID: filter.FilterID });
+    await page.getByRole('button', { name: 'Refresh' }).click();
+    await detail.getByTestId('validation-reevaluate').click();
+    await expect(detail).toContainText('Evaluated 1 Unit.');
+    expect((await unitGates()).warnings).toEqual([]);
+  });
+
+  test("a Trigger enforced elsewhere sends its Units' old warnings to Evaluate", async ({
+    page,
+  }) => {
+    test.setTimeout(90000);
+    // Enforced outside the page, which runs it again on no Unit outside its own Space, so the
+    // Unit keeps its warning.
+    const enforced = await hubApi.patch(`/api/space/${policySpaceId}/trigger/${triggerId}`, {
+      headers: { 'Content-Type': 'application/merge-patch+json' },
+      data: { Warn: false },
+    });
+    expect(enforced.ok(), await enforced.text()).toBe(true);
+    expect((await unitGates()).warnings).toHaveLength(1);
+
+    await page.goto(`/validation/${triggerId}`);
+    await page.getByLabel('Search Triggers').fill(ruleSlug);
+    const totals = page.getByTestId('validation-column-Enforced-totals');
+    await expect(totals).toHaveText('0 errors1 warning', { timeout: 20000 });
+    const detail = page.getByTestId('validation-detail');
+    await expect(detail.getByTestId('validation-stale')).toHaveText(
+      '1 Unit has a warning from before the Trigger was enforced. Evaluate to update it.',
+    );
+
+    await detail.getByTestId('validation-reevaluate').click();
+    await expect(detail).toContainText('Evaluated 1 Unit.');
+    await page.getByRole('button', { name: 'Refresh' }).click();
+    await expect(totals).toHaveText('1 error', { timeout: 20000 });
+    await expect(detail.getByTestId('validation-stale')).toHaveCount(0);
+  });
+
+  test("function runs on a failing Unit are made in the Trigger's ChangeSet, which the page links to", async ({
+    page,
+  }) => {
     test.setTimeout(120000);
     const annotation = `${policySlug}/${ruleSlug}`;
-    interface ChangeSetFields { ChangeSetID: string; Slug: string; State?: string; Annotations?: Record<string, string> }
+    interface ChangeSetFields {
+      ChangeSetID: string;
+      Slug: string;
+      State?: string;
+      Annotations?: Record<string, string>;
+    }
     const changeSets = async () =>
       (
-        await body<Array<{ ChangeSet: ChangeSetFields }>>(await hubApi.get(`/api/space/${appSpaceId}/change_set`), 'change sets')
+        await body<Array<{ ChangeSet: ChangeSetFields }>>(
+          await hubApi.get(`/api/space/${appSpaceId}/change_set`),
+          'change sets',
+        )
       )
         .map((entry) => entry.ChangeSet)
         .sort((a, b) => a.Slug.localeCompare(b.Slug));
     const readUnit = async () =>
-      (await body<{ Unit: { ChangeSetID?: string; HeadRevisionNum?: number } }>(await hubApi.get(`/api/space/${appSpaceId}/unit/${unitId}`), 'unit')).Unit;
+      (
+        await body<{ Unit: { ChangeSetID?: string; HeadRevisionNum?: number } }>(
+          await hubApi.get(`/api/space/${appSpaceId}/unit/${unitId}`),
+          'unit',
+        )
+      ).Unit;
     const unitChangeSetId = async () => (await readUnit()).ChangeSetID ?? '';
     const setUnitChangeSet = async (changeSetId: string | null) =>
       body(
@@ -239,16 +372,20 @@ test.describe('the Validation page', () => {
     // The first run makes a ChangeSet named after the Trigger and annotated with it, and leaves
     // the Unit in it, open, for the change to be reviewed.
     await run('3');
-    await expect.poll(async () => (await changeSets()).map((cs) => [cs.Slug, cs.Annotations?.Trigger]), { timeout: 20000 }).toEqual([
-      [ruleSlug, annotation],
-    ]);
+    await expect
+      .poll(async () => (await changeSets()).map((cs) => [cs.Slug, cs.Annotations?.Trigger]), {
+        timeout: 20000,
+      })
+      .toEqual([[ruleSlug, annotation]]);
     const [first] = await changeSets();
     await expect.poll(unitChangeSetId).toBe(first.ChangeSetID);
     const firstHead = (await readUnit()).HeadRevisionNum ?? 0;
 
     // A second run is made in the same ChangeSet.
     await run('4');
-    await expect.poll(async () => (await readUnit()).HeadRevisionNum ?? 0, { timeout: 20000 }).toBeGreaterThan(firstHead);
+    await expect
+      .poll(async () => (await readUnit()).HeadRevisionNum ?? 0, { timeout: 20000 })
+      .toBeGreaterThan(firstHead);
     expect(await unitChangeSetId()).toBe(first.ChangeSetID);
     expect((await changeSets()).map((cs) => cs.Slug)).toEqual([ruleSlug]);
 
@@ -269,7 +406,11 @@ test.describe('the Validation page', () => {
     );
     await setUnitChangeSet(other.ChangeSetID);
     await run('5');
-    await expect(page.getByText(/Nothing was run: a Unit is in a ChangeSet other than this Trigger's/).first()).toBeVisible({
+    await expect(
+      page
+        .getByText(/Nothing was run: a Unit is in a ChangeSet other than this Trigger's/)
+        .first(),
+    ).toBeVisible({
       timeout: 20000,
     });
     expect((await changeSets()).map((cs) => cs.Slug)).toEqual(['by-hand', ruleSlug]);
@@ -277,20 +418,24 @@ test.describe('the Validation page', () => {
     // Free of it, the Unit's next run makes the Trigger's second ChangeSet, numbered.
     await setUnitChangeSet(null);
     await run('6');
-    await expect.poll(async () => (await changeSets()).map((cs) => cs.Slug), { timeout: 20000 }).toEqual([
-      'by-hand',
-      ruleSlug,
-      `${ruleSlug}-2`,
-    ]);
+    await expect
+      .poll(async () => (await changeSets()).map((cs) => cs.Slug), { timeout: 20000 })
+      .toEqual(['by-hand', ruleSlug, `${ruleSlug}-2`]);
   });
 
-  test('a run on Units in two Spaces is made in the Trigger\'s ChangeSet already holding one of them', async ({ page }) => {
+  test("a run on Units in two Spaces is made in the Trigger's ChangeSet already holding one of them", async ({
+    page,
+  }) => {
     test.setTimeout(120000);
     // A second Space whose Unit fails the same Trigger.
     const otherSpaceId = (
       await body<{ SpaceID: string }>(
         await hubApi.post('/api/space', {
-          data: { Slug: `${policySlug}-other`, Labels: { Owner: 'E2E' }, WhereTrigger: `Space.Slug = '${policySlug}'` },
+          data: {
+            Slug: `${policySlug}-other`,
+            Labels: { Owner: 'E2E' },
+            WhereTrigger: `Space.Slug = '${policySlug}'`,
+          },
         }),
         'other space',
       )
@@ -298,30 +443,45 @@ test.describe('the Validation page', () => {
     try {
       const apiUnitId = (
         await body<{ Unit: { UnitID: string } }>(
-          await hubApi.post(`/api/space/${otherSpaceId}/unit`, { data: { Slug: 'api', ToolchainType: 'Kubernetes/YAML' } }),
+          await hubApi.post(`/api/space/${otherSpaceId}/unit`, {
+            data: { Slug: 'api', ToolchainType: 'Kubernetes/YAML' },
+          }),
           'other unit',
         )
       ).Unit.UnitID;
-      await body(await hubApi.put(`/api/space/${otherSpaceId}/unit/${apiUnitId}/data`, { data: deployment }), 'other unit data');
+      await body(
+        await hubApi.put(`/api/space/${otherSpaceId}/unit/${apiUnitId}/data`, {
+          data: deployment,
+        }),
+        'other unit data',
+      );
       await expect
         .poll(
           async () =>
             Object.keys(
-              (await body<{ Unit: { ValidationWarnings?: Record<string, boolean> } }>(
-                await hubApi.get(`/api/space/${otherSpaceId}/unit/${apiUnitId}`),
-                'other unit',
-              )).Unit.ValidationWarnings ?? {},
+              (
+                await body<{ Unit: { ValidationWarnings?: Record<string, boolean> } }>(
+                  await hubApi.get(`/api/space/${otherSpaceId}/unit/${apiUnitId}`),
+                  'other unit',
+                )
+              ).Unit.ValidationWarnings ?? {},
             ).length,
           { timeout: 20000 },
         )
         .toBe(1);
       const changeSetOf = async (spaceId: string, id: string) =>
-        (await body<{ Unit: { ChangeSetID?: string } }>(await hubApi.get(`/api/space/${spaceId}/unit/${id}`), 'unit')).Unit.ChangeSetID ?? '';
+        (
+          await body<{ Unit: { ChangeSetID?: string } }>(
+            await hubApi.get(`/api/space/${spaceId}/unit/${id}`),
+            'unit',
+          )
+        ).Unit.ChangeSetID ?? '';
 
       await page.goto(`/validation/${triggerId}`);
       const detail = page.getByTestId('validation-detail');
       // Both Units hold a Deployment named web, so a row is found by its checkbox, named for its Unit.
-      const checkboxOf = (unitSlug: string) => detail.getByRole('checkbox', { name: new RegExp(`/${unitSlug}$`) });
+      const checkboxOf = (unitSlug: string) =>
+        detail.getByRole('checkbox', { name: new RegExp(`/${unitSlug}$`) });
       await expect(checkboxOf('api')).toBeVisible({ timeout: 30000 });
       const invoker = new UnitDetailPage(page);
 
@@ -330,7 +490,9 @@ test.describe('the Validation page', () => {
       await invoker.selectFunctionByName('set-replicas');
       await invoker.fillNumberInputByName('Replicas', '3');
       await page.getByTestId('invoker-invoke-button').click();
-      await expect.poll(() => changeSetOf(appSpaceId, unitId), { timeout: 20000 }).not.toBe('');
+      await expect
+        .poll(() => changeSetOf(appSpaceId, unitId), { timeout: 20000 })
+        .not.toBe('');
       const first = await changeSetOf(appSpaceId, unitId);
 
       // The next, on that Unit and one in the other Space, is made in the same ChangeSet,
@@ -338,15 +500,21 @@ test.describe('the Validation page', () => {
       await checkboxOf('api').check();
       await invoker.fillNumberInputByName('Replicas', '4');
       await page.getByTestId('invoker-invoke-button').click();
-      await expect.poll(() => changeSetOf(otherSpaceId, apiUnitId), { timeout: 20000 }).toBe(first);
+      await expect
+        .poll(() => changeSetOf(otherSpaceId, apiUnitId), { timeout: 20000 })
+        .toBe(first);
       await expect(page.getByTestId('change-set-space-dialog')).toHaveCount(0);
       await expect(page.getByText(/Nothing was run/)).toHaveCount(0);
     } finally {
-      await hubApi.delete(`/api/space/${otherSpaceId}`, { params: { recursive: 'true' } }).catch(() => undefined);
+      await hubApi
+        .delete(`/api/space/${otherSpaceId}`, { params: { recursive: 'true' } })
+        .catch(() => undefined);
     }
   });
 
-  test('lists the resources excepted from a rule whose exceptions the Trigger honors', async ({ page }) => {
+  test('lists the resources excepted from a rule whose exceptions the Trigger honors', async ({
+    page,
+  }) => {
     const excepted = deployment.replace(
       'name: web\n  namespace',
       `name: api\n  annotations:\n    exceptions.guardrails.confighub.com/${honoredRule}: Runs as root by design\n  namespace`,
@@ -358,7 +526,9 @@ test.describe('the Validation page', () => {
       'unit',
     );
     await body(
-      await hubApi.put(`/api/space/${appSpaceId}/unit/${Unit.UnitID}/data`, { data: excepted }),
+      await hubApi.put(`/api/space/${appSpaceId}/unit/${Unit.UnitID}/data`, {
+        data: excepted,
+      }),
       'unit data',
     );
 
@@ -371,7 +541,9 @@ test.describe('the Validation page', () => {
     await expect(honored.getByRole('button', { name: 'Remove…' })).toHaveCount(0);
   });
 
-  test('a Unit with nothing for a rule to check is not counted, nor shown as not evaluated', async ({ page }) => {
+  test('a Unit with nothing for a rule to check is not counted, nor shown as not evaluated', async ({
+    page,
+  }) => {
     test.setTimeout(90000);
     // A rule that checks only ConfigMaps, which the app Space's one Unit, a Deployment, has none
     // of: the server skips it there and records that, so the page leaves the Unit out.
@@ -421,8 +593,76 @@ test.describe('the Validation page', () => {
 
     await page.goto(`/validation/${configMapTriggerId}`);
     const detail = page.getByTestId('validation-detail');
-    await expect(detail.getByRole('button', { name: 'All (0)' })).toBeVisible({ timeout: 20000 });
+    await expect(detail.getByRole('button', { name: 'All (0)' })).toBeVisible({
+      timeout: 20000,
+    });
     await expect(detail.getByRole('button', { name: 'Not evaluated (0)' })).toBeVisible();
+    // Its card says there is nothing to report, rather than nothing at all.
+    await expect(
+      page
+        .getByTestId(`validation-card-${configMapRule}`)
+        .getByTestId('validation-card-not-applicable'),
+    ).toHaveText('N/A');
+  });
+
+  test('excepts the failures of a Trigger temporarily, and lists them apart, here and on the Unit page', async ({
+    page,
+  }) => {
+    test.setTimeout(90000);
+    // A second failing Unit holds a Deployment and a Service of one name. vet-cel names the
+    // failing resource without its type, so which one fails cannot be told, and it is left as it is.
+    const twin =
+      deployment.replace(/web/g, 'api') +
+      '---\napiVersion: v1\nkind: Service\nmetadata:\n  name: api\n  namespace: default\nspec:\n  ports:\n    - port: 80\n';
+    const { Unit } = await body<{ Unit: { UnitID: string } }>(
+      await hubApi.post(`/api/space/${appSpaceId}/unit`, {
+        data: { Slug: 'api', ToolchainType: 'Kubernetes/YAML' },
+      }),
+      'unit',
+    );
+    await body(
+      await hubApi.put(`/api/space/${appSpaceId}/unit/${Unit.UnitID}/data`, { data: twin }),
+      'unit data',
+    );
+
+    await page.goto(`/validation/${triggerId}`);
+    const detail = page.getByTestId('validation-detail');
+    await detail.getByTestId('validation-except-temporarily').click({ timeout: 20000 });
+    const dialog = page.getByTestId('temporary-exceptions-dialog');
+    await expect(dialog.getByTestId('temporary-exceptions-summary')).toHaveText(
+      'Excepts 1 resource in 1 Unit.',
+      { timeout: 20000 },
+    );
+    const left = dialog.getByTestId('temporary-exceptions-not-excepted-Ambiguous');
+    await expect(left).toContainText('1 Unit: Their results name a resource without its type');
+    await expect(left).toContainText('/api');
+    await dialog
+      .getByTestId('temporary-exceptions-reason')
+      .locator('textarea')
+      .first()
+      .fill('Limits come with the next chart release');
+    await dialog.getByTestId('temporary-exceptions-submit').click();
+    await expect(dialog).toHaveCount(0, { timeout: 20000 });
+
+    await expect
+      .poll(async () => (await unitGates()).warnings.length, { timeout: 20000 })
+      .toBe(0);
+    const temporary = detail.getByTestId('validation-temporary-exceptions');
+    await expect(temporary).toContainText(
+      'ToBeFixed: Limits come with the next chart release',
+    );
+    await expect(temporary).toContainText('default/web');
+    await expect(detail.getByTestId('validation-exceptions')).toContainText('Exceptions (0)');
+
+    // The Unit, clear of warnings now, lists its temporary exception.
+    await page.goto(`/units/${appSpaceId}/${unitId}`);
+    const unitTemporary = page.getByTestId('unit-temporary-exceptions');
+    await expect(unitTemporary).toContainText(
+      'ToBeFixed: Limits come with the next chart release',
+      { timeout: 20000 },
+    );
+    await expect(unitTemporary).toContainText(ruleSlug);
+    await expect(page.getByTestId('unit-lasting-exceptions')).toContainText('Exceptions (0)');
   });
 
   test('excepts a failing resource, and removes the exception', async ({ page }) => {

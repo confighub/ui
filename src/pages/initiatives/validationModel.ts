@@ -9,12 +9,6 @@
 import type { TriggerRead, ValidationResultList } from '@confighub/rtk-query';
 
 import {
-  type FindingIssue,
-  extraDetails,
-  findingIssues,
-} from '../unit-detail/components/action-side-bar/validationFindings';
-
-import {
   ENFORCED_AT_ANNOTATION,
   ENFORCED_BY_ANNOTATION,
   type EnforcementStage,
@@ -25,6 +19,11 @@ import {
   triggerPriority,
   unitVerdicts,
 } from '../../utility/triggerEnforcement';
+import {
+  type FindingIssue,
+  extraDetails,
+  findingIssues,
+} from '../unit-detail/components/action-side-bar/validationFindings';
 
 /** What the page reads of a Space. */
 export interface ScopeSpace {
@@ -136,6 +135,21 @@ export const emptyCounts = (): OutcomeCounts => ({
 
 export const failingOf = (c: OutcomeCounts): number => c.warning + c.error;
 
+/**
+ * The errors and warnings on the cards of a set of Triggers, summed: a Unit failing two of them
+ * counts once for each, as it does on each card.
+ */
+export const failureTotals = (
+  policies: ValidationPolicy[],
+): Pick<OutcomeCounts, 'error' | 'warning'> =>
+  policies.reduce(
+    (t, p) => ({
+      error: t.error + p.unitCounts.error,
+      warning: t.warning + p.unitCounts.warning,
+    }),
+    { error: 0, warning: 0 },
+  );
+
 export interface ValidationPolicy {
   trigger: TriggerRead;
   id: string;
@@ -153,6 +167,8 @@ export interface ValidationPolicy {
   /** The Units it applies to, with how each fared. */
   units: PolicyUnit[];
   unitCounts: OutcomeCounts;
+  /** The Units the Trigger last found nothing to check in, which are not in its scope. */
+  skippedUnits: ScopeUnit[];
 }
 
 const outcomeRank: Record<UnitOutcome, number> = {
@@ -262,6 +278,7 @@ export const buildPolicies = (
     const targetIds = new Set(policyTargets.map((t) => t.id));
 
     const policyUnits: PolicyUnit[] = [];
+    const skippedUnits: ScopeUnit[] = [];
     const unitCounts = emptyCounts();
     for (const unit of units) {
       const verdict = verdictsByUnit.get(unit.id)?.get(id);
@@ -270,7 +287,10 @@ export const buildPolicies = (
         (!trigger.ToolchainType || unit.toolchainType === trigger.ToolchainType);
       if (!verdict && !selected) continue;
       // Nothing for the Trigger to check in the Unit: it is not one the Trigger applies to.
-      if (verdict?.verdict === 'Skipped') continue;
+      if (verdict?.verdict === 'Skipped') {
+        skippedUnits.push(unit);
+        continue;
+      }
       const outcome: UnitOutcome = verdict?.verdict ?? 'NotEvaluated';
       policyUnits.push({
         unit,
@@ -296,6 +316,7 @@ export const buildPolicies = (
         targets: policyTargets,
         units: policyUnits,
         unitCounts,
+        skippedUnits,
       },
     ];
   });
@@ -330,6 +351,19 @@ export const comparePolicies = (a: ValidationPolicy, b: ValidationPolicy): numbe
   return a.name.localeCompare(b.name);
 };
 
+/**
+ * The Units whose verdict from a Trigger is the kind of failure its stage does not give: an error
+ * from an Audited Trigger, which warns, or a warning from an Enforced one, which blocks. Each was
+ * recorded before the Trigger changed between the two, and stays until the Trigger runs on the
+ * Unit again.
+ */
+export const staleFailures = (policy: ValidationPolicy): number =>
+  policy.stage === 'Audited'
+    ? policy.unitCounts.error
+    : policy.stage === 'Enforced'
+      ? policy.unitCounts.warning
+      : 0;
+
 /** Whether a policy is past the date it was due to be enforced and still is not. */
 export const isOverdue = (policy: ValidationPolicy, now: Date = new Date()): boolean =>
   !!policy.enforcedBy &&
@@ -343,6 +377,10 @@ export interface FailedResource {
   /** Its name, namespace/name for a namespaced resource. */
   name: string;
 }
+
+/** A cluster-scoped resource's name may or may not start with a slash. */
+const sameName = (a: string, b: string): boolean =>
+  a.replace(/^\//, '') === b.replace(/^\//, '');
 
 // vet-cel reports a resource whose expression returned false only in a detail line, not as a
 // FailedAttribute, so the line is read for the name as well.
@@ -369,7 +407,7 @@ export const failedResources = (
     }
     for (const detail of result.Details ?? []) {
       const name = DETAIL_RESOURCE.exec(detail)?.[1];
-      if (name && ![...seen.values()].some((r) => r.name === name))
+      if (name && ![...seen.values()].some((r) => sameName(r.name, name)))
         seen.set(`|${name}`, { name });
     }
   }
@@ -414,8 +452,9 @@ export const exceptionAnnotationPath = (
 ): string | undefined => {
   const paths = exceptionAnnotationPaths(whereResource);
   return (
-    paths.find((path) => !!triggerSlug && annotationKeyOfPath(path).endsWith(`/${triggerSlug}`)) ??
-    paths[0]
+    paths.find(
+      (path) => !!triggerSlug && annotationKeyOfPath(path).endsWith(`/${triggerSlug}`),
+    ) ?? paths[0]
   );
 };
 
@@ -424,7 +463,10 @@ export const exceptionAnnotationPath = (
  * overlaps another honors its exceptions, so a resource excepted from that rule is not failed
  * by this one either.
  */
-export const honoredExceptionPaths = (whereResource?: string, triggerSlug?: string): string[] => {
+export const honoredExceptionPaths = (
+  whereResource?: string,
+  triggerSlug?: string,
+): string[] => {
   const own = exceptionAnnotationPath(whereResource, triggerSlug);
   return exceptionAnnotationPaths(whereResource).filter((path) => path !== own);
 };
@@ -432,3 +474,79 @@ export const honoredExceptionPaths = (whereResource?: string, triggerSlug?: stri
 /** The annotation key an exception path names, with its escaped dots restored. */
 export const annotationKeyOfPath = (path: string): string =>
   path.replace(/^metadata\.annotations\./, '').replace(/~1/g, '.');
+
+/**
+ * The reason of a temporary exception starts with this: one recorded for a failure that is to be
+ * fixed, so that its Trigger could be enforced without waiting for it. The SDK's guardrails
+ * package, which `cub manage guardrails exception add-temporary` uses, writes the same prefix.
+ */
+export const TEMPORARY_EXCEPTION_PREFIX = 'ToBeFixed';
+
+/** The reason a temporary exception records: the prefix, then why the failure is not fixed yet. */
+export const temporaryReason = (reason: string): string =>
+  `${TEMPORARY_EXCEPTION_PREFIX}: ${reason.trim()}`;
+
+/** Whether an exception's reason marks it as temporary. */
+export const isTemporaryException = (reason: string | undefined): boolean => {
+  const trimmed = (reason ?? '').trim();
+  if (!trimmed.startsWith(TEMPORARY_EXCEPTION_PREFIX)) return false;
+  const rest = trimmed.slice(TEMPORARY_EXCEPTION_PREFIX.length);
+  return rest === '' || rest[0] === ':' || rest[0] === ' ';
+};
+
+/** A resource of a Unit, as the resource list names it. */
+export interface NamedResource {
+  type: string;
+  name: string;
+}
+
+/**
+ * Why a failing Unit is excepted from nothing, as a kind Units can be counted by. The SDK's
+ * guardrails package names the same kinds.
+ */
+export type NotExceptedKind = 'AlreadyExcepted' | 'Ambiguous' | 'NotHeld' | 'Unnamed';
+
+/** What each kind means, for a group of Units. */
+export const NOT_EXCEPTED_TEXT: Record<NotExceptedKind, string> = {
+  Unnamed: 'Their results do not name the resource that fails, and each holds several.',
+  NotHeld: 'Their results name a resource they do not hold.',
+  Ambiguous:
+    'Their results name a resource without its type, and each holds more than one of that name.',
+  AlreadyExcepted: 'Already excepted: their verdicts are from before. Evaluate them again.',
+};
+
+/**
+ * Which resources of one failing Unit to except from its Trigger: those its results name, or,
+ * when they name none, its only resource. A Unit whose failures cannot all be placed is excepted
+ * from nothing, and `kind` says why, so that every Unit left out is one that still fails.
+ * Resources already excepted are left out; when that leaves nothing, the Unit's verdict is from
+ * before the exception.
+ *
+ * The SDK's guardrails package has the same rule for `exception add-temporary`; the specs of
+ * both run the same cases.
+ */
+export const resourcesToExcept = (
+  failed: FailedResource[],
+  all: NamedResource[],
+  isExcepted: (r: NamedResource) => boolean,
+):
+  | { resources: NamedResource[]; kind?: undefined }
+  | { resources?: undefined; kind: NotExceptedKind } => {
+  const chosen: NamedResource[] = [];
+  if (failed.length === 0) {
+    if (all.length !== 1) return { kind: 'Unnamed' };
+    chosen.push(all[0]);
+  }
+  for (const f of failed) {
+    const matches = all.filter(
+      (r) => sameName(r.name, f.name) && (!f.type || r.type === f.type),
+    );
+    if (matches.length === 0) return { kind: 'NotHeld' };
+    if (matches.length > 1) return { kind: 'Ambiguous' };
+    if (!chosen.some((r) => r.type === matches[0].type && r.name === matches[0].name))
+      chosen.push(matches[0]);
+  }
+  const resources = chosen.filter((r) => !isExcepted(r));
+  if (resources.length === 0) return { kind: 'AlreadyExcepted' };
+  return { resources };
+};

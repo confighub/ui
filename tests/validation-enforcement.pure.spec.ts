@@ -7,6 +7,9 @@
 import { expect, test } from '@playwright/test';
 
 import {
+  type FailedResource,
+  type NamedResource,
+  type NotExceptedKind,
   type ScopeSpace,
   type ScopeUnit,
   annotationKeyOfPath,
@@ -14,9 +17,14 @@ import {
   exceptionAnnotationPath,
   failedResources,
   failureIssues,
+  failureTotals,
   groupCounts,
   honoredExceptionPaths,
+  isTemporaryException,
   notEvaluatedReason,
+  resourcesToExcept,
+  staleFailures,
+  temporaryReason,
 } from '../src/pages/initiatives/validationModel';
 import {
   enforcedAtAfter,
@@ -190,6 +198,35 @@ test.describe('policies', () => {
     );
     expect(p.units.map((u) => u.unit.id)).toEqual(['passes']);
     expect(p.unitCounts).toMatchObject({ total: 1, passed: 1, notEvaluated: 0 });
+    // Kept apart, to run the Trigger on again after it changes.
+    expect(p.skippedUnits.map((u) => u.id)).toEqual(['no-workloads']);
+  });
+
+  test('a column totals its cards, counting a Unit once for each Trigger it fails', () => {
+    const g1 = `${POLICY}/t1/vet-cel`;
+    const g2 = `${POLICY}/t2/vet-cel`;
+    const policies = buildPolicies(
+      [trigger('t1'), trigger('t2', false)],
+      [space(POLICY, ['t1', 't2']), space(APP, ['t1', 't2'])],
+      [],
+      [
+        unit('both', APP, { [g1]: 't1', [g2]: 't2' }, { warn: [g1], error: [g2] }),
+        unit('one', APP, { [g1]: 't1', [g2]: 't2' }, { warn: [g1] }),
+        unit('not-yet', APP, {}),
+      ],
+    );
+    expect(failureTotals(policies)).toEqual({ error: 1, warning: 2 });
+    expect(failureTotals([])).toEqual({ error: 0, warning: 0 });
+  });
+
+  test('a failure of the kind its stage does not give is from before the stage changed', () => {
+    const gate = `${POLICY}/t1/vet-cel`;
+    const units = [unit('warns', APP, { [gate]: 't1' }, { warn: [gate] })];
+    const spaces = [space(POLICY, ['t1']), space(APP, ['t1'])];
+    const [audited] = buildPolicies([trigger('t1')], spaces, [], units);
+    expect(staleFailures(audited)).toBe(0);
+    const [enforced] = buildPolicies([trigger('t1', false)], spaces, [], units);
+    expect(staleFailures(enforced)).toBe(1);
   });
 });
 
@@ -332,4 +369,103 @@ test("a Unit's failure issues are each listed once, with their checks, and detai
       message: 'volumeMounts 0 names the volume "data", which the pod does not have',
     },
   ]);
+});
+
+test.describe('temporary exceptions', () => {
+  test('a reason starting ToBeFixed marks an exception as temporary', () => {
+    expect(temporaryReason('  images rebuilt in Q1 ')).toBe('ToBeFixed: images rebuilt in Q1');
+    expect(isTemporaryException(temporaryReason('x'))).toBe(true);
+    expect(isTemporaryException('ToBeFixed')).toBe(true);
+    expect(isTemporaryException('ToBeFixed by the platform team')).toBe(true);
+    expect(isTemporaryException('ToBeFixedLater')).toBe(false);
+    expect(isTemporaryException('singleton by design')).toBe(false);
+    expect(isTemporaryException(undefined)).toBe(false);
+  });
+
+  // The cases of the SDK's guardrails package's test of its own copy of the rule, case for case,
+  // so that the two cannot drift apart unnoticed.
+  const web = { type: 'apps/v1/Deployment', name: 'shop/web' };
+  const svc = { type: 'v1/Service', name: 'shop/web' };
+  const api = { type: 'apps/v1/Deployment', name: 'shop/api' };
+  const role = { type: 'rbac.authorization.k8s.io/v1/ClusterRole', name: '/admin' };
+  const cases: {
+    name: string;
+    failed?: FailedResource[];
+    all: NamedResource[];
+    excepted?: NamedResource[];
+    want?: NamedResource[];
+    kind?: NotExceptedKind;
+  }[] = [
+    { name: 'named with its type', failed: [web], all: [web, svc, api], want: [web] },
+    {
+      name: 'named without its type',
+      failed: [{ name: 'shop/api' }],
+      all: [web, svc, api],
+      want: [api],
+    },
+    {
+      name: 'cluster-scoped, named without a slash',
+      failed: [{ name: 'admin' }],
+      all: [role, web],
+      want: [role],
+    },
+    {
+      name: 'two failing',
+      failed: [web, { name: 'shop/api' }],
+      all: [web, svc, api],
+      want: [web, api],
+    },
+    { name: 'unnamed, one resource', all: [web], want: [web] },
+    { name: 'unnamed, several', all: [web, api], kind: 'Unnamed' },
+    {
+      name: 'ambiguous name',
+      failed: [{ name: 'shop/web' }],
+      all: [web, svc],
+      kind: 'Ambiguous',
+    },
+    // A Unit is excepted from all of its failures or none, so a Unit left out still fails.
+    {
+      name: 'one of two not held',
+      failed: [web, { name: 'shop/gone' }],
+      all: [web],
+      kind: 'NotHeld',
+    },
+    {
+      name: 'already excepted',
+      failed: [web],
+      all: [web, api],
+      excepted: [web],
+      kind: 'AlreadyExcepted',
+    },
+    {
+      name: 'already excepted is left out',
+      failed: [web, api],
+      all: [web, api],
+      excepted: [web],
+      want: [api],
+    },
+  ];
+  for (const c of cases) {
+    test(`which resources to except: ${c.name}`, () => {
+      const got = resourcesToExcept(c.failed ?? [], c.all, (r) =>
+        (c.excepted ?? []).some((e) => e.type === r.type && e.name === r.name),
+      );
+      expect(got).toEqual(c.kind ? { kind: c.kind } : { resources: c.want });
+    });
+  }
+
+  test('a resource named by a failed attribute and by a detail is one, slash or not', () => {
+    expect(
+      failedResources([
+        {
+          Passed: false,
+          Index: 0,
+          FailedAttributes: [
+            { ResourceType: role.type, ResourceName: '/admin', Path: 'rules' },
+          ],
+          Details: ['resource admin failed validation'],
+        },
+      ]),
+    ).toEqual([{ type: role.type, name: '/admin' }]);
+  });
 });

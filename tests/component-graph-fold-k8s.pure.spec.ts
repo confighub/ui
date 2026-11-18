@@ -8,7 +8,7 @@
 // be the same as a label key.
 import { expect, test } from '@playwright/test';
 
-import { buildComponentData, deploymentTargetId } from '../src/pages/x/apps/componentData';
+import { buildComponentData } from '../src/pages/x/apps/componentData';
 import type { ComponentDeployment } from '../src/pages/x/apps/componentTypes';
 import {
   kubernetesVersionCell,
@@ -173,7 +173,7 @@ test.describe("the Deployment's Target", () => {
     ['t-b', { 'Cluster.KubernetesVersion': '1.32.1' }],
   ]);
   const { deployments } = buildComponentData(
-    [space('base'), space('released', 't-b'), space('plain'), space('nofacts')],
+    [space('base'), space('released', 't-b'), space('plain'), space('nofacts', 't-c')],
     units,
     new Map(units.map((u) => [u.Unit!.UnitID!, u])),
     names,
@@ -187,12 +187,14 @@ test.describe("the Deployment's Target", () => {
     expect(kubernetesVersionCell(byId.get('released')!)?.value).toBe('1.32');
   });
 
-  test('else the first Target by name', () => {
-    expect(kubernetesVersionCell(byId.get('plain')!)?.value).toBe('1.30');
-    expect(deploymentTargetId(undefined, byId.get('plain')!.targets)).toBe('t-a');
+  test('the Targets of its Units do not stand in for a release Target', () => {
+    expect(byId.get('plain')!.type).toBe('Base');
+    expect(byId.get('plain')!.targets).toEqual([]);
+    expect(kubernetesVersionCell(byId.get('plain')!)).toBeNull();
   });
 
   test('a Target with no Facts, and a Base, have no value', () => {
+    expect(byId.get('nofacts')!.type).toBe('Deployment');
     expect(byId.get('nofacts')!.targetFacts).toBeUndefined();
     expect(kubernetesVersionCell(byId.get('nofacts')!)).toBeNull();
     expect(kubernetesVersionCell(byId.get('base')!)).toBeNull();

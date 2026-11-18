@@ -5,7 +5,7 @@ import { Link as RouterLink } from 'react-router-dom';
 
 import { HoverCard } from '@/components/styled';
 import { TriggerRuleDetails } from '@/components/trigger-rule/TriggerRuleDetails';
-import { parseGateName } from '@/utility/name-format-functions';
+import { gateTitle, parseGateName } from '@/utility/name-format-functions';
 import { parseValidationResult } from '@/utility/object-functions';
 import { decodeBase64 } from '@/utility/string-functions';
 import {
@@ -30,10 +30,6 @@ import {
 import { ValidationResult } from './ActionSideBar';
 import { ValidationFindingsList } from './ValidationFindingsList';
 import { FieldFinding, selectLiveResult, validationFindings } from './validationFindings';
-
-const formatGateName = (name: string) => {
-  return name.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-};
 
 // The live run's result for a gate, decoded from the run's ValidationResult output. Undefined
 // when the run has no such output, or it cannot be read.
@@ -239,22 +235,19 @@ export const ValidationGateCard = ({
                 },
               }}
             >
-              {formatGateName(trigger?.Trigger?.DisplayName || '')?.toLocaleUpperCase()}
+              {gateTitle(gateName, trigger?.Trigger)}
             </Link>
           ) : (
             <Typography
               variant='body2'
               sx={{ fontWeight: 600, fontSize: '0.8rem', lineHeight: '20px' }}
             >
-              {formatGateName(trigger?.Trigger?.DisplayName || '')?.toLocaleUpperCase()}
+              {gateTitle(gateName, trigger?.Trigger)}
             </Typography>
           )}
 
           {validation?.timestamp && (
-            <Typography
-              variant='caption'
-              sx={{ color: 'text.secondary', fontSize: '0.65rem' }}
-            >
+            <Typography variant='body2' sx={{ color: 'text.secondary', fontSize: '0.65rem' }}>
               Last checked: {formatRelativeTime(validation.timestamp)}
             </Typography>
           )}
@@ -266,21 +259,21 @@ export const ValidationGateCard = ({
             flexWrap='wrap'
             sx={{ gap: 0.5 }}
           >
+            {/* In the tones of gates and warnings everywhere: red blocks, orange warns. */}
             <Chip
               label={trigger?.Trigger?.Warn ? 'Warn' : 'Blocking'}
-              color='primary'
+              color={trigger?.Trigger?.Warn ? 'warning' : 'error'}
               size='small'
               sx={{ height: 18, fontSize: '0.6rem' }}
             />
             <Chip
-              label={isValidating ? 'Validating' : 'Non Validating'}
+              label={isValidating ? 'Validating' : 'Not validating'}
               size='small'
               color='info'
               sx={{ height: 18, fontSize: '0.6rem' }}
             />
             <Chip
               label={trigger?.Trigger?.Event}
-              color='warning'
               size='small'
               sx={{ height: 18, fontSize: '0.6rem' }}
             />
@@ -321,10 +314,7 @@ export const ValidationGateCard = ({
           {validationState === 'loading' && (
             <Stack direction='row' spacing={0.5} alignItems='center'>
               <CircularProgress size={12} />
-              <Typography
-                variant='caption'
-                sx={{ color: 'text.secondary', fontSize: '0.7rem' }}
-              >
+              <Typography variant='body2' sx={{ color: 'text.secondary', fontSize: '0.7rem' }}>
                 Checking validation...
               </Typography>
             </Stack>
@@ -340,7 +330,7 @@ export const ValidationGateCard = ({
           {validationState === 'error' && !(liveResult && hasFindings) && (
             <Alert severity={isWarning ? 'warning' : 'error'} sx={{ py: 0.25, px: 1 }}>
               <Typography
-                variant='caption'
+                variant='body2'
                 sx={{
                   fontSize: '0.7rem',
                   fontWeight: 600,
@@ -364,7 +354,7 @@ export const ValidationGateCard = ({
           )}
           {validationState === 'success' && (
             <Alert severity='success' sx={{ py: 0.25, px: 1 }}>
-              <Typography variant='caption' sx={{ fontSize: '0.7rem', fontWeight: 600 }}>
+              <Typography variant='body2' sx={{ fontSize: '0.7rem', fontWeight: 600 }}>
                 Validation passed
               </Typography>
             </Alert>
@@ -376,7 +366,7 @@ export const ValidationGateCard = ({
       {!expanded && showsStored && !liveResult && hasFindings && (
         <Box sx={{ mt: 1 }}>
           <Typography
-            variant='caption'
+            variant='body2'
             display='block'
             sx={{ color: 'text.secondary', fontSize: '0.65rem', mb: 0.5 }}
           >
@@ -404,8 +394,8 @@ export const ValidationGateCard = ({
           cursor: 'pointer',
         }}
       >
-        <Typography variant='caption' sx={{ fontSize: '0.75rem' }}>
-          {expanded ? 'Hide Details' : 'Show Details'}
+        <Typography variant='body2' sx={{ fontSize: '0.75rem' }}>
+          {expanded ? 'Hide details' : 'Show details'}
         </Typography>
         <Box
           className='show-details-icon'
@@ -425,7 +415,7 @@ export const ValidationGateCard = ({
             {/* What the Trigger runs */}
             <Box>
               <Typography
-                variant='caption'
+                variant='body2'
                 sx={{
                   color: 'text.secondary',
                   textTransform: 'uppercase',
@@ -449,7 +439,7 @@ export const ValidationGateCard = ({
             {!(isValidating && validation && !validation.loading) && hasFindings && (
               <Box>
                 <Typography
-                  variant='caption'
+                  variant='body2'
                   sx={{
                     color: 'text.secondary',
                     textTransform: 'uppercase',
@@ -475,7 +465,7 @@ export const ValidationGateCard = ({
             {isValidating && validation && !validation.loading && (
               <Box>
                 <Typography
-                  variant='caption'
+                  variant='body2'
                   sx={{
                     color: 'text.secondary',
                     textTransform: 'uppercase',
@@ -490,23 +480,19 @@ export const ValidationGateCard = ({
                 </Typography>
                 {validation.error ? (
                   <Alert severity='error' sx={{ py: 0.5 }}>
-                    <Typography variant='caption' sx={{ fontSize: '0.75rem' }}>
+                    <Typography variant='body2' sx={{ fontSize: '0.75rem' }}>
                       {validation.error}
                     </Typography>
                   </Alert>
                 ) : validation.result?.Error ? (
                   <Alert severity='error' sx={{ py: 0.5 }}>
-                    <Typography
-                      variant='caption'
-                      fontWeight={600}
-                      sx={{ fontSize: '0.75rem' }}
-                    >
+                    <Typography variant='body2' fontWeight={600} sx={{ fontSize: '0.75rem' }}>
                       {validation.result.Error.Message}
                     </Typography>
                     {validation.result.Error.Details?.map((detail, index) => (
                       <Typography
                         key={index}
-                        variant='caption'
+                        variant='body2'
                         display='block'
                         sx={{ mt: 0.5, fontSize: '0.7rem' }}
                       >
@@ -538,7 +524,7 @@ export const ValidationGateCard = ({
                     sx={{ py: 0.5 }}
                   >
                     <Typography
-                      variant='caption'
+                      variant='body2'
                       fontWeight='bold'
                       display='block'
                       sx={{ fontSize: '0.75rem' }}
@@ -555,7 +541,7 @@ export const ValidationGateCard = ({
                   </Alert>
                 ) : (
                   <Alert severity='success' sx={{ py: 0.5 }}>
-                    <Typography variant='caption' sx={{ fontSize: '0.75rem' }}>
+                    <Typography variant='body2' sx={{ fontSize: '0.75rem' }}>
                       Validation completed successfully
                     </Typography>
                   </Alert>

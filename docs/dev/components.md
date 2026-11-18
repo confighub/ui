@@ -109,7 +109,7 @@ you can cite them in review.
 | Term | Precise meaning |
 |---|---|
 | **Promotion** | Propagating config changes downstream along `UpstreamUnitID` Space→Space edges. The view = flow graph + side pane. |
-| **Deployment (node)** | `ComponentDeployment`; identity is **`Space.SpaceID`**. `type:'Deployment'` if the Space has a Target, else `'Base'`. `displayName = Space.Labels.Variant ?? slug`. |
+| **Deployment (node)** | `ComponentDeployment`; identity is **`Space.SpaceID`**. `type:'Deployment'` if the Space has a release Target (`Space.ReleaseTargetID`), else `'Base'`; the Targets of its Units do not decide it. `displayName = Space.Labels.Variant ?? slug`. |
 | **Stage** | Depth in the upstream DAG. `Stage {label:'Stage N', depth, deploymentIds}`. |
 | **Upgrade** | Merging the upstream HEAD revision into a downstream unit. Backend: `upgrade=true` → `mergeUnits` → `SourceTypeUpgradeUnit`. "Upgradable" unit = `UpstreamRevisionNum < upstream.HeadRevisionNum`. |
 | **Release** | Publishing a Space's Units to its Target. "Unreleased" = `LastReleasedRevisionNum < HeadRevisionNum`. |

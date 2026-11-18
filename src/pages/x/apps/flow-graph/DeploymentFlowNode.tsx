@@ -1179,13 +1179,6 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
   // rather than one shared boolean toggled from both places, so a mouse
   // moving from card to handle (an overlapping-but-distinct region) can
   // never race a false-clear against a still-true hover.
-  // The root of a component's variant tree is the node with no parent — the
-  // same test `data-variant` uses below. `deployment.type` is NOT a reliable
-  // stand-in: it is 'Deployment' for a base Space that has no target, so a
-  // badge keyed on it silently vanished from exactly the target-less base the
-  // guided tour builds, and could label a child node BASE.
-  const isBaseNode = !deployment.parentDeploymentId;
-
   // A drag on a card that cannot be dragged pans the canvas, so a tall graph
   // can be moved from anywhere; reactflow marks a draggable node `nopan`
   // itself, so a node the user can drag still drags.
@@ -1276,11 +1269,10 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
   const syncVital = deriveSyncPresentation(deployment.liveStatus);
   const healthVital = deriveHealthPresentation(deployment.liveStatus);
 
-  // A node that actually deploys somewhere (has a Target) but carries no
-  // live status reading says so explicitly.
-  // A Base (no Target) is correctly excluded: nothing is deployed from it, so
-  // there is nothing that could have reported.
-  const hasTargets = deployment.targets.length > 0;
+  // A Deployment that carries no live status reading says so explicitly.
+  // A Base is excluded: nothing is deployed from it, so there is nothing that
+  // could have reported.
+  const hasTargets = deployment.type === 'Deployment';
   const showUnreported = hasTargets && !healthVital && !syncVital;
   const unreportedSpec: PeekSpec = {
     tab: 'config',
@@ -1291,9 +1283,7 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
       // out unreported even where the one before it was healthy.
       deployment.runningRelease
         ? `Release ${deployment.runningRelease.releaseNum} is published and not reported on yet`
-        : deployment.releaseTargetId
-          ? 'No Release has been published to its release Target'
-          : 'It has no release Target, so no Release carries a live status',
+        : 'No Release has been published to its release Target',
     ],
     action: 'Open to inspect',
   };
@@ -1327,18 +1317,18 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
     lines: ['Local edits not yet released'],
     action: 'Review & release',
   };
-  // Configuration, where each unit with validation errors has its Gated chip
-  // and what the errors found.
+  // The Gates tab, which lists warnings as well as gates, where the Variant has one; else
+  // Configuration, where each Unit's Gated or Warnings chip is.
+  const validationTab: ChipTab = deployment.releaseTargetId ? 'gates' : 'config';
   const gatedSpec: PeekSpec = {
-    // The Gates tab, where the Variant has one; else Configuration, where each Unit's Gated chip is.
-    tab: deployment.releaseTargetId ? 'gates' : 'config',
+    tab: validationTab,
     eyebrow: 'Gated · validation errors',
     metric: { value: String(gatedCount), unit: gatedCount === 1 ? 'unit blocked' : 'units blocked' },
     lines: unitGateLines(units, (u) => u.gates),
     action: 'Review the gate',
   };
   const warningsSpec: PeekSpec = {
-    tab: 'config',
+    tab: validationTab,
     eyebrow: 'Warnings · validation warnings',
     metric: { value: String(warnedCount), unit: warnedCount === 1 ? 'unit' : 'units' },
     lines: [...unitGateLines(units, (u) => u.warnings), 'Advisory: they block no Release'],
@@ -1633,18 +1623,13 @@ export const DeploymentFlowNode = memo(({ data }: NodeProps<DeploymentFlowNodeDa
             {compareLetter}
           </CompareLetter>
         ) : null}
-        {density === 'full' && (deployment.targets.length > 0 || isBaseNode) && (
+        {density === 'full' && (
           <FloatingLabels>
-            <TypeBadge
-              $kind={isBaseNode ? 'Base' : deployment.type}
-              // Pure attribute instrumentation, no behavior change. This chip has
-              // no click handler of its own, so a click here bubbles normally and
-              // selects the node exactly like clicking blank card space would.
-              // Only ever one Base per component, so the value is fixed (not
-              // parameterized by the runtime deploymentId UUID).
-              data-testid={isBaseNode ? 'flow-node-base-badge' : undefined}
-            >
-              {isBaseNode ? 'Base' : deployment.type}
+            {/* Every card says which it is: a Base anywhere in the tree, not
+                only the root, and a Deployment by its Space's release Target.
+                The chip has no click handler, so a click selects the node. */}
+            <TypeBadge $kind={deployment.type} data-testid="flow-node-type-badge">
+              {deployment.type}
             </TypeBadge>
             {deployment.targets.map(({ targetId, name, url }, i) => {
               return (

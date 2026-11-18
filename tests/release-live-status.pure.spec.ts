@@ -201,10 +201,14 @@ test('a digest keeps its algorithm and abbreviates its hash', () => {
 test('a deployment carries the status of the Release it runs, and a Base carries none', () => {
   const spaces = [
     { Space: { SpaceID: 'dep', Slug: 'dep', ReleaseTargetID: 'target-1' } },
-    { Space: { SpaceID: 'base', Slug: 'base', ReleaseTargetID: 'target-2' } },
+    { Space: { SpaceID: 'base', Slug: 'base' } },
   ] as ExtendedSpaceRead[];
-  // Only `dep` has a Unit on a Target, so `base` is a Base.
-  const units = [{ Unit: { UnitID: 'u1', SpaceID: 'dep', Slug: 'app', TargetID: 'target-1' } }] as ExtendedUnitRead[];
+  // Only `dep` has a release Target, so `base` is a Base, though its Units
+  // name a Target and Releases were published from it before.
+  const units = [
+    { Unit: { UnitID: 'u1', SpaceID: 'dep', Slug: 'app' } },
+    { Unit: { UnitID: 'u2', SpaceID: 'base', Slug: 'app', TargetID: 'target-2' } },
+  ] as ExtendedUnitRead[];
   const running = new Map([
     ['dep', { releaseNum: 3, manifestDigest: 'sha256:abc', liveStatus: GREEN }],
     ['base', { releaseNum: 1, liveStatus: GREEN }],
@@ -220,11 +224,14 @@ test('a deployment carries the status of the Release it runs, and a Base carries
     running,
   );
   const dep = deployments.find((d) => d.deploymentId === 'dep');
+  expect(dep?.type).toBe('Deployment');
+  expect(dep?.targets.map((t) => t.targetId)).toEqual(['target-1']);
   expect(dep?.liveStatus).toEqual(GREEN);
   expect(dep?.runningRelease).toEqual({ releaseNum: 3, manifestDigest: 'sha256:abc' });
 
   const base = deployments.find((d) => d.deploymentId === 'base');
   expect(base?.type).toBe('Base');
+  expect(base?.targets).toEqual([]);
   expect(base?.liveStatus).toBeUndefined();
   expect(base?.runningRelease).toBeUndefined();
 });

@@ -115,18 +115,6 @@ export function uniqueTargetLabels(
 }
 
 /**
- * The one Target that stands for a Deployment when the graph needs one (its
- * Kubernetes version, for example): the release Target, since releases
- * publish through it, else the first Target by name.
- */
-export function deploymentTargetId(
-  releaseTargetId: string | null | undefined,
-  targets: readonly DeploymentTarget[],
-): string | undefined {
-  return releaseTargetId || targets[0]?.targetId;
-}
-
-/**
  * The `where`s of the two unit lists that find the units keeping a value on
  * merge: a path, or a whole resource, with an Override guard, which a merge from
  * upstream must not overwrite. Two lists, because a `where` has no `OR`.
@@ -186,6 +174,10 @@ export function unitConfigSignal(
  * Identity is the SpaceID, so multiple Spaces deploying to the same Target
  * each get their own node, and Spaces with no Target (e.g. bases) still appear.
  *
+ * A Space with a release Target (`Space.ReleaseTargetID`) is a Deployment and
+ * a Space without one is a Base: the Space is what gets released, so its
+ * release Target decides, whatever Targets its Units name.
+ *
  * `runningReleaseBySpaceId` is the Release each Space is running (see
  * `useRunningReleases`), which carries its live status.
  *
@@ -240,7 +232,6 @@ export function buildComponentData(
   const staleChangedAtBySpace = new Map<string, string>();
   const unappliedBySpace = new Map<string, number>();
   const unitCountBySpace = new Map<string, number>();
-  const targetIdsBySpace = new Map<string, Set<string>>();
   const configSignalsBySpace = new Map<string, ConfigSignals>();
   for (const u of allUnits) {
     const sid = u.Unit?.SpaceID;
@@ -254,13 +245,6 @@ export function buildComponentData(
       if (signal.release === 'unreleased') counts.unreleasedUnits += 1;
       if (signal.release === 'gated') counts.gatedUnits += 1;
       configSignalsBySpace.set(sid, counts);
-    }
-
-    const tid = u.Unit?.TargetID;
-    if (tid) {
-      const set = targetIdsBySpace.get(sid) ?? new Set<string>();
-      set.add(tid);
-      targetIdsBySpace.set(sid, set);
     }
 
     const upstreamUnitId = u.Unit?.UpstreamUnitID;
@@ -307,7 +291,7 @@ export function buildComponentData(
 
   const componentSpaces = spaces.filter((s) => !!s.Space?.SpaceID);
   const targetLabelById = uniqueTargetLabels(
-    componentSpaces.flatMap((s) => [...(targetIdsBySpace.get(s.Space!.SpaceID!) ?? [])]),
+    componentSpaces.flatMap((s) => (s.Space?.ReleaseTargetID ? [s.Space.ReleaseTargetID] : [])),
     targetNameById,
     targetSpaceSlugById ?? new Map(),
   );
@@ -316,20 +300,19 @@ export function buildComponentData(
     .map((s) => {
       const sid = s.Space!.SpaceID!;
       const slug = s.Space?.Slug ?? sid;
-      const targetIds = Array.from(targetIdsBySpace.get(sid) ?? []);
+      const releaseTargetId = s.Space?.ReleaseTargetID || undefined;
       const targets = buildDeploymentTargets(
-        targetIds,
+        releaseTargetId ? [releaseTargetId] : [],
         targetNameById,
         targetLabelById,
         targetAnnotationsById ?? new Map(),
         slug,
       );
       const variant = s.Space?.Labels?.[LABEL_VARIANT];
-      const isBase = targets.length === 0;
+      const isBase = !releaseTargetId;
       const runningRelease = isBase ? undefined : runningReleaseBySpaceId?.get(sid);
       const liveStatus = runningRelease?.liveStatus ?? undefined;
-      const factsTargetId = deploymentTargetId(s.Space?.ReleaseTargetID, targets);
-      const targetFacts = factsTargetId ? targetFactsById?.get(factsTargetId) : undefined;
+      const targetFacts = releaseTargetId ? targetFactsById?.get(releaseTargetId) : undefined;
       const keptCount = keptValueUnitsBySpace.get(sid);
       return {
         deploymentId: sid,
@@ -337,10 +320,8 @@ export function buildComponentData(
         displayName: variant?.trim() || slug,
         type: isBase ? 'Base' : 'Deployment',
         targets,
-        releaseTargetId: s.Space?.ReleaseTargetID,
-        releaseTargetName: s.Space?.ReleaseTargetID
-          ? targetNameById.get(s.Space.ReleaseTargetID)
-          : undefined,
+        releaseTargetId,
+        releaseTargetName: releaseTargetId ? targetNameById.get(releaseTargetId) : undefined,
         clusterUnitId: s.Space?.Annotations?.ClusterUnitID || undefined,
         readme: s.Space?.Annotations?.Readme?.trim() || undefined,
         parentDeploymentId: parentOf.get(sid) ?? null,
@@ -348,11 +329,11 @@ export function buildComponentData(
         upgradeableCount: upgradeableBySpace.get(sid) ?? 0,
         unappliedCount: unappliedBySpace.get(sid) ?? 0,
         unitCount: unitCountBySpace.get(sid) ?? 0,
-        // A Base has no Target, so nothing is deployed from it and no live-infra
-        // reporter (e.g. argobot) can be watching it. Forced here rather than left
-        // to convention: a Space whose Units lost their Targets can still name a
-        // release Target with Releases behind it, and those would paint a Base
-        // card with Live/Synced tags it structurally can't back up.
+        // A Base has no release Target, so nothing is deployed from it and no
+        // live-infra reporter (e.g. argobot) can be watching it. Forced here
+        // rather than left to convention: a Space whose release Target was
+        // cleared still has the Releases published before, and those would
+        // paint a Base card with Live/Synced tags it can't back up.
         liveStatus,
         ...(runningRelease && {
           runningRelease: {
