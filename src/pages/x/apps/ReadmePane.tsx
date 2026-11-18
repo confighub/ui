@@ -94,7 +94,11 @@ function Notice({ children }: { children: ReactNode }) {
   );
 }
 
-function MarkdownBody({ markdown, testId }: { markdown: string; testId: string }) {
+/**
+ * A Readme annotation's Markdown, rendered as the Readme tab renders it. The Unit page shows a
+ * Unit's Readme annotation with it too.
+ */
+export function ReadmeMarkdown({ markdown, testId }: { markdown: string; testId: string }) {
   return (
     <Box sx={markdownSx} data-testid={testId}>
       <Markdown remarkPlugins={[remarkGfm]} components={components}>
@@ -119,7 +123,7 @@ export function ReadmePane({ spaceReadme, data, loading }: ReadmePaneProps) {
   const body = hasUnit && !unitLoading ? readmeBody(data) : '';
   return (
     <>
-      {spaceReadme && <MarkdownBody markdown={spaceReadme} testId='component-space-readme' />}
+      {spaceReadme && <ReadmeMarkdown markdown={spaceReadme} testId='component-space-readme' />}
       {spaceReadme && hasUnit && <Box sx={{ borderTop: `1px solid ${componentTheme.borderDefault}`, margin: '0 20px' }} />}
       {unitLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', padding: '24px' }}>
@@ -128,7 +132,7 @@ export function ReadmePane({ spaceReadme, data, loading }: ReadmePaneProps) {
       ) : hasUnit && body.trim() === '' ? (
         <Notice>README.md is empty.</Notice>
       ) : (
-        hasUnit && <MarkdownBody markdown={body} testId='component-readme' />
+        hasUnit && <ReadmeMarkdown markdown={body} testId='component-readme' />
       )}
     </>
   );

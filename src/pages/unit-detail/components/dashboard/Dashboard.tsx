@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { SettingsTabs } from '@/components/settings-tabs/SettingsTabs';
 import { Section } from '@/components/styled';
@@ -41,6 +41,7 @@ import { styled } from '@mui/material/styles';
 import dayjs from 'dayjs';
 import groupBy from 'lodash/groupBy';
 
+import { ReadmeMarkdown } from '@/pages/x/apps/ReadmePane';
 import { formatRelative } from '@/utility/date-format';
 
 import { ActionSidebar } from '../action-side-bar/ActionSideBar';
@@ -116,6 +117,8 @@ const isUnitEvent = (item: UnitEventRead): item is UnitEventRead => {
 };
 
 const sectionOffset = 254;
+
+const README_TAB = 2;
 
 
 export interface DashboardProps {
@@ -273,6 +276,16 @@ export const Dashboard = ({
       key: key.substring(7), // Remove 'Status-' prefix
       value,
     }));
+
+  // The Unit's Readme annotation, Markdown that its own tab renders when the Unit has one.
+  const readme = currentUnitExtended?.Unit?.Annotations?.Readme?.trim() || undefined;
+  // A poll can remove the annotation while its tab is open. The pane shows the first tab at once,
+  // and the selection moves there too, so that the annotation coming back adds the tab without
+  // switching to it.
+  const activeTab = selectedTab === README_TAB && !readme ? 0 : selectedTab;
+  useEffect(() => {
+    if (!readme && selectedTab === README_TAB) setSelectedTab(0);
+  }, [readme, selectedTab]);
 
   return (
     <Container>
@@ -441,13 +454,14 @@ export const Dashboard = ({
                     Validation Errors
                   </Stack>,
                   'URLs',
+                  ...(readme ? ['Readme'] : []),
                 ]}
                 onTabSelected={(tab: number) => setSelectedTab(tab)}
-                defaultValue={selectedTab}
+                defaultValue={activeTab}
               />
               <Divider />
             </StickyTab>
-            <Section sx={{ pt: 2 }} $display={selectedTab === 0} $direction={Direction.FadeIn}>
+            <Section sx={{ pt: 2 }} $display={activeTab === 0} $direction={Direction.FadeIn}>
               <ActionSidebar
                 unit={currentUnitExtended}
                 onApplyGateClicked={onApplyGateClicked}
@@ -456,7 +470,7 @@ export const Dashboard = ({
                 lastPollTimestamp={lastPollTimestamp}
               />
             </Section>
-            <Section sx={{ pt: 2 }} $display={selectedTab === 1} $direction={Direction.FadeIn}>
+            <Section sx={{ pt: 2 }} $display={activeTab === 1} $direction={Direction.FadeIn}>
               <Stack spacing={1}>
                 {urlAnnotations.length > 0 ? (
                   <Box component='ul' sx={{ pl: 2, m: 0 }}>
@@ -481,6 +495,11 @@ export const Dashboard = ({
                 )}
               </Stack>
             </Section>
+            {readme && activeTab === README_TAB && (
+              <Section $display $direction={Direction.FadeIn}>
+                <ReadmeMarkdown markdown={readme} testId='unit-readme' />
+              </Section>
+            )}
           </Aside>
         </AccordionDetails>
       </BorderedAccordion>
