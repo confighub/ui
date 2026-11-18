@@ -13,7 +13,7 @@
  *
  * Real writes are not that tidy. Publishing a Release writes onto Revisions.
  * Deleting a Space recursively deletes eleven other entity types. Without the
- * additions below, tag types such as Revision, UnitEvent and Mutation are
+ * additions below, tag types such as Revision and Mutation are
  * provided by queries but named by no mutation at all, which means nothing in
  * the application can refetch them.
  *
@@ -75,7 +75,7 @@ const UNIT_WRITE: TagType[] = ['Revision', 'Mutation', 'ChangeSet', 'Resource'];
  * Deleting a Unit additionally drops the Links that reference it, and with them
  * the upstream/downstream relationships other Units display.
  */
-const UNIT_DELETE: TagType[] = [...UNIT_WRITE, 'Link', 'UnitEvent'];
+const UNIT_DELETE: TagType[] = [...UNIT_WRITE, 'Link'];
 
 /**
  * A Link establishes a Unit's upstream, which changes what those Units report
@@ -102,7 +102,7 @@ const RELEASE_WRITE: TagType[] = ['Revision', 'Tag', 'Unit'];
  * tag is `Function` — the entity the endpoint is filed under — which is the one
  * thing an invocation does not change.
  */
-const FUNCTION_INVOKE: TagType[] = ['Unit', 'Revision', 'Mutation', 'UnitEvent', 'Resource'];
+const FUNCTION_INVOKE: TagType[] = ['Unit', 'Revision', 'Mutation', 'Resource'];
 
 /**
  * The `Extended*` list endpoints expand related entities inline, and the

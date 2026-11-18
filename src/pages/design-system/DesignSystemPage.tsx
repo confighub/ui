@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from 'react';
 import AddIcon from '@mui/icons-material/Add';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CloseIcon from '@mui/icons-material/Close';
-import DifferenceIcon from '@mui/icons-material/Difference';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -2980,41 +2979,6 @@ function EmptyStateVariantsSection() {
         ))}
       </Box>
 
-      <SubLabel>No events — events tab</SubLabel>
-      <Paper elevation={1} sx={{ borderRadius: 'var(--r-md)' }}>
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            textAlign: 'center',
-            py: 6,
-            px: 4,
-          }}
-        >
-          <DifferenceIcon sx={{ fontSize: 36, color: 'text.disabled', mb: 2 }} />
-          <Typography variant='h3' sx={{ mb: 0.75 }}>
-            No events yet
-          </Typography>
-          <Typography
-            variant='body2'
-            color='text.secondary'
-            sx={{ mb: 1.5, maxWidth: 320 }}
-          >
-            Unit events track actuation operations — Apply, Destroy, Refresh, Import. Run an
-            operation to see the history here.
-          </Typography>
-          <Link
-            href='https://docs.confighub.com/background/entities/unit/#unit-actuation-lifecycle'
-            target='_blank'
-            rel='noopener noreferrer'
-            underline='hover'
-            sx={{ fontSize: 12.5 }}
-          >
-            Read about the actuation lifecycle
-          </Link>
-        </Box>
-      </Paper>
     </Box>
   );
 }

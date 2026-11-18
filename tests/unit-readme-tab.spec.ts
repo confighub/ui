@@ -110,7 +110,7 @@ test('a Readme annotation removed while its tab is open, then restored, does not
     expect(response.ok(), await response.text()).toBe(true);
   };
   const readmeTab = page.getByRole('tab', { name: 'Readme', exact: true });
-  const validationTab = page.getByRole('tab', { name: /Validation Errors/ });
+  const urlsTab = page.getByRole('tab', { name: 'URLs' });
 
   await page.goto(`/units/${spaceId}/${toggled}`);
   await readmeTab.click();
@@ -119,11 +119,11 @@ test('a Readme annotation removed while its tab is open, then restored, does not
   // The page polls the Unit every few seconds.
   await setReadme(null);
   await expect(readmeTab).toHaveCount(0, { timeout: 20000 });
-  await expect(validationTab).toHaveAttribute('aria-selected', 'true');
+  await expect(urlsTab).toHaveAttribute('aria-selected', 'true');
 
   await setReadme(README);
   await expect(readmeTab).toBeVisible({ timeout: 20000 });
   await expect(readmeTab).toHaveAttribute('aria-selected', 'false');
-  await expect(validationTab).toHaveAttribute('aria-selected', 'true');
+  await expect(urlsTab).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByTestId('unit-readme')).toHaveCount(0);
 });

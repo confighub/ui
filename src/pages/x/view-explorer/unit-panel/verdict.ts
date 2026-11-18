@@ -12,15 +12,14 @@ import type { Tone } from './tones';
  * next", as a pure function of the row, what was read for the open Unit, and
  * where the Unit sits in the view. The views only draw the result.
  *
- * Causes, in order: withheld conflicts, a failed last action, gates that
- * fail, gates being checked, needs that are not met, unreleased revisions, an
- * upstream that is ahead. Conflicts kept by a local override, an older
- * failure and gate warnings are facts, never causes.
+ * Causes, in order: withheld conflicts, gates that fail, gates being checked,
+ * needs that are not met, unreleased revisions, an upstream that is ahead.
+ * Conflicts kept by a local override and gate warnings are facts, never
+ * causes.
  */
 
 export type ActionId =
   | 'review-conflicts'
-  | 'see-events'
   | 'check-gate'
   | 'edit-config'
   | 'see-diff'
@@ -33,8 +32,8 @@ export type ActionId =
   | 'upgrade'
   | 'next-problem';
 
-export type CauseKind = 'conflicts' | 'failed' | 'gate' | 'checking' | 'needs' | 'unreleased' | 'upstream';
-export type FactKind = 'kept' | 'failed-earlier' | 'warnings' | 'release';
+export type CauseKind = 'conflicts' | 'gate' | 'checking' | 'needs' | 'unreleased' | 'upstream';
+export type FactKind = 'kept' | 'warnings' | 'release';
 
 /** The live status of the Release the Unit's Space runs, as its deploying tool reports it. */
 export interface ReleaseLive {
@@ -50,8 +49,6 @@ export interface ReleaseLive {
 export interface FetchedDetails {
   status: 'loading' | 'error' | 'ready';
   conflicts?: readonly ConflictLike[];
-  /** The Unit's latest event. */
-  event?: { status?: string; action?: string; revisionNum?: number; message?: string; at?: string };
   linkFindings?: readonly { Reason?: string; Path?: string }[];
   /** Per failing gate: the first failing path and message. */
   gateDetails?: Readonly<Record<string, { path?: string; message?: string }>>;
@@ -179,13 +176,6 @@ function unreleasedOf(row: RowFacts): number {
   return row.targetId ? Math.max(0, row.head - row.released) : 0;
 }
 
-/** A failed event counts as a cause only while it is about the head revision (or names none). */
-function failedEvent(fetched: FetchedDetails, head: number): { current: boolean } | null {
-  const e = fetched.event;
-  if (e?.status !== 'Failed') return null;
-  return { current: e.revisionNum === undefined || e.revisionNum >= head };
-}
-
 /** Whether "Release <Space>" can run, and why not; null when the Space is not known yet. */
 export function releaseState(row: RowFacts, fetched: FetchedDetails): { enabled: boolean; reason?: string } | null {
   const space = fetched.space;
@@ -218,18 +208,6 @@ function causesOf(row: RowFacts, fetched: FetchedDetails, checks: VerdictInput['
       title: CAUSE.conflicts(withheld.length),
       detail: CAUSE.conflictsDetail(withheld.map((c) => c.Path).filter((p): p is string => !!p)) || undefined,
       fix: { action: 'review-conflicts', ...FIX.reviewConflicts },
-    });
-  }
-
-  if (failedEvent(fetched, row.head)?.current) {
-    causes.push({
-      key: 'failed',
-      kind: 'failed',
-      tone: 'blocked',
-      title: CAUSE.failed(fetched.event?.action, fetched.event?.revisionNum, relativeTime(fetched.event?.at, now)),
-      // The message is the verdict's own detail when the failure is the headline; under conflicts it stays here.
-      detail: withheld.length ? fetched.event?.message || undefined : undefined,
-      fix: { action: 'see-events', ...FIX.seeEvents },
     });
   }
 
@@ -316,16 +294,6 @@ function factsOf(row: RowFacts, fetched: FetchedDetails, now: number): PanelLine
       detail: CAUSE.conflictsDetail(kept.map((c) => c.Path).filter((p): p is string => !!p)) || undefined,
     });
   }
-  const failed = failedEvent(fetched, row.head);
-  if (failed && !failed.current) {
-    facts.push({
-      key: 'failed-earlier',
-      kind: 'failed-earlier',
-      tone: 'muted',
-      title: FACT.failedEarlier(fetched.event?.revisionNum),
-      detail: fetched.event?.message || undefined,
-    });
-  }
   if (fetched.warnings?.length) {
     facts.push({ key: 'warnings', kind: 'warnings', tone: 'info', title: FACT.warnings(fetched.warnings.length), detail: fetched.warnings.join(', ') });
   }
@@ -357,7 +325,6 @@ function headlineOf(row: RowFacts, fetched: FetchedDetails, causes: readonly Pan
   if (fetched.status === 'loading' && !shownByRow) return { tone: 'muted', headline: HEADLINE.checking, detail: DETAIL.loading };
   if (has(causes, 'conflicts'))
     return { tone: 'blocked', headline: HEADLINE.conflicts(splitConflicts(fetched.conflicts).withheld.length), detail: DETAIL.conflicts };
-  if (has(causes, 'failed')) return { tone: 'blocked', headline: HEADLINE.failed(row.head), detail: fetched.event?.message || DETAIL.failed };
   if (gates > 0)
     return {
       tone: 'gated',
@@ -402,8 +369,6 @@ function primaryOf(row: RowFacts, input: VerdictInput, causes: readonly PanelLin
       return context.nextProblem ? { id: 'next-problem', ...PRIMARY.nextProblem(context.nextProblem.slug), enabled: true } : null;
     case 'conflicts':
       return { id: 'review-conflicts', ...PRIMARY.reviewConflicts, enabled: true };
-    case 'failed':
-      return { id: 'see-events', ...PRIMARY.seeEvents, enabled: true };
     case 'gate': {
       const checkable = checkableGates(row, fetched);
       if (checkable.length) {
@@ -436,7 +401,6 @@ function secondaryOf(row: RowFacts, input: VerdictInput, primary: PrimaryAction 
     : { id: 'restore-history', ...ACTION.restoreHistory, key: 'r', enabled: true };
   const list: ActionState[] = [];
   // The actions of the causes first, in cause order.
-  if (failedEvent(fetched, row.head)?.current) list.push(restore);
   if (isUpgradable(row)) list.push({ id: 'upgrade', ...ACTION.upgrade(row.upstreamRev, row.upstreamHead ?? 0), key: 'u', enabled: true });
   list.push(
     !context.selectionEnabled
@@ -468,8 +432,6 @@ export function buildVerdict(input: VerdictInput): Verdict {
   const causes = causesOf(row, fetched, input.checks, context.now);
   const { tone, headline, detail } = headlineOf(row, fetched, causes, context.now);
   const primary = primaryOf(row, input, causes);
-  // The primary says "See events" already: the line does not say it again.
-  if (primary?.id === 'see-events') for (const c of causes) if (c.fix?.action === 'see-events') delete c.fix;
   return {
     tone,
     headline,

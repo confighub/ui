@@ -397,26 +397,6 @@ test.describe('the row panel of a Unit', () => {
     await expect(primary(page)).toHaveAttribute('target', '_blank');
   });
 
-  test('a failed last action: See events opens the Unit page on its events', async ({ page }) => {
-    const head = (await unitHead(seed.spaceA.id, seed.unitIds.ok));
-    await changeUnitRead(page, seed.spaceA.id, seed.unitIds.ok, (b) => {
-      b.LatestUnitEvent = { Action: 'InvokeFunctions', Status: 'Failed', RevisionNum: head, Message: 'the worker could not reach the cluster' };
-    });
-    await open(page, 'ok');
-    await expect(headline(page)).toHaveText(`Last action failed on rev ${head}`);
-    // The message is the verdict's detail; the line says what failed and when; See events is said once, by the primary.
-    await expect(panel(page).getByTestId('vx-unit-verdict')).toContainText('the worker could not reach the cluster');
-    const failed = panel(page).getByTestId('vx-unit-causes').locator('li[data-kind="failed"]');
-    await expect(failed).toContainText(new RegExp(`^.?InvokeFunctions failed on rev ${head}`));
-    await expect(failed.getByRole('link')).toHaveCount(0);
-    await expect(primary(page)).toHaveText(/^See events/);
-    if (SHOTS) {
-      await page.setViewportSize({ width: 1440, height: 900 });
-      await shot(page, 'shot-panel-failed-final.png');
-    }
-    await expect(primary(page)).toHaveAttribute('href', new RegExp(`^/units/${seed.spaceA.id}/${seed.unitIds.ok}\\?tab=0&explorer=`));
-  });
-
   test('needs that are not met: Open Links', async ({ page }) => {
     await changeUnitRead(page, seed.spaceA.id, seed.unitIds.ok, (b) => {
       b.Unit.LinkFindings = [{ Reason: 'NeededNotFound', Path: 'spec.template.spec.containers.0.env.0.value' }];
@@ -740,7 +720,7 @@ test.describe('the row panel of a Unit', () => {
     const panelReads: string[] = [];
     page.on('request', (r) => {
       const url = new URL(r.url());
-      if (r.method() === 'GET' && /^\/api\/space\/[^/]+\/unit\/[^/]+$/.test(url.pathname) && url.searchParams.get('include')?.includes('UnitEventID'))
+      if (r.method() === 'GET' && /^\/api\/space\/[^/]+\/unit\/[^/]+$/.test(url.pathname) && url.searchParams.get('include') === 'TargetID,SpaceID,UpstreamUnitID,UpstreamSpaceID')
         panelReads.push(url.pathname);
     });
     for (const key of ['j', 'j', 'k', 'J', 'u', 'r']) await panel(page).dispatchEvent('keydown', { key, shiftKey: key === 'J' });

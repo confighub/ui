@@ -15,14 +15,15 @@ import type { ExtendedLinkRead } from '@confighub/rtk-query';
 
 /**
  * The unit detail page's tabs, by their value in `?tab=`. A tab added later takes the next
- * value wherever it is shown, so that a link saved before it existed opens the same tab.
+ * value wherever it is shown, so that a link saved before it existed opens the same tab. A
+ * value no tab has any more is not reused: 4 was the Mutations tab, whose mutations the
+ * revision viewer now shows.
  */
 export const UNIT_DETAIL_TAB = {
   overview: 0,
   config: 1,
   revisions: 2,
   links: 3,
-  mutations: 4,
   resources: 5,
   settings: 6,
   blame: 7,
@@ -31,14 +32,26 @@ export const UNIT_DETAIL_TAB = {
 /** The tabs in the order the page shows them. */
 export const UNIT_DETAIL_TAB_ORDER: readonly number[] = [
   UNIT_DETAIL_TAB.overview,
-  UNIT_DETAIL_TAB.config,
   UNIT_DETAIL_TAB.revisions,
-  UNIT_DETAIL_TAB.links,
-  UNIT_DETAIL_TAB.mutations,
   UNIT_DETAIL_TAB.blame,
   UNIT_DETAIL_TAB.resources,
+  UNIT_DETAIL_TAB.config,
+  UNIT_DETAIL_TAB.links,
   UNIT_DETAIL_TAB.settings,
 ];
+
+/** The value of the retired Mutations tab, which saved links may still name. */
+const RETIRED_MUTATIONS_TAB = 4;
+
+/**
+ * The tab `?tab=` opens: a link to the retired Mutations tab opens Revisions, where each
+ * revision's mutations are, and anything else no tab has opens the Overview.
+ */
+export function readUnitDetailTab(param: string | null): number {
+  const tab = Number(param ?? UNIT_DETAIL_TAB.overview);
+  if (tab === RETIRED_MUTATIONS_TAB) return UNIT_DETAIL_TAB.revisions;
+  return UNIT_DETAIL_TAB_ORDER.includes(tab) ? tab : UNIT_DETAIL_TAB.overview;
+}
 
 const LINK_UPDATE_TYPE_PARAM = 'linkUpdateType';
 const LINK_SPACES_PARAM = 'linkSpaces';

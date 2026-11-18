@@ -23,7 +23,7 @@ import type { FetchedDetails } from './verdict';
  * Everything the open Unit's verdict needs that its row does not carry,
  * read for that one Unit only, when its panel opens:
  *
- * - the Unit itself, with its latest event: one read, cached, so moving back
+ * - the Unit itself: one read, cached, so moving back
  *   to a Unit already seen asks for nothing;
  * - the author of its head revision, only while it has revisions to release;
  * - the Release its Space runs (with the live status), when the Space has a
@@ -36,8 +36,8 @@ import type { FetchedDetails } from './verdict';
  * the cache already is shown, so a Unit read before shows its verdict at once.
  */
 
-/** The Space, Target, upstream and latest event of the Unit, as the Unit page reads them. */
-export const UNIT_PANEL_INCLUDE = 'TargetID,SpaceID,UpstreamUnitID,UpstreamSpaceID,UnitEventID';
+/** The Space, Target and upstream of the Unit, as the Unit page reads them. */
+export const UNIT_PANEL_INCLUDE = 'TargetID,SpaceID,UpstreamUnitID,UpstreamSpaceID';
 
 const NO_SPACES: readonly ReleaseSpace[] = [];
 

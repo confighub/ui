@@ -92,11 +92,11 @@ export const useRevisionMutationSources = (
   unitId?: string,
   revisionId?: string,
 ) => {
-  const { data, isFetching } = useGetRevisionMutationSourcesQuery(
+  const { data, isFetching, error } = useGetRevisionMutationSourcesQuery(
     { spaceId: spaceId as string, unitId: unitId as string, revisionId: revisionId as string },
     { skip: !spaceId || !unitId || !revisionId },
   );
-  return { mutationSources: data?.MutationSources ?? [], isFetching };
+  return { mutationSources: data?.MutationSources ?? [], isFetching, error };
 };
 
 /**

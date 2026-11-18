@@ -40,7 +40,6 @@ export function relativeTime(at: string | undefined, now: number): string {
 export const HEADLINE = {
   checking: 'Checking…',
   conflicts: (n: number) => `Needs a decision: ${count(n, 'change was', 'changes were')} not applied`,
-  failed: (head: number) => `Last action failed on rev ${head}`,
   gateBlocks: (head: number) => `Blocked: rev ${head} cannot release`,
   gateFails: (n: number, head: number) => `${n === 1 ? 'A gate fails' : `${n} gates fail`} on rev ${head}`,
   gatesChecking: (head: number) => `Checking gates on rev ${head}`,
@@ -69,10 +68,8 @@ export const DETAIL = {
     return source ? `Last change${at}${by} (${source}).` : `Last changed${at}${by}.`;
   },
   untargeted: "Give its Space a release Target, or include it in releases, to release it.",
-  unconfirmed: 'The row shows no problem, but conflicts and events could not be checked.',
+  unconfirmed: 'The row shows no problem, but conflicts could not be checked.',
   conflicts: 'Each one waits for someone to apply or dismiss it.',
-  /** The failure's own message is on its cause line, just below. */
-  failed: 'It left no message.',
 } as const;
 
 /** The heading of the section that holds the verdict. */
@@ -88,8 +85,6 @@ export const ACTIONS_SECTION = { withPrimary: 'Other actions', alone: 'Actions' 
 export const CAUSE = {
   conflicts: (n: number) => `${count(n, 'change')} withheld`,
   conflictsDetail: (paths: string[]) => (paths.length ? paths.slice(0, 3).join(', ') + (paths.length > 3 ? `, and ${paths.length - 3} more` : '') : ''),
-  failed: (action: string | undefined, rev?: number, when?: string) =>
-    `${action || 'The last action'} failed${rev ? ` on rev ${rev}` : ''}${when ? ` · ${when}` : ''}`,
   gate: 'Gate',
   gateBlocksRelease: 'Blocks the release until it passes',
   checking: 'Gates are being checked',
@@ -106,7 +101,6 @@ export const CAUSE = {
 
 export const FACT = {
   kept: (n: number) => `${count(n, 'value')} kept by a local override`,
-  failedEarlier: (rev?: number) => `An earlier action failed${rev ? ` on rev ${rev}` : ''}`,
   warnings: (n: number) => `${count(n, 'gate warning')}, which ${n === 1 ? 'does' : 'do'} not block`,
   release: (num: number, space: string, status: string) => `Release ${num} of ${space}: ${status}`,
   /** The live status is the Release's, which every Unit of the Space shares. */
@@ -179,7 +173,6 @@ export const PREVIEW = {
 /** The fix link on a cause, and its accessible name, which says which cause it fixes. */
 export const FIX = {
   reviewConflicts: { label: 'Review', name: 'Review the conflicts' },
-  seeEvents: { label: 'See events', name: 'See the events' },
   checkGate: (gate: string) => ({ label: 'Check again', name: `Check again, gate ${gate}` }),
   editAt: (gate: string) => ({ label: 'Edit config', name: `Edit config, gate ${gate}` }),
   openLinks: { label: 'Open Links', name: 'Open the Links of this Unit' },
@@ -196,7 +189,6 @@ export const PRIMARY = {
   checking: { label: 'Checking…', why: "Reading the Unit's details." },
   unread: { label: 'Unavailable', why: "The Unit's details could not be read, so the next step is not known." },
   reviewConflicts: { label: 'Review conflicts', why: 'Conflicts come first: they need a decision.' },
-  seeEvents: { label: 'See events', why: 'A failed action comes first.' },
   // The same words as the gate line's own link: one verb for one action.
   checkGate: (n: number) => ({ label: 'Check again', why: n === 1 ? 'The gate is the first blocker.' : 'The gates are the first blockers.' }),
   checkingGate: (n: number) => ({ label: n === 1 ? 'Checking the gate…' : 'Checking the gates…', why: 'The check runs on the current config.' }),

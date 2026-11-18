@@ -163,29 +163,6 @@ test.describe('the headline, first rule that matches', () => {
     expect(verdict({}, { status: 'ready', conflicts: [{ Reason: 'Guarded' }] }).headline).toBe('Needs a decision: 1 change was not applied');
   });
 
-  test('a failed last action on the head revision', () => {
-    const v = verdict({}, { status: 'ready', event: { status: 'Failed', revisionNum: 9, action: 'InvokeFunctions', message: 'boom' } });
-    expect(v.headline).toBe('Last action failed on rev 9');
-    expect(v.causes[0].kind).toBe('failed');
-    // The message is said once, as the verdict's detail; the line says what failed, and the primary where to look.
-    expect(v.detail).toBe('boom');
-    expect(v.causes[0].title).toBe('InvokeFunctions failed on rev 9');
-    expect(v.causes[0].detail).toBeUndefined();
-    expect(v.causes[0].fix).toBeUndefined();
-    expect(v.primary?.id).toBe('see-events');
-    const at = verdict({}, { status: 'ready', event: { status: 'Failed', revisionNum: 9, action: 'Apply', at: '2026-10-25T11:55:00Z' } });
-    expect(at.causes[0].title).toBe('Apply failed on rev 9 · 5 min ago');
-    expect(at.detail).toBe('It left no message.');
-    expect(verdict({}, { status: 'ready', event: { status: 'Failed' } }).headline).toBe('Last action failed on rev 9');
-  });
-
-  test('a failed event on an older revision is a fact only', () => {
-    const v = verdict({}, { status: 'ready', event: { status: 'Failed', revisionNum: 4 } });
-    expect(v.causes).toEqual([]);
-    expect(v.facts.map((f) => f.kind)).toEqual(['failed-earlier']);
-    expect(v.headline).toBe('Nothing to do: rev 9 is released');
-  });
-
   test('a gate fails, blocking a release when revisions wait', () => {
     const v = verdict(GATED);
     expect(v.headline).toBe('Blocked: rev 43 cannot release');
@@ -303,12 +280,11 @@ test.describe('the causes', () => {
       {
         status: 'ready',
         conflicts: [{ Reason: 'Guarded' }, { Reason: 'Subtracted' }],
-        event: { status: 'Failed', revisionNum: 43 },
         linkFindings: [{ Reason: 'ResolveFailed' }],
         warnings: ['w'],
       },
     );
-    expect(v.causes.map((c) => c.kind)).toEqual(['conflicts', 'failed', 'gate', 'checking', 'needs', 'unreleased', 'upstream']);
+    expect(v.causes.map((c) => c.kind)).toEqual(['conflicts', 'gate', 'checking', 'needs', 'unreleased', 'upstream']);
     expect(v.facts.map((f) => f.kind)).toEqual(['kept', 'warnings']);
     const unreleased = v.causes.find((c) => c.kind === 'unreleased');
     expect(unreleased?.title).toBe('2 unreleased revisions, 42–43');
@@ -386,13 +362,11 @@ test.describe('the read of the open Unit', () => {
             'ps/warn-x/vet-x': [{ Index: 0, Passed: false, Details: ['ignored: a warning is not a gate'] }],
           },
         },
-        LatestUnitEvent: { Status: 'Failed', Action: 'InvokeFunctions', RevisionNum: 4, Message: 'boom' },
       } as ExtendedUnitRead,
       'ps',
     );
     expect(d.conflicts).toEqual([{ Reason: 'Guarded', Path: 'spec.replicas' }]);
     expect(d.linkFindings).toEqual([{ Reason: 'NeededNotFound', Path: 'a.b' }]);
-    expect(d.event).toEqual({ status: 'Failed', action: 'InvokeFunctions', revisionNum: 4, message: 'boom' });
     expect(d.gateDetails).toEqual({ 'ps/vet-replicas/vet-celexpr': { path: 'spec.replicas', message: 'replicas must be at least 3' } });
     expect(d.warnings).toEqual(['warn-x/vet-x']);
     expect(d.triggerIds).toEqual({});
@@ -407,14 +381,7 @@ test.describe('the read of the open Unit', () => {
     expect(gateDetail(undefined)).toBeUndefined();
   });
 
-  test('an event with no revision names none, and the author is the revision\'s user', () => {
-    expect(detailsFromUnit({ LatestUnitEvent: { Status: 'Completed', RevisionNum: 0 } } as ExtendedUnitRead, '').event).toEqual({
-      status: 'Completed',
-      action: undefined,
-      revisionNum: undefined,
-      message: undefined,
-    });
-    expect(detailsFromUnit({} as ExtendedUnitRead, '').event).toBeUndefined();
+  test('the author is the revision\'s user', () => {
     expect(revisionAuthor({ User: { DisplayName: 'Priya N', Username: 'priya.n' } } as ExtendedRevisionRead)).toBe('Priya N');
     expect(revisionAuthor({ User: { Username: 'priya.n' } } as ExtendedRevisionRead)).toBe('priya.n');
     expect(revisionAuthor(undefined)).toBeUndefined();
@@ -429,7 +396,6 @@ test.describe('where the link actions go', () => {
     const links = panelLinks(row({ spaceId: 's1', unitId: 'u1' }), undefined, search);
     expect(links).toEqual({
       'review-conflicts': `/units/s1/u1?tab=2&${back}`,
-      'see-events': `/units/s1/u1?tab=0&${back}`,
       'edit-config': `/units/s1/u1?tab=1&${back}`,
       'open-links': `/units/s1/u1?tab=3&${back}`,
       'restore-history': `/units/s1/u1?tab=2&${back}`,
@@ -465,12 +431,6 @@ test.describe('the primary action, first rule that matches', () => {
 
   test('Review conflicts', () => {
     expect(verdict(GATED, { status: 'ready', conflicts: [{ Reason: 'Guarded' }] }).primary?.id).toBe('review-conflicts');
-  });
-
-  test('See events, with Restore the first other action', () => {
-    const v = verdict(UNRELEASED, { status: 'ready', event: { status: 'Failed', revisionNum: 43 } });
-    expect(v.primary?.id).toBe('see-events');
-    expect(v.secondary[0].id).toBe('restore');
   });
 
   test('Check again, when a failing gate has its Trigger', () => {
@@ -537,15 +497,12 @@ test.describe('the primary action, first rule that matches', () => {
   test('the primary is the action of the first cause, whatever else the Unit has', () => {
     const TRIGGERS = { [GATED.gateNames[0]]: 'tr' };
     const NEEDS = [{ Reason: 'NeededNotFound' }];
-    const FAILED = { status: 'Failed', revisionNum: 43 };
     const pairs: Array<[string, Partial<RowFacts>, FetchedDetails, string | null]> = [
       ['needs before unreleased', UNRELEASED, { status: 'ready', space: SPACE_OK, linkFindings: NEEDS }, 'open-links'],
       ['needs before an upgrade', UPGRADABLE, { status: 'ready', linkFindings: NEEDS }, 'open-links'],
       ['a gate before an upgrade', { ...GATED, ...UPGRADABLE }, { status: 'ready', triggerIds: TRIGGERS }, 'check-gate'],
       ['a gate before unreleased', GATED, { status: 'ready', space: SPACE_OK }, 'edit-config'],
-      ['a failure before unreleased', UNRELEASED, { status: 'ready', space: SPACE_OK, event: FAILED }, 'see-events'],
-      ['a failure before a gate', GATED, { status: 'ready', triggerIds: TRIGGERS, event: FAILED }, 'see-events'],
-      ['conflicts before a failure', UNRELEASED, { status: 'ready', conflicts: [{ Reason: 'Guarded' }], event: FAILED }, 'review-conflicts'],
+      ['conflicts before a gate', GATED, { status: 'ready', triggerIds: TRIGGERS, conflicts: [{ Reason: 'Guarded' }] }, 'review-conflicts'],
       ['unreleased before an upgrade', { ...UNRELEASED, ...UPGRADABLE }, { status: 'ready', space: SPACE_OK }, 'release-space'],
       ['gates being checked, before unreleased', { ...UNRELEASED, checking: true }, { status: 'ready', space: SPACE_OK }, null],
       ['gates being checked, before an upgrade', { ...UPGRADABLE, checking: true }, READY, null],

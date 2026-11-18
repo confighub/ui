@@ -152,7 +152,7 @@ const CONFIG_COMPARE_COLLAPSED_KEY = 'confighub.componentPane.config.compareColl
  * README.md Unit or Readme annotation (a Space with none of them has nothing
  * to switch between — its pane looks byte-identical to before this feature).
  * Dense, componentTheme-styled MUI Tabs — no existing Tabs usage in ui/src
- * shares componentTheme (ComponentActivityFeed/MutationDrawer/etc. use the
+ * shares componentTheme (ComponentActivityFeed etc. use the
  * default MUI palette), so this is styled from scratch to match the pane's
  * own rust-accent, Manrope, dense idiom rather than inheriting a mismatched
  * look.

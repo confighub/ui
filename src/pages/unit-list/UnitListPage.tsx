@@ -967,7 +967,7 @@ export const UnitListPage = () => {
         const completeUnitsResult = await refetchCompleteUnits({
           where: `UnitID IN (${selectedUnitIds})`,
           include:
-            'SpaceID,TargetID,HeadRevisionNum,LastReleasedRevisionNum,UnitEventID,UpstreamUnitID',
+            'SpaceID,TargetID,HeadRevisionNum,LastReleasedRevisionNum,UpstreamUnitID',
           // No select parameter - fetch all fields including Data field needed for operations
         });
 

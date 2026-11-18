@@ -52,7 +52,7 @@ The panel reads for the open Unit only, never for other rows.
 | Read | Arguments (the cache key) | When | Tag |
 |---|---|---|---|
 | The rows (`useUniverseRows`) | `listAllUnits`, with `ValidationErrors` in the select | Always | `Unit` |
-| The Unit | `getUnit {spaceId, unitId, include: 'TargetID,SpaceID,UpstreamUnitID,UpstreamSpaceID,UnitEventID'}` | Settled | `Unit` |
+| The Unit | `getUnit {spaceId, unitId, include: 'TargetID,SpaceID,UpstreamUnitID,UpstreamSpaceID'}` | Settled | `Unit` |
 | Author of the head revision | `listExtendedRevisions {spaceId, unitId, where: 'RevisionNum = <head>', include: 'UserID'}` | Settled, with revisions to release | `Revision` |
 | The Space's Component | `getSpace {spaceId, select: 'ComponentID', include: 'ComponentID'}` | Settled, the Space has a Component, revisions to release | `Space` |
 | The Release's live status | `useRunningReleases([{spaceId, releaseTargetId}])` (`src/pages/x/apps/`) | Settled, the Space has a release Target | `Release` |
@@ -76,9 +76,9 @@ The panel reads for the open Unit only, never for other rows.
 
 `buildVerdict` (`unit-panel/verdict.ts`) is a pure function of the row (`RowFacts`), the read
 (`FetchedDetails`), the gate checks and the place in the view. Causes come in this order: withheld
-conflicts, a failed last action, failing gates, gates being checked, unmet needs, unreleased
-revisions, an upstream that is ahead. Kept conflicts (`ProtectedPath`, `Subtracted`), an earlier
-failure, gate warnings and the Release's live status are facts, never causes. `awaiting/triggers`
+conflicts, failing gates, gates being checked, unmet needs, unreleased revisions, an upstream
+that is ahead. Kept conflicts (`ProtectedPath`, `Subtracted`), gate warnings and the Release's
+live status are facts, never causes. `awaiting/triggers`
 means "being checked", never "fails".
 
 **Headline, first match:**
@@ -87,7 +87,6 @@ means "being checked", never "fails".
 |---|---|---|
 | The read is loading and the row shows no cause | Checking… | muted |
 | Withheld conflicts | Needs a decision: N changes were not applied | blocked (red) |
-| The last action failed on the head (or names no revision) | Last action failed on rev H; the detail is its message | blocked (red) |
 | A gate fails | Blocked: rev H cannot release (with revisions to release), else A gate fails on rev H (N gates fail on rev H) | gated (amber) |
 | Gates are being checked | Checking gates on rev H | info |
 | Needs are not met | Needs from upstream are not met | attention (amber) |
@@ -104,7 +103,6 @@ so it always answers the headline; the other causes' actions stay among the othe
 | First cause | Primary |
 |---|---|
 | Withheld conflicts | Review conflicts |
-| A failed last action | See events |
 | A failing gate | Check again (a gate with a known Trigger), else Edit at `<path>` |
 | Gates being checked | none |
 | Unmet needs | Open Links |
@@ -122,7 +120,7 @@ back to this view (`explorer=`).
 
 | Action | What it does | Writes |
 |---|---|---|
-| Review conflicts, See events, Edit config (`e`), Open Links, Restore a revision… | Link to the Unit page (`tab=2`, `tab=0`, `tab=1`, Links, `tab=2`) | No |
+| Review conflicts, Edit config (`e`), Open Links, Restore a revision… | Link to the Unit page (`tab=2`, `tab=1`, Links, `tab=2`) | No |
 | Release `<Space>` | Link to the Components view (`/components?app=&space=`), which releases | No |
 | Check again | The gate check above, result inline on the gate's line | No |
 | See diff | `DiffDialog`, read only | No |

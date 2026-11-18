@@ -3,14 +3,13 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { DiffDrawer } from '@/components/diff-drawer/DiffDrawer';
-import { useLazyUnitData, useRevisionDataMap, useRevisionMutationSourcesMap } from '@/hooks/useUnitData';
+import { useLazyUnitData, useRevisionDataMap } from '@/hooks/useUnitData';
 import { DATE_TIME_GRID_SLOTS } from '@/components/data-grid/cells';
 import { EntityDataGrid } from '@/components/entity-data-grid/EntityDataGrid';
 import { ErrorBox } from '@/components/error-box/ErrorBox';
 import { WithheldByGuardsNotice } from '@/components/guarded-write/WithheldByGuardsNotice';
 import { type GuardedChange, guardedChanges } from '@/components/guarded-write/guardedWrite';
 import { useGuardedWrite } from '@/components/guarded-write/useGuardedWrite';
-import { MutationDrawer } from '@/components/mutation-drawer/MutationDrawer';
 import { RevisionCompareDrawer } from '@/components/revision-compare-drawer/RevisionCompareDrawer';
 import { Section } from '@/components/styled';
 import { useGridPersistence } from '@/components/unit-data-grid/hooks/useGridPersistence';
@@ -18,7 +17,6 @@ import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
 import { useRevisionViewerUrl } from '@/hooks/useRevisionViewerUrl';
 import { unitBlameHref } from '@/pages/unit-detail/unitDetailHrefs';
 import {
-  ResourceMutation,
   RevisionRead,
   TagRead,
   ExtendedUnitRead,
@@ -32,7 +30,6 @@ import { nonMergeClearanceParam, unitHasGuards } from '@/utility/clearance-funct
 import { getApiErrorMessage } from '@/utility/error-functions';
 import { isIDInvalid } from '@/utility/validation-functions';
 import CompareArrowsOutlinedIcon from '@mui/icons-material/CompareArrowsOutlined';
-import SourceOutlinedIcon from '@mui/icons-material/SourceOutlined';
 import Button from '@mui/material/Button';
 import { GridRowSelectionModel } from '@mui/x-data-grid';
 import dayjs from 'dayjs';
@@ -92,7 +89,6 @@ export const RevisionsTable = ({
   const [restoreWithheld, setRestoreWithheld] = useState<GuardedChange[]>([]);
   const [selectedTab, setSelectedTab] = useState(0);
   const [isUpstreamDiffOpen, setIsUpstreamDiffOpen] = useState(false);
-  const [isMutationDetailDrawerOpen, setIsMutationDetailDrawerOpen] = useState(false);
   const [selectedRows, setSelectedRows] = useState<GridRowSelectionModel>([]);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
@@ -122,15 +118,10 @@ export const RevisionsTable = ({
   const fromRow = rows.find((row) => row.id === selectedRows?.[0]);
   const fromRevision = fromRow?.Revision || ({} as RevisionRead);
 
-  // Configuration and mutation sources are not on the Revision. The two Revisions these
-  // drawers can show are fetched together, and the upstream diff fetches its Units when it
-  // opens.
+  // Configuration is not on the Revision. The viewer's Revision is fetched here, and the
+  // upstream diff fetches its Units when it opens.
   const { dataFor: revisionDataFor } = useRevisionDataMap([
-    fromRevision?.RevisionID,
     selectedRevisionForView?.Revision?.RevisionID,
-  ]);
-  const { sourcesFor: revisionSourcesFor } = useRevisionMutationSourcesMap([
-    fromRevision?.RevisionID,
   ]);
   const fetchUnitData = useLazyUnitData();
 
@@ -212,10 +203,6 @@ export const RevisionsTable = ({
     onRowSelected?.(newSelection);
   };
 
-  const onMutationDetailsClick = () => {
-    setIsMutationDetailDrawerOpen(true);
-  };
-
   const handleViewRevision = (revision: RevisionRow) => {
     openRevision(revision.RevisionNum);
   };
@@ -261,16 +248,6 @@ export const RevisionsTable = ({
           sx={{ marginLeft: '8px' }}
         >
           View Upstream Diff
-        </Button>
-      )}
-      {selectedRows.length === 1 && (
-        <Button
-          size='small'
-          startIcon={<SourceOutlinedIcon />}
-          onClick={onMutationDetailsClick}
-          sx={{ marginLeft: '8px' }}
-        >
-          Mutation Details
         </Button>
       )}
     </>
@@ -350,18 +327,6 @@ export const RevisionsTable = ({
             handleViewRevision(_.row);
           }}
         />
-        <MutationDrawer
-          isMutationDrawerOpen={isMutationDetailDrawerOpen}
-          onMutationDrawerClosed={() => setIsMutationDetailDrawerOpen(false)}
-          unitExtended={currentUnitExtended}
-          revisionData={revisionDataFor(fromRevision?.RevisionID)}
-          revisionNum={fromRevision?.RevisionNum || 1}
-          revisionID={fromRevision?.RevisionID || ''}
-          mutations={
-            (revisionSourcesFor(fromRevision?.RevisionID) as ResourceMutation[]) || ([] as ResourceMutation[])
-          }
-        />
-
         <DiffDrawer
           isDiffDrawerOpen={isUpstreamDiffOpen}
           onDiffDrawerClosed={() => setIsUpstreamDiffOpen(false)}

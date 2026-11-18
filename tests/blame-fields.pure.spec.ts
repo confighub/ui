@@ -614,7 +614,7 @@ test('the Blame tab has a value of its own, and the other tabs keep theirs', () 
   expect(UNIT_DETAIL_TAB.resources).toBe(5);
   expect(UNIT_DETAIL_TAB.settings).toBe(6);
   expect(UNIT_DETAIL_TAB_ORDER.indexOf(UNIT_DETAIL_TAB.blame)).toBe(
-    UNIT_DETAIL_TAB_ORDER.indexOf(UNIT_DETAIL_TAB.mutations) + 1,
+    UNIT_DETAIL_TAB_ORDER.indexOf(UNIT_DETAIL_TAB.revisions) + 1,
   );
   expect(new Set(UNIT_DETAIL_TAB_ORDER).size).toBe(Object.keys(UNIT_DETAIL_TAB).length);
   const href = unitBlameHref('s1', 'u1', 'spec.template.spec.containers.?name=web.image');

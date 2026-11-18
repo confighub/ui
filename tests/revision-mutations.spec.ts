@@ -12,14 +12,15 @@ import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-test.describe('mutations tab', () => {
+test.describe('revision mutations', () => {
   test.use({ storageState: 'authentication.json' });
 
   let spaceId = '';
   let unitId = '';
+  const triggerSlug = RandomSlugGenerator.randomSlugName();
 
   // A Space with a set-pod-defaults trigger, so the Unit's revision carries
-  // mutations for the drawer to show.
+  // mutations for the revision viewer to show.
   test.beforeAll(async ({ browser }) => {
     const page = await newAuthorizedPage(browser);
     try {
@@ -28,7 +29,7 @@ test.describe('mutations tab', () => {
 
       const trigger = await hubApi.post(`/api/space/${spaceId}/trigger`, {
         data: {
-          Slug: RandomSlugGenerator.randomSlugName(),
+          Slug: triggerSlug,
           Event: 'Mutation',
           ToolchainType: 'Kubernetes/YAML',
           FunctionName: 'set-pod-defaults',
@@ -62,29 +63,20 @@ test.describe('mutations tab', () => {
     }
   });
 
-  test('should open the mutation drawer with a resource tab bar and the revision configuration', async ({ page }) => {
+  test('the revision viewer shows the function, Trigger and changes of each mutation in a revision', async ({ page }) => {
     const unitDetailPage = new UnitDetailPage(page);
 
     await page.goto(`/units/${spaceId}/${unitId}`);
-    await unitDetailPage.goToRevisionsTab();
-    await unitDetailPage.checkRowInTableByName('Head');
-    await unitDetailPage.goToMutationDetailsDrawer();
+    const drawer = await unitDetailPage.openHeadRevisionMutations();
 
-    // Scope every assertion to the drawer's paper: the unit detail page keeps its
-    // own tab bar and configuration editor mounted behind the drawer, so a
-    // page-wide lookup would match those instead.
-    const mutationDrawer = page.locator('.MuiDrawer-root .MuiDrawer-paper');
+    const mutation = drawer.getByTestId('revision-mutation').filter({ hasText: 'set-pod-defaults' });
+    await expect(mutation).toHaveCount(1, { timeout: 15000 });
+    await expect(mutation.getByRole('link', { name: triggerSlug })).toBeVisible();
+    await expect(mutation).toContainText('pod-security=true');
 
-    // The tab bar carries one tab per resource in the unit (todo-app-fe is a
-    // Deployment plus a Service).
-    await expect(mutationDrawer.getByRole('tab', { name: /Deployment\s*\/todo-app/ })).toBeVisible();
-    await expect(mutationDrawer.getByRole('tab', { name: /Service\s*\/todo-app/ })).toBeVisible();
-
-    // Selecting a tab drives the configuration editor, which renders that resource.
-    await mutationDrawer.getByRole('tab', { name: /Deployment\s*\/todo-app/ }).click();
-    const editorLines = mutationDrawer.locator('div.monaco-editor .view-lines');
-    await expect(editorLines).toBeVisible();
-    await expect(editorLines).toContainText('kind: Deployment');
-    await expect(editorLines).toContainText('todo-app');
+    // The paths the Trigger set, by resource, from the revision's mutation sources.
+    const changes = mutation.getByTestId('revision-mutation-changes');
+    await expect(changes).toContainText('Deployment', { timeout: 15000 });
+    await expect(changes).toContainText('securityContext');
   });
 });

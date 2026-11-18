@@ -3,46 +3,23 @@
 import { useEffect, useState } from 'react';
 
 import { SettingsTabs } from '@/components/settings-tabs/SettingsTabs';
-import { Section } from '@/components/styled';
-import { BorderedAccordion } from '@/components/styled';
+import { BorderedAccordion, Section } from '@/components/styled';
 import { usePageHeight } from '@/hooks/usePageHeight';
-import {
-  ExtendedUnitRead,
-  UnitRead,
-} from '@confighub/rtk-query';
-import {
-  RevisionRead,
-  UserRead,
-  useListExtendedRevisionsQuery,
-} from '@confighub/rtk-query';
-import { UnitEventRead, useListUnitEventsQuery } from '@confighub/rtk-query';
+import { ExtendedUnitRead, UnitRead } from '@confighub/rtk-query';
 import { Direction } from '@/types/enums';
-import TimelineIcon from '@mui/icons-material/Timeline';
-import Timeline from '@mui/lab/Timeline';
-import TimelineConnector from '@mui/lab/TimelineConnector';
-import TimelineContent from '@mui/lab/TimelineContent';
-import TimelineDot from '@mui/lab/TimelineDot';
-import TimelineItem, { timelineItemClasses } from '@mui/lab/TimelineItem';
-import TimelineSeparator from '@mui/lab/TimelineSeparator';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import Alert from '@mui/material/Alert';
-import Avatar from '@mui/material/Avatar';
-import Badge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import Link from '@mui/material/Link';
-import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
-import dayjs from 'dayjs';
-import groupBy from 'lodash/groupBy';
 
 import { ReadmeMarkdown } from '@/pages/x/apps/ReadmePane';
-import { formatRelative } from '@/utility/date-format';
 
 import { ActionSidebar } from '../action-side-bar/ActionSideBar';
 
@@ -51,7 +28,7 @@ const Container = styled('div')`
 `;
 
 const Main = styled('div')`
-  width: 60%;
+  width: 70%;
   overflow-y: auto;
   background-color: hsla(215, 15%, 97%, 0.5);
 
@@ -76,7 +53,7 @@ const Main = styled('div')`
 const Aside = styled('aside')`
   display: flex;
   flex-direction: column;
-  width: 40%;
+  width: 30%;
   padding: 0 1rem;
   height: 100%;
   overflow-y: auto;
@@ -108,18 +85,9 @@ const StickyTab = styled(Box)`
   padding-top: 5px;
 `;
 
-const isRevision = (item: RevisionRead): item is RevisionRead & UserRead => {
-  return 'RevisionID' in item;
-};
-
-const isUnitEvent = (item: UnitEventRead): item is UnitEventRead => {
-  return 'UnitEventID' in item;
-};
-
 const sectionOffset = 254;
 
-const README_TAB = 2;
-
+const README_TAB = 1;
 
 export interface DashboardProps {
   currentUnitExtended: ExtendedUnitRead;
@@ -130,11 +98,6 @@ export interface DashboardProps {
   isFetchingUnit?: boolean;
   lastPollTimestamp?: number;
 }
-
-export type UserExtendedRevision = RevisionRead & {
-  DisplayName?: string;
-  ProfilePictureURL?: string;
-};
 
 const sanitizeUrl = (url: string): string | null => {
   try {
@@ -172,93 +135,9 @@ export const Dashboard = ({
   // State
   const [selectedTab, setSelectedTab] = useState(0);
 
-  // Api
-  const { revisions = [], isRevisionsLoading } = useListExtendedRevisionsQuery(
-    {
-      spaceId: currentUnitExtended?.Unit?.SpaceID || '',
-      unitId: currentUnitExtended?.Unit?.UnitID || '',
-      include: 'UserID',
-    },
-    {
-      skip: !currentUnitExtended?.Unit?.SpaceID || !currentUnitExtended?.Unit?.UnitID,
-      selectFromResult: ({ data, isLoading }) => ({
-        revisions: data?.map(
-          (revision) =>
-            ({
-              ...revision?.Revision,
-              DisplayName: revision?.User?.DisplayName,
-              ProfilePictureURL: revision?.User?.ProfilePictureURL,
-            }) as UserExtendedRevision, // Cast this this explicitly to UserExtendedRevision
-        ),
-        isRevisionsLoading: isLoading,
-      }),
-    },
-  );
-
   const editorHeight = usePageHeight(sectionOffset);
 
   const unit = currentUnitExtended?.Unit || ({} as UnitRead);
-
-  const validationErrors = Object.entries(unit?.ValidationErrors ?? {}).map(([key, value]) => {
-    return { name: key, value };
-  });
-
-  const {
-    data: events = [],
-    isLoading: isEventsLoading,
-    isUninitialized: isEventsUninitialized,
-  } = useListUnitEventsQuery(
-    { spaceId: unit?.SpaceID || '', unitId: unit?.UnitID || '' },
-    { skip: !unit?.SpaceID || !unit?.UnitID },
-  );
-
-  const mergedEvents = [...(events || []), ...revisions]
-    .map((item: UserExtendedRevision | UnitEventRead) => {
-      // Shared properties can be defined outside the if/else blocks
-      const createdAt = dayjs(item.CreatedAt).toDate();
-
-      // Use the type guards to handle each type of item separately
-      if (isUnitEvent(item)) {
-        // TypeScript now knows `item` is of type `UnitEventRead`
-        return {
-          id: item.UnitEventID,
-          createdAt: createdAt,
-          description: item.Message,
-          action: item.Action,
-          results: item.Result ? [{ status: 'info', value: item.Result }] : [],
-          status: item.Status,
-          userName: 'Automated', // Events are automated
-          profileURL: '', // Events have no user profile
-        };
-      }
-
-      if (isRevision(item)) {
-        // TypeScript now knows `item` is of type `RevisionRead & UserRead`
-        return {
-          id: item.RevisionID,
-          createdAt: createdAt,
-          description: item.Description,
-          action: `${item.UserAgent} ${item.Source}`,
-          results: Object.entries(item.ValidationErrors || {}).map(([key]) => ({
-            status: 'error',
-            value: key,
-          })),
-          status: undefined, // Or a default status, as Revisions don't have this property
-          userName: item.DisplayName,
-          profileURL: item.ProfilePictureURL,
-        };
-      }
-
-      // Return null for any items that don't match guards, just in case
-      return null;
-    })
-    .filter((event): event is NonNullable<typeof event> => event !== null)
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-
-  const groupedEvents = groupBy(
-    mergedEvents,
-    (event) => dayjs(event.createdAt).startOf('week').format('YYYY-MM-DD'), // Group by the start of the week
-  );
 
   // Extract and sanitize URL- annotations from currentUnitExtended
   const urlAnnotations = Object.entries(currentUnitExtended?.Unit?.Annotations || {})
@@ -344,133 +223,24 @@ export const Dashboard = ({
                 This unit needs an upgrade. The upstream unit has a newer revision available.
               </Alert>
             )}
-            <Stack direction='row' alignItems='center' spacing={1}>
-              <TimelineIcon />
-              <Typography variant='h6'>Activity</Typography>
-            </Stack>
-            {!isEventsUninitialized &&
-            !isEventsLoading &&
-            !isRevisionsLoading &&
-            mergedEvents &&
-            mergedEvents.length > 0 ? (
-              <Timeline
-                sx={{
-                  padding: '0px',
-                  mt: '0px',
-                  [`& .${timelineItemClasses.root}:before`]: {
-                    flex: 0,
-                    padding: 0,
-                  },
-                }}
-              >
-                {Object.entries(groupedEvents).map(([week, events]) => (
-                  <div key={week}>
-                    <Divider textAlign='left' sx={{ pb: 2 }}>
-                      <Chip
-                        label={`Week of ${dayjs(week).format('MMMM D, YYYY')}`}
-                        size='small'
-                      />
-                    </Divider>
-                    {events.map((event) => (
-                      <TimelineItem key={event.id}>
-                        <TimelineSeparator>
-                          <TimelineDot />
-                          <TimelineConnector />
-                        </TimelineSeparator>
-                        <TimelineContent>
-                          <Stack direction='row' alignItems='center' spacing={1}>
-                            <Typography
-                              sx={{ marginLeft: '2px' }}
-                              variant='body1'
-                              fontWeight={600}
-                            >
-                              {event.action}
-                            </Typography>
-                            <Typography variant='body1'>{event.userName}</Typography>
-                            {event.profileURL && (
-                              <Avatar src={event.profileURL} sx={{ width: 20, height: 20 }} />
-                            )}
-                          </Stack>
-                          <Typography color='text.secondary' variant='body1'>
-                            {event.description}
-                          </Typography>
-                          <Typography color='text.secondary' variant='caption'>
-                            {formatRelative(event.createdAt)}
-                          </Typography>
-                          <Box>
-                            {event?.results?.map((result, index) => (
-                              <Chip
-                                key={`${result.value}-${index}`}
-                                sx={{ mr: 1 }}
-                                // @ts-expect-error TODO:
-                                color={result.status}
-                                label={result.value}
-                                size='small'
-                              />
-                            ))}
-                          </Box>
-                        </TimelineContent>
-                      </TimelineItem>
-                    ))}
-                  </div>
-                ))}
-              </Timeline>
-            ) : (
-              <Timeline
-                sx={{
-                  [`& .${timelineItemClasses.root}:before`]: {
-                    flex: 0,
-                    padding: 0,
-                  },
-                }}
-              >
-                {Array.from({ length: 5 }).map((_, index) => (
-                  <TimelineItem key={index}>
-                    <TimelineSeparator>
-                      <TimelineDot sx={{ backgroundColor: '#E0E0E0' }} />
-                      {index < 4 && <TimelineConnector sx={{ backgroundColor: '#E0E0E0' }} />}
-                    </TimelineSeparator>
-                    <TimelineContent>
-                      <Skeleton
-                        variant='text'
-                        width='80%'
-                        height={20}
-                        sx={{ marginBottom: '8px' }}
-                      />
-                      <Skeleton variant='text' width='40%' height={16} />
-                    </TimelineContent>
-                  </TimelineItem>
-                ))}
-              </Timeline>
-            )}
+            <ActionSidebar
+              unit={currentUnitExtended}
+              onApplyGateClicked={onApplyGateClicked}
+              onRefresh={setRefresh}
+              isFetchingUnit={isFetchingUnit}
+              lastPollTimestamp={lastPollTimestamp}
+            />
           </Main>
-          {/* TODO:  This should be moved into a new component */}
           <Aside>
             <StickyTab>
               <SettingsTabs
-                tabs={[
-                  <Stack direction='column' spacing={2}>
-                    <Badge badgeContent={validationErrors?.length} color='error' />
-                    Validation Errors
-                  </Stack>,
-                  'URLs',
-                  ...(readme ? ['Readme'] : []),
-                ]}
+                tabs={['URLs', ...(readme ? ['Readme'] : [])]}
                 onTabSelected={(tab: number) => setSelectedTab(tab)}
                 defaultValue={activeTab}
               />
               <Divider />
             </StickyTab>
             <Section sx={{ pt: 2 }} $display={activeTab === 0} $direction={Direction.FadeIn}>
-              <ActionSidebar
-                unit={currentUnitExtended}
-                onApplyGateClicked={onApplyGateClicked}
-                onRefresh={setRefresh}
-                isFetchingUnit={isFetchingUnit}
-                lastPollTimestamp={lastPollTimestamp}
-              />
-            </Section>
-            <Section sx={{ pt: 2 }} $display={activeTab === 1} $direction={Direction.FadeIn}>
               <Stack spacing={1}>
                 {urlAnnotations.length > 0 ? (
                   <Box component='ul' sx={{ pl: 2, m: 0 }}>

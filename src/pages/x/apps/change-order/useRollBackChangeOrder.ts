@@ -152,7 +152,7 @@ export function useRollBackChangeOrder(args: UseRollBackChangeOrderArgs): RollBa
           restore: `Before:ChangeOrder:${changeOrderId}`,
           clearance: nonMergeClearanceParam(),
           changeOrder: changeOrderId,
-          include: 'UnitEventID,TargetID,UpstreamUnitID,SpaceID',
+          include: 'TargetID,UpstreamUnitID,SpaceID',
           // @ts-expect-error RTK Query merge-patch+json content type requires pre-stringified body
           body: JSON.stringify({
             LastChangeDescription: `Undo change order ${changeOrderSlug}`,

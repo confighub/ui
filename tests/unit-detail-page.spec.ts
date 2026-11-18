@@ -123,8 +123,10 @@ test.describe('unit detail page', () => {
       }),
     ]);
 
-    // Mutations recorded by the invocation still show up in the Mutations tab.
-    await unitDetailPage.goToMutationsTab();
-    await unitDetailPage.expectToBeVisibleByText(functionName);
+    // The invocation's mutation shows in the revision viewer, on the revision it made.
+    const drawer = await unitDetailPage.openHeadRevisionMutations();
+    await expect(
+      drawer.getByTestId('revision-mutation').filter({ hasText: functionName }),
+    ).toHaveCount(1, { timeout: 15000 });
   });
 });

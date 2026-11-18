@@ -363,10 +363,11 @@ test.describe('unit list page', () => {
       await unitListPage.cloneUnit({ slug, slugClone });
 
       await expect(page.getByText(slug)).toBeVisible();
-      // Scoped to the section heading: getByText('Activity') is a substring
-      // match that also matches any unit slug containing "activity" (the
-      // shared test org accumulates many randomly-named units over time).
-      await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible();
+      // The clone's own page, on its Overview.
+      await expect(page.getByRole('tab', { name: 'Overview' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
     });
 
     test('should clone a multiple units', async ({ page }) => {

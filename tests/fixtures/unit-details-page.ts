@@ -7,20 +7,16 @@ import { expect } from '@playwright/test';
 export class UnitDetailPage {
   public readonly overviewTab: Locator;
   public readonly configTab: Locator;
-  public readonly mutationsTab: Locator;
   private readonly invokeButton: Locator;
   public readonly moreItemsButton: Locator;
   private readonly revisionsTab: Locator;
-  private readonly mutationDetailsButton: Locator;
 
   constructor(public readonly page: Page) {
     this.overviewTab = this.page.getByRole('tab', { name: 'Overview' });
     this.configTab = this.page.getByRole('tab', { name: 'Config' });
-    this.mutationsTab = this.page.getByRole('tab', { name: /^Mutations/ });
     this.revisionsTab = this.page.getByRole('tab', { name: 'Revisions' });
     this.invokeButton = this.page.getByRole('button', { name: 'Invoke' });
     this.moreItemsButton = this.page.getByRole('button', { name: 'More' });
-    this.mutationDetailsButton = this.page.getByRole('button', { name: 'Mutation Details' });
   }
 
   async goToRevisionsTab() {
@@ -29,16 +25,17 @@ export class UnitDetailPage {
     await expect(this.revisionsTab).toHaveAttribute('aria-selected', 'true');
   }
 
-  async goToMutationDetailsDrawer() {
-    await this.mutationDetailsButton.click();
-    // Wait for the mutation details drawer (MUI Drawer) to open
-    await expect(this.page.locator('.MuiDrawer-root .MuiDrawer-paper')).toBeVisible();
-  }
-
-  async goToMutationsTab() {
-    await this.mutationsTab.click();
-    // Wait for the tab to become selected
-    await expect(this.mutationsTab).toHaveAttribute('aria-selected', 'true');
+  /**
+   * Opens the head revision in the revision viewer and shows its mutations. Returns the
+   * viewer's drawer, since the page behind it keeps its own tabs and editors mounted.
+   */
+  async openHeadRevisionMutations(): Promise<Locator> {
+    await this.goToRevisionsTab();
+    const head = this.page.getByRole('row', { name: /Head/ }).first();
+    await head.locator('[data-field="RevisionNum"]').click();
+    const drawer = this.page.locator('.MuiDrawer-root .MuiDrawer-paper');
+    await drawer.getByRole('button', { name: 'Mutations', exact: true }).click();
+    return drawer;
   }
 
   async checkRowInTableByName(name: string) {

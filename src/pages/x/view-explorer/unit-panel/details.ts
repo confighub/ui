@@ -25,7 +25,7 @@ export function gateDetail(results: ValidationResultList | undefined): { path?: 
   return { path: attribute?.Path || undefined, message: message || undefined };
 }
 
-/** The verdict's details from the read of the Unit (with its latest event included). */
+/** The verdict's details from the read of the Unit. */
 export function detailsFromUnit(read: ExtendedUnitRead, spaceSlug: string): Omit<FetchedDetails, 'status'> {
   const u = read.Unit;
   const gateDetails: Record<string, { path?: string; message?: string }> = {};
@@ -38,12 +38,8 @@ export function detailsFromUnit(read: ExtendedUnitRead, spaceSlug: string): Omit
     .filter((name) => u?.ValidationWarnings?.[name])
     .sort((a, b) => a.localeCompare(b))
     .map((name) => gateLabel(name, spaceSlug));
-  const e = read.LatestUnitEvent;
   return {
     conflicts: u?.Conflicts ?? [],
-    event: e
-      ? { status: e.Status, action: e.Action, revisionNum: e.RevisionNum || undefined, message: e.Message || undefined, at: e.TerminatedAt || e.UpdatedAt || e.CreatedAt || undefined }
-      : undefined,
     linkFindings: u?.LinkFindings ?? [],
     gateDetails,
     triggerIds: u?.ValidationTriggerIDs ?? {},

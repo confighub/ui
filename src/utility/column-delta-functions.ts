@@ -367,7 +367,6 @@ export function buildIncludeParameter(
   const includes = new Set<string>([
     'SpaceID', // Always needed for Space.Slug (base column)
     'TargetID', // Always needed for Target.Slug (base column)
-    'UnitEventID', // Needed for unit operations
     'UpstreamUnitID', // Needed for UpgradeNeeded computation (base column)
   ]);
 

@@ -33,7 +33,6 @@ import { assertNever } from './types';
  * | unreleasedChanges: Yes | `hasUnreleasedChanges(unit)`: a Target and `unit.HeadRevisionNum > unit.LastReleasedRevisionNum` |
  * | unreleasedChanges: No  | `!hasUnreleasedChanges(unit)` |
  * | validationErrorsCount = N   | `(unit.ValidationErrors?.length || 0) === N`                          |
- * | lastActionStatus      | Query with include=UnitEventID, check `unit.Action?.ActionResult` |
  *
  * These cannot be filtered server-side as they require cross-field comparisons
  * or derived computations. Agents should fetch all units and filter locally.

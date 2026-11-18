@@ -8,7 +8,7 @@
  * It runs the gate's Trigger on the Unit's current config and returns what the
  * gate says. It does not set `UpdateValidationResults`, so nothing is stored:
  * the check is for display only. The generated `invokeFunctionsOnOrg` sends
- * the same request, but invalidates Unit, Revision, Mutation, UnitEvent and
+ * the same request, but invalidates Unit, Revision, Mutation and
  * Resource (`FUNCTION_INVOKE` in `invalidationMap.ts`). Through it, each check
  * would refetch every Unit of the explorer's rows, although it wrote nothing.
  * This endpoint sends the same request and invalidates nothing.

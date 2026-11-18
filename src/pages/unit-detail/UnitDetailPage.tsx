@@ -39,10 +39,14 @@ import { useUnitDetailData } from './hooks/useUnitDetailData';
 import { ModalType } from './rules';
 import { ConfigTab } from './tabs/ConfigTab';
 import { BlameTab } from './tabs/BlameTab';
-import { MutationsTab } from './tabs/MutationsTab';
 import { ResourcesTab } from './tabs/ResourcesTab';
 import { UnitSettingsForm } from './components/unit-settings/UnitSettingsForm';
-import { UNIT_DETAIL_TAB, UNIT_DETAIL_TAB_ORDER, unitBlameHref } from './unitDetailHrefs';
+import {
+  UNIT_DETAIL_TAB,
+  UNIT_DETAIL_TAB_ORDER,
+  readUnitDetailTab,
+  unitBlameHref,
+} from './unitDetailHrefs';
 import { useRevisionDataMap } from '@/hooks/useUnitData';
 
 const Container = styled('div')`
@@ -80,10 +84,10 @@ export const UnitDetailPage = () => {
   // Opened from a View Explorer tab in a new browser tab: the explorer's own
   // query (`view=…&t=…&d=…`), read once so a later tab change here keeps it.
   const [explorerReturn] = useState(() => searchParams.get('explorer'));
-  const [selectedTab, setSelectedTab] = useState(parseInt(tabParam || '0'));
+  const [selectedTab, setSelectedTab] = useState(readUnitDetailTab(tabParam));
   // A link within the page, such as to another Unit's Config tab, keeps this page mounted.
   useEffect(() => {
-    setSelectedTab(parseInt(tabParam || '0'));
+    setSelectedTab(readUnitDetailTab(tabParam));
   }, [tabParam]);
 
   // Modal state
@@ -460,12 +464,11 @@ export const UnitDetailPage = () => {
                 ) : (
                   'Overview'
                 ),
-                'Config',
                 `Revisions (${currentUnit?.HeadRevisionNum || 0})`,
-                `Links (${links?.length || 0})`,
-                `Mutations (${currentUnit?.HeadMutationNum || 0})`,
                 'Blame',
                 'Resources',
+                'Config',
+                `Links (${links?.length || 0})`,
                 'Settings',
               ]}
               tabValues={UNIT_DETAIL_TAB_ORDER}
@@ -536,11 +539,6 @@ export const UnitDetailPage = () => {
           spaceId={spaceID}
           unit={currentUnitExtended}
           onLinkAction={() => setRefresh(!refresh)}
-        />
-        <MutationsTab
-          selectedTab={selectedTab}
-          unitExtended={currentUnitExtended}
-          onTabSelected={onTabSelected}
         />
         <BlameTab spaceId={spaceID} unitId={id} selectedTab={selectedTab} />
         <ResourcesTab key={`resources-${currentUnit.UnitID}`} unit={currentUnit} selectedTab={selectedTab} />

@@ -297,7 +297,7 @@ export const SectionCard: React.FC<SectionCardProps> = ({
 
 // Hairline-style StripedDataGrid — matches the canonical copy in
 // `components/entity-data-grid/EntityDataGrid.tsx`. Keep both in sync until
-// MutationTable, LinksTable, and FunctionsTable are migrated onto EntityDataGrid and this export can be removed.
+// LinksTable and FunctionsTable are migrated onto EntityDataGrid and this export can be removed.
 export const StripedDataGrid = styled(DataGrid)(({ theme }) => ({
   borderRadius: 0,
   border: 0,

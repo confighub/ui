@@ -914,7 +914,7 @@ export async function buildChangeOrderFixture(
         params: {
           where: `SpaceID = '${upstream.spaceId}'`,
           where_space: `SpaceID IN (${targetIds})`,
-          include: 'UnitEventID,TargetID,UpstreamUnitID,SpaceID',
+          include: 'TargetID,UpstreamUnitID,SpaceID',
         },
         headers: MERGE_PATCH,
         data: {},

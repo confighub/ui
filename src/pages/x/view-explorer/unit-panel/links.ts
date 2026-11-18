@@ -27,7 +27,6 @@ export function panelLinks(facts: RowFacts, componentSlug: string | undefined, s
   const back = (href: string) => withExplorerReturn(href, search);
   const links: PanelLinks = {
     'review-conflicts': back(unitTab(facts, UNIT_DETAIL_TAB.revisions)),
-    'see-events': back(unitTab(facts, UNIT_DETAIL_TAB.overview)),
     'edit-config': back(unitConfigHref(facts.spaceId, facts.unitId)),
     'open-links': back(unitLinksHref(facts.spaceId, facts.unitId)),
     'restore-history': back(unitTab(facts, UNIT_DETAIL_TAB.revisions)),

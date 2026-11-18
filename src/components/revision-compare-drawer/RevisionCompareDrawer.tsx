@@ -33,6 +33,8 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 
+import { RevisionMutations } from './RevisionMutations';
+
 /** Width of the drawer in pixels */
 const DRAWER_WIDTH = 1200;
 
@@ -82,6 +84,9 @@ export interface RevisionCompareDrawerProps {
 
 type ViewMode = 'single' | 'compare';
 
+/** How a revision is shown: its fields, its source, or (one revision only) its mutations. */
+type ContentView = 'fields' | 'source' | 'mutations';
+
 /**
  * RevisionDiffCompareView Component
  *
@@ -110,7 +115,7 @@ export const RevisionCompareDrawer = ({
   isRestoring = false,
   revisionViewerUrl,
 }: RevisionCompareDrawerProps) => {
-  const [showFieldTree, setShowFieldTree] = useState(true);
+  const [contentView, setContentView] = useState<ContentView>('fields');
 
   // Sort revisions by revision number (newest first for display)
   const sortedRevisions = useMemo(
@@ -175,6 +180,11 @@ export const RevisionCompareDrawer = ({
 
   // Determine view mode based on number of selected revisions
   const viewMode: ViewMode = selectedIds.length === 2 ? 'compare' : 'single';
+  // A comparison has no mutations of its own, so it shows the fields until one revision is
+  // selected again.
+  const shownView: ContentView =
+    viewMode === 'compare' && contentView === 'mutations' ? 'fields' : contentView;
+  const showFieldTree = shownView === 'fields';
 
   // Get selected revisions
   const selectedRevisions = useMemo(
@@ -239,7 +249,7 @@ export const RevisionCompareDrawer = ({
   // The configuration is not on the Revision. Only the source views need it, both sides of a
   // comparison or the one Revision; the field trees are the server's diffs.
   const { dataFor } = useRevisionDataMap(
-    showFieldTree
+    shownView !== 'source'
       ? []
       : comparison
         ? [comparison.fromRevision.Revision?.RevisionID, comparison.toRevision.Revision?.RevisionID]
@@ -370,11 +380,11 @@ export const RevisionCompareDrawer = ({
                 />
               )}
               <ToggleButtonGroup
-                value={showFieldTree ? 'fields' : 'source'}
+                value={shownView}
                 exclusive
                 size='small'
-                onChange={(_e, val: 'fields' | 'source' | null) => {
-                  if (val !== null) setShowFieldTree(val === 'fields');
+                onChange={(_e, val: ContentView | null) => {
+                  if (val !== null) setContentView(val);
                 }}
               >
                 <ToggleButton value='fields' sx={{ py: 0.25, px: 1, fontSize: 12 }}>
@@ -388,18 +398,15 @@ export const RevisionCompareDrawer = ({
           )}
           {viewMode === 'single' && activeRevision && (
             <Stack direction='row' alignItems='center' spacing={2}>
-              <IconButton size='small'>
-                <SwapVertIcon />
-              </IconButton>
               <Typography variant='body2' color='text.secondary'>
                 Viewing revision {activeRevision.RevisionNum}
               </Typography>
               <ToggleButtonGroup
-                value={showFieldTree ? 'fields' : 'source'}
+                value={shownView}
                 exclusive
                 size='small'
-                onChange={(_e, val: 'fields' | 'source' | null) => {
-                  if (val !== null) setShowFieldTree(val === 'fields');
+                onChange={(_e, val: ContentView | null) => {
+                  if (val !== null) setContentView(val);
                 }}
               >
                 <ToggleButton value='fields' sx={{ py: 0.25, px: 1, fontSize: 12 }}>
@@ -407,6 +414,9 @@ export const RevisionCompareDrawer = ({
                 </ToggleButton>
                 <ToggleButton value='source' sx={{ py: 0.25, px: 1, fontSize: 12 }}>
                   Source
+                </ToggleButton>
+                <ToggleButton value='mutations' sx={{ py: 0.25, px: 1, fontSize: 12 }}>
+                  Mutations
                 </ToggleButton>
               </ToggleButtonGroup>
             </Stack>
@@ -502,7 +512,7 @@ export const RevisionCompareDrawer = ({
                     border: '1px solid',
                     borderColor: 'divider',
                     borderRadius: 1,
-                    overflow: showFieldTree ? 'auto' : 'hidden',
+                    overflow: shownView === 'source' ? 'hidden' : 'auto',
                     backgroundColor: 'background.paper',
                     p: 2,
                   }}
@@ -533,7 +543,14 @@ export const RevisionCompareDrawer = ({
                     </Stack>
                   )}
 
-                  {showFieldTree ? (
+                  {shownView === 'mutations' ? (
+                    <RevisionMutations
+                      spaceId={renderData.revision.Revision?.SpaceID ?? ''}
+                      unitId={renderData.revision.Revision?.UnitID ?? ''}
+                      revisionId={renderData.revision.Revision?.RevisionID ?? ''}
+                      revisionNum={renderData.revision.RevisionNum}
+                    />
+                  ) : showFieldTree ? (
                     revisionContents ? (
                       revisionContents.Diff?.Resources?.length ? (
                         <ConfigDiffView diff={revisionContents.Diff} />

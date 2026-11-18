@@ -57,7 +57,6 @@ export const useUnitDetailData = ({ id, spaceID, refresh }: IUseUnitDetailDataPr
   const [getSpaceByID] = confighubApi.endpoints.getSpace.useLazyQuery();
   const [triggerDownstreamUnits] =
     confighubApi.endpoints.listAllUnits.useLazyQuerySubscription();
-  const [triggerUnitEvents] = confighubApi.endpoints.listUnitEvents.useLazyQuerySubscription();
 
   const { data: revisionsData = [], refetch: refetchRevisions } =
     useListExtendedRevisionsQuery(
@@ -183,11 +182,6 @@ export const useUnitDetailData = ({ id, spaceID, refresh }: IUseUnitDetailDataPr
       triggerDownstreamUnits({
         include: 'SpaceID',
         where: `UpstreamUnitID = '${id}'`,
-      });
-
-      triggerUnitEvents({
-        unitId: id,
-        spaceId: spaceID,
       });
 
       getSpaces({});
