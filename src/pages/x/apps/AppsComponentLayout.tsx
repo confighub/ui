@@ -1,7 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { useCallback, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 
 import { QueryErrorState } from '@/components/query-error-state/QueryErrorState';
 import { spaceComponentSlug, useComponentSlugs } from '@/hooks/useComponentSlugs';
@@ -45,6 +45,8 @@ import {
   spacesOfComponents,
 } from './componentGroupFields';
 import { buildComponentNavItems, type ComponentNavItem } from './componentIndex';
+import { ComponentFocusContext, type ComponentFocusValue } from './field-diagnosis/ComponentFocusContext';
+import { componentFocusHref, readFocus, withSpaceChangeClears } from './field-diagnosis/componentFocus';
 
 /** Stable identity so a bare `/components` render doesn't hand every
  * downstream `useMemo` a brand-new empty Set each time (components.md risk
@@ -205,11 +207,40 @@ export const AppsComponentLayout = ({
    */
   const updateParams = useCallback(
     (patch: ViewParamsPatch, options?: { push?: boolean }) => {
-      setSearchParams(() => applyViewParamsPatch(readLiveSearchParams(), patch), {
-        replace: !options?.push,
-      });
+      setSearchParams(
+        () => {
+          const live = readLiveSearchParams();
+          return applyViewParamsPatch(live, withSpaceChangeClears(live, patch));
+        },
+        { replace: !options?.push },
+      );
     },
     [setSearchParams],
+  );
+
+  // Field diagnosis: the focus the URL names, for the side pane (PLAN.md decision 4). The layout
+  // stays the one URL writer; the pane writes through `go`.
+  const location = useLocation();
+  const focusUnit = searchParams.get('unit');
+  const focusField = searchParams.get('field');
+  const focusFres = searchParams.get('fres');
+  const focusTab = searchParams.get('tab');
+  const focusGate = searchParams.get('gate');
+  const focus = useMemo(() => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries({ unit: focusUnit, field: focusField, fres: focusFres, tab: focusTab, gate: focusGate })) {
+      if (v) params.set(k, v);
+    }
+    return readFocus(params);
+  }, [focusUnit, focusField, focusFres, focusTab, focusGate]);
+  const componentFocus = useMemo<ComponentFocusValue>(
+    () => ({
+      focus,
+      locationKey: location.key,
+      go: updateParams,
+      hrefFor: (patch) => componentFocusHref(readLiveSearchParams().toString(), patch),
+    }),
+    [focus, location.key, updateParams],
   );
 
   // Spaces that belong to a Component (deployment spaces, not infra spaces)
@@ -605,6 +636,7 @@ export const AppsComponentLayout = ({
             // an empty list after that means it has no variants.
             <NoVariants componentSlug={selectedApp?.name ?? null} />
           ) : isGraphOpen ? (
+              <ComponentFocusContext.Provider value={componentFocus}>
               <AppComponentView
                 spaces={graphSpaces}
                 componentSpaces={appSpaces}
@@ -621,6 +653,7 @@ export const AppsComponentLayout = ({
                 onViewParamsChange={handleViewParamsChange}
                 onComponentSelect={handleAppSelect}
               />
+              </ComponentFocusContext.Provider>
           ) : isLoadingOverviewCounts ? (
             <ComponentOverviewMatrixSkeleton />
           ) : (

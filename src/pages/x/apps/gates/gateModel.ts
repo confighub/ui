@@ -86,6 +86,19 @@ export interface Gate {
   findingCount: number;
 }
 
+/** The Gates tab's key of a gate: `e:` for a failing gate, `w:` for a warning, then its key. */
+export const gateOpenKey = (gate: Pick<Gate, 'key' | 'warning'>) => `${gate.warning ? 'w' : 'e'}:${gate.key}`;
+
+/** The key of the gate or warning a gate link names by its Trigger id; undefined if not listed. */
+export function gateOpenKeyForTrigger(
+  gates: readonly Pick<Gate, 'key' | 'warning'>[],
+  warnings: readonly Pick<Gate, 'key' | 'warning'>[],
+  triggerId: string,
+): string | undefined {
+  const hit = [...gates, ...warnings].find((g) => g.key === triggerId);
+  return hit ? gateOpenKey(hit) : undefined;
+}
+
 export const fieldKey = (
   unitId: string,
   resourceType: string | undefined,

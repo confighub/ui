@@ -1,0 +1,135 @@
+{
+  "Changes": [
+    {
+      "Mutation": {
+        "Mutation": {
+          "Clearance": [
+            {
+              "Key": "Override",
+              "Operator": "Exists"
+            }
+          ],
+          "CreatedAt": "2026-11-19T11:13:17.074965Z",
+          "EntityType": "Mutation",
+          "FunctionInvocation": {
+            "Arguments": [
+              {
+                "ParameterName": "replicas",
+                "Value": "5"
+              }
+            ],
+            "FunctionName": "set-replicas"
+          },
+          "MutationID": "d7c1f760-319f-4a43-bec0-4d50be920128",
+          "MutationNum": 2,
+          "OrganizationID": "b098bd0e-27f8-4f31-9add-295ebd83e63c",
+          "ProvidedResource": {},
+          "RevisionID": "ed6279f4-8cb9-4e49-8738-1a03ed3434e4",
+          "RevisionNum": 3,
+          "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+          "SpaceSlug": "fd-prod",
+          "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+          "UnitSlug": "web",
+          "UpdatedAt": "2026-11-19T11:13:17.074965Z"
+        }
+      },
+      "Origin": {
+        "Description": "Functions: set-replicas",
+        "Function": "set-replicas",
+        "MutationNum": 2,
+        "RevisionID": "ed6279f4-8cb9-4e49-8738-1a03ed3434e4",
+        "RevisionNum": 3,
+        "SetBy": "set-replicas",
+        "Source": "Invoke",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:17.073846Z"
+      },
+      "Revision": {
+        "Revision": {
+          "CreatedAt": "2026-11-19T11:13:17.073846Z",
+          "Description": "Functions: set-replicas",
+          "EntityType": "Revision",
+          "OrganizationID": "b098bd0e-27f8-4f31-9add-295ebd83e63c",
+          "RevisionID": "ed6279f4-8cb9-4e49-8738-1a03ed3434e4",
+          "RevisionNum": 3,
+          "Source": "Invoke",
+          "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+          "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+          "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b"
+        },
+        "User": {
+          "CreatedAt": "2026-10-08T11:48:39.743142Z",
+          "DisplayName": "Local Administrator",
+          "EntityType": "User",
+          "ExternalID": "confighub:local:admin",
+          "Slug": "admin",
+          "UpdatedAt": "2026-10-08T11:48:39.743142Z",
+          "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+          "Username": "admin@local.confighub.dev"
+        }
+      }
+    }
+  ],
+  "Field": {
+    "Conflicts": [
+      {
+        "Details": "withheld by the guard Override=Upstream, which this operation's clearance did not cover; a clearance of Override=Upstream would allow it",
+        "Guard": {
+          "Key": "Override",
+          "Value": "Upstream"
+        },
+        "Guards": [
+          {
+            "Key": "Override",
+            "Value": "Upstream"
+          }
+        ],
+        "Path": "spec.replicas",
+        "Reason": "Guarded",
+        "Resource": {
+          "ResourceCategory": "Resource",
+          "ResourceName": "test-ns/web",
+          "ResourceNameWithoutScope": "web",
+          "ResourceType": "apps/v1/Deployment"
+        },
+        "Source": {
+          "MutationType": "Update",
+          "Value": "7\n"
+        },
+        "Target": {
+          "Index": 2,
+          "MutationType": "Update",
+          "Value": "5\n"
+        },
+        "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4"
+      }
+    ],
+    "Flags": [
+      "Guarded",
+      "Conflict"
+    ],
+    "Guards": {
+      "Override": "Upstream"
+    },
+    "Path": "spec.replicas",
+    "Ref": "7253c88",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web",
+    "Value": "5"
+  },
+  "Names": {
+    "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4": "fd-staging/web"
+  },
+  "ReleaseMessage": "nothing to release: space fd-prod has no release target",
+  "ReleaseState": "NothingToRelease"
+}

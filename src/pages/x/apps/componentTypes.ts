@@ -337,12 +337,21 @@ export interface VariationEntry {
   liveFieldDiffs: KeyedFieldDiff[];
 }
 
+/** The Unit a Unit merges from, and the revision of it the Unit is at. */
+export interface UnitUpstream {
+  spaceId?: string;
+  unitId: string;
+  revisionNum?: number;
+}
+
 /** A unit as the side pane lists it, before its entries are merged in. */
 export interface PaneUnit {
   slug: string;
   spaceId: string;
   unitId: string;
   hasUpstream: boolean;
+  /** Unit.UpstreamSpaceID, UpstreamUnitID and UpstreamRevisionNum (field diagnosis: a withheld change's source). */
+  upstream?: UnitUpstream;
   toolchainType?: string;
   data?: string;
   validationErrors?: { [key: string]: boolean };
@@ -363,6 +372,8 @@ export interface MergedUnit {
   slug: string;
   spaceId: string;
   hasUpstream: boolean;
+  /** Unit.UpstreamSpaceID, UpstreamUnitID and UpstreamRevisionNum (field diagnosis: a withheld change's source). */
+  upstream?: UnitUpstream;
   toolchainType?: string;
   data?: string;
   validationErrors?: { [key: string]: boolean };

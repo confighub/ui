@@ -129,7 +129,7 @@ you can cite them in review.
 | **Preview / upgrade-preview active** | Globally dims unchanged rows and shows the proposed values for all upgradable rows. Active when the Upgradable tab is open or the footer Upgrade button is hovered. |
 | **Variation** | A field that intentionally differs between upstream HEAD and the post-upgrade downstream (env overrides, e.g. namespace). `VariationEntry`. |
 | **Filter tabs** | `Incoming·N` (purple, upgradable), `All`, and — only on a node with a ChangeSet — `ChangeSet·N`. `filterMode: PaneFilterMode` (`'incoming' \| 'all' \| 'changeset'`, `ComponentToolbar.tsx`). Entering Incoming auto-stages all upgradable picks; leaving clears them. The ChangeSet filter is read-only and greys out Upgrade, as All does. |
-| **Inspect panel** | Click a field path → revision history (incoming value, source attribution, sibling-variant values across deployments). `InspectPanel.tsx`. Access via the **kebab menu** (inspect magnifier is no longer on hover). |
+| **Field details** (field diagnosis) | Click a field's path (or the kebab menu's *Inspect value*, or *Details* in the row hover card) → the field's details under its row: value, who set it and why, the chain of Units it came through, what waits or blocks ("needs you"), its guards, and on demand Variants, History and Used by. `field-diagnosis/ComponentFieldDetails.tsx` over the views in `src/components/field-diagnosis/`. Replaced `InspectPanel`. See "Field diagnosis" below. |
 | **Treeview node** | `DiffTreeNode {key, type:'folder'\|'leaf', children, diff, context}`. `context:true` = a dimmed surrounding row shown for context. |
 | **Key-deletion (swallowed / blocked)** | Upstream issued a `Delete` mutation. **Case 1**: child never modified the key → deletion passes through as a normal upgrade (`newValue` = `-`). **Case 2**: child locally modified the key → `SubtractMutations` drops the upstream Delete (`ConflictReasonSubtracted`) and the key persists, *silently swallowed*. #4570 makes Case 2 an opt-in upgrade. |
 | **upstream-only path** | Present upstream, absent downstream: an upgrade diff whose stage key is no leaf of the unit (`upstreamOnlyKeys` in `ComponentValuesSection`). Drawn in the document its key names, with absent value `—` and a `+` prefix. |
@@ -156,7 +156,7 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
          ├─ ComponentValuesSection   the value TREEVIEW (staging, inline-diff, manual edits)
          ├─ ComponentOverviewSection Overview (friendly view per resource, read-only)
          ├─ ComponentSourceSection   Source view (Monaco, editable)
-         └─ InspectPanel             field history + sibling variants
+         └─ ComponentFieldDetails    field details under a row (field diagnosis)
 ```
 
 ### UI (path → responsibility)
@@ -178,7 +178,7 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
 | `ComponentOverviewSection.tsx` | Overview: the unit's Resources (`useUnitResources`, refetched when the unit's Data changes), sorted by kind and name, each opening to `ResourceOverview`. A lone resource opens; several wait for a click. Lazy-loaded. |
 | `useResourceCounts.ts` | Resources per Space, from one `GET /resource` narrowed to `SpaceID`, for the deployment selectors' `N units · M resources` line. |
 | `ComponentKeyComposer.tsx` | Inline new-key composer row; uses `validateKey` from `componentKeyUtils.ts`. |
-| `InspectPanel.tsx` | Field-history inspector (`useListExtendedRevisionsQuery`) + sibling variants across deployments. |
+| `field-diagnosis/` | The Component pane's glue for field diagnosis: `ComponentFieldDetails` (the details under a row), `FieldRowCardRows` (the row hover card's rows), the URL focus (`componentFocus.ts`, `ComponentFocusContext`), the per-history-entry memory, the link resolver (`componentFieldLinks.ts`), the actions (`useFieldActions`). The views and the pure model are in `src/components/field-diagnosis/`. |
 | `configDiffFieldDiffs.ts` | `fieldDiffsFromConfigDiff(diff, treeData, {treeSide, findElementsByMergeKey?})`: a server `ConfigDiff` as keyed `FieldDiff`s and `WholeResourceChange`s, each keyed as the tree keys the row; `addedResourceLeafRows`; `resolveConflictPath`. Covered by `tests/component-config-diff-entries.pure.spec.ts`. |
 | `entryBuilders.ts` | Pure builders: `textFieldDiffs` (the rows of a Unit the tree reads as text, from its own leaves), `buildPaths`, `buildUpgradeEntries` (from the dry run's Diff, through `fieldDiffsFromConfigDiff`; blocked deletes through `blockedDeleteKey`), the counters (`fieldDiffKey`, `countUpgradableBadgeFields`, `hasRealUpgrade`, `countLogicalChanges`), `buildAllApplyEntries` (still needed for the side pane's unapplied-changes/gate display; its `fieldDiffs`, which only the toolbar search reads, come from the server's bulk `/unit_diff` from `LastReleasedRevisionNum` to head), `buildVariationEntries` (from the server's variation diffs, `VariationDiffs`). |
 | `useVariationDiffs.ts` | The variation reads: per downstream Unit, `POST /diff` from the upstream's head to the Unit's head, and, for a Unit with a dry run, from the upstream's head to the dry run's configuration (inline). Heads are named by Revision number, so the reads are untagged. A few at a time; a Unit's last answer stands in while its next read is in flight. |
@@ -213,6 +213,18 @@ history entries beyond the page's own initial navigation (a reader can click thr
 and still leave with one `goBack()`). **Param contract:** the graph carries `space=<SpaceID>`
 (single-valued — a click always selects at most one node). The `mode`, `changeOrder`, `stage` and
 `rolloutSpace` params of the retired rollout mode are ignored on an older link.
+
+**Field diagnosis params.** `unit`, `field`, `fres` (`ResourceType|ResourceName`), `tab=gates` and
+`gate` name the side pane's open Unit card, its open field and the gate open in the Gates tab
+(`ViewParamsPatch` in `appTypes.ts`, codec in `field-diagnosis/componentFocus.ts`). The layout
+gives them to the pane through `ComponentFocusContext` (focus, `go`, `hrefFor`); the pane never
+reads the URL itself. Opening and closing a field REPLACE. A jump from a field's reference to a
+field in another Unit or Space is the SECOND deliberate push (with opening a Component), so Back
+returns to the field the jump came from. A Space change that names no `unit` (graph click, picker,
+closing the pane) clears all five in the same write (`withSpaceChangeClears`). The pane keeps its
+scroll and its open Unit cards per history entry (`field-diagnosis/paneHistoryMemory.ts`, in
+sessionStorage by location key), so Back restores hand-opened cards and closes a card a jump
+opened.
 
 **A ChangeOrder's promotion is not drawn on this graph.** The graph's rollout mode was retired: the
 ChangeOrders console and detail page (`/change-orders`, `src/pages/change-orders/`) tell that story,
@@ -296,7 +308,8 @@ has no place here (a node is a real deployment, not something a keypress should 
 
 - **No Redux slice.** Local React state + RTK Query (hooks from `@confighub/rtk-query`).
 - **Queries:** `useListSpacesQuery({summary:true})`, `useListAllTargetsQuery`, `useListAllUnitsQuery`,
-  `useListExtendedRevisionsQuery` (InspectPanel).
+  `useGetUnitBlameQuery` and `useGetUnitPathQuery` (field diagnosis: the open Unit's blame, one
+  field's path report).
 - **Mutations:** `useBulkPatchUnitsMutation` (used 3×: real upgrade via `onCommitStaged`, dry-run
   preview, field/data PATCH). Apply removed from the build — no `useBulkApplyUnitsMutation` here.
 - **Units query is hand-narrowed** (`AppComponentView.tsx`): `select` is `UNITS_QUERY_SELECT` (the unit
@@ -798,9 +811,8 @@ list's `confighub:unit:openViewTabs`.
   **Save** button (rule 17). Switching to Source does not expand anything on its own — rows follow
   the same collapse-by-default rule as the treeview. Intended to carry the same staging model as the
   treeview (rule 12).
-- **Inspect panel**: via the **kebab menu** on a field row (the on-hover magnifier was removed in
-  #4619). Opens `InspectPanel` — revision history with author avatars/relative time and
-  sibling-variant values (same field across the column's other deployments).
+- **Field details** (field diagnosis): a click on a field's path, the kebab menu's *Inspect value*
+  or *Details* in the row hover card opens the details under the row. See "Field diagnosis".
 - **Apply removed from the build.** There is no Apply button/action anymore — the footer's deploy-verb
   slot is Upgrade (Configuration tab) or Release (Releases tab) only. The "unapplied changes" diff/gate
   display (`allApplyEntries`/`buildAllApplyEntries`, `ApplyEntryWithGates`) is unrelated to the removed
@@ -934,6 +946,33 @@ What stays bare, on purpose:
 
 ---
 
+### Field diagnosis
+
+Why a field has its value, who set it, and what a change does, in the side pane
+(`docs/design/field-diagnosis/`: PLAN.md, ARCHITECTURE.md, the contract).
+
+- **Two layers.** `src/components/field-diagnosis/` holds the pure model (`explainField` over
+  `FieldFacts` from the blame or the path report, `adapters.ts`, `fieldArgs.ts`) and the views
+  (`FieldDetails` and its parts, `FieldRefLink`, `FieldRefPeek`). It imports nothing from `pages/`,
+  so the Blame tab can host the views later. `src/pages/x/apps/field-diagnosis/` is this pane's
+  glue: data, URL focus, link resolver, actions, the row card rows.
+- **Data.** The open Unit's whole blame (`blameArg`: Space and Unit only, so the Blame tab shares the
+  cache entry), placed on the tree rows with `resolveConflictPath` (`buildBlameIndex`). A heavy Unit
+  loads none. The details read the field's path report by Ref (`pathArg`; `history` only when
+  History opens) and the Unit (cached) for its upstream. The row hover card reads the cached blame
+  only: no request on hover. Variants: one chunked blame search, only when opened.
+- **Tokens, no prose.** Each fact is one token; what it means is in its tooltip or peek. A gate shows
+  on a field only when the data names the field's path; the Unit's other gates are the Gates tab's.
+- **Actions.** Edit, Discard, Restore, Upgrade and an Override guard's Remove stage through the row,
+  like every pane change. Apply and Dismiss of a withheld change and Remove of any other guard write
+  at once after the Blame tab's own dialogs (exported from `BlameTable.tsx`).
+- **Links.** Every reference is an `<a href>` (links.md rule 3, its field-details exception). In view
+  it jumps in place and pushes; a jump to another Space while changes are staged opens a new tab
+  instead, because a Space switch unmounts the values sections that hold them.
+- **Back.** The pane keeps its scroll and its open Unit cards per history entry
+  (`paneHistoryMemory.ts`, sessionStorage `componentView.history`, newest 50). An entry with saved
+  state is restored the first time the pane shows it for its Space, whatever the navigation type.
+
 ## Rejected approaches / anti-patterns
 
 Do not re-propose these — they were explicitly rejected by the people who built the feature.
@@ -961,7 +1000,7 @@ Do not re-propose these — they were explicitly rejected by the people who buil
 - **A third `mode` prop on `ComponentSidePane`** (considered for the since-retired rollout mode).
   Rejected: the pane owns the Configuration/Releases/Readme tabs, all four
   staging signals, release publish/withdraw, the Space settings sheet, the heavy-unit gate, the
-  source-view toggle and the inspect panel — a third mode means threading "but not in rollout"
+  source-view toggle and the field details — a third mode means threading "but not in rollout"
   through all of it, and every thread is a live regression path into the mode people use all day.
   Measured the alternative (extracting the per-unit section into a shared child) too: ~30 props after
   generous bundling, all four staging signals among them, ~18 of 30 belonging to subsystems rollout

@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: test-ns
+  labels:
+    app: web
+  annotations:
+    reviewed: "true"
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      securityContext:
+        runAsUser: 0
+      containers:
+      - name: web
+        image: registry.example.com/legacy/web:1.4.2
+        ports:
+        - containerPort: 8080

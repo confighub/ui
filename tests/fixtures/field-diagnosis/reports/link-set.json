@@ -1,0 +1,234 @@
+{
+  "Changes": [
+    {
+      "Mutation": {
+        "Link": {
+          "AutoUpdate": true,
+          "Bindings": [
+            {
+              "AttributeName": "resource-name",
+              "DataType": "string",
+              "NeededPath": "metadata.namespace",
+              "NeededResource": {
+                "ResourceCategory": "Resource",
+                "ResourceName": "confighubplaceholder/web",
+                "ResourceNameWithoutScope": "web",
+                "ResourceType": "apps/v1/Deployment"
+              },
+              "ProvidedPath": "metadata.name",
+              "ProvidedResource": {
+                "ResourceCategory": "Resource",
+                "ResourceName": "/test-ns",
+                "ResourceNameWithoutScope": "test-ns",
+                "ResourceType": "v1/Namespace"
+              }
+            }
+          ],
+          "CreatedAt": "2026-11-19T11:13:17.588472Z",
+          "DisplayName": "web-to-ns",
+          "DownstreamLastMergedRevisionNum": 6,
+          "EntityType": "Link",
+          "FromUnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+          "Hash": "e669816f8dad2175f3a9689633e427f980096788b9cca4723904e2cad0200add",
+          "LinkID": "9d518d25-86dd-49bc-8ed0-e0157116b197",
+          "OrganizationID": "b098bd0e-27f8-4f31-9add-295ebd83e63c",
+          "Permissions": {
+            "Manage": {
+              "UserIDs": {
+                "f39db730-e0b7-4f6e-99f7-422dde997a8b": true
+              }
+            }
+          },
+          "Slug": "web-to-ns",
+          "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+          "SpaceSlug": "fd-prod",
+          "ToSpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+          "ToUnitID": "8822a6b3-71af-4390-8662-ea007104d550",
+          "UpdateType": "NeedsProvides",
+          "UpdatedAt": "2026-11-19T11:13:17.622219Z",
+          "UpstreamLastMergedRevisionNum": 2,
+          "Version": 2
+        },
+        "Mutation": {
+          "CreatedAt": "2026-11-19T11:13:17.613784Z",
+          "EntityType": "Mutation",
+          "FunctionInvocation": {
+            "Arguments": [
+              {
+                "Value": "[{\"ResourceName\":\"confighubplaceholder/web\",\"ResourceNameWithoutScope\":\"web\",\"ResourceType\":\"apps/v1/Deployment\",\"ResourceCategory\":\"Resource\",\"Path\":\"metadata.namespace\",\"AttributeName\":\"resource-name\",\"DataType\":\"string\",\"Value\":\"test-ns\",\"Index\":0,\"FunctionName\":\"get-paths\"}]"
+              }
+            ],
+            "FunctionName": "set-attributes"
+          },
+          "LinkID": "9d518d25-86dd-49bc-8ed0-e0157116b197",
+          "MergeEndRevisionNum": 2,
+          "MutationID": "09be9eb7-39a7-49bf-bc70-6970987ec30a",
+          "MutationNum": 3,
+          "OrganizationID": "b098bd0e-27f8-4f31-9add-295ebd83e63c",
+          "ProvidedPath": "metadata.name",
+          "ProvidedResource": {
+            "ResourceCategory": "Resource",
+            "ResourceName": "/test-ns",
+            "ResourceType": "v1/Namespace"
+          },
+          "RevisionID": "5b846977-05e8-4ef4-a377-be327385a98a",
+          "RevisionNum": 6,
+          "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+          "SpaceSlug": "fd-prod",
+          "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+          "UnitSlug": "web",
+          "UpdatedAt": "2026-11-19T11:13:17.613784Z"
+        }
+      },
+      "Origin": {
+        "Description": "Resolve with linked-to unit ns (8822a6b3-71af-4390-8662-ea007104d550)",
+        "Function": "set-attributes",
+        "Link": "web-to-ns",
+        "LinkID": "9d518d25-86dd-49bc-8ed0-e0157116b197",
+        "LinkUpstream": "ns",
+        "LinkUpstreamRevisionNum": 2,
+        "LinkUpstreamUnitID": "8822a6b3-71af-4390-8662-ea007104d550",
+        "MutationNum": 3,
+        "RevisionID": "5b846977-05e8-4ef4-a377-be327385a98a",
+        "RevisionNum": 6,
+        "SetBy": "link web-to-ns",
+        "Source": "NeedsProvides",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:17.610289Z"
+      },
+      "Revision": {
+        "Revision": {
+          "CreatedAt": "2026-11-19T11:13:17.610289Z",
+          "Description": "Resolve with linked-to unit ns (8822a6b3-71af-4390-8662-ea007104d550)",
+          "EntityType": "Revision",
+          "OrganizationID": "b098bd0e-27f8-4f31-9add-295ebd83e63c",
+          "RevisionID": "5b846977-05e8-4ef4-a377-be327385a98a",
+          "RevisionNum": 6,
+          "Source": "NeedsProvides",
+          "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+          "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+          "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b"
+        },
+        "User": {
+          "CreatedAt": "2026-10-08T11:48:39.743142Z",
+          "DisplayName": "Local Administrator",
+          "EntityType": "User",
+          "ExternalID": "confighub:local:admin",
+          "Slug": "admin",
+          "UpdatedAt": "2026-10-08T11:48:39.743142Z",
+          "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+          "Username": "admin@local.confighub.dev"
+        }
+      }
+    },
+    {
+      "Mutation": {
+        "Mutation": {
+          "CreatedAt": "2026-11-19T11:13:17.477008Z",
+          "EntityType": "Mutation",
+          "FunctionInvocation": {},
+          "MutationID": "87cac4af-d835-4283-b923-1ffed20f0c9f",
+          "MutationNum": 1,
+          "OrganizationID": "b098bd0e-27f8-4f31-9add-295ebd83e63c",
+          "ProvidedResource": {},
+          "RevisionID": "e2604444-87bb-46a0-b982-257a363a6a2c",
+          "RevisionNum": 2,
+          "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+          "SpaceSlug": "fd-prod",
+          "UnitID": "8822a6b3-71af-4390-8662-ea007104d550",
+          "UnitSlug": "ns",
+          "UpdatedAt": "2026-11-19T11:13:17.477008Z"
+        }
+      },
+      "Origin": {
+        "Description": "MergeExternal; from test-data/test-ns.yaml",
+        "MutationNum": 1,
+        "RevisionID": "e2604444-87bb-46a0-b982-257a363a6a2c",
+        "RevisionNum": 2,
+        "SetBy": "test-data/test-ns.yaml",
+        "Source": "MergeExternal",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "8822a6b3-71af-4390-8662-ea007104d550",
+        "UnitSlug": "ns",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:17.47648Z"
+      },
+      "Revision": {
+        "Revision": {
+          "CreatedAt": "2026-11-19T11:13:17.47648Z",
+          "Description": "MergeExternal; from test-data/test-ns.yaml",
+          "EntityType": "Revision",
+          "OrganizationID": "b098bd0e-27f8-4f31-9add-295ebd83e63c",
+          "RevisionID": "e2604444-87bb-46a0-b982-257a363a6a2c",
+          "RevisionNum": 2,
+          "Source": "MergeExternal",
+          "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+          "UnitID": "8822a6b3-71af-4390-8662-ea007104d550",
+          "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b"
+        },
+        "User": {
+          "CreatedAt": "2026-10-08T11:48:39.743142Z",
+          "DisplayName": "Local Administrator",
+          "EntityType": "User",
+          "ExternalID": "confighub:local:admin",
+          "Slug": "admin",
+          "UpdatedAt": "2026-10-08T11:48:39.743142Z",
+          "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+          "Username": "admin@local.confighub.dev"
+        }
+      }
+    }
+  ],
+  "Field": {
+    "Flags": [
+      "SetByLink",
+      "Needed"
+    ],
+    "Needed": [
+      {
+        "AttributeName": "resource-name",
+        "BoundLink": "web-to-ns",
+        "DataType": "string",
+        "Details": {
+          "BoundLinkID": "9d518d25-86dd-49bc-8ed0-e0157116b197",
+          "BoundProvidedProperties": {
+            "ResourceType": "v1/Namespace"
+          },
+          "IsNeeded": true,
+          "NeededRequired": {
+            "ResourceType": "v1/Namespace"
+          }
+        },
+        "FunctionName": "get-needed",
+        "Path": "metadata.namespace",
+        "ResourceCategory": "Resource",
+        "ResourceName": "test-ns/web",
+        "ResourceNameWithoutScope": "web",
+        "ResourceType": "apps/v1/Deployment",
+        "Value": "confighubplaceholder"
+      }
+    ],
+    "Path": "metadata.namespace",
+    "Ref": "9f7c173",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web",
+    "Value": "test-ns"
+  },
+  "Names": {
+    "8822a6b3-71af-4390-8662-ea007104d550": "fd-prod/ns"
+  },
+  "ReleaseMessage": "nothing to release: space fd-prod has no release target",
+  "ReleaseState": "NothingToRelease"
+}

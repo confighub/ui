@@ -21,7 +21,7 @@ import { sameKubernetesResourceType } from '@/utility/resource-type-functions';
  * key and parses fresh.
  *
  * The returned structures are treated as READ-ONLY by all callers (they only
- * `.get()` / `.entries()` / `.find()` / iterate — verified across InspectPanel,
+ * `.get()` / `.entries()` / `.find()` / iterate — verified across
  * entryBuilders, ComponentValuesSection, useSetAttributesMutation), so it is safe
  * to hand out the same shared instance across calls. The budget bounds memory
  * growth across many units/polls; least-recently-used entries are evicted first.

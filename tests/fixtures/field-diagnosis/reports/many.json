@@ -1,0 +1,125 @@
+{
+  "Changes": [
+    {
+      "Origin": {
+        "Description": "Resolve with linked-to unit payments-namespace (f1df4476-bd2e-4038-97ba-f3d29090c106)",
+        "Function": "set-attributes",
+        "Link": "checkout-api-to-namespace",
+        "LinkUpstream": "payments-namespace",
+        "LinkUpstreamRevisionNum": 2,
+        "SetBy": "link checkout-api-to-namespace",
+        "Source": "NeedsProvides",
+        "SpaceSlug": "checkout-prod-us-east-1-4417",
+        "UnitSlug": "checkout-api",
+        "User": "admin@local.confighub.dev",
+        "RevisionNum": 8,
+        "When": "2026-11-10T18:30:19.117852Z"
+      }
+    },
+    {
+      "Origin": {
+        "Description": "MergeExternal; from stdin",
+        "SetBy": "stdin",
+        "Source": "MergeExternal",
+        "SpaceSlug": "checkout-prod-us-east-1-4417",
+        "UnitSlug": "payments-namespace",
+        "User": "admin@local.confighub.dev",
+        "RevisionNum": 2,
+        "When": "2026-11-10T18:30:18.986867Z"
+      }
+    }
+  ],
+  "Field": {
+    "Path": "metadata.namespace",
+    "Ref": "0d87706",
+    "Value": "payments-prod",
+    "ResourceName": "payments-prod/checkout-api",
+    "ResourceType": "apps/v1/Deployment",
+    "Guards": {
+      "Link": "NeedsProvides",
+      "Override": "Upstream",
+      "Tenant": "Payments"
+    },
+    "InheritedGuards": [
+      "Tenant"
+    ],
+    "Flags": [
+      "SetByLink",
+      "Needed",
+      "Guarded",
+      "Conflict",
+      "Finding",
+      "ValidationError",
+      "ValidationWarning",
+      "Unreleased"
+    ],
+    "Conflicts": [
+      {
+        "Path": "metadata.namespace",
+        "Reason": "Guarded",
+        "Guards": [
+          {
+            "Key": "Override",
+            "Value": "Upstream"
+          }
+        ],
+        "Source": {
+          "MutationType": "Update",
+          "Value": "confighubplaceholder"
+        },
+        "UnitID": "e89367bb-92a1-462b-8bf0-d2a622990cc6"
+      }
+    ],
+    "Validation": [
+      {
+        "Gate": "checkout-prod-us-east-1-4417/namespace-policy/vet-celexpr",
+        "Function": "vet-celexpr",
+        "Issues": [
+          {
+            "Message": "namespace payments-prod is not on the allowed list for this Space"
+          }
+        ],
+        "Warning": false
+      },
+      {
+        "Gate": "checkout-prod-us-east-1-4417/label-hygiene/vet-celexpr",
+        "Function": "vet-celexpr",
+        "Issues": [
+          {
+            "Message": "namespace should carry the label team=payments"
+          }
+        ],
+        "Warning": true
+      }
+    ],
+    "Findings": [
+      {
+        "Reason": "ProvidedNotFound",
+        "Details": "checkout-prod-us-east-1-4417/payments-namespace has no v1/Namespace resource to provide",
+        "Entry": "ManualBindings[0]"
+      }
+    ],
+    "Needed": [
+      {
+        "AttributeName": "resource-name",
+        "BoundLink": "checkout-api-to-namespace",
+        "DataType": "string"
+      }
+    ]
+  },
+  "Names": {
+    "e89367bb-92a1-462b-8bf0-d2a622990cc6": "checkout-staging-4417/checkout-api"
+  },
+  "History": [
+    {
+      "MutationType": "Update",
+      "Value": "payments-prod",
+      "Origin": {
+        "RevisionNum": 8,
+        "When": "2026-11-10T18:30:19.117852Z",
+        "User": "admin@local.confighub.dev",
+        "Description": "Resolve with linked-to unit payments-namespace"
+      }
+    }
+  ]
+}

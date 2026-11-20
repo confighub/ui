@@ -11,7 +11,7 @@ import Tooltip from '@mui/material/Tooltip';
 import { highlightText } from '@/components/entity-data-grid/utils/highlightText';
 import type { ResourceGuards, ResourceInfo } from '@confighub/rtk-query';
 import { overrideGuardEdit, overrideGuardValue, type OverrideGuardValue } from '@/utility/override-guard';
-import { applyConfigWrites, buildFieldPathMeta, parseUnitData, type ArrayInsertion, type ConfigWrite, type LeafValueType } from './configParser';
+import { applyConfigWrites, buildFieldPathMeta, type ArrayInsertion, type ConfigWrite, type LeafValueType } from './configParser';
 import type { FieldEntry, FieldPathMeta } from './configParser';
 import { availableWholeResourceChanges, buildGroupedPaths, buildPaths, countLogicalChanges, fieldDiffKey } from './entryBuilders';
 import { componentTheme } from './componentTheme';
@@ -22,7 +22,16 @@ import { AfterCell, PathValue, PropertyCell, ReviewRow, UpgradePreviewDimRow } f
 import { getInlineDiff } from './inlineDiff';
 import { CurrentPill, PillTooltipContent, type RowChangeType } from './ValuePill';
 import { tooltipSx } from './valuePillTooltip';
-import { InspectPanel } from './InspectPanel';
+import { ComponentFieldDetails, type FieldVariantUnit } from './field-diagnosis/ComponentFieldDetails';
+import { FieldRowCardRows } from './field-diagnosis/FieldRowCardRows';
+import { FieldBlameContext, type FieldBlameValue } from './field-diagnosis/fieldBlameContext';
+import { useUnitBlameIndex } from './field-diagnosis/useUnitBlameIndex';
+import { userStagedCount } from './field-diagnosis/stagedUserChanges';
+import { useComponentFocus } from './field-diagnosis/ComponentFocusContext';
+import { PaneSpacesContext } from './field-diagnosis/componentFieldLinks';
+import { CLOSE_FIELD_PATCH, decodeFres, encodeFres, openFieldPatch } from './field-diagnosis/componentFocus';
+import { FieldFocusStoreContext, useFolderHoldsFocus, useNewFieldFocusStore } from './field-diagnosis/useFieldFocusStore';
+import { resolveConflictPath } from './configDiffFieldDiffs';
 import { pathContainsArrayIndex } from './componentKeyUtils';
 import { ComposerRow, type ComposingDescriptor } from './ComponentKeyComposer';
 
@@ -732,7 +741,8 @@ interface NodeRowProps {
   /** Path → FieldPathMeta map for resource identity lookup when invoking set-attributes. */
   fieldPathMeta?: Map<string, FieldPathMeta>;
   inspectPath: string | null;
-  onInspectPath: (path: string | null) => void;
+  /** Open (or, with null, close) a field's details. `target` lets the URL name the field. */
+  onInspectPath: (path: string | null, target?: InspectTarget) => void;
   variationEntry?: VariationEntry;
   deploymentName?: string;
   /** Raw inputs used to compute sibling-variant values for the inspected leaf. */
@@ -754,6 +764,12 @@ interface NodeRowProps {
   onCancelComposer: () => void;
   onRemove: (fullPath: string) => void;
   onUndoRemove: (fullPath: string) => void;
+}
+
+/** Where an opened field is, so the URL can name it. */
+interface InspectTarget {
+  stageKey: string;
+  resource?: ResourceInfo;
 }
 
 interface ComponentValuesSectionProps {
@@ -778,6 +794,12 @@ interface ComponentValuesSectionProps {
    * (for the footer chip / button enablement). Logical, not raw leaf count: an
    * added array element spanning several leaves counts as one. */
   onStagedCountChange?: (unitId: string, count: number) => void;
+  /**
+   * Field diagnosis: how many of this unit's staged changes are the person's own work (edits,
+   * and upgrade picks that differ from the default Incoming staged by itself). The new-tab rule
+   * and the Back blocker protect only these (team-lead decision on review item 3).
+   */
+  onUserStagedCountChange?: (unitId: string, count: number) => void;
   /** Increment to COMMIT this unit's staged set (true-staging: nothing was written until now). */
   commitStagedSignal?: number;
   /** Increment to CLEAR this unit's staged UPGRADE picks without committing.
@@ -846,6 +868,11 @@ interface ComponentValuesSectionProps {
   stopKeepingAllSignal?: number;
   /** Optimistic per-path overlay for this unit: null = field deleted, string = value override. */
   valueOverlay?: Map<string, string | null>;
+  /**
+   * Field diagnosis: the field the URL focuses is not drawn under the pane's filter (Incoming, a
+   * scope). The pane shows All then, without clearing what is staged (review item 3).
+   */
+  onFocusedFieldHidden?: () => void;
   deployments?: ComponentDeployment[];
   unitsByDeployment?: Map<string, Array<{
     slug: string;
@@ -1016,6 +1043,7 @@ const NodeRow = memo(({
   // of the same bare path. For a single-document unit docScope is undefined, so the
   // key IS the bare path — behaviour there is byte-identical to before scoping.
   const stageKey = docStageKey(docScope, fullPath);
+  const inspectTarget = useMemo<InspectTarget>(() => ({ stageKey, resource: docScope?.resource }), [stageKey, docScope?.resource]);
   // A scalar element the Unit does not hold yet reads as its upstream index, not its made-up one.
   const leafLabel = elementLabels.get(stageKey) ?? node.key;
   // Gate for every "add a key" action under this row. A document that is not
@@ -1053,6 +1081,11 @@ const NodeRow = memo(({
   useEffect(() => {
     if (prefixIndex.shouldAutoExpand(fullPath)) setExpanded(true);
   }, [prefixIndex, fullPath]);
+  // Field diagnosis: open the folders above the field the URL focuses. Never closes one.
+  const holdsFocus = useFolderHoldsFocus(fullPath);
+  useEffect(() => {
+    if (holdsFocus) setExpanded(true);
+  }, [holdsFocus]);
   const [editingValue, setEditingValue] = useState<string | null>(null);
   const [leafMenuAnchorEl, setLeafMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [folderMenuAnchorEl, setFolderMenuAnchorEl] = useState<null | HTMLElement>(null);
@@ -1185,35 +1218,17 @@ const NodeRow = memo(({
     [contextPrefix, allPaths, changedPaths, changedDiffs, prefixIndex],
   );
 
-  // Computed only when this leaf is the inspected one — values for the same
-  // field across other variants in this column (units sharing the same slug).
-  // `deploymentName` carries `unit.slug` from the caller; `spaceId` is `unit.spaceId`.
-  const siblingVariants = useMemo(() => {
-    if (inspectPath !== fullPath) return undefined;
-    if (!deployments || !unitsByDeployment || !deploymentName) return undefined;
-    const slug = deploymentName;
-    const result: Array<{
-      deploymentId: string;
-      displayName: string;
-      value: string | undefined;
-      isCurrent: boolean;
-    }> = [];
+  // The open field's Variants: the Unit of the same slug in each Deployment of the Component.
+  // Computed only for the open field; their values are read only when Variants is opened.
+  const variantUnits = useMemo<FieldVariantUnit[] | undefined>(() => {
+    if (inspectPath !== fullPath || !deployments || !unitsByDeployment || !deploymentName) return undefined;
+    const result: FieldVariantUnit[] = [];
     for (const dep of deployments) {
-      const sibs = unitsByDeployment.get(dep.deploymentId);
-      if (!sibs) continue;
-      const sib = sibs.find((s) => s.slug === slug);
-      if (!sib) continue;
-      const value = parseUnitData(sib.data ?? '').get(fullPath);
-      result.push({
-        deploymentId: dep.deploymentId,
-        displayName: dep.displayName,
-        value,
-        // ComponentDeployment.deploymentId is set from Space.SpaceID (see componentData.ts), matching MergedUnit.spaceId
-        isCurrent: dep.deploymentId === spaceId,
-      });
+      const sibling = unitsByDeployment.get(dep.deploymentId)?.find((s) => s.slug === deploymentName);
+      if (sibling) result.push({ name: dep.displayName, spaceId: sibling.spaceId, unitId: sibling.unitId });
     }
     return result;
-  }, [deployments, unitsByDeployment, deploymentName, inspectPath, fullPath, spaceId]);
+  }, [deployments, unitsByDeployment, deploymentName, inspectPath, fullPath]);
 
   if (node.type === 'leaf' && node.diff != null) {
     // Use the pre-computed values from the top of NodeRow
@@ -1343,6 +1358,33 @@ const NodeRow = memo(({
     const hasEditHandlers = !readOnly && (onStageEdit != null || onSetFieldValue != null || onDeleteFieldValue != null);
     // Inline value editing is available when an edit-staging handler is wired.
     const canEditInline = !readOnly && onStageEdit != null;
+    // The row card's status line: only what is staged or waiting on this row. A plain row says
+    // who set it in the field diagnosis rows instead (the Unit's last "Functions: ..." is gone),
+    // and a withheld upstream change is the rows' attention line, so it has no status of its own.
+    const cardStatus =
+      hasStagedEdit && !isStagedDelete ? 'staged manual edit'
+        : isStaged ? 'staged for upgrade'
+          : upgradeValue !== undefined ? 'has upstream change · see checkbox'
+            : undefined;
+
+    // Open the inline editor (the value click and the field details' Edit).
+    const openEditor = () => {
+      // Seed the inline editor with what the user CURRENTLY SEES, so they
+      // edit from the displayed value. Precedence mirrors the visible text:
+      //   • staged manual edit (not a delete) → the typed/proposed value
+      //   • staged upgrade (no manual edit) → the proposed upgrade value
+      //     (the row persistently shows that via .current-preview), unless
+      //     it's a removal (struck-through) in which case seed empty
+      //   • absent unstaged path → empty (creating the value)
+      //   • otherwise → the current value
+      // Editing always re-stages as a manual edit (yellow), which wins at commit.
+      const seed = hasStagedEdit && !isStagedDelete
+      ? stagedEditValue!
+      : (isStaged && incomingValue !== undefined && !previewRemoved)
+      ? incomingValue
+      : (isAbsentCurrent && !isStaged ? '' : displayedCurrentValue);
+      editingValueRef.current = seed; setEditingValue(seed);
+    };
 
     return (
       <Fragment>
@@ -1470,7 +1512,7 @@ const NodeRow = memo(({
               >
                 {/* Inspect */}
                 <MenuItem
-                  onClick={() => { setLeafMenuAnchorEl(null); onInspectPath(isInspecting ? null : fullPath); }}
+                  onClick={() => { setLeafMenuAnchorEl(null); onInspectPath(isInspecting ? null : fullPath, inspectTarget); }}
                   sx={{ fontSize: 14, borderRadius: '6px', gap: '9px', padding: '7px 9px' }}
                 >
                   <Box component="span" sx={{ width: 15, color: componentTheme.fgSubtle, display: 'inline-flex' }}>
@@ -1621,7 +1663,7 @@ const NodeRow = memo(({
               }}
             >{previewRemoved ? '−' : previewAdded ? '+' : ''}</Box>
           </Tooltip>
-          <PathValue className="dim-path" onClick={(e: React.MouseEvent) => { e.stopPropagation(); onInspectPath(isInspecting ? null : fullPath); }} style={{ color: isRemoving ? componentTheme.danger : componentTheme.fgDefault, opacity: isRemoving ? 0.7 : 0.65, minWidth: 0, overflowWrap: 'break-word', transition: 'opacity .12s', cursor: 'pointer', textDecoration: isRemoving ? 'line-through' : undefined }}>
+          <PathValue className="dim-path" onClick={(e: React.MouseEvent) => { e.stopPropagation(); onInspectPath(isInspecting ? null : fullPath, inspectTarget); }} style={{ color: isRemoving ? componentTheme.danger : componentTheme.fgDefault, opacity: isRemoving ? 0.7 : 0.65, minWidth: 0, overflowWrap: 'break-word', transition: 'opacity .12s', cursor: 'pointer', textDecoration: isRemoving ? 'line-through' : undefined }}>
             {filterText ? highlightText(leafLabel, filterText) : leafLabel}
           </PathValue>
           {/* NEW icon — compact sparkle marking recently-added paths */}
@@ -1750,21 +1792,24 @@ const NodeRow = memo(({
                   // Non-editable leaves (context names, committed/removing rows) keep
                   // the plain value + "Current" meta tooltip (no action available).
                   canEditInline && !isRemoving && !node.context ? (
-                    <>
+                    <Box data-testid="fd-row-card">
                       <ActionTooltipContent
                         type="edit"
                         icon={<T1EditIcon />}
                         action="Edit this value"
                         value={`current: ${isAbsentCurrent || isEmptyValue(displayedCurrentValue) ? NO_VALUE_LABEL : displayedCurrentValue}`}
                         noValue={isAbsentCurrent || isEmptyValue(displayedCurrentValue)}
-                        status={
-                          // Context-aware status — correct for rows that DO have an
-                          // upstream diff or a staged change, not just plain values.
-                          hasStagedEdit && !isStagedDelete ? 'staged manual edit'
-                            : isStaged ? 'staged for upgrade'
-                              : upgradeValue !== undefined || showOverriddenUpstreamPill ? 'has upstream change · see checkbox'
-                                : headRevisionDescription ?? 'no upstream change pending'
-                        }
+                        status={cardStatus}
+                      />
+                      {/* Field diagnosis: set-by, one attention line, the guards Keep on merge
+                          does not say, Details. From the cached blame only (PLAN.md U5). */}
+                      <FieldRowCardRows
+                        spaceId={spaceId}
+                        unitId={unitId}
+                        stageKey={stageKey}
+                        keepShown={!cannotKeep}
+                        hasStatus={cardStatus !== undefined}
+                        onOpen={() => onInspectPath(fullPath, inspectTarget)}
                       />
                       {/* Keep on merge / Let merges update this — a second affordance
                           for the same staged-toggle action as the kebab's "Keep on
@@ -1797,7 +1842,7 @@ const NodeRow = memo(({
                           {effectiveKept ? 'Let merges update this' : 'Keep on merge'}
                         </Box>
                       )}
-                    </>
+                    </Box>
                   ) : (
                     <PillTooltipContent fullValue={displayedCurrentValue} meta={{ label: 'Current', createdAt: headRevisionCreatedAt, description: headRevisionDescription }} />
                   )
@@ -1812,23 +1857,7 @@ const NodeRow = memo(({
                   // its path, since `field-edit-input` only exists once this
                   // click has already opened the inline editor.
                   data-testid={`field-edit-trigger-${fullPath}`}
-                  style={{ minWidth: 0, display: 'flex', justifyContent: 'flex-end' }} onClick={() => { if (canEditInline && !isRemoving) {
-                  // Seed the inline editor with what the user CURRENTLY SEES, so they
-                  // edit from the displayed value. Precedence mirrors the visible text:
-                  //   • staged manual edit (not a delete) → the typed/proposed value
-                  //   • staged upgrade (no manual edit) → the proposed upgrade value
-                  //     (the row persistently shows that via .current-preview), unless
-                  //     it's a removal (struck-through) in which case seed empty
-                  //   • absent unstaged path → empty (creating the value)
-                  //   • otherwise → the current value
-                  // Editing always re-stages as a manual edit (yellow), which wins at commit.
-                  const seed = hasStagedEdit && !isStagedDelete
-                    ? stagedEditValue!
-                    : (isStaged && incomingValue !== undefined && !previewRemoved)
-                      ? incomingValue
-                      : (isAbsentCurrent && !isStaged ? '' : displayedCurrentValue);
-                  editingValueRef.current = seed; setEditingValue(seed);
-                } }}>
+                  style={{ minWidth: 0, display: 'flex', justifyContent: 'flex-end' }} onClick={() => { if (canEditInline && !isRemoving) openEditor(); }}>
                   <Box component="span" sx={{ cursor: canEditInline && !isRemoving ? 'text' : 'default', minWidth: 0 }}>
                     <CurrentPill
                       value={displayedCurrentValue}
@@ -1981,7 +2010,7 @@ const NodeRow = memo(({
                           if (isStaged) onUnstagePath(stageKey);
                           else onStagePath(stageKey);
                         } else {
-                          onInspectPath(isInspecting ? null : fullPath);
+                          onInspectPath(isInspecting ? null : fullPath, inspectTarget);
                         }
                       }}
                     />
@@ -2143,30 +2172,39 @@ const NodeRow = memo(({
 
         </AfterCell>
       </ReviewRow>
+      </UpgradePreviewDimRow>
+      {/* The field details sit OUTSIDE UpgradePreviewDimRow: the upgrade preview dims a row that
+          will not change, and the details are never dimmed with it. */}
       {isInspecting && (
-        <InspectPanel
+        <ComponentFieldDetails
           spaceId={spaceId}
           unitId={unitId}
-          path={fullPath}
-          currentValue={displayedCurrentValue}
-          deploymentName={deploymentName}
-          upgradeValue={upgradeValue}
-          upgradeSourceName={upgradeSourceName}
-          upgradeRevisionNum={upgradeRevisionNum}
-          upgradeCreatedAt={upgradeCreatedAt}
-          upgradeDescription={upgradeDescription}
-          variationEntry={variationEntry}
           stageKey={stageKey}
+          path={fullPath}
+          resource={docScope?.resource}
+          pending={hasStagedEdit && !isStagedDelete ? stagedEditValue : undefined}
+          upgrade={
+            upgradeValue !== undefined && !isDeleteUpgrade
+              ? {
+                  value: upgradeValue,
+                  revisionNum: upgradeRevisionNum,
+                  spaceId: upgradeSourceSpaceId,
+                  unitId: upgradeSourceUnitId,
+                  staged: isStaged,
+                }
+              : undefined
+          }
+          row={{
+            edit: canEditInline && !isRemoving && !node.context ? openEditor : undefined,
+            discard: !readOnly && hasStagedEdit ? () => onRevertEdit(stageKey) : undefined,
+            stageValue: canEditInline && !isRemoving ? (value: string) => onStageEdit?.(stageKey, value) : undefined,
+            stageUpgrade: !readOnly && upgradeValue !== undefined && !isStaged ? () => onStagePath(stageKey) : undefined,
+            letMergesUpdate: !readOnly && !cannotKeep && effectiveKept ? () => onToggleProtection(stageKey, false) : undefined,
+          }}
+          variantUnits={variantUnits}
           onClose={() => onInspectPath(null)}
-          siblingVariants={siblingVariants}
-          upgradeSourceSpaceId={upgradeSourceSpaceId}
-          upgradeSourceUnitId={upgradeSourceUnitId}
-          isKept={effectiveKept}
-          canProtect={!cannotKeep}
-          onToggleProtection={readOnly ? undefined : () => onToggleProtection(stageKey, !effectiveKept)}
         />
       )}
-      </UpgradePreviewDimRow>
       {/* Sibling composer renders OUTSIDE UpgradePreviewDimRow */}
       {composing && composing.insertAfterId === rowId && (
         <ComposerRow
@@ -2796,6 +2834,7 @@ export const ComponentValuesSection = memo(({
   scopeFilter = null,
   readOnly = false,
   onStagedCountChange,
+  onUserStagedCountChange,
   commitStagedSignal,
   clearStagedSignal,
   discardAllSignal,
@@ -2811,6 +2850,7 @@ export const ComponentValuesSection = memo(({
   onStagedProtectionChange,
   onStagedEditKeepSummaryChange,
   valueOverlay,
+  onFocusedFieldHidden,
   deployments,
   unitsByDeployment,
 }: ComponentValuesSectionProps) => {
@@ -3097,6 +3137,56 @@ export const ComponentValuesSection = memo(({
   // MembershipContextValue.stagedProtection / onToggleProtection.
   const [stagedProtection, setStagedProtection] = useState<Map<string, boolean>>(new Map());
   const [inspectPath, setInspectPath] = useState<string | null>(null);
+  /** The focused row's stage key, until it is known to be drawn (see below). */
+  const [focusToShow, setFocusToShow] = useState<string | null>(null);
+  const onFocusedFieldHiddenRef = useRef(onFocusedFieldHidden);
+  onFocusedFieldHiddenRef.current = onFocusedFieldHidden;
+  // Field diagnosis (PLAN.md U3): the URL focus opens a field of this Unit on every navigation,
+  // Back and Forward included, and opens the folders above it. A focus on another Unit, or none,
+  // closes this Unit's details. A field the URL names that this Unit does not draw opens nothing.
+  const { focus: fieldFocus, locationKey, go: goFocus } = useComponentFocus();
+  const focusStore = useNewFieldFocusStore();
+  useEffect(() => {
+    if (fieldFocus.unit !== unit.unitId || !fieldFocus.field) {
+      if (locationKey) setInspectPath(null);
+      focusStore.set(null);
+      return;
+    }
+    const key = resolveConflictPath({ Resource: decodeFres(fieldFocus.fres), Path: fieldFocus.field }, unit.data);
+    if (key === undefined) return;
+    const path = stageKeyPath(key);
+    setInspectPath(path);
+    focusStore.set(path);
+    // The row must be drawn: checked below, now and when the filter changes (a node switch sets
+    // Incoming after this runs), until the row is drawn under a narrowing filter.
+    setFocusToShow(key);
+  }, [locationKey, fieldFocus.unit, fieldFocus.field, fieldFocus.fres, unit.unitId, unit.data, focusStore]);
+  // Closing a field clears it from the URL too (REPLACE), or the next URL change would open it again.
+  // Opening one is written by the details, once they know the field's server path.
+  const fieldFocusRef = useRef(fieldFocus);
+  fieldFocusRef.current = fieldFocus;
+  // The open Unit's blame, set where it is read (further down), for handleInspectPath.
+  const fieldBlameRef = useRef<FieldBlameValue>({ index: new Map(), loading: false, error: undefined, heavy: false, refetch: () => undefined, data: undefined });
+  const handleInspectPath = useCallback(
+    (path: string | null, target?: InspectTarget) => {
+      setInspectPath(path);
+      const current = fieldFocusRef.current;
+      if (path === null) {
+        if (current.unit === unit.unitId && current.field) goFocus(CLOSE_FIELD_PATCH);
+        return;
+      }
+      // Opening writes the focus at once (replace), so the URL names this field even when it has
+      // no blame record (review item 9): the server path when the blame knows the field, else the
+      // tree's path, which the focus effect resolves the same way.
+      const field = target ? fieldBlameRef.current.index.get(target.stageKey) : undefined;
+      const serverPath = field?.Path ?? path;
+      const fres = encodeFres(field?.ResourceType ?? target?.resource?.ResourceType, field?.ResourceName ?? target?.resource?.ResourceName);
+      if (current.unit === unit.unitId && current.field === serverPath && current.fres === fres) return;
+      goFocus(openFieldPatch(unit.unitId, serverPath, fres));
+    },
+    [goFocus, unit.unitId],
+  );
+  const paneSpaceIds = useMemo(() => new Set((deployments ?? []).map((d) => d.deploymentId)), [deployments]);
   const [collapseBannerDismissed, setCollapseBannerDismissed] = useState(false);
   // Serialization error: set when any path fails setValueAtPath/deleteValueAtPath
   // during a commit attempt. Commit is aborted; user retries after seeing this.
@@ -3128,6 +3218,8 @@ export const ComponentValuesSection = memo(({
     () => withoutUnreachableWholeResources(stagedPaths, wholeResourceKeys, upgradableStageKeys, upgradeKeySet, stagedEditedValues),
     [stagedPaths, wholeResourceKeys, upgradableStageKeys, upgradeKeySet, stagedEditedValues],
   );
+  /** The upgrade picks Incoming staged by itself (not the person's work). */
+  const defaultPicksRef = useRef<Set<string>>(new Set());
   const effectiveStagedPathsRef = useRef(effectiveStagedPaths);
   effectiveStagedPathsRef.current = effectiveStagedPaths;
   // Checking a whole-resource row selects every incoming change, the only batch that
@@ -3256,6 +3348,21 @@ export const ComponentValuesSection = memo(({
     const uid = unit.unitId;
     return () => { cb?.(uid, 0); };
   }, [onStagedCountChange, unit.unitId]);
+  // The person's own staged work (field diagnosis): edits, and picks that differ from the
+  // default picks Incoming staged by itself (defaultPicksRef, kept by the stage-all and auto-stage
+  // effects below, cleared with the picks on clear, discard and commit).
+  useEffect(() => {
+    const defaults = new Set(upgradableStageKeys.filter((k) => defaultPicksRef.current.has(k)));
+    onUserStagedCountChange?.(
+      unit.unitId,
+      userStagedCount({ staged: effectiveStagedPaths, edits: new Set(stagedEditedValues.keys()), defaults }),
+    );
+  }, [onUserStagedCountChange, unit.unitId, effectiveStagedPaths, stagedEditedValues, upgradableStageKeys]);
+  useEffect(() => {
+    const cb = onUserStagedCountChange;
+    const uid = unit.unitId;
+    return () => { cb?.(uid, 0); };
+  }, [onUserStagedCountChange, unit.unitId]);
 
   // ── Report staged PROTECTION count up, SEPARATELY from the value count ────
   // Counted by stage key (one per document-scoped path), never merged into
@@ -3347,6 +3454,7 @@ export const ComponentValuesSection = memo(({
     // Union with existing picks so Select all ADDS the Upgradable set without
     // dropping paths the user staged by hand (e.g. a local override). Per-document
     // stage keys so a path shared across documents stages each one separately.
+    for (const k of upgradableStageKeys) defaultPicksRef.current.add(k);
     setStagedPaths((prev) => new Set([...prev, ...upgradableStageKeys]));
   }, [stageAllSignal, upgradableStageKeys]);
 
@@ -3391,7 +3499,10 @@ export const ComponentValuesSection = memo(({
     const seen = autoStagedPathsRef.current;
     const newKeys = upgradableStageKeys.filter((k) => !seen.has(k));
     if (newKeys.length === 0) return;
-    for (const k of newKeys) seen.add(k);
+    for (const k of newKeys) {
+      seen.add(k);
+      defaultPicksRef.current.add(k);
+    }
     setStagedPaths((prev) => new Set([...prev, ...newKeys]));
   }, [readOnly, filterMode, upgradableStageKeys]);
 
@@ -3406,6 +3517,7 @@ export const ComponentValuesSection = memo(({
   useEffect(() => {
     if ((clearStagedSignal ?? 0) === lastClearRef.current) return;
     lastClearRef.current = clearStagedSignal ?? 0;
+    defaultPicksRef.current = new Set();
     setStagedPaths((prev) => {
       if (prev.size === 0) return prev;
       const edits = stagedEditedValuesRef.current;
@@ -3422,6 +3534,7 @@ export const ComponentValuesSection = memo(({
   useEffect(() => {
     if ((discardAllSignal ?? 0) === lastDiscardAllRef.current) return;
     lastDiscardAllRef.current = discardAllSignal ?? 0;
+    defaultPicksRef.current = new Set();
     setStagedPaths((prev) => (prev.size ? new Set() : prev));
     setStagedEditedValues((prev) => (prev.size ? new Map() : prev));
     setStagedProtection((prev) => (prev.size ? new Map() : prev));
@@ -3475,6 +3588,7 @@ export const ComponentValuesSection = memo(({
   useEffect(() => {
     if ((commitStagedSignal ?? 0) === lastCommitRef.current) return;
     lastCommitRef.current = commitStagedSignal ?? 0;
+    defaultPicksRef.current = new Set();
 
     const edits = stagedEditedValuesRef.current;
     const staged = withoutUnreachableWholeResources(
@@ -3940,6 +4054,17 @@ export const ComponentValuesSection = memo(({
     stagedPaths.forEach((k) => { if (!wholeResourceKeys.has(k)) extended.add(k); });
     return extended;
   }, [baseNarrowedKeys, stagedPaths, wholeResourceKeys]);
+  // Under a narrowing filter (Incoming, a scope) the focused row may not be drawn: the pane shows
+  // All then, without clearing what is staged (review item 3). "All" does not settle it: the
+  // pane's node switch may set Incoming after the focus is applied.
+  useEffect(() => {
+    if (focusToShow === null || narrowedKeys === null) return;
+    if (narrowedKeys.has(focusToShow)) setFocusToShow(null);
+    else {
+      setFocusToShow(null);
+      onFocusedFieldHiddenRef.current?.();
+    }
+  }, [focusToShow, narrowedKeys]);
 
   // THE tree — built exactly once per selection. Pick the visible row set first,
   // then build; the full tree used to be built unconditionally alongside this one
@@ -4026,8 +4151,17 @@ export const ComponentValuesSection = memo(({
     [stagedPaths, committedDiffs, committedAddPaths, downstreamValueByKey, stagedEditedValues, onRevertEdit, stagedProtection, onToggleProtection],
   );
 
+  // The open Unit's whole blame, placed on its rows (field diagnosis, PLAN.md R6). A read-only
+  // mount (ChangeOrder mode) loads it only once a field's details are open.
+  const unitBlame = useUnitBlameIndex({ spaceId: unit.spaceId, unitId: unit.unitId, data: unit.data, open: !readOnly || inspectPath !== null });
+  const fieldBlame = useMemo<FieldBlameValue>(() => ({ ...unitBlame, data: unit.data, upstream: unit.upstream }), [unitBlame, unit.data, unit.upstream]);
+  fieldBlameRef.current = fieldBlame;
+
   return (
     <MembershipContext.Provider value={membership}>
+    <FieldBlameContext.Provider value={fieldBlame}>
+    <FieldFocusStoreContext.Provider value={focusStore}>
+    <PaneSpacesContext.Provider value={paneSpaceIds}>
     <Box>
       {isMassive && !collapseBannerDismissed && (
         <Box
@@ -4182,7 +4316,7 @@ export const ComponentValuesSection = memo(({
           spaceId: unit.spaceId,
           unitId: unit.unitId,
           inspectPath,
-          onInspectPath: setInspectPath,
+          onInspectPath: handleInspectPath,
           variationEntry: unit.variationEntry,
           deploymentName: unit.slug,
           deployments,
@@ -4221,6 +4355,9 @@ export const ComponentValuesSection = memo(({
         />
       ))}
     </Box>
+    </PaneSpacesContext.Provider>
+    </FieldFocusStoreContext.Provider>
+    </FieldBlameContext.Provider>
     </MembershipContext.Provider>
   );
 });

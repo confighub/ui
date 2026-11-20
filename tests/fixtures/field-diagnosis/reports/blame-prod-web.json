@@ -1,0 +1,853 @@
+[
+  {
+    "Chain": [
+      {
+        "Description": "Cloned from d5298d52-1cf6-4eca-8a62-67df2ae7be90/web",
+        "MutationNum": 1,
+        "RevisionID": "b16bcdc7-1134-4bbf-bf2a-c1eb742eb079",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-staging/web",
+        "Source": "CloneUnit",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.867402Z"
+      },
+      {
+        "Description": "Cloned from 352eba82-28cf-4632-bda9-3c327bb2f0a2/web",
+        "MutationNum": 1,
+        "RevisionID": "8108b576-7999-497d-80a0-e415381404ca",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-base/web",
+        "Source": "CloneUnit",
+        "SpaceID": "d5298d52-1cf6-4eca-8a62-67df2ae7be90",
+        "SpaceSlug": "fd-staging",
+        "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.691723Z"
+      },
+      {
+        "Description": "MergeExternal; from /private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "MutationNum": 1,
+        "RevisionID": "703a51eb-4e71-4b4a-b9c7-c97e276407bc",
+        "RevisionNum": 2,
+        "SetBy": "/private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "Source": "MergeExternal",
+        "SpaceID": "352eba82-28cf-4632-bda9-3c327bb2f0a2",
+        "SpaceSlug": "fd-base",
+        "UnitID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.562801Z"
+      }
+    ],
+    "Ref": "470f565",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web"
+  },
+  {
+    "Chain": [
+      {
+        "Description": "Cloned from d5298d52-1cf6-4eca-8a62-67df2ae7be90/web",
+        "MutationNum": 1,
+        "RevisionID": "b16bcdc7-1134-4bbf-bf2a-c1eb742eb079",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-staging/web",
+        "Source": "CloneUnit",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.867402Z"
+      },
+      {
+        "Description": "Cloned from 352eba82-28cf-4632-bda9-3c327bb2f0a2/web",
+        "MutationNum": 1,
+        "RevisionID": "8108b576-7999-497d-80a0-e415381404ca",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-base/web",
+        "Source": "CloneUnit",
+        "SpaceID": "d5298d52-1cf6-4eca-8a62-67df2ae7be90",
+        "SpaceSlug": "fd-staging",
+        "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.691723Z"
+      },
+      {
+        "Description": "MergeExternal; from /private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "MutationNum": 1,
+        "RevisionID": "703a51eb-4e71-4b4a-b9c7-c97e276407bc",
+        "RevisionNum": 2,
+        "SetBy": "/private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "Source": "MergeExternal",
+        "SpaceID": "352eba82-28cf-4632-bda9-3c327bb2f0a2",
+        "SpaceSlug": "fd-base",
+        "UnitID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.562801Z"
+      }
+    ],
+    "Path": "apiVersion",
+    "Ref": "04a8ddd",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web",
+    "Value": "apps/v1"
+  },
+  {
+    "Chain": [
+      {
+        "Description": "Cloned from d5298d52-1cf6-4eca-8a62-67df2ae7be90/web",
+        "MutationNum": 1,
+        "RevisionID": "b16bcdc7-1134-4bbf-bf2a-c1eb742eb079",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-staging/web",
+        "Source": "CloneUnit",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.867402Z"
+      },
+      {
+        "Description": "Cloned from 352eba82-28cf-4632-bda9-3c327bb2f0a2/web",
+        "MutationNum": 1,
+        "RevisionID": "8108b576-7999-497d-80a0-e415381404ca",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-base/web",
+        "Source": "CloneUnit",
+        "SpaceID": "d5298d52-1cf6-4eca-8a62-67df2ae7be90",
+        "SpaceSlug": "fd-staging",
+        "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.691723Z"
+      },
+      {
+        "Description": "MergeExternal; from /private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "MutationNum": 1,
+        "RevisionID": "703a51eb-4e71-4b4a-b9c7-c97e276407bc",
+        "RevisionNum": 2,
+        "SetBy": "/private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "Source": "MergeExternal",
+        "SpaceID": "352eba82-28cf-4632-bda9-3c327bb2f0a2",
+        "SpaceSlug": "fd-base",
+        "UnitID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.562801Z"
+      }
+    ],
+    "Path": "kind",
+    "Ref": "0f14e09",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web",
+    "Value": "Deployment"
+  },
+  {
+    "Chain": [
+      {
+        "Description": "Functions: set-annotation",
+        "Function": "set-annotation",
+        "MutationNum": 5,
+        "RevisionID": "9a079611-4b91-4e8c-beda-c8e63a7bf94c",
+        "RevisionNum": 8,
+        "SetBy": "set-annotation",
+        "Source": "Invoke",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:31.814378Z"
+      }
+    ],
+    "Path": "metadata.annotations.reviewed",
+    "Ref": "a2ca77a",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web",
+    "Value": "true"
+  },
+  {
+    "Chain": [
+      {
+        "Description": "Cloned from d5298d52-1cf6-4eca-8a62-67df2ae7be90/web",
+        "MutationNum": 1,
+        "RevisionID": "b16bcdc7-1134-4bbf-bf2a-c1eb742eb079",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-staging/web",
+        "Source": "CloneUnit",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.867402Z"
+      },
+      {
+        "Description": "Cloned from 352eba82-28cf-4632-bda9-3c327bb2f0a2/web",
+        "MutationNum": 1,
+        "RevisionID": "8108b576-7999-497d-80a0-e415381404ca",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-base/web",
+        "Source": "CloneUnit",
+        "SpaceID": "d5298d52-1cf6-4eca-8a62-67df2ae7be90",
+        "SpaceSlug": "fd-staging",
+        "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.691723Z"
+      },
+      {
+        "Description": "MergeExternal; from /private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "MutationNum": 1,
+        "RevisionID": "703a51eb-4e71-4b4a-b9c7-c97e276407bc",
+        "RevisionNum": 2,
+        "SetBy": "/private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "Source": "MergeExternal",
+        "SpaceID": "352eba82-28cf-4632-bda9-3c327bb2f0a2",
+        "SpaceSlug": "fd-base",
+        "UnitID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.562801Z"
+      }
+    ],
+    "Path": "metadata.labels.app",
+    "Ref": "31d7723",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web",
+    "Value": "web"
+  },
+  {
+    "Chain": [
+      {
+        "Description": "Cloned from d5298d52-1cf6-4eca-8a62-67df2ae7be90/web",
+        "MutationNum": 1,
+        "RevisionID": "b16bcdc7-1134-4bbf-bf2a-c1eb742eb079",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-staging/web",
+        "Source": "CloneUnit",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.867402Z"
+      },
+      {
+        "Description": "Cloned from 352eba82-28cf-4632-bda9-3c327bb2f0a2/web",
+        "MutationNum": 1,
+        "RevisionID": "8108b576-7999-497d-80a0-e415381404ca",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-base/web",
+        "Source": "CloneUnit",
+        "SpaceID": "d5298d52-1cf6-4eca-8a62-67df2ae7be90",
+        "SpaceSlug": "fd-staging",
+        "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.691723Z"
+      },
+      {
+        "Description": "MergeExternal; from /private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "MutationNum": 1,
+        "RevisionID": "703a51eb-4e71-4b4a-b9c7-c97e276407bc",
+        "RevisionNum": 2,
+        "SetBy": "/private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "Source": "MergeExternal",
+        "SpaceID": "352eba82-28cf-4632-bda9-3c327bb2f0a2",
+        "SpaceSlug": "fd-base",
+        "UnitID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.562801Z"
+      }
+    ],
+    "Flags": [
+      "Provided"
+    ],
+    "Path": "metadata.name",
+    "Provided": [
+      {
+        "AttributeName": "resource-name",
+        "DataType": "string",
+        "Details": {
+          "IsProvided": true,
+          "ProvidedProperties": {
+            "ResourceType": "apps/v1/Deployment"
+          }
+        },
+        "Path": "metadata.name",
+        "ResourceCategory": "Resource",
+        "ResourceName": "test-ns/web",
+        "ResourceNameWithoutScope": "web",
+        "ResourceType": "apps/v1/Deployment"
+      }
+    ],
+    "Ref": "b9aecd5",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web",
+    "Value": "web"
+  },
+  {
+    "Chain": [
+      {
+        "Description": "Resolve with linked-to unit ns (8822a6b3-71af-4390-8662-ea007104d550)",
+        "Function": "set-attributes",
+        "Link": "web-to-ns",
+        "LinkID": "9d518d25-86dd-49bc-8ed0-e0157116b197",
+        "LinkUpstream": "ns",
+        "LinkUpstreamRevisionNum": 2,
+        "LinkUpstreamUnitID": "8822a6b3-71af-4390-8662-ea007104d550",
+        "MutationNum": 3,
+        "RevisionID": "5b846977-05e8-4ef4-a377-be327385a98a",
+        "RevisionNum": 6,
+        "SetBy": "link web-to-ns",
+        "Source": "NeedsProvides",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:17.610289Z"
+      },
+      {
+        "Description": "MergeExternal; from test-data/test-ns.yaml",
+        "MutationNum": 1,
+        "RevisionID": "e2604444-87bb-46a0-b982-257a363a6a2c",
+        "RevisionNum": 2,
+        "SetBy": "test-data/test-ns.yaml",
+        "Source": "MergeExternal",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "8822a6b3-71af-4390-8662-ea007104d550",
+        "UnitSlug": "ns",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:17.47648Z"
+      }
+    ],
+    "Flags": [
+      "SetByLink",
+      "Needed"
+    ],
+    "Needed": [
+      {
+        "AttributeName": "resource-name",
+        "BoundLink": "web-to-ns",
+        "DataType": "string",
+        "Details": {
+          "BoundLinkID": "9d518d25-86dd-49bc-8ed0-e0157116b197",
+          "BoundProvidedProperties": {
+            "ResourceType": "v1/Namespace"
+          },
+          "IsNeeded": true,
+          "NeededRequired": {
+            "ResourceType": "v1/Namespace"
+          }
+        },
+        "FunctionName": "get-needed",
+        "Path": "metadata.namespace",
+        "ResourceCategory": "Resource",
+        "ResourceName": "test-ns/web",
+        "ResourceNameWithoutScope": "web",
+        "ResourceType": "apps/v1/Deployment",
+        "Value": "confighubplaceholder"
+      }
+    ],
+    "Path": "metadata.namespace",
+    "Ref": "9f7c173",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web",
+    "Value": "test-ns"
+  },
+  {
+    "Chain": [
+      {
+        "Description": "Functions: set-replicas",
+        "Function": "set-replicas",
+        "MutationNum": 2,
+        "RevisionID": "ed6279f4-8cb9-4e49-8738-1a03ed3434e4",
+        "RevisionNum": 3,
+        "SetBy": "set-replicas",
+        "Source": "Invoke",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:17.073846Z"
+      }
+    ],
+    "Conflicts": [
+      {
+        "Details": "withheld by the guard Override=Upstream, which this operation's clearance did not cover; a clearance of Override=Upstream would allow it",
+        "Guard": {
+          "Key": "Override",
+          "Value": "Upstream"
+        },
+        "Guards": [
+          {
+            "Key": "Override",
+            "Value": "Upstream"
+          }
+        ],
+        "Path": "spec.replicas",
+        "Reason": "Guarded",
+        "Resource": {
+          "ResourceCategory": "Resource",
+          "ResourceName": "test-ns/web",
+          "ResourceNameWithoutScope": "web",
+          "ResourceType": "apps/v1/Deployment"
+        },
+        "Source": {
+          "MutationType": "Update",
+          "Value": "7\n"
+        },
+        "Target": {
+          "Index": 2,
+          "MutationType": "Update",
+          "Value": "5\n"
+        },
+        "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4"
+      }
+    ],
+    "Flags": [
+      "Guarded",
+      "Conflict"
+    ],
+    "Guards": {
+      "Override": "Upstream"
+    },
+    "Path": "spec.replicas",
+    "Ref": "7253c88",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web",
+    "Value": "5"
+  },
+  {
+    "Chain": [
+      {
+        "Description": "Cloned from d5298d52-1cf6-4eca-8a62-67df2ae7be90/web",
+        "MutationNum": 1,
+        "RevisionID": "b16bcdc7-1134-4bbf-bf2a-c1eb742eb079",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-staging/web",
+        "Source": "CloneUnit",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.867402Z"
+      },
+      {
+        "Description": "Cloned from 352eba82-28cf-4632-bda9-3c327bb2f0a2/web",
+        "MutationNum": 1,
+        "RevisionID": "8108b576-7999-497d-80a0-e415381404ca",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-base/web",
+        "Source": "CloneUnit",
+        "SpaceID": "d5298d52-1cf6-4eca-8a62-67df2ae7be90",
+        "SpaceSlug": "fd-staging",
+        "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.691723Z"
+      },
+      {
+        "Description": "MergeExternal; from /private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "MutationNum": 1,
+        "RevisionID": "703a51eb-4e71-4b4a-b9c7-c97e276407bc",
+        "RevisionNum": 2,
+        "SetBy": "/private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "Source": "MergeExternal",
+        "SpaceID": "352eba82-28cf-4632-bda9-3c327bb2f0a2",
+        "SpaceSlug": "fd-base",
+        "UnitID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.562801Z"
+      }
+    ],
+    "Path": "spec.selector.matchLabels.app",
+    "Ref": "2b1a86b",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web",
+    "Value": "web"
+  },
+  {
+    "Chain": [
+      {
+        "Description": "Cloned from d5298d52-1cf6-4eca-8a62-67df2ae7be90/web",
+        "MutationNum": 1,
+        "RevisionID": "b16bcdc7-1134-4bbf-bf2a-c1eb742eb079",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-staging/web",
+        "Source": "CloneUnit",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.867402Z"
+      },
+      {
+        "Description": "Cloned from 352eba82-28cf-4632-bda9-3c327bb2f0a2/web",
+        "MutationNum": 1,
+        "RevisionID": "8108b576-7999-497d-80a0-e415381404ca",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-base/web",
+        "Source": "CloneUnit",
+        "SpaceID": "d5298d52-1cf6-4eca-8a62-67df2ae7be90",
+        "SpaceSlug": "fd-staging",
+        "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.691723Z"
+      },
+      {
+        "Description": "MergeExternal; from /private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "MutationNum": 1,
+        "RevisionID": "703a51eb-4e71-4b4a-b9c7-c97e276407bc",
+        "RevisionNum": 2,
+        "SetBy": "/private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "Source": "MergeExternal",
+        "SpaceID": "352eba82-28cf-4632-bda9-3c327bb2f0a2",
+        "SpaceSlug": "fd-base",
+        "UnitID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.562801Z"
+      }
+    ],
+    "Path": "spec.template.metadata.labels.app",
+    "Ref": "4c84203",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web",
+    "Value": "web"
+  },
+  {
+    "Chain": [
+      {
+        "Description": "Cloned from d5298d52-1cf6-4eca-8a62-67df2ae7be90/web",
+        "MutationNum": 1,
+        "RevisionID": "b16bcdc7-1134-4bbf-bf2a-c1eb742eb079",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-staging/web",
+        "Source": "CloneUnit",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.867402Z"
+      },
+      {
+        "Description": "Cloned from 352eba82-28cf-4632-bda9-3c327bb2f0a2/web",
+        "MutationNum": 1,
+        "RevisionID": "8108b576-7999-497d-80a0-e415381404ca",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-base/web",
+        "Source": "CloneUnit",
+        "SpaceID": "d5298d52-1cf6-4eca-8a62-67df2ae7be90",
+        "SpaceSlug": "fd-staging",
+        "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.691723Z"
+      },
+      {
+        "Description": "MergeExternal; from /private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "MutationNum": 1,
+        "RevisionID": "703a51eb-4e71-4b4a-b9c7-c97e276407bc",
+        "RevisionNum": 2,
+        "SetBy": "/private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "Source": "MergeExternal",
+        "SpaceID": "352eba82-28cf-4632-bda9-3c327bb2f0a2",
+        "SpaceSlug": "fd-base",
+        "UnitID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.562801Z"
+      }
+    ],
+    "Path": "spec.template.spec.containers.?name=web.image",
+    "Ref": "3ec3a9e",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web",
+    "Value": "registry.example.com/legacy/web:1.4.2"
+  },
+  {
+    "Chain": [
+      {
+        "Description": "Cloned from d5298d52-1cf6-4eca-8a62-67df2ae7be90/web",
+        "MutationNum": 1,
+        "RevisionID": "b16bcdc7-1134-4bbf-bf2a-c1eb742eb079",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-staging/web",
+        "Source": "CloneUnit",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.867402Z"
+      },
+      {
+        "Description": "Cloned from 352eba82-28cf-4632-bda9-3c327bb2f0a2/web",
+        "MutationNum": 1,
+        "RevisionID": "8108b576-7999-497d-80a0-e415381404ca",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-base/web",
+        "Source": "CloneUnit",
+        "SpaceID": "d5298d52-1cf6-4eca-8a62-67df2ae7be90",
+        "SpaceSlug": "fd-staging",
+        "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.691723Z"
+      },
+      {
+        "Description": "MergeExternal; from /private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "MutationNum": 1,
+        "RevisionID": "703a51eb-4e71-4b4a-b9c7-c97e276407bc",
+        "RevisionNum": 2,
+        "SetBy": "/private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "Source": "MergeExternal",
+        "SpaceID": "352eba82-28cf-4632-bda9-3c327bb2f0a2",
+        "SpaceSlug": "fd-base",
+        "UnitID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.562801Z"
+      }
+    ],
+    "Path": "spec.template.spec.containers.?name=web.name",
+    "Ref": "6b626ed",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web",
+    "Value": "web"
+  },
+  {
+    "Chain": [
+      {
+        "Description": "Cloned from d5298d52-1cf6-4eca-8a62-67df2ae7be90/web",
+        "MutationNum": 1,
+        "RevisionID": "b16bcdc7-1134-4bbf-bf2a-c1eb742eb079",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-staging/web",
+        "Source": "CloneUnit",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.867402Z"
+      },
+      {
+        "Description": "Cloned from 352eba82-28cf-4632-bda9-3c327bb2f0a2/web",
+        "MutationNum": 1,
+        "RevisionID": "8108b576-7999-497d-80a0-e415381404ca",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-base/web",
+        "Source": "CloneUnit",
+        "SpaceID": "d5298d52-1cf6-4eca-8a62-67df2ae7be90",
+        "SpaceSlug": "fd-staging",
+        "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.691723Z"
+      },
+      {
+        "Description": "MergeExternal; from /private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "MutationNum": 1,
+        "RevisionID": "703a51eb-4e71-4b4a-b9c7-c97e276407bc",
+        "RevisionNum": 2,
+        "SetBy": "/private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "Source": "MergeExternal",
+        "SpaceID": "352eba82-28cf-4632-bda9-3c327bb2f0a2",
+        "SpaceSlug": "fd-base",
+        "UnitID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.562801Z"
+      }
+    ],
+    "Path": "spec.template.spec.containers.?name=web.ports.0.containerPort",
+    "Ref": "fb2faac",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web",
+    "Value": "8080"
+  },
+  {
+    "Chain": [
+      {
+        "Description": "Cloned from d5298d52-1cf6-4eca-8a62-67df2ae7be90/web",
+        "MutationNum": 1,
+        "RevisionID": "b16bcdc7-1134-4bbf-bf2a-c1eb742eb079",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-staging/web",
+        "Source": "CloneUnit",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.867402Z"
+      },
+      {
+        "Description": "Cloned from 352eba82-28cf-4632-bda9-3c327bb2f0a2/web",
+        "MutationNum": 1,
+        "RevisionID": "8108b576-7999-497d-80a0-e415381404ca",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-base/web",
+        "Source": "CloneUnit",
+        "SpaceID": "d5298d52-1cf6-4eca-8a62-67df2ae7be90",
+        "SpaceSlug": "fd-staging",
+        "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.691723Z"
+      },
+      {
+        "Description": "MergeExternal; from /private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "MutationNum": 1,
+        "RevisionID": "703a51eb-4e71-4b4a-b9c7-c97e276407bc",
+        "RevisionNum": 2,
+        "SetBy": "/private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "Source": "MergeExternal",
+        "SpaceID": "352eba82-28cf-4632-bda9-3c327bb2f0a2",
+        "SpaceSlug": "fd-base",
+        "UnitID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.562801Z"
+      }
+    ],
+    "Flags": [
+      "Guarded"
+    ],
+    "Guards": {
+      "RunAsRoot": "LegacyImage"
+    },
+    "Path": "spec.template.spec.securityContext.runAsUser",
+    "Ref": "521cfae",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web",
+    "Value": "0"
+  }
+]

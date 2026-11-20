@@ -1,0 +1,90 @@
+{
+  "Changes": [
+    {
+      "Origin": {
+        "Description": "Cloned from f08cdeb0-d7d8-4c9d-aed7-745c5cf4aba8/web",
+        "MutationNum": 1,
+        "RevisionID": "e57f3610-7232-48cb-9faa-a4c665296839",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-staging/web",
+        "Source": "CloneUnit",
+        "SpaceID": "1c8998e8-343b-40fd-ad57-e566cdb3921f",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "58538fa7-7eaf-43eb-bb0f-af6b41ee9c61",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "ae0a816f-83e8-4779-8ae3-21b63c82b438",
+        "When": "2026-11-18T15:46:27.71233Z"
+      }
+    },
+    {
+      "Origin": {
+        "Description": "Cloned from 5305268b-cc6b-4507-8346-946a86ec2785/web",
+        "MutationNum": 1,
+        "RevisionID": "e43c24f3-623b-4ea8-96f8-2875577c6599",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-base/web",
+        "Source": "CloneUnit",
+        "SpaceID": "f08cdeb0-d7d8-4c9d-aed7-745c5cf4aba8",
+        "SpaceSlug": "fd-staging",
+        "UnitID": "707d50a1-d5f5-4dbf-85f9-0ad6055143b2",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "ae0a816f-83e8-4779-8ae3-21b63c82b438",
+        "When": "2026-11-18T15:46:27.590862Z"
+      }
+    },
+    {
+      "Origin": {
+        "Description": "MergeExternal; from /private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "MutationNum": 1,
+        "RevisionID": "01ce4079-9fa0-4586-8d66-fba0c1b1441d",
+        "RevisionNum": 2,
+        "SetBy": "/private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "Source": "MergeExternal",
+        "SpaceID": "5305268b-cc6b-4507-8346-946a86ec2785",
+        "SpaceSlug": "fd-base",
+        "UnitID": "28e9d105-5176-4fe9-834c-dedb8a1d4a47",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "ae0a816f-83e8-4779-8ae3-21b63c82b438",
+        "When": "2026-11-18T15:46:27.486982Z"
+      }
+    }
+  ],
+  "Field": {
+    "Flags": [
+      "Guarded"
+    ],
+    "Guards": {
+      "RunAsRoot": "LegacyImage"
+    },
+    "Path": "spec.template.spec.securityContext.runAsUser",
+    "Ref": "521cfae",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "1c8998e8-343b-40fd-ad57-e566cdb3921f",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "58538fa7-7eaf-43eb-bb0f-af6b41ee9c61",
+    "UnitSlug": "web",
+    "Value": "0",
+    "Validation": [
+      {
+        "Gate": "fd-prod/no-root/vet-celexpr",
+        "Function": "vet-celexpr",
+        "Issues": [
+          {
+            "Message": "runAsUser must not be 0"
+          }
+        ],
+        "Warning": false
+      }
+    ]
+  },
+  "Names": {
+    "28e9d105-5176-4fe9-834c-dedb8a1d4a47": "fd-base/web",
+    "707d50a1-d5f5-4dbf-85f9-0ad6055143b2": "fd-staging/web"
+  },
+  "History": []
+}

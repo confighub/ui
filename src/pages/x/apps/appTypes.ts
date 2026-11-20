@@ -58,6 +58,21 @@ export interface ViewParamsPatch {
    * health.
    */
   graphGroup?: string | null;
+  /**
+   * Field diagnosis (docs/design/field-diagnosis/PLAN.md decision 4). `unit` is the Unit card
+   * the focus is on; `field` its open field, as the server writes its path (merge keys, not
+   * positions); `fres` the field's resource, `ResourceType|ResourceName`
+   * (`field-diagnosis/componentFocus.ts`). Opening and closing a field REPLACES; a jump to a
+   * field in another Unit or Space PUSHES, so Back returns. A Space change that names no `unit`
+   * clears all five (`withSpaceChangeClears`).
+   */
+  unit?: string | null;
+  field?: string | null;
+  fres?: string | null;
+  /** The side pane's Gates tab, opened by a gate link; absent for the other tabs. */
+  tab?: 'gates' | null;
+  /** The gate open in the Gates tab: its Trigger id. */
+  gate?: string | null;
 }
 
 /** Writes `patch` onto `params` in place, as `ViewParamsPatch` describes, and returns it. */

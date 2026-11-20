@@ -1,0 +1,83 @@
+{
+  "Changes": [
+    {
+      "Origin": {
+        "Description": "Replayed revision 3 of fd-base/web: Functions: set-replicas",
+        "Function": "set-replicas",
+        "Link": "upgrade-web",
+        "LinkID": "8b592b33-8ce8-4a09-b6c8-6773aea755ec",
+        "MutationNum": 2,
+        "RevisionID": "c8c5d2b4-417b-4bd6-b5e7-12b809680bd7",
+        "RevisionNum": 3,
+        "SetBy": "link upgrade-web",
+        "Source": "UpgradeUnit",
+        "SpaceID": "f08cdeb0-d7d8-4c9d-aed7-745c5cf4aba8",
+        "SpaceSlug": "fd-staging",
+        "UnitID": "707d50a1-d5f5-4dbf-85f9-0ad6055143b2",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "ae0a816f-83e8-4779-8ae3-21b63c82b438",
+        "When": "2026-11-18T15:46:28.425555Z"
+      }
+    },
+    {
+      "Origin": {
+        "Description": "Functions: set-replicas",
+        "Function": "set-replicas",
+        "MutationNum": 2,
+        "RevisionID": "5c3914fb-892d-412c-85e6-f4187179093d",
+        "RevisionNum": 3,
+        "SetBy": "set-replicas",
+        "Source": "Invoke",
+        "SpaceID": "5305268b-cc6b-4507-8346-946a86ec2785",
+        "SpaceSlug": "fd-base",
+        "UnitID": "28e9d105-5176-4fe9-834c-dedb8a1d4a47",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "ae0a816f-83e8-4779-8ae3-21b63c82b438",
+        "When": "2026-11-18T15:46:28.346476Z"
+      }
+    }
+  ],
+  "Field": {
+    "Flags": [
+      "Upgraded"
+    ],
+    "Path": "spec.replicas",
+    "Ref": "7253c88",
+    "ResourceName": "confighubplaceholder/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "f08cdeb0-d7d8-4c9d-aed7-745c5cf4aba8",
+    "SpaceSlug": "fd-staging",
+    "UnitID": "707d50a1-d5f5-4dbf-85f9-0ad6055143b2",
+    "UnitSlug": "web",
+    "Value": "7"
+  },
+  "Names": {
+    "28e9d105-5176-4fe9-834c-dedb8a1d4a47": "fd-base/web"
+  },
+  "History": [
+    {
+      "Value": "7",
+      "Origin": {
+        "Description": "Replayed revision 3 of fd-base/web: Functions: set-replicas",
+        "Function": "set-replicas",
+        "Link": "upgrade-web",
+        "LinkID": "8b592b33-8ce8-4a09-b6c8-6773aea755ec",
+        "MutationNum": 2,
+        "RevisionID": "c8c5d2b4-417b-4bd6-b5e7-12b809680bd7",
+        "RevisionNum": 3,
+        "SetBy": "link upgrade-web",
+        "Source": "UpgradeUnit",
+        "SpaceID": "f08cdeb0-d7d8-4c9d-aed7-745c5cf4aba8",
+        "SpaceSlug": "fd-staging",
+        "UnitID": "707d50a1-d5f5-4dbf-85f9-0ad6055143b2",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "ae0a816f-83e8-4779-8ae3-21b63c82b438",
+        "When": "2026-11-18T15:46:28.425555Z"
+      }
+    }
+  ]
+}

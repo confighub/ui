@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch } from 'react-redux';
 
 import { ChangeSetAcknowledgements } from '@/components/change-set-lock/ChangeSetAcknowledgements';
@@ -24,7 +24,7 @@ import type { RowOrigin } from './GateFixRow';
 import { GateStep, type GateStepState } from './GateStep';
 import { GatesSummary } from './GatesSummary';
 import { UnitLink } from './UnitLink';
-import { type Gate, type GateField, gateAfterSave } from './gateModel';
+import { type Gate, type GateField, gateAfterSave, gateOpenKey, gateOpenKeyForTrigger } from './gateModel';
 import {
   type FieldOrigin,
   blameFieldsForFinding,
@@ -42,6 +42,7 @@ import {
 } from './gateWrites';
 import { sameCheckElsewhere, sameFindingElsewhere } from './sameFindingElsewhere';
 import type { ComponentGates } from './useComponentGates';
+import { useComponentFocus } from '../field-diagnosis/ComponentFocusContext';
 
 const LOADING_DELAY_MS = 200;
 
@@ -95,7 +96,7 @@ export interface GatesPaneProps {
   componentSpaceIds: string[];
 }
 
-const gateKey = (gate: Gate) => `${gate.warning ? 'w' : 'e'}:${gate.key}`;
+const gateKey = gateOpenKey;
 
 /** Shows a skeleton only after a short wait, so a fast read does not flash. */
 const useDelayed = (active: boolean, ms: number) => {
@@ -152,6 +153,21 @@ export const GatesPane = ({
     componentBlame,
     isComponentBlameLoading,
   } = data;
+
+  // Field diagnosis: a gate link (`?tab=gates&gate=<TriggerID>`) opens that gate, a failing one
+  // or a warning, once per link followed (Back and Forward included); the gates may arrive after
+  // the link. A gate the person closes stays closed while the list refreshes.
+  const { focus: fieldFocus, locationKey } = useComponentFocus();
+  const openedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!fieldFocus.gate) return;
+    const mark = `${locationKey}\u0000${fieldFocus.gate}`;
+    if (openedFor.current === mark) return;
+    const key = gateOpenKeyForTrigger(gates, warnings, fieldFocus.gate);
+    if (!key) return;
+    openedFor.current = mark;
+    setOpenKey(key);
+  }, [locationKey, fieldFocus.gate, gates, warnings]);
 
   // A save ends when every Unit it wrote has a newer head Revision and its Triggers have run.
   useEffect(() => {

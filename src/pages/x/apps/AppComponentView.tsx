@@ -75,6 +75,7 @@ import { useReleaseActions } from './useReleaseActions';
 import { useRunningReleases } from './useRunningReleases';
 import { useWaveActions } from './useWaveActions';
 import { WaveActionDialog } from './WaveActionDialog';
+import { useComponentFocus } from './field-diagnosis/ComponentFocusContext';
 
 // ============================================================================
 // TYPES
@@ -166,7 +167,7 @@ const RUNNING_RELEASE_POLL_MS = 5_000;
 // was made in (see changeSets.ts). Shared by every units-fetching batch
 // (the chunked SpaceID read and the upstream-outside-set UnitID lookup) so they all narrow the payload identically.
 const UNITS_QUERY_SELECT =
-  'UnitID,Slug,SpaceID,TargetID,Unreleasable,UpstreamUnitID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ValidationWarnings,ValidationResults,ValidationTriggerIDs,ToolchainType,DataHash,DataSize,ChangeSetID,PathAnnotations,'
+  'UnitID,Slug,SpaceID,TargetID,Unreleasable,UpstreamUnitID,UpstreamSpaceID,UpstreamRevisionNum,HeadRevisionNum,LastReleasedRevisionNum,ValidationErrors,ValidationWarnings,ValidationResults,ValidationTriggerIDs,ToolchainType,DataHash,DataSize,ChangeSetID,PathAnnotations,'
   + 'HeadRevision.RevisionID,HeadRevision.CreatedAt,HeadRevision.Description,HeadRevision.ChangeSetID,LastReleasedRevision.RevisionID';
 const UNITS_QUERY_INCLUDE = 'SpaceID,TargetID,UpstreamUnitID,HeadRevisionNum,LastReleasedRevisionNum';
 // The units that keep a value on merge need only their Space: the folded graph shows such a
@@ -696,6 +697,9 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
       const item = {
         slug, spaceId: sid, unitId,
         hasUpstream: !!u.Unit?.UpstreamUnitID,
+        ...(u.Unit?.UpstreamUnitID
+          ? { upstream: { spaceId: u.Unit.UpstreamSpaceID, unitId: u.Unit.UpstreamUnitID, revisionNum: u.Unit.UpstreamRevisionNum } }
+          : {}),
         releasable: !u.Unit?.Unreleasable,
         ...(toolchainType ? { toolchainType } : {}),
         ...(data ? { data } : {}),
@@ -1247,6 +1251,23 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
     initialTabRef.current = undefined;
     setTabFocus((prev) => ({ id: focusId, tab, nonce: (prev?.nonce ?? 0) + 1 }));
   }, [deployments]);
+
+  // Field diagnosis: `?tab=gates` (a gate link) opens the pane's Gates tab when the URL comes to
+  // name it, Back and Forward included; when it stops naming it, Configuration. Per change of the
+  // focus, not per navigation: a later URL write (a field opened) leaves the tab alone.
+  const { focus: fieldFocus } = useComponentFocus();
+  const focusOnGatesRef = useRef(false);
+  useEffect(() => {
+    const id = controlledSelectedIds?.values().next().value;
+    if (!id) return;
+    if (fieldFocus.tab === 'gates') {
+      focusOnGatesRef.current = true;
+      setTabFocus((prev) => ({ id, tab: 'gates', nonce: (prev?.nonce ?? 0) + 1 }));
+    } else if (focusOnGatesRef.current) {
+      focusOnGatesRef.current = false;
+      setTabFocus((prev) => ({ id, tab: 'config', nonce: (prev?.nonce ?? 0) + 1 }));
+    }
+  }, [fieldFocus.tab, controlledSelectedIds]);
 
   // ── Variant composer derived data ──
   const flatTargets = useMemo<TargetRead[]>(

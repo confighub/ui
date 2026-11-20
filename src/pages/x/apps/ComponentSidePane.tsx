@@ -106,6 +106,10 @@ import type { Gate } from './gates/gateModel';
 import type { FieldOrigin } from './gates/gateOrigin';
 import { GatesPane } from './gates/GatesPane';
 import { useComponentGates } from './gates/useComponentGates';
+import { useComponentFocus } from './field-diagnosis/ComponentFocusContext';
+import { usePaneHistoryMemory } from './field-diagnosis/usePaneHistoryMemory';
+import { PaneStagedContext } from './field-diagnosis/componentFieldLinks';
+import { useStagedSpaceLeaveGuard } from './field-diagnosis/useStagedSpaceLeaveGuard';
 
 // Lazy-loaded: pulls in CodeEditor -> @monaco-editor/react, monaco-editor, and
 // monaco-yaml (a multi-MB stack with a module-level initMonaco() side effect).
@@ -708,6 +712,8 @@ export const ComponentSidePane = memo(
     // ── True-staging signals/state ──
     // Per-unit staged-path counts reported up by each ComponentValuesSection.
     const [stagedCountByUnit, setStagedCountByUnit] = useState<Map<string, number>>(new Map());
+    // Field diagnosis: the person's own staged work per Unit (not the default Incoming picks).
+    const [userStagedByUnit, setUserStagedByUnit] = useState<Map<string, number>>(new Map());
     // Per-unit staged-PROTECTION counts, reported up separately from the value
     // count above (card 8: "N staged" and "N kept" are distinct numbers).
     // `protectCount` (of `total`) is how many keep their path — tells a
@@ -1722,6 +1728,44 @@ export const ComponentSidePane = memo(
       setSourceOverrideUnitIds((prev) => (prev.size ? new Set() : prev));
     }, [selectedDeploymentIds, hasUpgradableUnits]);
 
+    // Field diagnosis (PLAN.md U3). Declared AFTER the node-switch reset above, so on a Space
+    // change they run after it in the same commit: the cards of the history entry come back
+    // (Back, Forward), and the Unit the URL names opens, on every navigation.
+    const { focus: fieldFocus, locationKey, go: goFocus } = useComponentFocus();
+    const unitListRef = useRef<HTMLDivElement>(null);
+    usePaneHistoryMemory({
+      locationKey,
+      selectionKey: selectedDeploymentIds.values().next().value,
+      forced: forcedExpandedGroups,
+      collapsed: collapsedGroups,
+      setForced: setForcedExpandedGroups,
+      setCollapsed: setCollapsedGroups,
+      scrollerRef: unitListRef,
+      fieldOpen: Boolean(fieldFocus.field),
+      enabled: locationKey !== '',
+    });
+    // Once per focus value (Unit, field, Space): a later URL write for something else (the
+    // display, a filter) must not open again a card the person closed (review item 7).
+    const openedFocus = useRef<string | null>(null);
+    useEffect(() => {
+      const unitId = fieldFocus.unit;
+      if (!unitId) {
+        openedFocus.current = null;
+        return;
+      }
+      const mark = `${unitId}\u0000${fieldFocus.field ?? ''}\u0000${selectedDeploymentIds.values().next().value ?? ''}`;
+      if (openedFocus.current === mark) return;
+      openedFocus.current = mark;
+      setCollapsedGroups((prev) => setSetMember(prev, unitId, false));
+      setForcedExpandedGroups((prev) => setSetMember(prev, unitId, true));
+    }, [fieldFocus.unit, fieldFocus.field, selectedDeploymentIds]);
+    // The field a navigation names may be hidden by the filter (Incoming, a scope): show All, as a
+    // click on All would, but keep what is staged (a click on All from Incoming clears the picks).
+    const handleFocusedFieldHidden = useCallback(() => {
+      setFilterMode('all');
+      setScopeFilter(null);
+    }, []);
+
     // Honor a status-chip peek's deep-link to a specific tab. Runs AFTER the
     // node-switch reset above (later effect wins), so a chip that opens a NEW
     // node still lands on the requested tab; the nonce guard means it also
@@ -1822,6 +1866,17 @@ export const ComponentSidePane = memo(
       });
     }, []);
 
+    const handleUserStagedCountChange = useCallback((unitId: string, count: number) => {
+      setUserStagedByUnit((prev) => {
+        if ((prev.get(unitId) ?? 0) === count) return prev;
+        const next = new Map(prev);
+        if (count === 0) next.delete(unitId);
+        else next.set(unitId, count);
+        return next;
+      });
+    }, []);
+    const totalUserStaged = useMemo(() => [...userStagedByUnit.values()].reduce((n, c) => n + c, 0), [userStagedByUnit]);
+
     // Counted SEPARATELY from handleStagedCountChange (card 8's "N staged" vs
     // "N kept" rule — see ComponentValuesSectionProps.onStagedProtectionChange).
     const handleStagedProtectionCountChange = useCallback((unitId: string, total: number, protectCount: number) => {
@@ -1880,6 +1935,10 @@ export const ComponentSidePane = memo(
       () => [...stagedProtectionCountByUnit.values()].reduce((n, { total }) => n + total, 0),
       [stagedProtectionCountByUnit],
     );
+    // Field diagnosis: Back or Forward to another Space asks first while changes are staged.
+    // Only the person's work counts: edits, changed picks, guard actions; not the default picks
+    // Incoming stages by itself, which come back on their own (team-lead decision).
+    const leaveStagedDialog = useStagedSpaceLeaveGuard(totalUserStaged + totalStagedProtection);
     const totalStagedProtectionProtectCount = useMemo(
       () => [...stagedProtectionCountByUnit.values()].reduce((n, { protectCount }) => n + protectCount, 0),
       [stagedProtectionCountByUnit],
@@ -2315,7 +2374,12 @@ export const ComponentSidePane = memo(
             something. */}
           <PaneTabs
             value={activeTab}
-            onChange={(_, v: PaneContentTab) => setActiveTab(v)}
+            onChange={(_, v: PaneContentTab) => {
+              setActiveTab(v);
+              // A tab the person picks ends a gate link's focus: the URL stops naming it (replace),
+              // so a later URL write does not send the pane back to the Gates tab.
+              if (v !== 'gates' && (fieldFocus.tab || fieldFocus.gate)) goFocus({ tab: null, gate: null });
+            }}
             aria-label='Side pane content'
           >
             <PaneTab label='Configuration' value='config' data-testid='component-pane-tab-config' />
@@ -2530,7 +2594,10 @@ export const ComponentSidePane = memo(
             only alternative, `component-leaf-row`, is stamped per row, so a
             tour anchor resolved to whichever row happened to match first
             (`apiVersion`) while the copy described the entire view. */}
+        <PaneStagedContext.Provider value={totalUserStaged + totalStagedProtection}>
+        {leaveStagedDialog}
         <PaneContent
+          ref={unitListRef}
           data-testid='unit-list'
           // The container the Unit cards' narrow-pane rules read, on the quiet ground the cards sit on.
           sx={{ containerType: 'inline-size', background: componentTheme.bgSubtle }}
@@ -2826,11 +2893,13 @@ export const ComponentSidePane = memo(
                         scopeFilter={filterMode === 'all' ? scopeFilter : null}
                         readOnly={filterMode === 'changeset'}
                         valueOverlay={fieldOverlay?.get(unit.unitId)}
+                        onFocusedFieldHidden={handleFocusedFieldHidden}
                         onSetFieldValue={setFieldValueByUnit?.get(unit.unitId)}
                         onDeleteFieldValue={deleteFieldValueByUnit?.get(unit.unitId)}
                         deployments={deployments}
                         unitsByDeployment={unitsByDeployment}
                         onStagedCountChange={handleStagedCountChange}
+                        onUserStagedCountChange={handleUserStagedCountChange}
                         commitStagedSignal={commitStagedSignal}
                         clearStagedSignal={clearStagedSignal}
                         discardAllSignal={discardAllSignal}
@@ -2892,6 +2961,7 @@ export const ComponentSidePane = memo(
             );
           })}
         </PaneContent>
+        </PaneStagedContext.Provider>
         </>
         )}
 

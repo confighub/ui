@@ -170,7 +170,7 @@ function UnitDiff({ tree, toLabel, columnStyle, onDividerMouseDown, isDragging }
           <UnitNameLink
             href={detailsHref}
             // New tab, as every other unit-details link in this side pane does
-            // (ComponentSidePane's `UnitSlug`, UnitDetailsPane, InspectPanel):
+            // (ComponentSidePane's `UnitSlug`, UnitDetailsPane):
             // the pane is an overlay on the component graph and navigating in
             // place would discard the whole selection the user built to get
             // here.

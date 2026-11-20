@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { ChangeSetAcknowledgements } from '@/components/change-set-lock/ChangeSetAcknowledgements';
-import { useChangeSetLock } from '@/components/change-set-lock/useChangeSetLock';
+import { type ChangeSetLock, useChangeSetLock } from '@/components/change-set-lock/useChangeSetLock';
 import { ConfigDiffView } from '@/components/config-diff/ConfigDiffView';
 import { EntityDataGrid } from '@/components/entity-data-grid/EntityDataGrid';
 import { ErrorBox } from '@/components/error-box/ErrorBox';
@@ -399,7 +399,9 @@ export const BlameTable = ({ spaceId, unitId, initialPath = '' }: BlameTableProp
       spaceId,
       unitId,
       flags: needsAttention ? NEEDS_ATTENTION_FLAGS : undefined,
-      includeComments,
+      // `false` and `undefined` are two RTK cache entries; leave it out when off, so the
+      // unfiltered query shares field diagnosis's blameArg entry (ARCHITECTURE §13 Q1b).
+      includeComments: includeComments || undefined,
     },
     { skip: !spaceId || !unitId },
   );
@@ -1031,7 +1033,7 @@ const GuardDialog = ({
  * Removes one guard key where the selected fields hold it. Removing changes the reasons at the
  * path, so the removal is cleared for the guards there, each acknowledged.
  */
-const RemoveGuardDialog = ({
+export const RemoveGuardDialog = ({
   open,
   busy,
   keys,
@@ -1039,6 +1041,8 @@ const RemoveGuardDialog = ({
   annotations,
   onClose,
   onSubmit,
+  changeSetLock,
+  initialKey,
 }: {
   open: boolean;
   busy: boolean;
@@ -1047,11 +1051,15 @@ const RemoveGuardDialog = ({
   annotations: PathAnnotationList | undefined;
   onClose: () => void;
   onSubmit: (key: string, clearance?: Clearance) => void;
+  /** The key chosen when the dialog opens (the field details' Remove names one guard). */
+  initialKey?: string;
+  /** A ChangeSet open on the Unit: shown for acknowledgement, and the write waits for it. */
+  changeSetLock?: ChangeSetLock;
 }) => {
-  const [key, setKey] = useState<string | null>(null);
+  const [key, setKey] = useState<string | null>(initialKey ?? null);
   useEffect(() => {
-    if (open) setKey(null);
-  }, [open]);
+    if (open) setKey(initialKey ?? null);
+  }, [open, initialKey]);
   const guards = useMemo(
     () =>
       key === null
@@ -1074,6 +1082,7 @@ const RemoveGuardDialog = ({
     <Dialog open={open} onClose={onClose} fullWidth maxWidth='sm'>
       <DialogTitle>Remove guard</DialogTitle>
       <DialogContent>
+        {changeSetLock && <ChangeSetAcknowledgements lock={changeSetLock} disabled={busy} sx={{ mb: 2 }} />}
         <Stack spacing={2} sx={{ mt: 1 }}>
           <Autocomplete
             options={keys}
@@ -1094,7 +1103,7 @@ const RemoveGuardDialog = ({
         <Button onClick={onClose}>Cancel</Button>
         <Button
           variant='contained'
-          disabled={busy || !key || !allAcknowledged}
+          disabled={busy || !key || !allAcknowledged || Boolean(changeSetLock?.unacknowledged)}
           onClick={() => key && onSubmit(key, clearanceFor(guards))}
         >
           Remove guard
@@ -1198,13 +1207,14 @@ const GuardInheritanceDialog = ({
  * Applying writes what the merge withheld. Where the fields it writes are guarded, each guard has
  * to be acknowledged: the apply is cleared for exactly those guards, which the Mutation records.
  */
-const ApplyConflictsDialog = ({
+export const ApplyConflictsDialog = ({
   open,
   busy,
   guards,
   onClose,
   preview,
   onSubmit,
+  changeSetLock,
 }: {
   open: boolean;
   busy: boolean;
@@ -1212,6 +1222,8 @@ const ApplyConflictsDialog = ({
   onClose: () => void;
   preview: () => Promise<ConfigDiff | undefined>;
   onSubmit: () => void;
+  /** A ChangeSet open on the Unit: shown for acknowledgement, and the write waits for it. */
+  changeSetLock?: ChangeSetLock;
 }) => {
   const [diff, setDiff] = useState<ConfigDiff | undefined>(undefined);
   const [previewError, setPreviewError] = useState('');
@@ -1241,6 +1253,7 @@ const ApplyConflictsDialog = ({
     <Dialog open={open} onClose={onClose} fullWidth maxWidth='lg'>
       <DialogTitle>Apply withheld upstream changes</DialogTitle>
       <DialogContent>
+        {changeSetLock && <ChangeSetAcknowledgements lock={changeSetLock} disabled={busy} sx={{ mb: 2 }} />}
         <ErrorBox error={previewError} onClose={() => setPreviewError('')} />
         <Box sx={{ mb: guards.length > 0 ? 2 : 0 }} data-testid='apply-conflicts-guards'>
           <GuardAcknowledgements
@@ -1265,7 +1278,7 @@ const ApplyConflictsDialog = ({
         <Button onClick={onClose}>Cancel</Button>
         <Button
           variant='contained'
-          disabled={busy || loading || previewError !== '' || !allAcknowledged}
+          disabled={busy || loading || previewError !== '' || !allAcknowledged || Boolean(changeSetLock?.unacknowledged)}
           onClick={onSubmit}
         >
           Apply
@@ -1279,18 +1292,21 @@ const ApplyConflictsDialog = ({
  * Dismissing drops the selected conflicts. Checked, it also records them on the Unit, so that a
  * later merge reporting the same conflict leaves it dismissed rather than outstanding.
  */
-const DismissConflictsDialog = ({
+export const DismissConflictsDialog = ({
   open,
   busy,
   conflicts,
   onClose,
   onSubmit,
+  changeSetLock,
 }: {
   open: boolean;
   busy: boolean;
   conflicts: UnitConflictSelector[];
   onClose: () => void;
   onSubmit: (permanent: boolean) => void;
+  /** A ChangeSet open on the Unit: shown for acknowledgement, and the write waits for it. */
+  changeSetLock?: ChangeSetLock;
 }) => {
   const [permanent, setPermanent] = useState(false);
   useEffect(() => {
@@ -1300,6 +1316,7 @@ const DismissConflictsDialog = ({
     <Dialog open={open} onClose={onClose} fullWidth maxWidth='md'>
       <DialogTitle>Dismiss conflicts</DialogTitle>
       <DialogContent>
+        {changeSetLock && <ChangeSetAcknowledgements lock={changeSetLock} disabled={busy} sx={{ mb: 2 }} />}
         <Stack spacing={0.5} sx={{ mb: 2 }} data-testid='dismiss-conflicts-list'>
           {conflicts.map((conflict) => (
             <Typography
@@ -1337,7 +1354,7 @@ const DismissConflictsDialog = ({
         <Button onClick={onClose}>Cancel</Button>
         <Button
           variant='contained'
-          disabled={busy || conflicts.length === 0}
+          disabled={busy || conflicts.length === 0 || Boolean(changeSetLock?.unacknowledged)}
           onClick={() => onSubmit(permanent)}
         >
           Dismiss

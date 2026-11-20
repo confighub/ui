@@ -1,0 +1,333 @@
+{
+  "Changes": [
+    {
+      "Mutation": {
+        "MergeSource": {
+          "CreatedAt": "2026-11-19T11:13:16.689513Z",
+          "DataHash": "46a3ea52b237b4b10230122d91a216f2d78ecfb8ac8d4549d123d8f8187ef0b4",
+          "DataSize": 425,
+          "DisplayName": "web",
+          "EntityType": "Unit",
+          "FromLinkID": [
+            "bc30137c-68a2-41de-9f51-436f89ece0b8"
+          ],
+          "HeadMutationNum": 2,
+          "HeadRevisionID": "308a751d-126e-4216-addb-9042d638b160",
+          "HeadRevisionNum": 3,
+          "LastChangeDescription": "Replayed revision 3 of fd-base/web: Functions: set-replicas",
+          "NeededPaths": [
+            {
+              "AttributeName": "resource-name",
+              "DataType": "string",
+              "Details": {
+                "IsNeeded": true,
+                "NeededRequired": {
+                  "ResourceType": "v1/Namespace"
+                }
+              },
+              "FunctionName": "get-needed",
+              "Path": "metadata.namespace",
+              "ResourceCategory": "Resource",
+              "ResourceName": "confighubplaceholder/web",
+              "ResourceNameWithoutScope": "web",
+              "ResourceType": "apps/v1/Deployment",
+              "Value": "confighubplaceholder"
+            }
+          ],
+          "OrganizationID": "b098bd0e-27f8-4f31-9add-295ebd83e63c",
+          "Permissions": {
+            "Manage": {
+              "UserIDs": {
+                "f39db730-e0b7-4f6e-99f7-422dde997a8b": true
+              }
+            }
+          },
+          "ProvidedPaths": [
+            {
+              "AttributeName": "resource-name",
+              "DataType": "string",
+              "Details": {
+                "IsProvided": true,
+                "ProvidedProperties": {
+                  "ResourceType": "apps/v1/Deployment"
+                }
+              },
+              "Path": "metadata.name",
+              "ResourceCategory": "Resource",
+              "ResourceName": "confighubplaceholder/web",
+              "ResourceNameWithoutScope": "web",
+              "ResourceType": "apps/v1/Deployment"
+            }
+          ],
+          "Slug": "web",
+          "SpaceID": "d5298d52-1cf6-4eca-8a62-67df2ae7be90",
+          "SpaceSlug": "fd-staging",
+          "ToolchainType": "Kubernetes/YAML",
+          "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4",
+          "UpdatedAt": "2026-11-19T11:13:17.885987Z",
+          "UpstreamRevisionNum": 3,
+          "UpstreamSpaceID": "352eba82-28cf-4632-bda9-3c327bb2f0a2",
+          "UpstreamUnitID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+          "Version": 7
+        },
+        "Mutation": {
+          "CreatedAt": "2026-11-19T11:13:16.868407Z",
+          "EntityType": "Mutation",
+          "FunctionInvocation": {},
+          "MergeEndRevisionNum": 2,
+          "MergeSourceID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4",
+          "MutationID": "6898d3df-727a-4e88-9e14-b69eb83e7445",
+          "MutationNum": 1,
+          "OrganizationID": "b098bd0e-27f8-4f31-9add-295ebd83e63c",
+          "ProvidedResource": {},
+          "RevisionID": "b16bcdc7-1134-4bbf-bf2a-c1eb742eb079",
+          "RevisionNum": 2,
+          "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+          "SpaceSlug": "fd-prod",
+          "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+          "UnitSlug": "web",
+          "UpdatedAt": "2026-11-19T11:13:16.868407Z"
+        }
+      },
+      "Origin": {
+        "Description": "Cloned from d5298d52-1cf6-4eca-8a62-67df2ae7be90/web",
+        "MutationNum": 1,
+        "RevisionID": "b16bcdc7-1134-4bbf-bf2a-c1eb742eb079",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-staging/web",
+        "Source": "CloneUnit",
+        "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+        "SpaceSlug": "fd-prod",
+        "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.867402Z"
+      },
+      "Revision": {
+        "Revision": {
+          "CreatedAt": "2026-11-19T11:13:16.867402Z",
+          "Description": "Cloned from d5298d52-1cf6-4eca-8a62-67df2ae7be90/web",
+          "EntityType": "Revision",
+          "OrganizationID": "b098bd0e-27f8-4f31-9add-295ebd83e63c",
+          "RevisionID": "b16bcdc7-1134-4bbf-bf2a-c1eb742eb079",
+          "RevisionNum": 2,
+          "Source": "CloneUnit",
+          "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+          "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+          "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b"
+        },
+        "User": {
+          "CreatedAt": "2026-10-08T11:48:39.743142Z",
+          "DisplayName": "Local Administrator",
+          "EntityType": "User",
+          "ExternalID": "confighub:local:admin",
+          "Slug": "admin",
+          "UpdatedAt": "2026-10-08T11:48:39.743142Z",
+          "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+          "Username": "admin@local.confighub.dev"
+        }
+      }
+    },
+    {
+      "Mutation": {
+        "MergeSource": {
+          "CreatedAt": "2026-11-19T11:13:16.476819Z",
+          "DataHash": "46a3ea52b237b4b10230122d91a216f2d78ecfb8ac8d4549d123d8f8187ef0b4",
+          "DataSize": 425,
+          "DisplayName": "web",
+          "EntityType": "Unit",
+          "HeadMutationNum": 2,
+          "HeadRevisionID": "5a4caffe-05b9-46d5-b3e0-fa82f21336e2",
+          "HeadRevisionNum": 3,
+          "LastChangeDescription": "Functions: set-replicas",
+          "NeededPaths": [
+            {
+              "AttributeName": "resource-name",
+              "DataType": "string",
+              "Details": {
+                "IsNeeded": true,
+                "NeededRequired": {
+                  "ResourceType": "v1/Namespace"
+                }
+              },
+              "FunctionName": "get-needed",
+              "Path": "metadata.namespace",
+              "ResourceCategory": "Resource",
+              "ResourceName": "confighubplaceholder/web",
+              "ResourceNameWithoutScope": "web",
+              "ResourceType": "apps/v1/Deployment",
+              "Value": "confighubplaceholder"
+            }
+          ],
+          "OrganizationID": "b098bd0e-27f8-4f31-9add-295ebd83e63c",
+          "Permissions": {
+            "Manage": {
+              "UserIDs": {
+                "f39db730-e0b7-4f6e-99f7-422dde997a8b": true
+              }
+            }
+          },
+          "ProvidedPaths": [
+            {
+              "AttributeName": "resource-name",
+              "DataType": "string",
+              "Details": {
+                "IsProvided": true,
+                "ProvidedProperties": {
+                  "ResourceType": "apps/v1/Deployment"
+                }
+              },
+              "Path": "metadata.name",
+              "ResourceCategory": "Resource",
+              "ResourceName": "confighubplaceholder/web",
+              "ResourceNameWithoutScope": "web",
+              "ResourceType": "apps/v1/Deployment"
+            }
+          ],
+          "Slug": "web",
+          "SpaceID": "352eba82-28cf-4632-bda9-3c327bb2f0a2",
+          "SpaceSlug": "fd-base",
+          "ToolchainType": "Kubernetes/YAML",
+          "UnitID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+          "UpdatedAt": "2026-11-19T11:13:17.736819Z",
+          "Version": 8
+        },
+        "Mutation": {
+          "CreatedAt": "2026-11-19T11:13:16.692348Z",
+          "EntityType": "Mutation",
+          "FunctionInvocation": {},
+          "MergeEndRevisionNum": 2,
+          "MergeSourceID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+          "MutationID": "1d93a4de-10c4-49a7-901f-01c3e07d690f",
+          "MutationNum": 1,
+          "OrganizationID": "b098bd0e-27f8-4f31-9add-295ebd83e63c",
+          "ProvidedResource": {},
+          "RevisionID": "8108b576-7999-497d-80a0-e415381404ca",
+          "RevisionNum": 2,
+          "SpaceID": "d5298d52-1cf6-4eca-8a62-67df2ae7be90",
+          "SpaceSlug": "fd-staging",
+          "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4",
+          "UnitSlug": "web",
+          "UpdatedAt": "2026-11-19T11:13:16.692348Z"
+        }
+      },
+      "Origin": {
+        "Description": "Cloned from 352eba82-28cf-4632-bda9-3c327bb2f0a2/web",
+        "MutationNum": 1,
+        "RevisionID": "8108b576-7999-497d-80a0-e415381404ca",
+        "RevisionNum": 2,
+        "SetBy": "merge from fd-base/web",
+        "Source": "CloneUnit",
+        "SpaceID": "d5298d52-1cf6-4eca-8a62-67df2ae7be90",
+        "SpaceSlug": "fd-staging",
+        "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.691723Z"
+      },
+      "Revision": {
+        "Revision": {
+          "CreatedAt": "2026-11-19T11:13:16.691723Z",
+          "Description": "Cloned from 352eba82-28cf-4632-bda9-3c327bb2f0a2/web",
+          "EntityType": "Revision",
+          "OrganizationID": "b098bd0e-27f8-4f31-9add-295ebd83e63c",
+          "RevisionID": "8108b576-7999-497d-80a0-e415381404ca",
+          "RevisionNum": 2,
+          "Source": "CloneUnit",
+          "SpaceID": "d5298d52-1cf6-4eca-8a62-67df2ae7be90",
+          "UnitID": "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4",
+          "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b"
+        },
+        "User": {
+          "CreatedAt": "2026-10-08T11:48:39.743142Z",
+          "DisplayName": "Local Administrator",
+          "EntityType": "User",
+          "ExternalID": "confighub:local:admin",
+          "Slug": "admin",
+          "UpdatedAt": "2026-10-08T11:48:39.743142Z",
+          "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+          "Username": "admin@local.confighub.dev"
+        }
+      }
+    },
+    {
+      "Mutation": {
+        "Mutation": {
+          "CreatedAt": "2026-11-19T11:13:16.564438Z",
+          "EntityType": "Mutation",
+          "FunctionInvocation": {},
+          "MutationID": "e353e208-f78b-4d3f-a84e-74ba5db89198",
+          "MutationNum": 1,
+          "OrganizationID": "b098bd0e-27f8-4f31-9add-295ebd83e63c",
+          "ProvidedResource": {},
+          "RevisionID": "703a51eb-4e71-4b4a-b9c7-c97e276407bc",
+          "RevisionNum": 2,
+          "SpaceID": "352eba82-28cf-4632-bda9-3c327bb2f0a2",
+          "SpaceSlug": "fd-base",
+          "UnitID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+          "UnitSlug": "web",
+          "UpdatedAt": "2026-11-19T11:13:16.564438Z"
+        }
+      },
+      "Origin": {
+        "Description": "MergeExternal; from /private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "MutationNum": 1,
+        "RevisionID": "703a51eb-4e71-4b4a-b9c7-c97e276407bc",
+        "RevisionNum": 2,
+        "SetBy": "/private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+        "Source": "MergeExternal",
+        "SpaceID": "352eba82-28cf-4632-bda9-3c327bb2f0a2",
+        "SpaceSlug": "fd-base",
+        "UnitID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+        "UnitSlug": "web",
+        "User": "admin@local.confighub.dev",
+        "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+        "When": "2026-11-19T11:13:16.562801Z"
+      },
+      "Revision": {
+        "Revision": {
+          "CreatedAt": "2026-11-19T11:13:16.562801Z",
+          "Description": "MergeExternal; from /private/tmp/claude-501/-Users-charlieewing-Documents-GitHub-claude-canvas--worktrees-task-b14uvcax/1b995215-90b6-4bc2-a159-9ed770992b46/scratchpad/seed/web.yaml",
+          "EntityType": "Revision",
+          "OrganizationID": "b098bd0e-27f8-4f31-9add-295ebd83e63c",
+          "RevisionID": "703a51eb-4e71-4b4a-b9c7-c97e276407bc",
+          "RevisionNum": 2,
+          "Source": "MergeExternal",
+          "SpaceID": "352eba82-28cf-4632-bda9-3c327bb2f0a2",
+          "UnitID": "45d003a7-bd17-42aa-9b12-fcebd2274e6a",
+          "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b"
+        },
+        "User": {
+          "CreatedAt": "2026-10-08T11:48:39.743142Z",
+          "DisplayName": "Local Administrator",
+          "EntityType": "User",
+          "ExternalID": "confighub:local:admin",
+          "Slug": "admin",
+          "UpdatedAt": "2026-10-08T11:48:39.743142Z",
+          "UserID": "f39db730-e0b7-4f6e-99f7-422dde997a8b",
+          "Username": "admin@local.confighub.dev"
+        }
+      }
+    }
+  ],
+  "Field": {
+    "Path": "spec.template.spec.containers.?name=web.image",
+    "Ref": "3ec3a9e",
+    "ResourceName": "test-ns/web",
+    "ResourceNameWithoutScope": "web",
+    "ResourceType": "apps/v1/Deployment",
+    "SpaceID": "8bd0ae8d-bf49-4919-9e50-4ac0e0f48797",
+    "SpaceSlug": "fd-prod",
+    "UnitID": "ef5f242e-4632-4d52-80e6-86e892afbb06",
+    "UnitSlug": "web",
+    "Value": "registry.example.com/legacy/web:1.4.2"
+  },
+  "Names": {
+    "45d003a7-bd17-42aa-9b12-fcebd2274e6a": "fd-base/web",
+    "53c8abe4-d2dc-4f60-b2a6-3d835d9588c4": "fd-staging/web"
+  },
+  "ReleaseMessage": "nothing to release: space fd-prod has no release target",
+  "ReleaseState": "NothingToRelease"
+}
