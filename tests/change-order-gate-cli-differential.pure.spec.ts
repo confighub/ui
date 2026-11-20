@@ -41,7 +41,7 @@
 //   cub changeorder create --space gdx-base <co> --change-workflow gd-workflow/<wf>
 //   cub variant promote --change-order gdx-base/<co> --target-stage <stage> --dry-run
 //
-// A Space's live status is set by hand rather than by argobot, by patching
+// A Space's live status is set by hand rather than by k8sbot, by patching
 // `LiveStatus` onto the Release it is running:
 //   cub release update --patch <release-id> --from-stdin <<< '{"LiveStatus": {...}}'
 //

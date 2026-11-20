@@ -73,7 +73,7 @@ export interface UnitIdsArg {
   unitIds: string[];
 }
 
-export interface ListUnitsByIdChunkedArg extends Pick<ListAllUnitsApiArg, 'select'> {
+export interface ListUnitsByIdChunkedArg extends Pick<ListAllUnitsApiArg, 'select' | 'include'> {
   unitIds: string[];
 }
 
@@ -277,7 +277,7 @@ const chunkedQueriesApi = confighubApi.injectEndpoints({
         fetchChunks<ListAllUnitsApiResponse[number]>(
           'UnitID',
           idSet(arg.unitIds),
-          (where) => ({ url: `/unit`, params: { where, select: arg.select } }),
+          (where) => ({ url: `/unit`, params: { where, select: arg.select, include: arg.include } }),
           baseQuery,
         ),
       serializeQueryArgs: ({ endpointName, endpointDefinition, queryArgs }) =>

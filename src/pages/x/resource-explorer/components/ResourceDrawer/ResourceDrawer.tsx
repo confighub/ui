@@ -8,6 +8,7 @@ import { useLazyListAllResourcesQuery } from '@confighub/rtk-query';
 import { TOP_NAV_HEIGHT } from '@/utility/constants';
 import CloseIcon from '@mui/icons-material/Close';
 import Alert from '@mui/material/Alert';
+import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import Drawer from '@mui/material/Drawer';
@@ -18,6 +19,7 @@ import Tabs from '@mui/material/Tabs';
 import Typography from '@mui/material/Typography';
 
 import { ResourceRow } from '../../hooks/useResourceRows';
+import { type SelectorMatch, selectorMatchAction, selectorMatchDirection } from '../../selectorMatch';
 import { ResourceContext } from '@/components/resource-overview/ResourceContext';
 import { ResourceOverview } from '@/components/resource-overview/ResourceOverview';
 import { offersOverview } from '@/components/resource-overview/overviewAvailability';
@@ -27,6 +29,8 @@ interface ResourceDrawerProps {
   /** Row to display. When null, drawer is closed. */
   row: ResourceRow | null;
   onClose: () => void;
+  /** Narrows the explorer to what the resource's selector selects, or to what selects it. */
+  onSelectorMatch?: (match: SelectorMatch) => void;
 }
 
 interface BodyState {
@@ -50,7 +54,7 @@ type DrawerTab = 'overview' | 'yaml';
  * queryable projection, so this is a single-row read rather than a re-extraction
  * of the whole parent unit.
  */
-export function ResourceDrawer({ row, onClose }: ResourceDrawerProps) {
+export function ResourceDrawer({ row, onClose, onSelectorMatch }: ResourceDrawerProps) {
   const [triggerListResources] = useLazyListAllResourcesQuery();
   const [body, setBody] = useState<BodyState>(INITIAL_BODY);
   const [tab, setTab] = useState<DrawerTab>('overview');
@@ -161,6 +165,8 @@ export function ResourceDrawer({ row, onClose }: ResourceDrawerProps) {
             toolchainType={row.ToolchainType}
           />
 
+          {onSelectorMatch && <SelectorMatchAction row={row} onSelectorMatch={onSelectorMatch} />}
+
           <Tabs
             value={tab}
             onChange={(_, v: DrawerTab) => setTab(v)}
@@ -212,5 +218,38 @@ export function ResourceDrawer({ row, onClose }: ResourceDrawerProps) {
         </>
       )}
     </Drawer>
+  );
+}
+
+/** The action narrowing the explorer by the resource's selector or pods, for a kind that has one. */
+function SelectorMatchAction({
+  row,
+  onSelectorMatch,
+}: {
+  row: ResourceRow;
+  onSelectorMatch: (match: SelectorMatch) => void;
+}) {
+  const direction = selectorMatchDirection(row.ResourceType, row.ToolchainType);
+  if (!direction) return null;
+  return (
+    <Box sx={{ px: 2, pb: 1 }}>
+      <Button
+        size='small'
+        variant='outlined'
+        onClick={() =>
+          onSelectorMatch({
+            direction,
+            resourceId: row.ResourceID,
+            resourceType: row.ResourceType,
+            resourceName: resourceDisplayName(row.ResourceName, row.ToolchainType),
+            unit: `${row.SpaceSlug}/${row.UnitSlug}`,
+          })
+        }
+        data-testid='resource-drawer-selector-match'
+        sx={{ textTransform: 'none' }}
+      >
+        {selectorMatchAction(direction)}
+      </Button>
+    </Box>
   );
 }

@@ -1,7 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 // What the Add/Edit Trigger form holds, and how it becomes the Trigger it writes.
-import type { TriggerRead } from '@confighub/rtk-query';
+import type { OtherUnitSelection, TriggerRead } from '@confighub/rtk-query';
 
 import {
   type ClearanceRow,
@@ -24,6 +24,23 @@ import { TRIGGER_GUARD_KEY, joinKeepGuard, splitKeepGuard } from '@/utility/over
 
 /** Whether a Trigger runs a function it names or a stored Invocation. */
 export type TriggerSource = 'Function' | 'Invocation';
+
+/** A Unit the Trigger passes its function as OtherData, under the key the function reads it by. */
+export interface OtherUnitRow {
+  key: string;
+  unitId: string;
+}
+
+/**
+ * A selection of Units the Trigger passes its function under a key, which each Space selecting
+ * the Trigger evaluates for itself.
+ */
+export interface OtherUnitSelectionRow {
+  key: string;
+  where: string;
+  filterId: string;
+  whereResource: string;
+}
 
 export interface IAddTriggerFormInput {
   Slug: string;
@@ -48,6 +65,8 @@ export interface IAddTriggerFormInput {
   WhereUnit?: string;
   UnitFilterID?: string;
   WhereResource?: string;
+  OtherUnits?: OtherUnitRow[];
+  OtherUnitSelections?: OtherUnitSelectionRow[];
   /** The Trigger states the guard Trigger=<Slug>, which Guards and Clearance then leave out. */
   KeepOnMerge?: boolean;
   Guards?: MapRow[];
@@ -74,6 +93,8 @@ export const defaultTriggerFormInput = (): IAddTriggerFormInput => ({
   WhereUnit: '',
   UnitFilterID: '',
   WhereResource: '',
+  OtherUnits: [],
+  OtherUnitSelections: [],
   KeepOnMerge: false,
   Guards: [],
   Clearance: [],
@@ -107,6 +128,17 @@ export const triggerToFormInput = (trigger: TriggerRead): IAddTriggerFormInput =
     WhereUnit: trigger.WhereUnit || '',
     UnitFilterID: trigger.UnitFilterID || '',
     WhereResource: trigger.WhereResource || '',
+    OtherUnits: Object.entries(trigger.OtherUnitIDs ?? {})
+      .map(([key, unitId]) => ({ key, unitId }))
+      .sort((a, b) => a.key.localeCompare(b.key)),
+    OtherUnitSelections: Object.entries(trigger.OtherUnitSelections ?? {})
+      .map(([key, selection]) => ({
+        key,
+        where: selection.Where ?? '',
+        filterId: selection.FilterID ?? '',
+        whereResource: selection.WhereResource ?? '',
+      }))
+      .sort((a, b) => a.key.localeCompare(b.key)),
     KeepOnMerge: kept.keep,
     Guards: mapToRows(kept.guards),
     Clearance: clearanceToRows(kept.clearance),
@@ -119,6 +151,33 @@ const optional = (value: string | undefined): string | undefined => {
   return trimmed ? trimmed : undefined;
 };
 
+/** The rows naming a Unit, by key. A row without both is left out. */
+export const rowsToOtherUnitIDs = (rows: OtherUnitRow[] | undefined): Record<string, string> =>
+  Object.fromEntries(
+    (rows ?? []).flatMap((row) => (row.key.trim() && row.unitId ? [[row.key.trim(), row.unitId]] : [])),
+  );
+
+/** The selection rows, by key. A row without a key is left out, and so is each blank part. */
+export const rowsToOtherUnitSelections = (
+  rows: OtherUnitSelectionRow[] | undefined,
+): Record<string, OtherUnitSelection> =>
+  Object.fromEntries(
+    (rows ?? []).flatMap((row) =>
+      row.key.trim()
+        ? [
+            [
+              row.key.trim(),
+              {
+                Where: optional(row.where),
+                FilterID: optional(row.filterId),
+                WhereResource: optional(row.whereResource),
+              },
+            ],
+          ]
+        : [],
+    ),
+  );
+
 /**
  * The fields of the Trigger the form writes. Every field the form shows is set, to undefined when
  * blank, so an edit that clears one sends the Trigger without it rather than an empty string the
@@ -130,8 +189,9 @@ const optional = (value: string | undefined): string | undefined => {
  * Keep on merge is for a function that writes: it is the guard naming the Trigger, with the
  * clearance to write over it again, and a validating function writes nothing.
  *
- * The other Units a Trigger passes its function, OtherUnitIDs, are not in the form, so an edit keeps
- * the ones the Trigger has.
+ * A Trigger running an Invocation passes its functions the Units the Invocation names, so it names
+ * none of its own; it may still have selections, under keys the Invocation does not name. The
+ * update replaces the Trigger, so a key removed from the form is removed from the Trigger.
  */
 export const buildTriggerBody = (
   data: IAddTriggerFormInput,
@@ -177,7 +237,8 @@ export const buildTriggerBody = (
     WhereUnit: optional(data.WhereUnit),
     UnitFilterID: optional(data.UnitFilterID),
     WhereResource: optional(data.WhereResource),
-    OtherUnitIDs: runsInvocation ? undefined : existingTrigger?.OtherUnitIDs,
+    OtherUnitIDs: runsInvocation ? undefined : rowsToOtherUnitIDs(data.OtherUnits),
+    OtherUnitSelections: rowsToOtherUnitSelections(data.OtherUnitSelections),
     Guards: written.guards,
     Clearance: written.clearance,
   };
@@ -209,3 +270,47 @@ const withEnforcementAnnotations = (
   if (enforcedAt) out[ENFORCED_AT_ANNOTATION] = enforcedAt;
   return out;
 };
+
+/**
+ * The merge patch that sets the rows' keys on many Triggers at once, each replacing what a Trigger
+ * has under that key, and removes the keys named. A selection is stated whole: a part left blank is
+ * sent as null, so it does not keep the part a Trigger had. A key is in one map or the other, so a
+ * key set in one is removed from the other, and a removed key is removed from both.
+ */
+export const otherDataPatch = (
+  units: OtherUnitRow[] | undefined,
+  selections: OtherUnitSelectionRow[] | undefined,
+  removeKeys: string[],
+): {
+  OtherUnitIDs?: Record<string, string | null>;
+  OtherUnitSelections?: Record<string, OtherUnitSelectionPatch | null>;
+} => {
+  const removed = Object.fromEntries(
+    removeKeys.map((key) => key.trim()).filter(Boolean).map((key) => [key, null] as const),
+  );
+  const unitIDs: Record<string, string | null> = { ...removed };
+  const selected: Record<string, OtherUnitSelectionPatch | null> = { ...removed };
+  Object.entries(rowsToOtherUnitIDs(units)).forEach(([key, unitId]) => {
+    unitIDs[key] = unitId;
+    selected[key] = null;
+  });
+  Object.entries(rowsToOtherUnitSelections(selections)).forEach(([key, selection]) => {
+    unitIDs[key] = null;
+    selected[key] = {
+      Where: selection.Where ?? null,
+      FilterID: selection.FilterID ?? null,
+      WhereResource: selection.WhereResource ?? null,
+    };
+  });
+  return {
+    ...(Object.keys(unitIDs).length > 0 ? { OtherUnitIDs: unitIDs } : {}),
+    ...(Object.keys(selected).length > 0 ? { OtherUnitSelections: selected } : {}),
+  };
+};
+
+/** A selection in a merge patch: null removes a part. */
+export interface OtherUnitSelectionPatch {
+  Where: string | null;
+  FilterID: string | null;
+  WhereResource: string | null;
+}

@@ -31,9 +31,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
-import { OrganizationRow } from '@/components/organization-switcher/OrganizationRow';
 import { BackingUnitLink } from '@/components/backing-unit/BackingUnitLink';
 import { EnableBackingUnitField } from '@/components/backing-unit/EnableBackingUnitField';
+import { Header, type HeaderProps } from '@/components/header/Header';
 import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
 import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 
@@ -405,14 +405,27 @@ export default function WorkflowBuilderPage() {
     rootRef.current?.querySelector(`#cp-${api.cpSel}`)?.scrollIntoView({ block: 'nearest' });
   }, [api.customRevealNonce, api.cpSel]);
 
+  /* A blank draft is already at the list's address, so a link to the list
+     would not leave it; the backlink below does that. */
+  const workflowName = detail.workflow ? detail.workflow.displayName || detail.workflow.slug : '';
+  const breadCrumbs: HeaderProps['breadCrumbs'] = showingList
+    ? [{ name: 'ChangeWorkflows' }]
+    : [
+        draftMode ? { name: 'ChangeWorkflows' } : { name: 'ChangeWorkflows', isLink: true, link: '/change-workflows' },
+        ...(draftMode ? [{ name: 'New ChangeWorkflow' }] : workflowName ? [{ name: workflowName }] : []),
+      ];
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Escape' && api.selection) api.clearSelection();
   };
 
   return (
     <div className='wfb' ref={rootRef} onKeyDown={onKeyDown}>
-      {/* Same width and side gutter as `.shell`, so the picker lines up with the content below it. */}
-      <OrganizationRow sx={{ maxWidth: 1560, margin: '0 auto', padding: '12px 20px 0' }} />
+      {/* The wrapper keeps the header from sticking: the Stages card's head sticks to the top
+          of the same scrolling area, and a sticky header would cover it. */}
+      <div>
+        <Header breadCrumbs={breadCrumbs} />
+      </div>
       {showingList ? (
         <WorkflowsConsole
           api={api}

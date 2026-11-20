@@ -38,7 +38,7 @@ import {
 } from '../src/pages/x/apps/change-order/changeOrdersConsoleModel';
 
 const HEALTHY: LiveStatus = { Sync: 'Synced', Operation: 'Succeeded', Health: 'Healthy' };
-/** What argobot reports when the workload is failing. */
+/** What k8sbot reports when the workload is failing. */
 const FAILING: LiveStatus = {
   Sync: 'OutOfSync',
   Operation: 'Failed',

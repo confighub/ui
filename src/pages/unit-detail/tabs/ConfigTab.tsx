@@ -17,6 +17,7 @@ import { guardOnLineText, guardedLines } from '@/utility/guard-line-functions';
 import { UnitRead } from '@confighub/rtk-query';
 import CancelIcon from '@mui/icons-material/Cancel';
 import EditIcon from '@mui/icons-material/Edit';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import Button from '@mui/material/Button';
@@ -27,7 +28,10 @@ import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
 
 import { blameFlagMeta } from '../components/blame/blameFields';
+import Box from '@mui/material/Box';
 import { LastChangeDescriptionModal } from '../components/last-change-description-modal/LastChangeDescriptionModal';
+import { ChangeUnitNotices, SaveCaption } from '@/components/change-panel/ChangeUnitNotices';
+import { useChangeEditLock, useFinishedHold, useOwnOtherChange } from '@/components/change-panel/useHeldUnit';
 import { UNIT_DETAIL_TAB, unitBlameHref } from '../unitDetailHrefs';
 
 // Monaco (plus monaco-yaml and its workers) is the heaviest dependency on this
@@ -96,6 +100,13 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
   const [editSession, setEditSession] = useState(0);
 
   const { data: loadedData, etag, isLoaded } = useEditableUnitData(unit.SpaceID, unit.UnitID);
+  // Read only while another person's open change holds the Unit (D14).
+  const heldByOther = useChangeEditLock(unit);
+  // In another open change of your own: the server refuses a save that does not name it (D28).
+  const ownOther = useOwnOtherChange(unit);
+  // Held by a finished change (D37): every write is refused until the Unit is freed.
+  const finishedHold = useFinishedHold(unit);
+  const saveWaits = ownOther !== null || finishedHold !== null;
   const hasChanges = editedData !== undefined && editedData !== loadedData;
 
   // The lines guards are recorded on, marked in the gutter. Worked out from the configuration as
@@ -190,6 +201,7 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
       {selectedTab === CONFIG_TAB_ID && (
         <>
           <ErrorBox sx={{ mb: 1 }} error={errorMessage} onClose={() => setErrorMessage('')} />
+          <ChangeUnitNotices unit={unit} />
           {withheld.length > 0 && (
             <WithheldByGuardsNotice
               withheld={withheld}
@@ -206,22 +218,32 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
           {guardedWrite.dialog}
 
           <Container>
-            <BorderedAccordion sx={{ marginBottom: '15px' }} expanded>
+            <BorderedAccordion sx={{ marginBottom: '15px' }} expanded data-testid='config-editor'>
               {/* Header Section */}
               <AccordionSummary>
                 <Header>
                   <Typography variant='h6'>{unit.ToolchainType} Configuration</Typography>
                   <Stack direction='row' spacing={1}>
-                    {/* Edit Mode Toggle Button */}
-                    <Button
-                      startIcon={isEditMode ? <CancelIcon /> : <EditIcon />}
-                      variant='text'
-                      color='secondary'
-                      disabled={!isEditMode && !isLoaded}
-                      onClick={() => onToggleEditMode(!isEditMode)}
-                    >
-                      {isEditMode ? 'Cancel' : 'Edit'}
-                    </Button>
+                    {/* Edit Mode Toggle Button; while another person's change holds the Unit, Read only (D8) */}
+                    {heldByOther ? (
+                      <Box
+                        data-testid='config-read-only'
+                        sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 12, color: 'text.secondary' }}
+                      >
+                        <LockOutlinedIcon sx={{ fontSize: 14 }} />
+                        Read only
+                      </Box>
+                    ) : (
+                      <Button
+                        startIcon={isEditMode ? <CancelIcon /> : <EditIcon />}
+                        variant='text'
+                        color='secondary'
+                        disabled={!isEditMode && !isLoaded}
+                        onClick={() => onToggleEditMode(!isEditMode)}
+                      >
+                        {isEditMode ? 'Cancel' : 'Edit'}
+                      </Button>
+                    )}
                   </Stack>
                 </Header>
               </AccordionSummary>
@@ -251,7 +273,7 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
                         // The editor also reports text it was given, not only typing.
                         if (isEditMode) setEditedData(value);
                       }}
-                      canEdit={isEditMode}
+                      canEdit={isEditMode && !heldByOther}
                       gutterMarks={gutterMarks}
                       gutterMarkColor={blameFlagMeta('Guarded').color}
                     />
@@ -262,8 +284,10 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
               <Divider />
 
               {/* Footer with Save/Cancel Buttons */}
-              <Footer $isVisible={isEditMode}>
-                <Grid container spacing={2}>
+              <Footer $isVisible={isEditMode && !heldByOther}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <SaveCaption unit={unit} />
+                <Grid container spacing={2} sx={{ flex: '0 0 50%', marginLeft: 'auto' }}>
                   <Grid size={{ xs: 6 }}>
                     <Button
                       variant='text'
@@ -279,7 +303,7 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
                     <Button
                       variant='contained'
                       fullWidth
-                      disabled={!hasChanges || guardedWrite.busy}
+                      disabled={!hasChanges || guardedWrite.busy || saveWaits}
                       onClick={() => {
                         // Show change description modal
                         setIsShowLastChangeDescriptionModalOpen(true);
@@ -289,6 +313,7 @@ export const ConfigTab = ({ unit, onConfigUpdated, selectedTab }: ConfigEditorTa
                     </Button>
                   </Grid>
                 </Grid>
+                </Box>
               </Footer>
             </BorderedAccordion>
 

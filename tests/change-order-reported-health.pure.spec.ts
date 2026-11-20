@@ -45,7 +45,7 @@ const HEALTHY: LiveStatus = {
   Health: 'Healthy',
 };
 
-/** The shape argobot writes when the workload is on fire. */
+/** The shape k8sbot writes when the workload is on fire. */
 const FAILING: LiveStatus = {
   Sync: 'OutOfSync',
   Operation: 'Failed',

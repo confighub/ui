@@ -9,6 +9,7 @@ import GridOnIcon from '@mui/icons-material/GridOn';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
 import Snackbar from '@mui/material/Snackbar';
 import Stack from '@mui/material/Stack';
@@ -33,8 +34,9 @@ import {
   viewNeedsResourceBody,
   viewsEqual,
 } from './types';
+import { type SelectorMatch, selectorMatchLabel } from './selectorMatch';
 import { getCellValue } from './utils';
-import { OrganizationRow } from '@/components/organization-switcher/OrganizationRow';
+import { Header, type HeaderProps } from '@/components/header/Header';
 
 type SidebarTab = 'edit' | 'groups';
 
@@ -47,6 +49,8 @@ type SidebarTab = 'edit' | 'groups';
  * client-side and serialized into the `?v=` URL parameter so views can be
  * shared without needing a server-side View entity.
  */
+const RESOURCE_EXPLORER_BREADCRUMBS: HeaderProps['breadCrumbs'] = [{ name: 'Resource explorer' }];
+
 export default function ResourceExplorerPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -84,27 +88,44 @@ export default function ResourceExplorerPage() {
       where: applied.where ?? '',
       whereData: applied.whereData ?? '',
       resourceType: applied.resourceType ?? '',
+      selectorMatch: applied.selectorMatch,
       needBody,
     });
-  }, [refetch, applied.where, applied.whereData, applied.resourceType, needBody]);
+  }, [refetch, applied.where, applied.whereData, applied.resourceType, applied.selectorMatch, needBody]);
 
-  const handleApply = useCallback(() => {
-    setApplied(draft);
-    setSelectedGroups([]); // group selection is tied to the view's groupBy list
-    if (viewsEqual(draft, DEFAULT_VIEW)) {
-      // Keep the URL clean when the user is back on the default view.
-      const next = new URLSearchParams(searchParams);
-      next.delete(URL_PARAM);
-      setSearchParams(next, { replace: false });
-    } else {
-      const next = new URLSearchParams(searchParams);
-      next.set(URL_PARAM, encodeView(draft));
-      setSearchParams(next, { replace: false });
-    }
-    if ((draft.groupBy?.length ?? 0) > 0) {
-      setSidebarTab('groups');
-    }
-  }, [draft, searchParams, setSearchParams]);
+  const applyView = useCallback(
+    (view: ResourceView) => {
+      setApplied(view);
+      setSelectedGroups([]); // group selection is tied to the view's groupBy list
+      if (viewsEqual(view, DEFAULT_VIEW)) {
+        // Keep the URL clean when the user is back on the default view.
+        const next = new URLSearchParams(searchParams);
+        next.delete(URL_PARAM);
+        setSearchParams(next, { replace: false });
+      } else {
+        const next = new URLSearchParams(searchParams);
+        next.set(URL_PARAM, encodeView(view));
+        setSearchParams(next, { replace: false });
+      }
+      if ((view.groupBy?.length ?? 0) > 0) {
+        setSidebarTab('groups');
+      }
+    },
+    [searchParams, setSearchParams],
+  );
+
+  const handleApply = useCallback(() => applyView(draft), [applyView, draft]);
+
+  // Narrowing to what a resource selects, or to what selects it, applies at once and keeps the
+  // view's other edits as drafted; clearing it does the same.
+  const setSelectorMatch = useCallback(
+    (selectorMatch: SelectorMatch | undefined) => {
+      setDraft((current) => ({ ...current, selectorMatch }));
+      applyView({ ...applied, selectorMatch });
+      setSelectedRow(null);
+    },
+    [applied, applyView],
+  );
 
   const handleReset = useCallback(() => {
     setDraft(applied);
@@ -115,9 +136,10 @@ export default function ResourceExplorerPage() {
       where: applied.where ?? '',
       whereData: applied.whereData ?? '',
       resourceType: applied.resourceType ?? '',
+      selectorMatch: applied.selectorMatch,
       needBody,
     });
-  }, [refetch, applied.where, applied.whereData, applied.resourceType, needBody]);
+  }, [refetch, applied.where, applied.whereData, applied.resourceType, applied.selectorMatch, needBody]);
 
   const handleCopyShareLink = useCallback(() => {
     const url = new URL(window.location.href);
@@ -170,6 +192,9 @@ export default function ResourceExplorerPage() {
     <Box
       sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', minHeight: 0 }}
     >
+      <div>
+        <Header breadCrumbs={RESOURCE_EXPLORER_BREADCRUMBS} />
+      </div>
       <Stack
         direction='row'
         alignItems='baseline'
@@ -177,7 +202,6 @@ export default function ResourceExplorerPage() {
         sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider' }}
       >
         <Box>
-          <OrganizationRow sx={{ marginBottom: 0.5 }} />
           <Typography variant='h6' fontWeight={600}>
             Resource Explorer
           </Typography>
@@ -286,6 +310,18 @@ export default function ResourceExplorerPage() {
             </Stack>
           </Stack>
 
+          {applied.selectorMatch && (
+            <Box sx={{ mb: 1.5 }}>
+              <Chip
+                size='small'
+                label={selectorMatchLabel(applied.selectorMatch)}
+                onDelete={() => setSelectorMatch(undefined)}
+                data-testid='resource-explorer-selector-match'
+                sx={{ maxWidth: '100%' }}
+              />
+            </Box>
+          )}
+
           {error && (
             <Alert severity='error' sx={{ mb: 2 }}>
               {error}
@@ -301,7 +337,7 @@ export default function ResourceExplorerPage() {
         </Box>
       </Box>
 
-      <ResourceDrawer row={selectedRow} onClose={handleDrawerClose} />
+      <ResourceDrawer row={selectedRow} onClose={handleDrawerClose} onSelectorMatch={setSelectorMatch} />
 
       <ResourceSummaryDialog
         open={summaryOpen}

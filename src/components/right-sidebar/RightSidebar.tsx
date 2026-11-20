@@ -22,6 +22,7 @@ import {
   useDeleteInvocationMutation,
   useGetSpaceQuery,
   useInvokeFunctionsOnOrgMutation,
+  useLazyListAllChangeSetsQuery,
   useLazyListAllUnitsQuery,
   useListAllUnitsQuery,
   useListAllInvocationsQuery,
@@ -66,6 +67,12 @@ import {
 } from '@/components/invoker/utils/invocation-write-options';
 import { chunkInClause, inClause } from '@/hooks/inClauseChunks';
 import { nonMergeClearance, unitHasGuards } from '@/utility/clearance-functions';
+import type { SidebarPanelKind } from '@/hooks/useInvokerSidebar';
+import { ChangePanel } from '@/components/change-panel/ChangePanel';
+import { tokens } from '@/components/theme-provider/ThemeProvider';
+import { ChangeRailContent } from '@/components/change-panel/ChangeRailContent';
+import type { LeftOutUnit, RunPlan } from '@/components/change-panel/runPlan';
+import { useActiveChange, useOpenChangeName } from '@/components/change-panel/ActiveChangeProvider';
 
 export type ListOrgFunctionsApiResponse = {
   [key: string]: {
@@ -83,6 +90,9 @@ interface InvokerSidebarProps {
   onRestoreAllUnits?: () => void;
   totalVisibleUnits?: number;
   isOpen: boolean;
+  /** Which content the panel shows. */
+  panel: SidebarPanelKind;
+  onTogglePanel: (kind: SidebarPanelKind) => void;
   panelWidth: number;
   isResizing: boolean;
   onToggle: () => void;
@@ -190,6 +200,8 @@ export const InvokerSidebar = ({
   onRestoreAllUnits,
   totalVisibleUnits,
   isOpen,
+  panel,
+  onTogglePanel,
   panelWidth,
   isResizing,
   onToggle,
@@ -197,6 +209,9 @@ export const InvokerSidebar = ({
   onOpen,
   onResizeStart,
 }: InvokerSidebarProps) => {
+  const functionsOpen = isOpen && panel === 'functions';
+  const changeOpen = isOpen && panel === 'change';
+  const openChangeName = useOpenChangeName();
   const theme = useTheme();
   const location = useLocation();
 
@@ -216,6 +231,8 @@ export const InvokerSidebar = ({
      *  panel from later changes to the selected-units prop, which would
      *  otherwise drop the slug map out from under us. */
     slugByUnitId?: Record<string, string>;
+    /** A run in your change that left out Units held by another change (D38). */
+    ranIn?: RunPlan;
   } | null>(null);
   const [isInvoking, setIsInvoking] = useState(false);
   const [isSavingAttributes, setIsSavingAttributes] = useState(false);
@@ -314,10 +331,16 @@ export const InvokerSidebar = ({
         event.preventDefault();
         onToggle();
       }
+      // A page that shows a control of its own for "c" (the view explorer's Compare) keeps the key.
+      const pageOwnsC = document.querySelector('[aria-keyshortcuts="c"]') !== null;
+      if (event.key === 'c' && !hasModifier && !pageOwnsC && !isTextEntryTarget(event.target)) {
+        event.preventDefault();
+        onTogglePanel('change');
+      }
     };
     document.addEventListener('keydown', handleKeyPress);
     return () => document.removeEventListener('keydown', handleKeyPress);
-  }, [onToggle]);
+  }, [onToggle, onTogglePanel]);
 
   // Auto-update toolchain filter
   useEffect(() => {
@@ -454,12 +477,80 @@ export const InvokerSidebar = ({
     },
     [listUnits],
   );
+  // The person's active change: an invoke with no ChangeSet picked joins it (D16, D20).
+  const activeChange = useActiveChange();
+  const activeChangeSet = activeChange?.detail.changeSet;
+  const activeChangeSetId =
+    activeChangeSet && (activeChangeSet.State === 'Open' || activeChangeSet.State === 'New') ? activeChangeSet.ChangeSetID : undefined;
+  /** The Units an invoke in the active change runs on: free ones and its own; the rest are in other changes. */
+  const splitForChange = useCallback(
+    async (unitIds: string[], changeSetId: string) => {
+      const pages = await Promise.all(
+        chunkInClause('UnitID', unitIds).map((where) => listUnits({ where, select: 'UnitID,ChangeSetID,SpaceID' }).unwrap()),
+      );
+      const rows = pages.flat().flatMap((item) => (item.Unit?.UnitID ? [item.Unit] : []));
+      const keep = rows.filter((u) => !u.ChangeSetID || u.ChangeSetID === changeSetId);
+      const left = rows.filter((u) => u.ChangeSetID && u.ChangeSetID !== changeSetId);
+      return { keep, left };
+    },
+    [listUnits],
+  );
+  const [listChangeSets] = useLazyListAllChangeSetsQuery();
+  /** The left-out Units as the person reads them: SPACE/Unit and the change that holds each. */
+  const describeLeft = useCallback(
+    async (left: { UnitID?: string; ChangeSetID?: string }[]): Promise<LeftOutUnit[]> => {
+      const ids = [...new Set(left.flatMap((u) => (u.ChangeSetID ? [u.ChangeSetID] : [])))];
+      const holders = ids.length
+        ? await listChangeSets({ where: `ChangeSetID IN (${ids.map((id) => `'${id}'`).join(', ')})` })
+            .unwrap()
+            .catch(() => [])
+        : [];
+      const changeOf = new Map(
+        holders.flatMap((e) => (e.ChangeSet?.ChangeSetID ? [[e.ChangeSet.ChangeSetID, { space: e.ChangeSet.SpaceSlug ?? e.Space?.Slug ?? '', slug: e.ChangeSet.Slug }] as const] : [])),
+      );
+      return left.flatMap((u) => {
+        if (!u.UnitID) return [];
+        const picked = enrichedContext.selectedUnits.find((s: { id: string }) => s.id === u.UnitID) as { name?: string; spaceName?: string } | undefined;
+        const label = picked?.spaceName ? `${picked.spaceName}/${picked.name ?? ''}` : (picked?.name ?? u.UnitID);
+        return [{ unitId: u.UnitID, label, change: u.ChangeSetID ? changeOf.get(u.ChangeSetID) : undefined }];
+      });
+    },
+    [listChangeSets, enrichedContext.selectedUnits],
+  );
   const [createInvocationMutation] = useCreateInvocationMutation();
 
   // When the Invoker runs for a Validation Trigger, each write is made in the Trigger's ChangeSet,
   // which is left open for the change to be reviewed. Otherwise invocations go through the
   // normal stateless `invokeFunctions` path.
   const initiativeId = useAppSelector(selectInvocationInitiativeId);
+  // Before the run (D38): with a change active, which ticked Units it can write and which it
+  // leaves out, read when the Functions panel has Units, so the note shows before Invoke.
+  const activeRef = activeChange?.ref;
+  const [runPlan, setRunPlan] = useState<RunPlan>();
+  const pickedKey = enrichedContext.selectedUnits.map((u: { id: string }) => u.id).join(',');
+  useEffect(() => {
+    let current = true;
+    const ids = pickedKey ? pickedKey.split(',') : [];
+    if (!activeChangeSetId || !activeRef || initiativeId || ids.length === 0) {
+      setRunPlan(undefined);
+      return;
+    }
+    void (async () => {
+      try {
+        const { keep, left } = await splitForChange(ids, activeChangeSetId);
+        const described = left.length ? await describeLeft(left) : [];
+        if (!current) return;
+        setRunPlan(described.length ? { total: ids.length, run: keep.length, change: { space: activeRef.space, slug: activeRef.slug }, left: described } : undefined);
+      } catch {
+        if (current) setRunPlan(undefined);
+      }
+    })();
+    return () => {
+      current = false;
+    };
+    // describeLeft reads names only; the plan follows the ticked Units and the active change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickedKey, activeChangeSetId, activeRef?.space, activeRef?.slug, initiativeId, splitForChange]);
   const triggerRef = useAppSelector(selectInvocationTriggerRef);
   const forTrigger = Boolean(initiativeId && triggerRef);
   const { invoke: invokeInChangeSet } = useInvokeInChangeSet();
@@ -489,12 +580,12 @@ export const InvokerSidebar = ({
 
   // Toggle the sidebar: closed -> open, open -> close.
   const handleFunctionsButtonClick = useCallback(() => {
-    if (isOpen) {
+    if (functionsOpen) {
       onClose();
     } else {
       onOpen();
     }
-  }, [isOpen, onOpen, onClose]);
+  }, [functionsOpen, onOpen, onClose]);
 
   // Close handler
   const handleClose = useCallback(() => {
@@ -659,7 +750,20 @@ export const InvokerSidebar = ({
           return;
         }
 
-        const selectedUnitIds = enrichedContext.selectedUnits.map((u: { id: string }) => u.id);
+        let selectedUnitIds = enrichedContext.selectedUnits.map((u: { id: string }) => u.id);
+        let ranIn: RunPlan | undefined;
+        // With an active change and no ChangeSet picked here, the write is made in the change: the
+        // free Units join it first (an invoke naming a ChangeSet refuses free Units), and Units
+        // in other changes are left out. They show in the change's Units, with no notice (D7).
+        if (!dryRun && activeChangeSetId && !writeOptions?.changeSetId && !initiativeId) {
+          const total = selectedUnitIds.length;
+          const { keep, left } = await splitForChange(selectedUnitIds, activeChangeSetId);
+          selectedUnitIds = keep.flatMap((u) => (u.UnitID ? [u.UnitID] : []));
+          if (left.length > 0 && activeChange?.ref) {
+            ranIn = { total, run: selectedUnitIds.length, change: { space: activeChange.ref.space, slug: activeChange.ref.slug }, left: await describeLeft(left) };
+          }
+          writeOptions = { ...(writeOptions ?? {}), changeSetId: activeChangeSetId } as InvokeWriteOptions;
+        }
 
         // Each Unit as the dialog and the results name it: with its Space, since slugs repeat.
         const labelByUnitId: Record<string, string> = {};
@@ -780,15 +884,22 @@ export const InvokerSidebar = ({
 
         const slugByUnitId: Record<string, string> = {};
         for (const u of enrichedContext.selectedUnits) {
-          if (u.name) slugByUnitId[u.id] = u.name;
+          // SPACE/Unit: Unit slugs repeat across Spaces.
+          if (u.name) slugByUnitId[u.id] = u.spaceName ? `${u.spaceName}/${u.name}` : u.name;
         }
 
         const invokeResultObj = {
           success: !hasErrors,
           dryRun,
-          message: hasErrors ? 'Some invocations failed' : 'All invocations succeeded',
+          // Never "All invocations succeeded" when Units were left out (D38).
+          message: hasErrors
+            ? 'Some invocations failed'
+            : ranIn
+              ? `Ran on ${ranIn.run} of ${ranIn.total} Units in your ChangeSet ${ranIn.change.slug}.`
+              : 'All invocations succeeded',
           responses: result,
           slugByUnitId,
+          ranIn,
         };
 
         const historyItem: InvocationHistoryItem = {
@@ -838,7 +949,7 @@ export const InvokerSidebar = ({
         setIsInvoking(false);
       }
     },
-    [spaceId, executorSpaceId, enrichedContext, invokeFunctionMutation, initiativeId, triggerRef, forTrigger, triggerChangeSetSpaceFor, askChangeSetSpace, invokeInChangeSet, joinChangeSet, addInvocation, guardedUnitIds, startGuardedWrite]
+    [spaceId, executorSpaceId, enrichedContext, invokeFunctionMutation, initiativeId, triggerRef, forTrigger, triggerChangeSetSpaceFor, askChangeSetSpace, invokeInChangeSet, joinChangeSet, addInvocation, guardedUnitIds, startGuardedWrite, activeChangeSetId, splitForChange, activeChange?.ref, describeLeft]
   );
 
   // Handle save invocation or trigger
@@ -1080,13 +1191,13 @@ export const InvokerSidebar = ({
       )}
 
       {/* Button Bar - acts as separator between main content and sidebar */}
-      <ButtonBar data-testid="invoker-rail">
+      <ButtonBar data-testid="right-bar">
         <Tooltip title="Functions (F)" placement="left">
           <SidebarButton
-            isActive={isOpen}
+            isActive={functionsOpen}
             onClick={handleFunctionsButtonClick}
             aria-label="Functions"
-            aria-expanded={isOpen}
+            aria-expanded={functionsOpen}
             data-testid="invoker-functions-button"
           >
             <FunctionsIcon fontSize="small" />
@@ -1105,11 +1216,29 @@ export const InvokerSidebar = ({
             </Typography>
           </SidebarButton>
         </Tooltip>
+        <Tooltip title={openChangeName ? `Your ChangeSet ${openChangeName} (C)` : 'Start a ChangeSet (C)'} placement="left">
+          <SidebarButton
+            isActive={changeOpen}
+            onClick={() => onTogglePanel('change')}
+            aria-label={openChangeName ? `Your ChangeSet ${openChangeName}` : 'Start a ChangeSet'}
+            aria-expanded={changeOpen}
+            data-testid="change-button"
+            sx={{ width: 36, ...(openChangeName ? {} : { borderColor: tokens.rustLine }) }}
+          >
+            <ChangeRailContent />
+          </SidebarButton>
+        </Tooltip>
       </ButtonBar>
 
       {/* Sidebar Panel - expands to the right of the button bar */}
       <SidebarPanel isOpen={isOpen} panelWidth={panelWidth}>
 
+        {panel === 'change' ? (
+          changeOpen && <Box data-testid="change-panel" sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, width: panelWidth }}>
+            <ChangePanel onClose={handleClose} />
+          </Box>
+        ) : (
+        <>
         {/* Header */}
         <SidebarHeader>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, minWidth: 0 }}>
@@ -1148,6 +1277,7 @@ export const InvokerSidebar = ({
             onSave={handleSave}
             isInvoking={isInvoking}
             invokeResult={invokeResult}
+            runPlan={runPlan}
             onRemoveUnit={handleInternalRemoveUnit}
             onAddUnit={handleInternalAddUnit}
             onRemoveAllUnits={handleInternalRemoveAllUnits}
@@ -1165,6 +1295,8 @@ export const InvokerSidebar = ({
             changeSetChoice={!forTrigger}
           />
         </SidebarContent>
+        </>
+        )}
       </SidebarPanel>
       {guardedWriteDialog}
       <ChangeSetSpaceDialog

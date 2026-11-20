@@ -16,7 +16,7 @@ import { useListAllChannelsQuery } from '@confighub/rtk-query';
 
 import { BackLink } from '@/components/console-detail/ConsoleDetail';
 import { CONSOLE_PAGE_SX } from '@/components/console-detail/consoleDetailUtil';
-import { OrganizationRow } from '@/components/organization-switcher/OrganizationRow';
+import { Header, type HeaderProps } from '@/components/header/Header';
 
 import { consoleTokens as T } from '../change-orders/consoleStyle';
 import { CHANNELS_PATH } from './channelAddress';
@@ -61,9 +61,13 @@ function ChannelPage({ space, slug }: { space: string; slug: string }) {
 
 export default function ChannelsPage() {
   const { space, slug } = useParams<{ space?: string; slug?: string }>();
+  const breadCrumbs: HeaderProps['breadCrumbs'] =
+    space && slug ? [{ name: 'Channels', isLink: true, link: CHANNELS_PATH }, { name: slug }] : [{ name: 'Channels' }];
   return (
     <Box data-testid='channels-root' sx={CONSOLE_PAGE_SX}>
-      <OrganizationRow />
+      <div>
+        <Header breadCrumbs={breadCrumbs} />
+      </div>
       {space && slug ? <ChannelPage space={space} slug={slug} /> : <ChannelList />}
     </Box>
   );

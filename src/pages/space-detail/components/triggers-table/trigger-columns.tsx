@@ -37,6 +37,14 @@ export const TRIGGER_COLUMN_GROUPS: ColumnGroup[] = [
     columns: ['Arguments'],
   },
   {
+    header: 'Applies To',
+    columns: ['WhereUnit', 'UnitFilter', 'WhereResource'],
+  },
+  {
+    header: 'Other Data',
+    columns: ['OtherUnits', 'OtherUnitSelections'],
+  },
+  {
     header: 'Infrastructure',
     columns: ['ChannelSlug', 'ChannelID'],
   },
@@ -56,6 +64,23 @@ export const TRIGGER_DYNAMIC_GROUPS: DynamicGroupConfig[] = [
     columnPrefix: 'Labels.',
   },
 ];
+
+export interface TriggerSelectionCell {
+  key: string;
+  where?: string;
+  filter?: string;
+  whereResource?: string;
+}
+
+/** A selection as one line of text, as the grid searches and sorts it. */
+const selectionText = (selection: TriggerSelectionCell): string =>
+  [
+    selection.where && `Where ${selection.where}`,
+    selection.filter && `Filter ${selection.filter}`,
+    selection.whereResource && `WhereResource ${selection.whereResource}`,
+  ]
+    .filter(Boolean)
+    .join('; ');
 
 export interface TriggerRowItem {
   id: string;
@@ -86,6 +111,14 @@ export interface TriggerRowItem {
   Labels: {
     [key: string]: string;
   };
+  WhereUnit: string;
+  /** The Unit Filter, named space/filter */
+  UnitFilter: string;
+  WhereResource: string;
+  /** The Units the Trigger passes its function, as key=space/unit, comma-separated */
+  OtherUnits: string;
+  /** The selections each Space selecting the Trigger evaluates, by key, the filter named */
+  OtherUnitSelections: TriggerSelectionCell[];
   _extendedTrigger?: ExtendedTriggerRead; // Store original for edit callback
 }
 
@@ -179,6 +212,58 @@ export const createTriggerStaticColumns = () =>
       renderCell: (params) => (
         <CenteredTableCell>
           <KeyValueListCell value={params.row.Arguments} />
+        </CenteredTableCell>
+      ),
+    },
+
+    WhereUnit: {
+      type: 'string',
+      headerName: 'Where Unit',
+      minWidth: 180,
+      flex: 1.5,
+    },
+
+    UnitFilter: {
+      type: 'string',
+      headerName: 'Unit Filter',
+      minWidth: 150,
+      flex: 1,
+    },
+
+    WhereResource: {
+      type: 'string',
+      headerName: 'Where Resource',
+      minWidth: 180,
+      flex: 1.5,
+    },
+
+    OtherUnits: {
+      type: 'custom',
+      headerName: 'Other Units',
+      minWidth: 180,
+      flex: 1.5,
+      valueGetter: (row) => row.OtherUnits,
+      renderCell: (params) => (
+        <CenteredTableCell>
+          <KeyValueListCell value={params.row.OtherUnits} />
+        </CenteredTableCell>
+      ),
+    },
+
+    OtherUnitSelections: {
+      type: 'custom',
+      headerName: 'Other Unit Selections',
+      minWidth: 180,
+      flex: 1.5,
+      valueGetter: (row) =>
+        row.OtherUnitSelections.map((selection) => `${selection.key}: ${selectionText(selection)}`).join(', '),
+      renderCell: (params) => (
+        <CenteredTableCell sx={{ gap: 0.5, overflow: 'hidden' }}>
+          {params.row.OtherUnitSelections.map((selection) => (
+            <Tooltip key={selection.key} arrow title={selectionText(selection)}>
+              <Chip size='small' variant='outlined' label={selection.key} />
+            </Tooltip>
+          ))}
         </CenteredTableCell>
       ),
     },

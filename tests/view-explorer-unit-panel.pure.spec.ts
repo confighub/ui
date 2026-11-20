@@ -330,11 +330,11 @@ test.describe('the Release the Space runs', () => {
   test('comes from the running Release only when its tool reported on it, in the table\'s tones', () => {
     expect(releaseLive(undefined)).toBeUndefined();
     expect(releaseLive({ releaseNum: 3, liveStatus: null })).toBeUndefined();
-    expect(releaseLive({ releaseNum: 3, liveStatus: { Sync: 'Synced', Health: 'Healthy', Reporter: 'argobot', ObservedAt: 't' } })).toEqual({
+    expect(releaseLive({ releaseNum: 3, liveStatus: { Sync: 'Synced', Health: 'Healthy', Reporter: 'k8sbot', ObservedAt: 't' } })).toEqual({
       num: 3,
       status: 'Synced · Healthy',
       tone: 'ok',
-      reporter: 'argobot',
+      reporter: 'k8sbot',
       observedAt: 't',
     });
     expect(releaseLive({ releaseNum: 3, liveStatus: { Sync: 'Synced', Health: 'Degraded' } })?.tone).toBe('blocked');

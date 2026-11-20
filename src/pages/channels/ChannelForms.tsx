@@ -137,7 +137,7 @@ export function CreateChannelDialog({
                 <TextField
                   {...field}
                   label='Name'
-                  placeholder='argobot'
+                  placeholder='k8sbot'
                   error={fieldState.invalid}
                   helperText={fieldState.error?.message}
                   inputProps={{ 'data-testid': 'channel-slug' }}

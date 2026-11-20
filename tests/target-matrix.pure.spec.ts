@@ -17,7 +17,7 @@ import {
 import type { LiveStatus, RunningRelease } from '../src/pages/x/apps/liveStatus';
 
 const status = (fields: Partial<LiveStatus>): LiveStatus => ({
-  Reporter: 'argobot',
+  Reporter: 'k8sbot',
   Sync: 'Synced',
   Health: 'Healthy',
   ...fields,

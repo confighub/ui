@@ -146,6 +146,155 @@ test.describe('Triggers of every Space', () => {
     }
   });
 
+  test("a Trigger's other Units and selections are edited in its drawer and listed in their columns", async ({ page }) => {
+    const api = new ApiHelper(page);
+    const base = `trgother-${RandomSlugGenerator.randomSlugName()}`;
+    const spaces: string[] = [];
+    try {
+      const spaceId = (await api.createSpace({ space: { Slug: base } })).SpaceID!;
+      spaces.push(spaceId);
+      const unitIdOf = async (slug: string) =>
+        ((await api.createUnit({ spaceId, unit: { Slug: slug, ToolchainType: 'Kubernetes/YAML' } as never })) as { UnitID: string })
+          .UnitID;
+      const policyA = await unitIdOf(`${base}-policy-a`);
+      const policyB = await unitIdOf(`${base}-policy-b`);
+      await createTrigger(spaceId, {
+        Slug: `${base}-check`,
+        FunctionName: 'vet-schemas',
+        OtherUnitIDs: { policy: policyA },
+        OtherUnitSelections: {
+          workloads: {
+            Where: 'Space.Slug = EvaluatingSpace.Slug',
+            WhereResource: "ConfigHub.ResourceType = 'apps/v1/Deployment'",
+          },
+        },
+      });
+      const [trigger] = await triggersIn(spaceId);
+
+      // The drawer shows the Unit by name and the selection as stored.
+      await page.goto(`/triggers?edit=${trigger.TriggerID}`);
+      await expect(page.getByTestId('trigger-other-unit-key-0')).toHaveValue('policy');
+      const unitPicker = page.getByTestId('trigger-other-unit-unit-0').getByRole('combobox');
+      await expect(unitPicker).toHaveValue(`${base}/${base}-policy-a`);
+      await expect(page.getByTestId('trigger-selection-key-0')).toHaveValue('workloads');
+      await expect(page.getByTestId('trigger-selection-where-0')).toHaveValue('Space.Slug = EvaluatingSpace.Slug');
+
+      // Another Unit, and the selection replaced by another.
+      await unitPicker.fill(`${base}-policy-b`);
+      await page.getByRole('option', { name: `${base}/${base}-policy-b`, exact: true }).click();
+      await page.getByRole('button', { name: 'Remove selection 1', exact: true }).click();
+      await page.getByTestId('trigger-selection-add').click();
+      await page.getByTestId('trigger-selection-key-0').fill('namespaces');
+
+      // A selection with nothing to select by is refused before anything is written.
+      await page.getByRole('button', { name: 'Update Trigger' }).click();
+      await expect(page.getByText('Give it a Where, a Unit Filter or a Where Resource')).toBeVisible();
+      await page.getByTestId('trigger-selection-where-resource-0').fill("ConfigHub.ResourceType = 'v1/Namespace'");
+      await page.getByRole('button', { name: 'Update Trigger' }).click();
+
+      await expect
+        .poll(async () => {
+          const response = await hubApi.get(`/api/space/${spaceId}/trigger/${trigger.TriggerID}`);
+          const { OtherUnitIDs, OtherUnitSelections } = ((await response.json()) as {
+            Trigger: { OtherUnitIDs?: Record<string, string>; OtherUnitSelections?: Record<string, unknown> };
+          }).Trigger;
+          return { OtherUnitIDs, OtherUnitSelections };
+        })
+        .toEqual({
+          OtherUnitIDs: { policy: policyB },
+          OtherUnitSelections: { namespaces: { WhereResource: "ConfigHub.ResourceType = 'v1/Namespace'" } },
+        });
+
+      // The list shows them in columns the Columns panel turns on.
+      await openTriggerList(page, base);
+      const row = rowOf(page, `${base}-check`);
+      await expect(row).toBeVisible({ timeout: 15000 });
+      await page.getByRole('button', { name: 'Select columns', exact: true }).click();
+      await page.getByRole('checkbox', { name: 'Other Units', exact: true }).check();
+      await page.getByRole('checkbox', { name: 'Other Unit Selections', exact: true }).check();
+      await page.keyboard.press('Escape');
+      await expect(row.locator('[data-field="OtherUnits"]')).toContainText(`policy=${base}/${base}-policy-b`);
+      await expect(row.locator('[data-field="OtherUnitSelections"]')).toHaveText('namespaces');
+    } finally {
+      // A Unit a Trigger names cannot be deleted, even with the Trigger in the same Space.
+      for (const trigger of spaces.length > 0 ? await triggersIn(spaces[0]) : []) {
+        await hubApi.delete(`/api/space/${spaces[0]}/trigger/${trigger.TriggerID}`);
+      }
+      await removeSpaces(spaces);
+    }
+  });
+
+  test('the bulk update sets a Unit and a selection on Triggers in two Spaces and removes a key from each', async ({ page }) => {
+    const api = new ApiHelper(page);
+    const base = `trgbulkod-${RandomSlugGenerator.randomSlugName()}`;
+    const spaces: string[] = [];
+    try {
+      for (const suffix of ['a', 'b']) {
+        spaces.push((await api.createSpace({ space: { Slug: `${base}-${suffix}` } })).SpaceID!);
+      }
+      // One already selects under the key, with a Where the update must not keep.
+      await createTrigger(spaces[0], {
+        Slug: `${base}-one`,
+        FunctionName: 'vet-schemas',
+        OtherUnitSelections: {
+          workloads: { Where: "Slug = 'old'" },
+          legacy: { WhereResource: "ConfigHub.ResourceType = 'v1/Pod'" },
+        },
+      });
+      // The other selects under the key the update gives a Unit, which replaces the selection.
+      await createTrigger(spaces[1], {
+        Slug: `${base}-two`,
+        FunctionName: 'vet-schemas',
+        OtherUnitSelections: {
+          legacy: { WhereResource: "ConfigHub.ResourceType = 'v1/Pod'" },
+          policy: { Where: "Slug = 'policy'" },
+        },
+      });
+      const policyUnit = (
+        (await api.createUnit({ spaceId: spaces[0], unit: { Slug: `${base}-policy`, ToolchainType: 'Kubernetes/YAML' } as never })) as {
+          UnitID: string;
+        }
+      ).UnitID;
+
+      await openTriggerList(page, base);
+      await select(page, [`${base}-one`, `${base}-two`]);
+      await page.getByRole('button', { name: 'Update', exact: true }).click();
+      await page.getByTestId('trigger-other-unit-add').click();
+      await page.getByTestId('trigger-other-unit-key-0').fill('policy');
+      await page.getByTestId('trigger-other-unit-unit-0').getByRole('combobox').fill(`${base}-policy`);
+      await page.getByRole('option', { name: `${base}-a/${base}-policy`, exact: true }).click();
+      await page.getByTestId('trigger-selection-add').click();
+      await page.getByTestId('trigger-selection-key-0').fill('workloads');
+      await page.getByTestId('trigger-selection-where-resource-0').fill("ConfigHub.ResourceType = 'apps/v1/Deployment'");
+      await page.getByTestId('bulk-trigger-remove-other-data-add').click();
+      await page.getByTestId('bulk-trigger-remove-other-data-key-0').fill('legacy');
+      await page.getByRole('button', { name: 'Update Triggers' }).click();
+
+      const otherData = async () =>
+        Promise.all(
+          spaces.map(async (spaceId) => {
+            const response = await hubApi.get(`/api/space/${spaceId}/trigger`);
+            return (
+              (await response.json()) as Array<{
+                Trigger: { OtherUnitIDs?: Record<string, string>; OtherUnitSelections?: Record<string, unknown> };
+              }>
+            ).map((t) => [t.Trigger.OtherUnitIDs, t.Trigger.OtherUnitSelections]);
+          }),
+        );
+      const workloads = { workloads: { WhereResource: "ConfigHub.ResourceType = 'apps/v1/Deployment'" } };
+      const policy = { policy: policyUnit };
+      await expect.poll(otherData).toEqual([[[policy, workloads]], [[policy, workloads]]]);
+    } finally {
+      // A Unit a Trigger names cannot be deleted, even with the Trigger in the same Space.
+      for (const spaceId of spaces) {
+        for (const trigger of await triggersIn(spaceId)) {
+          await hubApi.delete(`/api/space/${spaceId}/trigger/${trigger.TriggerID}`);
+        }
+      }
+      await removeSpaces(spaces);
+    }
+  });
+
   test('a Trigger is edited as YAML from its drawer', async ({ page }) => {
     const api = new ApiHelper(page);
     const base = `trgyaml-${RandomSlugGenerator.randomSlugName()}`;

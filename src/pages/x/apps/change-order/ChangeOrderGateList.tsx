@@ -52,7 +52,7 @@ interface ChangeOrderGateListProps {
   extras?: Readonly<Record<string, ChangeOrderGateExtra>>;
 }
 
-const GateRow = styled(Box)({
+export const GateRow = styled(Box)({
   display: 'flex',
   gap: 9,
   padding: '9px 12px',
@@ -60,7 +60,7 @@ const GateRow = styled(Box)({
   minWidth: 0,
 });
 
-const GateMark = styled('span', {
+export const GateMark = styled('span', {
   shouldForwardProp: (prop) => prop !== '$tone',
 })<{ $tone: GateTone }>(({ $tone }) => ({
   flex: '0 0 16px',
@@ -84,9 +84,9 @@ const GateMark = styled('span', {
         }),
 }));
 
-const GateBody = styled(Box)({ minWidth: 0, flex: 1 });
+export const GateBody = styled(Box)({ minWidth: 0, flex: 1 });
 
-const GateName = styled(Box)({
+export const GateName = styled(Box)({
   fontFamily: componentTheme.fontMono,
   fontSize: 11.5,
   fontWeight: 600,
@@ -98,7 +98,7 @@ const GateName = styled(Box)({
   flexWrap: 'wrap',
 });
 
-const GateTag = styled('span', {
+export const GateTag = styled('span', {
   shouldForwardProp: (prop) => prop !== '$tone',
 })<{ $tone: GateTone }>(({ $tone }) => ({
   fontSize: 10,
@@ -114,7 +114,7 @@ const GateTag = styled('span', {
       : { color: componentTheme.fgSubtle, background: componentTheme.bgInset }),
 }));
 
-const GateWhy = styled(Box)({
+export const GateWhy = styled(Box)({
   marginTop: 3,
   fontSize: 11.5,
   color: componentTheme.fgMuted,

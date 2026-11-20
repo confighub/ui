@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test';
 import {
   buildTriggerBody,
   defaultTriggerFormInput,
+  otherDataPatch,
   type IAddTriggerFormInput,
   triggerToFormInput,
 } from '../src/hooks/triggerFormBody';
@@ -86,19 +87,61 @@ test('a Trigger that runs an Invocation names no function, arguments or Channel'
   expect(body.ChannelID).toBeUndefined();
 });
 
-test('an edit keeps the other Units the form does not show, unless the Trigger runs an Invocation', () => {
+test('the other Units and selections round-trip, and an Invocation keeps only its selections', () => {
   const existingTrigger = {
     Slug: 'check-policy',
     FunctionName: 'vet-validating-admission-policy',
     OtherUnitIDs: { policy: 'unit-1' },
+    OtherUnitSelections: {
+      workloads: {
+        Where: 'Space.ReleaseTargetID = EvaluatingSpace.ReleaseTargetID',
+        WhereResource: "ConfigHub.ResourceType = 'apps/v1/Deployment'",
+      },
+      namespaces: { FilterID: 'filter-1' },
+    },
   };
   const input = triggerToFormInput(existingTrigger);
+  expect(input.OtherUnits).toEqual([{ key: 'policy', unitId: 'unit-1' }]);
+  expect(input.OtherUnitSelections).toEqual([
+    { key: 'namespaces', where: '', filterId: 'filter-1', whereResource: '' },
+    {
+      key: 'workloads',
+      where: 'Space.ReleaseTargetID = EvaluatingSpace.ReleaseTargetID',
+      filterId: '',
+      whereResource: "ConfigHub.ResourceType = 'apps/v1/Deployment'",
+    },
+  ]);
   const body = buildTriggerBody(input, {}, ids, true, existingTrigger);
   expect(body.OtherUnitIDs).toEqual({ policy: 'unit-1' });
+  expect(body.OtherUnitSelections).toEqual({
+    namespaces: { Where: undefined, FilterID: 'filter-1', WhereResource: undefined },
+    workloads: {
+      Where: 'Space.ReleaseTargetID = EvaluatingSpace.ReleaseTargetID',
+      FilterID: undefined,
+      WhereResource: "ConfigHub.ResourceType = 'apps/v1/Deployment'",
+    },
+  });
 
-  // One that runs an Invocation passes the Invocation's, and the server refuses its own.
+  // One that runs an Invocation passes the Invocation's Units, and the server refuses its own.
   const runsInvocation = buildTriggerBody({ ...input, Source: 'Invocation', InvocationID: 'inv-1' }, {}, ids, true, existingTrigger);
   expect(runsInvocation.OtherUnitIDs).toBeUndefined();
+  expect(Object.keys(runsInvocation.OtherUnitSelections ?? {})).toEqual(['namespaces', 'workloads']);
+});
+
+test('a key removed from the form is removed from the Trigger, and an incomplete row is left out', () => {
+  const body = buildTriggerBody(
+    form({
+      OtherUnits: [
+        { key: 'policy', unitId: '' },
+        { key: ' ', unitId: 'unit-2' },
+      ],
+      OtherUnitSelections: [{ key: '', where: "Slug = 'x'", filterId: '', whereResource: '' }],
+    }),
+    {},
+    ids,
+  );
+  expect(body.OtherUnitIDs).toEqual({});
+  expect(body.OtherUnitSelections).toEqual({});
 });
 
 test('switching back to a function drops the Invocation', () => {
@@ -154,4 +197,23 @@ test('an existing Trigger round-trips through the form', () => {
       { Key: 'Trigger', Operator: 'In', Values: ['stamp'] },
     ],
   });
+});
+
+test('a bulk patch states each selection whole and removes keys from both maps', () => {
+  expect(
+    otherDataPatch(
+      [{ key: 'policy', unitId: 'unit-1' }],
+      [{ key: 'workloads', where: '', filterId: '', whereResource: "ConfigHub.ResourceType = 'apps/v1/Deployment'" }],
+      ['legacy', ' '],
+    ),
+  ).toEqual({
+    // A key set in one map is removed from the other, where a Trigger may have it.
+    OtherUnitIDs: { legacy: null, policy: 'unit-1', workloads: null },
+    OtherUnitSelections: {
+      legacy: null,
+      policy: null,
+      workloads: { Where: null, FilterID: null, WhereResource: "ConfigHub.ResourceType = 'apps/v1/Deployment'" },
+    },
+  });
+  expect(otherDataPatch([], [], [])).toEqual({});
 });

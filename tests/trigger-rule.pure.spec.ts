@@ -123,6 +123,35 @@ test("an Invocation's functions are numbered, and the Units a Trigger reads are 
   expect(viaInvocation.reads).toEqual([{ key: 'schema', unitId: 'u3' }]);
 });
 
+test("a Trigger's OtherUnitSelections are listed by key, with only the terms they set", () => {
+  const rule = triggerRule(
+    {
+      FunctionName: 'vet-cel',
+      OtherUnitSelections: {
+        policies: {
+          Where: 'Space.ReleaseTargetID = EvaluatingSpace.ReleaseTargetID',
+          WhereResource: "ConfigHub.ResourceType = 'networking.k8s.io/v1/NetworkPolicy'",
+        },
+        namespaces: { FilterID: 'f1' },
+      },
+    },
+    undefined,
+    () => undefined,
+  );
+  expect(rule.selections).toEqual([
+    { key: 'namespaces', where: undefined, filterId: 'f1', whereResource: undefined },
+    {
+      key: 'policies',
+      where: 'Space.ReleaseTargetID = EvaluatingSpace.ReleaseTargetID',
+      filterId: undefined,
+      whereResource: "ConfigHub.ResourceType = 'networking.k8s.io/v1/NetworkPolicy'",
+    },
+  ]);
+  expect(
+    triggerRule({ FunctionName: 'vet-cel' }, undefined, () => undefined).selections,
+  ).toEqual([]);
+});
+
 test("a function's description gives its first sentence and its fix", () => {
   expect(describeFunction(podSecurity.Description)).toEqual({
     summary:

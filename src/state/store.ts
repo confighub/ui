@@ -10,6 +10,7 @@ import { initiativeInvocationSlice } from './slices/initiativeInvocation';
 import { invokerRequestSlice } from './slices/invokerRequest';
 import { tourSlice } from './slices/tourSlice';
 import { applyInvalidationMap } from './liveness/invalidationMap';
+import { applyChangeWriteSeam } from '@/components/change-panel/changeWriteSeam';
 
 // Add the cross-entity invalidation edges the codegen cannot express: a
 // generated mutation only ever invalidates its own entity, so without this an
@@ -17,6 +18,8 @@ import { applyInvalidationMap } from './liveness/invalidationMap';
 // unit it rewrote, and six tag types are invalidated by nothing at all. Must
 // run before the first mutation dispatch; see docs/design/ui-liveness.md.
 applyInvalidationMap();
+// Saves join the person's active change; see changeWriteSeam.ts.
+applyChangeWriteSeam();
 
 const store = configureStore({
   reducer: {

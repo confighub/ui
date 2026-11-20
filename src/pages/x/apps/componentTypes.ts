@@ -83,7 +83,7 @@ export interface ComponentDeployment {
   unitCount: number;
   /**
    * Last observed live-infra status: the `LiveStatus` the deploying tool (such
-   * as argobot) reported on the Release this Space is running. Undefined when
+   * as k8sbot) reported on the Release this Space is running. Undefined when
    * the Space runs no Release, or the tool has not reported on it yet.
    */
   liveStatus?: LiveStatus;

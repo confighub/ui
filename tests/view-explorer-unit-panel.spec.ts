@@ -418,14 +418,14 @@ test.describe('the row panel of a Unit', () => {
       const body = await response.json();
       const list = (Array.isArray(body) ? body : []) as Array<{ Release?: Record<string, unknown> }>;
       for (const r of list)
-        if (r.Release) r.Release.LiveStatus = { Sync: 'Synced', Health: 'Healthy', Reporter: 'argobot', ObservedAt: new Date(Date.now() - 120_000).toISOString() };
+        if (r.Release) r.Release.LiveStatus = { Sync: 'Synced', Health: 'Healthy', Reporter: 'k8sbot', ObservedAt: new Date(Date.now() - 120_000).toISOString() };
       await route.fulfill({ response, json: body });
     });
     await page.reload();
     await open(page, 'ok');
     const fact = panel(page).locator('li[data-kind="release"]');
     await expect(fact).toContainText(new RegExp(`Release \\d+ of ${seed.spaceA.slug}: Synced · Healthy`));
-    await expect(fact).toContainText('reported by argobot for the Release, not for this Unit');
+    await expect(fact).toContainText('reported by k8sbot for the Release, not for this Unit');
     await expect(fact).toContainText('2 min ago');
 
     // Moving to another Unit of the same Space keeps the fact on screen while the panel settles: it is the cache's.

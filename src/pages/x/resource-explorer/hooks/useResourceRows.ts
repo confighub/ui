@@ -8,6 +8,8 @@ import {
   useLazyListAllResourcesQuery,
   useLazyListAllUnitsQuery,
 } from '@confighub/rtk-query';
+import { type SelectorMatch, selectorMatchParams } from '../selectorMatch';
+import { getApiErrorMessage } from '@/utility/error-functions';
 
 /**
  * One row in the resource grid: a single resource (drawn from a Unit's data)
@@ -77,6 +79,8 @@ export interface UseResourceRowsResult {
      */
     whereData: string;
     resourceType: string;
+    /** Narrows the read to what one resource's selector selects, or to what selects it. */
+    selectorMatch?: SelectorMatch;
     /**
      * When true, fetch the resource documents so that resource-path columns
      * can extract values client-side. They are bulk, so the page only opts in
@@ -133,11 +137,13 @@ export function useResourceRows(): UseResourceRowsResult {
       where,
       whereData,
       resourceType,
+      selectorMatch,
       needBody,
     }: {
       where: string;
       whereData: string;
       resourceType: string;
+      selectorMatch?: SelectorMatch;
       needBody: boolean;
     }) => {
       const callId = ++callIdRef.current;
@@ -147,6 +153,7 @@ export function useResourceRows(): UseResourceRowsResult {
         const resourceWhere = buildResourceWhere({ where, whereData, resourceType });
         const resourceResult = await triggerListResources({
           where: resourceWhere || undefined,
+          ...selectorMatchParams(selectorMatch),
           select: needBody ? `${RESOURCE_SELECT},Data` : RESOURCE_SELECT,
         });
 
@@ -154,7 +161,8 @@ export function useResourceRows(): UseResourceRowsResult {
         if (callId !== callIdRef.current) return;
 
         if (resourceResult.error) {
-          setError('Failed to list resources');
+          // The server says why it refused a selector match, such as a kind it cannot match.
+          setError(getApiErrorMessage(resourceResult.error, 'Failed to list resources'));
           setRows([]);
           return;
         }

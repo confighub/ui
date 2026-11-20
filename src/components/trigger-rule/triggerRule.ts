@@ -18,6 +18,18 @@ export interface TriggerRule {
   functions: RuleFunction[];
   /** The Units the Trigger passes its functions as OtherData, by the key they read them under. */
   reads: { key: string; unitId: string }[];
+  /**
+   * The Trigger's OtherUnitSelections, by key: the queries each Space that selects the Trigger
+   * evaluates to pick the Units passed under that key.
+   */
+  selections: RuleSelection[];
+}
+
+export interface RuleSelection {
+  key: string;
+  where?: string;
+  filterId?: string;
+  whereResource?: string;
 }
 
 export interface RuleFunction {
@@ -146,7 +158,7 @@ export const triggerRule = (
   invocation: InvocationRead | undefined,
   signatureOf: (functionName: string) => FunctionSignature | undefined,
 ): TriggerRule => {
-  if (!trigger) return { functions: [], reads: [] };
+  if (!trigger) return { functions: [], reads: [], selections: [] };
   const invocations: FunctionInvocation[] = invocation
     ? (invocation.FunctionInvocations ?? [])
     : trigger.FunctionName
@@ -167,5 +179,13 @@ export const triggerRule = (
     .filter(([, unitId]) => !!unitId)
     .map(([key, unitId]) => ({ key, unitId }))
     .sort((a, b) => a.key.localeCompare(b.key));
-  return { functions, reads };
+  const selections = Object.entries(trigger.OtherUnitSelections ?? {})
+    .map(([key, selection]) => ({
+      key,
+      where: selection.Where || undefined,
+      filterId: selection.FilterID || undefined,
+      whereResource: selection.WhereResource || undefined,
+    }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+  return { functions, reads, selections };
 };

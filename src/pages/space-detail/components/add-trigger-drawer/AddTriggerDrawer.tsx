@@ -76,6 +76,7 @@ import {
 } from '@/utility/triggerEnforcement';
 import dayjs from 'dayjs';
 
+import { OtherDataCard } from './OtherDataCard';
 import { TriggerDocumentDialog } from './TriggerDocumentDialog';
 
 // Types
@@ -1050,6 +1051,12 @@ export const AddTriggerDrawer = ({
             )}
             <AppliesToCard
               control={control}
+              unitFilters={unitFilterOptions}
+              unitFiltersLoading={unitFiltersLoading}
+            />
+            <OtherDataCard
+              control={control}
+              runsInvocation={runsInvocation}
               unitFilters={unitFilterOptions}
               unitFiltersLoading={unitFiltersLoading}
             />

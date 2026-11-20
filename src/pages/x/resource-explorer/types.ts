@@ -6,6 +6,8 @@ import {
   decompressFromEncodedURIComponent,
 } from 'lz-string';
 
+import { type SelectorMatch, isSelectorMatch } from './selectorMatch';
+
 /** Where a column's value comes from. */
 export type ColumnSource =
   | 'unit-field'
@@ -52,6 +54,8 @@ export interface ResourceView {
   whereData?: string;
   /** Optional Kubernetes resource type filter (apiVersion/kind). */
   resourceType?: string;
+  /** Narrows the view to what one resource's selector selects, or to what selects it. */
+  selectorMatch?: SelectorMatch;
   columns: ResourceColumn[];
   /** Column name to sort by. Empty = no explicit sort. */
   orderBy?: string;
@@ -163,6 +167,7 @@ export function decodeView(encoded: string | null | undefined): ResourceView {
       where: parsed.where,
       whereData: parsed.whereData,
       resourceType: parsed.resourceType,
+      selectorMatch: isSelectorMatch(parsed.selectorMatch) ? parsed.selectorMatch : undefined,
       columns: parsed.columns.filter(isValidColumn),
       orderBy: parsed.orderBy,
       orderByDirection: parsed.orderByDirection === 'DESC' ? 'DESC' : 'ASC',

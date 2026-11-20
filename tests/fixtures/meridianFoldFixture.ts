@@ -1141,7 +1141,7 @@ function deployment(row: Row): ComponentDeployment {
     upgradeableCount: stale,
     unappliedCount: unreleased + gated,
     unitCount: units,
-    liveStatus: { Reporter: 'argobot', Sync: sync, Health: health },
+    liveStatus: { Reporter: 'k8sbot', Sync: sync, Health: health },
     labels: {
       Region: region,
       ...(department ? { Department: department } : {}),

@@ -16,7 +16,7 @@ import { useListServiceAccountsQuery } from '@confighub/rtk-query';
 
 import { BackLink } from '@/components/console-detail/ConsoleDetail';
 import { CONSOLE_PAGE_SX } from '@/components/console-detail/consoleDetailUtil';
-import { OrganizationRow } from '@/components/organization-switcher/OrganizationRow';
+import { Header, type HeaderProps } from '@/components/header/Header';
 import { SERVICE_ACCOUNTS_PATH } from '@/hooks/usePrincipalNames';
 
 import { consoleTokens as T } from '../change-orders/consoleStyle';
@@ -59,9 +59,14 @@ function ServiceAccountPage({ slug }: { slug: string }) {
 
 export default function ServiceAccountsPage() {
   const { slug } = useParams<{ slug?: string }>();
+  const breadCrumbs: HeaderProps['breadCrumbs'] = slug
+    ? [{ name: 'Service accounts', isLink: true, link: SERVICE_ACCOUNTS_PATH }, { name: slug }]
+    : [{ name: 'Service accounts' }];
   return (
     <Box data-testid='service-accounts-root' sx={CONSOLE_PAGE_SX}>
-      <OrganizationRow />
+      <div>
+        <Header breadCrumbs={breadCrumbs} />
+      </div>
       {slug ? <ServiceAccountPage slug={slug} /> : <ServiceAccountList />}
     </Box>
   );

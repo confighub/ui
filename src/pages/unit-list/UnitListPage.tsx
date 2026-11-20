@@ -1182,7 +1182,7 @@ export const UnitListPage = () => {
             </Box>
           }
         />
-        <Main>
+        <Main data-testid='units-list'>
           <Section>
             <ErrorList errors={errorMessage} onClose={handleErrorClose} />
 

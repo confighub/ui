@@ -71,8 +71,7 @@ test.describe('ChangeOrders console', () => {
 
   test('shows the current organization above the console', async ({ page }) => {
     await assertOurConsole(page);
-    // The page does not use the shared Header, so it places the picker itself.
-    await expect(page.getByTestId('organization-row').getByTestId('organization-switcher')).not.toBeEmpty({
+    await expect(page.getByTestId('organization-switcher')).not.toBeEmpty({
       timeout: 20_000,
     });
   });

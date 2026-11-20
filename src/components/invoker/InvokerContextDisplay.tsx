@@ -1,9 +1,8 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { Fragment, useMemo, useState } from 'react';
-import { Box, IconButton, Link, Tooltip, Typography } from '@mui/material';
+import { Box, IconButton, Tooltip, Typography } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import CloseIcon from '@mui/icons-material/Close';
 import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import CheckBoxIcon from '@mui/icons-material/CheckBox';
 import IndeterminateCheckBoxIcon from '@mui/icons-material/IndeterminateCheckBox';
@@ -12,6 +11,7 @@ import AddIcon from '@mui/icons-material/Add';
 import { componentTheme } from '@/pages/x/apps/componentTheme';
 
 import { InvokerContext } from './types/invoker.types';
+import { ContextCaption, ContextCount, ContextGroupHeader, ContextUnitRow } from './ContextParts';
 
 interface InvokerContextDisplayProps {
   context: InvokerContext;
@@ -127,27 +127,10 @@ export const InvokerContextDisplay = ({
             flexShrink: 0,
           }}
         />
-        <Typography
-          sx={{
-            fontFamily: componentTheme.fontSans,
-            fontWeight: 600,
-            fontSize: 10,
-            letterSpacing: 0.5,
-            textTransform: 'uppercase',
-            color: componentTheme.fgMuted,
-          }}
-        >
-          Context
-        </Typography>
-        <Typography
-          sx={{
-            fontFamily: componentTheme.fontSans,
-            fontSize: 12,
-            color: componentTheme.fgDefault,
-          }}
-        >
+        <ContextCaption>Context</ContextCaption>
+        <ContextCount>
           {selectedCount} {unitLabel}
-        </Typography>
+        </ContextCount>
         {context.primaryToolchainType && (
           <>
             <Typography sx={{ fontSize: 11, color: componentTheme.fgSubtle }}>·</Typography>
@@ -242,107 +225,35 @@ export const InvokerContextDisplay = ({
               <Fragment key={groupKey}>
                 {/* Group header — always shown (even for a single group) so the
                     component/space name is always visible in the context panel. */}
-                <Box
-                  sx={{
-                    px: 1.5,
-                    py: 0.5,
-                    backgroundColor: componentTheme.bgSubtle,
-                    borderTop: groupIdx === 0 ? 'none' : `1px solid ${componentTheme.borderSubtle}`,
-                    position: 'sticky',
-                    top: 0,
-                    zIndex: 1,
-                  }}
-                >
-                  <Typography
-                    sx={{
-                      fontFamily: componentTheme.fontSans,
-                      fontWeight: 600,
-                      fontSize: 10,
-                      letterSpacing: 0.5,
-                      textTransform: 'uppercase',
-                      color: componentTheme.fgMuted,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {groupKey}
-                  </Typography>
-                </Box>
+                <ContextGroupHeader first={groupIdx === 0}>{groupKey}</ContextGroupHeader>
                 {units!.map((unit, unitIdx) => {
                   const isCompatible =
                     !functionToolchainType || unit.toolchainType === functionToolchainType;
                   return (
-                    <Box
+                    <ContextUnitRow
                       key={unit.id}
-                      data-testid="invoker-context-unit"
-                      data-unit-id={unit.id}
-                      sx={{
-                        px: 1.5,
-                        py: 0.75,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        borderTop: unitIdx === 0 ? 'none' : `1px solid ${componentTheme.borderSubtle}`,
-                        opacity: isCompatible ? 1 : 0.45,
-                        '&:hover': { backgroundColor: componentTheme.bgSubtle },
-                        transition: 'background-color 120ms ease-in-out',
-                      }}
-                    >
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <Link
-                          href={`/units/${unit.spaceId}/${unit.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          underline="hover"
-                          onClick={(e) => e.stopPropagation()}
-                          sx={{
-                            display: 'block',
-                            fontFamily: componentTheme.fontSans,
-                            fontWeight: 500,
-                            fontSize: 12,
-                            color: componentTheme.fgDefault,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            '&:hover': { color: componentTheme.accent },
-                          }}
-                        >
-                          {unit.name}
-                        </Link>
-                      </Box>
-                      {unit.toolchainType && (
-                        <Typography
-                          sx={{
-                            fontFamily: componentTheme.fontSans,
-                            fontSize: 10,
-                            letterSpacing: 0.4,
-                            textTransform: 'uppercase',
-                            color: componentTheme.fgMuted,
-                          }}
-                        >
-                          {unit.toolchainType}
-                        </Typography>
-                      )}
-                      {onRemoveUnit && (
-                        <Tooltip title="Remove from selection">
-                          <IconButton
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onRemoveUnit(unit.id);
-                            }}
+                      unitId={unit.id}
+                      spaceId={unit.spaceId}
+                      name={unit.name}
+                      first={unitIdx === 0}
+                      dimmed={!isCompatible}
+                      onRemove={onRemoveUnit}
+                      right={
+                        unit.toolchainType ? (
+                          <Typography
                             sx={{
+                              fontFamily: componentTheme.fontSans,
+                              fontSize: 10,
+                              letterSpacing: 0.4,
+                              textTransform: 'uppercase',
                               color: componentTheme.fgMuted,
-                              p: 0.5,
-                              '&:hover': { color: componentTheme.danger, backgroundColor: componentTheme.dangerFaint },
                             }}
                           >
-                            <CloseIcon sx={{ fontSize: 14 }} />
-                          </IconButton>
-                        </Tooltip>
-                      )}
-                    </Box>
+                            {unit.toolchainType}
+                          </Typography>
+                        ) : undefined
+                      }
+                    />
                   );
                 })}
               </Fragment>

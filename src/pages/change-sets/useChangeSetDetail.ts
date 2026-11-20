@@ -60,6 +60,8 @@ export interface ChangeSetLinkedChangeOrder {
 
 export interface ChangeSetDetail {
   status: 'loading' | 'notFound' | 'error' | 'found';
+  /** The failed read of the ChangeSet, when `status` is 'error'. */
+  error?: unknown;
   changeSet?: ChangeSetRead;
   open: boolean;
   /** Undefined until read. */
@@ -229,6 +231,7 @@ export function useChangeSetDetail({ space, slug }: { space?: string; slug?: str
 
   return {
     status,
+    error: changeSets.error,
     changeSet: current,
     open,
     revisions: revisions.data,

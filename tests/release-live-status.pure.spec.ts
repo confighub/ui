@@ -18,7 +18,7 @@ import type { ChangeOrderProgress, ChangeOrderStage } from '../src/pages/x/apps/
 import { carryingReleaseMap } from './fixtures/running-release';
 
 const GREEN: LiveStatus = {
-  Reporter: 'argobot',
+  Reporter: 'k8sbot',
   Sync: 'Synced',
   Health: 'Healthy',
   Operation: 'Succeeded',

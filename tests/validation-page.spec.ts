@@ -627,8 +627,30 @@ test.describe('the Validation page', () => {
 
     await page.goto(`/validation/${triggerId}`);
     const detail = page.getByTestId('validation-detail');
-    await detail.getByTestId('validation-except-temporarily').click({ timeout: 20000 });
+    const exceptButton = detail.getByTestId('validation-except-temporarily');
     const dialog = page.getByTestId('temporary-exceptions-dialog');
+
+    // With a Unit checked, only its failures are excepted.
+    await detail
+      .getByTestId('validation-unit-row')
+      .filter({ hasText: 'web' })
+      .getByRole('checkbox')
+      .check({ timeout: 20000 });
+    await expect(exceptButton).toHaveText('Except the selected failing Unit temporarily…');
+    await exceptButton.click();
+    await expect(dialog.getByTestId('temporary-exceptions-summary')).toHaveText(
+      'Excepts 1 resource in 1 Unit.',
+      { timeout: 20000 },
+    );
+    await expect(dialog.getByTestId('temporary-exceptions-not-excepted')).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await detail
+      .getByTestId('validation-selection-bar')
+      .getByRole('button', { name: 'Clear' })
+      .click();
+
+    await expect(exceptButton).toHaveText('Except the 2 failing Units temporarily…');
+    await exceptButton.click();
     await expect(dialog.getByTestId('temporary-exceptions-summary')).toHaveText(
       'Excepts 1 resource in 1 Unit.',
       { timeout: 20000 },

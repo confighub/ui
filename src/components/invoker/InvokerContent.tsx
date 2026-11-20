@@ -45,6 +45,7 @@ import {
 import { useFuzzySearch } from './hooks/useFuzzySearch';
 import { FunctionListScreen } from './screens/FunctionListScreen';
 import { FunctionDetailScreen } from './screens/FunctionDetailScreen';
+import { plural, type RunPlan } from '@/components/change-panel/runPlan';
 import { FunctionsByToolchain } from './utils/fuzzy-search.utils';
 
 export interface InvokerContentProps {
@@ -77,7 +78,10 @@ export interface InvokerContentProps {
     /** The invocation was a dry run: nothing was written. */
     dryRun?: boolean;
     slugByUnitId?: Record<string, string>;
+    ranIn?: RunPlan;
   } | null;
+  /** With a change active, which ticked Units the run writes and which it leaves out (D38). */
+  runPlan?: RunPlan;
   onRemoveUnit?: (unitId: string) => void;
   onAddUnit?: (unit: { id: string; name: string; toolchainType: string; spaceId: string }) => void;
   onRemoveAllUnits?: () => void;
@@ -111,6 +115,7 @@ export const InvokerContent = ({
   onSave,
   isInvoking = false,
   invokeResult,
+  runPlan,
   onRemoveUnit,
   onAddUnit,
   onRemoveAllUnits,
@@ -404,6 +409,7 @@ export const InvokerContent = ({
                 loadedInvocation={loadedInvocation}
                 invocationParamForm={invocationParamForm}
                 invokeResult={invokeResult}
+                runPlan={runPlan}
                 onRemoveUnit={onRemoveUnit}
                 onRemoveAllUnits={onRemoveAllUnits}
                 onRestoreAllUnits={onRestoreAllUnits}
@@ -505,7 +511,7 @@ export const InvokerContent = ({
                   data-testid="invoker-invoke-button"
                   sx={{ whiteSpace: 'nowrap' }}
                 >
-                  {isInvoking ? 'Invoking...' : 'Invoke'}
+                  {isInvoking ? 'Invoking...' : runPlan ? `Invoke on ${plural(runPlan.run, 'Unit')}` : 'Invoke'}
                 </Button>
               </PanelFooter>
             </Box>

@@ -3,7 +3,7 @@
 
 /**
  * Pure (no React) helpers for the live status of a deployment: what the tool
- * deploying a Release (e.g. argobot watching an Argo CD Application) reports
+ * deploying a Release (e.g. k8sbot watching an Argo CD Application) reports
  * about it running.
  *
  * The status is `Release.LiveStatus`, so it describes one Release. A Space's

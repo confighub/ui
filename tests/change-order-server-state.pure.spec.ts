@@ -32,8 +32,8 @@ const DEV = 'dev-1';
 const STAGING = 'staging-1';
 const PROD = 'prod-1';
 
-const HEALTHY: LiveStatus = { Reporter: 'argobot', Sync: 'Synced', Operation: 'Succeeded', Health: 'Healthy' };
-const DEGRADED: LiveStatus = { Reporter: 'argobot', Sync: 'OutOfSync', Operation: 'Failed', Health: 'Degraded' };
+const HEALTHY: LiveStatus = { Reporter: 'k8sbot', Sync: 'Synced', Operation: 'Succeeded', Health: 'Healthy' };
+const DEGRADED: LiveStatus = { Reporter: 'k8sbot', Sync: 'OutOfSync', Operation: 'Failed', Health: 'Degraded' };
 
 const COMPONENT: ComponentRead = { ComponentID: '11111111-1111-1111-1111-111111111111', Slug: 'myapp' };
 

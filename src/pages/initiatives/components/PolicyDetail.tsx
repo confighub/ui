@@ -314,6 +314,8 @@ export const PolicyDetail = ({
     () => selectedUnits.filter((u) => u.outcome === 'Error' || u.outcome === 'Warning'),
     [selectedUnits],
   );
+  // With Units checked, only their failures are excepted temporarily; otherwise all of them.
+  const exceptTemporarily = selectedIds.length > 0 ? selectedFailing : failingUnits;
   // As many requests as the IDs need, since a Trigger in audit across a fleet can fail on more
   // Units than one filter can name.
   const failingIds = useMemo(() => failingUnits.map((u) => u.unit.id), [failingUnits]);
@@ -785,18 +787,33 @@ export const PolicyDetail = ({
             Units
           </Typography>
           {exceptionKey && failingUnits.length > 0 && (
-            <Tooltip title='Excepts each resource failing this Trigger, with a reason starting ToBeFixed, so the Trigger can be enforced before they are fixed.'>
-              <Button
-                size='small'
-                variant='outlined'
-                onClick={() => setTemporaryUnits(failingUnits)}
-                data-testid='validation-except-temporarily'
-                sx={{ textTransform: 'none' }}
-              >
-                {failingUnits.length === 1
-                  ? 'Except the failing Unit temporarily…'
-                  : `Except the ${failingUnits.length} failing Units temporarily…`}
-              </Button>
+            <Tooltip
+              title={
+                selectedIds.length > 0
+                  ? selectedFailing.length > 0
+                    ? 'Excepts each resource failing this Trigger in the selected Units, with a reason starting ToBeFixed, so the Trigger can be enforced before they are fixed.'
+                    : 'None of the selected Units fails this Trigger.'
+                  : 'Excepts each resource failing this Trigger, with a reason starting ToBeFixed, so the Trigger can be enforced before they are fixed. Select Units to except only theirs.'
+              }
+            >
+              <span>
+                <Button
+                  size='small'
+                  variant='outlined'
+                  disabled={exceptTemporarily.length === 0}
+                  onClick={() => setTemporaryUnits(exceptTemporarily)}
+                  data-testid='validation-except-temporarily'
+                  sx={{ textTransform: 'none' }}
+                >
+                  {selectedIds.length > 0
+                    ? selectedFailing.length === 1
+                      ? 'Except the selected failing Unit temporarily…'
+                      : `Except the ${selectedFailing.length} selected failing Units temporarily…`
+                    : failingUnits.length === 1
+                      ? 'Except the failing Unit temporarily…'
+                      : `Except the ${failingUnits.length} failing Units temporarily…`}
+                </Button>
+              </span>
             </Tooltip>
           )}
           {unitListLinks.map((l) => (
@@ -852,18 +869,6 @@ export const PolicyDetail = ({
                       Evaluate
                     </Button>
                   </span>
-                </Tooltip>
-              )}
-              {exceptionKey && selectedFailing.length > 0 && (
-                <Tooltip title='Excepts each resource failing this Trigger in the selected Units, with a reason starting ToBeFixed.'>
-                  <Button
-                    size='small'
-                    variant='outlined'
-                    onClick={() => setTemporaryUnits(selectedFailing)}
-                    data-testid='validation-except-selected-temporarily'
-                  >
-                    Except temporarily…
-                  </Button>
                 </Tooltip>
               )}
               <Button size='small' onClick={() => setSelectedIds([])}>

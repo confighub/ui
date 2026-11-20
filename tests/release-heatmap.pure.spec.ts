@@ -19,7 +19,7 @@ import {
 } from '../src/pages/releases/releaseHeatmap';
 
 const status = (fields: Partial<LiveStatus>): LiveStatus => ({
-  Reporter: 'argobot',
+  Reporter: 'k8sbot',
   Sync: 'Synced',
   Health: 'Healthy',
   ...fields,

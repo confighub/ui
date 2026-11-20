@@ -22,7 +22,7 @@ const DEV = 'dev-1';
 const PROD = 'prod-1';
 
 const HEALTHY: LiveStatus = {
-  Reporter: 'argobot',
+  Reporter: 'k8sbot',
   Sync: 'Synced',
   Operation: 'Succeeded',
   Health: 'Healthy',
@@ -30,7 +30,7 @@ const HEALTHY: LiveStatus = {
 
 /** What a failing production actually reports, in the three fields the gate reads. */
 const DEGRADED: LiveStatus = {
-  Reporter: 'argobot',
+  Reporter: 'k8sbot',
   Sync: 'OutOfSync',
   Operation: 'Failed',
   Health: 'Degraded',

@@ -8,11 +8,23 @@ const INVOKER_WIDTH_STORAGE_KEY = 'rightSidebarWidth';
 const INVOKER_OPEN_STORAGE_KEY = 'invokerSidebarOpen';
 const INVOKER_BUTTON_BAR_WIDTH = 48;
 const INVOKER_MAX_WIDTH_MARGIN = 100;
+const PANEL_STORAGE_KEY = 'rightSidebarPanel';
+
+/** Which content the one sidebar panel shows: the function invoker or the active change. */
+export type SidebarPanelKind = 'functions' | 'change';
 
 export const useInvokerSidebar = (leftNavWidth: number) => {
   const [isOpen, setIsOpen] = useState<boolean>(() => {
     const stored = localStorage.getItem(INVOKER_OPEN_STORAGE_KEY);
     return stored === 'true';
+  });
+
+  const [panel, setPanel] = useState<SidebarPanelKind>(() => {
+    try {
+      return localStorage.getItem(PANEL_STORAGE_KEY) === 'change' ? 'change' : 'functions';
+    } catch {
+      return 'functions';
+    }
   });
 
   const [panelWidth, setPanelWidth] = useState<number>(() => {
@@ -37,11 +49,38 @@ export const useInvokerSidebar = (leftNavWidth: number) => {
     localStorage.setItem(INVOKER_OPEN_STORAGE_KEY, isOpen.toString());
   }, [isOpen]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(PANEL_STORAGE_KEY, panel);
+    } catch {
+      // Storage blocked: the panel opens on Functions next time.
+    }
+  }, [panel]);
+
+  // Functions' own toggle and open (its button, the F key, a page's request) show Functions.
   const toggle = useCallback(() => {
-    setIsOpen((prev) => !prev);
+    setIsOpen((prev) => (panel === 'functions' ? !prev : true));
+    setPanel('functions');
+  }, [panel]);
+
+  const open = useCallback(() => {
+    setIsOpen(true);
+    setPanel('functions');
   }, []);
 
-  const open = useCallback(() => setIsOpen(true), []);
+  /** Opens the panel on `kind`, or closes it when it already shows `kind`. */
+  const togglePanel = useCallback(
+    (kind: SidebarPanelKind) => {
+      setIsOpen((prev) => !(prev && panel === kind));
+      setPanel(kind);
+    },
+    [panel],
+  );
+
+  const openPanel = useCallback((kind: SidebarPanelKind) => {
+    setIsOpen(true);
+    setPanel(kind);
+  }, []);
   const close = useCallback(() => setIsOpen(false), []);
 
   const handleResizeStart = useCallback(
@@ -89,12 +128,15 @@ export const useInvokerSidebar = (leftNavWidth: number) => {
 
   return {
     isOpen,
+    panel,
     panelWidth,
     isResizing,
     buttonBarWidth: INVOKER_BUTTON_BAR_WIDTH,
     toggle,
     open,
     close,
+    togglePanel,
+    openPanel,
     handleResizeStart,
   } as const;
 };

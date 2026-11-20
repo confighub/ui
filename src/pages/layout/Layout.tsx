@@ -8,6 +8,8 @@ import { DiscordIcon } from '@/components/icons/DiscordIcon';
 import { fadeIn } from '@/components/styled';
 import { useAppDispatch, useAppSelector } from '@/hooks/useApp';
 import { useInvokerSidebar } from '@/hooks/useInvokerSidebar';
+import { ActiveChangeProvider } from '@/components/change-panel/ActiveChangeProvider';
+import { OPEN_CHANGE_PANEL_EVENT } from '@/components/change-panel/activeChange';
 import { closeAlert, selectAlert } from '@/state/slices/alert';
 import { selectInvokerOpenSeq, selectInvokerRequestSeq } from '@/state/slices/invokerRequest';
 import { removeAllSelectedUnits, selectSelectedUnits, setSelectedUnits } from '@/state/slices/selectedUnits';
@@ -464,6 +466,13 @@ export const Layout = memo(() => {
   useEffect(() => {
     if (invokerOpenSeq > 0) openInvoker();
   }, [invokerOpenSeq, openInvoker]);
+  // A page asked for the change panel ("Show in sidebar" on the ChangeSet page, Start in the hint).
+  const openSidebarPanel = invoker.openPanel;
+  useEffect(() => {
+    const onOpenChange = () => openSidebarPanel('change');
+    window.addEventListener(OPEN_CHANGE_PANEL_EVENT, onOpenChange);
+    return () => window.removeEventListener(OPEN_CHANGE_PANEL_EVENT, onOpenChange);
+  }, [openSidebarPanel]);
 
   // Feed the global Invoker sidebar the units currently selected anywhere
   // in the app (populated by each page via the selectedUnits slice).
@@ -507,6 +516,7 @@ export const Layout = memo(() => {
     <Container>
       {/* ── Top Navigation AppBar ─────────────────────────────────────── */}
       <AppBar
+        data-testid='app-bar'
         position='fixed'
         elevation={0}
         sx={{
@@ -533,7 +543,7 @@ export const Layout = memo(() => {
           }}
         >
           {/* Logo */}
-          <Box sx={{ display: 'flex', alignItems: 'center', mr: 1.5, flexShrink: 0 }}>
+          <Box data-testid='brand' sx={{ display: 'flex', alignItems: 'center', mr: 1.5, flexShrink: 0 }}>
             <ConfigHubIcon color='white' height='28px' width='28px' />
             <Typography
               color='white'
@@ -624,6 +634,7 @@ export const Layout = memo(() => {
       <Box sx={{ height: `${TOP_NAV_HEIGHT}px`, flexShrink: 0 }} />
 
       {/* ── Content row: MainContent + Invoker sidebar ───────────────── */}
+      <ActiveChangeProvider>
       <ContentRow>
         <MainContent>
           <ContentArea>
@@ -638,6 +649,8 @@ export const Layout = memo(() => {
           onRemoveAllUnits={handleInvokerRemoveAllUnits}
           totalVisibleUnits={invokerSelectedUnits.length}
           isOpen={invoker.isOpen}
+          panel={invoker.panel}
+          onTogglePanel={invoker.togglePanel}
           panelWidth={invoker.panelWidth}
           isResizing={invoker.isResizing}
           onToggle={invoker.toggle}
@@ -646,6 +659,7 @@ export const Layout = memo(() => {
           onResizeStart={invoker.handleResizeStart}
         />
       </ContentRow>
+      </ActiveChangeProvider>
 
       {/* Global Alert Snackbar */}
       <Snackbar

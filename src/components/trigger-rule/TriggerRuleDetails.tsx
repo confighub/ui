@@ -3,6 +3,7 @@
 import { Fragment, useId, useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 
+import { useFilterRefOptions } from '@/components/entity-ref-select/useEntityRefOptions';
 import { functionListArgs } from '@/hooks/useFunctionChannels';
 import { unitLink } from '@/pages/initiatives/validationLinks';
 import {
@@ -18,7 +19,7 @@ import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 
 import { formatCel } from './celFormat';
-import { type RuleValue, triggerRule } from './triggerRule';
+import { type RuleSelection, type RuleValue, triggerRule } from './triggerRule';
 
 /** How many lines of an expression show before "Show all". */
 const EXPRESSION_LINES = 8;
@@ -44,7 +45,7 @@ const valueSx = { fontSize: '0.75rem', overflowWrap: 'anywhere', minWidth: 0 } a
 
 /**
  * What a Trigger runs: each function, the arguments the Trigger gives it, shown by their
- * parameters' data types, the defaults of those it omits, and the other Units it reads. Read from
+ * parameters' data types, the defaults of those it omits, and the other Units it reads or selects. Read from
  * the Trigger and its functions' signatures, so it is the same for every function.
  */
 export const TriggerRuleDetails = ({
@@ -70,7 +71,8 @@ export const TriggerRuleDetails = ({
     [trigger, invocation, functions, toolchain],
   );
 
-  if (rule.functions.length === 0 && rule.reads.length === 0) return null;
+  if (rule.functions.length === 0 && rule.reads.length === 0 && rule.selections.length === 0)
+    return null;
   // Without the signatures the arguments have no types or defaults, and a function no description:
   // not an answer to show while they are read.
   if (signaturesLoading)
@@ -138,6 +140,7 @@ export const TriggerRuleDetails = ({
         </Fragment>
       ))}
       {rule.reads.length > 0 && <ReadsRows reads={rule.reads} />}
+      {rule.selections.length > 0 && <SelectsRows selections={rule.selections} />}
     </Box>
   );
 };
@@ -231,6 +234,59 @@ const ExpressionView = ({ value }: { value: Extract<RuleValue, { kind: 'expressi
         </Button>
       )}
     </Box>
+  );
+};
+
+/**
+ * The queries that pick the other Units the Trigger reads, by key. Each Space that selects the
+ * Trigger runs them for itself, so the Units differ by Space and are not listed here.
+ */
+const SelectsRows = ({ selections }: { selections: RuleSelection[] }) => {
+  // A selection's Filter is named space/filter, never by its ID.
+  const { options: filters, isFetching: filtersLoading } = useFilterRefOptions(
+    'Unit',
+    !selections.some((selection) => selection.filterId),
+  );
+  const filterName = (id: string) =>
+    filters.find((option) => option.id === id)?.label ??
+    (filtersLoading ? 'Loading…' : 'A Filter you cannot see, or that was deleted');
+  return (
+    <>
+      <Typography sx={labelSx}>Selects</Typography>
+      <Box
+        sx={{
+          ...valueSx,
+          display: 'grid',
+          gridTemplateColumns: 'max-content max-content minmax(0, 1fr)',
+          columnGap: 1,
+        }}
+      >
+        {selections.map(({ key, where, filterId, whereResource }) => {
+          const terms = [
+            { name: 'Where', value: where },
+            { name: 'Filter', value: filterId && filterName(filterId) },
+            { name: 'WhereResource', value: whereResource },
+          ].filter((term) => !!term.value);
+          return terms.map((term, index) => (
+            <Fragment key={`${key}-${term.name}`}>
+              <Box component='code' sx={{ fontFamily: 'monospace' }}>
+                {index === 0 ? key : ''}
+              </Box>
+              <Typography component='span' sx={{ ...valueSx, color: 'text.secondary' }}>
+                {term.name}
+              </Typography>
+              <Box
+                component='code'
+                sx={{ fontFamily: 'monospace' }}
+                data-testid={`trigger-rule-selects-${key}-${term.name}`}
+              >
+                {term.value}
+              </Box>
+            </Fragment>
+          ));
+        })}
+      </Box>
+    </>
   );
 };
 

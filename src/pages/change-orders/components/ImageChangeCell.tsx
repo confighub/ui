@@ -76,11 +76,15 @@ function FieldChip({ detail }: { detail: FieldChangeDetail }) {
         data-testid="image-change-field-chip"
         sx={{
           flex: 'none',
-          display: 'inline-flex',
+          // Whole, or wrapped to the next line. A chip longer than the line gives way inside it: the path and
+          // the values share the line, each whole while it is shorter than its share, and are cut with an ellipsis.
+          display: 'inline-grid',
+          gridTemplateColumns: 'minmax(0, max-content) minmax(0, max-content)',
           alignItems: 'center',
-          gap: '4px',
-          // Whole, or wrapped to the next line: only a path longer than the line itself may give way.
+          columnGap: '4px',
           maxWidth: '100%',
+          // The padding and border inside that 100%, or the chip runs past the card's edge.
+          boxSizing: 'border-box',
           fontFamily: componentTheme.fontMono,
           fontSize: 11,
           lineHeight: 1.6,
@@ -99,12 +103,21 @@ function FieldChip({ detail }: { detail: FieldChangeDetail }) {
           '& .current-preview, & .current-old-preview': { display: 'inline' },
           // Sit in the chip's line rather than the review row's 20px one.
           '& .current-pill': { minHeight: 0, padding: 0, border: 0, fontSize: 11, flexWrap: 'nowrap', gap: '3px' },
+          // A long value (a sha256 digest) is cut, never the arrow. The chip's line height, so the cut keeps the token boxes whole.
+          '& [data-fidelity="value-superseded"], & .current-preview': {
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            lineHeight: 'inherit',
+          },
+          // The struck old value gives way a little faster, so the new one keeps more of the line.
+          '& [data-fidelity="value-superseded"]': { flexShrink: 1.25 },
         }}
       >
         <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {detail.label}
         </Box>
-        <Box component="span" sx={{ flex: 'none' }}>
+        <Box component="span" sx={{ display: 'flex', minWidth: 0 }}>
           <CurrentPill
           value={detail.to}
           filterText=""
@@ -326,6 +339,8 @@ function ImageCard({ changes }: { changes: ImageChanges }) {
         // The same side padding for one line and several, so their image tags start at one x.
         padding: solo ? '10px 12px' : '8px 12px',
         display: 'grid',
+        // Not an auto track: it sizes to the widest line, so a long field chip would run out of the card.
+        gridTemplateColumns: 'minmax(0, 1fr)',
         gap: '6px',
         minWidth: 0,
       }}

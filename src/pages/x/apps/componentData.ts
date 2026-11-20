@@ -330,7 +330,7 @@ export function buildComponentData(
         unappliedCount: unappliedBySpace.get(sid) ?? 0,
         unitCount: unitCountBySpace.get(sid) ?? 0,
         // A Base has no release Target, so nothing is deployed from it and no
-        // live-infra reporter (e.g. argobot) can be watching it. Forced here
+        // live-infra reporter (e.g. k8sbot) can be watching it. Forced here
         // rather than left to convention: a Space whose release Target was
         // cleared still has the Releases published before, and those would
         // paint a Base card with Live/Synced tags it can't back up.

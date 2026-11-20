@@ -422,7 +422,7 @@ function render(resource: ResourceName, at: { version: string; memory: string })
 }
 
 /**
- * The `LiveStatus` argobot writes onto a Release. Returns null for `absent`,
+ * The `LiveStatus` k8sbot writes onto a Release. Returns null for `absent`,
  * which is its own gate case — a Release nobody has reported on is not the
  * same as an unhealthy one.
  */
@@ -430,7 +430,7 @@ function liveStatus(spaceSlug: string, health: LiveHealth): ReleaseLiveStatus | 
   if (health === 'absent') return null;
 
   return {
-    Reporter: 'argobot',
+    Reporter: 'k8sbot',
     DataSource: spaceSlug,
     Sync: health === 'outofsync' ? 'OutOfSync' : 'Synced',
     Health: health === 'unhealthy' ? 'Degraded' : 'Healthy',
@@ -458,7 +458,7 @@ async function latestPublishedRelease(spaceId: string): Promise<ExtendedReleaseR
 }
 
 /**
- * Report `health` on the Release a Space is running, as argobot does once it
+ * Report `health` on the Release a Space is running, as k8sbot does once it
  * has deployed it. `absent` clears the status. A Space that has published no
  * Release has nothing to report on, so nothing is written.
  */

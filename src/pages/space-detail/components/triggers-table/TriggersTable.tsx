@@ -13,6 +13,8 @@ import type { TriggerSelectionStatus } from '@/components/trigger-selection/useT
 import { useGridPersistence } from '@/components/unit-data-grid/hooks/useGridPersistence';
 import { EmptyTriggers } from '@/pages/space-detail/components/empty-triggers/EmptyTriggers';
 import { getApiErrorMessage } from '@/utility/error-functions';
+import { useFilterRefOptions } from '@/components/entity-ref-select/useEntityRefOptions';
+import { useUnitNamesById } from '@/hooks/useUnitNamesById';
 import { useListAllTriggersQuery } from '@confighub/rtk-query';
 import Alert from '@mui/material/Alert';
 import Typography from '@mui/material/Typography';
@@ -83,6 +85,11 @@ const GRID_DEFAULTS = {
     Priority: true,
     Controls: true,
     Disabled: true,
+    WhereUnit: false,
+    UnitFilter: false,
+    WhereResource: false,
+    OtherUnits: false,
+    OtherUnitSelections: false,
     [HIDDEN_REASON_FIELD]: false,
     CreatedAt: false,
     UpdatedAt: true,
@@ -92,13 +99,13 @@ const GRID_DEFAULTS = {
 // A list of Triggers from across Spaces shows where each is.
 const ALL_SPACES_GRID_DEFAULTS = {
   ...GRID_DEFAULTS,
-  columnVisibility: { ...GRID_DEFAULTS.columnVisibility, Space: true },
+  columnVisibility: { ...GRID_DEFAULTS.columnVisibility, Space: true } as Record<string, boolean>,
 };
 
 // A list of Triggers selected from across Spaces shows where each is and how it is selected.
 const SELECTION_GRID_DEFAULTS = {
   ...GRID_DEFAULTS,
-  columnVisibility: { ...GRID_DEFAULTS.columnVisibility, Space: true, Selection: true },
+  columnVisibility: { ...GRID_DEFAULTS.columnVisibility, Space: true, Selection: true } as Record<string, boolean>,
 };
 
 export const TriggersTable = ({
@@ -119,6 +126,11 @@ export const TriggersTable = ({
   includeHidden,
   customToolbarActions,
 }: TriggersTableProps) => {
+  const gridDefaults = selectionStatusById
+    ? SELECTION_GRID_DEFAULTS
+    : showSpaceColumn
+      ? ALL_SPACES_GRID_DEFAULTS
+      : GRID_DEFAULTS;
   const {
     currentData: extendedTriggers,
     isLoading,
@@ -138,8 +150,33 @@ export const TriggersTable = ({
   // state, and the grid and its filters stay, so a Where the server refused can be corrected.
   const readErrorMessage = queryError ? getApiErrorMessage(queryError, 'The Triggers could not be read.') : '';
 
+  const {
+    handleColumnResize,
+    applyStoredWidths,
+    onSortModelChange,
+    columnVisibilityModel,
+    onColumnVisibilityModelChange,
+    clearStoredState,
+    hasStateChanged,
+  } = useGridPersistence(persistenceKey, gridDefaults);
+
+  // A column a stored layout does not mention, such as one added since, takes its default.
+  const columnShown = (field: string) =>
+    (columnVisibilityModel[field] ?? gridDefaults.columnVisibility[field]) !== false;
+
+  // The other Units the Triggers read, named space/unit, and the Unit Filters they and their
+  // selections use, named the same way. Read only while their columns show.
+  const otherUnitsShown = columnShown('OtherUnits');
+  const filtersShown = columnShown('OtherUnitSelections') || columnShown('UnitFilter');
+  const otherUnitNames = useUnitNamesById(
+    useMemo(() => triggers.flatMap((t) => Object.values(t.Trigger?.OtherUnitIDs ?? {})), [triggers]),
+    !otherUnitsShown,
+  );
+  const { options: unitFilters, isFetching: unitFiltersLoading } = useFilterRefOptions('Unit', !filtersShown);
+
   // Convert triggers to row items
   const rows = useMemo<TriggerRowItem[]>(() => {
+    const filterName = new Map(unitFilters.map((option) => [option.id, option.label]));
     return triggers.map((trigger) => {
       const args = (trigger?.Trigger?.Arguments || [])
         .map((arg) => `${arg.ParameterName}=${arg.Value}`)
@@ -173,10 +210,41 @@ export const TriggersTable = ({
         UpdatedAt: trigger?.Trigger?.UpdatedAt || '',
         HiddenReason: trigger?.Trigger?.HiddenReason || '',
         Labels: trigger?.Trigger?.Labels || {},
+        WhereUnit: trigger?.Trigger?.WhereUnit || '',
+        UnitFilter: trigger?.Trigger?.UnitFilterID
+          ? (filterName.get(trigger.Trigger.UnitFilterID) ??
+            (unitFiltersLoading ? 'Loading…' : 'a Filter you cannot see'))
+          : '',
+        WhereResource: trigger?.Trigger?.WhereResource || '',
+        OtherUnits: Object.entries(trigger?.Trigger?.OtherUnitIDs ?? {})
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(
+            ([key, unitId]) =>
+              `${key}=${
+                otherUnitNames.names.get(unitId) ??
+                (otherUnitNames.isLoading
+                  ? 'Loading…'
+                  : otherUnitNames.isError
+                    ? 'could not be read'
+                    : 'a Unit you cannot see')
+              }`,
+          )
+          .join(', '),
+        OtherUnitSelections: Object.entries(trigger?.Trigger?.OtherUnitSelections ?? {})
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, selection]) => ({
+            key,
+            where: selection.Where || undefined,
+            filter: selection.FilterID
+              ? (filterName.get(selection.FilterID) ??
+                (unitFiltersLoading ? 'Loading…' : 'a Filter you cannot see'))
+              : undefined,
+            whereResource: selection.WhereResource || undefined,
+          })),
         _extendedTrigger: trigger, // Store original for edit callback
       };
     });
-  }, [triggers, spaceID, editInPlace, selectionStatusById]);
+  }, [triggers, spaceID, editInPlace, selectionStatusById, otherUnitNames, unitFilters, unitFiltersLoading]);
 
   // Use attribute column manager for Labels
   const { availableAttributeKeys, createAttributeColumn } = useAttributeColumnManager(rows, {
@@ -223,22 +291,6 @@ export const TriggersTable = ({
     ];
   }, [labelColumns, staticColumns]);
 
-  const {
-    handleColumnResize,
-    applyStoredWidths,
-    onSortModelChange,
-    columnVisibilityModel,
-    onColumnVisibilityModelChange,
-    clearStoredState,
-    hasStateChanged,
-  } = useGridPersistence(
-    persistenceKey,
-    selectionStatusById
-      ? SELECTION_GRID_DEFAULTS
-      : showSpaceColumn
-        ? ALL_SPACES_GRID_DEFAULTS
-        : GRID_DEFAULTS,
-  );
 
   // Apply stored widths to columns
   const allColumns = useMemo(
@@ -257,8 +309,8 @@ export const TriggersTable = ({
         dynamicVisibility[col.field] = GRID_DEFAULTS.columnVisibility[col.field] ?? false;
       }
     });
-    return { ...dynamicVisibility, ...columnVisibilityModel };
-  }, [baseColumns, columnVisibilityModel]);
+    return { ...gridDefaults.columnVisibility, ...dynamicVisibility, ...columnVisibilityModel };
+  }, [baseColumns, columnVisibilityModel, gridDefaults]);
 
   const handleRowSelectionChange = (newSelection: GridRowSelectionModel) => {
     // @ts-expect-error GridRowSelectionModel is actually string[]

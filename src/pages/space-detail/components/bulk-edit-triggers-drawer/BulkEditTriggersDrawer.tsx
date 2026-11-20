@@ -6,8 +6,13 @@ import { Control, FieldErrors, UseFormWatch, UseFormSetValue, useForm } from 're
 import { type BulkMetadataChange, BulkMetadataCard } from '@/components/bulk-edit/BulkMetadataCard';
 import { bulkMetadataPatch, isBulkMetadataEditEmpty } from '@/components/bulk-edit/bulkMetadataEdit';
 import { ErrorList } from '@/components/error-list/ErrorList';
+import { useFilterRefOptions } from '@/components/entity-ref-select/useEntityRefOptions';
+import { MapFieldSection } from '@/components/map-field-editor/MapFieldSection';
+import type { MapRow } from '@/components/map-field-editor/map-rows';
 import { FixedSubmitContainer, SectionCard } from '@/components/styled';
 import { runChunkedBulkWrite } from '@/hooks/chunkedBulkWrite';
+import { type OtherUnitRow, type OtherUnitSelectionRow, otherDataPatch } from '@/hooks/triggerFormBody';
+import { OtherDataCard } from '@/pages/space-detail/components/add-trigger-drawer/OtherDataCard';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import { TriggerRead, useBulkPatchTriggersMutation } from '@confighub/rtk-query';
 import ArrowBack from '@mui/icons-material/ArrowBack';
@@ -25,6 +30,12 @@ export interface BulkEditTriggersFormData {
   disabled: '' | 'enabled' | 'disabled';
   /** What to set Warn to on every selected Trigger; empty leaves each as it is */
   warn: '' | 'blocking' | 'warn';
+  /** Units to set under their keys on every selected Trigger */
+  OtherUnits: OtherUnitRow[];
+  /** Selections to set under their keys on every selected Trigger */
+  OtherUnitSelections: OtherUnitSelectionRow[];
+  /** Keys to remove from every selected Trigger's Units and selections */
+  RemoveOtherDataKeys: MapRow[];
 }
 
 /** How many of the Triggers have a flag set, as "2 disabled, 3 enabled". */
@@ -128,6 +139,7 @@ export const BulkEditTriggersDrawer = ({
 }: BulkEditTriggersDrawerProps) => {
   const [errorMessage, setErrorMessage] = useState<string[]>([]);
   const [bulkPatchTriggers] = useBulkPatchTriggersMutation();
+  const { options: unitFilterOptions, isFetching: unitFiltersLoading } = useFilterRefOptions('Unit', !isOpen);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [metadata, setMetadata] = useState(NO_METADATA_CHANGE);
@@ -144,6 +156,9 @@ export const BulkEditTriggersDrawer = ({
     defaultValues: {
       disabled: '',
       warn: '',
+      OtherUnits: [],
+      OtherUnitSelections: [],
+      RemoveOtherDataKeys: [],
     },
   });
 
@@ -164,6 +179,11 @@ export const BulkEditTriggersDrawer = ({
         ...(data.disabled ? { Disabled: data.disabled === 'disabled' } : {}),
         ...(data.warn ? { Warn: data.warn === 'warn' } : {}),
         ...bulkMetadataPatch(metadata.edit),
+        ...otherDataPatch(
+          data.OtherUnits,
+          data.OtherUnitSelections,
+          data.RemoveOtherDataKeys.map((row) => row.key),
+        ),
       };
 
       // A selection can be every Trigger in the organization, so it is patched in chunks.
@@ -193,7 +213,14 @@ export const BulkEditTriggersDrawer = ({
   const hasChanges =
     !isBulkMetadataEditEmpty(metadata.edit) ||
     !!watchedValues.disabled ||
-    !!watchedValues.warn;
+    !!watchedValues.warn ||
+    Object.keys(
+      otherDataPatch(
+        watchedValues.OtherUnits,
+        watchedValues.OtherUnitSelections,
+        (watchedValues.RemoveOtherDataKeys ?? []).map((row) => row.key),
+      ),
+    ).length > 0;
 
   return (
     <Drawer
@@ -253,6 +280,24 @@ export const BulkEditTriggersDrawer = ({
               triggersToEdit={triggersToEdit}
             />
             <BulkMetadataCard entities={triggersToEdit} onChange={setMetadata} />
+            <OtherDataCard
+              control={control}
+              runsInvocation={false}
+              unitFilters={unitFilterOptions}
+              unitFiltersLoading={unitFiltersLoading}
+              description='Set on every selected Trigger, each replacing what a Trigger has under its key. A Trigger that runs an Invocation reads the Units the Invocation names, so it cannot take a Unit.'
+            >
+              <MapFieldSection
+                control={control}
+                name='RemoveOtherDataKeys'
+                title='Remove'
+                description='Keys to remove from every selected Trigger, whether a Unit or a selection.'
+                itemLabel='key'
+                keysOnly
+                keyPlaceholder='policy'
+                testId='bulk-trigger-remove-other-data'
+              />
+            </OtherDataCard>
           </Stack>
         </Box>
 

@@ -19,6 +19,8 @@ import { FunctionInvocationsResponse, FunctionSignature, Invocation } from '@con
 import { FunctionParameterForm } from '../FunctionParameterForm';
 import { InvokerContextDisplay } from '../InvokerContextDisplay';
 import { PerUnitResultCard } from '../components/PerUnitResultCard';
+import type { RunPlan } from '@/components/change-panel/runPlan';
+import { RunLeftOut, RunPlanNote } from '@/components/change-panel/RunPlanParts';
 import { useColumnResize } from '@/pages/x/apps/useColumnResize';
 import { componentTheme } from '@/pages/x/apps/componentTheme';
 import { InvokerContext, FunctionParameterFormData } from '../types/invoker.types';
@@ -265,7 +267,11 @@ export interface FunctionDetailScreenProps {
     /** The invocation was a dry run: nothing was written. */
     dryRun?: boolean;
     slugByUnitId?: Record<string, string>;
+    /** The run left out Units held by another change (D38). */
+    ranIn?: RunPlan;
   } | null;
+  /** Before the run, with a change active: which ticked Units it writes and which it leaves out (D38). */
+  runPlan?: RunPlan;
   onRemoveUnit?: (unitId: string) => void;
   onRemoveAllUnits?: () => void;
   onRestoreAllUnits?: () => void;
@@ -283,6 +289,7 @@ export const FunctionDetailScreen = ({
   loadedInvocation,
   invocationParamForm,
   invokeResult,
+  runPlan,
   onRemoveUnit,
   onRemoveAllUnits,
   onRestoreAllUnits,
@@ -524,6 +531,11 @@ export const FunctionDetailScreen = ({
         functionToolchainType={functionToolchainType}
         totalVisibleUnits={totalVisibleUnits}
       />
+      {runPlan ? (
+        <Box sx={{ mt: 2 }}>
+          <RunPlanNote plan={runPlan} />
+        </Box>
+      ) : null}
 
       {/* Function Details — flat header matching component theme */}
       <Box
@@ -681,7 +693,7 @@ export const FunctionDetailScreen = ({
       {invokeResult && (
         <ThemeProvider theme={invokerTheme}>
         <Fade in>
-          <Box ref={resultsSectionRef} sx={{ mt: 3 }}>
+          <Box ref={resultsSectionRef} sx={{ mt: 3 }} data-testid="run-result">
             {/* Lean result banner — matches the per-unit card vocabulary:
                 colored dot + headline + muted message, with a thin accent
                 bar on failures to keep the error prominent. */}
@@ -714,9 +726,25 @@ export const FunctionDetailScreen = ({
                     color: invokeResult.success ? componentTheme.success : componentTheme.danger,
                   }}
                 >
-                  {invokeResult.success ? 'All invocations succeeded' : 'Invocation failed'}
+                  {invokeResult.success && invokeResult.ranIn ? (
+                    // Never "All invocations succeeded" when Units were left out (D38).
+                    <>
+                      {`Ran on ${invokeResult.ranIn.run} of ${invokeResult.ranIn.total} Units`}
+                      <Box component="span" sx={{ fontWeight: 400, color: componentTheme.fgDefault }}>
+                        {' in your ChangeSet '}
+                        <Box component="span" sx={{ fontFamily: componentTheme.fontMono }}>
+                          {invokeResult.ranIn.change.slug}
+                        </Box>
+                        .
+                      </Box>
+                    </>
+                  ) : invokeResult.success ? (
+                    'All invocations succeeded'
+                  ) : (
+                    'Invocation failed'
+                  )}
                 </Typography>
-                {invokeResult.message && (
+                {invokeResult.message && !(invokeResult.success && invokeResult.ranIn) && (
                   invokeResult.success ? (
                     <Typography
                       variant="caption"
@@ -736,6 +764,7 @@ export const FunctionDetailScreen = ({
                   )
                 )}
               </Box>
+              {invokeResult.ranIn ? <RunLeftOut left={invokeResult.ranIn.left} /> : null}
               {!invokeResult.success && invokeResult.responses && (() => {
                 const firstError = invokeResult.responses.find((r) => r.Error);
                 if (!firstError?.Error) return null;
@@ -901,16 +930,17 @@ export const FunctionDetailScreen = ({
                       || response.UnitID
                     : `Result ${index + 1}`;
                   return (
-                    <PerUnitResultCard
-                      key={response.UnitID ?? index}
-                      response={response}
-                      unitDisplay={unitDisplay}
-                      columnStyle={columnStyle}
-                      onDividerMouseDown={onDividerMouseDown}
-                      isDragging={isDragging}
-                      dryRun={invokeResult.dryRun}
-                      onSaveAttributes={onSaveAttributes}
-                    />
+                    <Box key={response.UnitID ?? index} data-testid={`run-unit-${index + 1}`}>
+                      <PerUnitResultCard
+                        response={response}
+                        unitDisplay={unitDisplay}
+                        columnStyle={columnStyle}
+                        onDividerMouseDown={onDividerMouseDown}
+                        isDragging={isDragging}
+                        dryRun={invokeResult.dryRun}
+                        onSaveAttributes={onSaveAttributes}
+                      />
+                    </Box>
                   );
                 })}
               </Box>
