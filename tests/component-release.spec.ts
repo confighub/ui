@@ -328,6 +328,48 @@ test.describe('component release flow', () => {
     // which would otherwise match unrelated hidden text first in the DOM.
     await expect(page.getByTestId('component-error-card')).toBeVisible({ timeout: 10000 });
   });
+
+  // ── A Unit held back by an open ChangeSet is named ──
+  //
+  // A publish bundles a Unit whose head is partway through a ChangeSet at the Revision before it,
+  // and its response names each such Unit. Route-mocked, like the error card above, so it
+  // publishes nothing.
+  test('names the Units an open ChangeSet held back', async ({ page }) => {
+    await navigateAndSelectApp(page, APP_LABEL);
+
+    const releaseNode = page.locator('.react-flow__node').filter({ hasText: releaseSlug });
+    await expect(releaseNode).toBeVisible({ timeout: 10000 });
+    await releaseNode.click();
+
+    await page.getByTestId('component-pane-tab-releases').click();
+    await goToUnreleased(page);
+    const releaseBtn = page.getByTestId('component-release-button');
+    await expect(releaseBtn).toBeEnabled({ timeout: 5000 });
+
+    await page.route(`**/api/space/${releaseSpaceId}/release`, async (route) => {
+      if (route.request().method() === 'POST') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            Release: { ReleaseNum: 99, SpaceSlug: releaseSlug },
+            HeldBack: [
+              { UnitSlug: 'test-config', ChangeSetSlug: 'rollout', RevisionNum: 2, HeadRevisionNum: 3 },
+            ],
+          }),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+
+    await releaseBtn.click();
+
+    await expect(page.getByTestId('component-action-success')).toHaveText(
+      `Released rel-99; held back ${releaseSlug}/test-config (ChangeSet rollout)`,
+      { timeout: 10000 },
+    );
+  });
 });
 
 // ============================================================================

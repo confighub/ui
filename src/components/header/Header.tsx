@@ -1,6 +1,5 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 
 import { DropdownMenu } from '@/components/dropdown-menu/DropdownMenu';
@@ -8,8 +7,6 @@ import { NavLink } from '@/components/nav-link/NavLink';
 import { Ellipses } from '@/components/styled';
 import { useScroll } from '@/hooks/useScroll';
 import { Domains } from '@/types/enums';
-import CloseIcon from '@mui/icons-material/Close';
-import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import Box from '@mui/material/Box';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Button from '@mui/material/Button';
@@ -18,7 +15,6 @@ import { SelectChangeEvent } from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import { alpha, styled } from '@mui/material/styles';
 
-import { ActionsPopover } from '../actions-popover/ActionsPopover';
 import { useUserInfo } from '../authenticated-context/AuthenticatedContext';
 import { CopyToClipboard } from '../copy-to-clipboard/CopyToClipboard';
 import { OrganizationSwitcher } from '@/components/organization-switcher/OrganizationSwitcher';
@@ -121,9 +117,6 @@ export const Header = ({
   const { userInfo } = useUserInfo();
   const isScrolling = useScroll();
 
-  // state
-  const [enableDrag, setEnableDrag] = useState(false);
-
   const actionsStack = (
     <Stack direction='row-reverse' sx={{ alignItems: 'center' }} spacing={1}>
       {moreItems && (
@@ -173,18 +166,6 @@ export const Header = ({
         </Box>
       )}
       {deleteButton}
-      <Box>
-        <Button
-          size='small'
-          sx={{
-            position: 'relative',
-            top: '1px',
-          }}
-          onClick={() => setEnableDrag((prevSelected) => !prevSelected)}
-        >
-          {enableDrag ? <CloseIcon /> : <DragIndicatorIcon />}
-        </Button>
-      </Box>
     </Stack>
   );
 
@@ -238,7 +219,7 @@ export const Header = ({
         </Box>
         <Box sx={{ height: '32px' }}>
           <Stack direction='row' spacing={2} sx={{ alignItems: 'center' }}>
-            {enableDrag ? <ActionsPopover actions={<>{actionsStack}</>} /> : actionsStack}
+            {actionsStack}
           </Stack>
         </Box>
       </FilterSection>

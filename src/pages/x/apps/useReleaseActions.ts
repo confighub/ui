@@ -49,6 +49,7 @@ import { getApiErrorMessage } from '@/utility/error-functions';
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query';
 
 import { isEmptyReleaseBundle } from './releaseBundle';
+import { releaseOutcomeText } from './releaseHeldBack';
 import { useLazyReleaseBundle } from '@/hooks/useUnitData';
 
 // ============================================================================
@@ -356,7 +357,13 @@ export function useReleaseActions({
           // there is nothing to settle on.
           const release = published.Release;
           if (published.Message || !release) {
-            onSuccess('No change: no Release was created');
+            onSuccess(
+              releaseOutcomeText(
+                'No change: no Release was created',
+                release?.SpaceSlug,
+                published.HeldBack,
+              ),
+            );
             return;
           }
 
@@ -407,7 +414,13 @@ export function useReleaseActions({
           } else {
             // A non-empty publish says nothing about any OTHER release's
             // warning — earlier flagged entries are left untouched.
-            onSuccess(`Released rel-${release.ReleaseNum ?? '?'}`);
+            onSuccess(
+              releaseOutcomeText(
+                `Released rel-${release.ReleaseNum ?? '?'}`,
+                release.SpaceSlug,
+                published.HeldBack,
+              ),
+            );
           }
         } catch (err: unknown) {
           // Detect the apply-gate case off the RAW RTK error's HTTP status

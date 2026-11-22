@@ -216,10 +216,6 @@ test.describe('Triggers of every Space', () => {
       await expect(row.locator('[data-field="OtherUnits"]')).toContainText(`policy=${base}/${base}-policy-b`);
       await expect(row.locator('[data-field="OtherUnitSelections"]')).toHaveText('namespaces');
     } finally {
-      // A Unit a Trigger names cannot be deleted, even with the Trigger in the same Space.
-      for (const trigger of spaces.length > 0 ? await triggersIn(spaces[0]) : []) {
-        await hubApi.delete(`/api/space/${spaces[0]}/trigger/${trigger.TriggerID}`);
-      }
       await removeSpaces(spaces);
     }
   });
@@ -285,13 +281,9 @@ test.describe('Triggers of every Space', () => {
       const policy = { policy: policyUnit };
       await expect.poll(otherData).toEqual([[[policy, workloads]], [[policy, workloads]]]);
     } finally {
-      // A Unit a Trigger names cannot be deleted, even with the Trigger in the same Space.
-      for (const spaceId of spaces) {
-        for (const trigger of await triggersIn(spaceId)) {
-          await hubApi.delete(`/api/space/${spaceId}/trigger/${trigger.TriggerID}`);
-        }
-      }
-      await removeSpaces(spaces);
+      // The Trigger in the second Space names a Unit in the first, which refuses the first's delete
+      // until the second has gone.
+      await removeSpaces([...spaces].reverse());
     }
   });
 

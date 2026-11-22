@@ -6,6 +6,9 @@
  * hook gives these the API calls and the page callbacks, so the rules about
  * partial failure can be tested without a React tree or a server.
  */
+import type { ReleaseHeldBackUnit } from '@confighub/rtk-query';
+
+import { releaseOutcomeText } from '../../releaseHeldBack';
 import type { WaveUpgradePlan } from './waveActions';
 
 type ErrorEntry = { title: string; detail: string; timestamp: Date };
@@ -142,11 +145,14 @@ export async function runWaveUpgrade(
 export interface WaveReleaseDeps {
   /**
    * The unnamed release of the side pane; resolves with its number, or with a
-   * Message when the Space is unchanged since its latest Release.
+   * Message when the Space is unchanged since its latest Release, and the Units
+   * it held back because their head is partway through a ChangeSet.
    */
-  publish: (
-    spaceId: string,
-  ) => Promise<{ Release?: { ReleaseNum?: number }; Message?: string }>;
+  publish: (spaceId: string) => Promise<{
+    Release?: { ReleaseNum?: number; SpaceSlug?: string };
+    Message?: string;
+    HeldBack?: ReleaseHeldBackUnit[];
+  }>;
   /** What a failed publish tells the user, given the thrown error. */
   errorDetail: (err: unknown) => string;
   setReleasing: (update: (prev: ReadonlySet<string>) => ReadonlySet<string>) => void;
@@ -172,10 +178,18 @@ export async function runWaveRelease(
   // one failure (a gate) must not stop the others.
   for (const spaceId of mine) {
     try {
-      const { Release: release, Message: message } = await deps.publish(spaceId);
+      const {
+        Release: release,
+        Message: message,
+        HeldBack: heldBack,
+      } = await deps.publish(spaceId);
       deps.flashSuccess(
         new Set([spaceId]),
-        message ? 'No change' : `Released rel-${release?.ReleaseNum ?? '?'}`,
+        releaseOutcomeText(
+          message ? 'No change' : `Released rel-${release?.ReleaseNum ?? '?'}`,
+          release?.SpaceSlug,
+          heldBack,
+        ),
       );
     } catch (err: unknown) {
       deps.setErrors([spaceId], {

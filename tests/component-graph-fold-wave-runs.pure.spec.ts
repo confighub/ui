@@ -124,8 +124,9 @@ test('a thrown request fails its Units and every later request, and runs no more
   expect(log.landed).toEqual([['s1']]);
 });
 
-// A number is the ReleaseNum published; 'unchanged' is a Space with nothing new to publish.
-function releaseHarness(results: Record<string, number | 'unchanged' | Error>) {
+// A number is the ReleaseNum published; 'unchanged' is a Space with nothing new to publish;
+// 'held' publishes release 3 with a Unit held back by an open ChangeSet.
+function releaseHarness(results: Record<string, number | 'unchanged' | 'held' | Error>) {
   const log = { flash: [] as unknown[], errors: [] as unknown[], published: [] as string[] };
   const held = new Set<string>();
   let releasing: ReadonlySet<string> = new Set();
@@ -135,6 +136,14 @@ function releaseHarness(results: Record<string, number | 'unchanged' | Error>) {
       const r = results[id];
       if (r instanceof Error) throw r;
       if (r === 'unchanged') return { Release: { ReleaseNum: 1 }, Message: 'no changes' };
+      if (r === 'held') {
+        return {
+          Release: { ReleaseNum: 3, SpaceSlug: `web-${id}` },
+          HeldBack: [
+            { UnitSlug: 'backend', ChangeSetSlug: 'tls', RevisionNum: 4, HeadRevisionNum: 6 },
+          ],
+        };
+      }
       return { Release: { ReleaseNum: r } };
     },
     errorDetail: (e) => (e as Error).message,
@@ -169,6 +178,14 @@ test('a Space unchanged since its latest release flashes no change', async () =>
   expect(log.flash).toEqual([
     { ids: ['a'], msg: 'No change' },
     { ids: ['b'], msg: 'Released rel-2' },
+  ]);
+});
+
+test('a release names the Units an open ChangeSet held back', async () => {
+  const { deps, log } = releaseHarness({ a: 'held' });
+  await runWaveRelease(['a'], deps);
+  expect(log.flash).toEqual([
+    { ids: ['a'], msg: 'Released rel-3; held back web-a/backend (ChangeSet tls)' },
   ]);
 });
 

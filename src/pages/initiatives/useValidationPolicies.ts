@@ -34,10 +34,14 @@ export interface ValidationData {
   refetch: () => void;
 }
 
-/** Every validating Trigger in the organization, as the Validation page tracks it. */
+/**
+ * Every validating Trigger in the organization that checks Units, as the Validation page tracks it.
+ * Release Triggers check what a Release bundles, and record what they find on the Release, so no
+ * Unit ever has a verdict from one.
+ */
 export const useValidationPolicies = (): ValidationData => {
   const triggersQuery = useListAllTriggersQuery(
-    { where: 'Validating = true' },
+    { where: "Validating = true AND Event != 'Release'" },
     { refetchOnFocus: true },
   );
   const spacesQuery = useListSpacesQuery(
