@@ -87,6 +87,18 @@ test('a release gate naming no attestation prerequisite is a fault', () => {
   ]);
 });
 
+test('a release gate may name the built-in Validated and Distinct', () => {
+  const { workflow, identity } = fromWire(
+    wire({
+      Stages: [{ Name: 'production', ReleasePrerequisites: ['Validated', 'Distinct'] }],
+      AttestationPrerequisites: [],
+    }),
+  );
+
+  expect(definitionFaults(workflow).filter((p) => p.sev === 'problem')).toEqual([]);
+  expect(toWire(workflow, identity).Stages?.[0].ReleasePrerequisites).toEqual(['Validated', 'Distinct']);
+});
+
 test('a custom prerequisite may not take an attestation prerequisite’s name', () => {
   const { workflow } = fromWire(
     wire({ CustomPrerequisites: [{ Name: 'release-approval', Expression: 'cel:true' }] }),

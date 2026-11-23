@@ -11,7 +11,13 @@
  * wrong.
  */
 
-import { BUILTIN_NAMES, CHANGESET_REFUSED_BUILTINS, COMPLETE_LABEL, IMPLICIT_GATE } from './vocabulary';
+import {
+  BUILTIN_NAMES,
+  CHANGESET_REFUSED_BUILTINS,
+  COMPLETE_LABEL,
+  IMPLICIT_GATE,
+  RELEASE_BUILTIN_NAMES,
+} from './vocabulary';
 import type { ChangeWorkflowAttestationPrerequisite } from '@confighub/rtk-query';
 
 import {
@@ -100,7 +106,12 @@ export function isAttestationName(wf: UnresolvedWorkflow, name: string): boolean
   return wf.attestations.some((a) => a.Name === name);
 }
 
-/** Which Stages require a prerequisite of their Releases. Only an attestation one can be. */
+/** What a Stage's release gates may name: an attestation prerequisite, `Validated` or `Distinct`. */
+export function isReleaseGateName(wf: UnresolvedWorkflow, name: string): boolean {
+  return RELEASE_BUILTIN_NAMES.includes(name) || isAttestationName(wf, name);
+}
+
+/** Which Stages require a prerequisite of their Releases. */
 export function releasedBy(wf: UnresolvedWorkflow, name: string): string[] {
   return wf.stages.filter((s) => s.releasePrereqs.includes(name)).map((s) => s.name);
 }
@@ -347,7 +358,7 @@ export function definitionFaults(wf: UnresolvedWorkflow): Problem[] {
 
   wf.stages.forEach((st) => {
     const n = (st.name || '').trim();
-    const undeclared = st.releasePrereqs.filter((pr) => !isAttestationName(wf, pr));
+    const undeclared = st.releasePrereqs.filter((pr) => !isReleaseGateName(wf, pr));
     if (n && undeclared.length) {
       out.push({
         sev: 'problem',

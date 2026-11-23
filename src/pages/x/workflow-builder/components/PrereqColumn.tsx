@@ -35,8 +35,8 @@ import {
   attestationSummary,
   declaredNames,
   governsChangeSets,
-  isAttestationName,
   isKnownGate,
+  isReleaseGateName,
   releasedBy,
   stageIndex,
   usedBy,
@@ -120,7 +120,7 @@ function ReleaseLine({ api }: { api: LoadedBuilderApi }) {
         w.sep !== undefined ? (
           <Fragment key={i}>{w.sep}</Fragment>
         ) : (
-          <span className={isAttestationName(api.workflow, w.item) ? 'g' : 'g bad'} key={i}>
+          <span className={isReleaseGateName(api.workflow, w.item) ? 'g' : 'g bad'} key={i}>
             {w.item}
           </span>
         ),

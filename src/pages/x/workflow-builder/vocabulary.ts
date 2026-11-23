@@ -33,6 +33,13 @@ export const BUILTINS: readonly Builtin[] = [
 export const BUILTIN_NAMES: readonly string[] = BUILTINS.map((b) => b.name);
 
 /**
+ * The built-in gates a Stage's `ReleasePrerequisites` may name besides its attestation
+ * prerequisites (`ChangeWorkflowStage.ReleasePrerequisites`). `Distinct` is a release gate
+ * only: no resource a Release bundles is released to its Target more than once.
+ */
+export const RELEASE_BUILTIN_NAMES: readonly string[] = ['Validated', 'Distinct'];
+
+/**
  * The terminal node's human label. The stored field is `Final`
  * (`ChangeWorkflowFinalStage`) and the spec key and the CLI both say `final`, so
  * `final` is what gets quoted wherever the stored definition is shown, and

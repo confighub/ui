@@ -24,9 +24,10 @@ export interface Stage {
   /** `ChangeWorkflowStage.Prerequisites`. Names of built-in, custom or attestation checks. */
   prereqs: string[];
   /**
-   * `ChangeWorkflowStage.ReleasePrerequisites`. Names of attestation prerequisites a Release
-   * for a ChangeOrder in one of the Stage's Spaces must satisfy. Checked over the Stage itself,
-   * not the one ahead of it, so the first Stage may have them too.
+   * `ChangeWorkflowStage.ReleasePrerequisites`. Names of attestation prerequisites, or the
+   * built-in `Validated` or `Distinct`, a Release for a ChangeOrder in one of the Stage's
+   * Spaces must satisfy. Checked over the Stage itself, not the one ahead of it, so the first
+   * Stage may have them too.
    */
   releasePrereqs: string[];
 }
