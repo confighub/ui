@@ -211,13 +211,9 @@ test.describe('view explorer table', () => {
     await page.keyboard.press('ControlOrMeta+Enter');
     const detail = await opened;
     await expect.poll(() => detail.url()).toContain(unit.id);
-    // The Unit page offers the way back to the same explorer tab.
-    const back = detail.getByRole('link', { name: 'View explorer', exact: true });
-    await expect(back).toBeVisible();
-    await back.click();
-    await expect.poll(() => new URL(detail.url()).pathname).toBe('/x/view-explorer');
-    expect(new URL(detail.url()).searchParams.get('view')).toBe(viewId);
-    await expect(detail.locator('[data-testid="vx-tab"][data-active="true"]')).toContainText(name);
+    // A new tab has a trail of its own, which starts at the page it opened on.
+    await expect(detail.getByTestId('trail-current')).toHaveAttribute('data-kind', 'unit');
+    await expect(detail.getByTestId('trail-crumb')).toHaveCount(0);
     await detail.close();
   });
 
@@ -228,8 +224,6 @@ test.describe('view explorer table', () => {
     const expectUnitPage = async (opened: Promise<Page>) => {
       const detail = await opened;
       await expect.poll(() => detail.url()).toContain(unit.id);
-      // Same URL as the name link: it carries the way back to this explorer tab.
-      expect(new URL(detail.url()).searchParams.has('explorer')).toBe(true);
       await detail.close();
     };
 

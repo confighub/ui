@@ -9,7 +9,7 @@ import ButtonBase from '@mui/material/ButtonBase';
 import { Kbd } from '../../lenses/parts';
 import type { PanelLinks } from '../links';
 import type { ActionState } from '../verdict';
-import { newTab } from './new-tab';
+import { pageLink } from './page-link';
 import type { PanelActions } from './types';
 
 function ActionItem({ action, run, href }: { action: ActionState; run: () => void; href?: string }) {
@@ -22,7 +22,7 @@ function ActionItem({ action, run, href }: { action: ActionState; run: () => voi
         aria-disabled={off || undefined}
         aria-describedby={off ? reasonId : undefined}
         aria-keyshortcuts={action.key}
-        {...(off ? {} : newTab(href))}
+        {...(off ? {} : pageLink(href))}
         onClick={off || href ? undefined : () => run()}
         data-action={action.id}
         sx={{

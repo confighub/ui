@@ -182,7 +182,6 @@ export const UnitListHeader = memo<UnitListHeaderProps>(
 
     return (
       <Header
-        breadCrumbs={[{ name: 'Units' }]}
         moreItems={{
           onChange: handleMoreMenuChange,
           items: moreMenuItems,

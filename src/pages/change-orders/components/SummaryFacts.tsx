@@ -69,22 +69,11 @@ export function StateChip({ label, tone }: { label: string; tone: string }) {
   );
 }
 
-/**
- * A fact's value, as a link to somewhere else in the product. A ChangeOrder page
- * holds work in progress, so there it opens a new tab. A read-only summary, as
- * on a ChangeSet or a Channel, passes `newTab={false}`.
- */
-export function FactLink({ href, children, newTab = true }: { href: string; children: ReactNode; newTab?: boolean }) {
+/** A fact's value, as a link to another page of the product. */
+export function FactLink({ href, children }: { href: string; children: ReactNode }) {
   const sx = { color: 'inherit', textDecoration: 'underline', textDecorationColor: changeOrderBorder.strong };
-  if (!newTab) {
-    return (
-      <Box component={RouterLink} to={href} sx={sx}>
-        {children}
-      </Box>
-    );
-  }
   return (
-    <Box component="a" href={href} target="_blank" rel="noopener noreferrer" sx={sx}>
+    <Box component={RouterLink} to={href} sx={sx}>
       {children}
     </Box>
   );

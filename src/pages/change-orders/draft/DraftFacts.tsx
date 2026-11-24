@@ -23,7 +23,7 @@ import {
   changeOrderStatus,
   changeOrderType,
 } from '../changeOrdersTokens';
-import { ChangeCardEnd, ChangeCardRibbon } from './ChangeCardRibbon';
+import { ChangeCardEnd, ChangeCardReissue, ChangeCardRibbon } from './ChangeCardRibbon';
 import { CouldNotEstablish } from './CouldNotEstablish';
 import { draftCopy } from './draftCopy';
 import { type DraftAddress, type DraftAddressPatch, type DraftDecisions, kindSwitchPatch, workflowGovernsKind } from './draftDecisions';
@@ -264,6 +264,7 @@ export const DraftFacts = memo(function DraftFacts({
     (a, b) => Number(b.workflowId === lastWorkflowId) - Number(a.workflowId === lastWorkflowId) || a.slug.localeCompare(b.slug),
   );
   const onEnd = useCallback((end: string | null) => onChange({ end }), [onChange]);
+  const onReissue = useCallback((on: boolean) => onChange({ reissue: on ? '1' : null }), [onChange]);
   // Variants on no stage of the workflow: the server would accept them and no promotion reaches
   // them. They are chips beside the outliers, so their problem is not said again under the line.
   const outside = useMemo(() => {
@@ -412,7 +413,8 @@ export const DraftFacts = memo(function DraftFacts({
             onRevert={() => onChange({ kind: null })}
           />
           {kind === 'baseChanges' ? (
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', minWidth: 0 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              {decisions.reissue === undefined ? null : <ChangeCardReissue reissue={decisions.reissue} onReissue={onReissue} />}
               <ChangeCardEnd cards={cards} onEnd={onEnd} />
             </Box>
           ) : null}
@@ -447,6 +449,7 @@ export const DraftFacts = memo(function DraftFacts({
             <ChangeCardRibbon
               cards={cards}
               startLabel={template?.slug}
+              startsBefore={decisions.reissue?.on ?? false}
               onEnd={onEnd}
               onRetry={onRetryCards}
               emptySaid={changeProblems.some((problem) => problem.code === 'nothing-to-carry')}

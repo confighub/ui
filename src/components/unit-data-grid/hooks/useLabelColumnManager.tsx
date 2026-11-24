@@ -83,7 +83,6 @@ const useStableKeyList = (labels: Label[]): Label[] => {
 /**
  * Custom hook for managing label column state and operations in a data grid
  * @param rows - Array of unit row items containing label data
- * @param openLinksInNewTab - When true, slug links open in a new browser tab
  * @param allowedLabelColumns - When provided, only label keys in this list are surfaced as
  *   columns via `availableLabelKeys`. Pass an empty array to suppress all auto-added label
  *   columns. Leave undefined to preserve the default (auto-add every label key found on rows).
@@ -92,7 +91,6 @@ const useStableKeyList = (labels: Label[]): Label[] => {
  */
 export const useLabelColumnManager = (
   rows: Array<UnitRowItem>,
-  openLinksInNewTab = false,
   allowedLabelColumns?: string[],
   slugLinkTo?: (row: UnitRowItem) => string,
 ) => {
@@ -372,8 +370,6 @@ export const useLabelColumnManager = (
                       ? slugLinkTo(params.row)
                       : `/units/${params.row?.SpaceID}/${params.row.id}`
                   }
-                  target={openLinksInNewTab ? '_blank' : undefined}
-                  rel={openLinksInNewTab ? 'noopener noreferrer' : undefined}
                 >
                   <Ellipses
                     variant='body1'
@@ -1141,7 +1137,7 @@ export const useLabelColumnManager = (
         );
       },
     },
-  ], [slugLinkTo, openLinksInNewTab]);
+  ], [slugLinkTo]);
 
   return {
     availableLabelKeys,

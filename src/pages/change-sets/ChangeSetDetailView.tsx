@@ -282,7 +282,7 @@ export function ChangeSetDetailView({ detail, onNotice }: { detail: ChangeSetDet
               sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '14px', margin: '16px 0 0' }}
             >
               <Fact term="Space" icon={FolderOutlinedIcon}>
-                <FactLink href={`/spaces/${changeSet.SpaceID}`} newTab={false}>{changeSet.SpaceSlug ?? changeSet.SpaceID}</FactLink>
+                <FactLink href={`/spaces/${changeSet.SpaceID}`}>{changeSet.SpaceSlug ?? changeSet.SpaceID}</FactLink>
               </Fact>
               <Fact term="Units" icon={DataObjectOutlinedIcon}>
                 <span data-testid="change-set-unit-count">

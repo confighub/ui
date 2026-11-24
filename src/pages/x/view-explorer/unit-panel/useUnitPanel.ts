@@ -1,6 +1,7 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 
+import { useNavigate } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ExtendedUnitRead } from '@confighub/rtk-query';
@@ -44,8 +45,6 @@ interface Args {
   allRows: readonly EntityRow[];
   rowIdOf: (row: EntityRow) => string;
   selection: PanelSelection;
-  /** The explorer tab's URL query, which the panel's links carry back. */
-  search: string;
   /** The Unit has left the rows (deleted): the panel shows it as it was, says so, and runs nothing on it. */
   gone: boolean;
   /** The panel has stayed on this row long enough to read its details. */
@@ -65,7 +64,7 @@ interface Args {
  * from here. The place and the counts come from the rows already loaded; the
  * verdict also reads the open Unit's own details (`useUnitPanelData`).
  */
-export function useUnitPanel({ row, rowId, order, allRows, rowIdOf, selection, search, gone: rowGone, settled, goTo, move, tab, onTabChange, focusPanel }: Args): {
+export function useUnitPanel({ row, rowId, order, allRows, rowIdOf, selection, gone: rowGone, settled, goTo, move, tab, onTabChange, focusPanel }: Args): {
   model: UnitPanelModel | null;
   announcement: string;
 } {
@@ -190,7 +189,7 @@ export function useUnitPanel({ row, rowId, order, allRows, rowIdOf, selection, s
     [unit, preview],
   );
 
-  const links = useMemo(() => (facts && !gone ? panelLinks(facts, data.componentSlug, search) : {}), [facts, gone, data.componentSlug, search]);
+  const links = useMemo(() => (facts && !gone ? panelLinks(facts, data.componentSlug) : {}), [facts, gone, data.componentSlug]);
   const dispatch = useAppDispatch();
   const { enabled: selectionEnabled, pick } = selection;
   const nextProblemId = place?.nextProblem?.id;
@@ -200,9 +199,10 @@ export function useUnitPanel({ row, rowId, order, allRows, rowIdOf, selection, s
   const diffArgs = restorable ? facts : null;
   // Release is listed with its reason when it cannot run, so it needs an entry then too; it runs only with its link.
   const releaseOff = !!facts && releaseState(facts, fetched)?.enabled === false;
+  const navigate = useNavigate();
   const actions = useMemo<PanelActions>(() => {
     const list: PanelActions = {};
-    for (const [id, href] of Object.entries(links) as [ActionId, string][]) list[id] = () => void window.open(href, '_blank', 'noopener');
+    for (const [id, href] of Object.entries(links) as [ActionId, string][]) list[id] = () => navigate(href);
     if (nextProblemId) list['next-problem'] = () => onGoTo(nextProblemId);
     if (gone) return list;
     if (!list['release-space'] && releaseOff) list['release-space'] = () => undefined;
@@ -227,7 +227,7 @@ export function useUnitPanel({ row, rowId, order, allRows, rowIdOf, selection, s
       list.restore = () => setDialog({ kind: 'restore', unitId, unit });
     }
     return list;
-  }, [links, releaseOff, nextProblemId, onGoTo, gone, selectionEnabled, rowId, hidden, pick, dispatch, gateTarget, checkGate, diffArgs, preview, restorable, unit]);
+  }, [links, navigate, releaseOff, nextProblemId, onGoTo, gone, selectionEnabled, rowId, hidden, pick, dispatch, gateTarget, checkGate, diffArgs, preview, restorable, unit]);
 
   const details = useMemo(
     () => ({ status: fetched.status, gone, componentError: !!fetched.space?.componentError, retry: data.retry }),

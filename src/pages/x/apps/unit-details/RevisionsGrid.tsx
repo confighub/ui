@@ -33,8 +33,6 @@ const RevisionCell = ({ label, value, spaceId, unitId, ahead, subLabel }: CellPr
     {...(value
       ? {
           href: buildRevisionViewerHref(spaceId, unitId, value),
-          target: '_blank',
-          rel: 'noopener noreferrer',
         }
       : {})}
     sx={{

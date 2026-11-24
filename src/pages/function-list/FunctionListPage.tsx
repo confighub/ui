@@ -355,15 +355,6 @@ export const FunctionListPage = () => {
   return (
     <Container sx={{ color: 'text.primary' }}>
       <Header
-        breadCrumbs={[
-          {
-            name: 'Units',
-            isLink: true,
-            link: '/units',
-          },
-          { name: isBulkFunctionInvocation ? 'Bulk Functions' : 'Link Units' },
-          { name: functionSignature.FunctionName || name || 'Function Details' },
-        ]}
       />
       <Main sx={{ padding: '0px' }}>
         <ServerErrorBox

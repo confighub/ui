@@ -1,5 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
+import { useCrumbName } from '@/components/trail/TrailProvider';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
@@ -288,16 +289,7 @@ export const SpaceDetailPage = () => {
     [selectedTriggers.length],
   );
 
-  const breadcrumbs = [
-    {
-      name: 'Spaces',
-      isLink: true,
-      link: '/spaces',
-    },
-    {
-      name: space?.Slug || '',
-    },
-  ];
+  useCrumbName(space?.Slug);
 
   const headerActions = (
     <>
@@ -331,7 +323,6 @@ export const SpaceDetailPage = () => {
   return (
     <DetailsContainer>
       <Header
-        breadCrumbs={breadcrumbs}
         addButton={isTriggersTab ? createTriggerButton : undefined}
         editButton={
           isTriggersTab && triggerView === 'space' ? (

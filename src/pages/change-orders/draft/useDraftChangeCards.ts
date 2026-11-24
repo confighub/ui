@@ -34,6 +34,7 @@ import {
   changeSetsOfRevisions,
   deriveUnitRanges,
   deriveUnitStarts,
+  startsFromTag,
   draftRevisionOf,
   endTagRevisionsWhere,
   foreignUpstreamSpaceIds,
@@ -126,6 +127,8 @@ export interface UseDraftChangeCardsArgs {
   inScopeSpaceIds: readonly string[];
   end: DraftEndChoice | undefined;
   updateType: DraftUpdateType;
+  /** A reissued ChangeOrder's start Tag: each Unit it marks a Revision of starts there. */
+  startTagId?: string;
   skip?: boolean;
 }
 
@@ -162,6 +165,7 @@ export function useDraftChangeCards(args: UseDraftChangeCardsArgs): DraftChangeC
     inScopeSpaceIds,
     end,
     updateType,
+    startTagId,
     skip = false,
   } = args;
   const ready = !skip && baseSpaceId !== undefined;
@@ -211,13 +215,33 @@ export function useDraftChangeCards(args: UseDraftChangeCardsArgs): DraftChangeC
     () => foreignUpstreamSpaceIds(baseUnits, variantUnits, inScopeSpaceIds),
     [baseUnits, variantUnits, inScopeSpaceIds],
   );
-  const starts = useMemo(
-    () =>
-      unitsLanded
-        ? deriveUnitStarts(baseUnits, variantUnits, inScopeSpaceIds, foreignSpaceIds)
-        : [],
-    [unitsLanded, baseUnits, variantUnits, inScopeSpaceIds, foreignSpaceIds],
+  // A reissue starts where the ChangeOrder it reissues started, on each Unit its start Tag marks.
+  const startTagRead = useGetDraftRevisionsQuery(
+    {
+      wheres:
+        baseSpaceId === undefined || startTagId === undefined
+          ? NO_WHERES
+          : [endTagRevisionsWhere(baseSpaceId, startTagId)],
+      select: DRAFT_START_REVISION_SELECT,
+    },
+    { skip: !ready || baseSpaceId === undefined || startTagId === undefined },
   );
+  const startTagLanded = startTagId === undefined || startTagRead.currentData !== undefined;
+  const starts = useMemo(() => {
+    if (!unitsLanded || !startTagLanded) return [];
+    const derived = deriveUnitStarts(baseUnits, variantUnits, inScopeSpaceIds, foreignSpaceIds);
+    if (startTagId === undefined) return derived;
+    return startsFromTag(derived, revisionsOf(startTagRead.currentData), variantUnits, inScopeSpaceIds);
+  }, [
+    unitsLanded,
+    startTagLanded,
+    startTagId,
+    startTagRead.currentData,
+    baseUnits,
+    variantUnits,
+    inScopeSpaceIds,
+    foreignSpaceIds,
+  ]);
 
   const startWheres = useMemo(() => startRevisionsWheres(starts), [starts]);
   const startRead = useGetDraftRevisionsQuery(
@@ -225,7 +249,9 @@ export function useDraftChangeCards(args: UseDraftChangeCardsArgs): DraftChangeC
     { skip: !ready || startWheres.length === 0 },
   );
   const startsLanded =
-    unitsLanded && (startWheres.length === 0 || startRead.currentData !== undefined);
+    unitsLanded &&
+    startTagLanded &&
+    (startWheres.length === 0 || startRead.currentData !== undefined);
   const startRevisionList = useMemo(
     () => revisionsOf(startRead.currentData),
     [startRead.currentData],
@@ -267,7 +293,7 @@ export function useDraftChangeCards(args: UseDraftChangeCardsArgs): DraftChangeC
 
   // Where no Unit's start can be said, no Revision is read, so a ChangeSet cannot be looked for.
   const startsUndetermined = starts.some((start) => start.undetermined);
-  const lookupFailed = [baseUnitsRead, variantUnitsRead, startRead, rangeRead].some(
+  const lookupFailed = [baseUnitsRead, variantUnitsRead, startTagRead, startRead, rangeRead].some(
     (read) => read.isError,
   );
   const endResolution = useMemo((): DraftEndResolution => {
@@ -390,10 +416,9 @@ export function useDraftChangeCards(args: UseDraftChangeCardsArgs): DraftChangeC
     const list: DraftProblem[] = [];
     const add = (code: string, message: string, blocks: boolean) =>
       list.push({ row: 'howMuch', code, message, source: 'client', blocks });
-    for (const start of starts) {
-      if (start.start === undefined && !start.undetermined)
-        add('start-disagrees', draftCopy.problems.startDisagrees(start.slug), true);
-    }
+    const behind = starts.filter((start) => start.behind.length > 0).map((start) => start.slug);
+    if (behind.length > 0)
+      add('start-behind', draftCopy.problems.startBehind(behind.join(', ')), false);
     if (endResolution.status === 'notFound')
       list.push({
         row: 'howMuch',
@@ -423,6 +448,7 @@ export function useDraftChangeCards(args: UseDraftChangeCardsArgs): DraftChangeC
   const retry = useRetry([
     baseUnitsRead,
     variantUnitsRead,
+    startTagRead,
     startRead,
     rangeRead,
     endTagRead,

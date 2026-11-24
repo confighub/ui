@@ -97,6 +97,11 @@ export interface DraftAddress {
   /** `DRAFT_END_HEAD` or a closed ChangeSet's slug. */
   end?: string;
   /**
+   * Present: the draft reissues the template ChangeOrder, which did not finish, with what came
+   * after it. Read only where the template can be reissued (`reissuable`).
+   */
+  reissue?: string;
+  /**
    * The node selected on the promotion path, as the URL writes it: a stage's name, or
    * `DRAFT_STAGE_WORDS.source` / `.complete` for the source node and the Complete step. A view,
    * not a decision. `DraftDecisions.stage` is the node's id.
@@ -153,7 +158,7 @@ export type DraftAddressPatch = { [K in Exclude<keyof DraftAddress, 'params'>]?:
  * own, so switching kind and back finds what was typed for it still there.
  */
 export const KIND_FIELDS: Readonly<Record<DraftKind, readonly (keyof DraftAddress)[]>> = {
-  baseChanges: ['end', 'update'],
+  baseChanges: ['end', 'reissue', 'update'],
   invoke: ['fn', 'inv', 'img', 'container', 'tag', 'where', 'params'],
   transformPaths: ['via', 'until'],
 };
@@ -162,6 +167,7 @@ export const KIND_FIELDS: Readonly<Record<DraftKind, readonly (keyof DraftAddres
 export const KIND_FIELDS_CLEARED: DraftAddressPatch = {
   from: null,
   end: null,
+  reissue: null,
   update: null,
   fn: null,
   inv: null,
@@ -248,6 +254,7 @@ const PARAM_ORDER: (keyof DraftAddress)[] = [
   'from',
   'kind',
   'end',
+  'reissue',
   'stage',
   'name',
   'desc',
@@ -419,6 +426,39 @@ export type DraftTemplate =
   /** No last ChangeOrder: everything comes from the policy. */
   | { kind: 'policy' };
 
+/**
+ * A template ChangeOrder that did not finish, which a new one can reissue with what came after it:
+ * the new one starts where it started (`StartRevision: Before:ChangeOrder:<id>`), so variants that
+ * took it take only what is new, and the rest take both.
+ */
+export interface DraftReissue {
+  changeOrder: DraftPastChangeOrder;
+  /** The Tag on each Unit's Revision just before it: where the reissue starts. */
+  startTagId: string;
+  /** Whether the draft reissues it. */
+  on: boolean;
+}
+
+/** States of a ChangeOrder that reached every variant, or was taken back out: nothing to reissue. */
+const FINISHED_STATES: ReadonlySet<string> = new Set([
+  'Resolved',
+  'Released',
+  'Restored',
+  'RestoreReleased',
+]);
+
+/**
+ * Whether a past ChangeOrder can be reissued: it carried base changes over Links, and it did not
+ * reach every variant in its scope, whether it is still open or was aborted partway.
+ */
+export const reissuable = (order: DraftPastChangeOrder): boolean =>
+  isDraftUpdateType(order.updateType) &&
+  !FINISHED_STATES.has(order.state ?? '') &&
+  (order.changeOrder.StartTagID ?? '') !== '';
+
+/** The `StartRevision` that reissues a ChangeOrder. */
+export const reissueStartRevision = (changeOrderId: string) => `Before:ChangeOrder:${changeOrderId}`;
+
 /** Where the change ends, as decided: before it is resolved against the base's ChangeSets. */
 export type DraftEndChoice = { kind: 'head' } | { kind: 'changeSet'; slug: string };
 
@@ -436,6 +476,8 @@ export interface DraftDecisions {
   kind: DraftDecision<DraftKind>;
   /** The newest ChangeOrder of each kind: what choosing that kind re-aims, or the policy. */
   kindTemplates: Readonly<Record<DraftKind, DraftPastChangeOrder | undefined>>;
+  /** The template, when a Base changes draft can reissue it. */
+  reissue: DraftReissue | undefined;
   name: DraftDecision<string>;
   description: DraftDecision<string>;
   workflow: DraftDecision<DraftWorkflowChoice>;
@@ -776,10 +818,16 @@ export function resolveDraftDecisions(input: ResolveDraftDecisionsInput): DraftD
       );
   }
 
+  const reissue: DraftReissue | undefined =
+    kindValue === 'baseChanges' && last !== undefined && reissuable(last)
+      ? { changeOrder: last, startTagId: last.changeOrder.StartTagID as string, on: address.reissue !== undefined }
+      : undefined;
+
   return {
     template,
     kind,
     kindTemplates,
+    reissue,
     name,
     description,
     workflow,
@@ -882,7 +930,10 @@ export function draftCreateRequest(input: {
     if (invoke.invocationId !== undefined) request.InvocationID = invoke.invocationId;
     request.Parameters = invoke.parameters;
     if (invoke.whereUnit !== '') request.WhereUnit = invoke.whereUnit;
-  } else if (endTagId !== null && endTagId !== undefined) request.EndTagID = endTagId;
+  } else {
+    if (endTagId !== null && endTagId !== undefined) request.EndTagID = endTagId;
+    if (decisions.reissue?.on) request.StartRevision = reissueStartRevision(decisions.reissue.changeOrder.changeOrderId);
+  }
   if (decisions.workflow.value.kind === 'workflow')
     request.ChangeWorkflowID = decisions.workflow.value.workflow.workflowId;
   return request;

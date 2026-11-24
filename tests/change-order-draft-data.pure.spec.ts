@@ -34,9 +34,9 @@ import {
   deriveUnitRanges,
   deriveUnitStarts,
   foreignUpstreamSpaceIds,
-  listedStartOf,
   rangeRevisionsWheres,
   startRevisionsWheres,
+  startsFromTag,
   suggestedEnd,
   validEnds,
 } from '../src/pages/change-orders/draft/draftChangeCards';
@@ -51,6 +51,7 @@ import {
   nameProblems,
   outsideEveryStageProblem,
   parseDraftAddress,
+  reissuable,
   resolveDraftDecisions,
   suggestDraftDescription,
   suggestDraftName,
@@ -362,26 +363,32 @@ test.describe('where each Unit starts and ends', () => {
   test('the start is what the variants in scope have taken; a Unit one lacks is cloned into it', () => {
     const { starts } = scenario();
     const worker = starts.find((s) => s.unitId === 'worker');
-    expect(worker).toMatchObject({ start: 2, missingSpaceIds: ['apac'], disagreement: [] });
+    expect(worker).toMatchObject({ start: 2, missingSpaceIds: ['apac'], behind: [] });
     expect(starts.find((s) => s.unitId === 'api')?.start).toBe(4);
   });
 
-  test('variants that disagree are reported, never averaged', () => {
+  test('variants that disagree start at the latest; the ones behind it are listed', () => {
     const units = variantUnits().map((u) =>
       u.unitId === 'us-west/api' ? { ...u, upstreamRevisionNum: 6 } : u,
     );
-    const api = deriveUnitStarts(BASE_UNITS, units, ALL_IN_SCOPE).find(
-      (s) => s.unitId === 'api',
+    const starts = deriveUnitStarts(BASE_UNITS, units, ALL_IN_SCOPE);
+    const api = starts.find((s) => s.unitId === 'api');
+    expect(api?.start).toBe(6);
+    expect(api?.behind.map((d) => d.revisionNum)).toEqual([4, 4, 4, 4, 4, 4, 4]);
+    expect(api?.behind.map((d) => d.spaceId)).not.toContain('us-west');
+    // The ChangeOrder is the change none of them has: only what is past the latest is carried.
+    const ranges = deriveUnitRanges({
+      starts,
+      revisions: REVISIONS,
+      startRevisions: new Map(),
+      end: { kind: 'head' },
+      updateType: 'UpgradeUnit',
+    });
+    expect(ranges.find((r) => r.unitId === 'api')).toMatchObject({ start: 6 });
+    const listed = buildChangeCards(REVISIONS, starts, SLUGS).flatMap((card) =>
+      card.revisions.filter((r) => r.unitId === 'api').map((r) => r.revisionNum),
     );
-    expect(api?.start).toBeUndefined();
-    expect(api?.disagreement.map((d) => d.revisionNum)).toEqual([4, 4, 4, 4, 4, 4, 4, 6]);
-    // Leaving the outlier out is the fix the server names.
-    const narrowed = deriveUnitStarts(
-      BASE_UNITS,
-      units,
-      ALL_IN_SCOPE.filter((s) => s !== 'us-west'),
-    );
-    expect(narrowed.find((s) => s.unitId === 'api')?.start).toBe(4);
+    expect(listed).toEqual([7, 8]);
   });
 
   test('a Unit no variant in scope holds starts at its first Revision', () => {
@@ -395,8 +402,7 @@ test.describe('where each Unit starts and ends', () => {
   test("with no variant in scope the start is undetermined: never the base's beginning", () => {
     const starts = deriveUnitStarts(BASE_UNITS, variantUnits(), []);
     expect(starts.every((s) => s.undetermined && s.start === undefined)).toBe(true);
-    expect(starts.every((s) => s.disagreement.length === 0)).toBe(true);
-    expect(starts.map(listedStartOf)).toEqual(starts.map(() => undefined));
+    expect(starts.every((s) => s.behind.length === 0)).toBe(true);
     // Nothing is read, nothing is listed, and every range is "could not establish".
     expect(startRevisionsWheres(starts)).toEqual([]);
     expect(rangeRevisionsWheres('base', starts, new Map())).toEqual([]);
@@ -424,7 +430,7 @@ test.describe('where each Unit starts and ends', () => {
     expect(mixed.some((s) => s.undetermined)).toBe(false);
   });
 
-  test('the start Revisions are read in one request; a disagreeing Unit by the earliest any variant took', () => {
+  test('the start Revisions are read in one request; a disagreeing Unit by the latest any variant took', () => {
     const { starts } = scenario();
     expect(startRevisionsWheres(starts)).toEqual([
       "UnitID IN ('api', 'config', 'worker', 'hpa', 'service') AND RevisionNum IN (2, 4)",
@@ -433,7 +439,30 @@ test.describe('where each Unit starts and ends', () => {
       u.unitId === 'us-west/api' ? { ...u, upstreamRevisionNum: 6 } : u,
     );
     const disagreeing = deriveUnitStarts(BASE_UNITS, units, ALL_IN_SCOPE);
-    expect(startRevisionsWheres(disagreeing)[0]).toContain('RevisionNum IN (2, 4)');
+    expect(startRevisionsWheres(disagreeing)[0]).toContain('RevisionNum IN (2, 6)');
+  });
+
+  test('a reissue starts where the reissued ChangeOrder started, on each Unit its start Tag marks', () => {
+    const { starts } = scenario();
+    // The api's variants are all at 4; the reissued ChangeOrder started after Revision 2.
+    const moved = startsFromTag(
+      starts,
+      [revision('api', 2, '2026-10-01T09:00:00Z', 'u', '', undefined, ['start-tag'])],
+      variantUnits(),
+      ALL_IN_SCOPE,
+    );
+    const api = moved.find((s) => s.unitId === 'api');
+    expect(api).toMatchObject({ start: 2, behind: [] });
+    // A Unit the Tag marks nothing of keeps the start its variants give it.
+    expect(moved.find((s) => s.unitId === 'worker')).toEqual(starts.find((s) => s.unitId === 'worker'));
+    // A start past some variants leaves those behind it.
+    const later = startsFromTag(
+      starts,
+      [revision('api', 6, '2026-10-01T09:00:00Z', 'u', '', undefined, ['start-tag'])],
+      variantUnits(),
+      ALL_IN_SCOPE,
+    );
+    expect(later.find((s) => s.unitId === 'api')?.behind.length).toBeGreaterThan(0);
   });
 
   test('a never-cloned Unit is read on its own, not by pulling every read back to its creation', () => {
@@ -1599,6 +1628,29 @@ test.describe('the decisions', () => {
       draftCreateRequest({ decisions: decide('space=payments-base'), endTagId: null })
         ?.EndTagID,
     ).toBeUndefined();
+  });
+
+  test('a ChangeOrder that did not finish can be reissued: the request starts before it', () => {
+    const stopped: DraftPastChangeOrder = {
+      ...LAST,
+      state: 'Aborted',
+      changeOrder: { ...LAST.changeOrder, AbortedReason: 'bad image', StartTagID: 'start-tag' },
+    };
+    expect(reissuable(LAST)).toBe(false);
+    expect(reissuable(stopped)).toBe(true);
+    expect(reissuable({ ...stopped, state: 'InProgress' })).toBe(true);
+    expect(reissuable({ ...stopped, updateType: 'Invoke' })).toBe(false);
+    // Offered, and off until the URL turns it on.
+    const from = `space=payments-base&from=${LAST.slug}`;
+    const off = decide(from, { pastChangeOrders: [stopped] });
+    expect(off.reissue).toMatchObject({ startTagId: 'start-tag', on: false });
+    expect(draftCreateRequest({ decisions: off, endTagId: null })?.StartRevision).toBeUndefined();
+    const on = decide(`${from}&reissue=1`, { pastChangeOrders: [stopped] });
+    expect(draftCreateRequest({ decisions: on, endTagId: null })?.StartRevision).toBe(
+      'Before:ChangeOrder:co-1',
+    );
+    // A finished one is never offered, whatever the URL says.
+    expect(decide(`space=payments-base&reissue=1`).reissue).toBeUndefined();
   });
 });
 

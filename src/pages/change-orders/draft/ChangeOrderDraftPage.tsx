@@ -11,7 +11,6 @@ import Snackbar from '@mui/material/Snackbar';
 
 import { TOP_NAV_HEIGHT } from '@/utility/constants';
 
-import { Header, type HeaderProps } from '@/components/header/Header';
 import { SummaryCard } from '../components/SummaryFacts';
 import { changeOrderFontSans, changeOrderInk, changeOrderSurface, changeOrderType } from '../changeOrdersTokens';
 import { DRAFT_END_ID } from './ChangeCardRibbon';
@@ -101,10 +100,6 @@ const NO_STAGES: readonly string[] = [];
  * row; the promotion path and the selected stage follow as cards of their own. Create commits with no confirm step: the page is
  * the preview.
  */
-const DRAFT_BREADCRUMBS: HeaderProps['breadCrumbs'] = [
-  { name: 'ChangeOrders', isLink: true, link: '/change-orders' },
-  { name: 'New ChangeOrder' },
-];
 
 export default function ChangeOrderDraftPage() {
   const draft = useChangeOrderDraft();
@@ -257,9 +252,6 @@ export default function ChangeOrderDraftPage() {
         color: changeOrderInk.default,
       }}
     >
-      <div>
-        <Header breadCrumbs={DRAFT_BREADCRUMBS} />
-      </div>
       <Box sx={{ marginBottom: '12px' }}>
         <Box
           component={RouterLink}

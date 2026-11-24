@@ -295,8 +295,6 @@ const DrawerBody = memo(function DrawerBody({
             size='small'
             component={Link}
             href={href}
-            target='_blank'
-            rel='noopener noreferrer'
             aria-label='Open full detail page'
             sx={{ color: 'text.secondary' }}
           >
@@ -557,8 +555,6 @@ function DetailsTab({
         <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
           <Link
             href={href}
-            target='_blank'
-            rel='noopener noreferrer'
             underline='hover'
             sx={{ fontSize: '0.82rem' }}
           >

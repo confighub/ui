@@ -28,12 +28,13 @@
  * per-pixel comparison can.
  */
 
+import { useLeaveGuard } from '@/components/trail/LeaveGuard';
+import { useCrumbName } from '@/components/trail/TrailProvider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { BackingUnitLink } from '@/components/backing-unit/BackingUnitLink';
 import { EnableBackingUnitField } from '@/components/backing-unit/EnableBackingUnitField';
-import { Header, type HeaderProps } from '@/components/header/Header';
 import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
 import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 
@@ -267,6 +268,7 @@ export default function WorkflowBuilderPage() {
    * runs. A press that appears to do nothing is what that gate exists to rule
    * out everywhere else on this card; this keeps it true here too.
    */
+  const allowLeave = useLeaveGuard(api.dirty);
   const onSave = useCallback(async () => {
     const draft = api.workflow;
     if (!draft || !api.dirty) return;
@@ -281,6 +283,8 @@ export default function WorkflowBuilderPage() {
       if (detail.identity) {
         detail.noteSaved(outcome.identity);
       } else {
+        // The draft is saved; going to its page discards nothing.
+        allowLeave();
         onDraftCreated(outcome.identity.changeWorkflowId);
       }
       api.save();
@@ -289,7 +293,7 @@ export default function WorkflowBuilderPage() {
     }
     api.setSaveNotice({ kind: outcome.kind, message: outcome.message });
     api.setSaving(false);
-  }, [api, detail, writer, pendingSpaceId, onDraftCreated, createWithBackingUnit]);
+  }, [api, detail, writer, pendingSpaceId, onDraftCreated, createWithBackingUnit, allowLeave]);
 
   // Giving a saved workflow a backing Unit writes it, so it waits for unsaved edits, as Clone
   // does, and the next save sends the Version that write left.
@@ -408,12 +412,8 @@ export default function WorkflowBuilderPage() {
   /* A blank draft is already at the list's address, so a link to the list
      would not leave it; the backlink below does that. */
   const workflowName = detail.workflow ? detail.workflow.displayName || detail.workflow.slug : '';
-  const breadCrumbs: HeaderProps['breadCrumbs'] = showingList
-    ? [{ name: 'ChangeWorkflows' }]
-    : [
-        draftMode ? { name: 'ChangeWorkflows' } : { name: 'ChangeWorkflows', isLink: true, link: '/change-workflows' },
-        ...(draftMode ? [{ name: 'New ChangeWorkflow' }] : workflowName ? [{ name: workflowName }] : []),
-      ];
+  // A blank draft is at the list's address, so it has the list's crumb.
+  useCrumbName(showingList || draftMode ? null : workflowName || undefined);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Escape' && api.selection) api.clearSelection();
@@ -421,11 +421,6 @@ export default function WorkflowBuilderPage() {
 
   return (
     <div className='wfb' ref={rootRef} onKeyDown={onKeyDown}>
-      {/* The wrapper keeps the header from sticking: the Stages card's head sticks to the top
-          of the same scrolling area, and a sticky header would cover it. */}
-      <div>
-        <Header breadCrumbs={breadCrumbs} />
-      </div>
       {showingList ? (
         <WorkflowsConsole
           api={api}
@@ -468,8 +463,7 @@ export default function WorkflowBuilderPage() {
             onPendingSpaceChange={setPendingSpaceId}
             backingUnit={
               detail.backingUnitId ? (
-                // The builder holds a draft, so the Unit opens in a new tab.
-                <BackingUnitLink backingUnitId={detail.backingUnitId} newTab />
+                <BackingUnitLink backingUnitId={detail.backingUnitId} />
               ) : openId === null ? (
                 <EnableBackingUnitField
                   value={{ enabled: createWithBackingUnit, spaceId: '' }}

@@ -228,16 +228,11 @@ const ExceptionRows = ({
                     <Link
                       component={RouterLink}
                       to={unitLink(r.SpaceID ?? '', r.UnitID ?? '')}
-                      target='_blank'
-                      rel='noopener'
                       underline='hover'
                       sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
                     >
                       {r.UnitSlug}
-                      <OpenInNew
-                        sx={{ fontSize: 13, opacity: 0.6 }}
-                        aria-label='opens in a new tab'
-                      />
+                      <OpenInNew sx={{ fontSize: 13, opacity: 0.6 }} aria-hidden />
                     </Link>
                   </TableCell>
                   <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>

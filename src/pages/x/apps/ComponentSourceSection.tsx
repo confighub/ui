@@ -1,5 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
+import { useLeaveGuard } from '@/components/trail/LeaveGuard';
 import { Suspense, lazy, memo, useCallback, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 
@@ -43,6 +44,7 @@ export const ComponentSourceSection = memo(({
   const isEmpty = useMemo(() => decoded.trim().length === 0, [decoded]);
 
   const [editedContent, setEditedContent] = useState<string | null>(null);
+  useLeaveGuard(Boolean(onSaveData) && editedContent !== null);
   const [isSaving, setIsSaving] = useState(false);
   const [editorResetKey, setEditorResetKey] = useState(0);
 

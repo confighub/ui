@@ -25,6 +25,7 @@
  * full beside the action, in `stage/useStageConfirm.ts`.
  */
 
+import { useCrumbName } from '@/components/trail/TrailProvider';
 import { ValidationNote } from './components/ValidationNote';
 import type { ReleaseValidation } from './releaseValidation';
 import { useReleaseValidation } from './useReleaseValidation';
@@ -96,7 +97,6 @@ import { useChangeOrderDetail, type ChangeOrderSpace } from './useChangeOrderDet
 import { useChangeOrderImageChanges } from './useChangeOrderImageChanges';
 import { useChangeOrderChangeSets } from './useChangeOrderChangeSets';
 import { ChangeOrderChangeSets } from './components/ChangeOrderChangeSets';
-import { Header, type HeaderProps } from '@/components/header/Header';
 import { FullDiffDisclosure, ImageChangeSummary } from './components/ImageChangeHero';
 import { onlyChangesHint } from './imageChangeCopy';
 import { imageChangesForSource, type ImageChanges } from './imageChange';
@@ -513,10 +513,7 @@ export default function ChangeOrdersPage() {
   );
   const { address } = detail;
   const changeOrderName = detail.found ? detail.displayName || detail.slug : '';
-  const breadCrumbs: HeaderProps['breadCrumbs'] =
-    address?.kind === 'none'
-      ? [{ name: 'ChangeOrders' }]
-      : [{ name: 'ChangeOrders', isLink: true, link: '/change-orders' }, ...(changeOrderName ? [{ name: changeOrderName }] : [])];
+  useCrumbName(address?.kind === 'none' ? undefined : changeOrderName || undefined);
   /** Whether the URL addresses a ChangeOrder at all, rather than the console. */
   const addressed = address?.kind !== 'none';
   /** The stage segment, wherever the address form put it. */
@@ -1264,11 +1261,6 @@ export default function ChangeOrdersPage() {
         ContentProps={{ sx: { fontFamily: changeOrderFontSans, fontSize: changeOrderType.size.body } }}
       />
 
-      {/* The wrapper keeps the header from sticking: the sign-off panel sticks to the top of the
-          same scrolling area, and a sticky header would cover it. */}
-      <div>
-        <Header breadCrumbs={breadCrumbs} />
-      </div>
 
       {/*
         Altitude 0. The console renders its own `h1` — it IS the page when no

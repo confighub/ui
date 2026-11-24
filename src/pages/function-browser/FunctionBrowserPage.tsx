@@ -58,12 +58,6 @@ export const FunctionBrowserPage = () => {
   return (
     <Container sx={{ color: 'text.primary' }}>
       <Header
-        breadCrumbs={[
-          {
-            name: 'Function Browser',
-            isLink: false,
-          },
-        ]}
         actions={
           <>
             <ToolchainTypeSelector

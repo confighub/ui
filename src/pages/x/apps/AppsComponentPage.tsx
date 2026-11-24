@@ -174,7 +174,6 @@ export const AppsComponentPage = memo(() => {
     if (isSpacesError) {
       return (
         <Container>
-          <Header breadCrumbs={[{ name: 'Components' }]} />
           <LoadingContainer>
             <QueryErrorState
               error={spacesError}
@@ -191,7 +190,6 @@ export const AppsComponentPage = memo(() => {
     // render, so first paint swaps shapes rather than replacing a blank page.
     return (
       <Container>
-        <Header breadCrumbs={[{ name: 'Components' }]} />
         <PageContent>
           <AppsComponentPageSkeleton variant={hasApp ? 'graph' : 'overview'} />
         </PageContent>
@@ -202,7 +200,6 @@ export const AppsComponentPage = memo(() => {
   return (
     <Container>
       <Header
-        breadCrumbs={[{ name: 'Components' }]}
         addButtonText='New component'
         onAddButtonClick={() => setCreateOpen(true)}
         actions={

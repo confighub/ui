@@ -812,7 +812,7 @@ test('a release that no Target ran has no released line; the failure line says w
 
 /** The server's text for the refusal, as a promotion record keeps it. */
 const gatedRecord = [
-  'outstanding ValidationErrors; triggers re-queued for evaluation',
+  'outstanding ValidationErrors',
   'Metadata:',
   '  Validation Errors: cert-manager-base/cert-manager-v1-17-in-prod/vet-images,cert-manager-base/no-placeholders/no-placeholders:2',
   '',
@@ -829,7 +829,7 @@ test('the gates of a refused Unit are read from the server text, and any other f
     'cert-manager-base/no-placeholders/no-placeholders:2',
   ]);
   // A message without the metadata list: gated, with no names.
-  expect(gateNamesOf('outstanding ValidationErrors; triggers re-queued for evaluation')).toEqual([]);
+  expect(gateNamesOf('outstanding ValidationErrors')).toEqual([]);
   expect(gateNamesOf('webhook keeps image tag at v1.16.2 in cert-manager-eu-west-prod1.')).toBeUndefined();
 });
 
@@ -877,7 +877,7 @@ test('a failed Space splits into one gated line per Unit and its other failures,
       unitId: 'u-webhook',
     },
     // An answer that names no Unit is its own line.
-    { message: 'outstanding ValidationErrors; triggers re-queued for evaluation' },
+    { message: 'outstanding ValidationErrors' },
   ]);
   expect(split.others).toEqual([other]);
   expect(split.gated.map((g) => [g.unitSlug, g.unitId, g.gates, g.messages.length])).toEqual([

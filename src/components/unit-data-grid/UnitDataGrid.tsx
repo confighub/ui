@@ -74,8 +74,6 @@ export interface UnitDataGridProps {
   noRowsOverlay?: React.ReactNode;
   /** Override the default column visibility. Keys are column names, values are visibility. */
   initialColumnVisibility?: Record<string, boolean>;
-  /** When true, unit name links open in a new browser tab */
-  openLinksInNewTab?: boolean;
   /** Where a unit's name links. Defaults to the unit's page. */
   slugLinkTo?: (row: UnitRowItem) => string;
   /** Optional Kyverno policy check results — adds a "Result" column when provided.
@@ -110,7 +108,6 @@ export const UnitDataGrid = ({
   customToolbarActions,
   noRowsOverlay,
   initialColumnVisibility,
-  openLinksInNewTab = false,
   slugLinkTo,
   checkResults,
   hideCheckboxes = false,
@@ -181,7 +178,7 @@ export const UnitDataGrid = ({
     createLabelColumn,
     createValueColumn,
     createColumnsWithGrouping,
-  } = useLabelColumnManager(rows, openLinksInNewTab, allowedLabelColumns, slugLinkTo);
+  } = useLabelColumnManager(rows, allowedLabelColumns, slugLinkTo);
 
   // Whether the Result column should be shown (present when prop is explicitly passed, even as null)
   const showResultColumn = checkResults !== undefined;

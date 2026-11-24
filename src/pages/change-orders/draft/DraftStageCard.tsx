@@ -228,7 +228,7 @@ function CloneRow({ unit, spaceName, spaceHref, baseSpaceId, onRetry }: CloneRow
       <UnitHeaderRow sx={{ cursor: 'default' }} data-testid={`draft-clone-${clone.spaceId}-${clone.baseUnitId}`}>
         <DataObjectIcon sx={{ fontSize: 15, color: componentTheme.fgMuted, flexShrink: 0 }} />
         {baseSpaceId !== undefined ? (
-          <UnitSlug href={unitConfigHref(baseSpaceId, clone.baseUnitId)} target="_blank" rel="noopener noreferrer">
+          <UnitSlug href={unitConfigHref(baseSpaceId, clone.baseUnitId)}>
             {clone.slug}
           </UnitSlug>
         ) : (
@@ -237,7 +237,7 @@ function CloneRow({ unit, spaceName, spaceHref, baseSpaceId, onRetry }: CloneRow
           </Box>
         )}
         {spaceHref !== undefined ? (
-          <TagBadgeLink href={spaceHref} target="_blank" rel="noopener noreferrer">
+          <TagBadgeLink href={spaceHref}>
             {spaceName}
           </TagBadgeLink>
         ) : (

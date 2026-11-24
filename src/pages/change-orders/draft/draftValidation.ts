@@ -124,13 +124,7 @@ export function reconcileRanges(
         endRevisionId: undefined,
       };
     }
-    if (
-      range.carry === 'carries' ||
-      range.carry === 'unknown' ||
-      range.carry === 'disagrees'
-    ) {
-      return range;
-    }
+    if (range.carry === 'carries' || range.carry === 'unknown') return range;
     carried.push(range.slug);
     return {
       ...range,

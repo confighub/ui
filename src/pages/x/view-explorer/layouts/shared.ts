@@ -13,7 +13,6 @@ import { fieldById, fieldCatalog, STATUS_LABEL, type EntityRow, type FieldDef } 
 import type { GroupNode } from '../model/grouping';
 import { groupLevelFor } from '../model/sort';
 import type { EntityKind, StatusKind } from '../model/types';
-import { withExplorerReturn } from '../results/explorer-link';
 import { useExplorerContext } from '../state/context';
 import type { CellActions } from '../table/cells/TableCellContent';
 import { groupValueText, pathLenses, type GroupStep } from '../table/groups';
@@ -158,8 +157,7 @@ export function useLayoutActions(entity: EntityKind, groupBy: readonly string[],
     (row: EntityRow, e: OpenModifiers) => {
       if (e.metaKey || e.ctrlKey) {
         const href = getAdapter(entity).getRowHref(row as GroupNavRow);
-        // The page it opens offers a way back to this tab.
-        if (href) window.open(withExplorerReturn(href), '_blank', 'noopener');
+        if (href) window.open(href, '_blank', 'noopener');
         return;
       }
       slots.current.openRow(row);

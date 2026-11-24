@@ -321,8 +321,6 @@ export const UnitHeader = ({
           href={`/units/${unit.spaceId}/${unit.unitId}`}
           // The real href keeps middle click, cmd or ctrl click and the context menu opening the
           // Unit's page in a new tab; a plain click opens the inline details.
-          target='_blank'
-          rel='noopener noreferrer'
           onClick={(e: React.MouseEvent) => {
             e.stopPropagation();
             if (!canOpenDetails || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {

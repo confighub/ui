@@ -112,8 +112,6 @@ export function ContextUnitRow({
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Link
           href={`/units/${spaceId}/${unitId}`}
-          target="_blank"
-          rel="noopener noreferrer"
           underline="hover"
           title={name}
           onClick={(e) => e.stopPropagation()}

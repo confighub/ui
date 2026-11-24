@@ -12,8 +12,6 @@ import Typography from '@mui/material/Typography';
 export interface BackingUnitLinkProps {
   /** The entity's BackingUnitID. Nothing renders without one. */
   backingUnitId: string | null | undefined;
-  /** Open the Unit in a new tab, for a surface that holds work in progress. */
-  newTab?: boolean;
 }
 
 const BACKING_UNIT_SELECT =
@@ -24,7 +22,7 @@ const BACKING_UNIT_SELECT =
  * Revisions, marked when the Unit has Revisions after its last released one, which the
  * entity has not taken.
  */
-export const BackingUnitLink = ({ backingUnitId, newTab = false }: BackingUnitLinkProps) => {
+export const BackingUnitLink = ({ backingUnitId }: BackingUnitLinkProps) => {
   // A backing Unit is hidden, but a where that names it by ID lists it.
   const { data, isLoading, isError } = useListAllUnitsQuery(
     {
@@ -93,7 +91,6 @@ export const BackingUnitLink = ({ backingUnitId, newTab = false }: BackingUnitLi
         to={unitRevisionsHref(unit.SpaceID, unit.UnitID)}
         data-testid='backing-unit-link'
         style={{ textDecoration: 'underline', wordBreak: 'break-word' }}
-        {...(newTab ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
       >
         {spaceSlug ? `${spaceSlug}/${unitName}` : unitName}
       </NavLink>

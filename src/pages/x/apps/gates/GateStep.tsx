@@ -393,8 +393,6 @@ export const GateStep = (props: GateStepProps) => {
       {trigger?.TriggerID && (
         <Link
           href={`/validation/${trigger.TriggerID}`}
-          target='_blank'
-          rel='noopener noreferrer'
           data-testid={`gate-trigger-link-${label}`}
           onClick={(e) => e.stopPropagation()}
           sx={{

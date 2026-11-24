@@ -161,7 +161,6 @@ export const LinkListPage = () => {
   return (
     <Container>
       <Header
-        breadCrumbs={[{ name: 'Links' }]}
         actions={
           <Tooltip arrow placement='bottom' title='Refresh link list'>
             <IconButton

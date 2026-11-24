@@ -163,7 +163,7 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
 
 | Path (`src/pages/x/apps/`) | Responsibility |
 |---|---|
-| `AppsComponentPage.tsx` | Page entry; top-level spaces/targets queries; breadcrumb header. |
+| `AppsComponentPage.tsx` | Page entry; top-level spaces/targets queries; header actions. |
 | `AppsComponentLayout.tsx` | 2-pane resizable layout; keeps the Spaces whose Component (`Space.ComponentID`) has loaded; builds the tree items; `?app=` URL; lifts `selectedDeploymentIds`. |
 | `AppNavigationTree.tsx` | Left Component picker: one leaf per Component, grouped by the Component's owner by default. |
 | `AppComponentView.tsx` | **Core orchestrator.** Fetches units, computes entries, owns upgrade/dry-run/`onCommitStaged` handlers, renders the graph + side pane, or the Dashboard (`displayMode`), plus the `FlowViewControl` overlay either way. |

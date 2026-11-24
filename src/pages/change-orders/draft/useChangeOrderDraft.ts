@@ -133,6 +133,7 @@ export function useChangeOrderDraft(): ChangeOrderDraft {
     inScopeSpaceIds: bounding?.scope.value ?? [],
     end: bounding?.end.value,
     updateType: bounding?.updateType.value ?? 'UpgradeUnit',
+    startTagId: bounding?.reissue?.on ? bounding.reissue.startTagId : undefined,
     skip: bounding === undefined,
   });
   const endPending = cards.end.status === 'loading';

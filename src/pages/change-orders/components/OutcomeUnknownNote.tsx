@@ -26,7 +26,7 @@ export interface OutcomeUnknownNoteProps {
   variants: readonly OutcomeUnknownVariant[];
   /**
    * Where a variant's chip leads, or `null` for a plain chip. The chip opens the
-   * variant itself in a new tab, not the ChangeOrder at it.
+   * variant itself, not the ChangeOrder at it.
    */
   hrefFor?: (spaceId: string) => string | null;
 }
@@ -74,8 +74,6 @@ export function OutcomeUnknownNote({ variants, hrefFor }: OutcomeUnknownNoteProp
               key={spaceId}
               component={href !== null ? 'a' : 'span'}
               href={href ?? undefined}
-              target={href !== null ? '_blank' : undefined}
-              rel={href !== null ? 'noopener noreferrer' : undefined}
               data-testid="outcome-unknown-chip"
               sx={{
                 height: 22,

@@ -494,7 +494,7 @@ export const EmptyValue = styled('p')({
   margin: 0,
 });
 
-/** Screen-reader-only text — carries the per-unit link's "opens in a new tab" hint. */
+/** Screen-reader-only text — carries the per-unit link's "opens unit details" hint. */
 export const VisuallyHidden = styled('span')({
   position: 'absolute',
   width: 1,

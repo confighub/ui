@@ -152,7 +152,6 @@ export const TriggerListPage = () => {
   return (
     <Container>
       <Header
-        breadCrumbs={[{ name: 'Triggers' }]}
         actions={
           <Tooltip arrow placement='bottom' title='Refresh triggers list'>
             <IconButton

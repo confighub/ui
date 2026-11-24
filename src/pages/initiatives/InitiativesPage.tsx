@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { ErrorBox } from '@/components/error-box/ErrorBox';
-import { Header } from '@/components/header/Header';
 import { AddTriggerDrawer } from '@/pages/space-detail/components/add-trigger-drawer/AddTriggerDrawer';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import type { TriggerRead } from '@confighub/rtk-query';
@@ -151,7 +150,6 @@ export const InitiativesPage = () => {
         backgroundColor: 'rgb(249, 250, 251)',
       }}
     >
-      <Header breadCrumbs={[{ name: 'Validation' }]} />
 
       {isLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>

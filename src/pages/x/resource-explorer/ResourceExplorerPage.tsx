@@ -36,7 +36,6 @@ import {
 } from './types';
 import { type SelectorMatch, selectorMatchLabel } from './selectorMatch';
 import { getCellValue } from './utils';
-import { Header, type HeaderProps } from '@/components/header/Header';
 
 type SidebarTab = 'edit' | 'groups';
 
@@ -49,7 +48,6 @@ type SidebarTab = 'edit' | 'groups';
  * client-side and serialized into the `?v=` URL parameter so views can be
  * shared without needing a server-side View entity.
  */
-const RESOURCE_EXPLORER_BREADCRUMBS: HeaderProps['breadCrumbs'] = [{ name: 'Resource explorer' }];
 
 export default function ResourceExplorerPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -192,9 +190,6 @@ export default function ResourceExplorerPage() {
     <Box
       sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', minHeight: 0 }}
     >
-      <div>
-        <Header breadCrumbs={RESOURCE_EXPLORER_BREADCRUMBS} />
-      </div>
       <Stack
         direction='row'
         alignItems='baseline'

@@ -57,9 +57,8 @@ function useLabelled(spaces: readonly ListedSpace[]): ListedSpace[] {
 
 function SpaceName({ space, link }: { space: ListedSpace; link: boolean }) {
   if (!link) return <>{space.name}</>;
-  // A Space opens in a new tab, so the review on this page is kept.
   return (
-    <Link component={RouterLink} to={space.href ?? spaceHref(space.spaceId)} target="_blank" rel="noopener noreferrer" sx={LINK_SX}>
+    <Link component={RouterLink} to={space.href ?? spaceHref(space.spaceId)} sx={LINK_SX}>
       {space.name}
     </Link>
   );

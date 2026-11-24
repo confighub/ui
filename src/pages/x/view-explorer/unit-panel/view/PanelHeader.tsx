@@ -108,7 +108,7 @@ export function PanelHeader({ title, model, href, onClose, onCompare, compareExp
             </Button>
           )}
           {href && (
-            <Button size='small' color='inherit' component={Link} href={href} target='_blank' rel='noopener noreferrer' aria-label={HEADER.open} sx={quiet}>
+            <Button size='small' color='inherit' component={Link} href={href} aria-label={HEADER.open} sx={quiet}>
               Open ↗
             </Button>
           )}

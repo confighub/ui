@@ -169,7 +169,7 @@ export function ChannelDetailView({ channel, now }: { channel: ChannelRead; now:
             ) : null}
             <Box component='dl' sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '14px', margin: '16px 0 0' }}>
               <Fact term='Space' icon={FolderOutlinedIcon}>
-                <FactLink href={`/spaces/${spaceId}`} newTab={false}>{channel.SpaceSlug ?? spaceId}</FactLink>
+                <FactLink href={`/spaces/${spaceId}`}>{channel.SpaceSlug ?? spaceId}</FactLink>
               </Fact>
               <Fact term='Last poll' icon={HistoryOutlinedIcon}>
                 <span data-testid='channel-last-seen'>

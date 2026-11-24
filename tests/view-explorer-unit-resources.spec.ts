@@ -150,10 +150,9 @@ test.describe('view explorer unit resources', () => {
       unitResourcesHref,
     );
     await expect(context).toContainText('Kubernetes/YAML');
-    // The drawer's link also remembers the explorer tab, for the page's way back.
     await expect(page.getByRole('link', { name: 'Open full detail page' })).toHaveAttribute(
       'href',
-      /^\/units\/[0-9a-f-]{36}\/[0-9a-f-]{36}\?tab=5&resource=[0-9a-f-]{36}&explorer=view%3D[0-9a-f-]{36}/,
+      /^\/units\/[0-9a-f-]{36}\/[0-9a-f-]{36}\?tab=5&resource=[0-9a-f-]{36}$/,
     );
   });
 });

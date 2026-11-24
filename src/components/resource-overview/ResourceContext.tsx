@@ -42,8 +42,6 @@ export function ResourceContext({
         <ContextItem label='Unit'>
           <Link
             href={unitResourceHref(spaceId, unitId, resourceId)}
-            target='_blank'
-            rel='noopener noreferrer'
             underline='hover'
             sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}
           >

@@ -20,7 +20,7 @@ export interface FixInOriginButtonProps {
 /**
  * "Fix in <origin Space>". An origin that is a node of this Component is selected in the same
  * pane; any other origin has no node to select, so the button is a link to the origin Unit's
- * configuration page, in a new tab, as every Unit link in the side pane is.
+ * configuration page.
  */
 export const FixInOriginButton = ({
   origin,
@@ -35,8 +35,6 @@ export const FixInOriginButton = ({
       <Button
         component={RouterLink}
         to={unitConfigHref(spaceId, unitId)}
-        target='_blank'
-        rel='noopener noreferrer'
         data-testid={testId}
         sx={{ ...primarySmallButtonSx, ...sx }}
       >

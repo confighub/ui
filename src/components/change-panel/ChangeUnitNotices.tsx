@@ -109,7 +109,7 @@ function FinishedHoldBar({ unit, held }: { unit: UnitRead; held: HeldUnit }) {
       <span data-testid="closed-hold-text">
         Held by the finished ChangeSet{' '}
         <Box component="span" data-testid="closed-change-link" sx={{ ...monoSx, fontWeight: 600, overflowWrap: 'anywhere' }}>
-          <FactLink href={changeSetPath(held.changeSetSpace, held.changeSetSlug)} newTab={false}>
+          <FactLink href={changeSetPath(held.changeSetSpace, held.changeSetSlug)}>
             {held.changeSetSlug}
           </FactLink>
         </Box>
@@ -148,7 +148,7 @@ export function ChangeUnitNotices({ unit }: { unit: UnitRead }) {
           <span data-testid="held-bar-text">
             Held by <b>{held.owner}</b>&apos;s ChangeSet{' '}
             <Box component="span" data-testid="held-change-link" sx={{ ...monoSx, fontWeight: 600, overflowWrap: 'anywhere' }}>
-              <FactLink href={changeSetPath(held.changeSetSpace, held.changeSetSlug)} newTab={false}>
+              <FactLink href={changeSetPath(held.changeSetSpace, held.changeSetSlug)}>
                 {held.changeSetSlug}
               </FactLink>
             </Box>

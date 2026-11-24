@@ -1,24 +1,18 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
+import { createPortal } from 'react-dom';
 import { Link as RouterLink } from 'react-router-dom';
 
 import { DropdownMenu } from '@/components/dropdown-menu/DropdownMenu';
-import { NavLink } from '@/components/nav-link/NavLink';
-import { Ellipses } from '@/components/styled';
 import { useScroll } from '@/hooks/useScroll';
-import { Domains } from '@/types/enums';
 import Box from '@mui/material/Box';
-import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
 import { SelectChangeEvent } from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import { alpha, styled } from '@mui/material/styles';
 
-import { useUserInfo } from '../authenticated-context/AuthenticatedContext';
-import { CopyToClipboard } from '../copy-to-clipboard/CopyToClipboard';
-import { OrganizationSwitcher } from '@/components/organization-switcher/OrganizationSwitcher';
-import { buildShareableUrl } from '@/hooks/useOrgQueryParam';
+import { useTrailActionsSlot } from '../trail/TrailProvider';
 
 const Container = styled('div', {
   shouldForwardProp: (prop) => prop !== 'isSticky',
@@ -33,30 +27,13 @@ const Container = styled('div', {
   transition: 'background-color 200ms ease-in-out',
 }));
 
-const FilterSection = styled('div', {
-  shouldForwardProp: (prop) => prop !== '$compactBottom',
-})<{ $compactBottom?: boolean }>(({ $compactBottom }) => `
-  display: flex;
-  justify-content: space-between;
-  padding: ${$compactBottom ? '16px 16px 0' : '16px'};
-`);
-
 const AdditionalFilters = styled('div', {
   shouldForwardProp: (prop) => prop !== '$compactBottom',
 })<{ $compactBottom?: boolean }>(({ $compactBottom }) => `
-  padding: ${$compactBottom ? '8px 0 0' : '0 16px'};
+  padding: ${$compactBottom ? '8px 0 0' : '16px 16px 0'};
 `);
 
-export type BreadCrumbIconType = { [key in Domains]: React.ReactNode };
-
 export interface HeaderProps {
-  /** BreadCrumbs array. */
-  breadCrumbs: Array<{
-    name: string | React.ReactNode;
-    isLink?: boolean;
-    link?: string;
-    state?: unknown;
-  }>;
   /** Optional add button text. */
   addButtonText?: string;
   /** Optional delete button text. */
@@ -92,14 +69,17 @@ export interface HeaderProps {
    * When true, removes the bottom padding from the header row and suppresses
    * the bottom Divider. Use when the `filters` slot contains a full-width tab
    * strip (e.g. ViewTabs) that provides its own bottom border — this makes the
-   * tabs appear directly below the breadcrumb row with no gap.
+   * tabs appear directly below the trail bar with no gap.
    */
   compactBottom?: boolean;
 }
 
-/** Primary component for Page Headers.  This component uses a breadcrumb and optional buttons of Add, Delete and custom actions as components. */
+/**
+ * A page's header: optional Add, Delete and custom action buttons, and a row of
+ * filters. The actions go into the trail bar that `Layout` renders above each
+ * page, beside the trail; the filters stay at the top of the page.
+ */
 export const Header = ({
-  breadCrumbs,
   addButtonText,
   deleteButtonText,
   onAddButtonClick,
@@ -114,8 +94,8 @@ export const Header = ({
   compactBottom = false,
   ...other
 }: HeaderProps) => {
-  const { userInfo } = useUserInfo();
   const isScrolling = useScroll();
+  const { slot } = useTrailActionsSlot();
 
   const actionsStack = (
     <Stack direction='row-reverse' sx={{ alignItems: 'center' }} spacing={1}>
@@ -169,62 +149,22 @@ export const Header = ({
     </Stack>
   );
 
+  const hasActions = Boolean(moreItems || actions || addButton || addButtonText || editButton || deleteButtonText || deleteButton);
+  const actionsRow = (
+    <Stack direction='row' spacing={2} sx={{ alignItems: 'center' }} data-testid='header-actions'>
+      {actionsStack}
+    </Stack>
+  );
+
   return (
-    <Container {...other} isSticky={isScrolling}>
-      <FilterSection $compactBottom={compactBottom}>
-        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <Breadcrumbs aria-label='breadcrumb'>
-            <OrganizationSwitcher currentOrganizationId={userInfo.ExternalOrganizationID || ''} />
-            {breadCrumbs.map((breadCrumb, index) => (
-              <Stack direction='row' spacing={1} sx={{ alignItems: 'center' }} key={index}>
-                {breadCrumb?.isLink ? (
-                  <NavLink to={breadCrumb?.link || ''} state={breadCrumb?.state}>
-                    <Ellipses
-                      variant='body2'
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        maxWidth: '250px',
-                        textDecoration: 'underline',
-                        cursor: 'pointer',
-                        color: 'secondary.main',
-                      }}
-                    >
-                      {breadCrumb?.name}
-                    </Ellipses>
-                  </NavLink>
-                ) : (
-                  <Ellipses
-                    variant='subtitle1'
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      maxWidth: '250px',
-                      textDecoration: 'none',
-                      cursor: 'default',
-                      color: 'text.primary',
-                    }}
-                  >
-                    {breadCrumb?.name}
-                  </Ellipses>
-                )}
-              </Stack>
-            ))}
-          </Breadcrumbs>
-          <CopyToClipboard
-            text={userInfo.ExternalOrganizationID ? buildShareableUrl(userInfo.ExternalOrganizationID) : ''}
-            title='Copy shareable link with org context'
-            sx={{ ml: 0.5 }}
-          />
-        </Box>
-        <Box sx={{ height: '32px' }}>
-          <Stack direction='row' spacing={2} sx={{ alignItems: 'center' }}>
-            {actionsStack}
-          </Stack>
-        </Box>
-      </FilterSection>
-      <AdditionalFilters $compactBottom={compactBottom}>{filters}</AdditionalFilters>
-      {!compactBottom && <Divider />}
-    </Container>
+    <>
+      {slot && hasActions && createPortal(actionsRow, slot)}
+      {filters !== undefined && filters !== null && filters !== false && (
+        <Container {...other} isSticky={isScrolling}>
+          <AdditionalFilters $compactBottom={compactBottom}>{filters}</AdditionalFilters>
+          {!compactBottom && <Divider />}
+        </Container>
+      )}
+    </>
   );
 };

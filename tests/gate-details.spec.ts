@@ -292,8 +292,7 @@ test.describe('Gates tab', () => {
         const link = page.getByTestId(id);
         await expect(link).toHaveText(text);
         await expect(link).toHaveAttribute('href', href);
-        await expect(link).toHaveAttribute('target', '_blank');
-        await expect(link).toHaveAttribute('rel', /noopener/);
+        await expect(link).not.toHaveAttribute('target', '_blank');
       }
       const save = page.getByTestId('gate-save-1');
       await expect(save).toBeDisabled();
@@ -407,7 +406,7 @@ test.describe('Gates tab', () => {
       const fix = page.getByTestId('fix-origin-link-1-1');
       await expect(fix).toHaveText(`Fix in ${c.slug}-base`);
       await expect(fix).toHaveAttribute('href', href);
-      await expect(fix).toHaveAttribute('target', '_blank');
+      await expect(fix).not.toHaveAttribute('target', '_blank');
       await expect(page.getByTestId('gate-origin-fix-1')).toHaveAttribute('href', href);
     } finally {
       await c.cleanup();

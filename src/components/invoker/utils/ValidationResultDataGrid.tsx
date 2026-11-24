@@ -47,8 +47,6 @@ export const ValidationResultDataGrid = ({
                 variant="body2"
                 component="a"
                 href={`/units/${row.spaceId}/${row.unitId}?`}
-                target="_blank"
-                rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
                 sx={{
                   fontSize: '0.75rem',

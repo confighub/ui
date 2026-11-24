@@ -389,25 +389,20 @@ test.describe('the read of the open Unit', () => {
 });
 
 test.describe('where the link actions go', () => {
-  const search = 'view=v1&t=2';
-  const back = `explorer=${encodeURIComponent(search)}`;
-
-  test('the Unit page tabs, each with the way back to this explorer tab', () => {
-    const links = panelLinks(row({ spaceId: 's1', unitId: 'u1' }), undefined, search);
+  test('the Unit page tabs', () => {
+    const links = panelLinks(row({ spaceId: 's1', unitId: 'u1' }), undefined);
     expect(links).toEqual({
-      'review-conflicts': `/units/s1/u1?tab=2&${back}`,
-      'edit-config': `/units/s1/u1?tab=1&${back}`,
-      'open-links': `/units/s1/u1?tab=3&${back}`,
-      'restore-history': `/units/s1/u1?tab=2&${back}`,
+      'review-conflicts': '/units/s1/u1?tab=2',
+      'edit-config': '/units/s1/u1?tab=1',
+      'open-links': '/units/s1/u1?tab=3',
+      'restore-history': '/units/s1/u1?tab=2',
     });
-    // The Components view does not read the way back, so its link does not carry it.
-    expect(panelLinks(row(), 'payments', search)['release-space']).toBe('/components?app=payments&space=s1');
-    expect(panelLinks(row({ spaceId: '', unitId: 'u1' }), 'c', search)).toEqual({});
+    expect(panelLinks(row(), 'payments')['release-space']).toBe('/components?app=payments&space=s1');
+    expect(panelLinks(row({ spaceId: '', unitId: 'u1' }), 'c')).toEqual({});
   });
 
   test('Release opens the Space on the Components view, once the Component\'s slug is known', () => {
     expect(componentsHref('pay ments', 's1')).toBe('/components?app=pay%20ments&space=s1');
-    expect(panelLinks(row(), 'payments', search)['release-space']).not.toContain('explorer=');
   });
 });
 

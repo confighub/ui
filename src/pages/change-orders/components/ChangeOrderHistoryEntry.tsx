@@ -305,7 +305,7 @@ export function SpaceChip({
     );
   }
   return (
-    <Box component="a" href={`/spaces/${spaceId}`} target="_blank" rel="noopener noreferrer" sx={sx} data-history-space={slug ?? ''}>
+    <Box component="a" href={`/spaces/${spaceId}`} sx={sx} data-history-space={slug ?? ''}>
       {content}
     </Box>
   );
@@ -489,8 +489,6 @@ function FailureItemList({
                   <Box
                     component="a"
                     href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
                     sx={{ color: 'inherit', textDecoration: 'underline', textDecorationColor: changeOrderBorder.strong }}
                   >
                     {item.Slug}

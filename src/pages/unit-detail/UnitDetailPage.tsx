@@ -1,5 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
+import { useCrumbName } from '@/components/trail/TrailProvider';
 import { Dispatch, useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
@@ -71,19 +72,10 @@ export const UnitDetailPage = () => {
   const dispatch = useAppDispatch();
   const [refresh, setRefresh] = useState(false);
 
-  // Check if we arrived from the View Explorer
-  const explorerState = location.state as {
-    fromViewExplorer?: boolean;
-    viewId?: string;
-  } | null;
-
   // State
   const { id = '', spaceID = '' } = useParams();
   const [searchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
-  // Opened from a View Explorer tab in a new browser tab: the explorer's own
-  // query (`view=…&t=…&d=…`), read once so a later tab change here keeps it.
-  const [explorerReturn] = useState(() => searchParams.get('explorer'));
   const [selectedTab, setSelectedTab] = useState(readUnitDetailTab(tabParam));
   // A link within the page, such as to another Unit's Config tab, keeps this page mounted.
   useEffect(() => {
@@ -130,6 +122,9 @@ export const UnitDetailPage = () => {
     spaceID,
     refresh,
   });
+
+  // A Unit's slug repeats across Spaces, so the crumb names both.
+  useCrumbName(currentUnit?.Slug ? (currentSpace?.Slug ? `${currentSpace.Slug}/${currentUnit.Slug}` : currentUnit.Slug) : undefined);
 
   // Computed data
   const {
@@ -347,7 +342,6 @@ export const UnitDetailPage = () => {
   if (unitError && !currentUnit?.UnitID) {
     return (
       <Container>
-        <Header breadCrumbs={[{ name: 'Units', isLink: true, link: '/units' }]} />
         <ErrorContainer>
           <QueryErrorState
             error={unitError}
@@ -364,31 +358,6 @@ export const UnitDetailPage = () => {
   return (
     <Container>
       <Header
-        breadCrumbs={[
-          ...(explorerState?.fromViewExplorer || explorerReturn !== null
-            ? [
-                {
-                  name: 'View explorer',
-                  isLink: true,
-                  link: explorerReturn ? `/x/view-explorer?${explorerReturn}` : '/x/view-explorer',
-                  state: { restoreViewId: explorerState?.viewId },
-                },
-              ]
-            : []),
-          {
-            name: currentSpace?.Slug || 'Space',
-            isLink: true,
-            link: `/spaces/${currentSpace?.SpaceID}`,
-          },
-          {
-            name: 'Units',
-            isLink: true,
-            link: `/units`,
-          },
-          {
-            name: currentUnit?.Slug,
-          },
-        ]}
         moreItems={{
           onChange: (event) => onMoreItemsChanged(event.target.value as string),
           items: [

@@ -12,6 +12,7 @@
  * grid of five there is no such thing.
  */
 
+import { useLeaveGuard } from '@/components/trail/LeaveGuard';
 import { memo, useCallback, useMemo, useState, type CSSProperties, type ReactElement } from 'react';
 
 import Box from '@mui/material/Box';
@@ -266,6 +267,7 @@ function ComponentCompareSectionInner({
   const [stagedEdits, setStagedEdits] = useState<ReadonlyMap<string, StagedCompareEdit>>(
     () => new Map(),
   );
+  useLeaveGuard(stagedEdits.size > 0);
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(() => new Set());
   const [applying, setApplying] = useState(false);
   const [outcomes, setOutcomes] = useState<readonly DeploymentApplyOutcome[]>([]);

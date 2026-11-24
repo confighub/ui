@@ -11,7 +11,7 @@ import Typography from '@mui/material/Typography';
 import { Kbd } from '../../lenses/parts';
 import type { PanelLinks } from '../links';
 import type { PrimaryAction } from '../verdict';
-import { newTab } from './new-tab';
+import { pageLink } from './page-link';
 import type { PanelActions } from './types';
 
 /**
@@ -34,7 +34,7 @@ export function PrimaryRow({ primary, actions, links }: { primary: PrimaryAction
           variant='contained'
           size='small'
           disabled={!primary.enabled || !run}
-          {...newTab(href)}
+          {...pageLink(href)}
           onClick={href || !run ? undefined : () => run()}
           aria-keyshortcuts={nextProblem ? 'Enter Shift+J' : 'Enter'}
           aria-describedby={whyId}

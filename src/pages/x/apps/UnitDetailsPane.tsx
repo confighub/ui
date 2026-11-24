@@ -498,8 +498,6 @@ export const UnitDetailsPane = memo(({
                         <Box
                           component='a'
                           href={`/units/${upstreamSpaceId}/${upstreamUnitId}`}
-                          target='_blank'
-                          rel='noopener noreferrer'
                           onClick={(e: React.MouseEvent) => {
                             if (onNavigate && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
                               e.preventDefault();
@@ -532,8 +530,6 @@ export const UnitDetailsPane = memo(({
                               key={d.UnitID}
                               component='a'
                               href={`/units/${d.SpaceID}/${d.UnitID}`}
-                              target='_blank'
-                              rel='noopener noreferrer'
                               onClick={(e: React.MouseEvent) => {
                                 if (onNavigate && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
                                   e.preventDefault();
@@ -679,8 +675,6 @@ export const UnitDetailsPane = memo(({
         <Button
           component='a'
           href={fullDetailsHref}
-          target='_blank'
-          rel='noopener noreferrer'
           aria-label={`Open full details for ${displayName}`}
           variant='outlined'
           size='small'

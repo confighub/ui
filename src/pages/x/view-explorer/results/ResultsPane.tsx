@@ -3,7 +3,6 @@
 
 import { type KeyboardEvent, useCallback, useMemo, useRef, useState } from 'react';
 
-import { useSearchParams } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
 import { visuallyHidden } from '@mui/utils';
@@ -38,7 +37,6 @@ import { useSettledId } from '../unit-panel/useSettledId';
 import { type PanelSelection, useUnitPanel } from '../unit-panel/useUnitPanel';
 import type { ActionId } from '../unit-panel/verdict';
 import type { UnitPanelModel, UnitPanelTab } from '../unit-panel/view/types';
-import { withExplorerReturn } from './explorer-link';
 import { HoldWhileHidden } from './HoldWhileHidden';
 import { Toolbar } from './Toolbar';
 
@@ -178,8 +176,6 @@ function ResultsBody({ current, setOpened, comparing }: ResultsBodyProps) {
   const tab = useActiveTab();
   const selection = useRowSelection();
   // The panel's page links carry the URL of this tab; reading it here re-renders them when it changes.
-  const [searchParams] = useSearchParams();
-  const search = searchParams.toString();
   // The row is kept by id and read from the universe on each render, so the panel follows a refetch
   // (an upgrade, a release); the row as opened stands in only once it has left the universe.
   const panelOpen = !!current;
@@ -244,7 +240,7 @@ function ResultsBody({ current, setOpened, comparing }: ResultsBodyProps) {
   const openHref = useCallback(
     (row: EntityRow) => {
       const href = adapter.getRowHref(row as GroupNavRow);
-      if (href) window.open(withExplorerReturn(href), '_blank', 'noopener');
+      if (href) window.open(href, '_blank', 'noopener');
     },
     [adapter],
   );
@@ -293,7 +289,6 @@ function ResultsBody({ current, setOpened, comparing }: ResultsBodyProps) {
     allRows: universe.rows,
     rowIdOf: derived.rowId,
     selection: panelSelection,
-    search,
     gone: rowGone,
     settled,
     goTo,
@@ -367,7 +362,7 @@ function ResultsBody({ current, setOpened, comparing }: ResultsBodyProps) {
 
   const href = panelRow ? adapter.getRowHref(panelRow as GroupNavRow) : undefined;
   const panelTitle = panelRow ? getCellValue(panelRow as GroupNavRow, 'Slug') || getCellValue(panelRow as GroupNavRow, 'DisplayName') : '';
-  const panelHref = href ? withExplorerReturn(href, search) : undefined;
+  const panelHref = href;
 
   // Focus moves into the panel when it opens (not when ↑/↓ change its row).
   const focusOnOpen = useCallback((el: HTMLDivElement | null) => {

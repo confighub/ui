@@ -48,11 +48,13 @@ test.describe('ChangeOrder detail — the ChangeSets the change was made in', ()
     await expect(changeSet).toContainText('Closed');
     await expect(changeSet.getByTestId('change-order-change-set-description')).toHaveText('Release v0.2.20');
 
-    // The slug opens the ChangeSet's own page in a new tab, so the ChangeOrder stays open.
-    const [changeSetPage] = await Promise.all([page.waitForEvent('popup'), changeSet.getByTestId('change-order-change-set-slug').click()]);
-    await expect(changeSetPage).toHaveURL(new RegExp(`/change-sets/[^/]+/${fx.appLabel}-changeset$`));
-    await expect(changeSetPage.getByRole('heading', { level: 1, name: `${fx.appLabel}-changeset`, exact: true })).toBeVisible({ timeout: 30000 });
-    await expect(changeSetPage.getByTestId('change-set-description')).toHaveText('Release v0.2.20');
-    await changeSetPage.close();
+    // The slug opens the ChangeSet's own page in this tab, and the trail leads back to the ChangeOrder.
+    await changeSet.getByTestId('change-order-change-set-slug').click();
+    await expect(page).toHaveURL(new RegExp(`/change-sets/[^/]+/${fx.appLabel}-changeset$`));
+    await expect(page.getByRole('heading', { level: 1, name: `${fx.appLabel}-changeset`, exact: true })).toBeVisible({ timeout: 30000 });
+    await expect(page.getByTestId('change-set-description')).toHaveText('Release v0.2.20');
+    await expect(page.getByTestId('trail-current')).toHaveAttribute('data-kind', 'changeSet');
+    await page.getByTestId('trail-crumb').and(page.locator('[data-kind="changeOrder"]')).last().click();
+    await expect(page).toHaveURL(/\/change-orders\//);
   });
 });

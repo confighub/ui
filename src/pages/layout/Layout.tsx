@@ -16,6 +16,11 @@ import { removeAllSelectedUnits, selectSelectedUnits, setSelectedUnits } from '@
 import { selectTourId, selectTourStatus } from '@/state/slices/tourSlice';
 import { TOP_NAV_HEIGHT } from '@/utility/constants';
 import { UserSection } from '@/components/user-section/UserSection';
+import { useUserInfo } from '@/components/authenticated-context/AuthenticatedContext';
+import { LeaveGuardProvider } from '@/components/trail/LeaveGuard';
+import { TrailBar } from '@/components/trail/TrailBar';
+import { TrailProvider } from '@/components/trail/TrailProvider';
+import { useSameTabLinks } from '@/components/trail/useSameTabLinks';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
@@ -437,6 +442,8 @@ const SlideTransition = (props: SlideProps) => {
 export const Layout = memo(() => {
   const theme = useTheme();
   const dispatch = useAppDispatch();
+  const { userInfo } = useUserInfo();
+  useSameTabLinks();
   const { message, isOpen: snackBarIsOpen, type: severity } = useAppSelector(selectAlert);
   const [gettingStartedAnchor, setGettingStartedAnchor] = useState<null | HTMLElement>(null);
   const activeTourId = useAppSelector(selectTourId);
@@ -634,11 +641,15 @@ export const Layout = memo(() => {
       <Box sx={{ height: `${TOP_NAV_HEIGHT}px`, flexShrink: 0 }} />
 
       {/* ── Content row: MainContent + Invoker sidebar ───────────────── */}
+      <TrailProvider orgId={userInfo.ExternalOrganizationID || ''}>
       <ActiveChangeProvider>
       <ContentRow>
         <MainContent>
+          <TrailBar />
           <ContentArea>
-            <Outlet />
+            <LeaveGuardProvider>
+              <Outlet />
+            </LeaveGuardProvider>
           </ContentArea>
         </MainContent>
 
@@ -660,6 +671,7 @@ export const Layout = memo(() => {
         />
       </ContentRow>
       </ActiveChangeProvider>
+      </TrailProvider>
 
       {/* Global Alert Snackbar */}
       <Snackbar

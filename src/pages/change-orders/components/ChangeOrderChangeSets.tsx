@@ -91,7 +91,7 @@ export function ChangeOrderChangeSets({ changeSets, baseSpaceId }: ChangeOrderCh
             <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: `${changeOrderShape.gap.md}px` }}>
               <Box
                 {...(changeSet.spaceSlug
-                  ? { component: RouterLink, to: changeSetPath(changeSet.spaceSlug, changeSet.slug), target: '_blank', rel: 'noopener noreferrer' }
+                  ? { component: RouterLink, to: changeSetPath(changeSet.spaceSlug, changeSet.slug) }
                   : { component: 'span' })}
                 data-testid="change-order-change-set-slug"
                 sx={{
@@ -124,8 +124,6 @@ export function ChangeOrderChangeSets({ changeSets, baseSpaceId }: ChangeOrderCh
                 <Box
                   component={RouterLink}
                   to={unitListHref(changeSet.unitIds)}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   sx={{ fontSize: changeOrderType.size.small, color: changeOrderAction.ink }}
                 >
                   {units === 1 ? '1 unit' : `${units} units`}

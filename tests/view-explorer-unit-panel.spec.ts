@@ -392,9 +392,8 @@ test.describe('the row panel of a Unit', () => {
     await expect(group).toContainText('4 Units');
     await expect(group).not.toContainText('need attention');
     const href = await primary(page).getAttribute('href');
-    expect(href).toMatch(new RegExp(`^/units/${seed.spaceA.id}/${seed.unitIds.ok}\\?tab=2&explorer=`));
-    expect(new URLSearchParams(href!.split('?')[1]).get('explorer')).toContain(`view=${seed.viewId}`);
-    await expect(primary(page)).toHaveAttribute('target', '_blank');
+    expect(href).toBe(`/units/${seed.spaceA.id}/${seed.unitIds.ok}?tab=2`);
+    await expect(primary(page)).not.toHaveAttribute('target', '_blank');
   });
 
   test('needs that are not met: Open Links', async ({ page }) => {
@@ -404,7 +403,7 @@ test.describe('the row panel of a Unit', () => {
     await open(page, 'ok');
     await expect(headline(page)).toHaveText('Needs from upstream are not met');
     await expect(primary(page)).toHaveText(/^Open Links/);
-    await expect(primary(page)).toHaveAttribute('href', new RegExp(`^/units/${seed.spaceA.id}/${seed.unitIds.ok}\\?tab=3&explorer=`));
+    await expect(primary(page)).toHaveAttribute('href', `/units/${seed.spaceA.id}/${seed.unitIds.ok}?tab=3`);
   });
 
   test('the live status of the Release the Space runs, said to be the Release\'s', async ({ page }) => {
@@ -452,17 +451,23 @@ test.describe('the row panel of a Unit', () => {
     expect(seen.filter((e) => inA.has(e.split(':')[0]) && e.endsWith(':false'))).toEqual([]);
   });
 
-  test('e opens the config in a new tab, with the way back to this view', async ({ page }) => {
+  test('e opens the config in this tab, and the trail leads back to this view', async ({ page }) => {
     await open(page, 'unrel');
     await expect(headline(page)).toHaveText(/^Ready to release/);
-    await expect(action(page, 'edit-config')).toHaveAttribute('href', new RegExp(`^/units/${seed.spaceA.id}/${seed.unitIds.unrel}\\?tab=1&explorer=`));
+    await expect(action(page, 'edit-config')).toHaveAttribute('href', `/units/${seed.spaceA.id}/${seed.unitIds.unrel}?tab=1`);
     await panel(page).focus();
-    const [tab] = await Promise.all([page.context().waitForEvent('page'), page.keyboard.press('e')]);
-    const url = new URL(tab.url());
-    expect(url.pathname).toBe(`/units/${seed.spaceA.id}/${seed.unitIds.unrel}`);
-    expect(url.searchParams.get('tab')).toBe('1');
-    expect(url.searchParams.get('explorer')).toContain(`view=${seed.viewId}`);
-    await tab.close();
+    // The Unit page it goes to is not this spec's subject: its own console output is not checked here.
+    const seenInExplorer = problems.length;
+    await page.keyboard.press('e');
+    await expect.poll(() => new URL(page.url()).pathname).toBe(`/units/${seed.spaceA.id}/${seed.unitIds.unrel}`);
+    expect(new URL(page.url()).searchParams.get('tab')).toBe('1');
+    expect(page.context().pages()).toHaveLength(1);
+    const back = page.getByTestId('trail-crumb').and(page.locator('[data-kind="view"]'));
+    await expect(back).toHaveAttribute('href', new RegExp(`^/x/view-explorer\\?.*view=${seed.viewId}`));
+    problems.length = seenInExplorer;
+    await back.click();
+    await expect.poll(() => new URL(page.url()).pathname).toBe('/x/view-explorer');
+    expect(new URL(page.url()).searchParams.get('view')).toBe(seed.viewId);
   });
 
   test('Release opens the Space on the Components view, and says why it cannot when it cannot', async ({ page }) => {
@@ -474,8 +479,6 @@ test.describe('the row panel of a Unit', () => {
     expect(url.pathname).toBe('/components');
     expect(url.searchParams.get('app')).toBe(seed.componentSlug);
     expect(url.searchParams.get('space')).toBe(seed.spaceA.id);
-    // The Components view does not read the way back.
-    expect(url.searchParams.get('explorer')).toBeNull();
 
     await open(page, 'gated');
     await expect(action(page, 'release-space')).toHaveAttribute('aria-disabled', 'true');
@@ -861,7 +864,7 @@ test.describe('the row panel of a Unit', () => {
     });
     await open(page, 'gated');
     await expect(primary(page)).toHaveText(/^Edit (at \S+|config)/);
-    await expect(primary(page)).toHaveAttribute('href', new RegExp(`/units/${seed.spaceA.id}/${seed.unitIds.gated}\\?tab=1&`));
+    await expect(primary(page)).toHaveAttribute('href', new RegExp(`/units/${seed.spaceA.id}/${seed.unitIds.gated}\\?tab=1$`));
     await expect(panel(page).getByRole('button', { name: /^Check again, gate / })).toHaveCount(0);
   });
 
@@ -1010,13 +1013,17 @@ test.describe('the row panel of a Unit', () => {
     await expect(headline(page)).toHaveText(/^Nothing to do/);
     await expect(action(page, 'restore')).toHaveCount(0);
     await expect(action(page, 'restore-history')).toContainText('Restore a revision…');
-    await expect(action(page, 'restore-history')).toHaveAttribute('href', new RegExp(`^/units/${seed.spaceA.id}/${seed.unitIds.ok}\\?tab=2&explorer=`));
+    await expect(action(page, 'restore-history')).toHaveAttribute('href', `/units/${seed.spaceA.id}/${seed.unitIds.ok}?tab=2`);
     await panel(page).focus();
-    const [tab] = await Promise.all([page.context().waitForEvent('page'), page.keyboard.press('r')]);
-    const url = new URL(tab.url());
-    expect(url.pathname).toBe(`/units/${seed.spaceA.id}/${seed.unitIds.ok}`);
-    expect(url.searchParams.get('tab')).toBe('2');
-    await tab.close();
+    const seenInExplorer = problems.length;
+    await page.keyboard.press('r');
+    await expect.poll(() => new URL(page.url()).pathname).toBe(`/units/${seed.spaceA.id}/${seed.unitIds.ok}`);
+    expect(new URL(page.url()).searchParams.get('tab')).toBe('2');
+    expect(page.context().pages()).toHaveLength(1);
+    // The Unit page is not this spec's subject: its own console output is not checked here.
+    await page.goBack();
+    await expect.poll(() => new URL(page.url()).pathname).toBe('/x/view-explorer');
+    problems.length = seenInExplorer;
   });
 
   test('Restore rev N asks first, on the released revision; Cancel writes nothing', async ({ page }) => {

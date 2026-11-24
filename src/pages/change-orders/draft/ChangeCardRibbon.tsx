@@ -12,6 +12,7 @@ import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import LastPageIcon from '@mui/icons-material/LastPage';
 import RemoveIcon from '@mui/icons-material/Remove';
 import AddIcon from '@mui/icons-material/Add';
+import ReplayIcon from '@mui/icons-material/Replay';
 
 import { PersonAvatar } from '../components/ChangeOrderHistoryEntry';
 import {
@@ -24,6 +25,7 @@ import {
   changeOrderType,
 } from '../changeOrdersTokens';
 import { cardsAffectedBy, type DraftChangeSet, type DraftEndOption, type DraftSummaryPart } from './draftChangeCards';
+import type { DraftReissue } from './draftDecisions';
 import { draftCopy } from './draftCopy';
 import { draftPlaceId, focusWhenDrawn } from './draftFocus';
 import { BARE_BUTTON, CODE_SX, DRAFT_TRANSITION, FOCUS_RING, PRESS } from './draftLook';
@@ -490,9 +492,11 @@ function EndSuggestion({ option, affected, onEnd }: EndSuggestionProps) {
 interface StartFlagProps {
   /** The last ChangeOrder's slug; undefined draws the flag with no label. */
   label: string | undefined;
+  /** The draft reissues it: the change starts before it, not after it. */
+  before?: boolean;
 }
 
-function StartFlag({ label }: StartFlagProps) {
+function StartFlag({ label, before = false }: StartFlagProps) {
   return (
     <Box
       sx={{
@@ -528,6 +532,7 @@ function StartFlag({ label }: StartFlagProps) {
             }}
           >
             <HistoryIcon aria-hidden sx={{ fontSize: 14 }} />
+            {before ? copy.startBefore : null}
             <Box component="b" translate="no" sx={{ fontFamily: changeOrderFontMono, fontWeight: changeOrderType.weight.semibold, color: changeOrderInk.muted, fontSize: 11 }}>
               {label}
             </Box>
@@ -542,6 +547,8 @@ export interface ChangeCardRibbonProps {
   cards: DraftChangeCards;
   /** The last ChangeOrder's slug, on the start flag. `undefined` draws the flag with no label. */
   startLabel: string | undefined;
+  /** The draft reissues that ChangeOrder, so the change starts before it. */
+  startsBefore?: boolean;
   /** Change the end: a ChangeSet slug, or `null` for the latest change. */
   onEnd: (end: string | null) => void;
   /** Ask again for what could not be read. */
@@ -561,6 +568,7 @@ export interface ChangeCardRibbonProps {
 export const ChangeCardRibbon = memo(function ChangeCardRibbon({
   cards,
   startLabel,
+  startsBefore = false,
   onEnd,
   onRetry,
   emptySaid = false,
@@ -626,7 +634,7 @@ export const ChangeCardRibbon = memo(function ChangeCardRibbon({
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'stretch', position: 'relative', minWidth: 'min-content' }}>
-          <StartFlag label={startLabel} />
+          <StartFlag label={startLabel} before={startsBefore} />
           <Box
             sx={{
               flex: 1,
@@ -701,5 +709,66 @@ export const ChangeCardEnd = memo(function ChangeCardEnd({ cards, onEnd }: Chang
       affected={cardsAffectedBy(suggestion, cards.cards)}
       onEnd={() => endAndFollow(onEnd, suggestion.kind === 'changeSet' ? suggestion.changeSet.slug : null)}
     />
+  );
+});
+
+interface ChangeCardReissueProps {
+  reissue: DraftReissue;
+  /** Turn the reissue on or off. */
+  onReissue: (on: boolean) => void;
+}
+
+/**
+ * The reissue toggle, on What's line beside the one-click end: drawn only when the template
+ * ChangeOrder did not finish. On, the ChangeOrder starts where that one started, so it carries
+ * that change and what came after it (`StartRevision: Before:ChangeOrder:<id>`).
+ */
+export const ChangeCardReissue = memo(function ChangeCardReissue({ reissue, onReissue }: ChangeCardReissueProps) {
+  const { on } = reissue;
+  const slug = reissue.changeOrder.slug;
+  return (
+    <DraftPeek
+      spec={{
+        eyebrow: copy.reissueEyebrow,
+        icon: <ReplayIcon aria-hidden />,
+        title: <span translate="no">{slug}</span>,
+        lines: copy.reissueLines(slug),
+        action: on ? copy.reissueOn : copy.reissueOff,
+      }}
+    >
+      <Box
+        component="button"
+        type="button"
+        aria-pressed={on}
+        onClick={() => onReissue(!on)}
+        data-testid="draft-reissue"
+        sx={{
+          ...BARE_BUTTON,
+          boxSizing: 'border-box',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '5px',
+          height: 24,
+          padding: '0 9px 0 7px',
+          borderRadius: `${changeOrderShape.radius.pill}px`,
+          border: `1px solid ${on ? changeOrderAction.line : changeOrderBorder.default}`,
+          background: on ? changeOrderAction.soft : changeOrderSurface.card,
+          color: on ? changeOrderAction.ink : changeOrderInk.muted,
+          fontSize: changeOrderType.size.small,
+          fontWeight: changeOrderType.weight.semibold,
+          whiteSpace: 'nowrap',
+          transition: DRAFT_TRANSITION,
+          '&:hover': { borderColor: on ? changeOrderAction.ink : changeOrderBorder.strong },
+          '&:focus-visible': FOCUS_RING,
+          ...PRESS,
+        }}
+      >
+        <ReplayIcon aria-hidden sx={{ fontSize: 14 }} />
+        {`${copy.reissue} `}
+        <Box component="b" translate="no" sx={{ fontFamily: changeOrderFontMono, fontWeight: changeOrderType.weight.semibold }}>
+          {slug}
+        </Box>
+      </Box>
+    </DraftPeek>
   );
 });

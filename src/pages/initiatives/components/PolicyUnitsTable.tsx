@@ -150,7 +150,7 @@ interface PolicyUnitsTableProps {
 /**
  * The Units a validating Trigger applies to, grouped by Component and Space, with how each fared
  * and, for a failing one, the resources it failed on and what was found wrong. The fields of a
- * failure are on the Unit's own page, which each row opens in a new tab.
+ * failure are on the Unit's own page, which each row links to.
  */
 export const PolicyUnitsTable = ({
   policy,
@@ -265,13 +265,11 @@ export const PolicyUnitsTable = ({
           <Link
             component={RouterLink}
             to={unitLink(u.unit.spaceId, u.unit.id)}
-            target='_blank'
-            rel='noopener'
             underline='hover'
             sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, fontWeight: 500 }}
           >
             {u.unit.slug}
-            <OpenInNew sx={{ fontSize: 13, opacity: 0.6 }} aria-label='opens in a new tab' />
+            <OpenInNew sx={{ fontSize: 13, opacity: 0.6 }} aria-hidden />
           </Link>
         </TableCell>
         <TableCell>

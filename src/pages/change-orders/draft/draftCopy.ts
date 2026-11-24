@@ -30,8 +30,8 @@ export const draftCopy = {
     /** A type none of whose Links reaches a variant in scope: also the option's tooltip. */
     updateTypeNoLink: (type: string) => `No ${type} Link to these variants`,
     endNotFound: (slug: string) => `No closed ChangeSet ${slug} here`,
-    startDisagrees: (resource: string) =>
-      `Variants have taken different revisions of ${resource}`,
+    startBehind: (resources: string) =>
+      `Some variants do not have all earlier changes to ${resources}. A promotion adds those changes first.`,
     nothingToCarry: 'Nothing waiting',
     mergeUnitsPreview: 'MergeUnits is not previewed',
     passedOverByServer: (resources: string) => `Passed over: ${resources}`,
@@ -377,6 +377,17 @@ export const draftCopy = {
       end: 'end',
       endAt: 'End at',
       endAtLatest: 'End at latest',
+      /** The reissue toggle beside the end, and its peek. */
+      reissue: 'Reissue',
+      reissueEyebrow: 'Reissue',
+      reissueLines: (slug: string) => [
+        `Start before ${slug}, so this ChangeOrder carries ${slug} and the changes after it.`,
+        `Variants that have ${slug} get only the new changes. The other variants get all of them.`,
+      ],
+      reissueOn: 'Click to start after it',
+      reissueOff: 'Click to reissue it',
+      /** Before the slug on the start flag, while the draft reissues it. */
+      startBefore: 'before',
       leavesOut: 'Leaves out',
       takesIn: 'Takes in',
       changeSet: 'ChangeSet',

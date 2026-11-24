@@ -2124,8 +2124,6 @@ export const ComponentSidePane = memo(
           {filterUrl ? (
             <Link
               href={filterUrl}
-              target='_blank'
-              rel='noopener noreferrer'
               data-testid='pane-title'
               sx={{
                 fontSize: 14,
@@ -2269,13 +2267,10 @@ export const ComponentSidePane = memo(
               ),
             )}
             {clusterUnitPath && (
-              // A Components side pane holds staged work, so this in-app link opens a new tab (docs/dev/links.md, rule 3).
               <Tooltip title={`Open ${clusterUnit?.Slug}, the Unit that deploys this Space`} placement='top'>
                 <Link
                   component={RouterLink}
                   to={clusterUnitPath}
-                  target='_blank'
-                  rel='noopener noreferrer'
                   underline='none'
                   data-testid='component-side-pane-cluster-unit'
                   sx={headerLinkChipSx}

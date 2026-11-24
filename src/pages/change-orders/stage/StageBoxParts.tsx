@@ -75,10 +75,8 @@ function SegmentLink({ part, links }: { part: Extract<CopySegment, { kind: 'link
       </Link>
     );
   }
-  // A stage link stays on this ChangeOrder; a Space or Unit opens in a new tab, so the review here is kept.
-  const newTab = ref.to === 'space' || ref.to === 'unit' ? { target: '_blank', rel: 'noopener noreferrer' } : {};
   return (
-    <Link component={RouterLink} to={href} title={part.title} sx={sx} data-link={ref.to} {...newTab}>
+    <Link component={RouterLink} to={href} title={part.title} sx={sx} data-link={ref.to}>
       {text}
     </Link>
   );

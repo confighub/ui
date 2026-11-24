@@ -8,9 +8,10 @@
  *
  * WHERE EACH UNIT'S CHANGE STARTS IS WHAT ITS VARIANTS HAVE TAKEN, read off each variant
  * Unit's `UpstreamRevisionNum` — the rule the server applies when the ChangeOrder is
- * created ("the start is the Revision each target has already taken"). Variants that
- * disagree on a Unit are not averaged: the server refuses that ChangeOrder, so the draft
- * names the Unit instead of guessing a start for it.
+ * created ("the start is the Revision each target has already taken"). Where the variants
+ * have taken different Revisions of a Unit, the start is the latest of them, as the server
+ * starts it: the ChangeOrder is the change none of them has, and a variant behind it takes
+ * the Revisions between as `PriorRevisions` says when it is promoted.
  *
  * REVISION NUMBERS ARE PER UNIT, so the cards are not numbered. A card is the Revisions one
  * author made as one change: the same author, ChangeSet and description, written within
@@ -136,16 +137,19 @@ export interface DraftUnitStart {
   slug: string;
   headRevisionNum: number;
   /**
-   * The Revision the in-scope variants have taken. `undefined` when they disagree, or when
-   * nothing says (`undetermined`).
+   * The latest Revision the in-scope variants have taken. `undefined` only when nothing says
+   * (`undetermined`).
    */
   start: number | undefined;
   /** In-scope variants that hold a copy of the Unit. */
   holderSpaceIds: string[];
   /** In-scope variants that hold none: a promotion clones the Unit into them. */
   missingSpaceIds: string[];
-  /** Each holder's Revision, when they disagree. Empty when they agree. */
-  disagreement: { spaceId: string; revisionNum: number }[];
+  /**
+   * The holders behind `start`, each with the Revision it has taken, earliest first. A
+   * promotion gives them the Revisions between as `PriorRevisions` says. Empty when they agree.
+   */
+  behind: { spaceId: string; revisionNum: number }[];
   /**
    * No in-scope variant can say where the change starts: none is in scope, or every one takes
    * it from another Space. Never read as the Unit's beginning, which would be a guess.
@@ -201,25 +205,17 @@ export function deriveUnitStarts(
     const missingSpaceIds = inScopeSpaceIds.filter(
       (spaceId) => !held.has(spaceId) && !foreignSpaceIds.has(spaceId),
     );
-    const taken = new Set(
-      holders.map((holder) => Math.max(holder.upstreamRevisionNum, FIRST_REVISION_NUM)),
-    );
-    const disagreement =
-      taken.size > 1
-        ? holders
-            .map((holder) => ({
-              spaceId: holder.spaceId,
-              revisionNum: holder.upstreamRevisionNum,
-            }))
-            .sort(
-              (a, b) => a.revisionNum - b.revisionNum || a.spaceId.localeCompare(b.spaceId),
-            )
-        : [];
+    const takenOf = (holder: DraftVariantUnit) =>
+      Math.max(holder.upstreamRevisionNum, FIRST_REVISION_NUM);
     // Held by none and missing from none: no variant in scope says anything about this Unit.
     const undetermined = holders.length === 0 && missingSpaceIds.length === 0;
-    let start: number | undefined = FIRST_REVISION_NUM;
-    if (taken.size > 1 || undetermined) start = undefined;
-    else if (taken.size === 1) start = [...taken][0];
+    const start = undetermined
+      ? undefined
+      : Math.max(FIRST_REVISION_NUM, ...holders.map(takenOf));
+    const behind = holders
+      .filter((holder) => start !== undefined && takenOf(holder) < start)
+      .map((holder) => ({ spaceId: holder.spaceId, revisionNum: takenOf(holder) }))
+      .sort((a, b) => a.revisionNum - b.revisionNum || a.spaceId.localeCompare(b.spaceId));
     return {
       unitId: unit.unitId,
       slug: unit.slug,
@@ -227,23 +223,43 @@ export function deriveUnitStarts(
       start,
       holderSpaceIds,
       missingSpaceIds,
-      disagreement,
+      behind,
       undetermined,
     };
   });
 }
 
 /**
- * The Revision the ribbon lists a Unit's changes after: its start, or, where the variants
- * disagree, the earliest Revision any of them has taken — everything some variant still lacks.
- * `undefined` when the start is `undetermined`: nothing of that Unit is listed.
+ * The starts moved to where a ChangeOrder being reissued started: on each Unit the start Tag
+ * marks a Revision of, the change starts there, as `StartRevision` makes the server start it. A
+ * Unit the Tag marks nothing of keeps the start the variants give it. Holders past the new start
+ * take what of the range they lack; holders behind it are `behind`.
  */
-export function listedStartOf(start: DraftUnitStart): number | undefined {
-  if (start.start !== undefined) return start.start;
-  if (start.undetermined) return undefined;
-  return Math.min(
-    ...start.disagreement.map((d) => Math.max(d.revisionNum, FIRST_REVISION_NUM)),
-  );
+export function startsFromTag(
+  starts: readonly DraftUnitStart[],
+  tagged: readonly DraftRevision[],
+  variantUnits: readonly DraftVariantUnit[],
+  inScopeSpaceIds: readonly string[],
+): DraftUnitStart[] {
+  const startOf = new Map(tagged.map((revision) => [revision.unitId, revision.revisionNum]));
+  const inScope = new Set(inScopeSpaceIds);
+  return starts.map((start) => {
+    const at = startOf.get(start.unitId);
+    if (at === undefined || start.undetermined) return start;
+    const behind = variantUnits
+      .filter(
+        (unit) =>
+          inScope.has(unit.spaceId) &&
+          unit.upstreamUnitId === start.unitId &&
+          Math.max(unit.upstreamRevisionNum, FIRST_REVISION_NUM) < at,
+      )
+      .map((unit) => ({
+        spaceId: unit.spaceId,
+        revisionNum: Math.max(unit.upstreamRevisionNum, FIRST_REVISION_NUM),
+      }))
+      .sort((a, b) => a.revisionNum - b.revisionNum || a.spaceId.localeCompare(b.spaceId));
+    return { ...start, start: at, behind };
+  });
 }
 
 /** Ids per `UnitID IN` clause: short enough for the query-string limit with the rest of a read. */
@@ -263,9 +279,9 @@ const quotedIds = (ids: readonly string[]) => ids.map((id) => `'${id}'`).join(',
  * number; `startRevisionByUnitId` matches each row to its own Unit.
  */
 export function startRevisionsWheres(starts: readonly DraftUnitStart[]): string[] {
-  const listed = starts.filter((start) => listedStartOf(start) !== undefined);
+  const listed = starts.filter((start) => start.start !== undefined);
   return chunked(listed, UNITS_PER_READ).map((chunk) => {
-    const nums = [...new Set(chunk.map((start) => listedStartOf(start) as number))]
+    const nums = [...new Set(chunk.map((start) => start.start as number))]
       .sort((a, b) => a - b)
       .join(', ');
     return `UnitID IN (${quotedIds(chunk.map((start) => start.unitId))}) AND RevisionNum IN (${nums})`;
@@ -287,8 +303,7 @@ export function rangeRevisionsWheres(
   startRevisions: ReadonlyMap<string, DraftRevision>,
 ): string[] {
   const waiting = starts.filter((start) => {
-    const listed = listedStartOf(start);
-    return listed !== undefined && listed < start.headRevisionNum;
+    return start.start !== undefined && start.start < start.headRevisionNum;
   });
   const bounded: DraftRevision[] = [];
   const byId: string[] = [];
@@ -316,7 +331,7 @@ export function rangeRevisionsWheres(
   return wheres;
 }
 
-/** The read of the Revisions an end Tag marks in the base, wherever they are. */
+/** The read of the Revisions a Tag (an end Tag, or a reissue's start Tag) marks in the base. */
 export function endTagRevisionsWhere(baseSpaceId: string, tagId: string): string {
   return `SpaceID = '${baseSpaceId}' AND Tags ? '${tagId}'`;
 }
@@ -326,7 +341,7 @@ export function startRevisionByUnitId(
   starts: readonly DraftUnitStart[],
   revisions: readonly DraftRevision[],
 ): Map<string, DraftRevision> {
-  const wanted = new Map(starts.map((start) => [start.unitId, listedStartOf(start)]));
+  const wanted = new Map(starts.map((start) => [start.unitId, start.start]));
   const byUnit = new Map<string, DraftRevision>();
   for (const revision of revisions) {
     if (wanted.get(revision.unitId) === revision.revisionNum)
@@ -365,7 +380,6 @@ export type DraftResolvedEnd =
  * - `notFollowed` (`NotFollowed`), `followedByOtherLinks` (`FollowedByOtherLinks`),
  *   `noStartRevision` (`NoStartRevision`): only the server can say these.
  * - `skipped`: the server passes it over for a reason not listed here.
- * - `disagrees`: the variants have taken different Revisions of it; the server refuses.
  * - `unknown`: what it carries could not be established — a MergeUnits change, whose Links
  *   are not read here, or a Unit the server carries that the Revisions read here do not.
  */
@@ -378,7 +392,6 @@ export type DraftUnitCarry =
   | 'followedByOtherLinks'
   | 'noStartRevision'
   | 'skipped'
-  | 'disagrees'
   | 'unknown';
 
 export interface DraftUnitRange {
@@ -430,9 +443,8 @@ export function deriveUnitRanges(input: {
       endRevisionId: undefined,
     };
     // A MergeUnits change starts where its Links have merged, which the Units do not record.
-    if (updateType === 'MergeUnits' || start.undetermined)
+    if (updateType === 'MergeUnits' || start.start === undefined)
       return { ...none, end: undefined, carry: 'unknown' };
-    if (start.start === undefined) return { ...none, end: undefined, carry: 'disagrees' };
     const from = start.start;
     let endRevision: DraftRevision | undefined;
     if (end.kind === 'head') {
@@ -511,9 +523,8 @@ export function buildChangeCards(
   starts: readonly DraftUnitStart[],
   unitSlugById: ReadonlyMap<string, string>,
 ): DraftChangeCardBase[] {
-  // Where variants disagree, every Revision some variant still lacks is listed: the ribbon shows
-  // what is waiting, and the disagreement is reported on its own.
-  const startByUnit = new Map(starts.map((start) => [start.unitId, listedStartOf(start)]));
+  // Only the change itself is listed: what a variant behind the start lacks before it is not.
+  const startByUnit = new Map(starts.map((start) => [start.unitId, start.start]));
   const waiting = revisions
     .filter((revision) => {
       const start = startByUnit.get(revision.unitId);

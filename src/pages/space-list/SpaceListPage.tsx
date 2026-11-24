@@ -185,11 +185,6 @@ export const SpaceListPage = () => {
   return (
     <Container>
       <Header
-        breadCrumbs={[
-          {
-            name: 'Spaces',
-          },
-        ]}
         addButtonText='Add'
         actions={
           <Tooltip arrow placement='bottom' title='Refresh space list'>

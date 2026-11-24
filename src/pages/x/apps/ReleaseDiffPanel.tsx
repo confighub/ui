@@ -174,12 +174,10 @@ function UnitDiff({ tree, toLabel, columnStyle, onDividerMouseDown, isDragging }
             // the pane is an overlay on the component graph and navigating in
             // place would discard the whole selection the user built to get
             // here.
-            target='_blank'
-            rel='noopener noreferrer'
             data-testid={`release-diff-unit-link-${unit.unitId}`}
           >
             {unit.slug}
-            <VisuallyHidden> (opens unit details in a new tab)</VisuallyHidden>
+            <VisuallyHidden> (opens unit details)</VisuallyHidden>
           </UnitNameLink>
         ) : (
           <UnitName>{unit.slug}</UnitName>

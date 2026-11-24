@@ -17,16 +17,13 @@ export interface UnitLinkProps {
 
 /**
  * A Unit named in the Gates tab, as a link to the Unit's configuration page. Many findings can only
- * be fixed there. It opens a new tab, because the side pane holds the user's staged fixes
- * (docs/dev/links.md, rule 3). Without the Unit's IDs the name stays plain text.
+ * be fixed there. Without the Unit's IDs the name stays plain text.
  */
 export const UnitLink = ({ spaceId, unitId, children, testId }: UnitLinkProps) =>
   spaceId && unitId ? (
     <Link
       component={RouterLink}
       to={unitConfigHref(spaceId, unitId)}
-      target='_blank'
-      rel='noopener noreferrer'
       data-testid={testId}
       onClick={(e) => e.stopPropagation()}
       sx={{

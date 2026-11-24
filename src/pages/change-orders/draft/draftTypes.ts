@@ -60,7 +60,7 @@ export type DraftRow =
  */
 export interface DraftProblem {
   row: DraftRow;
-  /** Stable, for tests and for the page to pick an icon: `name-taken`, `start-disagrees`, … */
+  /** Stable, for tests and for the page to pick an icon: `name-taken`, `start-behind`, … */
   code: string;
   message: string;
   /** `client`: found before asking the server. `server`: the create dry run refused. */

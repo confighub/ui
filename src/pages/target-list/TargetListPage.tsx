@@ -213,7 +213,6 @@ export const TargetListPage = () => {
   return (
     <Container>
       <Header
-        breadCrumbs={[{ name: 'Targets' }]}
         actions={
           <Tooltip arrow placement='bottom' title='Refresh targets list'>
             <IconButton

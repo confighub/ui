@@ -472,11 +472,11 @@ Theme adds a 3px colored left border and semantic background tint. Use `standard
 - Sits below the AppBar with `border-top-left-radius: 6px; border-top-right-radius: 6px`
 - This creates the Chrome-style tab visual connecting the nav to the page
 
-### Page Header
-- Sticky, white background (with `blur(8px)` when scrolling)
-- Contains: organization switcher → breadcrumbs → copy-link icon (all in one flex row on the left)
+### Trail bar and page header
+- `Layout` renders the trail bar (`components/trail/TrailBar.tsx`) above each page; it does not scroll with the page
+- Contains: organization switcher → the trail of visited pages (icon and name each, separated by an arrow) → copy-link icon, all in one flex row on the left. See [links](links.md#the-trail)
+- A page's `Header` renders its action buttons into the right side of the bar, and its filter row at the top of the page (sticky)
 - The organization switcher (`components/organization-switcher/`) shows the current org name and a menu with one action, "Switch organization", which starts a fresh login so the identity provider does the picking. It never lists organizations.
-- Right side: action buttons (Add, More menu)
 - No account/user controls in page headers
 
 ---

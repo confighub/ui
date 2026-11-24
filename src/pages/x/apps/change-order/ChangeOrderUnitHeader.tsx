@@ -116,8 +116,6 @@ export function ChangeOrderUnitHeader({
       <DataObjectIcon sx={{ fontSize: 15, color: componentTheme.fgMuted, flexShrink: 0 }} />
       <UnitSlug
         href={unitConfigHref(spaceId, unitId)}
-        target="_blank"
-        rel="noopener noreferrer"
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
         {slug}
@@ -132,8 +130,6 @@ export function ChangeOrderUnitHeader({
       {spaceHref !== undefined ? (
         <TagBadgeLink
           href={spaceHref}
-          target="_blank"
-          rel="noopener noreferrer"
           onClick={(e: React.MouseEvent) => e.stopPropagation()}
           data-testid={`change-order-unit-space-${unitId}`}
           title={spaceName}
@@ -154,8 +150,6 @@ export function ChangeOrderUnitHeader({
       {linksHref !== undefined && (
         <TagBadgeLink
           href={linksHref}
-          target="_blank"
-          rel="noopener noreferrer"
           onClick={(e: React.MouseEvent) => e.stopPropagation()}
           data-testid={`change-order-unit-links-${unitId}`}
         >

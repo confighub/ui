@@ -107,7 +107,6 @@ export const ChangeReviewPage = () => {
   return (
     <Layout>
       <Header
-        breadCrumbs={[{ name: 'Units', link: '/units', isLink: true }, { name: 'Changes' }]}
         filters={
           <TabsContainer>
             <SettingsTabs

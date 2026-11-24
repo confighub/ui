@@ -9,7 +9,7 @@ import Typography from '@mui/material/Typography';
 import type { PanelLinks } from '../links';
 import { TONE_MARK, type Tone } from '../tones';
 import type { PanelLine, Verdict } from '../verdict';
-import { newTab } from './new-tab';
+import { pageLink } from './page-link';
 import { tint, toneColor } from './colors';
 import { Dot } from './parts';
 import type { PanelActions } from './types';
@@ -143,7 +143,7 @@ export function LineList({ lines, actions, links, lead, testId }: LineListProps)
             </Box>
             {fix ? (
               links[fix.action] ? (
-                <Link underline='hover' aria-label={fix.name} {...newTab(links[fix.action])} sx={FIX_SX}>
+                <Link underline='hover' aria-label={fix.name} {...pageLink(links[fix.action])} sx={FIX_SX}>
                   {fix.label}
                 </Link>
               ) : (

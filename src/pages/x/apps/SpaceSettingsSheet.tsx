@@ -54,6 +54,7 @@
  * because only one Discard button ever exists in the DOM at a time (the
  * BottomBar renders one branch or the other, never both).
  */
+import { useLeaveGuard } from '@/components/trail/LeaveGuard';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
 
 import Box from '@mui/material/Box';
@@ -202,6 +203,7 @@ export const SpaceSettingsSheet = forwardRef<SpaceSettingsSheetHandle, SpaceSett
   const dirtyFlags = [isVariantDirty, isLabelsDirty, isAnnotationsDirty, isReleaseTargetDirty];
   const isDirty = dirtyFlags.some(Boolean);
   const dirtyCount = dirtyFlags.filter(Boolean).length;
+  useLeaveGuard(isDirty);
 
   // Report dirtiness up so the parent can guard the close routes it owns
   // (cog toggle, node switch) — see the prop's JSDoc. Effect, not inline
@@ -399,8 +401,7 @@ export const SpaceSettingsSheet = forwardRef<SpaceSettingsSheetHandle, SpaceSett
         {space?.BackingUnitID ? (
           <Box sx={{ padding: '8px 16px', borderTop: `1px solid ${componentTheme.borderSubtle}` }} data-testid='space-settings-backing-unit'>
             <Typography sx={{ fontSize: 12, fontWeight: 650, color: componentTheme.fgDefault, mb: 0.6 }}>Backing Unit</Typography>
-            {/* The side pane holds work in progress, so the Unit opens in a new tab. */}
-            <BackingUnitLink backingUnitId={space.BackingUnitID} newTab />
+            <BackingUnitLink backingUnitId={space.BackingUnitID} />
           </Box>
         ) : null}
 

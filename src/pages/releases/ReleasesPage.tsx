@@ -143,7 +143,6 @@ export default function ReleasesPage() {
   return (
     <Box sx={{ width: '100%' }}>
       <Header
-        breadCrumbs={[{ name: 'Releases' }]}
         actions={
           <Select
             size='small'

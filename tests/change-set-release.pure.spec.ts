@@ -43,7 +43,7 @@ test('a refusal says why, naming the Unit and the items', () => {
     body: {
       Message: 'legacy text',
       Error: {
-        Message: 'outstanding ValidationErrors; triggers re-queued for evaluation',
+        Message: 'outstanding ValidationErrors',
         ErrorMetadata: {
           EntityType: 'Unit',
           EntitySlug: 'web',
@@ -55,7 +55,7 @@ test('a refusal says why, naming the Unit and the items', () => {
   expect(status).toEqual({
     kind: 'refused',
     message:
-      'Unit web: outstanding ValidationErrors; triggers re-queued for evaluation (Validation Errors: no-latest)',
+      'Unit web: outstanding ValidationErrors (Validation Errors: no-latest)',
   });
 });
 

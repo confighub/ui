@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import type { CSSProperties, KeyboardEvent, MouseEvent, ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
 
 import { NavLink } from '@/components/nav-link/NavLink';
 
@@ -10,7 +9,6 @@ import { getAdapter } from '../adapters';
 import type { GroupNavRow } from '../cell-value';
 import type { EntityRow } from '../model/fields';
 import type { EntityKind } from '../model/types';
-import { withExplorerReturn } from './explorer-link';
 
 interface ExplorerRowLinkProps {
   entity: EntityKind;
@@ -39,13 +37,11 @@ interface ExplorerRowLinkProps {
  * as they are.
  */
 export function ExplorerRowLink({ entity, row, onOpen, onRangePick, openOnSpace, className, style, children, ...rest }: ExplorerRowLinkProps) {
-  const { search } = useLocation();
   const href = getAdapter(entity).getRowHref(row as GroupNavRow);
   if (!href) return <>{children}</>;
   return (
     <NavLink
-      // The page it opens offers a way back to this tab.
-      to={withExplorerReturn(href, search)}
+      to={href}
       className={className}
       style={style}
       data-testid={rest['data-testid']}

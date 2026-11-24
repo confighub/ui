@@ -43,7 +43,6 @@ import { useSaveFlow } from './tabs/useSaveFlow';
  * that is saved, saved as new, or discarded from the toolbar.
  */
 
-const BREADCRUMBS = [{ name: 'View explorer' }];
 
 function HeaderActions() {
   const { views, state } = useExplorerContext();
@@ -94,7 +93,7 @@ function ExplorerBody() {
   const activeId = useExplorerContext().state.activeId;
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', minHeight: 0 }}>
-      <Header breadCrumbs={BREADCRUMBS} actions={<HeaderActions />} />
+      <Header actions={<HeaderActions />} />
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', px: 2.5, pb: 2 }}>
         <TabStrip />
         <ResultsProvider>
@@ -155,7 +154,6 @@ export default function ViewExplorerPage() {
   if (isLoading || isError) {
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-        <Header breadCrumbs={BREADCRUMBS} />
         <Box sx={{ px: 2.5, pt: 1 }}>
           {isError ? (
             <Alert severity='error' action={<Button size='small' onClick={() => void refetch()}>Retry</Button>}>

@@ -852,8 +852,6 @@ export function AttributeValueTreeComparison({
                 {unitTree.unitId && unitTree.spaceId ? (
                   <UnitSlug
                     href={`/units/${unitTree.spaceId}/${unitTree.unitId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
                   >
                     {unitSlug}

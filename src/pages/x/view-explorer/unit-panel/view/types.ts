@@ -65,7 +65,7 @@ export interface UnitPanelModel {
   /** Open another Unit of the view, showing it in the table. */
   onGoTo: (id: string) => void;
   actions: PanelActions;
-  /** The actions that go to another page, by where they go: drawn as links that open a new browser tab. */
+  /** The actions that go to another page, by where they go: drawn as links. */
   links: PanelLinks;
   /** The read of the Unit's own details. */
   details: {

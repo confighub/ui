@@ -40,8 +40,6 @@ function Link({ href, children }: { href: string; children: React.ReactNode }) {
     <Box
       component="a"
       href={href}
-      target="_blank"
-      rel="noopener noreferrer"
       sx={{ color: 'inherit', textDecoration: 'underline', textDecorationColor: changeOrderBorder.strong }}
     >
       {children}
@@ -117,8 +115,7 @@ export function InvocationSourceDetails({ source, extraRows }: InvocationSourceD
       </InvocationSourceRow>
       {source.backingUnitId !== undefined ? (
         <InvocationSourceRow term="Backing Unit">
-          {/* A ChangeOrder page holds work in progress, so the Unit opens in a new tab. */}
-          <BackingUnitLink backingUnitId={source.backingUnitId} newTab />
+          <BackingUnitLink backingUnitId={source.backingUnitId} />
         </InvocationSourceRow>
       ) : null}
       <InvocationSourceRow term="Parameters">

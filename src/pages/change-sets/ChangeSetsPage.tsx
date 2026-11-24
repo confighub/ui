@@ -11,7 +11,6 @@ import { useParams } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
 import Snackbar from '@mui/material/Snackbar';
-import { Header, type HeaderProps } from '@/components/header/Header';
 
 import { changeOrderFontSans, changeOrderInk, changeOrderStatus, changeOrderSurface, changeOrderType } from '../change-orders/changeOrdersTokens';
 import { AllChangeSetsLink, ChangeSetDetailView } from './ChangeSetDetailView';
@@ -48,10 +47,6 @@ function ChangeSetPage({ space, slug, onNotice }: { space: string; slug?: string
 export default function ChangeSetsPage() {
   const { space, slug } = useParams<{ space?: string; slug?: string }>();
   const [notice, setNotice] = useState<string | null>(null);
-  const breadCrumbs: HeaderProps['breadCrumbs'] =
-    space === undefined || space === ''
-      ? [{ name: 'ChangeSets' }]
-      : [{ name: 'ChangeSets', isLink: true, link: '/change-sets' }, ...(slug ? [{ name: slug }] : [])];
   return (
     <Box
       data-testid="change-sets-root"
@@ -67,9 +62,6 @@ export default function ChangeSetsPage() {
         fontSize: changeOrderType.size.body,
       }}
     >
-      <div>
-        <Header breadCrumbs={breadCrumbs} />
-      </div>
       {space === undefined || space === '' ? <ChangeSetList /> : <ChangeSetPage space={space} slug={slug} onNotice={setNotice} />}
       <Snackbar
         open={notice !== null}

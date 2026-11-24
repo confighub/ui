@@ -1,10 +1,11 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import { Suspense, lazy } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, RouteObject } from 'react-router-dom';
 
 import { AuthenticatedContextProvider } from './components/authenticated-context/AuthenticatedContext';
 import { Loader } from './components/loader/Loader';
+import { CrumbHandle, crumbs } from './components/trail/crumbs';
 import './index.css';
 import { FallbackPage } from './pages/fallback/FallbackPage';
 import { Layout } from './pages/layout/Layout';
@@ -88,13 +89,16 @@ const routes = [
         <Layout />
       </AuthenticatedContextProvider>
     ),
+    // Each page under Layout says what it puts in the trail, so the type requires a `handle`.
     children: [
       {
         index: true,
+        handle: { crumb: crumbs.none },
         element: <Navigate to='/components' replace />,
       },
       {
         path: '/spaces',
+        handle: { crumb: crumbs.spaces },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <SpacesListPage />
@@ -103,6 +107,7 @@ const routes = [
       },
       {
         path: '/units',
+        handle: { crumb: crumbs.units },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <UnitListPage />
@@ -111,6 +116,7 @@ const routes = [
       },
       {
         path: '/spaces/:id?',
+        handle: { crumb: crumbs.space },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <SpaceDetailPage />
@@ -119,6 +125,7 @@ const routes = [
       },
       {
         path: '/units/:spaceID/:id',
+        handle: { crumb: crumbs.unit },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <UnitDetailPage />
@@ -127,6 +134,7 @@ const routes = [
       },
       {
         path: '/functions/:name',
+        handle: { crumb: crumbs.func },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <FunctionListPage />
@@ -135,6 +143,7 @@ const routes = [
       },
       {
         path: '/targets',
+        handle: { crumb: crumbs.targets },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <TargetListPage />
@@ -143,6 +152,7 @@ const routes = [
       },
       {
         path: '/triggers',
+        handle: { crumb: crumbs.triggers },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <TriggerListPage />
@@ -151,6 +161,7 @@ const routes = [
       },
       {
         path: '/links',
+        handle: { crumb: crumbs.links },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <LinkListPage />
@@ -159,6 +170,7 @@ const routes = [
       },
       {
         path: '/function-browser',
+        handle: { crumb: crumbs.functionBrowser },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <FunctionBrowserPage />
@@ -167,6 +179,7 @@ const routes = [
       },
       {
         path: '/components',
+        handle: { crumb: crumbs.components },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <AppsComponentPage />
@@ -176,6 +189,7 @@ const routes = [
       {
         // A static segment, so it ranks above the optional ones below: the draft of a new ChangeOrder.
         path: '/change-orders/new',
+        handle: { crumb: crumbs.changeOrderDraft },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <ChangeOrderDraftPage />
@@ -184,6 +198,7 @@ const routes = [
       },
       {
         path: '/change-orders/:space?/:slug?/:stage?',
+        handle: { crumb: crumbs.changeOrder },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <ChangeOrdersPage />
@@ -193,6 +208,7 @@ const routes = [
       {
         // A sibling of /change-orders rather than nested in it: its optional :space would take the segment.
         path: '/change-sets/:space?/:slug?',
+        handle: { crumb: crumbs.changeSet },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <ChangeSetsPage />
@@ -202,6 +218,7 @@ const routes = [
       {
         // The page's earlier address. Links to it are still in bookmarks and history.
         path: '/rollouts/:slug?/:stage?',
+        handle: { crumb: crumbs.none },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <ChangeOrdersOldRouteRedirect />
@@ -211,6 +228,7 @@ const routes = [
       {
         // Not under /targets, the Target list, so the top bar marks only one of them as the current page.
         path: '/target-overview',
+        handle: { crumb: crumbs.targetOverview },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <TargetOverviewPage />
@@ -219,6 +237,7 @@ const routes = [
       },
       {
         path: '/service-accounts/:slug?',
+        handle: { crumb: crumbs.serviceAccount },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <ServiceAccountsPage />
@@ -228,6 +247,7 @@ const routes = [
       {
         // A Channel belongs to a Space, so its address names both.
         path: '/channels/:space?/:slug?',
+        handle: { crumb: crumbs.channel },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <ChannelsPage />
@@ -236,6 +256,7 @@ const routes = [
       },
       {
         path: '/releases',
+        handle: { crumb: crumbs.releases },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <ReleasesPage />
@@ -244,6 +265,7 @@ const routes = [
       },
       {
         path: '/diff',
+        handle: { crumb: crumbs.diff },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <ChangeReviewPage />
@@ -252,6 +274,7 @@ const routes = [
       },
       {
         path: '/x/view-explorer',
+        handle: { crumb: crumbs.viewExplorer },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <ViewExplorerPage />
@@ -260,6 +283,7 @@ const routes = [
       },
       {
         path: '/x/resource-explorer',
+        handle: { crumb: crumbs.resourceExplorer },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <ResourceExplorerPage />
@@ -268,6 +292,7 @@ const routes = [
       },
       {
         path: '/validation',
+        handle: { crumb: crumbs.validation },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <InitiativesPage />
@@ -276,6 +301,7 @@ const routes = [
       },
       {
         path: '/validation/:triggerId',
+        handle: { crumb: crumbs.validation },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <InitiativesPage />
@@ -285,6 +311,7 @@ const routes = [
       {
         // The page's former place, when it tracked initiatives stored in Views.
         path: '/x/initiatives/*',
+        handle: { crumb: crumbs.none },
         element: <Navigate to='/validation' replace />,
       },
       {
@@ -292,6 +319,7 @@ const routes = [
         // An id belongs in the path because it says which workflow the page is
         // about, where a query string would say how to look at some other subject.
         path: '/change-workflows',
+        handle: { crumb: crumbs.changeWorkflows },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <WorkflowBuilderPage />
@@ -300,6 +328,7 @@ const routes = [
       },
       {
         path: '/change-workflows/:changeWorkflowId',
+        handle: { crumb: crumbs.changeWorkflow },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <WorkflowBuilderPage />
@@ -309,6 +338,7 @@ const routes = [
       {
         // The page's earlier address. Links to it are still in bookmarks and history.
         path: '/x/workflow-builder/:changeWorkflowId?',
+        handle: { crumb: crumbs.none },
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <WorkflowBuilderOldRouteRedirect />
@@ -317,9 +347,10 @@ const routes = [
       },
       {
         path: '*',
+        handle: { crumb: crumbs.none },
         element: <Navigate to='/' />,
       },
-    ],
+    ] satisfies Array<RouteObject & { handle: CrumbHandle }>,
   },
 ];
 

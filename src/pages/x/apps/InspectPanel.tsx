@@ -498,8 +498,6 @@ export const InspectPanel = memo(({
                 <Box
                   component="a"
                   href={`/units/${spaceId}/${unitId}?revisionViewer=true&revision=${entry.revisionNum}&viewMode=single&tab=2`}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   sx={{
                     flex: 1,
                     minWidth: 0,
@@ -669,8 +667,6 @@ export const InspectPanel = memo(({
                         <Box
                           component="a"
                           href={`/units/${upgradeSourceSpaceId}/${upgradeSourceUnitId}?revisionViewer=true&revision=${upgradeRevisionNum}&viewMode=single&tab=2`}
-                          target="_blank"
-                          rel="noopener noreferrer"
                           sx={{
                             fontFamily: componentTheme.fontMono,
                             fontSize: 9,

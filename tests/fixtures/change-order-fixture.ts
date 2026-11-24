@@ -1370,7 +1370,7 @@ export async function buildChangeOrderFixture(
           // first attempt right after a promote reliably loses a race with the
           // trigger evaluator:
           //
-          //   422 outstanding ValidationErrors; triggers re-queued for evaluation
+          //   422 outstanding ValidationErrors
           //
           // That is the gates working, not a failure, so wait for them rather
           // than treating it as one. Anything else fails immediately: a real

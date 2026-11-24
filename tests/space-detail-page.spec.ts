@@ -65,7 +65,7 @@ test.describe('space detail page', () => {
     await spaceListPage.goToSpaceDetailPageByName(spaceName);
     await spaceDetailPage.editSpace(spaceName);
 
-    await spaceDetailPage.expectToBeVisibleByLabel('breadcrumb', spaceName);
+    await spaceDetailPage.expectToBeVisibleByLabel('Trail', spaceName);
   });
 
   test('should add a trigger', async ({ page }) => {

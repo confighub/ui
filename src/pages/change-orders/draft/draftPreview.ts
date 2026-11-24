@@ -273,7 +273,7 @@ function sourcesOf(
     if (unit.upstreamUnitId === undefined) return unchanged();
     // Its upstream is not in the base: it takes from a Space that has not taken the change yet.
     if (range === undefined) return undetermined();
-    if (range.carry === 'unknown' || range.carry === 'disagrees') return undetermined();
+    if (range.carry === 'unknown') return undetermined();
     // Every other carry is a Unit the change positively does not write.
     if (range.carry !== 'carries') return unchanged();
     const data = preview.dataByUnitId.get(unit.unitId);
@@ -522,7 +522,7 @@ export function undeterminedSpaceIdsOf(input: {
   for (const unit of units) {
     if (unit.upstreamUnitId === undefined) continue;
     const range = rangeByBaseUnitId.get(unit.upstreamUnitId);
-    if (range === undefined || range.carry === 'disagrees' || range.carry === 'unknown') {
+    if (range === undefined || range.carry === 'unknown') {
       spaces.add(unit.spaceId);
       continue;
     }

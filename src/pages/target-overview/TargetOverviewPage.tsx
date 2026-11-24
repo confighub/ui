@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 import { useCallback, useMemo, useState } from 'react';
 
-import { Header } from '@/components/header/Header';
 import { RELEASE_DETAILS_INCLUDE } from '@/hooks/chunkedQueriesApi';
 import { useComponentSlugs } from '@/hooks/useComponentSlugs';
 import { usePolling } from '@/hooks/usePolling';
@@ -99,7 +98,6 @@ export default function TargetOverviewPage() {
 
   return (
     <Box sx={{ width: '100%' }}>
-      <Header breadCrumbs={[{ name: 'Targets' }]} />
       <Box sx={{ p: 3 }}>
         {!loading && !error && matrix.rows.length > 0 && (
           <Typography variant='body2' color='text.secondary' sx={{ mb: 1.5 }}>
