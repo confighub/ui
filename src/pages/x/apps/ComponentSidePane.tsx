@@ -17,6 +17,7 @@ import CallSplitIcon from '@mui/icons-material/CallSplit';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CloseIcon from '@mui/icons-material/Close';
 import DataObjectIcon from '@mui/icons-material/DataObject';
+import DeviceHubIcon from '@mui/icons-material/DeviceHub';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import SearchIcon from '@mui/icons-material/Search';
@@ -42,6 +43,8 @@ import { Link as RouterLink } from 'react-router-dom';
 import { unitOffersOverview } from '@/components/resource-overview/overviewAvailability';
 import { useUnitMutationSourcesMap } from '@/hooks/useUnitData';
 
+import { deliveriesOf, deliveryHref } from '../../delivery/deliveryGraph';
+import { useDeliveryResources } from '../../delivery/useDeliveryResources';
 import type { FieldPathMeta } from './configParser';
 import { ComponentToolbar } from './ComponentToolbar';
 import { CompareCollapsible } from './compare/CompareCollapsible';
@@ -835,14 +838,28 @@ export const ComponentSidePane = memo(
       const id = selectedDeploymentIds.values().next().value;
       return id ? deploymentMap.get(id) : undefined;
     }, [selectedDeploymentIds, deploymentMap]);
-    // The Unit that deploys the selected Space through its cluster's
-    // controller. The annotation carries only its ID, and the Unit's page is
-    // keyed by its Space too, so read that.
-    const clusterUnitId = selectedDeployment?.clusterUnitId;
-    const { clusterUnit } = useListAllUnitsQuery(
+    // The Unit that delivers the selected Space: the one holding the Argo CD Application, Flux
+    // Kustomization or Sveltos Profile whose source is this Space's Release, read from the
+    // resources themselves, as the GitOps page reads them. `cub` also records the Unit it
+    // created in the ClusterUnitID annotation, which is the fallback: it carries only the
+    // Unit's ID, and the Unit's page is keyed by its Space too, so that one is read.
+    const { resources: deliveryResources } = useDeliveryResources({ skip: !selectedDeployment });
+    const delivery = useMemo(() => {
+      if (!selectedDeployment || !deliveryResources) return undefined;
+      const self = [{ spaceId: selectedDeployment.deploymentId, slug: selectedDeployment.slug }];
+      return deliveriesOf(deliveryResources, self).find(
+        (d) => d.toSpaceId === selectedDeployment.deploymentId && d.fromSpaceId !== selectedDeployment.deploymentId,
+      );
+    }, [selectedDeployment, deliveryResources]);
+    const clusterUnitId = delivery ? undefined : selectedDeployment?.clusterUnitId;
+    const { annotatedUnit } = useListAllUnitsQuery(
       { where: `UnitID = '${clusterUnitId}'`, select: 'UnitID,SpaceID,Slug' },
-      { skip: !clusterUnitId, selectFromResult: ({ data }) => ({ clusterUnit: data?.[0]?.Unit }) },
+      { skip: !clusterUnitId, selectFromResult: ({ data }) => ({ annotatedUnit: data?.[0]?.Unit }) },
     );
+    const clusterUnit = delivery
+      ? { SpaceID: delivery.fromSpaceId, UnitID: delivery.unitId, Slug: delivery.unitSlug ?? delivery.name }
+      : annotatedUnit;
+    const deliveryPath = delivery && selectedDeployment ? deliveryHref(selectedDeployment.slug) : undefined;
     const headerTargets = selectedDeployment?.targets ?? [];
     const clusterUnitPath =
       clusterUnit?.SpaceID && clusterUnit.UnitID ? `/units/${clusterUnit.SpaceID}/${clusterUnit.UnitID}` : undefined;
@@ -2265,6 +2282,20 @@ export const ComponentSidePane = memo(
                   <span className='header-chip-label'>{label}</span>
                 </Box>
               ),
+            )}
+            {deliveryPath && (
+              <Tooltip title='Show what deploys this Variant' placement='top'>
+                <Link
+                  component={RouterLink}
+                  to={deliveryPath}
+                  underline='none'
+                  data-testid='component-side-pane-delivery'
+                  sx={headerLinkChipSx}
+                >
+                  <DeviceHubIcon sx={{ fontSize: 13 }} />
+                  <span className='header-chip-label'>GitOps</span>
+                </Link>
+              </Tooltip>
             )}
             {clusterUnitPath && (
               <Tooltip title={`Open ${clusterUnit?.Slug}, the Unit that deploys this Space`} placement='top'>

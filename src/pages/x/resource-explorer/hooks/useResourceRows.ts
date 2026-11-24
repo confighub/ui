@@ -9,6 +9,7 @@ import {
   useLazyListAllUnitsQuery,
 } from '@confighub/rtk-query';
 import { type SelectorMatch, selectorMatchParams } from '../selectorMatch';
+import type { ResourceRevision } from '../types';
 import { getApiErrorMessage } from '@/utility/error-functions';
 
 /**
@@ -19,8 +20,13 @@ import { getApiErrorMessage } from '@/utility/error-functions';
 export interface ResourceRow {
   /** Stable id for the DataGrid row. */
   id: string;
-  /** Identifies the resource to the API, which is how the drawer fetches its body. */
+  /**
+   * Identifies the resource to the API, which is how the drawer fetches its body. A resource of
+   * the head and of the last Release has a ResourceID for each.
+   */
   ResourceID: string;
+  /** The Revision of its Unit this is a resource of: what the drawer reads its body from. */
+  revision: ResourceRevision;
   ResourceType: string;
   ResourceName: string;
   UnitID: string;
@@ -81,6 +87,8 @@ export interface UseResourceRowsResult {
     resourceType: string;
     /** Narrows the read to what one resource's selector selects, or to what selects it. */
     selectorMatch?: SelectorMatch;
+    /** Which Revision of each Unit to list the resources of. Absent for the head. */
+    revision?: ResourceRevision;
     /**
      * When true, fetch the resource documents so that resource-path columns
      * can extract values client-side. They are bulk, so the page only opts in
@@ -138,12 +146,14 @@ export function useResourceRows(): UseResourceRowsResult {
       whereData,
       resourceType,
       selectorMatch,
+      revision = 'HeadRevisionNum',
       needBody,
     }: {
       where: string;
       whereData: string;
       resourceType: string;
       selectorMatch?: SelectorMatch;
+      revision?: ResourceRevision;
       needBody: boolean;
     }) => {
       const callId = ++callIdRef.current;
@@ -154,6 +164,7 @@ export function useResourceRows(): UseResourceRowsResult {
         const resourceResult = await triggerListResources({
           where: resourceWhere || undefined,
           ...selectorMatchParams(selectorMatch),
+          revision: revision === 'HeadRevisionNum' ? undefined : revision,
           select: needBody ? `${RESOURCE_SELECT},Data` : RESOURCE_SELECT,
         });
 
@@ -201,6 +212,7 @@ export function useResourceRows(): UseResourceRowsResult {
             // nothing appended to it.
             id: resource.ResourceID ?? `${unitId}:${resource.ResourceIndex ?? 0}`,
             ResourceID: resource.ResourceID ?? '',
+            revision,
             ResourceType: resource.ResourceType ?? '',
             ResourceName: resource.ResourceName ?? '',
             UnitID: unitId,

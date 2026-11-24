@@ -62,9 +62,10 @@ import {
   TransformPathsCard,
   WritesCard,
 } from './LinkFormSections';
-import { bindingRows } from './linkFormat';
+import { bindingRows, linkSkipsRevisions } from './linkFormat';
 import { ListTable } from './LinkTables';
 import { MakeCurrentDialog } from './MakeCurrentDialog';
+import { SkippedRevisionsCard } from './SkippedRevisionsCard';
 
 
 /**
@@ -365,6 +366,17 @@ function LinkForm({
         </Stack>
       </SectionCard>
 
+      {link && extendedLink && linkSkipsRevisions(link) && (
+        <SkippedRevisionsCard
+          link={link}
+          toName={unitName(extendedLink.ToSpace?.Slug, extendedLink.ToUnit?.Slug)}
+          dirty={formState.isDirty}
+          onDone={(message) => {
+            dispatch(setAlert({ message, type: 'success', isOpen: true }));
+            onChanged?.();
+          }}
+        />
+      )}
       <ResolveCard
         control={control}
         takes={takes}

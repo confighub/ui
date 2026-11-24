@@ -7,6 +7,7 @@ import { AuthenticatedContextProvider } from './components/authenticated-context
 import { Loader } from './components/loader/Loader';
 import { CrumbHandle, crumbs } from './components/trail/crumbs';
 import './index.css';
+import DeliveryOldRouteRedirect from './pages/delivery/DeliveryOldRouteRedirect';
 import { FallbackPage } from './pages/fallback/FallbackPage';
 import { Layout } from './pages/layout/Layout';
 
@@ -25,6 +26,7 @@ const ChangeOrdersPage = lazy(() => import('./pages/change-orders/ChangeOrdersPa
 const ChangeOrderDraftPage = lazy(() => import('./pages/change-orders/draft/ChangeOrderDraftPage'));
 const ReleasesPage = lazy(() => import('./pages/releases/ReleasesPage'));
 const TargetOverviewPage = lazy(() => import('./pages/target-overview/TargetOverviewPage'));
+const DeliveryPage = lazy(() => import('./pages/delivery/DeliveryPage'));
 const ServiceAccountsPage = lazy(() => import('./pages/service-accounts/ServiceAccountsPage'));
 const ChannelsPage = lazy(() => import('./pages/channels/ChannelsPage'));
 const ChangeOrdersOldRouteRedirect = lazy(() => import('./pages/change-orders/OldRouteRedirect'));
@@ -234,6 +236,21 @@ const routes = [
             <TargetOverviewPage />
           </Suspense>
         ),
+      },
+      {
+        path: '/gitops',
+        handle: { crumb: crumbs.gitops },
+        element: (
+          <Suspense fallback={<Loader isLoading={true} />}>
+            <DeliveryPage />
+          </Suspense>
+        ),
+      },
+      {
+        // The page's earlier address.
+        path: '/delivery',
+        handle: { crumb: crumbs.none },
+        element: <DeliveryOldRouteRedirect />,
       },
       {
         path: '/service-accounts/:slug?',

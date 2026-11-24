@@ -13,6 +13,7 @@ import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import DataObjectIcon from '@mui/icons-material/DataObject';
+import DeviceHubIcon from '@mui/icons-material/DeviceHub';
 import DifferenceIcon from '@mui/icons-material/Difference';
 import EastIcon from '@mui/icons-material/East';
 import FlashOnOutlinedIcon from '@mui/icons-material/FlashOnOutlined';
@@ -58,6 +59,7 @@ const KIND_ICON: Record<CrumbKind, React.ComponentType<SvgIconProps>> = {
   space: FolderCopyIcon,
   unit: DataObjectIcon,
   target: StorageIcon,
+  gitops: DeviceHubIcon,
   trigger: FlashOnOutlinedIcon,
   link: LinkIcon,
   function: FunctionsIcon,
@@ -78,6 +80,7 @@ const KIND_NAME: Record<CrumbKind, string> = {
   space: 'Space',
   unit: 'Unit',
   target: 'Target',
+  gitops: 'GitOps',
   trigger: 'Trigger',
   link: 'Link',
   function: 'Function',

@@ -15,6 +15,8 @@ import Snackbar from '@mui/material/Snackbar';
 import Stack from '@mui/material/Stack';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 
@@ -27,6 +29,7 @@ import { ResourceRow, useResourceRows } from './hooks/useResourceRows';
 import {
   DEFAULT_VIEW,
   ResourceColumn,
+  type ResourceRevision,
   ResourceView,
   URL_PARAM,
   decodeView,
@@ -87,9 +90,18 @@ export default function ResourceExplorerPage() {
       whereData: applied.whereData ?? '',
       resourceType: applied.resourceType ?? '',
       selectorMatch: applied.selectorMatch,
+      revision: applied.revision,
       needBody,
     });
-  }, [refetch, applied.where, applied.whereData, applied.resourceType, applied.selectorMatch, needBody]);
+  }, [
+    refetch,
+    applied.where,
+    applied.whereData,
+    applied.resourceType,
+    applied.selectorMatch,
+    applied.revision,
+    needBody,
+  ]);
 
   const applyView = useCallback(
     (view: ResourceView) => {
@@ -125,6 +137,17 @@ export default function ResourceExplorerPage() {
     [applied, applyView],
   );
 
+  // Which Revision is read applies at once, as the selector match does.
+  const setRevision = useCallback(
+    (revision: ResourceRevision) => {
+      const next = revision === 'HeadRevisionNum' ? undefined : revision;
+      setDraft((current) => ({ ...current, revision: next }));
+      applyView({ ...applied, revision: next });
+      setSelectedRow(null);
+    },
+    [applied, applyView],
+  );
+
   const handleReset = useCallback(() => {
     setDraft(applied);
   }, [applied]);
@@ -135,9 +158,18 @@ export default function ResourceExplorerPage() {
       whereData: applied.whereData ?? '',
       resourceType: applied.resourceType ?? '',
       selectorMatch: applied.selectorMatch,
+      revision: applied.revision,
       needBody,
     });
-  }, [refetch, applied.where, applied.whereData, applied.resourceType, applied.selectorMatch, needBody]);
+  }, [
+    refetch,
+    applied.where,
+    applied.whereData,
+    applied.resourceType,
+    applied.selectorMatch,
+    applied.revision,
+    needBody,
+  ]);
 
   const handleCopyShareLink = useCallback(() => {
     const url = new URL(window.location.href);
@@ -277,13 +309,42 @@ export default function ResourceExplorerPage() {
             spacing={1}
             mb={1.5}
           >
-            <Typography variant='subtitle2' color='text.secondary'>
-              {isLoading
-                ? 'Loading…'
-                : `${filteredRows.length} resource${filteredRows.length !== 1 ? 's' : ''}${
-                    filteredRows.length !== rows.length ? ` of ${rows.length}` : ''
-                  }`}
-            </Typography>
+            <Stack direction='row' alignItems='center' spacing={1.5}>
+              <ToggleButtonGroup
+                size='small'
+                exclusive
+                value={applied.revision ?? 'HeadRevisionNum'}
+                onChange={(_, next: ResourceRevision | null) => {
+                  if (next) setRevision(next);
+                }}
+                aria-label='Revision'
+                data-testid='resource-explorer-revision'
+              >
+                <Tooltip title={"The resources of each Unit's latest Revision"}>
+                  <ToggleButton
+                    value='HeadRevisionNum'
+                    sx={{ textTransform: 'none', py: 0.25, px: 1.25 }}
+                  >
+                    Head
+                  </ToggleButton>
+                </Tooltip>
+                <Tooltip title='The resources that the last Release of each Unit published. A Unit with no Release has none.'>
+                  <ToggleButton
+                    value='LastReleasedRevisionNum'
+                    sx={{ textTransform: 'none', py: 0.25, px: 1.25 }}
+                  >
+                    Last release
+                  </ToggleButton>
+                </Tooltip>
+              </ToggleButtonGroup>
+              <Typography variant='subtitle2' color='text.secondary'>
+                {isLoading
+                  ? 'Loading…'
+                  : `${filteredRows.length} resource${filteredRows.length !== 1 ? 's' : ''}${
+                      filteredRows.length !== rows.length ? ` of ${rows.length}` : ''
+                    }`}
+              </Typography>
+            </Stack>
             <Stack direction='row' alignItems='center' spacing={0.5}>
               <Button
                 size='small'

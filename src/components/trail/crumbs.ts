@@ -38,6 +38,8 @@ export const crumbs = {
   functionBrowser: fixed('/function-browser', 'function', 'Functions'),
   targets: fixed('/targets', 'target', 'Target list'),
   targetOverview: fixed('/target-overview', 'target', 'Targets'),
+  // The selected Space is left out: the page is one page, and its crumb returns to the Space last selected.
+  gitops: fixed('/gitops', 'gitops', 'GitOps'),
   triggers: fixed('/triggers', 'trigger', 'Triggers'),
   links: fixed('/links', 'link', 'Links'),
   releases: fixed('/releases', 'release', 'Releases'),

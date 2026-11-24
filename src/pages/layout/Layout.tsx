@@ -27,6 +27,7 @@ import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import DataObjectIcon from '@mui/icons-material/DataObject';
+import DeviceHubIcon from '@mui/icons-material/DeviceHub';
 import DifferenceIcon from '@mui/icons-material/Difference';
 import ExploreIcon from '@mui/icons-material/Explore';
 import FlashOnOutlinedIcon from '@mui/icons-material/FlashOnOutlined';
@@ -357,6 +358,12 @@ const ConfigurationItems: INavItem[] = [
         text: 'Resources',
         component: <ViewListIcon sx={{ fontSize: 18 }} />,
         navigate: `/x/resource-explorer`,
+        disable: false,
+      },
+      {
+        text: 'GitOps',
+        component: <DeviceHubIcon sx={{ fontSize: 18 }} />,
+        navigate: `/gitops`,
         disable: false,
       },
       {

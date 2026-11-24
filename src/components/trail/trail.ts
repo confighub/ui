@@ -14,6 +14,7 @@ export type CrumbKind =
   | 'space'
   | 'unit'
   | 'target'
+  | 'gitops'
   | 'trigger'
   | 'link'
   | 'function'

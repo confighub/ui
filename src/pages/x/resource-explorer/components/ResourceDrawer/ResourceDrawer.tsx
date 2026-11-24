@@ -67,6 +67,9 @@ export function ResourceDrawer({ row, onClose, onSelectorMatch }: ResourceDrawer
       setBody({ yaml: null, loading: true, error: null });
       const result = await triggerListResources({
         where: `ResourceID = '${target.ResourceID}'`,
+        // The list reads the head's resources unless told otherwise, and a resource of the last
+        // Release has a ResourceID of its own.
+        revision: target.revision === 'HeadRevisionNum' ? undefined : target.revision,
         rawData: true,
         select: 'ResourceID',
       });
@@ -82,7 +85,10 @@ export function ResourceDrawer({ row, onClose, onSelectorMatch }: ResourceDrawer
         setBody({
           yaml: null,
           loading: false,
-          error: 'Resource not found in the current Unit data.',
+          error:
+            target.revision === 'HeadRevisionNum'
+              ? 'Resource not found in the current Unit data.'
+              : 'Resource not found in the last released Unit data.',
         });
         return;
       }
@@ -149,6 +155,20 @@ export function ResourceDrawer({ row, onClose, onSelectorMatch }: ResourceDrawer
               >
                 {row.ResourceType}
               </Typography>
+              {row.revision === 'LastReleasedRevisionNum' && (
+                <Typography
+                  variant='caption'
+                  color='text.secondary'
+                  component='div'
+                  data-testid='resource-drawer-revision'
+                  // The caption variant would capitalize it.
+                  sx={{ textTransform: 'none' }}
+                >
+                  {row.LastReleasedRevisionNum === undefined
+                    ? 'Last release'
+                    : `Last release, Revision ${row.LastReleasedRevisionNum}`}
+                </Typography>
+              )}
             </Box>
             <IconButton size='small' onClick={onClose} aria-label='Close drawer'>
               <CloseIcon fontSize='small' />

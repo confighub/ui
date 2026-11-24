@@ -35,6 +35,15 @@ export interface ResourceColumn {
   key: string;
 }
 
+/**
+ * Which Revision of each Unit the explorer lists the resources of: the head (the default), or
+ * the one the last Release published.
+ */
+export type ResourceRevision = 'HeadRevisionNum' | 'LastReleasedRevisionNum';
+
+const isResourceRevision = (value: unknown): value is ResourceRevision =>
+  value === 'HeadRevisionNum' || value === 'LastReleasedRevisionNum';
+
 /** Frontend-only view definition. JSON-serialized into the URL. */
 export interface ResourceView {
   name?: string;
@@ -56,6 +65,8 @@ export interface ResourceView {
   resourceType?: string;
   /** Narrows the view to what one resource's selector selects, or to what selects it. */
   selectorMatch?: SelectorMatch;
+  /** Absent for the head. */
+  revision?: ResourceRevision;
   columns: ResourceColumn[];
   /** Column name to sort by. Empty = no explicit sort. */
   orderBy?: string;
@@ -168,6 +179,10 @@ export function decodeView(encoded: string | null | undefined): ResourceView {
       whereData: parsed.whereData,
       resourceType: parsed.resourceType,
       selectorMatch: isSelectorMatch(parsed.selectorMatch) ? parsed.selectorMatch : undefined,
+      revision:
+        isResourceRevision(parsed.revision) && parsed.revision !== 'HeadRevisionNum'
+          ? parsed.revision
+          : undefined,
       columns: parsed.columns.filter(isValidColumn),
       orderBy: parsed.orderBy,
       orderByDirection: parsed.orderByDirection === 'DESC' ? 'DESC' : 'ASC',

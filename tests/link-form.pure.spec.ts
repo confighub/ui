@@ -12,6 +12,7 @@ import {
   linkTypeFields,
   referencedParameters,
 } from '../src/pages/unit-detail/components/link-drawer/linkForm';
+import { linkSkipsRevisions, runSelector } from '../src/pages/unit-detail/components/link-drawer/linkFormat';
 import { guardsNotCleared } from '../src/utility/clearance-functions';
 
 const stored = (overrides: Partial<LinkRead>): LinkRead => ({
@@ -248,4 +249,13 @@ test('guards a clearance does not cover are found as the server finds them', () 
     ]),
   ).toEqual([{ Key: 'owner', Value: 'transform-link', Precondition: true }]);
   expect(guardsNotCleared({}, [])).toEqual([]);
+});
+
+test('a skipped run is named to the server as one revision, or as the range after the one before it', () => {
+  expect(runSelector({ FromRevisionNum: 5, ToRevisionNum: 5 })).toBe('5');
+  // A range names the revisions after its first number, so 5-7 is 4..7.
+  expect(runSelector({ FromRevisionNum: 5, ToRevisionNum: 7 })).toBe('4..7');
+  expect(linkSkipsRevisions({ UpdateType: 'UpgradeUnit' })).toBe(true);
+  expect(linkSkipsRevisions({ UpdateType: 'MergeUnits' })).toBe(true);
+  expect(linkSkipsRevisions({ UpdateType: 'NeedsProvides' })).toBe(false);
 });
