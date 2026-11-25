@@ -292,12 +292,17 @@ export function uploadSkippedSecrets(result: UploadResult | undefined): string[]
   return result?.Components?.[0]?.SkippedSecrets ?? [];
 }
 
-/** Unit and Link writes that failed, as slug + message. */
+/**
+ * Unit and Link writes that failed, as slug + message, and AppConfig Units whose rendering could
+ * not be set up, which were written but are reported apart from a failed write.
+ */
 export function uploadItemErrors(result: UploadResult | undefined): Array<{ slug: string; message: string }> {
   const space = uploadSpace(result);
   const errors: Array<{ slug: string; message: string }> = [];
   for (const u of space?.Units ?? []) {
-    if (u.Error) errors.push({ slug: u.Slug ?? u.Resource ?? '', message: u.Error.Message ?? 'failed' });
+    const slug = u.Slug ?? u.Resource ?? '';
+    if (u.Error) errors.push({ slug, message: u.Error.Message ?? 'failed' });
+    else if (u.RenderingError) errors.push({ slug, message: u.RenderingError.Message ?? 'not rendered' });
   }
   for (const l of space?.Links ?? []) {
     if (l.Error) {
