@@ -46,7 +46,8 @@ export function ConsoleTitleRow({
 }: {
   title: string;
   headingId: string;
-  count: number;
+  /** Undefined while the list is not read, so that no count is shown as an answer. */
+  count: number | undefined;
   /** Beside the count, such as what could not be read. */
   note?: ReactNode;
   freshness: string;
@@ -65,9 +66,11 @@ export function ConsoleTitleRow({
         >
           {title}
         </Typography>
-        <Typography component="span" sx={{ fontFamily: T.mono, fontSize: 12.5, lineHeight: T.lh, color: T.ink3 }}>
-          {count}
-        </Typography>
+        {count === undefined ? null : (
+          <Typography component="span" sx={{ fontFamily: T.mono, fontSize: 12.5, lineHeight: T.lh, color: T.ink3 }}>
+            {count}
+          </Typography>
+        )}
         {note}
       </Stack>
 

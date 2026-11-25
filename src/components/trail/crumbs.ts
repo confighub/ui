@@ -66,6 +66,8 @@ export const crumbs = {
     slug
       ? { key: `/service-accounts/${slug}`, kind: 'serviceAccount', label: slug }
       : { key: '/service-accounts', kind: 'serviceAccount', label: 'Service accounts' },
+  // The filters are left out of the key: they change the crumb's address, not the page.
+  auditLog: fixed('/audit-log', 'auditLog', 'Audit log'),
   channel: ({ space, slug }) =>
     space && slug ? { key: `/channels/${space}/${slug}`, kind: 'channel', label: slug } : { key: '/channels', kind: 'channel', label: 'Channels' },
   /** An address that only redirects to another. */

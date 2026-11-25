@@ -1216,11 +1216,11 @@ export const InvokerSidebar = ({
             </Typography>
           </SidebarButton>
         </Tooltip>
-        <Tooltip title={openChangeName ? `Your ChangeSet ${openChangeName} (C)` : 'Start a ChangeSet (C)'} placement="left">
+        <Tooltip title="ChangeSets (C)" placement="left">
           <SidebarButton
             isActive={changeOpen}
             onClick={() => onTogglePanel('change')}
-            aria-label={openChangeName ? `Your ChangeSet ${openChangeName}` : 'Start a ChangeSet'}
+            aria-label="ChangeSets"
             aria-expanded={changeOpen}
             data-testid="change-button"
             sx={{ width: 36, ...(openChangeName ? {} : { borderColor: tokens.rustLine }) }}

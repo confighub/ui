@@ -94,6 +94,8 @@ export const SPACE_SUMMARY_COUNTS: SpaceSummaryCount[] = [
     unitWhere: 'UpstreamRevisionNum < UpstreamUnit.HeadRevisionNum',
   },
   { field: 'UnlinkedUnitCount', label: 'Unlinked Units', group: 'Units', getValue: count('UnlinkedUnitCount') },
+  // No link: the Unit list cannot show archived Units, which only include_hidden=Archived reaches
+  { field: 'ArchivedUnitCount', label: 'Archived Units', group: 'Units', getValue: count('ArchivedUnitCount') },
   { field: 'TotalLinkCount', label: 'Links', group: 'Entities', getValue: count('TotalLinkCount') },
   { field: 'TotalTargetCount', label: 'Targets', group: 'Entities', getValue: count('TotalTargetCount') },
   {

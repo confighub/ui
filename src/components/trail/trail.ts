@@ -27,7 +27,8 @@ export type CrumbKind =
   | 'view'
   | 'resource'
   | 'channel'
-  | 'serviceAccount';
+  | 'serviceAccount'
+  | 'auditLog';
 
 /** A page, as its route describes it from the address alone. */
 export interface PageCrumb {

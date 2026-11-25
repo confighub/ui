@@ -23,6 +23,7 @@ import FunctionsIcon from '@mui/icons-material/Functions';
 import LinkIcon from '@mui/icons-material/Link';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import PolicyIcon from '@mui/icons-material/Policy';
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import SchemaIcon from '@mui/icons-material/Schema';
 import SearchIcon from '@mui/icons-material/Search';
@@ -73,6 +74,7 @@ const KIND_ICON: Record<CrumbKind, React.ComponentType<SvgIconProps>> = {
   resource: ViewListIcon,
   channel: ForumOutlinedIcon,
   serviceAccount: SmartToyOutlinedIcon,
+  auditLog: ReceiptLongOutlinedIcon,
 };
 
 const KIND_NAME: Record<CrumbKind, string> = {
@@ -94,6 +96,7 @@ const KIND_NAME: Record<CrumbKind, string> = {
   resource: 'Resource',
   channel: 'Channel',
   serviceAccount: 'Service account',
+  auditLog: 'Audit log',
 };
 
 /** The widest a crumb that is not the page on screen grows, so one long name cannot fill the bar. */

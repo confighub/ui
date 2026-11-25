@@ -65,6 +65,7 @@ test('the counts of entities with a list page link to it with the Space slug', (
 test('the counts of entities with no list page link nowhere', () => {
   for (const field of [
     'UnlinkedUnitCount',
+    'ArchivedUnitCount',
     'TotalTagCount',
     'TotalFilterCount',
     'TotalViewCount',

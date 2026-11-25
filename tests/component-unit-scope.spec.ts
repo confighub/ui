@@ -57,7 +57,9 @@ test.describe('component pane Units row', () => {
     };
     unitIds.releasable = await createUnit({ Slug: 'web', ToolchainType: 'Kubernetes/YAML' });
     unitIds.appConfig = await createUnit({ Slug: 'settings', ToolchainType: 'AppConfig/Properties' });
-    unitIds.hidden = await createUnit({ Slug: 'archived', ToolchainType: 'Kubernetes/YAML', HiddenReason: 'Archived' });
+    // Any HiddenReason but Archived: an archived unit is left out even of include_hidden=*,
+    // which the Units row lists hidden units with, and only archiving can set it.
+    unitIds.hidden = await createUnit({ Slug: 'retired', ToolchainType: 'Kubernetes/YAML', HiddenReason: 'Retired' });
     await api.uploadUnitData({ spaceId, unitId: unitIds.releasable, body: YAML });
     await api.uploadUnitData({ spaceId, unitId: unitIds.hidden, body: YAML });
 

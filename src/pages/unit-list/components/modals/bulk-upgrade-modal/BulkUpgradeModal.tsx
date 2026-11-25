@@ -59,7 +59,6 @@ export const BulkUpgradeModal = ({
       const unitIds = unitsToEdit
         .map((unit) => unit.UnitID)
         .filter((id): id is string => !!id);
-      const where = `UnitID IN (${unitIds.map((id) => `'${id}'`).join(',')})`;
       const upgrade = (
         whereClause: string,
         options: { dryRun: boolean; clearance?: string },
@@ -73,27 +72,42 @@ export const BulkUpgradeModal = ({
           body: JSON.stringify({}),
         }).unwrap();
 
-      // Which of the Units have guards, each named with its Space: only those are run as a dry
-      // run first, since a write to the others is never withheld by a guard.
+      // Each Unit named with its Space, whether it has an upstream Unit to upgrade from, and
+      // whether it has guards: only those with guards are run as a dry run first, since a write
+      // to the others is never withheld by a guard.
       dryRunFailed = true;
-      const selected = (
+      const listed = (
         await Promise.all(
           chunkInClause('UnitID', unitIds).map((ids) =>
             listUnits({
               where: ids,
               include: 'SpaceID',
-              select: 'UnitID,Slug,SpaceID,PathAnnotations',
+              select: 'UnitID,Slug,SpaceID,UpstreamUnitID,PathAnnotations',
             }).unwrap(),
           ),
         )
       ).flat();
       dryRunFailed = false;
       const labelByUnitId = new Map(
-        selected.map((item) => [
+        listed.map((item) => [
           item.Unit?.UnitID ?? '',
           item.Space?.Slug ? `${item.Space.Slug}/${item.Unit?.Slug}` : (item.Unit?.Slug ?? ''),
         ]),
       );
+      // A Unit that was never cloned has nothing to upgrade from, and the server refuses it.
+      const selected = listed.filter((item) => !!item.Unit?.UpstreamUnitID);
+      const noUpstream = listed
+        .filter((item) => !item.Unit?.UpstreamUnitID)
+        .map((item) => labelByUnitId.get(item.Unit?.UnitID ?? '') ?? '');
+      if (selected.length === 0) {
+        setErrorMessage([
+          unitIds.length === 1
+            ? 'This unit has no upstream unit to upgrade from.'
+            : 'None of the selected units has an upstream unit to upgrade from.',
+        ]);
+        return;
+      }
+      const where = `UnitID IN (${selected.map((item) => `'${item.Unit?.UnitID}'`).join(',')})`;
       const guarded = selected
         .filter((item) => unitHasGuards(item.Unit?.PathAnnotations))
         .map((item) => item.Unit?.UnitID ?? '');
@@ -127,13 +141,26 @@ export const BulkUpgradeModal = ({
           );
         },
       });
-      // Upgraded without what guards withheld, which stays on each Unit as a conflict. The
-      // modal closes on success, so the page's alert says so.
-      if (result.status === 'written' && result.withheld.length > 0) {
-        const withheldFrom = [...new Set(result.withheld.map((change) => change.unitLabel))];
+      // Upgraded without what guards withheld, which stays on each Unit as a conflict, and
+      // without the Units that have no upstream. The modal closes on success, so the page's
+      // alert says so.
+      if (
+        result.status === 'written' &&
+        (result.withheld.length > 0 || noUpstream.length > 0)
+      ) {
+        const notes: string[] = [];
+        if (result.withheld.length > 0) {
+          const withheldFrom = [...new Set(result.withheld.map((change) => change.unitLabel))];
+          notes.push(
+            `${withheldSummary(result.withheld)} in ${withheldFrom.join(', ')}; apply them from the Blame tab of each.`,
+          );
+        }
+        if (noUpstream.length > 0) {
+          notes.push(`Not upgraded, with no upstream unit: ${noUpstream.join(', ')}.`);
+        }
         dispatch(
           setAlert({
-            message: `Units upgraded. ${withheldSummary(result.withheld)} in ${withheldFrom.join(', ')}; apply them from the Blame tab of each.`,
+            message: `Units upgraded. ${notes.join(' ')}`,
             type: 'warning',
             isOpen: true,
           }),

@@ -28,6 +28,7 @@ const ReleasesPage = lazy(() => import('./pages/releases/ReleasesPage'));
 const TargetOverviewPage = lazy(() => import('./pages/target-overview/TargetOverviewPage'));
 const DeliveryPage = lazy(() => import('./pages/delivery/DeliveryPage'));
 const ServiceAccountsPage = lazy(() => import('./pages/service-accounts/ServiceAccountsPage'));
+const AuditLogPage = lazy(() => import('./pages/audit-log/AuditLogPage'));
 const ChannelsPage = lazy(() => import('./pages/channels/ChannelsPage'));
 const ChangeOrdersOldRouteRedirect = lazy(() => import('./pages/change-orders/OldRouteRedirect'));
 const ChangeSetsPage = lazy(() => import('./pages/change-sets/ChangeSetsPage'));
@@ -258,6 +259,15 @@ const routes = [
         element: (
           <Suspense fallback={<Loader isLoading={true} />}>
             <ServiceAccountsPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/audit-log',
+        handle: { crumb: crumbs.auditLog },
+        element: (
+          <Suspense fallback={<Loader isLoading={true} />}>
+            <AuditLogPage />
           </Suspense>
         ),
       },

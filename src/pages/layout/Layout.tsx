@@ -35,6 +35,7 @@ import LinkIcon from '@mui/icons-material/Link';
 import FolderCopyIcon from '@mui/icons-material/FolderCopy';
 import LocalLibraryIcon from '@mui/icons-material/LocalLibrary';
 import PolicyIcon from '@mui/icons-material/Policy';
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import SchemaIcon from '@mui/icons-material/Schema';
 import SearchIcon from '@mui/icons-material/Search';
@@ -48,6 +49,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ClickAwayListener from '@mui/material/ClickAwayListener';
 import Divider from '@mui/material/Divider';
+import ListSubheader from '@mui/material/ListSubheader';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Popper from '@mui/material/Popper';
@@ -236,13 +238,29 @@ const TopNavMenuButton = memo(({ item }: { item: INavItem }) => {
         transformOrigin={{ horizontal: 'left', vertical: 'top' }}
         anchorOrigin={{ horizontal: 'left', vertical: 'bottom' }}
       >
-        {item.subItems?.map((sub) => {
+        {/* A flat list, not fragments: MenuList moves focus only over its direct children, and
+            skips the headings, which have no tabindex. A heading is not a menu item, so it has
+            role="presentation". */}
+        {item.subItems?.flatMap((sub, index) => {
           const isSubActive =
             !!sub.navigate &&
             (location.pathname === sub.navigate ||
               location.pathname.startsWith(sub.navigate + '/'));
+          const startsGroup = sub.group !== undefined && sub.group !== item.subItems?.[index - 1]?.group;
 
-          return (
+          return [
+            ...(startsGroup
+              ? [
+                  <ListSubheader
+                    key={`group-${index}-${sub.group}`}
+                    role='presentation'
+                    disableSticky
+                    sx={{ fontSize: 11.5, fontWeight: 700, lineHeight: '28px', color: 'text.secondary', mt: index === 0 ? 0 : 0.5 }}
+                  >
+                    {sub.group}
+                  </ListSubheader>,
+                ]
+              : []),
             <MenuItem
               key={sub.text}
               component={RouterLink}
@@ -258,8 +276,8 @@ const TopNavMenuButton = memo(({ item }: { item: INavItem }) => {
               >
                 {sub.text}
               </Typography>
-            </MenuItem>
-          );
+            </MenuItem>,
+          ];
         })}
       </Menu>
     </>
@@ -368,44 +386,58 @@ const ConfigurationItems: INavItem[] = [
       },
       {
         text: 'Units',
+        group: 'Configuration',
         component: <DataObjectIcon sx={{ fontSize: 18 }} />,
         navigate: `/units`,
         disable: false,
       },
       {
         text: 'Spaces',
+        group: 'Configuration',
         component: <FolderCopyIcon sx={{ fontSize: 18 }} />,
         navigate: `/spaces`,
         disable: false,
       },
       {
         text: 'Targets',
+        group: 'Configuration',
         component: <Storage sx={{ fontSize: 18 }} />,
         navigate: `/targets`,
         disable: false,
       },
       {
         text: 'Triggers',
+        group: 'Configuration',
         component: <FlashOnOutlinedIcon sx={{ fontSize: 18 }} />,
         navigate: `/triggers`,
         disable: false,
       },
       {
         text: 'Links',
+        group: 'Configuration',
         component: <LinkIcon sx={{ fontSize: 18 }} />,
         navigate: `/links`,
         disable: false,
       },
       {
         text: 'Channels',
+        group: 'Configuration',
         component: <ForumOutlinedIcon sx={{ fontSize: 18 }} />,
         navigate: `/channels`,
         disable: false,
       },
       {
         text: 'Service accounts',
+        group: 'Organization',
         component: <SmartToyOutlinedIcon sx={{ fontSize: 18 }} />,
         navigate: `/service-accounts`,
+        disable: false,
+      },
+      {
+        text: 'Audit log',
+        group: 'Organization',
+        component: <ReceiptLongOutlinedIcon sx={{ fontSize: 18 }} />,
+        navigate: `/audit-log`,
         disable: false,
       },
     ],

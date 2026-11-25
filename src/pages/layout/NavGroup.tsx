@@ -47,6 +47,11 @@ export interface INavItem {
   onClick?: () => void;
   /** Optional sub-items rendered as an expandable dropdown below this item */
   subItems?: INavItem[];
+  /**
+   * For a sub-item: the heading of the group it is in, in a dropdown. Sub-items of one group
+   * are listed together; a sub-item with no group is listed before the first heading.
+   */
+  group?: string;
 }
 
 const StyledNavLink = styled(NavLink)`

@@ -103,8 +103,10 @@ test.describe('a stage gating on a declared custom prerequisite', () => {
     await page.goto(`${fx.changeOrderPath}/${GATED_STAGE}`);
     // The declared check is satisfied by the server's answer: a passed line, by
     // "auto", with what it checks. (The mandatory `check/promoted` is the arrival line.)
+    // The line is drawn from the promote dry run, which a reloaded page on CI
+    // has back about 7s after `goto`.
     const passed = page.locator('[data-testid^="log-gate-"]');
-    await expect(passed).toHaveCount(1);
+    await expect(passed).toHaveCount(1, { timeout: 30_000 });
     await expect(passed).toHaveAttribute('data-tone', 'okDone', { timeout: 30_000 });
     await expect(passed).toContainText(`${CUSTOM_PREREQUISITE.Name} Passed — ${CUSTOM_PREREQUISITE.Description}`);
     await expect(passed).toContainText('auto');

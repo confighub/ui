@@ -65,8 +65,12 @@ export const consoleTokens = {
   progress: '#2f5fd0',
   progressInk: '#234ba6',
   progressSoft: '#eaf0fd',
+  /** The border of a progress notice. */
+  progressLine: '#b9cbf3',
 
   ok: '#1c7a4c',
+  /** The ground of an added line. `ok` text on it is 4.73:1. */
+  okSoft: '#e8f4ed',
   wait: '#8a6100',
   waitSoft: '#fbf1dc',
   bad: '#ad2b2b',
