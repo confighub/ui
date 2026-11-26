@@ -30,6 +30,13 @@ import { sameInstant } from './instant';
 export { sameInstant };
 
 /** What a write to an existing View needs; built from the saved View, or from the ids of one saved a moment ago. */
+/**
+ * The Views a Filter's users are looked for among: hidden and archived ones too. An archived View
+ * still uses its Filter, and is unarchived with it as it was, so the Filter is neither changed
+ * nor deleted for it.
+ */
+const EVERY_VIEW = '*,Archived';
+
 export interface SaveTarget {
   viewId: string;
   spaceId: string;
@@ -319,7 +326,7 @@ export function useSaveView() {
       }
       let filterId = target.filterId;
       if (filterId) {
-        const users = await listViews({ where: `FilterID = '${filterId}'` }).unwrap();
+        const users = await listViews({ where: `FilterID = '${filterId}'`, includeHidden: EVERY_VIEW }).unwrap();
         if (users.some((u) => u.View?.ViewID && u.View.ViewID !== target.viewId)) filterId = undefined;
       }
       const filterSpaceId = target.filterSpaceId ?? target.spaceId;
@@ -421,16 +428,16 @@ export function useSaveView() {
   );
 
   /**
-   * Delete the View, then its Filter unless another View still uses it. Once
-   * the View is gone the delete has happened: a Filter that could not be
-   * removed is reported, not thrown.
+   * Archive the View, or delete it and then its Filter unless another View still uses it. An
+   * archived View keeps its Filter, which it needs to be unarchived. Once the View is gone the
+   * delete has happened: a Filter that could not be removed is reported, not thrown.
    */
   const remove = useCallback(
-    async (saved: SaveTarget): Promise<RemoveResult> => {
-      await deleteView({ spaceId: saved.spaceId, viewId: saved.viewId }).unwrap();
-      if (!saved.filterId) return { filterLeft: false };
+    async (saved: SaveTarget, archive: boolean): Promise<RemoveResult> => {
+      await deleteView({ spaceId: saved.spaceId, viewId: saved.viewId, archive }).unwrap();
+      if (archive || !saved.filterId) return { filterLeft: false };
       try {
-        const users = await listViews({ where: `FilterID = '${saved.filterId}'` }).unwrap();
+        const users = await listViews({ where: `FilterID = '${saved.filterId}'`, includeHidden: EVERY_VIEW }).unwrap();
         if (users.length > 0) return { filterLeft: false };
         await deleteFilter({ spaceId: saved.filterSpaceId ?? saved.spaceId, filterId: saved.filterId }).unwrap();
         return { filterLeft: false };

@@ -22,6 +22,7 @@ export const FIELD_TO_API_MAPPING: Record<string, string> = {
   createdAt: 'CreatedAt',
   updatedAt: 'UpdatedAt',
   labels: 'Labels',
+  hiddenReason: 'HiddenReason',
   // Unit-specific fields
   toolchainType: 'ToolchainType',
   target: 'TargetID',

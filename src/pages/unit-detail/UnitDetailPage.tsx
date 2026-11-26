@@ -295,7 +295,7 @@ export const UnitDetailPage = () => {
       invoke: async (data: Record<string, string>) => {
         await onFunctionInvoked(data);
       },
-      delete: async () => onUnitDeleted(),
+      delete: async (data: Record<string, string>) => onUnitDeleted(data?.archive === 'true'),
       add: async (unit: UnitRead) => {
         navigate(`/units/${unit?.SpaceID}/${unit?.UnitID}`);
       },
@@ -304,7 +304,7 @@ export const UnitDetailPage = () => {
     func: modalFunction,
     // TODO: Based on type?
     modalDescriptionText: {
-      delete: 'Are you sure you want to delete this unit?',
+      delete: 'Archive or permanently delete this Unit?',
       upgrade: 'Are you sure you want to upgrade this unit?',
     },
     modalTitleText: {

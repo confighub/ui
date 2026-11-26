@@ -4,12 +4,12 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { ActionContextButton } from '@/components/action-context-button/ActionContextButton';
 import { BulkMetadataDrawer } from '@/components/bulk-edit/BulkMetadataDrawer';
-import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
+import { DeleteOrArchiveDialog } from '@/components/delete-or-archive/DeleteOrArchiveDialog';
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { FilteredEmptyState } from '@/components/filtered-empty-state';
 import { Header } from '@/components/header/Header';
 import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
-import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
+import { BULK_PATCH_INCLUDE_HIDDEN, bulkDeleteIncludeHidden, useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { extractLabelOptions, useQueryBuilder } from '@/components/query-builder';
 import type { FieldOptions, NamedEntity } from '@/components/query-builder';
 import { Main } from '@/components/styled';
@@ -164,9 +164,11 @@ export const SpaceListPage = () => {
     setServerErrors,
   );
 
-  const onSpaceDeleted = async () => {
+  const onSpaceDeleted = async (archive: boolean) => {
     await bulkDeleteSpaces({
       where: `SpaceID IN (${selectedSpaces.map((id) => `'${id}'`).join(',')})`,
+      includeHidden: bulkDeleteIncludeHidden(spacesToEdit),
+      archive,
     });
 
     setIsDeleteSpacesModalOpen(false);
@@ -268,14 +270,14 @@ export const SpaceListPage = () => {
           idColumn='SpaceID'
           entities={spacesToEdit}
           // The selection names each Space by ID, so a hidden one shown in the list is written too.
-          patch={(where, body) => bulkPatchSpaces({ where, body, includeHidden: '*' }).unwrap()}
+          patch={(where, body) => bulkPatchSpaces({ where, body, includeHidden: BULK_PATCH_INCLUDE_HIDDEN }).unwrap()}
         />
-        <ConfirmationModal
-          isOpen={isDeleteSpacesModalOpen}
+        <DeleteOrArchiveDialog
+          open={isDeleteSpacesModalOpen}
           onClose={() => setIsDeleteSpacesModalOpen(false)}
-          onSubmit={onSpaceDeleted}
-          modalDescriptionText={`Are you sure you want to delete the selected Spaces?`}
-          modalTitleText='Delete Spaces'
+          onConfirm={onSpaceDeleted}
+          description='Archive or permanently delete the selected Spaces?'
+          title='Delete Spaces'
         />
       </Main>
     </Container>

@@ -9,6 +9,9 @@
  * static placeholder), and the delete button stays disabled until it
  * matches.
  *
+ * Archive, which can be undone, is the choice the row starts with and needs no typing; the typed
+ * slug guards only a permanent delete.
+ *
  * `deleteSpace` MUST pass `recursive: 'true'` — both flags on
  * `DeleteSpaceApiArg` are typed `string`, not boolean (opens
  * `confighubapi.gen.ts:6285`, field `:6289`), so `recursive: true` would not
@@ -28,6 +31,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 
 import { useDeleteSpaceMutation } from '@confighub/rtk-query';
+import { DeleteChoice, DeleteOrArchiveChoice } from '@/components/delete-or-archive/DeleteOrArchiveDialog';
 import { getApiErrorMessage } from '@/utility/error-functions';
 
 import { componentTheme } from '../componentTheme';
@@ -41,11 +45,13 @@ export interface DeleteRowProps {
 
 export function DeleteRow({ spaceId, slug, unitCount, onDeleted }: DeleteRowProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [choice, setChoice] = useState<DeleteChoice>('archive');
   const [typedSlug, setTypedSlug] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [deleteSpace, { isLoading: isDeleting }] = useDeleteSpaceMutation();
 
-  const matches = typedSlug === slug;
+  const archive = choice === 'archive';
+  const matches = archive || typedSlug === slug;
 
   const handleDelete = async () => {
     if (!matches) return;
@@ -54,10 +60,10 @@ export function DeleteRow({ spaceId, slug, unitCount, onDeleted }: DeleteRowProp
       // recursive: 'true' (string, per DeleteSpaceApiArg) — a variant Space
       // always holds units, so a non-recursive delete would 400. recursiveForce
       // is left off so an existing delete gate can still stop this.
-      await deleteSpace({ spaceId, recursive: 'true' }).unwrap();
+      await deleteSpace({ spaceId, recursive: 'true', archive }).unwrap();
       onDeleted();
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to delete the variant'));
+      setError(getApiErrorMessage(err, archive ? 'Failed to archive the variant' : 'Failed to delete the variant'));
     }
   };
 
@@ -81,27 +87,36 @@ export function DeleteRow({ spaceId, slug, unitCount, onDeleted }: DeleteRowProp
         </Box>
       ) : (
         <Box sx={{ padding: '9px 16px 12px', background: componentTheme.dangerFaint }}>
-          <Typography sx={{ fontSize: 12, fontWeight: 700, color: componentTheme.danger, mb: 0.5 }}>
-            Type <Box component='code' sx={{ fontFamily: componentTheme.fontMono, background: componentTheme.bgDefault, px: '4px', borderRadius: '3px' }}>{slug}</Box> to
-            delete this variant. This permanently deletes the Space and all <b>{unitCount}</b> unit{unitCount === 1 ? '' : 's'} in it.
-          </Typography>
-          <TextField
-            fullWidth
-            size='small'
-            autoFocus
-            value={typedSlug}
-            onChange={(e) => setTypedSlug(e.target.value)}
-            placeholder={slug}
-            data-testid='space-settings-delete-confirm-input'
-            sx={{ mt: 0.5, '& .MuiInputBase-root': { height: 30, fontSize: 13, background: componentTheme.bgDefault } }}
-          />
+          <DeleteOrArchiveChoice value={choice} onChange={setChoice} disabled={isDeleting} />
+          {archive ? (
+            <Typography sx={{ fontSize: 12, color: componentTheme.fgMuted, mt: 0.5 }}>
+              Archives the Space and all <b>{unitCount}</b> unit{unitCount === 1 ? '' : 's'} in it.
+            </Typography>
+          ) : (
+            <>
+              <Typography sx={{ fontSize: 12, fontWeight: 700, color: componentTheme.danger, mt: 0.5, mb: 0.5 }}>
+                Type <Box component='code' sx={{ fontFamily: componentTheme.fontMono, background: componentTheme.bgDefault, px: '4px', borderRadius: '3px' }}>{slug}</Box> to
+                delete this variant. This permanently deletes the Space and all <b>{unitCount}</b> unit{unitCount === 1 ? '' : 's'} in it.
+              </Typography>
+              <TextField
+                fullWidth
+                size='small'
+                autoFocus
+                value={typedSlug}
+                onChange={(e) => setTypedSlug(e.target.value)}
+                placeholder={slug}
+                data-testid='space-settings-delete-confirm-input'
+                sx={{ mt: 0.5, '& .MuiInputBase-root': { height: 30, fontSize: 13, background: componentTheme.bgDefault } }}
+              />
+            </>
+          )}
           {error && (
             <Typography sx={{ fontSize: 11.5, color: componentTheme.danger, mt: 0.5 }}>{error}</Typography>
           )}
           <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
             <Button
               size='small'
-              onClick={() => { setConfirmOpen(false); setTypedSlug(''); setError(null); }}
+              onClick={() => { setConfirmOpen(false); setChoice('archive'); setTypedSlug(''); setError(null); }}
               disabled={isDeleting}
               sx={{ textTransform: 'none', fontWeight: 600, color: componentTheme.fgMuted }}
             >
@@ -116,11 +131,12 @@ export function DeleteRow({ spaceId, slug, unitCount, onDeleted }: DeleteRowProp
               sx={{
                 textTransform: 'none',
                 fontWeight: 650,
-                backgroundColor: componentTheme.danger,
-                '&:hover': { backgroundColor: componentTheme.dangerEmphasis },
+                ...(archive
+                  ? {}
+                  : { backgroundColor: componentTheme.danger, '&:hover': { backgroundColor: componentTheme.dangerEmphasis } }),
               }}
             >
-              {isDeleting ? <CircularProgress size={14} sx={{ color: 'inherit' }} /> : `Delete ${slug}`}
+              {isDeleting ? <CircularProgress size={14} sx={{ color: 'inherit' }} /> : `${archive ? 'Archive' : 'Delete'} ${slug}`}
             </Button>
           </Box>
         </Box>

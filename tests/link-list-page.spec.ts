@@ -3,6 +3,7 @@
 import type { LinkRead } from '@confighub/rtk-query';
 
 import { ApiHelper } from './fixtures/api-helper';
+import { confirmPermanentDelete } from './fixtures/delete-or-archive';
 import { expect, hubApi, test } from './fixtures/test';
 import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
 
@@ -77,6 +78,55 @@ test.describe('link list page', () => {
       .toEqual({ merges: true, needs: false });
   });
 
+  test('an archived Link is listed by the include-hidden toggle, and by the Hidden Reason filter alone', async ({ page }) => {
+    const apiHelper = new ApiHelper(page);
+    const live = await apiHelper.createLink({
+      spaceId,
+      link: { Slug: 'live', FromUnitID: appId, ToUnitID: nsId, ToSpaceID: spaceId, UpdateType: 'MergeUnits', AutoUpdate: false },
+    });
+    const gone = await apiHelper.createLink({
+      spaceId,
+      link: { Slug: 'gone', FromUnitID: appId, ToUnitID: nsId, ToSpaceID: spaceId, UpdateType: 'MergeUnits', AutoUpdate: false },
+    });
+    const archive = await hubApi.delete(`/api/space/${spaceId}/link/${gone.LinkID}`, { params: { archive: 'true' } });
+    expect(archive.ok(), await archive.text()).toBeTruthy();
+    const liveRow = page.getByTestId(`link-details-${live.Slug}`);
+    // An archived Link is named by its ID until it is unarchived.
+    const archivedRow = page.getByTestId(`link-details-id${gone.LinkID}`);
+
+    await page.goto(spaceLinksPath);
+    await expect(liveRow).toBeVisible({ timeout: 20000 });
+    await expect(archivedRow).toHaveCount(0);
+
+    await page.getByTestId('include-hidden-toggle').click();
+    await expect(archivedRow).toBeVisible();
+    await expect(liveRow).toBeVisible();
+    await page.getByTestId('include-hidden-toggle').click();
+    await expect(archivedRow).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Add filter' }).click();
+    await page.locator('[role="menuitem"][data-field="hiddenReason"]').click();
+    await page.getByRole('menuitem', { name: 'Archived' }).click();
+    await page.keyboard.press('Escape');
+    await expect(archivedRow).toBeVisible();
+    await expect(liveRow).toHaveCount(0);
+
+    // A bulk write reaches an archived Link only when include_hidden names Archived, which the list
+    // sends for a selection that holds one. An update is refused, with the server's reason.
+    await page.getByRole('row', { name: new RegExp(`id${gone.LinkID}`) }).getByRole('checkbox').check();
+    await page.getByRole('button', { name: 'Update', exact: true }).click();
+    await page.getByTestId('bulk-link-auto-update').getByRole('button', { name: 'On', exact: true }).click();
+    await page.getByRole('button', { name: 'Update Links', exact: true }).click();
+    await expect(page.getByTestId('server-error-list')).toContainText('archived');
+    await page.getByRole('button', { name: 'Back to Links' }).click();
+
+    // Delete permanently purges it.
+    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await confirmPermanentDelete(page);
+    await expect.poll(async () => (await hubApi.get(`/api/space/${spaceId}/link/${gone.LinkID}`)).status()).toBe(404);
+    await expect(archivedRow).toHaveCount(0);
+  });
+
   test('a read the server refuses is shown as an error, not as no Links', async ({ page }) => {
     await page.goto(`/links?${new URLSearchParams({ filterWhere: "NoSuchAttribute = 'x'" }).toString()}`);
     await expect(page.getByTestId('links-read-error')).toBeVisible({ timeout: 20000 });
@@ -104,7 +154,7 @@ test.describe('link list page', () => {
 
     await page.getByRole('row', { name: /app-to-ns/ }).getByRole('checkbox').check();
     await page.getByRole('button', { name: 'Delete', exact: true }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Confirm' }).click();
+    await confirmPermanentDelete(page);
     await expect.poll(async () => (await listLinks(spaceId)).length).toBe(0);
     await expect(page.getByTestId('link-details-app-to-ns')).toHaveCount(0);
   });

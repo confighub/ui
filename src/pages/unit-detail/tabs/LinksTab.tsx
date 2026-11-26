@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ActionButton, createEnablementRule } from '@/components/action-button/ActionButton';
-import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
+import { DeleteOrArchiveDialog } from '@/components/delete-or-archive/DeleteOrArchiveDialog';
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
-import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
+import { bulkDeleteIncludeHidden, useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 
 import { Section } from '@/components/styled';
 import { runChunkedBulkWrite } from '@/hooks/chunkedBulkWrite';
@@ -78,7 +78,7 @@ export const LinksTab = ({ selectedTab, linkRows, unitId, spaceId, unit, onLinkA
       Add Link
     </Button>
   );
-  const { includeHidden, setIncludeHidden, includeHiddenParam } = useIncludeHidden();
+  const { includeHidden, setIncludeHidden } = useIncludeHidden();
   const filter = useMemo(() => readLinkFilter(searchParams), [searchParams]);
 
   const setFilter = (update: Partial<LinkFilter>) => {
@@ -122,12 +122,12 @@ export const LinksTab = ({ selectedTab, linkRows, unitId, spaceId, unit, onLinkA
 
   // The Links can be in several Spaces, so they are deleted by ID across the organization. When
   // any fails the selection stays, so Delete can be tried again.
-  const deleteSelected = async () => {
+  const deleteSelected = async (archive: boolean) => {
     const failures = await runChunkedBulkWrite(
       'LinkID',
       selectedLinkIds,
-      (where) => bulkDeleteLinks({ where, includeHidden: includeHiddenParam }).unwrap(),
-      (error) => getApiErrorMessage(error, 'The Links could not be deleted.'),
+      (where) => bulkDeleteLinks({ where, includeHidden: bulkDeleteIncludeHidden(selectedLinks), archive }).unwrap(),
+      (error) => getApiErrorMessage(error, `The Links could not be ${archive ? 'archived' : 'deleted'}.`),
     );
     setIsDeleteConfirmOpen(false);
     setDeleteErrors(failures);
@@ -229,15 +229,15 @@ export const LinksTab = ({ selectedTab, linkRows, unitId, spaceId, unit, onLinkA
         ) : (
           <EmptyLinks action={addLinkButton} />
         ))}
-      <ConfirmationModal
-        isOpen={isDeleteConfirmOpen}
+      <DeleteOrArchiveDialog
+        open={isDeleteConfirmOpen}
         onClose={() => setIsDeleteConfirmOpen(false)}
-        onSubmit={deleteSelected}
-        modalTitleText={selectedCount > 1 ? 'Delete Links' : 'Delete Link'}
-        modalDescriptionText={
+        onConfirm={deleteSelected}
+        title={selectedCount > 1 ? 'Delete Links' : 'Delete Link'}
+        description={
           selectedCount > 1
-            ? `Are you sure you want to delete the ${selectedCount} selected Links?`
-            : `Are you sure you want to delete ${
+            ? `Archive or permanently delete the ${selectedCount} selected Links?`
+            : `Archive or permanently delete ${
                 filteredRows.find((row) => row.id === selectedLinkIds[0])?.Link?.Slug ?? 'the selected Link'
               }?`
         }

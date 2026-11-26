@@ -201,24 +201,26 @@ export function useSaveFlow() {
     [state, setRenamingTabId, targetOf, run, rename, versions, dispatch, toast],
   );
 
-  /** Delete a saved view for everyone (asked for with a confirmation first). */
+  /** Archive or delete a saved view for everyone (asked for with a confirmation first). */
   const deleteView = useCallback(
-    (tabId: string) => {
+    (tabId: string, archive: boolean) => {
       const tab = state.tabs.find((t) => t.id === tabId);
       const target = tab && targetOf(tab);
       if (!tab || !target) return;
       void run(
         tabId,
         async () => {
-          const { filterLeft } = await remove(target);
+          const { filterLeft } = await remove(target, archive);
           dispatch({ type: 'closeTab', tabId });
-          if (filterLeft) {
+          if (archive) {
+            toast({ message: `Archived “${tab.name}”.`, severity: 'info' });
+          } else if (filterLeft) {
             toast({ message: `Deleted “${tab.name}”. Its filter could not be removed and is left unused.`, severity: 'warning' });
           } else {
             toast({ message: `Deleted “${tab.name}”.`, severity: 'info' });
           }
         },
-        'The view could not be deleted.',
+        archive ? 'The view could not be archived.' : 'The view could not be deleted.',
       );
     },
     [state, targetOf, run, remove, dispatch, toast],

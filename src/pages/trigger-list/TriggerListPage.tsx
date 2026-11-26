@@ -7,11 +7,11 @@ import {
   type EnablementRule,
   createEnablementRule,
 } from '@/components/action-button/ActionButton';
-import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
+import { DeleteOrArchiveDialog } from '@/components/delete-or-archive/DeleteOrArchiveDialog';
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { Header } from '@/components/header/Header';
 import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
-import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
+import { bulkDeleteIncludeHidden, useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { extractLabelOptions, useQueryBuilder } from '@/components/query-builder';
 import { Main } from '@/components/styled';
 import { runChunkedBulkWrite } from '@/hooks/chunkedBulkWrite';
@@ -123,12 +123,12 @@ export const TriggerListPage = () => {
   // A selection can be every Trigger in the organization, so it is deleted in chunks. When
   // any fails the selection stays, so Delete can be tried again; the Triggers that were
   // deleted have left the list and so the selection.
-  const deleteSelected = async () => {
+  const deleteSelected = async (archive: boolean) => {
     const failures = await runChunkedBulkWrite(
       'TriggerID',
       selectedTriggerIds,
-      (where) => bulkDeleteTriggers({ where }).unwrap(),
-      (error) => getApiErrorMessage(error, 'The Triggers could not be deleted.'),
+      (where) => bulkDeleteTriggers({ where, includeHidden: bulkDeleteIncludeHidden(triggersToEdit), archive }).unwrap(),
+      (error) => getApiErrorMessage(error, `The Triggers could not be ${archive ? 'archived' : 'deleted'}.`),
     );
     setIsDeleteConfirmOpen(false);
     setErrorMessages(failures);
@@ -223,12 +223,12 @@ export const TriggerListPage = () => {
           triggersToEdit={triggersToEdit}
           refresh={refetch}
         />
-        <ConfirmationModal
-          isOpen={isDeleteConfirmOpen}
+        <DeleteOrArchiveDialog
+          open={isDeleteConfirmOpen}
           onClose={() => setIsDeleteConfirmOpen(false)}
-          onSubmit={deleteSelected}
-          modalTitleText='Delete Triggers'
-          modalDescriptionText='Are you sure you want to delete the selected triggers?'
+          onConfirm={deleteSelected}
+          title='Delete Triggers'
+          description='Archive or permanently delete the selected Triggers?'
         />
       </Main>
     </Container>

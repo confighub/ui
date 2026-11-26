@@ -8,12 +8,12 @@ import {
   createEnablementRule,
 } from '@/components/action-button/ActionButton';
 import { BulkMetadataDrawer } from '@/components/bulk-edit/BulkMetadataDrawer';
-import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
+import { DeleteOrArchiveDialog } from '@/components/delete-or-archive/DeleteOrArchiveDialog';
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { FilteredEmptyState } from '@/components/filtered-empty-state';
 import { Header } from '@/components/header/Header';
 import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
-import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
+import { BULK_PATCH_INCLUDE_HIDDEN, bulkDeleteIncludeHidden, useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { extractLabelOptions, useQueryBuilder } from '@/components/query-builder';
 import { Main } from '@/components/styled';
 import { useBulkApiErrorMessage } from '@/hooks/useBulkApiErrorMessages';
@@ -195,9 +195,11 @@ export const TargetListPage = () => {
     setSelectedTargetIds(newSelection);
   };
 
-  const handleDeleteTargets = async () => {
+  const handleDeleteTargets = async (archive: boolean) => {
     await bulkDeleteTargets({
       where: `TargetID IN (${selectedTargetIds.map((id) => `'${id}'`).join(',')})`,
+      includeHidden: bulkDeleteIncludeHidden(targetsToEdit),
+      archive,
     });
 
     // Clear selection after successful deletion
@@ -274,12 +276,12 @@ export const TargetListPage = () => {
           emptyState={<EmptyTargetList onAddTarget={() => updateModal('addTarget', true)} />}
           hasNoData={allTargets.length === 0}
         />
-        <ConfirmationModal
-          modalTitleText='Delete Targets'
-          modalDescriptionText='Are you sure you want to delete the selected targets?'
-          isOpen={modals.deleteTarget}
+        <DeleteOrArchiveDialog
+          title='Delete Targets'
+          description='Archive or permanently delete the selected Targets?'
+          open={modals.deleteTarget}
           onClose={() => updateModal('deleteTarget', false)}
-          onSubmit={handleDeleteTargets}
+          onConfirm={handleDeleteTargets}
         />
         <AddTargetDrawer
           isOpen={(isDrawerOpen && !!targetToEdit) || modals.addTarget}
@@ -294,7 +296,7 @@ export const TargetListPage = () => {
           idColumn='TargetID'
           entities={targetsToEdit}
           // The selection names each Target by ID, so a hidden one shown in the list is written too.
-          patch={(where, body) => bulkPatchTargets({ where, body, includeHidden: '*' }).unwrap()}
+          patch={(where, body) => bulkPatchTargets({ where, body, includeHidden: BULK_PATCH_INCLUDE_HIDDEN }).unwrap()}
         />
       </Main>
     </Container>

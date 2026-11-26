@@ -3,10 +3,10 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
+import { DeleteOrArchiveDialog } from '@/components/delete-or-archive/DeleteOrArchiveDialog';
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
-import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
+import { bulkDeleteIncludeHidden, useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import {
   ALL_GROUPS,
   GroupNavPanel,
@@ -986,9 +986,13 @@ export const UnitListPage = () => {
   // ============================================================================
   // EVENT HANDLERS - DELETE
   // ============================================================================
-  const handleSelectedUnitsDeleted = async () => {
+  const handleSelectedUnitsDeleted = async (archive: boolean) => {
     await bulkDelete({
       where: `UnitID IN (${selectedUnits.map((id) => `'${id}'`).join(',')})`,
+      includeHidden: bulkDeleteIncludeHidden(
+        units.flatMap((unit) => (unit.Unit?.UnitID && selectedUnits.includes(unit.Unit.UnitID) ? [unit.Unit] : [])),
+      ),
+      archive,
     });
 
     updateModalState({ isDeleteModalOpen: false });
@@ -1308,12 +1312,12 @@ export const UnitListPage = () => {
             invocationToEdit={invocationToEdit}
           />
 
-          <ConfirmationModal
-            isOpen={modalState.isDeleteModalOpen}
+          <DeleteOrArchiveDialog
+            open={modalState.isDeleteModalOpen}
             onClose={() => updateModalState({ isDeleteModalOpen: false })}
-            onSubmit={handleSelectedUnitsDeleted}
-            modalDescriptionText='Are you sure you want to delete the selected units?'
-            modalTitleText='Delete Units'
+            onConfirm={handleSelectedUnitsDeleted}
+            description='Archive or permanently delete the selected Units?'
+            title='Delete Units'
           />
 
           <AddTargetDrawer

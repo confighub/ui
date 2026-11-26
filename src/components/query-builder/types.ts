@@ -28,6 +28,7 @@ export type FilterFieldType =
   | 'headRevisionNum'
   | 'lastReleasedRevisionNum'
   | 'lastChangeDescription'
+  | 'hiddenReason'
   | 'where'
   | 'whereData'
   | 'resourceType'

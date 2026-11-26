@@ -4,18 +4,17 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 
+import { confirmPermanentDelete } from './delete-or-archive';
 import { EntityGridFixture } from './entity-grid-fixture';
 
 export class TargetListPage extends EntityGridFixture {
   private readonly addTargetButton: Locator;
   private readonly deleteTargetButton: Locator;
-  private readonly confirmButton: Locator;
 
   constructor(public readonly page: Page) {
     super(page);
     this.addTargetButton = this.page.getByTestId('add-target-button');
     this.deleteTargetButton = this.page.getByRole('button', { name: 'Delete' });
-    this.confirmButton = this.page.getByRole('button', { name: 'Confirm' });
   }
 
   async goto() {
@@ -52,8 +51,7 @@ export class TargetListPage extends EntityGridFixture {
 
     await this.deleteTargetButton.click();
 
-    // Confirm button click auto-waits for the confirmation dialog to appear
-    await this.confirmButton.click();
+    await confirmPermanentDelete(this.page);
   }
 
   /**

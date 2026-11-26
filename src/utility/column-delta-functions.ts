@@ -280,6 +280,7 @@ const BASE_SELECT_FIELDS = [
   'ToolchainType', // Always needed for UnitModalComposer defaultToolchainType prop
   'Labels',
   'Values',
+  'HiddenReason', // A bulk delete names Archived when a selected Unit is archived
 ];
 
 /**

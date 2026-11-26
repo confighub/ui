@@ -71,7 +71,7 @@ interface UseUnitActionsReturn {
   };
 
   // Action Handlers
-  onUnitDeleted: () => Promise<void>;
+  onUnitDeleted: (archive: boolean) => Promise<void>;
   onUnitUpgrade: () => Promise<void>;
   onBulkUnitUpgrade: () => Promise<void>;
   onFunctionInvoked: (data: Record<string, string>) => Promise<void>;
@@ -157,10 +157,11 @@ export const useUnitActions = ({
     );
 
   // Action Handlers
-  const onUnitDeleted = async (): Promise<void> => {
+  const onUnitDeleted = async (archive: boolean): Promise<void> => {
     const input: DeleteUnitApiArg = {
       spaceId,
       unitId,
+      archive,
     };
 
     const result = await deleteUnit(input);

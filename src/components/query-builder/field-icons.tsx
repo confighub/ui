@@ -25,6 +25,7 @@ import TrackChangesOutlined from '@mui/icons-material/TrackChangesOutlined';
 import TrendingUpOutlined from '@mui/icons-material/TrendingUpOutlined';
 import UpdateOutlined from '@mui/icons-material/UpdateOutlined';
 import VerifiedUserOutlined from '@mui/icons-material/VerifiedUserOutlined';
+import VisibilityOffOutlined from '@mui/icons-material/VisibilityOffOutlined';
 import WidgetsOutlined from '@mui/icons-material/WidgetsOutlined';
 
 import type { FilterFieldType } from './types';
@@ -61,6 +62,7 @@ export const FIELD_ICONS: Record<FieldIconKey, React.ReactNode> = {
   headRevisionNum: <NumbersOutlined fontSize="small" />,
   lastReleasedRevisionNum: <NumbersOutlined fontSize="small" />,
   lastChangeDescription: <DescriptionOutlined fontSize="small" />,
+  hiddenReason: <VisibilityOffOutlined fontSize="small" />,
   where: <CodeOutlined fontSize="small" />,
   whereData: <StorageOutlined fontSize="small" />,
   resourceType: <CategoryOutlined fontSize="small" />,

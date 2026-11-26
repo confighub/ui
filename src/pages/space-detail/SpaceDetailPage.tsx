@@ -9,11 +9,11 @@ import {
   type EnablementRule,
   createEnablementRule,
 } from '@/components/action-button/ActionButton';
-import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
+import { DeleteOrArchiveDialog } from '@/components/delete-or-archive/DeleteOrArchiveDialog';
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { Header } from '@/components/header/Header';
 import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
-import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
+import { bulkDeleteIncludeHidden, useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { useQueryBuilder, extractLabelOptions } from '@/components/query-builder';
 import { SettingsTabs } from '@/components/settings-tabs/SettingsTabs';
 import { Main } from '@/components/styled';
@@ -33,6 +33,7 @@ import { sumMap } from '@/utility/object-functions';
 import { SPACE_TRIGGER_VIEW_PARAM, SPACE_TRIGGERS_TAB } from '@/utility/space-summary-counts';
 import {
   type SpaceRead,
+  type Trigger,
   type TriggerRead,
   useBulkDeleteTriggersMutation,
   useDeleteSpaceMutation,
@@ -103,6 +104,8 @@ export const SpaceDetailPage = () => {
   // State
   const navigate = useNavigate();
   const [selectedTriggers, setSelectedTriggers] = useState<Array<string>>([]);
+  // The selection's include_hidden for a bulk delete, from the selected Triggers the list holds.
+  const [selectedTriggersIncludeHidden, setSelectedTriggersIncludeHidden] = useState<string | undefined>();
 
   // URL-controlled edit drawer state
   const { editEntityId, isDrawerOpen, closeEditDrawer } = useEditDrawerUrl();
@@ -134,21 +137,25 @@ export const SpaceDetailPage = () => {
 
   // Deleted in chunks, as on the page of every Trigger. When any fails the selection stays, so
   // Delete can be tried again.
-  const onTriggerDeleted = async () => {
+  const onTriggerDeleted = async (archive: boolean) => {
     const failures = await runChunkedBulkWrite(
       'TriggerID',
       selectedTriggers,
-      (where) => bulkDeleteTrigger({ where }).unwrap(),
-      (error) => getApiErrorMessage(error, 'The Triggers could not be deleted.'),
+      (where) => bulkDeleteTrigger({ where, includeHidden: selectedTriggersIncludeHidden, archive }).unwrap(),
+      (error) => getApiErrorMessage(error, `The Triggers could not be ${archive ? 'archived' : 'deleted'}.`),
     );
     updateModalState('isTriggerDeleteModalOpen', false);
     setServerError(failures);
-    if (failures.length === 0) setSelectedTriggers([]);
+    if (failures.length === 0) {
+      setSelectedTriggers([]);
+      setSelectedTriggersIncludeHidden(undefined);
+    }
   };
 
-  const onSpaceDeleted = () => {
+  const onSpaceDeleted = (archive: boolean) => {
     deleteSpace({
       spaceId: id,
+      archive,
     });
   };
 
@@ -242,6 +249,7 @@ export const SpaceDetailPage = () => {
 
   const setTriggerView = (view: TriggerView) => {
     setSelectedTriggers([]);
+    setSelectedTriggersIncludeHidden(undefined);
     if (view === 'applied') triggerSelection.refetch();
     const params = new URLSearchParams(searchParams);
     params.set('tab', String(TRIGGERS_TAB));
@@ -418,7 +426,10 @@ export const SpaceDetailPage = () => {
             selectedRows={selectedTriggers}
             onRowSelected={
               triggerView === 'space'
-                ? (triggers: Array<string>) => setSelectedTriggers(triggers)
+                ? (ids: Array<string>, triggers: Array<Trigger>) => {
+                    setSelectedTriggers(ids);
+                    setSelectedTriggersIncludeHidden(bulkDeleteIncludeHidden(triggers));
+                  }
                 : undefined
             }
             onAddTrigger={triggerView === 'space' ? openInvokerToCreateTrigger : undefined}
@@ -468,19 +479,19 @@ export const SpaceDetailPage = () => {
           triggersToEdit={triggersToEdit}
           refresh={refetchTriggers}
         />
-        <ConfirmationModal
-          isOpen={modalStates.isTriggerDeleteModalOpen}
+        <DeleteOrArchiveDialog
+          open={modalStates.isTriggerDeleteModalOpen}
           onClose={() => updateModalState('isTriggerDeleteModalOpen', false)}
-          onSubmit={onTriggerDeleted}
-          modalDescriptionText='Are you sure you want to delete the selected triggers?'
-          modalTitleText='Delete Trigger'
+          onConfirm={onTriggerDeleted}
+          description='Archive or permanently delete the selected Triggers?'
+          title='Delete Triggers'
         />
-        <ConfirmationModal
-          isOpen={modalStates.isDeleteSpaceModalOpen}
+        <DeleteOrArchiveDialog
+          open={modalStates.isDeleteSpaceModalOpen}
           onClose={() => updateModalState('isDeleteSpaceModalOpen', false)}
-          onSubmit={onSpaceDeleted}
-          modalDescriptionText={`Are you sure you want to delete ${space?.DisplayName}?`}
-          modalTitleText='Delete Space'
+          onConfirm={onSpaceDeleted}
+          description={`Archive or permanently delete ${space?.DisplayName}?`}
+          title='Delete Space'
         />
         <AddUnitModal
           isOpen={isUnitAddOpen}

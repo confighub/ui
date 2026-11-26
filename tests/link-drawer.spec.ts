@@ -3,6 +3,7 @@
 import type { LinkRead } from '@confighub/rtk-query';
 
 import { ApiHelper } from './fixtures/api-helper';
+import { confirmPermanentDelete } from './fixtures/delete-or-archive';
 import { expect, hubApi, test } from './fixtures/test';
 import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
 
@@ -198,7 +199,7 @@ test.describe('link drawer', () => {
     await page.getByRole('row', { name: /first-link/ }).getByRole('checkbox').check();
     await expect(deleteButton).toHaveText('Delete Link');
     await deleteButton.click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Confirm' }).click();
+    await confirmPermanentDelete(page);
 
     await expect.poll(async () => (await listLinks(spaceId)).map((link) => link.Slug)).toEqual(['second-link']);
     await expect(page.getByTestId('link-details-first-link')).toHaveCount(0);

@@ -119,6 +119,21 @@ export const FIELD_CONFIGS: Record<FilterFieldType, FieldConfig> = {
     valueType: 'select',
     placeholder: 'Select targets...',
   },
+  // Why an entity is hidden. A list shows the entities a condition on it selects, hidden or not,
+  // so it finds archived ones without the include-hidden toggle. The reason is free-form; these
+  // are the ones ConfigHub sets, and Retired, which earlier archives by hand became.
+  hiddenReason: {
+    type: 'hiddenReason',
+    label: 'Hidden Reason',
+    operators: MULTI_SELECT_OPERATORS,
+    valueType: 'select',
+    placeholder: 'Select reasons...',
+    options: [
+      { value: 'Archived', label: 'Archived' },
+      { value: 'BackingUnit', label: 'Backing Unit' },
+      { value: 'Retired', label: 'Retired' },
+    ],
+  },
   createdAt: {
     type: 'createdAt',
     label: 'Created',
@@ -431,6 +446,7 @@ export const ENTITY_AVAILABLE_FIELDS: Record<EntityType, FilterFieldType[]> = {
     'labels',
     'createdAt',
     'updatedAt',
+    'hiddenReason',
     // Entity-specific fields
     'toolchainType',
     'resourceType',
@@ -454,6 +470,7 @@ export const ENTITY_AVAILABLE_FIELDS: Record<EntityType, FilterFieldType[]> = {
     'labels',
     'createdAt',
     'updatedAt',
+    'hiddenReason',
     // Entity-specific fields
     'targetId',
     // Advanced filters
@@ -465,6 +482,7 @@ export const ENTITY_AVAILABLE_FIELDS: Record<EntityType, FilterFieldType[]> = {
     'labels',
     'createdAt',
     'updatedAt',
+    'hiddenReason',
     // Entity-specific fields
     'component',
     'releaseTarget',
@@ -481,6 +499,7 @@ export const ENTITY_AVAILABLE_FIELDS: Record<EntityType, FilterFieldType[]> = {
     'labels',
     'createdAt',
     'updatedAt',
+    'hiddenReason',
     // Entity-specific fields
     'updateType',
     'autoUpdate',
@@ -496,6 +515,7 @@ export const ENTITY_AVAILABLE_FIELDS: Record<EntityType, FilterFieldType[]> = {
     'annotations',
     'createdAt',
     'updatedAt',
+    'hiddenReason',
     // Advanced filters
     'where',
   ],
@@ -506,6 +526,7 @@ export const ENTITY_AVAILABLE_FIELDS: Record<EntityType, FilterFieldType[]> = {
     'annotations',
     'createdAt',
     'updatedAt',
+    'hiddenReason',
     // Advanced filters
     'where',
   ],
@@ -517,6 +538,7 @@ export const ENTITY_AVAILABLE_FIELDS: Record<EntityType, FilterFieldType[]> = {
     'annotations',
     'createdAt',
     'updatedAt',
+    'hiddenReason',
     // Entity-specific fields
     'event',
     'functionName',
@@ -541,6 +563,7 @@ export const FIELD_DESCRIPTIONS: Record<FilterFieldType, string> = {
   updatedAt: 'Filter by when the resource was last modified',
   labels: 'Filter by label key-value pairs (e.g., env=production)',
   annotations: 'Filter by annotation key-value pairs (e.g., Trigger=my-space/my-trigger)',
+  hiddenReason: 'Filter by why the entity is hidden, such as Archived. Lists the hidden entities it selects',
 
   // Unit-specific fields
   toolchainType: 'Filter by the toolchain type (Kubernetes, Terraform, etc.)',

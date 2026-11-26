@@ -30,7 +30,7 @@ import { extractLabelOptions, useQueryBuilder } from '@/components/query-builder
 import { ConsoleTable, ConsoleTableRow, type ConsoleTableColumn } from '@/components/console-table/ConsoleTable';
 import { HiddenReasonTag } from '@/components/hidden-entities/HiddenReasonTag';
 import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
-import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
+import { BULK_PATCH_INCLUDE_HIDDEN, useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { useInViewport } from '@/hooks/useInViewport';
 import { useConsoleSpaceFilter } from '@/hooks/useSpaceParam';
 import { useListUsersByIdChunkedQuery } from '@/hooks/chunkedQueriesApi';
@@ -583,7 +583,7 @@ export function ChangeSetList() {
         idColumn="ChangeSetID"
         entities={checkedEntities}
         // The selection names each ChangeSet by ID, so a hidden one shown in the list is written too.
-        patch={(where, body) => bulkPatchChangeSets({ where, body, includeHidden: '*' }).unwrap()}
+        patch={(where, body) => bulkPatchChangeSets({ where, body, includeHidden: BULK_PATCH_INCLUDE_HIDDEN }).unwrap()}
       />
     </Box>
   );

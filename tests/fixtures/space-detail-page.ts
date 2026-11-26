@@ -4,18 +4,18 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 
+import { confirmPermanentDelete } from './delete-or-archive';
+
 export class SpaceDetailPage {
   private readonly triggersTab: Locator;
   private readonly createTriggerButton: Locator;
   private readonly deleteSpaceButton: Locator;
-  private readonly confirmationButton: Locator;
   private readonly saveButton: Locator;
 
   constructor(public readonly page: Page) {
     this.triggersTab = this.page.getByRole('tab', { name: 'Triggers' });
     this.createTriggerButton = this.page.getByTestId('create-trigger-button');
     this.deleteSpaceButton = this.page.getByRole('button', { name: 'Delete Space' });
-    this.confirmationButton = this.page.getByRole('button', { name: 'Confirm' });
     // exact:true so this never also matches buttons whose name merely contains
     // "Save" (e.g. a "Saved Functions" accordion), which would cause a strict-mode
     // violation. (Pre-existing issue: this also fails on main.)
@@ -71,7 +71,7 @@ export class SpaceDetailPage {
 
   async deleteSpace() {
     await this.deleteSpaceButton.click();
-    await this.confirmationButton.click();
+    await confirmPermanentDelete(this.page);
   }
 
   async goToSettingsTab() {

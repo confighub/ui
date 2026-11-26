@@ -3,6 +3,7 @@
 import { type Page } from '@playwright/test';
 
 import { ApiHelper } from './fixtures/api-helper';
+import { confirmArchive } from './fixtures/delete-or-archive';
 import { expect, hubApi, test } from './fixtures/test';
 import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
 
@@ -14,10 +15,12 @@ interface TriggerFields {
   Slug: string;
   Disabled?: boolean;
   Warn?: boolean;
+  HiddenReason?: string;
+  Labels?: Record<string, string>;
 }
 
-const triggersIn = async (spaceId: string): Promise<TriggerFields[]> => {
-  const response = await hubApi.get(`/api/space/${spaceId}/trigger`);
+const triggersIn = async (spaceId: string, includeHidden?: string): Promise<TriggerFields[]> => {
+  const response = await hubApi.get(`/api/space/${spaceId}/trigger`, includeHidden ? { params: { include_hidden: includeHidden } } : undefined);
   expect(response.ok(), await response.text()).toBeTruthy();
   return ((await response.json()) as Array<{ Trigger: TriggerFields }>).map((t) => t.Trigger);
 };
@@ -78,10 +81,15 @@ test.describe('Triggers of every Space', () => {
           [slugs[1], false, true],
         ]);
 
+      // The delete dialog starts on Archive: the Triggers leave the list, archived, not deleted.
       await page.getByRole('button', { name: 'Delete Trigger' }).click();
-      await page.getByRole('dialog').getByRole('button', { name: 'Confirm' }).click();
+      await confirmArchive(page);
       await expect.poll(async () => (await Promise.all(spaces.map(triggersIn))).flat().length).toBe(0);
       for (const slug of slugs) await expect(rowOf(page, slug)).toHaveCount(0);
+      const archived = (await Promise.all(spaces.map((spaceId) => triggersIn(spaceId, 'Archived')))).flat();
+      expect(archived.map((t) => [t.Labels?.ArchivedSlug, t.HiddenReason]).sort()).toEqual(
+        slugs.map((slug) => [slug, 'Archived']).sort(),
+      );
     } finally {
       await removeSpaces(spaces);
     }

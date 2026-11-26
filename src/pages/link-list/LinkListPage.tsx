@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ActionContextButton } from '@/components/action-context-button/ActionContextButton';
-import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
+import { DeleteOrArchiveDialog } from '@/components/delete-or-archive/DeleteOrArchiveDialog';
 import { ErrorList } from '@/components/error-list/ErrorList';
 import { FilteredEmptyState } from '@/components/filtered-empty-state';
 import { Header } from '@/components/header/Header';
 import { IncludeHiddenToggle } from '@/components/hidden-entities/IncludeHiddenToggle';
-import { useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
+import { bulkDeleteIncludeHidden, useIncludeHidden } from '@/components/hidden-entities/useIncludeHidden';
 import { extractLabelOptions, useQueryBuilder } from '@/components/query-builder';
 import type { FieldOptions, NamedEntity } from '@/components/query-builder';
 import { Main } from '@/components/styled';
@@ -143,12 +143,12 @@ export const LinkListPage = () => {
   const [bulkDeleteLinks] = useBulkDeleteLinksMutation();
   // The Links can be in many Spaces, so they are deleted by ID across the organization. When any
   // fails the selection stays, so Delete can be tried again.
-  const deleteSelected = async () => {
+  const deleteSelected = async (archive: boolean) => {
     const failures = await runChunkedBulkWrite(
       'LinkID',
       selectedLinkIds,
-      (where) => bulkDeleteLinks({ where, includeHidden: includeHiddenParam }).unwrap(),
-      (error) => getApiErrorMessage(error, 'The Links could not be deleted.'),
+      (where) => bulkDeleteLinks({ where, includeHidden: bulkDeleteIncludeHidden(selectedLinks), archive }).unwrap(),
+      (error) => getApiErrorMessage(error, `The Links could not be ${archive ? 'archived' : 'deleted'}.`),
     );
     setIsDeleteConfirmOpen(false);
     setErrorMessages(failures);
@@ -236,12 +236,12 @@ export const LinkListPage = () => {
           links={selectedLinks}
           refresh={refetch}
         />
-        <ConfirmationModal
-          isOpen={isDeleteConfirmOpen}
+        <DeleteOrArchiveDialog
+          open={isDeleteConfirmOpen}
           onClose={() => setIsDeleteConfirmOpen(false)}
-          onSubmit={deleteSelected}
-          modalTitleText='Delete Links'
-          modalDescriptionText='Are you sure you want to delete the selected Links?'
+          onConfirm={deleteSelected}
+          title='Delete Links'
+          description='Archive or permanently delete the selected Links?'
         />
       </Main>
     </Container>

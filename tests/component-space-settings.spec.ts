@@ -25,6 +25,8 @@ async function navigateAndSelectApp(page: Page, appLabel: string): Promise<void>
 
 test.describe('space settings sheet', () => {
   test.use({ storageState: 'authentication.json' });
+  // In order: the last test archives the fixture Space the first one edits.
+  test.describe.configure({ mode: 'default' });
 
   const spaceSlug = `e2e-space-settings-${RandomSlugGenerator.randomSlugName()}`;
   const targetSlug = `${spaceSlug}-tgt`;
@@ -117,5 +119,34 @@ test.describe('space settings sheet', () => {
     const api = new ApiHelper(page);
     const freshSpace = await api.getSpaceById(spaceId);
     expect(freshSpace.Labels?.Owner).toBeUndefined();
+  });
+
+  // Last, since it archives the fixture Space. Archive can be undone, so it needs no typed slug;
+  // a permanent delete still does.
+  test('the delete row archives the variant without typing its slug', async ({ page }) => {
+    await navigateAndSelectApp(page, APP_LABEL);
+    const node = page.locator('.react-flow__node').filter({ hasText: targetSlug });
+    await expect(node).toBeVisible({ timeout: 10000 });
+    await node.click();
+    await page.getByTestId('component-space-settings-cog').click();
+    await expect(page.getByTestId('space-settings-sheet')).toBeVisible();
+
+    await page.getByTestId('space-settings-delete-open').click();
+    const confirm = page.getByTestId('space-settings-delete-confirm');
+    await expect(page.getByRole('radio', { name: /^Archive/ })).toBeChecked();
+    await expect(confirm).toHaveText(`Archive ${spaceSlug}`);
+    await page.getByRole('radio', { name: /^Delete permanently/ }).check();
+    await expect(confirm).toBeDisabled();
+    await page.getByRole('radio', { name: /^Archive/ }).check();
+    await expect(confirm).toBeEnabled();
+
+    const deleteResponse = page.waitForResponse(
+      (r) => r.url().includes(`/api/space/${spaceId}`) && r.request().method() === 'DELETE',
+    );
+    await confirm.click();
+    expect((await deleteResponse).ok()).toBeTruthy();
+    const archived = await hubApi.get(`/api/space/${spaceId}`);
+    expect(archived.ok(), await archived.text()).toBeTruthy();
+    expect(((await archived.json()) as { Space: { HiddenReason?: string } }).Space.HiddenReason).toBe('Archived');
   });
 });

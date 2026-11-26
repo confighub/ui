@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 
 import { BulkMetadataDrawer } from '@/components/bulk-edit/BulkMetadataDrawer';
+import { BULK_PATCH_INCLUDE_HIDDEN } from '@/components/hidden-entities/useIncludeHidden';
 import { SectionCard } from '@/components/styled';
 import { type Link, useBulkPatchLinksMutation } from '@confighub/rtk-query';
 import ToggleButton from '@mui/material/ToggleButton';
@@ -66,7 +67,7 @@ export const BulkEditLinksDrawer = ({ isOpen, onClose, links, refresh }: BulkEdi
         </SectionCard>
       }
       // The selection names each Link by ID, so a hidden one shown in the list is written too.
-      patch={(where, body) => bulkPatchLinks({ where, body, includeHidden: '*' }).unwrap()}
+      patch={(where, body) => bulkPatchLinks({ where, body, includeHidden: BULK_PATCH_INCLUDE_HIDDEN }).unwrap()}
     />
   );
 };

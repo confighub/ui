@@ -47,7 +47,7 @@ import { alpha, styled } from '@mui/material/styles';
 
 import { useAppDispatch } from '@/hooks/useApp';
 import { useApiErrorMessage } from '@/hooks/useApiErrorMessage';
-import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
+import { DeleteOrArchiveDialog } from '@/components/delete-or-archive/DeleteOrArchiveDialog';
 import { getApiErrorMessage } from '@/utility/error-functions';
 import {
   type ExtendedViewRead,
@@ -1186,7 +1186,7 @@ export const ViewTabs = ({
   }, [kebabAnchor, closeKebab]);
 
   /** Executes the deletion after the user confirms in the modal. */
-  const handleDeleteConfirmed = useCallback(async () => {
+  const handleDeleteConfirmed = useCallback(async (archive: boolean) => {
     if (!deleteConfirmView) return;
     const viewId = deleteConfirmView.View?.ViewID;
     const viewSpaceId = deleteConfirmView.View?.SpaceID;
@@ -1194,12 +1194,14 @@ export const ViewTabs = ({
     setDeleteConfirmView(null);
     if (!viewId || !viewSpaceId) return;
     try {
-      await deleteView({ spaceId: viewSpaceId, viewId }).unwrap();
+      await deleteView({ spaceId: viewSpaceId, viewId, archive }).unwrap();
       if (activeViewId === viewId) {
         onClearView();
       }
       onCloseTab(viewId);
-      dispatch(setAlert({ type: 'success', message: `Deleted "${displayName}"`, isOpen: true }));
+      dispatch(
+        setAlert({ type: 'success', message: `${archive ? 'Archived' : 'Deleted'} "${displayName}"`, isOpen: true }),
+      );
     } catch {
       // useApiErrorMessage above watches deleteViewError and dispatches the toast.
     }
@@ -1854,12 +1856,12 @@ export const ViewTabs = ({
       </Menu>
 
       {/* Delete-view confirmation modal */}
-      <ConfirmationModal
-        isOpen={Boolean(deleteConfirmView)}
+      <DeleteOrArchiveDialog
+        open={Boolean(deleteConfirmView)}
         onClose={() => setDeleteConfirmView(null)}
-        onSubmit={handleDeleteConfirmed}
-        modalTitleText={`Delete "${deleteConfirmView?.View?.DisplayName ?? 'this view'}"?`}
-        modalDescriptionText="Members of this space will lose this view."
+        onConfirm={handleDeleteConfirmed}
+        title={`Delete "${deleteConfirmView?.View?.DisplayName ?? 'this view'}"?`}
+        description='Members of this space will lose this view.'
       />
     </Container>
   );

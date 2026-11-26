@@ -1,16 +1,12 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import Button from '@mui/material/Button';
-import Dialog from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogContentText from '@mui/material/DialogContentText';
-import DialogTitle from '@mui/material/DialogTitle';
+import { DeleteOrArchiveDialog } from '@/components/delete-or-archive/DeleteOrArchiveDialog';
 
 interface DeleteConfirmDialogProps {
   open: boolean;
   viewName: string;
-  onConfirm: () => void;
+  /** Archives when archive is true, and deletes permanently otherwise. */
+  onConfirm: (archive: boolean) => void;
   onCancel: () => void;
 }
 
@@ -20,25 +16,19 @@ export function DeleteConfirmDialog({
   onConfirm,
   onCancel,
 }: DeleteConfirmDialogProps) {
-  // Mounted only while open: closing removes the dialog and its backdrop in the same commit. Left mounted to run its exit transition, a slow CPU can leave it in place, invisible, taking every click.
-  if (!open) return null;
+  // DeleteOrArchiveDialog is mounted only while open: closing removes the dialog and its backdrop
+  // in the same commit, so a slow exit transition cannot leave an invisible backdrop taking clicks.
   return (
-    <Dialog open={open} onClose={onCancel} maxWidth='xs'>
-      <DialogTitle>Delete View</DialogTitle>
-      <DialogContent>
-        <DialogContentText>
-          Are you sure you want to delete <strong>{viewName}</strong>? This action cannot be
-          undone.
-        </DialogContentText>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onCancel} size='small'>
-          Cancel
-        </Button>
-        <Button onClick={onConfirm} color='error' variant='contained' size='small'>
-          Delete
-        </Button>
-      </DialogActions>
-    </Dialog>
+    <DeleteOrArchiveDialog
+      open={open}
+      title='Delete View'
+      description={
+        <>
+          Archive or permanently delete <strong>{viewName}</strong>?
+        </>
+      }
+      onConfirm={onConfirm}
+      onClose={onCancel}
+    />
   );
 }

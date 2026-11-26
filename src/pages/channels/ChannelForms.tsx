@@ -38,6 +38,7 @@ import {
   NO_BACKING_UNIT,
 } from '@/components/backing-unit/backingUnitChoice';
 import { DISPLAY_NAME_RULE } from '@/components/console-detail/consoleDetailUtil';
+import { DeleteOrArchiveDialog } from '@/components/delete-or-archive/DeleteOrArchiveDialog';
 import { getApiErrorMessage } from '@/utility/error-functions';
 
 const NO_ACCOUNT = '';
@@ -203,40 +204,29 @@ export function DeleteChannelDialog({
   onDeleted: () => void;
 }) {
   const [remove, { isLoading }] = useDeleteChannelMutation();
-  const [typed, setTyped] = useState('');
   const [error, setError] = useState<string>();
-  const confirm = async () => {
+  const confirm = async (archive: boolean) => {
     setError(undefined);
     try {
-      await remove({ spaceId: channel.SpaceID ?? '', channelId: channel.ChannelID ?? '' }).unwrap();
+      await remove({ spaceId: channel.SpaceID ?? '', channelId: channel.ChannelID ?? '', archive }).unwrap();
       onDeleted();
     } catch (e: unknown) {
-      setError(getApiErrorMessage(e) || 'The Channel could not be deleted.');
+      setError(getApiErrorMessage(e) || `The Channel could not be ${archive ? 'archived' : 'deleted'}.`);
     }
   };
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth='sm'>
-      <DialogTitle>Delete {channel.Slug}?</DialogTitle>
-      <DialogContent>
-        <Typography variant='body2' sx={{ mb: 2 }}>
-          {connected ? 'A client is connected to it now and will lose its mailbox. ' : ''}
-          Its commands can no longer be run, and the events it would have received are not kept for it.
-        </Typography>
-        <TextField fullWidth label={`Type ${channel.Slug} to confirm`} value={typed} onChange={(e) => setTyped(e.target.value)} />
-        {error ? (
-          <Alert severity='error' sx={{ mt: 2 }}>
-            {error}
-          </Alert>
-        ) : null}
-      </DialogContent>
-      <DialogActions>
-        <Button variant='outlined' onClick={onClose}>
-          Cancel
-        </Button>
-        <Button color='error' variant='contained' disabled={typed !== channel.Slug || isLoading} onClick={() => void confirm()}>
-          Delete
-        </Button>
-      </DialogActions>
-    </Dialog>
+    <DeleteOrArchiveDialog
+      open={open}
+      onClose={() => {
+        setError(undefined);
+        onClose();
+      }}
+      title={`Delete ${channel.Slug}?`}
+      description={`${connected ? 'A client is connected to it now and will lose its mailbox. ' : ''}Its commands can no longer be run, and the events it would have received are not kept for it.`}
+      confirmSlug={channel.Slug}
+      onConfirm={confirm}
+      busy={isLoading}
+      error={error}
+    />
   );
 }

@@ -10,6 +10,7 @@ import {
   isBulkMetadataEditEmpty,
 } from '@/components/bulk-edit/bulkMetadataEdit';
 import { ErrorList } from '@/components/error-list/ErrorList';
+import { BULK_PATCH_INCLUDE_HIDDEN } from '@/components/hidden-entities/useIncludeHidden';
 import { FixedSubmitContainer, SectionCard } from '@/components/styled';
 import { useBulkApiErrorMessage } from '@/hooks/useBulkApiErrorMessages';
 import { useBulkPatchUnitsMutation } from '@confighub/rtk-query';
@@ -137,8 +138,9 @@ export const BulkEditUnitsDrawer = ({
       await bulkPatchUnits({
         where,
         body: updateData,
-        // The selection names each Unit by ID, so a hidden one shown in the list is written too.
-        includeHidden: '*',
+        // The selection names each Unit by ID, so a hidden one shown in the list is written too, and
+        // an archived one is refused with a message.
+        includeHidden: BULK_PATCH_INCLUDE_HIDDEN,
       });
     } finally {
       setIsSubmitting(false);

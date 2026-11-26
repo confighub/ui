@@ -9,6 +9,7 @@ import { ErrorList } from '@/components/error-list/ErrorList';
 import { useFilterRefOptions } from '@/components/entity-ref-select/useEntityRefOptions';
 import { MapFieldSection } from '@/components/map-field-editor/MapFieldSection';
 import type { MapRow } from '@/components/map-field-editor/map-rows';
+import { BULK_PATCH_INCLUDE_HIDDEN } from '@/components/hidden-entities/useIncludeHidden';
 import { FixedSubmitContainer, SectionCard } from '@/components/styled';
 import { runChunkedBulkWrite } from '@/hooks/chunkedBulkWrite';
 import { type OtherUnitRow, type OtherUnitSelectionRow, otherDataPatch } from '@/hooks/triggerFormBody';
@@ -194,8 +195,9 @@ export const BulkEditTriggersDrawer = ({
           bulkPatchTriggers({
             where,
             body: updateData,
-            // The selection names each Trigger by ID, so a hidden one shown in the list is written too.
-            includeHidden: '*',
+            // The selection names each Trigger by ID, so a hidden one shown in the list is written
+            // too, and an archived one is refused with a message.
+            includeHidden: BULK_PATCH_INCLUDE_HIDDEN,
           }).unwrap(),
         (error) => getApiErrorMessage(error, 'The Triggers could not be updated.'),
       );

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 
 import { ConfirmationModal } from '@/components/confirmation-modal/ConfirmationModal';
+import { DeleteOrArchiveDialog } from '@/components/delete-or-archive/DeleteOrArchiveDialog';
 import { AddTargetPage } from '@/pages/add-target/AddTargetPage';
 import { AddUnitModal } from '@/pages/add-unit/AddUnitModal';
 import {
@@ -21,7 +22,18 @@ import { InvokeFunctionsModal } from '../invoke-units-functions-modal/InvokeFunc
 
 export const UnitDetailModals = {
   invoke: (data: IUnitMutationModalProps) => <InvokeFunctionsModal {...data} />,
-  delete: (data: IUnitMutationModalProps) => <ConfirmationModal {...data} />,
+  // The choice reaches onSubmit as { archive: 'true' } or { archive: 'false' }.
+  delete: (data: IUnitMutationModalProps) => (
+    <DeleteOrArchiveDialog
+      open={data.isOpen}
+      onClose={data.onClose}
+      title={data.modalTitleText ?? ''}
+      description={data.modalDescriptionText}
+      onConfirm={async (archive) => {
+        await data.onSubmit?.({ archive: String(archive) });
+      }}
+    />
+  ),
   destroy: (data: IUnitMutationModalProps) => <ConfirmationModal {...data} />,
   upgrade: (data: IUnitMutationModalProps) => <ConfirmationModal {...data} />,
   clone: (data: IUnitMutationModalProps) => <CloneUnitsDrawer {...data} />,

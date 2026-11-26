@@ -15,7 +15,7 @@ import { EmptyTriggers } from '@/pages/space-detail/components/empty-triggers/Em
 import { getApiErrorMessage } from '@/utility/error-functions';
 import { useFilterRefOptions } from '@/components/entity-ref-select/useEntityRefOptions';
 import { useUnitNamesById } from '@/hooks/useUnitNamesById';
-import { useListAllTriggersQuery } from '@confighub/rtk-query';
+import { type Trigger, useListAllTriggersQuery } from '@confighub/rtk-query';
 import Alert from '@mui/material/Alert';
 import Typography from '@mui/material/Typography';
 import { GridColDef, GridRowSelectionModel } from '@mui/x-data-grid';
@@ -28,7 +28,8 @@ import {
 } from './trigger-columns';
 
 export interface TriggersTableProps {
-  onRowSelected?: (newSelection: Array<string>) => void;
+  /** The IDs of the Triggers selected, and those of them the list holds */
+  onRowSelected?: (newSelection: Array<string>, selectedTriggers: Array<Trigger>) => void;
   onAddTrigger?: () => void;
   /** The Space whose page this is: its Triggers open in the edit drawer here, others on their own Space's page */
   spaceID?: string;
@@ -313,8 +314,12 @@ export const TriggersTable = ({
   }, [baseColumns, columnVisibilityModel, gridDefaults]);
 
   const handleRowSelectionChange = (newSelection: GridRowSelectionModel) => {
-    // @ts-expect-error GridRowSelectionModel is actually string[]
-    onRowSelected?.(newSelection);
+    const ids = newSelection as unknown as Array<string>;
+    const selected = new Set(ids);
+    onRowSelected?.(
+      ids,
+      triggers.flatMap((t) => (t.Trigger?.TriggerID && selected.has(t.Trigger.TriggerID) ? [t.Trigger] : [])),
+    );
   };
 
   if (isLoading && !skip) {

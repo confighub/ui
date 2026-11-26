@@ -5,6 +5,7 @@ import type { ConsoleMessage, Page } from '@playwright/test';
 import { defaultViewDef } from '../src/pages/x/view-explorer/model/fields';
 import type { Lens, ViewDef } from '../src/pages/x/view-explorer/model/types';
 import { encodeDraftParam } from '../src/pages/x/view-explorer/model/view-codec';
+import { confirmArchive, confirmPermanentDelete } from './fixtures/delete-or-archive';
 import { expect, hubApi, newAuthorizedContext, test } from './fixtures/test';
 import { type ExplorerSeed, readView, seedExplorer, viewsNamed, openExplorer, reloadExplorer, expectOverlaysGone } from './fixtures/view-explorer-seed';
 import { RandomSlugGenerator } from './fixtures/utils/random-slug-generator';
@@ -265,7 +266,7 @@ test.describe('view explorer tabs and saving', () => {
       await openExplorer(page, `/x/view-explorer?view=${view.viewId}`);
       await optionsButton(page, name).click();
       await page.getByRole('menuitem', { name: 'Delete view' }).click();
-      await page.getByRole('dialog').getByRole('button', { name: /delete/i }).click();
+      await confirmPermanentDelete(page);
       await expect(page.getByText(`Deleted “${name}”.`)).toBeVisible();
       await expect(tabNamed(page, name)).toHaveCount(0);
       const filter = await hubApi.get(`/api/space/${seed.spaceId}/filter/${a.filterId}`);
@@ -763,7 +764,7 @@ test.describe('view explorer tabs and saving', () => {
     await openExplorer(page, `/x/view-explorer?view=${view.viewId}`);
     await optionsButton(page, name).click();
     await page.getByRole('menuitem', { name: 'Delete view' }).click();
-    await page.getByRole('dialog').getByRole('button', { name: /delete/i }).click();
+    await confirmPermanentDelete(page);
     await expect(page.getByText(`Deleted “${name}”. Its filter could not be removed and is left unused.`)).toBeVisible();
     await expect(tabNamed(page, name)).toHaveCount(0);
     expect((await hubApi.get(`/api/space/${view.spaceId}/view/${view.viewId}`)).status()).toBe(404);
@@ -919,5 +920,41 @@ test.describe('view explorer tabs and saving', () => {
     await page.keyboard.press('n');
     await page.keyboard.type('abc');
     await expect(addFilter(page)).toHaveValue('abc');
+  });
+
+  test('archiving a view hides it and keeps its Filter, which unarchiving it needs', async ({ page }) => {
+    const name = uniqueName('Archived');
+    const view = await seed.createView({ name });
+
+    await openExplorer(page, `/x/view-explorer?view=${view.viewId}`);
+    await optionsButton(page, name).click();
+    await page.getByRole('menuitem', { name: 'Delete view' }).click();
+    await confirmArchive(page);
+    await expect(page.getByText(`Archived “${name}”.`)).toBeVisible();
+    await expect(tabNamed(page, name)).toHaveCount(0);
+    const archived = await hubApi.get(`/api/space/${view.spaceId}/view/${view.viewId}`);
+    expect(archived.status()).toBe(200);
+    expect(((await archived.json()) as { View: { HiddenReason?: string } }).View.HiddenReason).toBe('Archived');
+    expect((await hubApi.get(`/api/space/${view.spaceId}/filter/${view.filterId}`)).status()).toBe(200);
+    // The seed's clean-up lists live Views only; deleting the archived one purges it.
+    expect((await hubApi.delete(`/api/space/${view.spaceId}/view/${view.viewId}`)).ok()).toBeTruthy();
+  });
+
+  test('a Filter an archived view shares is kept when the other view is deleted', async ({ page }) => {
+    const first = uniqueName('Shared archived');
+    const second = uniqueName('Shared live');
+    const a = await seed.createView({ name: first });
+    const b = await seed.createView({ name: second, filterId: a.filterId });
+    expect((await hubApi.delete(`/api/space/${a.spaceId}/view/${a.viewId}`, { params: { archive: 'true' } })).ok()).toBeTruthy();
+
+    await openExplorer(page, `/x/view-explorer?view=${b.viewId}`);
+    await optionsButton(page, second).click();
+    await page.getByRole('menuitem', { name: 'Delete view' }).click();
+    await confirmPermanentDelete(page);
+    // Not "could not be removed": the archived view still uses the Filter, so it is not deleted.
+    await expect(page.getByText(`Deleted “${second}”.`, { exact: true })).toBeVisible();
+    expect((await hubApi.get(`/api/space/${a.spaceId}/filter/${a.filterId}`)).status()).toBe(200);
+    // The seed's clean-up lists live Views only; deleting the archived one purges it.
+    expect((await hubApi.delete(`/api/space/${a.spaceId}/view/${a.viewId}`)).ok()).toBeTruthy();
   });
 });

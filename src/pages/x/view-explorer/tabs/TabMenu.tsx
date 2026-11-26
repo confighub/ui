@@ -95,9 +95,9 @@ export function TabMenu({ tab, anchor, onClose }: TabMenuProps) {
       <DeleteConfirmDialog
         open={confirmOpen}
         viewName={tab.name}
-        onConfirm={() => {
+        onConfirm={(archive) => {
           setConfirmOpen(false);
-          deleteView(tab.id);
+          deleteView(tab.id, archive);
         }}
         onCancel={() => setConfirmOpen(false)}
       />

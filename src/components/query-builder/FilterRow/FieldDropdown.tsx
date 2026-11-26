@@ -8,13 +8,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import DeleteIcon from '@mui/icons-material/Delete';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import ClickAwayListener from '@mui/material/ClickAwayListener';
-import Dialog from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogContentText from '@mui/material/DialogContentText';
-import DialogTitle from '@mui/material/DialogTitle';
 import IconButton from '@mui/material/IconButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
@@ -29,6 +23,8 @@ import {
   useDeleteViewMutation,
   useListAllViewsQuery,
 } from '@confighub/rtk-query';
+
+import { DeleteOrArchiveDialog } from '@/components/delete-or-archive/DeleteOrArchiveDialog';
 
 import { FIELD_ICONS } from '../field-icons';
 import { FIELD_CONFIGS, FIELD_DESCRIPTIONS, getOfferedFieldsForEntity } from '../operators';
@@ -145,12 +141,12 @@ export const FieldDropdown = ({
     }
   };
 
-  const handleDeleteConfirm = useCallback(async () => {
+  const handleDeleteConfirm = useCallback(async (archive: boolean) => {
     if (!itemToDelete) return;
 
     setDeleteError(null);
     try {
-      await deleteView({ viewId: itemToDelete.id, spaceId: itemToDelete.spaceId }).unwrap();
+      await deleteView({ viewId: itemToDelete.id, spaceId: itemToDelete.spaceId, archive }).unwrap();
       setDeleteDialogOpen(false);
       setItemToDelete(null);
       // RTK Query will automatically refetch the lists
@@ -349,26 +345,14 @@ export const FieldDropdown = ({
         </SubmenuContainer>
       </Popper>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onClose={() => { setDeleteDialogOpen(false); setDeleteError(null); }}>
-        <DialogTitle>Delete View?</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to delete "{itemToDelete?.name}"? This action cannot be undone.
-          </DialogContentText>
-          {deleteError && (
-            <Typography color="error" sx={{ mt: 2 }}>
-              {deleteError}
-            </Typography>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => { setDeleteDialogOpen(false); setDeleteError(null); }}>Cancel</Button>
-          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
-            Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <DeleteOrArchiveDialog
+        open={deleteDialogOpen}
+        onClose={() => { setDeleteDialogOpen(false); setDeleteError(null); }}
+        onConfirm={handleDeleteConfirm}
+        title='Delete View?'
+        description={`Archive or permanently delete "${itemToDelete?.name}"?`}
+        error={deleteError ?? undefined}
+      />
     </>
   );
 };

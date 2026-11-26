@@ -273,7 +273,7 @@ land on `ComponentDeployment.changeSets`.
   (`ChangeSetPaneNotices.tsx`). Closing bulk-patches `ChangeSetID: null` over every unit the
   ChangeSet is open on, in any Space, which is what closes it and lands its end Tag.
 - **Downstream of an open ChangeSet.** The server refuses to take a Revision from the middle of an
-  open ChangeSet (`checkSourceChangeSet`), dry runs included. A unit whose upstream is in one it is
+  open ChangeSet (`CheckSourceChangeSet`), dry runs included. A unit whose upstream is in one it is
   not in itself (`upstreamChangeSetBlocking`) is left out of the upgrade preview and of
   `hasUpgradableUnits`, and its node carries `waitingOnChangeSets`; the pane says what it waits for
   and links to the upstream's ChangeSet filter, instead of reporting a failed preview and offering

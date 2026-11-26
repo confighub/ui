@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url';
 import { Role } from '../types';
 import { ApiHelper } from './api-helper';
 import { addBulkRows } from './bulk-metadata';
+import { confirmPermanentDelete } from './delete-or-archive';
 import { EntityGridFixture } from './entity-grid-fixture';
 import { hubApi } from './test';
 
@@ -43,14 +44,12 @@ const DEFAULT_TOOLCHAIN_TYPE = 'Kubernetes/YAML';
 
 export class UnitListPage extends EntityGridFixture {
   private readonly moreItemsButton: Locator;
-  private readonly deleteModalConfirm: Locator;
   private readonly invokeButton: Locator;
   private readonly refreshButton: Locator;
 
   constructor(public readonly page: Page) {
     super(page);
     this.moreItemsButton = this.page.getByRole('button', { name: 'More' });
-    this.deleteModalConfirm = this.page.getByRole('button', { name: 'Confirm' });
     this.invokeButton = page.getByRole('button', { name: 'Invoke' });
     this.refreshButton = this.page.getByTestId('refresh-button');
   }
@@ -433,7 +432,7 @@ export class UnitListPage extends EntityGridFixture {
   }
 
   async clickConfirmDelete() {
-    await this.deleteModalConfirm.click();
+    await confirmPermanentDelete(this.page);
   }
 
   async clickCloneConfirmButton() {

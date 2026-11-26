@@ -27,7 +27,7 @@ export const IncludeHiddenToggle = ({
     title={
       includeHidden
         ? `Hidden ${entities} are listed`
-        : `Also list hidden ${entities}, such as those that hold the configuration of other entities`
+        : `Also list hidden ${entities}, such as archived ones and those that hold the configuration of other entities`
     }
   >
     <Button
