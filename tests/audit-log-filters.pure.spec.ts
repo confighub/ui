@@ -4,7 +4,7 @@
 // The Audit log's filters: the where expression they make, and the page address they are kept
 // in. No page and no server.
 import { expect, test } from '@playwright/test';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 
 import {
@@ -171,13 +171,15 @@ test.describe('the page address', () => {
   });
 });
 
+// The spec is beside ui/ only where the server is built. A copy of ui/ on its own has no spec
+// to compare with.
+const openapiSpecPath = fileURLToPath(
+  new URL('../../public/core/openapi/openapi.json', import.meta.url),
+);
+
 test('the Action filter offers every Action the server records', () => {
-  const spec = JSON.parse(
-    readFileSync(
-      fileURLToPath(new URL('../../public/core/openapi/openapi.json', import.meta.url)),
-      'utf8',
-    ),
-  ) as {
+  test.skip(!existsSync(openapiSpecPath), 'no OpenAPI spec beside ui/');
+  const spec = JSON.parse(readFileSync(openapiSpecPath, 'utf8')) as {
     components: {
       schemas: { AuditEvent: { properties: { Action: { description: string } } } };
     };
