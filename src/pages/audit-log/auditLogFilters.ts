@@ -35,6 +35,8 @@ export const ACTION_GROUPS: readonly { label: string; actions: readonly string[]
       'Update',
       'Patch',
       'Delete',
+      'Archive',
+      'Unarchive',
       'Move',
       'Detach',
       'Hide',

@@ -4,8 +4,11 @@
 // The Audit log's filters: the where expression they make, and the page address they are kept
 // in. No page and no server.
 import { expect, test } from '@playwright/test';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
 
 import {
+  ACTION_GROUPS,
   type AuditLogFilters,
   EMPTY_FILTERS,
   buildAuditWhere,
@@ -166,4 +169,24 @@ test.describe('the page address', () => {
     expect(clearFilters(filters)).toEqual({ ...EMPTY_FILTERS, time: '24h' });
     expect(hasFilters(clearFilters(filters))).toBe(false);
   });
+});
+
+test('the Action filter offers every Action the server records', () => {
+  const spec = JSON.parse(
+    readFileSync(
+      fileURLToPath(new URL('../../public/core/openapi/openapi.json', import.meta.url)),
+      'utf8',
+    ),
+  ) as {
+    components: {
+      schemas: { AuditEvent: { properties: { Action: { description: string } } } };
+    };
+  };
+  const description = spec.components.schemas.AuditEvent.properties.Action.description;
+  const served = description
+    .replace(/^The verb, as a code: /, '')
+    .split('.')[0]
+    .split(', ');
+  const offered = ACTION_GROUPS.flatMap((group) => group.actions);
+  expect([...offered].sort()).toEqual([...served].sort());
 });
