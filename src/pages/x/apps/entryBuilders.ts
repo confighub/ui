@@ -1,6 +1,8 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
 import type { ConfigDiff, ExtendedUnitRead, MutationConflict, PathAnnotationList, UnitCreateOrUpdateResponseRead, UnitDiff } from '@confighub/rtk-query';
+import { parse as parseYamlValue } from 'yaml';
+
 import { guardText } from '@/utility/clearance-functions';
 
 import { changeEntriesOf } from './change-order/changeOrderChanges';
@@ -8,6 +10,7 @@ import { parseUnitData, parseUnitDataStructured, type FieldEntry } from './confi
 import { addedResourceLeafRows, fieldDiffsFromConfigDiff, isWholeResourceChange, resolveConflictPath, type TreeSideOptions } from './configDiffFieldDiffs';
 import type { ApplyEntryWithGates, FieldDiff, GuardedKey, KeyedFieldDiff, MergedUnit, UpgradeEntry, VariationEntry, WholeResourceChange } from './componentTypes';
 import { treeReadsDocuments } from './componentValues';
+import { buildSpecSheet } from './spec-sheet/specSheetModel';
 
 // ============================================================================
 // LOGICAL CHANGE COUNTING
@@ -61,11 +64,44 @@ export function countLogicalChanges(paths: Iterable<string>): number {
 }
 
 /**
+ * The changes in a set of field diffs, as the server's Diff groups them: the leaves of one
+ * added or deleted list element count once, and each other leaf counts on its own. A diff
+ * that does not come from the server's Diff is grouped by {@link logicalChangeKey}.
+ */
+export function countChanges(diffs: readonly FieldDiff[]): number {
+  const changes = new Set<string>();
+  for (const d of diffs) changes.add(d.change ?? logicalChangeKey(fieldDiffKey(d)));
+  return changes.size;
+}
+
+/**
+ * The changes among `keys`, rows of a Unit's upgrade: grouped by the server's change of each
+ * row, as {@link countChanges} groups them. A key with no field diff, such as a blocked
+ * deletion or a guarded row, is a change of its own.
+ */
+export function countUpgradeChanges(unit: MergedUnit, keys: Iterable<string>): number {
+  const { changeOf } = fieldStates(unit);
+  const changes = new Set<string>();
+  for (const key of keys) changes.add(changeOf.get(key) ?? key);
+  return changes.size;
+}
+
+/**
  * The key a field diff is counted, staged and looked up by: its stage key, which names
  * its document, or its bare path for a diff that does not know its document.
  */
 export function fieldDiffKey(d: FieldDiff): string {
   return d.key ?? d.path;
+}
+
+/**
+ * The fields of the Changes scope: the Unreleased fields, by stage key (see
+ * spec-sheet/unreleasedKeys), each once. Staged edits are not in it: they show in the footer
+ * only (the user's decision). The Changes chip counts this set and the scope draws it, so the
+ * two always agree.
+ */
+export function changesScopeKeys(unreleased: Iterable<string>): Set<string> {
+  return new Set(unreleased);
 }
 
 /**
@@ -75,9 +111,9 @@ export function fieldDiffKey(d: FieldDiff): string {
  * promoting would add them — matching `hasRealUpgrade` and the "upgradable"
  * filter view so the badge count and the rows shown stay consistent.
  *
- * Counts LOGICAL changes (via `countLogicalChanges`), not raw leaf paths: a
+ * Counts the server's changes (via `countUpgradeChanges`), not raw leaf paths: a
  * wholly-added array element (e.g. one env var = name+value, a new container =
- * many leaves) counts as ONE. This keeps the badge, the footer "Upgrade [N]"
+ * many leaves) counts as ONE, and two fields changed in one container count as two. This keeps the badge, the footer "Upgrade [N]"
  * chip, and "Select all (N)" all showing the same logical number. The diffs are
  * counted by stage key, so a path two documents share counts once per document that
  * changes it; a resource added or deleted as a whole counts as one change.
@@ -99,22 +135,75 @@ export function countSelectableUpgradeFields(unit: MergedUnit): number {
 
 function countUpgradeFields(unit: MergedUnit, withGuarded: boolean): number {
   if (!unit.upgradeEntry) return 0;
+  const states = fieldStates(unit);
+  const keys = withGuarded ? states.incomingKeys : states.selectableKeys;
+  return countUpgradeChanges(unit, keys) + availableWholeResourceChanges(unit.upgradeEntry).length;
+}
+
+/** What each field of a Unit has coming from upstream, by stage key. */
+export interface FieldStates {
+  /**
+   * The Incoming fields: the upstream changes with no local override (removals included),
+   * the blocked upstream deletions, and the changes a guard holds back. The badge, the
+   * Incoming scope and the Stale marks all read this one set, so they never disagree.
+   */
+  incomingKeys: ReadonlySet<string>;
+  /** `incomingKeys` but the guarded ones: what "Select all" and entering Incoming tick. */
+  selectableKeys: ReadonlySet<string>;
+  /** Upstream deletions the merge kept out because the Unit changed the key. */
+  blockedDeleteKeys: ReadonlySet<string>;
+  /** Changes a guard holds back: only the person ticks one, to clear its guard. */
+  guardedKeys: ReadonlySet<string>;
+  /** The upstream value of each changed key (a removal is the removal sentinel). */
+  upstreamValues: ReadonlyMap<string, string>;
+  /** The server's change each changed key is part of (`FieldDiff.change`), for counting. */
+  changeOf: ReadonlyMap<string, string>;
+}
+
+const EMPTY_FIELD_STATES: FieldStates = {
+  incomingKeys: new Set(),
+  selectableKeys: new Set(),
+  blockedDeleteKeys: new Set(),
+  guardedKeys: new Set(),
+  upstreamValues: new Map(),
+  changeOf: new Map(),
+};
+
+const fieldStatesCache = new WeakMap<UpgradeEntry, { variation: unknown; states: FieldStates }>();
+
+/** The one predicate behind the badge, Incoming, Select all and the Stale marks, so they never disagree. */
+export function fieldStates(unit: MergedUnit): FieldStates {
+  const entry = unit.upgradeEntry;
+  if (!entry) return EMPTY_FIELD_STATES;
+  const cached = fieldStatesCache.get(entry);
+  if (cached && cached.variation === unit.variationEntry) return cached.states;
   const overriddenKeys = new Set(unit.variationEntry?.fieldDiffs.map(fieldDiffKey) ?? []);
   // Includes upstream removals (newValue '-' or ''): a removed path is a real
   // upgrade change and is shown (struck-through) in the upgradable view.
   // Also counts blocked upstream deletions (swallowed by SubtractMutations) so
   // the badge reflects those opt-in upgrades too, and the changes a guard holds
-  // back, which land once cleared. The same keys as the Incoming filter; "Select
-  // all" takes these but the guarded ones, which need a clearance to land.
-  const guardedKeys = (unit.upgradeEntry.guardedKeys ?? []).map((guarded) => guarded.key);
-  const keys = [
-    ...new Set([
-      ...unit.upgradeEntry.fieldDiffs.map(fieldDiffKey).filter((key) => !overriddenKeys.has(key)),
-      ...(unit.upgradeEntry.blockedDeleteKeys ?? []),
-      ...(withGuarded ? guardedKeys : []),
-    ]),
-  ].filter((key) => withGuarded || !guardedKeys.includes(key));
-  return countLogicalChanges(keys) + availableWholeResourceChanges(unit.upgradeEntry).length;
+  // back, which land once cleared. "Select all" takes these but the guarded ones,
+  // which need a clearance to land.
+  const guardedKeys = new Set((entry.guardedKeys ?? []).map((guarded) => guarded.key));
+  const blockedDeleteKeys = new Set(entry.blockedDeleteKeys ?? []);
+  const upstreamValues = new Map<string, string>();
+  const changeOf = new Map<string, string>();
+  for (const diff of entry.fieldDiffs) {
+    upstreamValues.set(fieldDiffKey(diff), diff.newValue);
+    if (diff.change !== undefined) changeOf.set(fieldDiffKey(diff), diff.change);
+  }
+  for (const guarded of entry.guardedKeys ?? []) {
+    if (guarded.upstreamValue !== undefined && !upstreamValues.has(guarded.key)) upstreamValues.set(guarded.key, guarded.upstreamValue);
+  }
+  const incomingKeys = new Set([
+    ...entry.fieldDiffs.map(fieldDiffKey).filter((key) => !overriddenKeys.has(key)),
+    ...blockedDeleteKeys,
+    ...guardedKeys,
+  ]);
+  const selectableKeys = new Set([...incomingKeys].filter((key) => !guardedKeys.has(key)));
+  const states: FieldStates = { incomingKeys, selectableKeys, blockedDeleteKeys, guardedKeys, upstreamValues, changeOf };
+  fieldStatesCache.set(entry, { variation: unit.variationEntry, states });
+  return states;
 }
 
 const NO_WHOLE_RESOURCE_CHANGES: WholeResourceChange[] = [];
@@ -130,6 +219,17 @@ const NO_WHOLE_RESOURCE_CHANGES: WholeResourceChange[] = [];
 export function availableWholeResourceChanges(entry: UpgradeEntry | undefined): WholeResourceChange[] {
   if (!entry?.wholeResourceChanges || (entry.blockedDeleteKeys?.length ?? 0) > 0) return NO_WHOLE_RESOURCE_CHANGES;
   return entry.wholeResourceChanges;
+}
+
+/**
+ * The stage keys "Select all" ticks, and entering Incoming ticks: every field change a guard
+ * does not hold back, and every whole-resource change the Unit can take. The commit's
+ * upgrade-all test reads the same set, so a batch is the whole upgrade only when every one of
+ * them is ticked.
+ */
+export function selectAllUpgradeKeys(unit: MergedUnit): string[] {
+  if (!unit.upgradeEntry) return [];
+  return [...fieldStates(unit).selectableKeys, ...availableWholeResourceChanges(unit.upgradeEntry).map((c) => c.key)];
 }
 
 /**
@@ -241,9 +341,8 @@ function makeDataCache<T>(compute: (data: string) => T): (data: string | undefin
  * Memoized on the raw Data string, so the same Data yields the SAME array
  * REFERENCE. That identity is load-bearing, not just a speed-up: an RTK poll
  * rebuilds every upgrade/apply/variation entry object even when nothing changed,
- * and a fresh `allPaths` array would invalidate the whole derived chain in
- * ComponentValuesSection (tree → prefixIndex → filteredPaths → changedDiffs →
- * downstreamValueByPath) on every poll.
+ * and a fresh `allPaths` array would invalidate every memo derived from it on
+ * every poll.
  *
  * The returned array is READ-ONLY — callers must not mutate it (it is shared
  * across calls), same contract as `parseUnitData`'s map.
@@ -343,32 +442,50 @@ export function filterUnitsByText(units: MergedUnit[], filterText: string): Merg
 }
 
 /**
- * Total field count for the "All · N" toolbar badge, shared by `ComponentSidePane`
- * (auto mode) and ChangeOrder mode. `isMaterialized` is the one thing that differs
- * between callers: auto mode gates it on its collapse/heavy-unit state, while
- * ChangeOrder mode — which never collapses a unit and has no heavy-unit gate of its
- * own yet — passes `() => true`, so every unit counts exactly and `allFieldsPartial`
- * never fires there. See `peekGroupedLeafCount` for why an unmaterialized unit
- * must not be parsed just to count it.
+ * A Unit's fields as the sheet counts them: every value once, list items and empty `{}` / `[]`
+ * included (the contract's most-items: "74 rows (83 fields counting list items)"). What names a
+ * resource or a row is not counted: a resource's `apiVersion` and `kind`, and the `name` of a
+ * list element that has other fields (an env var, a container, a port, a volume), which the
+ * sheet draws as the row's label. An element with only its name keeps it as its field.
  */
-export function computeTotalAllFields(
-  units: MergedUnit[],
-  isMaterialized: (unit: MergedUnit) => boolean,
-): { totalAllFields: number; allFieldsPartial: boolean } {
-  let total = 0;
-  let partial = false;
-  for (const u of units) {
-    const known = peekGroupedLeafCount(u.data);
-    const perDocumentLeaves = known ?? (isMaterialized(u) ? buildGroupedPaths(u.data).length : undefined);
-    if (perDocumentLeaves === undefined) {
-      partial = true;
-      continue;
-    }
-    total += perDocumentLeaves > 0
-      ? perDocumentLeaves
-      : (u.variationEntry?.allPaths.length ?? u.upgradeEntry?.allPaths.length ?? u.applyEntry?.allPaths.length ?? 0);
+const sheetFieldCountOf = makeDataCache((data: string) => {
+  const sheet = buildSpecSheet(data, { scopedWritesSupported: true });
+  const identity = new Set<string>();
+  for (const r of sheet.resources) {
+    if (r.kindAtom) identity.add(r.kindAtom.key);
+    if (r.apiVersionAtom) identity.add(r.apiVersionAtom.key);
   }
-  return { totalAllFields: total, allFieldsPartial: partial };
+  const elementOf = (key: string) => /^(.*\.\d+)\.name$/.exec(key)?.[1];
+  // How many fields each list element holds, nested elements counted in their parents too.
+  const fieldsOfElement = new Map<string, number>();
+  for (const a of sheet.atoms) {
+    // By stage key, so the elements of two documents with the same path are kept apart.
+    const segments = a.key.split('.');
+    segments.forEach((segment, i) => {
+      if (i === segments.length - 1 || !/^\d+$/.test(segment)) return;
+      const element = segments.slice(0, i + 1).join('.');
+      fieldsOfElement.set(element, (fieldsOfElement.get(element) ?? 0) + 1);
+    });
+  }
+  const atoms = sheet.atoms.filter((a) => {
+    if (identity.has(a.key)) return false;
+    const element = elementOf(a.key);
+    return !element || (fieldsOfElement.get(element) ?? 0) <= 1;
+  }).length;
+  // Configuration the sheet reads as flat keys (Properties, Env, INI, TOML, Text).
+  return sheet.atoms.length > 0 ? atoms : buildGroupedPaths(data).length;
+});
+
+/**
+ * The All count: the fields the sheet draws, so the count and the sheet agree. `isDrawn` says
+ * which Units the sheet draws (open, and not held back as oversized); the others add nothing.
+ */
+export function computeTotalAllFields(units: MergedUnit[], isDrawn: (unit: MergedUnit) => boolean): number {
+  let total = 0;
+  for (const u of units) {
+    if (u.data && isDrawn(u)) total += sheetFieldCountOf(u.data);
+  }
+  return total;
 }
 
 /**
@@ -493,13 +610,27 @@ export function guardedKeysOf(
     if (key === undefined) continue;
     const guards = conflict.Guards ?? (conflict.Guard ? [conflict.Guard] : []);
     if (guards.length === 0) continue;
+    const upstreamValue = scalarText(conflict.Source?.Value);
     byKey.set(key, {
       key,
       guards: guards.map(guardText),
       inherited: guards.every((guard) => guardInheritedAt(annotations, conflict, guard.Key ?? '')),
+      ...(upstreamValue !== undefined ? { upstreamValue } : {}),
     });
   }
   return [...byKey.values()];
+}
+
+/** A conflict's value (YAML) as the sheet writes a scalar; undefined for a map, a list or none. */
+function scalarText(value: string | undefined): string | undefined {
+  if (value === undefined || value === '') return undefined;
+  try {
+    const parsed: unknown = parseYamlValue(value);
+    if (parsed === null || typeof parsed === 'object') return undefined;
+    return String(parsed);
+  } catch {
+    return undefined;
+  }
 }
 
 /**

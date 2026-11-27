@@ -1,6 +1,6 @@
 # Component view (agents-first guide)
 
-> Read this before touching the Component view / component-treeview feature. It is written for an
+> Read this before touching the Component view and its field sheet. It is written for an
 > AI agent editing this code cold. It is rule-dense on purpose. Paths and identifiers are real and
 > verified against the tree; grep them.
 
@@ -12,8 +12,9 @@ a clone of an **upstream** unit; as the upstream changes, the downstream can **u
 changes — per-field or in bulk. The whole interaction is **opt-in, preview-first, and stage-first**:
 nothing is ever auto-applied, and changes are queued into a **staged batch** before being committed
 in one network call. The UI is a left **app picker**, a center **flow graph** of deployment nodes
-(by stage), and a right **side pane** whose centerpiece is a custom **value treeview** — one row
-per config key with colored state checkboxes. The diff is deliberately **not** a text/Monaco diff;
+(by stage), and a right **side pane** whose centerpiece is a custom **field sheet** — each Unit's
+resources, parts and blocks in document order, one value per field, and a tick for each incoming
+change. The diff is deliberately **not** a text/Monaco diff;
 Monaco only appears in the alternative **Source view**.
 
 Everything lives under **`src/pages/x/apps/`**. There is **no Redux slice** and **no
@@ -45,28 +46,35 @@ you can cite them in review.
    *(This supersedes an earlier "don't count deletions as upgradable" stance from before #4570's
    removal-preview work — do not reintroduce it; it would contradict rules 6 and 7.)*
 4. **Keep count, filter, and dimming on the SAME predicate.** `hasRealUpgrade` /
-   `countUpgradableBadgeFields` (`entryBuilders.ts`) and the section's `upgradableStageKeys` are
-   the single source of truth so the badge number and the dimmed rows can never diverge. All of
-   them key a change by its stage key (`fieldDiffKey`: `key ?? path`), never by its bare path.
+   `countUpgradableBadgeFields` and `fieldStates` (all in `entryBuilders.ts`) are the single source
+   of truth, so the badge number and the marked fields can never diverge: the badge, the Incoming
+   scope and the Stale marks read `fieldStates(unit).incomingKeys`, and "Select all", entering
+   Incoming and the commit's upgrade-all test read `selectAllUpgradeKeys` (its `selectableKeys`
+   and the whole-resource changes the Unit can take). All of them key a change by its stage key (`fieldDiffKey`: `key ?? path`),
+   never by its bare path.
    Divergence here is a recurring, user-caught bug.
-5. **Kick the user off the Upgradable tab when a node has nothing upgradable.** Don't strand them on
-   an empty tab. Guard the auto-switch on **`dryRunSettled`**, not `!isDryRunLoading`
+5. **Kick the user off the Incoming scope when a node has nothing upgradable.** Don't strand them on
+   an empty scope. Guard the auto-switch on **`dryRunSettled`**, not `!isDryRunLoading`
    (`ComponentSidePane.tsx`) — at a node switch `isDryRunLoading` is briefly `false` before
-   the new dry-run starts. Note: entering the Upgradable tab auto-stages all upgradable paths
-   (`stageAllSignal` bumps); leaving it clears upgrade-only staged picks (`clearStagedSignal` bumps).
+   the new dry-run starts. Note: entering Incoming ticks, for each Unit as its dry run lands,
+   every change "Select all" would tick (a `stageAll` action with `selectAllUpgradeKeys`); leaving
+   it drops the upgrade ticks only (`clearUpgradeOnly`). Edits and keeps stay.
 6. **Surface a swallowed upstream key-deletion as an opt-in upgrade.** This is the essence of #4570.
    When upstream deleted a key but the child locally modified it, the merge silently keeps the key
-   (see Terminology → Key-deletion). Show it as a *blocked / lock* upgrade checkbox the user can
-   accept.
+   (see Terminology → Key-deletion). Show it with the held shield mark and a shield tick the user
+   can untick or tick.
 7. **Never apply an upstream key-deletion silently.** It goes through the same opt-in accept path as
    any value change.
 8. **Manual inline edits STAGE (deferred) — never write immediately.** Clicking a value opens an
    inline editor; saving goes through `onStageEdit`, NOT `onSetFieldValue` / `onDeleteFieldValue`.
    Those immediate-write handlers must never be called by an inline edit. The staged edit is
    committed as part of the next batch commit (Upgrade button).
-9. **Staged manual edits are STICKY across `clearStagedSignal`.** Leaving the Upgradable tab only
-   discards upgrade-only staged picks. Manual edits survive tab switches and can only be cleared by
-   `discardAllSignal` (explicit Discard) or `commitStagedSignal` (commit).
+9. **Staged manual edits are STICKY across a scope switch.** Leaving Incoming drops only the
+   upgrade ticks (`clearUpgradeOnly`). Manual edits and Keep on merge changes survive scope
+   switches and remounts, because `ComponentSidePane` holds the staging store
+   (`spec-sheet/staging/useUnitStagingStore.ts`) above every field view. Only Discard
+   (`discardAll`), a successful write (`committed` for values, `protectionCommitted` for keeps) or
+   a node switch (`reset`) clears them.
 10. **Manual edit wins over upstream upgrade in the committed payload.** If a user manually edits a
     path that also has an upstream upgrade, the manual edit value is written — the upgrade for that
     path is absorbed.
@@ -76,15 +84,19 @@ you can cite them in review.
     The one exception is the guard dialog every guarded write uses (`useGuardedWrite`): it appears
     only when a ticked change would write a field a guard keeps (rule 18), and asks about those
     guards, not about the whole commit.
-12. **Mirror the treeview's interaction model in Source view.** (User: *"copy how the pills and
-    buttons work in the treeview."*) Pills + accept/revert, not a separate paradigm.
-13. **Treeview is the DEFAULT view; Source view is the opt-in alternative.** Do not flip the default.
+12. **Mirror the field sheet's interaction model in Source view.** (User, of the tree it replaced:
+    *"copy how the pills and buttons work in the treeview."*) Ticks, accept and revert, not a
+    separate paradigm.
+13. **The field sheet is the DEFAULT view (the Fields button); Source view is the opt-in alternative.**
+    There is no tree view: the sheet (`spec-sheet/`) draws All, Incoming, Changes, Local overrides,
+    Kept on merge and a ChangeSet read-only. Do not flip the default.
 14. **Design before implementation for UX changes.** Mock in HTML, get sign-off, then build. (User,
     verbatim: *"No no no no no. I just want the design for it. undo that."*) Do not jump from a design
     request to writing the feature.
-15. **Do not touch the pill-group inline-diff hover CSS** (`.pill-group :has(.upgrade-pill:hover) …`
-    in `ComponentValuesSection.tsx`). It is load-bearing for superimposition and treated as a no-touch
-    invariant.
+15. **The Incoming scope shows each incoming field with a tick and one line with what comes in**
+    (`spec-sheet/IncomingField.tsx`): a Stale arrow and the upstream value, a plus for a key only
+    upstream has, "deleted upstream" for a deletion, a shield tick for a blocked deletion or a
+    guarded key. It never shows a compare grid. The tree's pill-group inline-diff CSS is gone with the tree.
 16. **Do not build an `UpgradeEntry` before its dry-run Diff lands** (`buildUpgradeEntries`,
     `entryBuilders.ts`). An entry with no Diff offers nothing to upgrade, and one built from
     anything else risks flagging *every* field as removed (`-` sentinel) → a transient
@@ -93,10 +105,11 @@ you can cite them in review.
 18. **Surface a change a guard holds back as an opt-in upgrade, counted but never ticked for the
     user.** The dry run withholds it (a `Guarded` conflict), so it is in no field diff; without
     this it is simply missing from Incoming, and the Variant reads as up to date. It is a row of
-    `UpgradeEntry.guardedKeys` (`guardedKeysOf`), shown with the blocked lock checkbox a local
-    override gets, its hover naming the guard. It counts in Incoming, since a clearance lands it
-    (the user's call, over rule 1), but "Select all" and the auto-stage leave it out
-    (`upgradableStageKeys`): ticking it is choosing to clear a guard. A ticked one makes the commit
+    `UpgradeEntry.guardedKeys` (`guardedKeysOf`), shown in Incoming with the shield tick a blocked
+    deletion also gets (`HeldCheck`, `IncomingField.tsx`), its hover naming the guard. It counts in
+    Incoming, since a clearance lands it (the user's call, over rule 1), but "Select all" and the
+    auto-stage leave it out (it is not in `fieldStates`'s `selectableKeys`, which
+    `selectAllUpgradeKeys` reads): ticking it is choosing to clear a guard. A ticked one makes the commit
     a data write, and a data write to a guarded Unit goes through the guard dialog
     (`handleCommitStaged`); the wholesale upgrade, chosen only when none is ticked, never asks. A
     row the guards still withheld comes back in `withheldKeys` and is not marked done. Applying a
@@ -114,30 +127,30 @@ you can cite them in review.
 | **Upgrade** | Merging the upstream HEAD revision into a downstream unit. Backend: `upgrade=true` → `mergeUnits` → `SourceTypeUpgradeUnit`. "Upgradable" unit = `UpstreamRevisionNum < upstream.HeadRevisionNum`. |
 | **Release** | Publishing a Space's Units to its Target. "Unreleased" = `LastReleasedRevisionNum < HeadRevisionNum`. |
 | **Override / local override** | The child's locally-changed value at a path; it supersedes the upstream value and *blocks* that path from being "upgradable". |
-| **Kept on merge** | A path with an Override guard (`Override=Upstream` on a Unit with an upstream Unit, `Override=External` on one without) on itself, an ancestor, or its resource, in the Unit's `PathAnnotations` — a merge must not overwrite it. Committed via `SetUnitGuard` (`SourceTypeSetGuard`), a **separate revision** from any value write. Read ladder: `protectedPaths.ts`'s `buildProtectedPathLookup` (`overrideGuardAt`: exact path → ancestors → resource → `false`). A row kept by an enclosing guard cannot be let go on its own: removing a guard at the row would remove nothing. Toggled per-row via the leaf/folder kebab (`Keep on merge` / `Let merges update this`); staged the same way as everything else (`stagedProtection`, below) before commit. Array-indexed paths (`spec.containers.0.image`) are excluded from both read and write — `MutationSources` keys array elements associatively (`ResolvedPath`, e.g. `spec.containers.?name=nginx;@0.image`) and there is no parser in `src` to translate the tree's positional notation into it, so guessing would risk silently mismatching the merge engine's own lookup. |
-| **Value treeview** | The default diff UI: field-level tree, one row per dot-path key, with colored state checkboxes. NOT a text diff. `ComponentValuesSection.tsx`. |
-| **Source view** | Monaco editor of the full raw decoded `unit.Data` (`ComponentSourceSection.tsx`). Opt-in alternative to the treeview (shipped #4538). |
-| **Units row** | The toolbar row above Scope (`ComponentToolbar.tsx`), in every view: **Releasable** (the default) lists the units a Release of their Space publishes, by the server's `Unit.Releasable`; **All units** lists every unit; **Include hidden** adds the units with a `HiddenReason`, such as the ConfigHub/YAML units behind entities. `PaneUnitScope` and `includeHiddenUnits` live in `AppComponentView`, so they survive a node switch, and filter `mergedUnits`, so the counts and the lone-unit rule follow them. Hidden units are read only when asked for, only in the selected Spaces (`include_hidden=*`, `HiddenReason != ''`), and go into `unitsByDeployment` alone, never into `allUnits`: the graph, its counts and the upgrade machinery do not see them. |
+| **Kept on merge** | A path with an Override guard (`Override=Upstream` on a Unit with an upstream Unit, `Override=External` on one without) on itself, an ancestor, or its resource, in the Unit's `PathAnnotations` — a merge must not overwrite it. Committed via `SetUnitGuard` (`SourceTypeSetGuard`), a **separate revision** from any value write. Read ladder: `protectedPaths.ts`'s `buildProtectedPathLookup` (`overrideGuardAt`: exact path → ancestors → resource → `false`). A field kept by an enclosing guard cannot be let go on its own: removing a guard at the field would remove nothing. Toggled per value by the `Keep on merge` / `Let merges update this` action of its hover card (`spec-sheet/FieldActions.tsx`), or per block by `Keep this block on merge` (`spec-sheet/BlockActions.tsx`); staged the same way as everything else (`StagingState.protection`, below) before commit. Array-indexed paths (`spec.containers.0.image`) are excluded from both read and write — `MutationSources` keys array elements associatively (`ResolvedPath`, e.g. `spec.containers.?name=nginx;@0.image`) and there is no parser in `src` to translate the positional notation of these paths into it, so guessing would risk silently mismatching the merge engine's own lookup. |
+| **Field sheet** | The field view of the side pane: resources, parts and blocks in the order of the stored document, every field one value. NOT a text diff and not a tree. `spec-sheet/SpecSheet.tsx` (model: `spec-sheet/specSheetModel.ts`). |
+| **Source view** | Monaco editor of the full raw decoded `unit.Data` (`ComponentSourceSection.tsx`). Opt-in alternative to the field sheet (shipped #4538). |
+| **Units filter** | In the view menu of the filter row (`ComponentToolbar.tsx`), in every view; a dot on the menu button shows a filter that is not the default: **Releasable** (the default) lists the units a Release of their Space publishes, by the server's `Unit.Releasable`; **All units** lists every unit; **Include hidden** adds the units with a `HiddenReason`, such as the ConfigHub/YAML units behind entities. `PaneUnitScope` and `includeHiddenUnits` live in `AppComponentView`, so they survive a node switch, and filter `mergedUnits`, so the counts and the lone-unit rule follow them. Hidden units are read only when asked for, only in the selected Spaces (`include_hidden=*`, `HiddenReason != ''`), and go into `unitsByDeployment` alone, never into `allUnits`: the graph, its counts and the upgrade machinery do not see them. |
 | **Overview** | Each unit's resources in the friendly view the resource explorer, View explorer and Unit Resources tab show (`ComponentOverviewSection.tsx` → `ResourceOverview`). Read-only and not searchable: the search box is cleared and disabled, and the filter tabs and Scope row are hidden. Kubernetes, and the other configuration `overviewAvailability.ts` names (the installer's record, an AppConfig/YAML `InstallerRecord`); other configuration falls back to the Source view, as the Resources tab does. `viewMode: PaneViewMode` (`'diff' \| 'overview' \| 'source'`, `ComponentToolbar.tsx`). |
-| **Staged change** | A pending change queued for batch commit. A checkbox for an upgrade OR a manual inline edit. Type: `StagedChange {path, type: StagedChangeType, before, after}` (`ComponentValuesSection.tsx`). A staged **protection** change (`stagedProtection`, below) is a DIFFERENT kind of pending change — it never joins this set, and commits through a different endpoint. |
-| **`stagedProtection`** | `Map<stageKey, boolean>` — the target `Protected` value the user picked for a path via the kebab, staged (not written) until commit. Keyed the same document-scoped way as `stagedEditedValues`. Deliberately separate from `stagedPaths`: a protection change is never a value change, so it never adds to the "N staged" count. Collapses to a no-op (deleted from the map) when the target equals the path's current *committed* protection — clicking `Keep on merge` then `Let merges update this` on the same unmodified row is a true no-op, and "protect 6 where 4 already are" stages exactly 2. Sticky across `clearStagedSignal`; cleared only by `discardAllSignal` or a successful protection commit. |
-| **Staging signals** | Integer props on `ComponentValuesSection` that bump to trigger actions without re-mounting: `stageAllSignal` (stage all upgradable), `clearStagedSignal` (clear upgrade-only staged, leave Upgradable tab), `discardAllSignal` (clear everything, explicit Discard), `commitStagedSignal` (fire batch commit — protection first, see "Locking (protection)" below), `keepStagedEditsSignal` (stage a protect for every staged-edited-but-not-yet-kept path — the bar's `Keep both on merge`), `undoKeepStagedEditsSignal` (undo exactly that), `stopKeepingAllSignal` (stage an unprotect for every currently-kept path — the Scope chip's flattened-view `Stop keeping N keys`). |
-| **StagedCommitPayload** | `{kind:'patch-data'; data: string}` — the base64-encoded merged unit Data blob `onCommitStaged` receives to PATCH. Exported from `ComponentValuesSection.tsx`. |
-| **Colour system** | Cohesive per-change-type hue applied to the checkbox fill, left-edge accent bar, and row tint: **upgrade = purple** (`#7c3aed`), **manual edit = yellow** (`#ca8a04`), **delete = red** (`#dc2626`), **add = green** (`#16a34a`). Tokens in `ComponentValuesSection.tsx` (top of file). |
-| **Checkboxes / UpgradeCheckbox** | Per-row staging control. Checked = staged for next commit. Unchecking an upgrade unstages it; unchecking a manual edit discards it (`onRevertEdit`). All change types use the SAME checkbox shape; colour differentiates. |
-| **Inline diff / superimposition** | `computeInlineDiff` (token-LCS via `tokenizeForDiff`) overlays the proposed value onto the current; changed *tokens* (whole words/numbers) are highlighted, not individual characters. Driven by CSS `.pill-group :has(.upgrade-pill:hover) …` — **rule 15, do not touch.** |
-| **Preview / upgrade-preview active** | Globally dims unchanged rows and shows the proposed values for all upgradable rows. Active when the Upgradable tab is open or the footer Upgrade button is hovered. |
+| **Staged change** | A pending change queued for batch commit: a tick for an upgrade, or a manual edit made in a value's editor. Held per Unit in the staging store (`spec-sheet/staging/stagingReducer.ts`). A staged **protection** change (Keep on merge) is a DIFFERENT kind of pending change: it is not a value change, and commits through a different endpoint. |
+| **`StagingState.protection`** | `Map<stageKey, boolean>` (`spec-sheet/staging/stagingReducer.ts`) — the Keep on merge state the user picked for a path, staged (not written) until commit. Keyed by stage key, as the staged edits are. Deliberately separate from the value changes (`upgrades`, `edits`): a Keep on merge change is never a value change, so it never adds to the "N staged" count; the footer counts it as keeps (`stagedCounts`). `setProtection` deletes the entry when the target equals the path's current *committed* state — `Keep on merge` then `Let merges update this` on the same unmodified field is a true no-op, and a block's keep skips the fields already kept, so keeping a block of 6 where 4 already are stages exactly 2. Sticky across `clearUpgradeOnly` and a value write (`committed`); cleared only by `discardAll`, a successful guard write (`protectionCommitted`) or a node switch. |
+| **Staging actions** | `StagingAction` (`spec-sheet/staging/stagingReducer.ts`). The side pane dispatches each one for one Unit to its staging store; no field view holds staged state, so a remount loses none. `stageEdit` (`add` marks a key the Unit does not hold), `stageRemove`, `unstageEdit`, `stageUpgrade` (one tick), `stageAll` (entering Incoming, or "Select all"), `clearUpgradeOnly` (leaving Incoming), `setProtection`, `stopKeepingAll` (the Kept on merge scope's `Stop keeping N keys`), `discardAll` (Discard), and, after a write, `committed` (values) and `protectionCommitted` (keeps). The footer's `Keep both on merge` and `Undo keep` (`keepStagedEdits` / `undoKeepStagedEdits`, `ComponentSidePane.tsx`) dispatch `setProtection` for each staged edit. |
+| **StagedCommitPayload** | `{kind:'upgrade-all'}` or `{kind:'patch-data'; data: string}`, the merged Unit data `onCommitStaged` receives. Defined in `spec-sheet/staging/types.ts`; built by `buildSheetCommit` (`spec-sheet/staging/commitPayload.ts`). |
+| **Colour system** | Each staged value takes the ground and mark of its change type from `COMPARE_STAGED_TOKENS` (`compare/rowTypeTokens.ts`): edit gold, remove red with a strike, add green. A Stale mark is purple, Unreleased changes blue, a kept value a lock. No left-hand bar. |
+| **Ticks** | The Incoming scope's per-field staging control (`spec-sheet/IncomingField.tsx`, test id `incoming-tick-<testKey>`). Ticked = staged for the next commit; a click dispatches `stageUpgrade`. A blocked deletion or a guarded key has the shield tick (`HeldCheck`, `data-held="true"`), whose hover says why. A whole-resource change has one tick on its resource head (`WholeResourceTick`, `incoming-tick-res-<id>`). A manual edit has no tick: staging the value the Unit holds, `Undo remove`, or Discard takes it back. |
+| **Inline diff** | `getInlineDiffPair` (`inlineDiff.ts`: token-LCS via `tokenizeForDiff`, cached, a whole-value swap over 2000 characters) marks the changed *tokens* (whole words/numbers), not individual characters. The sheet draws the new side with `InlineDiffSegments` (`ValuePill.tsx`): what an Incoming field becomes in the upgrade hue (`IncomingField.tsx`), a staged edit in the edit hue (`FieldValue.tsx`). |
+| **Preview / upgrade-preview active** | `showUpgradePreview` (`ComponentSidePane.tsx`) puts the `pane-upgrade-preview` class on the pane while Incoming or ChangeSet is open or the footer Upgrade button is hovered. While the button is hovered, the unit rows the upgrade does not change are dimmed (`unit-unchanged`). |
 | **Variation** | A field that intentionally differs between upstream HEAD and the post-upgrade downstream (env overrides, e.g. namespace). `VariationEntry`. |
 | **Filter tabs** | `Incoming·N` (purple, upgradable), `All`, and — only on a node with a ChangeSet — `ChangeSet·N`. `filterMode: PaneFilterMode` (`'incoming' \| 'all' \| 'changeset'`, `ComponentToolbar.tsx`). Entering Incoming auto-stages all upgradable picks; leaving clears them. The ChangeSet filter is read-only and greys out Upgrade, as All does. |
-| **Inspect panel** | Click a field path → revision history (incoming value, source attribution, sibling-variant values across deployments). `InspectPanel.tsx`. Access via the **kebab menu** (inspect magnifier is no longer on hover). |
+| **Inspect panel** | Click a field path → revision history (incoming value, source attribution, sibling-variant values across deployments). `spec-sheet/SheetInspect.tsx`: the field name and full path, the Revisions in which its value changed (with the value), and its value in every Variant. Opened by the Inspect action of a value. |
 | **Treeview node** | `DiffTreeNode {key, type:'folder'\|'leaf', children, diff, context}`. `context:true` = a dimmed surrounding row shown for context. |
 | **Key-deletion (swallowed / blocked)** | Upstream issued a `Delete` mutation. **Case 1**: child never modified the key → deletion passes through as a normal upgrade (`newValue` = `-`). **Case 2**: child locally modified the key → `SubtractMutations` drops the upstream Delete (`ConflictReasonSubtracted`) and the key persists, *silently swallowed*. #4570 makes Case 2 an opt-in upgrade. |
-| **upstream-only path** | Present upstream, absent downstream: an upgrade diff whose stage key is no leaf of the unit (`upstreamOnlyKeys` in `ComponentValuesSection`). Drawn in the document its key names, with absent value `—` and a `+` prefix. |
+| **upstream-only path** | Present upstream, absent downstream: an incoming key the sheet does not draw. In Incoming, `withIncomingAdditions` (`spec-sheet/incomingAdditions.ts`) adds it as an atom with `added: true` in the document its key names: an element of a list in the block that draws the list, any other key in an "Added upstream" part at the end of its resource. `IncomingField` draws it with a circled plus. |
 | **Stage key** | `docStageKey(scope, path)` (`diffTree.ts`): a document's id, U+0001, then the dot-index path; the bare path in a single-document unit. Staging, the upgrade diffs, the counts and the narrowing all key on it, so a path two documents share is two rows. |
-| **Whole-resource change** | `WholeResourceChange`: a resource the upgrade adds or deletes as a whole. One row below the tree (`component-whole-resource-row`), counted as one change, never staged field by field. It goes in only with the wholesale upgrade (`upgrade-all`): checking it stages every incoming change, and leaving any change out or staging an edit leaves it out (`withoutUnreachableWholeResources`). |
+| **Whole-resource change** | `WholeResourceChange`: a resource the upgrade adds or deletes as a whole. In Incoming it is a head-only resource (`withIncomingAdditions`) with one tick on its head (`WholeResourceTick`), counted as one change, never staged field by field. While the Unit has a blocked deletion to accept, none is offered and the tick is disabled (`availableWholeResourceChanges`, `entryBuilders.ts`). It goes in only with the wholesale upgrade (`upgrade-all`): `buildSheetCommit` drops it from any other batch, so leaving any change out or staging an edit leaves it out. |
 | **Sync with upstream** | The override-row action tooltip verb (was "Force the upstream value" — renamed in #4619). |
-| **`data-change-type`** | Attribute on `[data-testid="component-leaf-row"]` set to `'upgrade' \| 'edit' \| 'delete' \| 'add' \| 'protect' \| 'none'`. `'protect'` is the LOWEST-precedence type (`upgrade > edit > delete > add > protect`) — a row with only a staged protection change and nothing else. Use this in Playwright tests to assert change type; don't rely on visual-only CSS. |
-| **`data-protected`** | Attribute on `[data-testid="component-leaf-row"]`, `'true' \| 'false'` — the row's EFFECTIVE kept state (staged protection change, if any, else the committed baseline). Independent of `data-change-type`: editing an already-kept value shows `data-change-type="edit"` and `data-protected="true"` at once — the rail and the border are driven by two different signals on purpose (see "Locking (protection)" below). |
+| **`field-staged-<testKey>`** | The mark after a staged value (`StagedMark`, `spec-sheet/StateMark.tsx`). Its accessible name is "Staged edit", "Staged removal" or "Staged add". A staged Keep on merge change has no staged mark; it shows as the kept mark. Use these marks in Playwright tests to assert the change type; don't rely on colour alone. The compare grid's cells carry `data-change-type` and `data-protected` instead (`compare/CompareCell.tsx`). |
+| **`field-kept-<testKey>`** | The lock after a value (`KeptMark`) that is kept on merge in EFFECT: the staged Keep on merge change, if any, else the committed guard. Its accessible name is "Keep on merge staged" or "Kept on merge". Independent of the staged mark: an edited value that is kept shows both at once (see "Locking (protection)" below). |
 
 ---
 
@@ -152,11 +165,11 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
    └─ AppComponentView         CORE orchestrator (units, entries, all handlers)
       ├─ ComponentFlowGraph    center: reactflow DAG of deployment nodes by stage
       │  └─ DeploymentFlowNode  one node per Space; per-unit upgrade/apply badges
-      └─ ComponentSidePane     right detail pane (slides in)
-         ├─ ComponentValuesSection   the value TREEVIEW (staging, inline-diff, manual edits)
+      └─ ComponentSidePane     right detail pane (slides in); holds the per-Unit staging store
+         ├─ SpecSheet                the field sheet of one Unit (scopes, search, hover card, inline edits)
          ├─ ComponentOverviewSection Overview (friendly view per resource, read-only)
          ├─ ComponentSourceSection   Source view (Monaco, editable)
-         └─ InspectPanel             field history + sibling variants
+         └─ SheetInspect             field history + every Variant's value
 ```
 
 ### UI (path → responsibility)
@@ -171,14 +184,17 @@ AppsComponentPage              page entry; useListSpacesQuery({summary}) + useLi
 | `flow-graph/FlowViewControl.tsx` | Graph / Dashboard segmented control. |
 | `flow-graph/DeploymentFlowNode.tsx` | One node per deployment/Space. Exports `NodeUnitSummary {slug, upgrading, applyStatus:'gated'\|'pending'\|null, gates, warnings}`. A unit with validation errors is `gated` whether or not it has a Target or unreleased changes, as the Components list's Blocking Gates counts it; the Gated and Warnings peeks name each unit's gates. |
 | `flow-graph/flowLayout.ts` | Stage-based node positioning. Exports `NODE_WIDTH`/`NODE_HEIGHT`/`STAGE_GAP`. |
-| `ComponentSidePane.tsx` | View toggle (Tree/Source/Overview), filter tabs, per-unit rows, footer Upgrade/Release/Discard buttons (Apply removed from the build — the "unapplied changes" diff/gate display remains); staging signal state (`stageAllSignal`, `clearStagedSignal`, `discardAllSignal`, `commitStagedSignal`); merges entries into `MergedUnit[]`. |
+| `ComponentSidePane.tsx` | The drawer chrome: the title row (`PaneChrome.tsx`: name, one button per tag kind, Compare, Create variant, Close) and the tabs row (Settings is a tab), which go away on a scroll down of the list and come back on a scroll up; the filter row (`ComponentToolbar.tsx`: scope chips, search, one view menu for Sheet/Code/Stacked and the Units filter), which stays; per-unit rows, footer Upgrade/Release/Discard buttons (Apply removed from the build — the "unapplied changes" diff/gate display remains); the per-Unit staging store (`useUnitStagingStore`), the Incoming auto-ticks, and the commit (`handleConfirmCommit`); merges entries into `MergedUnit[]`. |
 | `ReadmePane.tsx` / `readme.ts` | The Readme tab, right of Releases: the Markdown of the Space's `README.md` Unit (AppConfig/Text, which `cub variant upload` makes of a bundle's README.md), frontmatter stripped, via `react-markdown` + `remark-gfm`. Only web and mail links are links; relative links and images name files in the source repository and render as text. The tab bar shows when a Space has a release target or a README. |
-| `ComponentValuesSection.tsx` | **The treeview.** Staging model (checkboxes, signal props); inline editor (`onStageEdit`); per-change-type colour system; token-LCS inline diff; `nodeRowPropsAreEqual` memo. Exports `StagedChange`, `StagedChangeType`, `StagedCommitPayload`. |
+| `spec-sheet/` | **The field sheet.** `specSheetModel.ts` (pure model: resources, parts, blocks and atoms, each atom keyed by its stage key), `SpecSheet.tsx` (one Unit: the scopes All, Incoming, Changes, Local overrides and Kept on merge, search on the model, the hover card `SheetPeek.tsx` with the value's actions `FieldActions.tsx`, and Inspect), `Part.tsx`, `shapes/` (one renderer per kind of block, picked by `shapes/registry.ts`), `FieldValue.tsx`, `IncomingField.tsx`, `incomingAdditions.ts`, `staging/` (below). |
+| `spec-sheet/staging/` | The per-Unit staging store. `stagingReducer.ts`: `StagingState` (upgrades ticked, manual edits, adds, Keep on merge changes), `StagingAction`, `commitPlan` (an edit wins over the upgrade of its key, rule 10), `stagedCounts` and `footerVerb`. `useUnitStagingStore.ts`: one state per Unit, held by `ComponentSidePane` above every field view, so a scope switch or a remount loses nothing; dropped on a node switch (`reset`). `commitPayload.ts`: `buildSheetCommit`, a Unit's write from its staged state. `protectionPayload.ts`: `buildProtectionEdits`, the staged Keep on merge changes as the `ResourceGuards[]` that `SetUnitGuard` takes. `types.ts`: `StagedCommitPayload`, `StagedCommitResult`, `STAGED_DELETE_SENTINEL`. |
+| `spec-sheet/FieldEditor.tsx`, `spec-sheet/editors/validate.ts` | The inline editor a click on a value opens, in the value's place. `editorKindOf` picks the kind from the path and the value (image, quantity, integer, boolean, line, multiline); an image edits only its image tag (`imagePrefixOf`). `validateValue` keeps an invalid value open, red, with a short error and a disabled check. Check or Enter stages; X or Esc cancels; a click away keeps the draft. |
+| `spec-sheet/kubeDefaults.ts` | Quiet Kubernetes defaults. `kubeDefaultOf` gives a field's fixed Kubernetes default; `quietDefaultsOf` says which values are quiet: they hold the default and nothing happened to them (no open editor; not staged, kept, Stale, Unreleased or incoming; not set back to the default by this Unit in a resource that comes from upstream). A quiet default is not drawn on its line: one that belongs to a value (an image's pull policy, a port's protocol, a probe's timings) is in that value's hover card, and the rest fold into one line per section. Nothing is quiet during a search. Pure. |
 | `ComponentSourceSection.tsx` | Source view: Monaco `CodeEditor` of decoded Data; editable w/ Save/Discard bar when `onSaveData` provided. |
 | `ComponentOverviewSection.tsx` | Overview: the unit's Resources (`useUnitResources`, refetched when the unit's Data changes), sorted by kind and name, each opening to `ResourceOverview`. A lone resource opens; several wait for a click. Lazy-loaded. |
 | `useResourceCounts.ts` | Resources per Space, from one `GET /resource` narrowed to `SpaceID`, for the deployment selectors' `N units · M resources` line. |
-| `ComponentKeyComposer.tsx` | Inline new-key composer row; uses `validateKey` from `componentKeyUtils.ts`. |
-| `InspectPanel.tsx` | Field-history inspector (`useListExtendedRevisionsQuery`) + sibling variants across deployments. |
+| `spec-sheet/AddKeyEditor.tsx` | The key and value editor at the end of a block, opened by the block's `Add a key` (`BlockActions.tsx`): a new key on a map block (labels, annotations, ConfigMap data), or a new env var on a container's Env block. The key follows `validateKey` from `componentKeyUtils.ts` and must not be in the block yet; an env var's name must not be in the list yet. Check or Enter stages an add (`stageEdit` with `add`; an env var is its name and value, staged as one add); X or Esc cancels. The new key shows in its block before it is written (`withStagedAdds`). |
+| `spec-sheet/SheetInspect.tsx` | Field-history inspector (`useListExtendedRevisionsQuery`) + the value in every Variant (`variantValues.ts`). |
 | `configDiffFieldDiffs.ts` | `fieldDiffsFromConfigDiff(diff, treeData, {treeSide, findElementsByMergeKey?})`: a server `ConfigDiff` as keyed `FieldDiff`s and `WholeResourceChange`s, each keyed as the tree keys the row; `addedResourceLeafRows`; `resolveConflictPath`. Covered by `tests/component-config-diff-entries.pure.spec.ts`. |
 | `entryBuilders.ts` | Pure builders: `textFieldDiffs` (the rows of a Unit the tree reads as text, from its own leaves), `buildPaths`, `buildUpgradeEntries` (from the dry run's Diff, through `fieldDiffsFromConfigDiff`; blocked deletes through `blockedDeleteKey`), the counters (`fieldDiffKey`, `countUpgradableBadgeFields`, `hasRealUpgrade`, `countLogicalChanges`), `buildAllApplyEntries` (still needed for the side pane's unapplied-changes/gate display; its `fieldDiffs`, which only the toolbar search reads, come from the server's bulk `/unit_diff` from `LastReleasedRevisionNum` to head), `buildVariationEntries` (from the server's variation diffs, `VariationDiffs`). |
 | `useVariationDiffs.ts` | The variation reads: per downstream Unit, `POST /diff` from the upstream's head to the Unit's head, and, for a Unit with a dry run, from the upstream's head to the dry run's configuration (inline). Heads are named by Revision number, so the reads are untagged. A few at a time; a Unit's last answer stands in while its next read is in flight. |
@@ -237,10 +253,10 @@ way still hold there:
   (clone, then upgrade) can leave a fan-out stage with some Spaces written and others not, so
   provenance travels with the real unit, not the stage.
 
-`ComponentValuesSection`'s `readOnly` is complete — keyed off `readOnly` itself at every site that
-stages or classifies (`rowChangeType`, `isUnchangedField`, the Upgradable auto-stage effect,
-`hasFolderEditHandlers`) — so a read-only caller need not unwire handlers to make it safe. A caller
-that wants unchanged rows dimmed sets the `pane-upgrade-preview` class itself.
+`SpecSheet`'s `readOnly` hides the ticks of its Incoming scope, and only those. The sheet offers
+its editor and the value actions only when it has `onStageEdit`; without it the sheet is
+read-only. So a read-only caller passes `readOnly` and no `onStageEdit`, as the ChangeSet filter
+does.
 
 ### ChangeSets on the graph
 
@@ -265,9 +281,9 @@ land on `ComponentDeployment.changeSets`.
   are the server's diff between the two (`useChangeSetDiffs`), keyed by stage key; a unit created
   in the ChangeSet is diffed from nothing, a unit the tree reads as text is compared as the tree
   reads it (`textFieldDiffs`), and a failed read shows as an error in the unit's header. The pane
-  swaps those into its units (`changeSetUnits`) and mounts `ComponentValuesSection` `readOnly`, so
-  nothing stages and Upgrade is disabled. Every unit stays listed, with the same key, so switching
-  filters never unmounts a section and loses staged edits (rule 9). A separate server-diff section
+  swaps those into its units (`changeSetUnits`) and mounts `SpecSheet` in its Incoming scope with
+  `readOnly` and no `onStageEdit`, so nothing stages and Upgrade is disabled. Staged edits are in
+  the pane's staging store, not in the sheet, so switching filters loses none (rule 9). A separate server-diff section
   (`ConfigDiffView`) was tried first and rejected: two diff formats in one pane confused.
 - **Closing.** On a node with an open ChangeSet, the ChangeSet filter has a Close ChangeSet bar
   (`ChangeSetPaneNotices.tsx`). Closing bulk-patches `ChangeSetID: null` over every unit the
@@ -296,9 +312,12 @@ has no place here (a node is a real deployment, not something a keypress should 
 
 - **No Redux slice.** Local React state + RTK Query (hooks from `@confighub/rtk-query`).
 - **Queries:** `useListSpacesQuery({summary:true})`, `useListAllTargetsQuery`, `useListAllUnitsQuery`,
-  `useListExtendedRevisionsQuery` (InspectPanel).
-- **Mutations:** `useBulkPatchUnitsMutation` (used 3×: real upgrade via `onCommitStaged`, dry-run
-  preview, field/data PATCH). Apply removed from the build — no `useBulkApplyUnitsMutation` here.
+  `useListExtendedRevisionsQuery` (SheetInspect).
+- **Mutations:** `useBulkPatchUnitsMutation` (the wholesale upgrade via `onCommitStaged`, and
+  closing a ChangeSet), `usePreviewUnitUpgradeMutation` (the dry-run preview, `dryRunPatch`),
+  `useUploadUnitData` (a merged document, to the Unit's data endpoint) and
+  `useSetUnitGuardMutation` (Keep on merge). Apply removed from the build — no
+  `useBulkApplyUnitsMutation` here.
 - **Units query is hand-narrowed** (`AppComponentView.tsx`): `select` is `UNITS_QUERY_SELECT` (the unit
   metadata, `Releasable` among it, plus the head and last-released Revision ids the
   data and mutation-source reads are keyed by), `where = SpaceID IN (...)`. Uses **`currentData`, not `data`** to avoid rendering new spaces
@@ -323,12 +342,11 @@ has no place here (a node is a real deployment, not something a keypress should 
   configuration, which the upgrade entries are drawn from) and `dryRunConflicts: Map<unitId,
   MutationConflict[]>`. Every reset clears all three. `dryRunPendingIds` gates skeletons;
   `dryRunSettled` distinguishes "not finished" vs "zero upgradable".
-- **Staging signals flow:** `ComponentSidePane` owns four `useState` counters it bumps into
-  `ComponentValuesSection` as props: `stageAllSignal` (entering Upgradable tab or "Select all"),
-  `clearStagedSignal` (leaving Upgradable tab), `discardAllSignal` (Discard button), and
-  `commitStagedSignal` (Upgrade button). `ComponentValuesSection` detects each bump via refs
-  and acts. `onStagedCountChange` / `onStagedChangesChange` bubble staged state back up to the side
-  pane for the footer chip count and tooltip summary.
+- **Staging store flow:** `ComponentSidePane` holds one `useUnitStagingStore` for the node: a
+  `StagingState` per Unit, changed only by `StagingAction`s (`stagingReducer.ts`). Each `SpecSheet`
+  reads its Unit's state (`staging.stateOf`) and dispatches to it; the footer counts
+  (`stagedCounts`, `footerVerb`), the leave guard (`useLeaveGuard`) and `handleConfirmCommit`
+  read the same store, so nothing bubbles up from the sheets. A node switch calls `reset`.
 
 ### Core types (`componentTypes.ts`)
 
@@ -339,7 +357,9 @@ has no place here (a node is a real deployment, not something a keypress should 
 row carrying optional `upgradeEntry` / `applyEntry` / `variationEntry` + `validationErrors`,
 `validationWarnings` and `validationResults`) · `PaneUnit` (a unit as `unitsByDeployment` lists it).
 
-Exported from `ComponentValuesSection.tsx`: `StagedChange`, `StagedChangeType`, `StagedCommitPayload`.
+Exported from `spec-sheet/staging/types.ts`: `StagedCommitPayload`, `StagedCommitResult`,
+`STAGED_DELETE_SENTINEL`. From `spec-sheet/staging/stagingReducer.ts`: `StagingState`,
+`StagingAction`.
 
 ### Backend (what the view depends on)
 
@@ -485,7 +505,7 @@ tree and the detail pane show `QueryErrorState` with Retry, not a skeleton.
   it lived inside `ComponentFlowGraph` instead. In Graph mode it sits in the
   canvas column (`GraphArea`), NOT over the whole view: the side pane is to
   the right of that column, and an overlay over the full width covered the
-  pane header's Space settings cog (`component-space-settings.spec.ts`
+  pane's title row and its Settings tab (`component-space-settings.spec.ts`
   clicks it).
   **Sticky across node clicks**: `display=dashboard` is deliberately left
   untouched (not reset) by every node-open URL writer
@@ -750,18 +770,25 @@ list's `confighub:unit:openViewTabs`.
 ## How key interactions work
 
 - **Selecting a deployment node** (`ComponentFlowGraph` click) sets the selected unit(s), fires the
-  dry-run preview, and switches to the Upgradable tab (if the node has upgradable units). Tab entry
-  bumps `stageAllSignal` → all upgradable rows auto-stage (checkboxes checked). Side pane slides in.
-- **Treeview rendering** (`ComponentValuesSection`): builds `upgradeFieldDiffs` / `variationFieldDiffs`
-  maps and a `DiffTreeNode` tree from each `MergedUnit`'s entries. Folder chains collapse; `context`
-  rows around a diff are dimmed. Each leaf row gets a `data-change-type` attribute reflecting its
-  staged state. See "Upgrade diffs and stage keys" below for what each map is keyed by.
+  dry-run preview, and opens on Incoming (if the node has upgradable units). On Incoming, each Unit
+  gets a `stageAll` action as its dry run lands, so every change "Select all" would tick is ticked.
+  Side pane slides in.
+- **Field sheet rendering** (`SpecSheet`): `buildSpecSheet` (`specSheetModel.ts`) reads the Unit's
+  data into resources, parts, blocks and atoms, in document order, each atom keyed by its stage
+  key. A scope filters the model (`filterSpecSheet`) to its keys: Incoming to
+  `fieldStates(unit).incomingKeys` (with `withIncomingAdditions` for what the Unit does not hold),
+  Changes to the Unreleased keys, Local overrides to the variation and local-only keys, Kept on
+  merge to the kept keys. Search runs on the model, so it finds parts that have not mounted yet.
+  Each block draws with the shape `shapes/registry.ts` picks for it. See "Upgrade diffs and stage
+  keys" below.
 - **Unit row expansion** (`isUnitExpandedInPane`): unit rows start **collapsed** in every view and on
   every tab. The pane opens a row unasked only when it already knows there is something to read
   inside it — a unit with a pending upgrade while the Incoming tab is showing, a unit the user
   just upgraded (`recentlyUpgradedUnitIds`), a unit matched by an active scope filter
-  (`local-overrides` → any `variationEntry`; `local-only` → a non-empty `localOnlyPaths`, since
-  picking that filter is itself the request to see those rows), a unit whose diff/path CONTENT (not
+  (`local-overrides` → any `variationEntry` field diff or local-only key; `local-only` → a non-empty
+  `variationEntry.localOnlyKeys`; `changes` → an `applyEntry` on a unit with a Target;
+  `kept-on-merge` → any `liveFieldDiffs`, since picking that filter is itself the request to see
+  those rows), a unit whose diff/path CONTENT (not
   just its slug) matched an active search — a slug-only match leaves the row shut, since the name is
   already visible in the header and there's nothing hidden the search was looking for — or the
   selected node has exactly one unit, where a closed row only costs an extra click for nothing.
@@ -773,62 +800,78 @@ list's `confighub:unit:openViewTabs`.
   partial "N+" form. That is expected, not a bug. A unit gated as oversized (`isUnitGated`) still only
   shows its placeholder card when opened this way — a search match does not bypass that gate, so a
   hit inside a heavy unit's content isn't visibly confirmed until the user clicks "Render anyway."
-- **Inline diff (superimposition)**: `computeInlineDiff` (token-LCS, `tokenizeForDiff`) overlays the
-  proposed value onto the current; changed *whole tokens* highlight in change-type colour. Driven by
-  CSS `.pill-group :has(.upgrade-pill:hover) …` — **rule 15, do not touch.** The Upgradable tab and
-  Upgrade-button hover both activate `showUpgradePreview`, which dims unchanged rows globally.
-- **Staging an upgrade**: checking a row's `UpgradeCheckbox` adds its path(s) to the staged set;
-  unchecking removes them. "Select all" bumps `stageAllSignal` (stages all at once). "Discard" bumps
-  `discardAllSignal` (clears everything). Leaving the Upgradable tab bumps `clearStagedSignal` (clears
-  upgrade-only picks; manual edits survive — rule 9).
-- **Manual inline edits**: clicking a value's `.current-pill` opens an inline `InputBase`; on blur
-  the `handleSave` → `onStageEdit` path stages the edit (does NOT call `onSetFieldValue`). The row
-  turns amber (edit colour). An upgradable row stays click-to-edit (rule 8). A staged edit opens the
-  editor seeded with the staged (proposed) value, not the underlying current value.
-- **Committing**: the footer Upgrade button calls `handleConfirmCommit` → bumps `commitStagedSignal`
-  → each `ComponentValuesSection` instance builds a `StagedCommitPayload {kind:'patch-data', data}`
-  from its staged set (manual edits applied on top of upstream value) and calls `onCommitStaged`.
-  `AppComponentView` wires `onCommitStaged` to a `bulkPatch` call. No review dialog. The committed
-  rows stay visible post-refetch via `committedDiffs` (cleared on explicit Discard, not on
-  `clearStagedSignal`).
-- **Opt-in upgrades (swallowed key-deletions)**: `blockedDeleteKeys` render as *blocked / lock*
-  checkboxes (with a lock-shake animation when Upgrade button is hovered). Checking them goes through
-  the normal staging path. Origin: `entryBuilders.ts` reading dry-run Conflicts.
+- **Inline diff**: `getInlineDiffPair` (token-LCS, `tokenizeForDiff`) marks the changed *whole
+  tokens* of a value: what an Incoming field becomes, in the upgrade hue (`IncomingField.tsx`), and
+  a staged edit, in the edit hue (`FieldValue.tsx`). Hovering the footer Upgrade button dims the
+  unit rows the upgrade does not change (`showUpgradePreview`, `unit-unchanged`).
+- **Staging an upgrade**: a tick in Incoming dispatches `stageUpgrade` for its key; the keys of
+  one list element added or deleted whole share one tick (`changeKeys`, `SpecSheet.tsx`). "Select
+  all" dispatches `stageAll` with `selectAllUpgradeKeys` for every Unit. "Discard" dispatches
+  `discardAll` (clears everything); it shows only once the person has changed what entering
+  Incoming ticked. Leaving Incoming dispatches `clearUpgradeOnly` (clears the upgrade ticks; manual
+  edits and keeps survive — rule 9).
+- **Manual inline edits**: a click on a value (or Enter on it, or Edit in its hover card) opens
+  `FieldEditor` in the value's place. Check or Enter stages through `onStageEdit` (a `stageEdit`
+  action) and does NOT call `onSetFieldValue` (rule 8); staging the value the Unit holds unstages
+  the edit. The value then shows its changed tokens in the edit hue and a staged mark. Values are
+  editable in every scope but Incoming, so a Stale value is click-to-edit in All. A staged edit
+  opens the editor seeded with the staged (proposed) value, not the underlying current value.
+  `Remove key` in the hover card stages a removal (`stageRemove`); on a key this person added, it
+  takes the add back. New keys: see `spec-sheet/AddKeyEditor.tsx` above.
+- **Committing**: the footer button (`Upgrade N`, or `Update N` when an edit or a Keep on merge
+  change is staged: `footerVerb`) calls `handleConfirmCommit`. For each Unit, `buildSheetCommit`
+  (`staging/commitPayload.ts`) builds the write from the Unit's staged state: `{kind:'upgrade-all'}`
+  when no edit is staged, every change "Select all" offers is ticked (whole-resource changes
+  included), and every ticked change is in the upgrade's own diff; otherwise one merged document
+  (`{kind:'patch-data', data}`), in which a manual edit wins over the upgrade of its key (rule 10).
+  A ticked blocked deletion or guarded key therefore makes a merged document. `AppComponentView`'s
+  `handleCommitStaged` sends `upgrade-all` as a bulk patch with `upgrade: true`, and `patch-data`
+  to the Unit's data endpoint, through the guard dialog when the Unit has guards (rule 18). No
+  review dialog (rule 11). A written Unit's staged values go (`committed`); a change the guards
+  withheld is still incoming, unticked. A commit that cannot be built writes nothing for that
+  Unit and shows its error in the footer; its staged changes stay.
+- **Opt-in upgrades (swallowed key-deletions)**: `blockedDeleteKeys` show in Incoming with the
+  shield tick (`HeldCheck`, `IncomingField.tsx`); the current value stays, and the hover card says
+  "deleted upstream". Ticking one goes through the normal staging path. Unlike a guarded key, it is
+  in `selectableKeys`, so entering Incoming and "Select all" tick it. Origin: `entryBuilders.ts`
+  reading dry-run Conflicts.
 - **Source view** (`ComponentSourceSection`): Monaco editor of decoded Data; editable with an explicit
   **Save** button (rule 17). Switching to Source does not expand anything on its own — rows follow
-  the same collapse-by-default rule as the treeview. Intended to carry the same staging model as the
-  treeview (rule 12).
-- **Inspect panel**: via the **kebab menu** on a field row (the on-hover magnifier was removed in
-  #4619). Opens `InspectPanel` — revision history with author avatars/relative time and
-  sibling-variant values (same field across the column's other deployments).
+  the same collapse-by-default rule as the field sheet. Intended to carry the same staging model as
+  the field sheet (rule 12).
+- **Inspect panel**: via Inspect in a value's hover card (`FieldActions.tsx`). Opens `SheetInspect`
+  — revision history with author avatars/relative time and sibling-variant values (same field
+  across the column's other deployments).
 - **Apply removed from the build.** There is no Apply button/action anymore — the footer's deploy-verb
   slot is Upgrade (Configuration tab) or Release (Releases tab) only. The "unapplied changes" diff/gate
   display (`allApplyEntries`/`buildAllApplyEntries`, `ApplyEntryWithGates`) is unrelated to the removed
   button and still powers gate chips, revision labels, and staged-field counts elsewhere in the panel.
-- **Locking (protection)**: a leaf/folder kebab item (`Keep on merge` / `Let merges update this`;
-  folder: `Keep group & N keys on merge`, protect-only — the reverse lives only on the Scope chip's
-  flattened view, see below) stages a `stagedProtection` entry (see Terminology). The value pill's
-  border firms from dashed to SOLID when a path is effectively kept (`kept` prop on `CurrentPill`) —
-  solid REPLACES dashed, never composes with it — and a protection-only staged row gets the lowest-
-  precedence `'protect'` rail (`ROW_TYPE_TOKENS.protect`, `componentTheme.accent`). **Commit is TWO
-  calls, Keep on merge first**: `ComponentValuesSection`'s commit-signal effect calls `onCommitProtection`
-  (→ `SetUnitGuard` with the Override guard, its own revision, `SourceTypeSetGuard`) BEFORE building/sending the value
-  `StagedCommitPayload`; if the protection write fails, the value write is never attempted; if the
-  protection write succeeds and the SUBSEQUENT value write fails, the protection write is **not** rolled
-  back (over-protected is the safe direction to fail in). A folder's "Keep group" writes N individual
-  leaf entries via `collectLeafPaths`, never one ancestor-path write, so that each leaf can be let go
-  on its own later: a guard on the ancestor keeps every leaf under it, and none of them could be. The
-  read-side data is
-  the Unit's `PathAnnotations`, which arrives with the Units; unknown reads as **not kept**
+- **Locking (protection)**: `Keep on merge` / `Let merges update this` in a value's hover card
+  (`FieldActions.tsx`), or `Keep this block on merge` on a block label (`BlockActions.tsx`,
+  keep-only), stages a `setProtection` action (see `StagingState.protection` in Terminology). A
+  field inside a list cannot be kept (the action is disabled). The value shows the lock
+  (`KeptMark`) while it is kept in effect. A block's keep stages one keep per field of the block
+  not yet kept (`keepableAtoms`, `Part.tsx`), never one guard on the block's path, so that each
+  field can be let go on its own later: a guard on the ancestor keeps every field under it, and
+  none of them could be. **The commit is TWO writes per Unit** (`handleConfirmCommit`):
+  `buildProtectionEdits` (`staging/protectionPayload.ts`) turns the staged keeps into the
+  `ResourceGuards[]` that `onCommitProtection` sends (→ `SetUnitGuard` with the Override guard, its
+  own revision, `SourceTypeSetGuard`). A wholesale upgrade writes the guards first, then the
+  values: it is a merge, and a guard written first stops it from overwriting what is kept. Any
+  other batch writes the values first, then the guards: a guard written first would withhold the
+  values the user chose. When the first write fails, the second is not sent; neither write is
+  rolled back when the other fails. The staged keeps stay staged until the guard write succeeds
+  (`protectionCommitted`), so a failed guard write can be tried again. The read-side data is the
+  Unit's `PathAnnotations`, which arrives with the Units; unknown reads as **not kept**
   (`isProtected` defaults to `() => false`), so the worst-case failure mode is a redundant (no-op)
-  Keep on merge, never a silent release. The bar (footer) discloses staged protection
-  SEPARATELY from the value-staged count (card 8's rule: never `2 staged · 2 locks`) — see
-  `barKeepState` in `ComponentSidePane.tsx` for the five derived states (edits-none-kept /
-  edits-all-kept / pure-scope-uniform / pure-scope-mixed / values-and-scope) and their lead
-  text/button labels (`Keep both on merge`, `Undo keep`, `Keep N keys`, `Update N keys`). The Scope
-  chip's own bulk-unprotect (`Stop keeping N keys`) lives in its flattened `scopeFilter === 'kept-on-merge'`
-  view's footer — it STAGES (via `stopKeepingAllSignal`), it does not write directly; the normal bar's
-  `Update N keys` button (now showing, since something is staged) performs the actual commit.
+  Keep on merge, never a silent release. The bar (footer) discloses staged keeps SEPARATELY from
+  the value-staged count (card 8's rule: never `2 staged · 2 locks`) — see `barKeepState` in
+  `ComponentSidePane.tsx` for its derived states (`none`, `editsUnkept`, `editsKept`,
+  `scopeUniform`, `scopeMixed`, `valuesAndScope`) and their lead text/button labels (`Keep both on
+  merge`, `Undo keep`, `Keep N keys`, `Update N keys`). The Kept on merge scope's footer has `Stop
+  keeping N keys`: it STAGES (a `stopKeepingAll` action per Unit, for the fields each sheet
+  reported through `onKeptKeys`), it does not write directly; the normal bar's button then performs
+  the actual commit.
 
 - **Compare: N deployments side by side, with no reference column.** `?compare=` adds up to four
   more deployments alongside the open one; `DeploymentSelectors` renders one slot per deployment and
@@ -893,13 +936,12 @@ a path two documents share changes only in the document it changed in. The rows 
 Diff object (`upgradeRowsCache`), so a rebuild with the same Diff and data hands back the same
 arrays and re-renders no row.
 
-Every upgrade row carries its stage key (`FieldDiff.key`), and `ComponentValuesSection` keys on it
-throughout: `upgradeFieldDiffs` (stage key → incoming value), `upstreamOnlyKeys`,
-`downstreamValueByKey` (per document, from the unit's own leaves), the narrowing sets
-(`baseNarrowedKeys` / `narrowedKeys`), the text filter (`filteredRows`), `upgradableStageKeys`, and
-the commit builder. `selectGroupedEntries` draws a row with no leaf of its own inside the document
-its key names, not in the last one. `NodeRow` looks its upgrade value up by `stageKey`, not
-`fullPath`.
+Every upgrade row carries its stage key (`FieldDiff.key`), and the field sheet keys on it
+throughout: each atom of the model (`SheetAtom.key`), `fieldStates` (the Incoming keys, the keys
+"Select all" ticks, the upstream value of each key), the scopes, the staging store, and
+`buildSheetCommit`. A key the Unit does not hold is drawn inside the document its key names, not
+in the last one (`withIncomingAdditions`). A value finds its upgrade by its atom's stage key, never
+by its bare path.
 
 The variation rows come from the server too. `buildVariationEntries` reads two diffs per
 downstream Unit (`useVariationDiffs`): from the upstream's head to the Unit's head
@@ -925,12 +967,9 @@ the commit writes nothing for it.
 
 What stays bare, on purpose:
 
-- **The prefix index and the context tree** (`buildPrefixIndex`, `buildContextTree`) address folders
-  by path alone, so they get bare projections (`upgradeFieldDiffsByPath`, `variationFieldDiffsByPath`,
-  `changedPaths`, `upgradablePaths`, `variationPaths`, `keptOnMergePaths`). A folder of one document
-  can auto-expand, or stay undimmed on hover, because the same folder path of another document
-  changes. Cosmetic only; no row is marked from these.
-- **Protection** (`isProtected`) is looked up by bare path, from `MutationSources`.
+- **Protection** (`isProtected`) is looked up by bare path, from the Unit's `PathAnnotations`
+  (`buildProtectedPathLookup`), and written by bare path, grouped by resource
+  (`buildProtectionEdits`).
 
 ---
 
@@ -954,25 +993,25 @@ Do not re-propose these — they were explicitly rejected by the people who buil
 - **A separate per-unit-row "N changes" counter.** Removed; don't add it back.
 - **Auto-save / blur-to-save in the Source view.** Rejected; explicit Save button only (rule 17).
 - **Jumping from a design request straight to implementation.** Mock → sign-off → build (rule 14).
-- **Touching the pill-group `:has(.upgrade-pill:hover)` CSS** (rule 15).
+- **A compare grid in the Incoming scope.** Each incoming field shows its tick and one value, what
+  it becomes, in its place (rule 15).
 - **Phantom deletions** — treating a no-data dry-run as mass deletions. Guard: rule 16.
 - **Bracket notation in path handling** (`env[0]`). Canonical runtime format is dot-index
   (`env.0.name`). Use helpers from `componentKeyUtils.ts` — don't write ad-hoc bracket regexes.
 - **A third `mode` prop on `ComponentSidePane`** (considered for the since-retired rollout mode).
-  Rejected: the pane owns the Configuration/Releases/Readme tabs, all four
-  staging signals, release publish/withdraw, the Space settings sheet, the heavy-unit gate, the
+  Rejected: the pane owns the Configuration/Releases/Readme tabs, the per-Unit
+  staging store, release publish/withdraw, the Space settings sheet, the heavy-unit gate, the
   source-view toggle and the inspect panel — a third mode means threading "but not in rollout"
   through all of it, and every thread is a live regression path into the mode people use all day.
   Measured the alternative (extracting the per-unit section into a shared child) too: ~30 props after
-  generous bundling, all four staging signals among them, ~18 of 30 belonging to subsystems rollout
-  has no use for — a "shared" child two-thirds of whose surface one caller ignores is not shared.
+  generous bundling, ~18 of 30 belonging to subsystems rollout has no use for — a "shared" child two-thirds of whose surface one caller ignores is not shared.
   The ChangeOrder pages draw each Unit's server diff with `ConfigDiffView` under
   `ChangeOrderUnitHeader` instead. `ComponentSidePane.tsx` is not opened by them at all.
 - **An inline right-hand-slot toggle for protection** (a per-row ambient switch next to the value,
   mirroring the upgrade checkbox's position). Built and rejected by the lock-interaction design track:
   it collides with the upgrade checkbox at the pane's 460px width, and a switch that waits for a button
   (i.e. doesn't write until commit) lies about itself — a toggle control implies immediate effect. Use
-  the kebab menu item instead (`Keep on merge` / `Let merges update this`).
+  the action in the value's hover card instead (`Keep on merge` / `Let merges update this`).
 - **A frozen reference column in the compare grid.** Slot A (and the key column) used to freeze
   together, with blue meaning "differs from the frozen column". Removed along with the baseline
   itself — a colour with no referent is worse than one that scrolls with everything else, so only the
@@ -987,15 +1026,16 @@ Do not re-propose these — they were explicitly rejected by the people who buil
 ## Gotchas & invariants
 
 - **Deployment identity is always `Space.SpaceID`.** `ComponentDeployment.deploymentId ===
-  MergedUnit.spaceId` is relied on for sibling-variant matching in `ComponentValuesSection`.
-- **`clearStagedSignal` ≠ `discardAllSignal`.** `clearStagedSignal` only clears upgrade-only staged
-  picks (manual edits are sticky). `discardAllSignal` clears everything. Bumping `clearStagedSignal`
+  MergedUnit.spaceId` is relied on for sibling-variant matching in Inspect's Variants list
+  (`variantValues`, `spec-sheet/variantValues.ts`), which marks this Variant by it.
+- **`clearUpgradeOnly` ≠ `discardAll`.** `clearUpgradeOnly` only clears the upgrade ticks (manual
+  edits and keeps are sticky). `discardAll` clears everything. Dispatching `clearUpgradeOnly`
   when you mean a full discard leaves stale manual edits staged — a silent data-corruption risk.
 - **Phantom deletions.** If a dry-run returns no data for a unit, every current path naively diffs as
   a deletion. Guard: don't build an `UpgradeEntry` until its dry-run Diff lands (rule 16,
   `buildUpgradeEntries`); never treat a no-data dry-run as mass deletions.
 - **`dryRunSettled` vs `!isDryRunLoading`.** Only `dryRunSettled` may gate the auto-switch off the
-  Upgradable tab; at a node switch `isDryRunLoading` is momentarily `false`.
+  Incoming scope; at a node switch `isDryRunLoading` is momentarily `false`.
 - **StrictMode double-render trap** (`AppComponentView.tsx`): `prevGraphKeyRef` is updated in a
   post-commit effect (not during render) so `isGraphSwitch` stays correct. It drives `Slide timeout={0}`
   so the side pane vanishes instantly on a graph switch — otherwise it steals layout width and the
@@ -1004,8 +1044,10 @@ Do not re-propose these — they were explicitly rejected by the people who buil
 - **`currentData` not `data`** on the units query — avoids rendering new spaces against stale units.
 - **RTK merge-patch+json needs a pre-stringified body** → the repeated `// @ts-expect-error` +
   `JSON.stringify({})` on patch calls is deliberate.
-- **`nodeRowPropsAreEqual` is load-bearing** (`ComponentValuesSection.tsx`). A naive
-  Set-by-reference comparator re-renders every tree row on each stage/unstage.
+- **No tooltip and no MUI component per value.** `FieldValue` draws plain elements with class
+  names, styled once by the sheet root (`sheetStyles.ts`), and the sheet has one hover card
+  (`SheetPeek`, placed by delegated `pointerover` / `focusin`). A Unit of thousands of fields
+  depends on this; do not add a per-value MUI component or tooltip.
 - **`countLogicalChanges`** counts LOGICAL changes (a wholly-added array element with N leaf paths
   counts as ONE). The badge, footer "Upgrade [N]" chip, and "Select all (N)" all use this; do not
   substitute raw leaf-path counts.

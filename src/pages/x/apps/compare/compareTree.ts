@@ -24,8 +24,8 @@
  * about: N value columns rather than a before and an after, one colour encoding
  * instead of red/green, frozen and growing tracks, and per-column edit targets.
  * `DiffTreeNode` carries a two-valued `diff` that none of that fits, so the tree
- * is used for STRUCTURE and the cells are attached by full path — the same way
- * `ComponentValuesSection` composes a `fullPath` as it walks.
+ * is used for STRUCTURE and the cells are attached by the full path each node
+ * composes as the tree is walked.
  */
 
 import { buildPathTree, type DiffTreeNode } from '../diffTree';

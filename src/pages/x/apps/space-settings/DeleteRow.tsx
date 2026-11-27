@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Delete variant (design-mockups/variant-settings/BUILD-PLAN.md commit 7).
- * Typed confirmation is the mitigation, not a courtesy — copy specified in
- * BUILD-PLAN step 21 rather than left to the implementer: the input must
+ * Delete variant. Typed confirmation is the mitigation, not a courtesy: the
+ * input must
  * match the Space slug exactly, the REAL unit count must be rendered (not a
  * static placeholder), and the delete button stays disabled until it
  * matches.
@@ -16,7 +15,7 @@
  * `DeleteSpaceApiArg` are typed `string`, not boolean (opens
  * `confighubapi.gen.ts:6285`, field `:6289`), so `recursive: true` would not
  * compile. `recursiveForce` is deliberately left off so a delete gate can
- * still block the delete (BUILD-PLAN step 22). The existing call site
+ * still block the delete. The existing call site
  * `SpaceDetailPage.tsx:121-123` passes NEITHER param and only works there
  * because those Spaces are empty — copying it naively would fail on every
  * real variant, which always holds units.

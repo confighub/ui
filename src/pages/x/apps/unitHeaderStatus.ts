@@ -6,7 +6,7 @@ import { validationFindings } from '@/pages/unit-detail/components/action-side-b
 import { unitOverviewHref } from '@/pages/unit-detail/unitDetailHrefs';
 
 import type { MergedUnit } from './componentTypes';
-import { countLogicalChanges, countUpgradableBadgeFields, fieldDiffKey } from './entryBuilders';
+import { countChanges, countUpgradableBadgeFields } from './entryBuilders';
 import { formatUnitDataSize } from './unitSizeGuard';
 
 /**
@@ -89,21 +89,33 @@ export const revisionRange = (from: number, to: number): string => `r${from}→r
  */
 export function unitHeaderStatuses(
   unit: MergedUnit,
-  { expanded, held }: { expanded: boolean; held: boolean },
+  {
+    expanded,
+    held,
+    dataLoading = false,
+    originError = false,
+  }: {
+    expanded: boolean;
+    held: boolean;
+    /** The Unit's configuration is still being read. */
+    dataLoading?: boolean;
+    /** The read of where each field comes from failed. */
+    originError?: boolean;
+  },
 ): UnitHeaderStatus[] {
   const out: UnitHeaderStatus[] = [];
 
-  if (unit.isUpgradeLoading && !unit.upgradeEntry) {
+  if ((unit.isUpgradeLoading && !unit.upgradeEntry) || dataLoading) {
     out.push({
       kind: 'loading',
       label: 'Reading the changes',
       eyebrow: 'Reading the changes',
-      lines: ['The upgrade preview is being computed'],
+      lines: [dataLoading ? 'The configuration is being read' : 'The upgrade preview is being computed'],
     });
   }
 
   const upgradeError = unit.upgradeEntry ? undefined : unit.upgradeError;
-  if (upgradeError || unit.variationError) {
+  if (upgradeError || unit.variationError || originError) {
     out.push({
       kind: 'error',
       label: 'Not read: failed',
@@ -111,7 +123,9 @@ export function unitHeaderStatuses(
       lines: [
         upgradeError
           ? `The changes to this Unit could not be read: ${upgradeError}`
-          : `The local overrides could not be read: ${unit.variationError}`,
+          : unit.variationError
+            ? `The local overrides could not be read: ${unit.variationError}`
+            : 'Where each field comes from could not be read',
       ],
     });
   }
@@ -143,7 +157,7 @@ export function unitHeaderStatuses(
   // A Unit with no Target is never released, so the node card does not call its head unreleased either.
   if (unit.applyEntry && unit.targetId) {
     const entry = unit.applyEntry;
-    const changed = countLogicalChanges(entry.fieldDiffs.map(fieldDiffKey));
+    const changed = countChanges(entry.fieldDiffs);
     out.push({
       kind: 'unreleased',
       label: 'Unreleased changes',

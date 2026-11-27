@@ -43,8 +43,10 @@ async function navigateAndSelectApp(page: Page, appLabel: string): Promise<void>
   await page
     .waitForSelector('[role="progressbar"]', { state: 'hidden', timeout: 20000 })
     .catch(() => {});
-  await expect(page.getByText(appLabel)).toBeVisible({ timeout: 20000 });
-  await page.getByText(appLabel).click();
+  // The trail names the Component too, so the tree item is found by its test id.
+  const treeItem = page.getByTestId(`app-tree-item-${appLabel}`);
+  await expect(treeItem).toBeVisible({ timeout: 20000 });
+  await treeItem.click();
 }
 
 test.describe('component staging keeps the Upgradable narrowed view', () => {
@@ -168,32 +170,23 @@ test.describe('component staging keeps the Upgradable narrowed view', () => {
     // is narrowed to the upgradable rows.
     await expect(page.getByTestId('component-upgrade-button')).toBeVisible({ timeout: 10000 });
 
-    // Wait for the narrowed upgradable rows to render. There should be exactly the
-    // upgradable leaf rows (2), NOT all 10 data paths.
-    const leafRows = page.getByTestId('component-leaf-row');
-    await expect(leafRows).toHaveCount(UPGRADABLE_COUNT, { timeout: 15000 });
+    // Incoming draws exactly the incoming fields (2), NOT all the Unit's fields.
+    const ticks = page.locator('[data-testid^="incoming-tick-"]');
+    await expect(ticks).toHaveCount(UPGRADABLE_COUNT, { timeout: 15000 });
 
-    // The Upgradable tab AUTO-SELECTS all upgradable rows on entry, so the stage
-    // controls (checkboxes) start in the STAGED state.
-    const pills = page.getByTestId('component-upgrade-pill');
-    await expect(pills).toHaveCount(UPGRADABLE_COUNT, { timeout: 5000 });
-    await expect(pills.first()).toHaveAttribute('data-staged', 'true', { timeout: 5000 });
+    // Entering Incoming ticks every incoming field, so the ticks start checked.
+    const firstBox = ticks.first().locator('input');
+    await expect(firstBox).toBeChecked({ timeout: 5000 });
 
-    // Toggle the first row OFF then ON. The narrowed view must hold throughout —
-    // staging/unstaging must NOT expand the unit to reveal its non-upgradable paths.
-    const firstBox = pills.first().locator('input[type="checkbox"]');
-
+    // Toggle the first field OFF then ON. The scope must hold throughout: unticking must NOT
+    // draw the Unit's other fields.
     await firstBox.uncheck();
-    await expect(pills.first()).toHaveAttribute('data-staged', 'false', { timeout: 5000 });
-    await expect(leafRows).toHaveCount(UPGRADABLE_COUNT);
+    await expect(firstBox).not.toBeChecked({ timeout: 5000 });
+    await expect(ticks).toHaveCount(UPGRADABLE_COUNT);
 
     await firstBox.check();
-    await expect(pills.first()).toHaveAttribute('data-staged', 'true', { timeout: 5000 });
-
-    // REGRESSION ASSERTION: the view stays narrowed (not expanded toward the full
-    // unit's 10 paths) after toggling, and every row keeps its pill.
-    await expect(leafRows).toHaveCount(UPGRADABLE_COUNT);
-    await expect(pills).toHaveCount(UPGRADABLE_COUNT);
+    await expect(firstBox).toBeChecked({ timeout: 5000 });
+    await expect(ticks).toHaveCount(UPGRADABLE_COUNT);
   });
 
   test('committing the staged batch keeps the just-committed rows visible (they do not vanish)', async ({ page }) => {
@@ -206,32 +199,23 @@ test.describe('component staging keeps the Upgradable narrowed view', () => {
     const upgradeBtn = page.getByTestId('component-upgrade-button');
     await expect(upgradeBtn).toBeVisible({ timeout: 10000 });
 
-    // Wait for the narrowed upgradable rows (the 2 changed keys).
-    const leafRows = page.getByTestId('component-leaf-row');
-    await expect(leafRows).toHaveCount(UPGRADABLE_COUNT, { timeout: 15000 });
+    // Wait for the incoming fields (the 2 changed keys); entering Incoming ticked them.
+    const ticks = page.locator('[data-testid^="incoming-tick-"]');
+    await expect(ticks).toHaveCount(UPGRADABLE_COUNT, { timeout: 15000 });
+    await expect(ticks.first().locator('input')).toBeChecked({ timeout: 5000 });
 
-    // The Upgradable tab auto-selects all upgradable rows on entry, so they're
-    // already staged. Confirm the stage controls are checked.
-    await expect(page.getByTestId('component-upgrade-pill').first()).toHaveAttribute('data-staged', 'true', { timeout: 5000 });
-
-    // Commit: clicking the footer Upgrade button performs the real PATCH + triggers
-    // an RTK refetch immediately — there is no intermediate review step.
+    // Commit: clicking the footer button performs the real PATCH and refetches immediately.
     await expect(upgradeBtn).toBeEnabled({ timeout: 5000 });
     await upgradeBtn.click();
 
-    // After commit + refetch the committed paths drop out of upgradeFieldDiffs.
-    // REGRESSION ASSERTION: the just-committed rows must STAY visible (not vanish).
-    // The row count must NOT drop to 0 — the committed rows remain, now in a "done"
-    // state with no upgrade pill (nothing left to stage on them).
-    await expect(leafRows).toHaveCount(UPGRADABLE_COUNT, { timeout: 20000 });
-
-    // Done state: the committed rows no longer offer an upgrade pill to stage.
-    await expect(page.getByTestId('component-upgrade-pill')).toHaveCount(0, { timeout: 10000 });
+    // After the commit nothing is incoming any more: the scope says so, and All draws the
+    // written values.
+    await expect(page.getByTestId('scope-empty')).toHaveText('Nothing incoming', { timeout: 20000 });
+    await expect(ticks).toHaveCount(0);
   });
 
-  // The Space settings sheet must not unmount the values tree: a staged edit
-  // lives in that tree's state, so remounting it would silently drop the work.
-  test('a staged treeview field edit survives opening and closing the Space settings sheet', async ({ page }) => {
+  // The Space settings sheet must not drop a staged edit: it lives in the pane's staging store.
+  test('a staged field edit survives opening and closing the Space settings sheet', async ({ page }) => {
     await navigateAndSelectApp(page, APP_LABEL);
 
     // The DEV node, not prod: dev has no upstream of its own, so its field
@@ -244,28 +228,29 @@ test.describe('component staging keeps the Upgradable narrowed view', () => {
 
     await expect(page.getByText('k7-base').first()).toBeVisible({ timeout: 10000 });
     await page.getByText('k7-base').first().click();
-    const inlineInput = page.getByTestId('field-edit-input');
+    const inlineInput = page.getByTestId('field-editor-input');
     await expect(inlineInput).toBeVisible({ timeout: 5000 });
-    await inlineInput.fill('k7-staged-in-treeview');
+    await inlineInput.fill('k7-staged-in-sheet');
     await inlineInput.press('Enter');
     await expect(inlineInput).not.toBeVisible({ timeout: 5000 });
 
     // Confirm it actually staged (not written) before touching the sheet at all.
-    await expect(page.locator('.pill-group.pill-staged').first()).toBeVisible({ timeout: 5000 });
+    const stagedMark = page.locator('[data-testid^="field-staged-"]');
+    await expect(stagedMark.first()).toBeVisible({ timeout: 5000 });
     const upgradeBtn = page.getByTestId('component-upgrade-button');
     await expect(upgradeBtn).toBeEnabled({ timeout: 10000 });
 
-    // Open the Space settings sheet, then close it again (nothing staged in
-    // the SHEET itself, so this is a plain Close with no discard dialog).
-    await page.getByTestId('component-space-settings-cog').click();
+    // Open the Settings tab, then go back to Configuration (nothing staged in
+    // the SHEET itself, so there is no discard dialog).
+    await page.getByTestId('component-pane-tab-settings').click();
     await expect(page.getByTestId('space-settings-sheet')).toBeVisible();
-    await page.getByTestId('component-space-settings-cog').click();
+    await page.getByTestId('component-pane-tab-config').click();
     await expect(page.getByTestId('space-settings-sheet')).not.toBeVisible();
 
-    // The treeview's OWN staged edit must have survived the round trip.
-    await expect(page.locator('.pill-group.pill-staged').first()).toBeVisible({ timeout: 5000 });
+    // The staged edit lives in the pane's staging store: it must have survived the round trip.
+    await expect(stagedMark.first()).toBeVisible({ timeout: 5000 });
     await expect(upgradeBtn).toBeEnabled({ timeout: 5000 });
-    await expect(page.getByText('k7-staged-in-treeview').first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('k7-staged-in-sheet').first()).toBeVisible({ timeout: 5000 });
   });
 });
 
@@ -394,23 +379,22 @@ test.describe('component staging in a multi-document Unit', () => {
   test('a path only upstream has starts staged, showing its incoming value', async ({ page }) => {
     await openProdPane(page);
 
-    const addedRow = page.getByTestId('component-leaf-row').filter({ hasText: 'added' });
-    await expect(addedRow).toHaveCount(1, { timeout: 15000 });
-    await expect(addedRow.getByTestId('component-upgrade-pill')).toHaveAttribute('data-staged', 'true', { timeout: 5000 });
-    await expect(addedRow).toContainText('added-upstream');
-    await expect(page.getByTestId('component-upgrade-button')).toContainText('2');
+    // The added key and the changed one: two ticks, both ticked, the added one showing its value.
+    const ticks = page.locator('[data-testid^="incoming-tick-"]');
+    await expect(ticks).toHaveCount(2, { timeout: 15000 });
+    await expect(ticks.first().locator('input')).toBeChecked({ timeout: 5000 });
+    await expect(page.locator('.inc').filter({ hasText: 'added-upstream' })).toHaveCount(1);
+    await expect(page.getByTestId('component-upgrade-button')).toHaveText('Upgrade 2');
   });
 
   test('upgrading only the added path writes it into the document it was added to', async ({ page }) => {
     await openProdPane(page);
 
-    const addedRow = page.getByTestId('component-leaf-row').filter({ hasText: 'added' });
-    await expect(addedRow.getByTestId('component-upgrade-pill')).toHaveAttribute('data-staged', 'true', { timeout: 15000 });
-    // Unstaging the other change makes this a partial upgrade, which writes the staged
-    // values into the Unit's data rather than running the server's upgrade.
-    const changedRow = page.getByTestId('component-leaf-row').filter({ hasText: 'second-CHANGED' });
-    await changedRow.getByTestId('component-upgrade-pill').locator('input[type="checkbox"]').uncheck();
-    await expect(page.getByTestId('component-upgrade-button')).toContainText('1');
+    await expect(page.locator('.inc').filter({ hasText: 'added-upstream' }).locator('input')).toBeChecked({ timeout: 15000 });
+    // Unticking the other change makes this a partial upgrade, which writes the ticked values
+    // into the Unit's data rather than running the server's upgrade.
+    await page.locator('.inc').filter({ hasText: 'second-CHANGED' }).locator('input[type="checkbox"]').uncheck();
+    await expect(page.getByTestId('component-upgrade-button')).toHaveText('Upgrade 1');
     await page.getByTestId('component-upgrade-button').click();
 
     await expect(async () => {

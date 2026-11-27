@@ -182,18 +182,17 @@ test.describe('guided tour chapters 9-10: field ownership', () => {
     await expect(devNode).toBeVisible({ timeout: 10000 });
     await selectNode(devNode);
 
-    const trigger = page.getByTestId('field-edit-trigger-data.LOG_LEVEL');
+    const trigger = page.locator('[data-testid="field-sheet"] .v[data-path="data.LOG_LEVEL"]');
     await expect(trigger).toBeVisible({ timeout: 10000 });
     await trigger.click();
 
-    const input = page.getByTestId('field-edit-input');
+    const input = page.getByTestId('field-editor-input');
     await expect(input).toBeVisible({ timeout: 5000 });
     await input.fill('debug');
     await input.press('Enter');
 
-    // Staged, not yet written — data-change-type reflects the pending edit.
-    const row = page.getByTestId('component-leaf-row').filter({ hasText: 'LOG_LEVEL' });
-    await expect(row).toHaveAttribute('data-change-type', 'edit', { timeout: 5000 });
+    // Staged, not yet written — the value takes the staged mark.
+    await expect(trigger).toHaveClass(/staged/, { timeout: 5000 });
 
     // Protection is opt-in now — a staged edit alone is override-blind on
     // the next upgrade. This is the footer's one-click "keep everything
@@ -221,7 +220,7 @@ test.describe('guided tour chapters 9-10: field ownership', () => {
     const baseNode = page.locator('[data-testid="flow-node-select-target"][data-variant="base"]');
     await expect(baseNode).toBeVisible({ timeout: 10000 });
     await selectNode(baseNode);
-    await expect(page.getByTestId('component-leaf-row').first()).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('field-sheet')).toBeVisible({ timeout: 10000 });
 
     await page.getByTestId('invoker-functions-button').click();
 
@@ -266,7 +265,7 @@ test.describe('guided tour chapters 9-10: field ownership', () => {
     await expect(devNode).toBeVisible({ timeout: 10000 });
     await selectNode(devNode);
 
-    await page.getByTestId('component-filter-incoming').click();
+    await page.getByTestId('scope-incoming').click();
     const selectAll = page.getByTestId('component-select-all-button');
     if (await selectAll.isVisible({ timeout: 3000 }).catch(() => false)) {
       await selectAll.click();

@@ -118,9 +118,7 @@ export const BottomBar = styled(Box)({
 });
 
 /**
- * The BottomBar's ONE primary-action-button treatment ("Replace the upgrade
- * footer with the save button. as a footer. style them the same." —
- * task #34). Shared, literally, by the Upgrade button and the Space settings
+ * The BottomBar's ONE primary-action-button treatment. Shared, literally, by the Upgrade button and the Space settings
  * sheet's Save button in `ComponentSidePane` (both spread this same object, so
  * they cannot visually drift apart the way two hand-copied sx literals
  * could), and moved here (a pure move, no behaviour change) so the ChangeOrder

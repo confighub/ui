@@ -1,0 +1,51 @@
+{
+ "staged": [
+  {
+   "id": "container-gateway-env-node-env",
+   "value": "staging"
+  },
+  {
+   "id": "container-gateway-resources-limits-memory",
+   "value": "6Gi"
+  }
+ ],
+ "removed": [
+  "container-gateway-env-home"
+ ],
+ "keptCommitted": [
+  "deployment-metadata-labels-environment"
+ ],
+ "keptStaged": [
+  "deployment-spec-replicas"
+ ],
+ "keptBlocksStaged": [
+  "pod-metadata-labels"
+ ],
+ "invalid": {
+  "id": "container-gateway-resources-limits-memory",
+  "value": "4 GB",
+  "error": "Not a quantity: try 4Gi"
+ },
+ "image": {
+  "id": "container-gateway-image",
+  "tag": "2026.11.1-slim"
+ },
+ "added": [
+  {
+   "group": "container-gateway",
+   "prefix": [
+    "env"
+   ],
+   "key": "LOG_LEVEL",
+   "value": "debug"
+  }
+ ],
+ "env": {
+  "id": "container-gateway-env-node-env",
+  "value": "staging"
+ },
+ "limit": {
+  "id": "container-gateway-resources-limits-memory",
+  "value": "6Gi"
+ }
+}

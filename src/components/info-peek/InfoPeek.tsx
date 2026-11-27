@@ -1,6 +1,6 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, type ReactNode, useState } from 'react';
 
 import Box from '@mui/material/Box';
 import Tooltip, { type TooltipProps } from '@mui/material/Tooltip';
@@ -26,6 +26,7 @@ const INFO_PEEK_BORDER_SUBTLE = '#f3f4f6';
 const INFO_PEEK_RADIUS = 9;
 const INFO_PEEK_SHADOW = '0 4px 12px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.04)';
 const INFO_PEEK_FONT_MONO = '"JetBrains Mono", "Courier New", monospace';
+const INFO_PEEK_FONT_SANS = '"Manrope", system-ui, -apple-system, sans-serif';
 
 /** Drop into `<Tooltip slotProps={{ tooltip: { sx: INFO_PEEK_TOOLTIP_SX } }}>` to render
  *  the light "nice popout" card instead of MUI's default dark tooltip bubble. */
@@ -51,7 +52,7 @@ export interface InfoPeekSpec {
   /** Hero metric (the "2d stale" moment). Optional. */
   metric?: { value: string; unit?: string };
   /** Muted supporting lines. */
-  lines: string[];
+  lines: ReactNode[];
   /**
    * Accent action label; the "→" is appended. With `onAction` it is a link the pointer can move
    * onto and click; without it, a hint at what clicking the peek's trigger does. Omit for a
@@ -78,14 +79,38 @@ export const InfoPeekCard = ({
   spec,
   onAction,
   testId,
+  lineTestIds,
+  eyebrowIcon,
+  sentenceCaseEyebrow,
+  sans,
 }: {
   color: string;
   spec: InfoPeekSpec;
   onAction?: () => void;
   testId?: string;
+  /** The card in the sans face, its eyebrow a sentence: for prose, not for values and paths. */
+  sans?: boolean;
+  /** A test id per line of `spec.lines`, by index. */
+  lineTestIds?: (string | undefined)[];
+  /** An icon before the eyebrow. */
+  eyebrowIcon?: ReactNode;
+  /** The eyebrow in sentence case (a sentence, not a label). */
+  sentenceCaseEyebrow?: boolean;
 }) => (
-  <Box data-testid={testId} sx={{ p: '11px 12px 10px', minWidth: 176, fontFamily: INFO_PEEK_FONT_MONO }}>
-    <Box sx={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color }}>
+  <Box data-testid={testId} sx={{ p: '11px 12px 10px', minWidth: 176, fontFamily: sans ? INFO_PEEK_FONT_SANS : INFO_PEEK_FONT_MONO }}>
+    <Box
+      sx={{
+        fontSize: sentenceCaseEyebrow || sans ? 12 : 9,
+        fontWeight: 700,
+        letterSpacing: sentenceCaseEyebrow || sans ? 0 : '0.08em',
+        textTransform: sentenceCaseEyebrow || sans ? 'none' : 'uppercase',
+        color,
+        display: eyebrowIcon ? 'flex' : undefined,
+        alignItems: 'center',
+        gap: '5px',
+      }}
+    >
+      {eyebrowIcon}
       {spec.eyebrow}
     </Box>
     {spec.metric && (
@@ -99,7 +124,7 @@ export const InfoPeekCard = ({
       </Box>
     )}
     {spec.lines.map((line, i) => (
-      <Box key={i} sx={{ fontSize: 11, lineHeight: 1.5, color: INFO_PEEK_FG_MUTED, mt: spec.metric ? 0 : '3px' }}>
+      <Box key={i} data-testid={lineTestIds?.[i]} sx={{ fontSize: sans ? 12 : 11, lineHeight: 1.5, color: INFO_PEEK_FG_MUTED, mt: spec.metric ? 0 : '3px' }}>
         {line}
       </Box>
     ))}
@@ -163,6 +188,7 @@ export const InfoPeekTooltip = ({
   testId,
   maxWidth,
   describeChild,
+  sans,
   children,
 }: {
   color: string;
@@ -178,6 +204,8 @@ export const InfoPeekTooltip = ({
    * with its own `aria-label` keeps that name while the card is open.
    */
   describeChild?: boolean;
+  /** See `InfoPeekCard`'s `sans`. */
+  sans?: boolean;
   children: ReactElement;
 }) => {
   const [open, setOpen] = useState(false);
@@ -208,6 +236,7 @@ export const InfoPeekTooltip = ({
             color={color}
             spec={spec}
             testId={testId}
+            sans={sans}
             onAction={
               interactive
                 ? () => {

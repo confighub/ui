@@ -170,7 +170,7 @@ const chapter9: TourStep[] = [
   },
   {
     id: 'edit-start-edit',
-    anchor: { kind: 'selector', css: '[data-testid="field-edit-trigger-data.LOG_LEVEL"]' },
+    anchor: { kind: 'selector', css: '[data-testid="field-sheet"] .v[data-path="data.LOG_LEVEL"]' },
     title: 'Change a value directly',
     body: (
       <>
@@ -178,11 +178,11 @@ const chapter9: TourStep[] = [
         <TourCommand>Click</TourCommand> the value to edit it inline.
       </>
     ),
-    advance: { on: 'click', anchor: { kind: 'selector', css: '[data-testid="field-edit-trigger-data.LOG_LEVEL"]' } },
+    advance: { on: 'click', anchor: { kind: 'selector', css: '[data-testid="field-sheet"] .v[data-path="data.LOG_LEVEL"]' } },
   },
   {
     id: 'edit-type-value',
-    anchor: { kind: 'selector', css: '[data-testid="field-edit-input"]' },
+    anchor: { kind: 'selector', css: '[data-testid="field-editor-input"]' },
     title: 'Type the new value',
     body: (
       <>
@@ -204,10 +204,9 @@ const chapter9: TourStep[] = [
   },
   {
     // Keep on merge is opt-in, not automatic: a staged edit is just a staged
-    // edit until something marks it "kept on merge" — the same
-    // onToggleProtection stagedProtection state ComponentValuesSection.tsx's
-    // row kebab ("Keep on merge" / "Let merges update this") and the value
-    // tooltip's toggle both write to. This footer button
+    // edit until something marks it "kept on merge" — the same staged
+    // protection that the value's hover card ("Keep on merge") writes to.
+    // This footer button
     // (`barKeepState.showKeepButton`, kind 'editsUnkept') is the
     // one-click version of the same action for every currently
     // staged-but-unkept edit — here, just LOG_LEVEL — and reads "Keep 1 on
@@ -575,7 +574,7 @@ const chapter10: TourStep[] = [
     // screen here — the same anchor `edit-start-edit` used two chapters ago.
     // Self-paced: there is nothing left to click, only two values to compare.
     id: 'reedit-review-fields',
-    anchor: { kind: 'selector', css: '[data-testid="field-edit-trigger-data.LOG_LEVEL"]' },
+    anchor: { kind: 'selector', css: '[data-testid="field-sheet"] .v[data-path="data.LOG_LEVEL"]' },
     title: 'See what changed and what did not',
     body: (
       <>

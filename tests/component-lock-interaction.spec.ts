@@ -158,12 +158,15 @@ async function setupLockFixture(
 async function openProdPane(page: Page, appLabel: string, prodTargetSlug: string): Promise<void> {
   await page.goto(`/components?app=${encodeURIComponent(appLabel)}`);
   await page.waitForSelector('[role="progressbar"]', { state: 'hidden', timeout: 20000 }).catch(() => {});
-  await expect(page.getByText(appLabel)).toBeVisible({ timeout: 20000 });
-  await page.getByText(appLabel).click();
+  // The trail names the Component too, so the tree item is found by its test id.
+  const treeItem = page.getByTestId(`app-tree-item-${appLabel}`);
+  await expect(treeItem).toBeVisible({ timeout: 20000 });
+  await treeItem.click();
   const prodNode = page.locator('.react-flow__node').filter({ hasText: prodTargetSlug });
   await expect(prodNode).toBeVisible({ timeout: 10000 });
   await prodNode.click();
-  await expect(page.getByTestId('component-upgrade-button')).toBeVisible({ timeout: 10000 });
+  // The pane is ready: its scope chips are drawn (the footer shows only when something is staged).
+  await expect(page.getByTestId('component-filter-all')).toBeVisible({ timeout: 10000 });
   // The fixture always has exactly one pending upgrade (`newFeatureFlag`) —
   // gate on the dry-run having actually landed before switching tabs, not a
   // bare timeout (which would let `upstreamOnlyPaths` still be empty).
@@ -173,17 +176,21 @@ async function openProdPane(page: Page, appLabel: string, prodTargetSlug: string
   await allTab.click();
 }
 
-/** Open the leaf kebab menu for a row uniquely matched by `searchText`, returning the row locator. */
-async function openLeafKebab(page: Page, searchText: string): Promise<ReturnType<Page['getByTestId']>> {
-  const searchBox = page.getByPlaceholder('Search...');
-  await searchBox.fill(searchText);
-  const leafRow = page.getByTestId('component-leaf-row').filter({ hasText: searchText });
-  await expect(async () => {
-    expect(await leafRow.count()).toBe(1);
-  }).toPass({ timeout: 15000 });
-  await leafRow.locator('.kebab-btn').click();
-  await expect(page.getByRole('menu')).toBeVisible({ timeout: 5000 });
-  return leafRow;
+// The sheet's fields are found by their path; a kept field carries a lock after its value.
+const sheetField = (page: Page, path: string) => page.locator(`.bbody .v[data-path="${path}"]`);
+const keptMark = (page: Page, path: string) =>
+  page.locator('.vm', { has: page.locator(`.v[data-path="${path}"]`) }).locator('[data-testid^="field-kept-"]');
+async function keepViaCluster(page: Page, path: string): Promise<void> {
+  await sheetField(page, path).hover();
+  await page.getByTestId('field-action-keep').click();
+}
+async function stageValue(page: Page, path: string, newValue: string): Promise<void> {
+  await sheetField(page, path).click();
+  const input = page.getByTestId('field-editor-input');
+  await expect(input).toBeVisible({ timeout: 5000 });
+  await input.fill(newValue);
+  await input.press('Enter');
+  await expect(sheetField(page, path)).toHaveClass(/staged/);
 }
 
 test.describe('Lock/unlock interaction — Undo keep', () => {
@@ -215,66 +222,41 @@ test.describe('Lock/unlock interaction — Undo keep', () => {
     await context.close();
   });
 
-  test('Undo keep reverses exactly the staged keep, leaving an independently-kept row untouched', async ({ page }) => {
+  test('Undo keep reverses exactly the staged keep, leaving an independently-kept field untouched', async ({ page }) => {
     await openProdPane(page, fx.appLabel, fx.prodTargetSlug);
 
-    // Stage manual edits on TWO unprotected local overrides (card 3's
-    // "both") — both under `spec.limits`, so ONE search term ("limits")
-    // keeps both rows simultaneously visible for the rest of the test
-    // (searching "cpu" alone would hide the "memory" row, and vice versa).
-    const searchBox = page.getByPlaceholder('Search...');
-    await searchBox.fill('limits');
-    const cpuRow = page.getByTestId('component-leaf-row').filter({ hasText: 'cpu' });
-    const memoryRow = page.getByTestId('component-leaf-row').filter({ hasText: 'memory' });
-    async function stageEdit(row: ReturnType<Page['getByTestId']>, currentValue: string, newValue: string): Promise<void> {
-      await expect(async () => { expect(await row.count()).toBe(1); }).toPass({ timeout: 15000 });
-      await row.getByText(currentValue).click();
-      const editInput = page.getByTestId('field-edit-input');
-      await expect(editInput).toBeVisible({ timeout: 5000 });
-      await editInput.fill(newValue);
-      await editInput.press('Enter');
-      await expect(row).toHaveAttribute('data-change-type', 'edit');
-      await expect(row).toHaveAttribute('data-protected', 'false');
-    }
-    await stageEdit(cpuRow, prodFields.limitsCpu, '900m');
-    await stageEdit(memoryRow, prodFields.limitsMemory, '2Gi');
+    // Stage manual edits on TWO unprotected local overrides (card 3's "both").
+    await stageValue(page, 'spec.limits.cpu', '900m');
+    await stageValue(page, 'spec.limits.memory', '2Gi');
 
-    // Bar shows the "none kept" warning state (both un-kept) and the Keep-both button.
+    // The bar shows the "none kept" warning state (both un-kept) and the Keep-both button.
     const keepButton = page.getByTestId('component-keep-staged-edits-button');
     await expect(keepButton).toBeVisible({ timeout: 10000 });
     await expect(page.getByTestId('component-bar-keep-lead')).toContainText('may be overwritten');
 
     await keepButton.click();
 
-    // Both edited rows are now solid/kept; the bar flips to the "all kept" state.
-    await expect(cpuRow).toHaveAttribute('data-protected', 'true');
-    await expect(memoryRow).toHaveAttribute('data-protected', 'true');
+    // Both edited fields are now kept; the bar flips to the "all kept" state.
+    await expect(keptMark(page, 'spec.limits.cpu')).toBeVisible();
+    await expect(keptMark(page, 'spec.limits.memory')).toBeVisible();
     const undoButton = page.getByTestId('component-undo-keep-button');
     await expect(undoButton).toBeVisible({ timeout: 10000 });
     await expect(page.getByTestId('component-bar-keep-lead')).toContainText('kept on merge');
 
-    // Independently lock an UNRELATED row (minReadySeconds), via its own
-    // kebab — this staged protection must survive "Undo keep" untouched, since
-    // Undo keep only reverses paths that are BOTH staged-edited and staged-kept.
-    const controlRow = await openLeafKebab(page, 'minReadySeconds');
-    await page.getByRole('menuitem').filter({ hasText: 'Keep on merge' }).click();
-    await expect(controlRow).toHaveAttribute('data-protected', 'true');
-    await expect(controlRow).toHaveAttribute('data-change-type', 'protect');
+    // Independently keep an UNRELATED field (minReadySeconds) from its own hover cluster: this
+    // staged keep must survive "Undo keep", which only reverses fields both edited and kept.
+    await keepViaCluster(page, 'spec.minReadySeconds');
+    await expect(keptMark(page, 'spec.minReadySeconds')).toBeVisible();
 
     await undoButton.click();
 
-    // Reverted: both edited rows are unkept again, but their edits stay
-    // staged. Re-filter first — the search box currently shows
-    // "minReadySeconds" (from openLeafKebab above), which hides these rows.
-    await searchBox.fill('limits');
-    await expect(cpuRow).toHaveAttribute('data-protected', 'false');
-    await expect(cpuRow).toHaveAttribute('data-change-type', 'edit');
-    await expect(memoryRow).toHaveAttribute('data-protected', 'false');
-    await expect(memoryRow).toHaveAttribute('data-change-type', 'edit');
-    // The independently-kebab-locked control row is untouched.
-    await searchBox.fill('minReadySeconds');
-    await expect(controlRow).toHaveAttribute('data-protected', 'true');
-    await expect(controlRow).toHaveAttribute('data-change-type', 'protect');
+    // Reverted: both edited fields are unkept again, but their edits stay staged.
+    await expect(keptMark(page, 'spec.limits.cpu')).toHaveCount(0);
+    await expect(keptMark(page, 'spec.limits.memory')).toHaveCount(0);
+    await expect(sheetField(page, 'spec.limits.cpu')).toHaveClass(/staged/);
+    await expect(sheetField(page, 'spec.limits.memory')).toHaveClass(/staged/);
+    // The independently kept field is untouched.
+    await expect(keptMark(page, 'spec.minReadySeconds')).toBeVisible();
   });
 });
 
@@ -319,34 +301,24 @@ test.describe.serial('Lock/unlock interaction — commit flows', () => {
   async function openPane(page: Page): Promise<void> {
     await page.goto(`/components?app=${encodeURIComponent(fx.appLabel)}`);
     await page.waitForSelector('[role="progressbar"]', { state: 'hidden', timeout: 20000 }).catch(() => {});
-    await expect(page.getByText(fx.appLabel)).toBeVisible({ timeout: 20000 });
-    await page.getByText(fx.appLabel).click();
+    await expect(page.getByTestId(`app-tree-item-${fx.appLabel}`)).toBeVisible({ timeout: 20000 });
+    await page.getByTestId(`app-tree-item-${fx.appLabel}`).click();
     const prodNode = page.locator('.react-flow__node').filter({ hasText: fx.prodTargetSlug });
     await expect(prodNode).toBeVisible({ timeout: 10000 });
     await prodNode.click();
-    await expect(page.getByTestId('component-upgrade-button')).toBeVisible({ timeout: 10000 });
+    // The pane is ready: its scope chips are drawn (the footer shows only when something is staged).
+  await expect(page.getByTestId('component-filter-all')).toBeVisible({ timeout: 10000 });
     const allTab = page.getByTestId('component-filter-all');
     await expect(allTab).toBeVisible({ timeout: 10000 });
     await allTab.click();
   }
 
-  test('staged commit leaves the pill border/data-protected identical after the refetch lands', async ({ page }) => {
+  test('a staged keep is written by the footer and stays kept after the refetch lands', async ({ page }) => {
     await openPane(page);
 
-    const searchBox = page.getByPlaceholder('Search...');
-    await searchBox.fill('replicas');
-    const row = page.getByTestId('component-leaf-row').filter({ hasText: 'replicas' });
-    await expect(async () => { expect(await row.count()).toBe(1); }).toPass({ timeout: 15000 });
-
-    await row.locator('.kebab-btn').click();
-    await expect(page.getByRole('menu')).toBeVisible({ timeout: 5000 });
-    await page.getByRole('menuitem').filter({ hasText: 'Keep on merge' }).click();
-
-    // Staged: solid border, protect rail, not yet committed.
-    await expect(row).toHaveAttribute('data-protected', 'true');
-    await expect(row).toHaveAttribute('data-change-type', 'protect');
-    const stagedBorder = await row.locator('.current-pill').evaluate((el) => getComputedStyle(el).borderStyle);
-    expect(stagedBorder).toBe('solid');
+    await keepViaCluster(page, 'spec.replicas');
+    // Staged: the lock in rust, not yet committed.
+    await expect(keptMark(page, 'spec.replicas')).toBeVisible();
 
     const upgradeButton = page.getByTestId('component-upgrade-button');
     await expect(upgradeButton).toBeEnabled({ timeout: 10000 });
@@ -354,16 +326,12 @@ test.describe.serial('Lock/unlock interaction — commit flows', () => {
     await upgradeButton.click();
     await protectionResponse;
 
-    // Committed: same solid border, same data-protected — nothing redrawn.
-    await expect(row).toHaveAttribute('data-protected', 'true', { timeout: 10000 });
-    const committedBorder = await row.locator('.current-pill').evaluate((el) => getComputedStyle(el).borderStyle);
-    expect(committedBorder).toBe(stagedBorder);
+    // Committed: the same lock, nothing redrawn.
+    await expect(keptMark(page, 'spec.replicas')).toBeVisible({ timeout: 10000 });
 
     // Persists across a fresh navigation (not just the optimistic staged view).
     await openPane(page);
-    await searchBox.fill('replicas');
-    const rowAfterReload = page.getByTestId('component-leaf-row').filter({ hasText: 'replicas' });
-    await expect(rowAfterReload).toHaveAttribute('data-protected', 'true', { timeout: 15000 });
+    await expect(keptMark(page, 'spec.replicas')).toBeVisible({ timeout: 15000 });
   });
 
   test('folder "Keep group" commit stages exactly the delta, not the whole subtree', async ({ page }) => {
@@ -379,17 +347,17 @@ test.describe.serial('Lock/unlock interaction — commit flows', () => {
     await waitForResolved(page, fx.prodSpaceId, fx.prodUnitId);
 
     await openPane(page);
-    const searchBox = page.getByPlaceholder('Search...');
-    await searchBox.fill('limits');
-    const folderRow = page.locator('[data-testid="component-folder-row"][data-folder-path="spec.limits"]');
-    await expect(folderRow).toBeVisible({ timeout: 15000 });
-    await folderRow.locator('.kebab-btn').click();
-    await expect(page.getByRole('menu')).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText('Keep group & 2 keys on merge')).toBeVisible();
-    await expect(page.getByText('1 is already kept. This changes 1.')).toBeVisible();
+    // Hover the Limits block label: "Keep this block on merge" stages only the delta (1 key).
+    const limits = page.locator('.blk', { has: page.locator('.v[data-path="spec.limits.cpu"]') });
+    await expect(limits).toBeVisible({ timeout: 15000 });
+    await expect(keptMark(page, 'spec.limits.cpu')).toBeVisible();
+    await expect(keptMark(page, 'spec.limits.memory')).toHaveCount(0);
+    await limits.scrollIntoViewIfNeeded();
+    // The block's own row label: a value's hover card hides the block's actions.
+    await limits.locator('.blabel').hover();
 
     const protectionRequestPromise = page.waitForRequest((r) => r.url().includes('/guard') && r.method() === 'POST');
-    await page.getByText('Keep group & 2 keys on merge').click();
+    await limits.getByTestId('block-action-keep').click();
 
     // The Upgrade-slot button relabels to "Keep 1 key" — a pure scope batch,
     // one endpoint, one revision (card 8 row 3).
@@ -409,30 +377,16 @@ test.describe.serial('Lock/unlock interaction — commit flows', () => {
   test('commit order: a staged value edit lands before the locks committed with it', async ({ page }) => {
     await openPane(page);
 
-    // Independently lock `strategy` (unmodified, unedited) via its own kebab.
-    const searchBox = page.getByPlaceholder('Search...');
-    await searchBox.fill('strategy');
-    const lockRow = page.getByTestId('component-leaf-row').filter({ hasText: 'strategy' });
-    await expect(async () => { expect(await lockRow.count()).toBe(1); }).toPass({ timeout: 15000 });
-    await lockRow.locator('.kebab-btn').click();
-    await expect(page.getByRole('menu')).toBeVisible({ timeout: 5000 });
-    await page.getByRole('menuitem').filter({ hasText: 'Keep on merge' }).click();
-    await expect(lockRow).toHaveAttribute('data-protected', 'true');
+    // Independently keep `strategy` (unmodified, unedited) from its hover cluster.
+    await keepViaCluster(page, 'spec.strategy');
+    await expect(keptMark(page, 'spec.strategy')).toBeVisible();
 
     // Stage a manual edit on a DIFFERENT, independent path.
-    await searchBox.fill('minReadySeconds');
-    const editRow = page.getByTestId('component-leaf-row').filter({ hasText: 'minReadySeconds' });
-    await expect(async () => { expect(await editRow.count()).toBe(1); }).toPass({ timeout: 15000 });
-    await editRow.getByText('10').click();
-    const editInput = page.getByTestId('field-edit-input');
-    await expect(editInput).toBeVisible({ timeout: 5000 });
-    await editInput.fill('42');
-    await editInput.press('Enter');
-    await expect(editRow).toHaveAttribute('data-change-type', 'edit');
+    await stageValue(page, 'spec.minReadySeconds', '42');
 
     // The value change dominates the button label (card 8's rule).
     const commitButton = page.getByTestId('component-upgrade-button');
-    await expect(commitButton).toHaveText(/Upgrade/, { timeout: 10000 });
+    await expect(commitButton).toHaveText(/Update/, { timeout: 10000 });
 
     // Value commits write through PUT .../unit/{id}/data (#5140), not a
     // PATCH of the Unit itself — see AppComponentView's uploadUnitData call.
@@ -455,10 +409,7 @@ test.describe.serial('Lock/unlock interaction — commit flows', () => {
     expect(requestOrder[0]).toBe('value');
     expect(requestOrder).toContain('protection');
 
-    await expect(editRow).toHaveAttribute('data-differs-upstream', 'true', { timeout: 10000 });
-    // Re-filter to "strategy" — the search box currently shows
-    // "minReadySeconds", which hides the lock row.
-    await searchBox.fill('strategy');
-    await expect(lockRow).toHaveAttribute('data-protected', 'true', { timeout: 10000 });
+    await expect(sheetField(page, 'spec.minReadySeconds')).toHaveText('42', { timeout: 10000 });
+    await expect(keptMark(page, 'spec.strategy')).toBeVisible({ timeout: 10000 });
   });
 });

@@ -1,0 +1,923 @@
+{
+ "unit": {
+  "space": "prod",
+  "slug": "openclaw",
+  "kind": "Deployment",
+  "upstream": {
+   "space": "base",
+   "slug": "openclaw",
+   "revision": 19
+  }
+ },
+ "groups": [
+  {
+   "id": "container-gateway",
+   "name": "gateway",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=gateway"
+  },
+  {
+   "id": "init-init-config",
+   "name": "init-config",
+   "kind": "init",
+   "path": "spec.template.spec.initContainers.?name=init-config"
+  },
+  {
+   "id": "deployment",
+   "name": "Deployment",
+   "kind": "deployment",
+   "path": "metadata, spec"
+  },
+  {
+   "id": "pod",
+   "name": "Pod",
+   "kind": "pod",
+   "path": "spec.template"
+  },
+  {
+   "id": "volumes",
+   "name": "Volumes",
+   "kind": "volumes",
+   "path": "spec.template.spec.volumes"
+  }
+ ],
+ "rows": [
+  {
+   "group": "container-gateway",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.image",
+   "value": "ghcr.io/openclaw/openclaw@sha256:4f1c9a0e7b2d58c36e914a7f0b3d2c85e6a17f49b0c2d3e8f5a6b7c8d9e0f1a2",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "ghcr.io/openclaw/openclaw@sha256:9b8a7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b",
+   "upstreamRevision": 21,
+   "when": "2d ago"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "imagePullPolicy"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.imagePullPolicy",
+   "value": "IfNotPresent",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "command"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.command",
+   "value": [
+    "node",
+    "/app/dist/index.js",
+    "gateway",
+    "run"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "ports",
+    "gateway",
+    "containerPort"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.ports.?name=gateway.containerPort",
+   "value": "18789",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "ports",
+    "gateway",
+    "protocol"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.ports.?name=gateway.protocol",
+   "value": "TCP",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "HOME"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=HOME.value",
+   "value": "/home/node",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "OPENCLAW_CONFIG_DIR"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=OPENCLAW_CONFIG_DIR.value",
+   "value": "/home/node/.openclaw",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "NODE_ENV"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=NODE_ENV.value",
+   "value": "production",
+   "origin": "here",
+   "baseValue": "production"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "OPENCLAW_GATEWAY_TOKEN",
+    "valueFrom",
+    "secretKeyRef",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=OPENCLAW_GATEWAY_TOKEN.valueFrom.secretKeyRef.name",
+   "value": "openclaw-secrets",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "OPENCLAW_GATEWAY_TOKEN",
+    "valueFrom",
+    "secretKeyRef",
+    "key"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=OPENCLAW_GATEWAY_TOKEN.valueFrom.secretKeyRef.key",
+   "value": "OPENCLAW_GATEWAY_TOKEN",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "ANTHROPIC_API_KEY",
+    "valueFrom",
+    "secretKeyRef",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=ANTHROPIC_API_KEY.valueFrom.secretKeyRef.name",
+   "value": "openclaw-secrets",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "ANTHROPIC_API_KEY",
+    "valueFrom",
+    "secretKeyRef",
+    "key"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=ANTHROPIC_API_KEY.valueFrom.secretKeyRef.key",
+   "value": "ANTHROPIC_API_KEY",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "ANTHROPIC_API_KEY",
+    "valueFrom",
+    "secretKeyRef",
+    "optional"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=ANTHROPIC_API_KEY.valueFrom.secretKeyRef.optional",
+   "value": "true",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "OPENAI_API_KEY",
+    "valueFrom",
+    "secretKeyRef",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=OPENAI_API_KEY.valueFrom.secretKeyRef.name",
+   "value": "openclaw-secrets",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "OPENAI_API_KEY",
+    "valueFrom",
+    "secretKeyRef",
+    "key"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=OPENAI_API_KEY.valueFrom.secretKeyRef.key",
+   "value": "OPENAI_API_KEY",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "OPENAI_API_KEY",
+    "valueFrom",
+    "secretKeyRef",
+    "optional"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=OPENAI_API_KEY.valueFrom.secretKeyRef.optional",
+   "value": "true",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "GEMINI_API_KEY",
+    "valueFrom",
+    "secretKeyRef",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=GEMINI_API_KEY.valueFrom.secretKeyRef.name",
+   "value": "openclaw-secrets",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "GEMINI_API_KEY",
+    "valueFrom",
+    "secretKeyRef",
+    "key"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=GEMINI_API_KEY.valueFrom.secretKeyRef.key",
+   "value": "GEMINI_API_KEY",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "GEMINI_API_KEY",
+    "valueFrom",
+    "secretKeyRef",
+    "optional"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=GEMINI_API_KEY.valueFrom.secretKeyRef.optional",
+   "value": "true",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "OPENROUTER_API_KEY",
+    "valueFrom",
+    "secretKeyRef",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=OPENROUTER_API_KEY.valueFrom.secretKeyRef.name",
+   "value": "openclaw-secrets",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "OPENROUTER_API_KEY",
+    "valueFrom",
+    "secretKeyRef",
+    "key"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=OPENROUTER_API_KEY.valueFrom.secretKeyRef.key",
+   "value": "OPENROUTER_API_KEY",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "env",
+    "OPENROUTER_API_KEY",
+    "valueFrom",
+    "secretKeyRef",
+    "optional"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.env.?name=OPENROUTER_API_KEY.valueFrom.secretKeyRef.optional",
+   "value": "true",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "resources",
+    "requests",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.resources.requests.memory",
+   "value": "1Gi",
+   "origin": "here",
+   "baseValue": "512Mi"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "resources",
+    "requests",
+    "cpu"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.resources.requests.cpu",
+   "value": "250m",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.resources.limits.memory",
+   "value": "4Gi",
+   "origin": "here",
+   "baseValue": "2Gi"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "resources",
+    "limits",
+    "cpu"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.resources.limits.cpu",
+   "value": "2",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "1",
+   "revision": 24,
+   "when": "2h ago",
+   "baseValue": "1"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "livenessProbe",
+    "exec",
+    "command"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.livenessProbe.exec.command",
+   "value": [
+    "node",
+    "-e",
+    "require('http').get('http://127.0.0.1:18789/healthz', r => process.exit(r.statusCode < 400 ? 0 : 1)).on('error', () => process.exit(1))"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "livenessProbe",
+    "initialDelaySeconds"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.livenessProbe.initialDelaySeconds",
+   "value": "60",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "45",
+   "upstreamRevision": 21,
+   "when": "2d ago"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "livenessProbe",
+    "periodSeconds"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.livenessProbe.periodSeconds",
+   "value": "30",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "livenessProbe",
+    "timeoutSeconds"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.livenessProbe.timeoutSeconds",
+   "value": "10",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "readinessProbe",
+    "exec",
+    "command"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.readinessProbe.exec.command",
+   "value": [
+    "node",
+    "-e",
+    "require('http').get('http://127.0.0.1:18789/readyz', r => process.exit(r.statusCode < 400 ? 0 : 1)).on('error', () => process.exit(1))"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "readinessProbe",
+    "initialDelaySeconds"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.readinessProbe.initialDelaySeconds",
+   "value": "15",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "readinessProbe",
+    "periodSeconds"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.readinessProbe.periodSeconds",
+   "value": "10",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "readinessProbe",
+    "timeoutSeconds"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.readinessProbe.timeoutSeconds",
+   "value": "5",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "volumeMounts",
+    "openclaw-home",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.volumeMounts.?name=openclaw-home.mountPath",
+   "value": "/home/node/.openclaw",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "volumeMounts",
+    "tmp-volume",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.volumeMounts.?name=tmp-volume.mountPath",
+   "value": "/tmp",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "securityContext",
+    "runAsNonRoot"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.securityContext.runAsNonRoot",
+   "value": "true",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "securityContext",
+    "runAsUser"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.securityContext.runAsUser",
+   "value": "1000",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "securityContext",
+    "runAsGroup"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.securityContext.runAsGroup",
+   "value": "1000",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "securityContext",
+    "allowPrivilegeEscalation"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.securityContext.allowPrivilegeEscalation",
+   "value": "false",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "securityContext",
+    "readOnlyRootFilesystem"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.securityContext.readOnlyRootFilesystem",
+   "value": "true",
+   "origin": "upstream"
+  },
+  {
+   "group": "container-gateway",
+   "path": [
+    "securityContext",
+    "capabilities",
+    "drop"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=gateway.securityContext.capabilities.drop",
+   "value": [
+    "ALL"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "init-init-config",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-config.image",
+   "value": "busybox:1.37",
+   "origin": "upstream"
+  },
+  {
+   "group": "init-init-config",
+   "path": [
+    "imagePullPolicy"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-config.imagePullPolicy",
+   "value": "IfNotPresent",
+   "origin": "upstream"
+  },
+  {
+   "group": "init-init-config",
+   "path": [
+    "command"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-config.command",
+   "value": [
+    "sh",
+    "-c",
+    "cp /config/openclaw.json /home/node/.openclaw/openclaw.json\nmkdir -p /home/node/.openclaw/workspace\ncp /config/AGENTS.md /home/node/.openclaw/workspace/AGENTS.md"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "init-init-config",
+   "path": [
+    "securityContext",
+    "runAsUser"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-config.securityContext.runAsUser",
+   "value": "1000",
+   "origin": "upstream"
+  },
+  {
+   "group": "init-init-config",
+   "path": [
+    "securityContext",
+    "runAsGroup"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-config.securityContext.runAsGroup",
+   "value": "1000",
+   "origin": "upstream"
+  },
+  {
+   "group": "init-init-config",
+   "path": [
+    "resources",
+    "requests",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-config.resources.requests.memory",
+   "value": "32Mi",
+   "origin": "upstream"
+  },
+  {
+   "group": "init-init-config",
+   "path": [
+    "resources",
+    "requests",
+    "cpu"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-config.resources.requests.cpu",
+   "value": "50m",
+   "origin": "upstream"
+  },
+  {
+   "group": "init-init-config",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-config.resources.limits.memory",
+   "value": "64Mi",
+   "origin": "upstream"
+  },
+  {
+   "group": "init-init-config",
+   "path": [
+    "resources",
+    "limits",
+    "cpu"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-config.resources.limits.cpu",
+   "value": "100m",
+   "origin": "upstream"
+  },
+  {
+   "group": "init-init-config",
+   "path": [
+    "volumeMounts",
+    "openclaw-home",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-config.volumeMounts.?name=openclaw-home.mountPath",
+   "value": "/home/node/.openclaw",
+   "origin": "upstream"
+  },
+  {
+   "group": "init-init-config",
+   "path": [
+    "volumeMounts",
+    "openclaw-config",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-config.volumeMounts.?name=openclaw-config.mountPath",
+   "value": "/config/openclaw.json",
+   "origin": "upstream"
+  },
+  {
+   "group": "init-init-config",
+   "path": [
+    "volumeMounts",
+    "openclaw-config",
+    "subPath"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-config.volumeMounts.?name=openclaw-config.subPath",
+   "value": "openclaw.json",
+   "origin": "upstream"
+  },
+  {
+   "group": "init-init-config",
+   "path": [
+    "volumeMounts",
+    "openclaw-context",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-config.volumeMounts.?name=openclaw-context.mountPath",
+   "value": "/config/AGENTS.md",
+   "origin": "upstream"
+  },
+  {
+   "group": "init-init-config",
+   "path": [
+    "volumeMounts",
+    "openclaw-context",
+    "subPath"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-config.volumeMounts.?name=openclaw-context.subPath",
+   "value": "AGENTS.md",
+   "origin": "upstream"
+  },
+  {
+   "group": "deployment",
+   "path": [
+    "metadata",
+    "name"
+   ],
+   "fullPath": "metadata.name",
+   "value": "openclaw",
+   "origin": "upstream"
+  },
+  {
+   "group": "deployment",
+   "path": [
+    "metadata",
+    "namespace"
+   ],
+   "fullPath": "metadata.namespace",
+   "value": "openclaw-prod",
+   "origin": "provided",
+   "provider": {
+    "unit": "prod/openclaw-namespace",
+    "kind": "NeedsProvides"
+   }
+  },
+  {
+   "group": "deployment",
+   "path": [
+    "metadata",
+    "labels",
+    "app"
+   ],
+   "fullPath": "metadata.labels.app",
+   "value": "openclaw",
+   "origin": "upstream"
+  },
+  {
+   "group": "deployment",
+   "path": [
+    "metadata",
+    "labels",
+    "environment"
+   ],
+   "fullPath": "metadata.labels.environment",
+   "value": "prod",
+   "origin": "here",
+   "baseValue": null
+  },
+  {
+   "group": "deployment",
+   "path": [
+    "metadata",
+    "annotations",
+    "confighub.com/owner"
+   ],
+   "fullPath": "metadata.annotations.confighub.com/owner",
+   "value": "platform-team",
+   "origin": "here",
+   "baseValue": null
+  },
+  {
+   "group": "deployment",
+   "path": [
+    "spec",
+    "replicas"
+   ],
+   "fullPath": "spec.replicas",
+   "value": "3",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "2",
+   "revision": 24,
+   "when": "2h ago",
+   "baseValue": "1"
+  },
+  {
+   "group": "deployment",
+   "path": [
+    "spec",
+    "selector",
+    "matchLabels",
+    "app"
+   ],
+   "fullPath": "spec.selector.matchLabels.app",
+   "value": "openclaw",
+   "origin": "upstream"
+  },
+  {
+   "group": "deployment",
+   "path": [
+    "spec",
+    "strategy",
+    "type"
+   ],
+   "fullPath": "spec.strategy.type",
+   "value": "Recreate",
+   "origin": "upstream"
+  },
+  {
+   "group": "pod",
+   "path": [
+    "metadata",
+    "labels",
+    "app"
+   ],
+   "fullPath": "spec.template.metadata.labels.app",
+   "value": "openclaw",
+   "origin": "upstream"
+  },
+  {
+   "group": "pod",
+   "path": [
+    "metadata",
+    "labels",
+    "environment"
+   ],
+   "fullPath": "spec.template.metadata.labels.environment",
+   "value": "prod",
+   "origin": "here",
+   "baseValue": null
+  },
+  {
+   "group": "pod",
+   "path": [
+    "metadata",
+    "annotations",
+    "confighub.com/Hash"
+   ],
+   "fullPath": "spec.template.metadata.annotations.confighub.com/Hash",
+   "value": "confighubplaceholder",
+   "origin": "upstream"
+  },
+  {
+   "group": "pod",
+   "path": [
+    "spec",
+    "automountServiceAccountToken"
+   ],
+   "fullPath": "spec.template.spec.automountServiceAccountToken",
+   "value": "false",
+   "origin": "upstream"
+  },
+  {
+   "group": "pod",
+   "path": [
+    "spec",
+    "securityContext",
+    "fsGroup"
+   ],
+   "fullPath": "spec.template.spec.securityContext.fsGroup",
+   "value": "1000",
+   "origin": "upstream"
+  },
+  {
+   "group": "pod",
+   "path": [
+    "spec",
+    "securityContext",
+    "seccompProfile",
+    "type"
+   ],
+   "fullPath": "spec.template.spec.securityContext.seccompProfile.type",
+   "value": "RuntimeDefault",
+   "origin": "upstream"
+  },
+  {
+   "group": "volumes",
+   "path": [
+    "openclaw-home",
+    "persistentVolumeClaim",
+    "claimName"
+   ],
+   "fullPath": "spec.template.spec.volumes.?name=openclaw-home.persistentVolumeClaim.claimName",
+   "value": "openclaw-home-pvc",
+   "origin": "upstream"
+  },
+  {
+   "group": "volumes",
+   "path": [
+    "openclaw-config",
+    "configMap",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.volumes.?name=openclaw-config.configMap.name",
+   "value": "confighubplaceholder",
+   "origin": "upstream"
+  },
+  {
+   "group": "volumes",
+   "path": [
+    "openclaw-context",
+    "configMap",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.volumes.?name=openclaw-context.configMap.name",
+   "value": "confighubplaceholder",
+   "origin": "upstream"
+  },
+  {
+   "group": "volumes",
+   "path": [
+    "tmp-volume",
+    "emptyDir"
+   ],
+   "fullPath": "spec.template.spec.volumes.?name=tmp-volume.emptyDir",
+   "value": "{}",
+   "origin": "upstream"
+  }
+ ],
+ "meta": {
+  "fixture": "longest",
+  "source": "test-data/openclaw/deployment.yaml"
+ },
+ "resources": [
+  {
+   "id": "deployment-openclaw",
+   "kind": "Deployment",
+   "name": "openclaw",
+   "apiVersion": "apps/v1",
+   "groups": [
+    "container-gateway",
+    "init-init-config",
+    "deployment",
+    "pod",
+    "volumes"
+   ]
+  }
+ ]
+}

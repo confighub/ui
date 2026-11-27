@@ -120,9 +120,8 @@ export interface ReleaseActions {
    * Units, keyed by ReleaseID. ACCUMULATES across publishes — publishing
    * again (empty or not) never wipes an earlier flagged release's entry, so
    * a "0 units" badge stays a persistent, honest record of that specific
-   * release rather than a transient "just happened" flash (task #58 fix for
-   * the bug where a single overwritten value silently dropped older
-   * warnings). A release's entry is removed only by withdrawing that
+   * release rather than a transient "just happened" flash: a single
+   * overwritten value would silently drop older warnings. A release's entry is removed only by withdrawing that
    * specific release. Session-local and NOT retroactive: only Releases this
    * hook has itself published are ever checked — pre-existing history rows
    * from before this session/mount are never decoded (checking every
@@ -401,7 +400,7 @@ export function useReleaseActions({
             // itself, surfaced by the caller via emptyBundleWarnings, IS the
             // feedback for this publish.
             //
-            // ACCUMULATE, never overwrite (task #58): a later publish — empty
+            // ACCUMULATE, never overwrite: a later publish — empty
             // or not — must not silently wipe an earlier flagged release's
             // entry out of the map.
             const releaseId = release.ReleaseID;

@@ -50,8 +50,7 @@ function measureKeyColumn(container: HTMLElement): number | null {
 }
 
 /**
- * Changed-token treatment per column: a subtle tint plus a hairline, mirroring the
- * staged-preview pill in ComponentValuesSection. The token TEXT colour is inherited
+ * Changed-token treatment per column: a subtle tint plus a hairline. The token TEXT colour is inherited
  * from the enclosing OldValue/NewValue span, so removals stay red and additions
  * stay green without restating either hue here.
  *

@@ -45,6 +45,19 @@ export const componentTheme = {
   upgrade: '#9951f4',
   upgradeEmphasis: '#4e1a96',
   upgradeMuted: '#f4f0ff',
+  /**
+   * The ink of a value an upgrade brings in, as text: the second line of an Incoming field.
+   * Darker than `upgrade` (#9951f4, 4.34:1 on white) so 11.5px text reads: 5.70:1.
+   */
+  upgradeInk: '#7c3aed',
+  /** The ink of a change held back (a blocked delete, a guarded key): 4.87:1 on white. */
+  heldInk: '#9a6700',
+  /** The ground of a value with a staged edit in the field sheet (the edit hue at 14%). */
+  stagedEditGround: 'rgba(234,179,8,0.14)',
+  /** The ground of a value this person adds (the add hue at 10%). */
+  stagedAddGround: 'rgba(22,163,74,0.10)',
+  /** The ground of a value this person removes (the delete hue at 8%). */
+  stagedDeleteGround: 'rgba(220,38,38,0.08)',
 
   // ── Promote — the filled Promote / Release / Create button ──
   // The theme's `secondary` purple. White text is 7.96:1 on `promote` and

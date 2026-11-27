@@ -203,22 +203,24 @@ test.describe('a path two documents share, changed upstream in one', () => {
     await deleteCreated(browser, created);
   });
 
-  test('only that document\'s row is upgradable, and the count is 1', async ({ page }) => {
+  test('only that document\'s field is incoming, and the count is 1', async ({ page }) => {
     await openProdPane(page, appLabel, chain!);
 
-    const leafRows = page.getByTestId('component-leaf-row');
-    await expect(leafRows).toHaveCount(1, { timeout: 15000 });
-    await expect(leafRows.first()).toContainText('web-svc');
-    await expect(leafRows.first().getByTestId('component-upgrade-pill')).toHaveAttribute('data-staged', 'true', { timeout: 5000 });
-    // The narrowed tree holds the Service's document only.
-    await expect(page.getByTestId('component-folder-row').filter({ hasText: 'Service web' })).toHaveCount(1);
-    await expect(page.getByTestId('component-folder-row').filter({ hasText: 'Deployment web' })).toHaveCount(0);
-    await expect(page.getByTestId('component-upgrade-button')).toContainText('1');
+    // Incoming holds the Service's field alone, ticked on entering.
+    const ticks = page.locator('[data-testid^="incoming-tick-"]');
+    await expect(ticks).toHaveCount(1, { timeout: 15000 });
+    await expect(ticks.first().locator('input')).toBeChecked({ timeout: 5000 });
+    await expect(page.getByTestId('field-sheet').getByTestId('incoming-value-service-metadata-labels-app')).toContainText('web-svc');
+    await expect(page.getByTestId('res-head-service-web')).toBeVisible();
+    await expect(page.getByTestId('res-head-deployment-web')).toHaveCount(0);
+    await expect(page.getByTestId('component-upgrade-button')).toHaveText('Upgrade 1');
 
     // In All, the Deployment's copy of the path is drawn, and nothing marks it.
     await page.getByTestId('component-filter-all').click();
-    await expect(page.getByTestId('component-folder-row').filter({ hasText: 'Deployment web' })).toHaveCount(1, { timeout: 10000 });
-    await expect(page.getByTestId('component-upgrade-pill')).toHaveCount(1, { timeout: 10000 });
+    await expect(page.getByTestId('res-head-deployment-web')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('field-value-deployment-metadata-labels-app')).toHaveText('web');
+    await expect(page.getByTestId('field-state-deployment-metadata-labels-app')).toHaveCount(0);
+    await expect(page.getByTestId('field-state-service-metadata-labels-app')).toHaveCount(1);
   });
 });
 
@@ -247,21 +249,19 @@ test.describe('an env var inserted in the middle of the list upstream', () => {
   test('is one added element, and the elements after it are not changed', async ({ page }) => {
     await openProdPane(page, appLabel, chain!);
 
-    // XRAY's name and value, both new, and nothing else.
-    const leafRows = page.getByTestId('component-leaf-row');
-    await expect(leafRows).toHaveCount(2, { timeout: 15000 });
-    await expect(leafRows.filter({ hasText: /XRAY/ })).toHaveCount(1);
-    await expect(leafRows.filter({ hasText: 'xray-value' })).toHaveCount(1);
-    for (const row of await leafRows.all()) await expect(row).toHaveAttribute('data-change-type', 'add');
-    await expect(page.getByTestId('component-upgrade-button')).toContainText('1');
+    // XRAY's name and value, both new, and nothing else: one change, with one tick on its value,
+    // in the Env block of the container, named by its name.
+    const sheet = page.getByTestId('field-sheet');
+    await expect(sheet.locator('[data-testid^="incoming-tick-"]')).toHaveCount(1, { timeout: 15000 });
+    await expect(sheet.getByTestId('incoming-tick-container-web-env-xray')).toBeVisible();
+    await expect(sheet.locator('[data-testid^="incoming-value-"]').filter({ hasText: 'xray-value' })).toHaveCount(1);
+    await expect(page.getByTestId('component-upgrade-button')).toHaveText('Upgrade 1');
 
-    // In All, BRAVO and CHARLIE are drawn where they are, with no upgrade on them.
+    // In All, BRAVO and CHARLIE are drawn where they are, with no mark on them.
     await page.getByTestId('component-filter-all').click();
-    await expect(page.getByTestId('component-leaf-row').filter({ hasText: 'charlie-value' })).toHaveCount(1, { timeout: 10000 });
-    await expect(page.getByTestId('component-upgrade-pill')).toHaveCount(2, { timeout: 10000 });
-    for (const name of ['ALPHA', 'BRAVO', 'CHARLIE']) {
-      const row = page.getByTestId('component-leaf-row').filter({ hasText: name });
-      await expect(row.getByTestId('component-upgrade-pill')).toHaveCount(0);
+    await expect(sheet.getByTestId('field-value-container-web-env-charlie')).toHaveText('charlie-value', { timeout: 10000 });
+    for (const name of ['alpha', 'bravo', 'charlie']) {
+      await expect(sheet.getByTestId(`field-state-container-web-env-${name}`)).toHaveCount(0);
     }
   });
 });
@@ -285,21 +285,16 @@ test.describe('staging one document\'s row of a path two documents change', () =
   test('commits the upgrade to that document alone', async ({ page }) => {
     await openProdPane(page, appLabel, chain!);
 
-    const leafRows = page.getByTestId('component-leaf-row');
-    await expect(leafRows).toHaveCount(2, { timeout: 15000 });
-    await expect(page.getByTestId('component-upgrade-button')).toContainText('2');
+    const ticks = page.locator('[data-testid^="incoming-tick-"]');
+    await expect(ticks).toHaveCount(2, { timeout: 15000 });
+    await expect(page.getByTestId('component-upgrade-button')).toHaveText('Upgrade 2');
 
-    // Leave the Deployment's change out; the Service's stays staged. The rows are in
-    // document order, and an unstaged row hides its incoming value, so they are taken
-    // by position once their values are confirmed.
-    const deploymentRow = leafRows.nth(0);
-    const serviceRow = leafRows.nth(1);
-    await expect(deploymentRow).toContainText('web-dep');
-    await expect(serviceRow).toContainText('web-svc');
-    await deploymentRow.getByTestId('component-upgrade-pill').locator('input[type="checkbox"]').uncheck();
-    await expect(deploymentRow.getByTestId('component-upgrade-pill')).toHaveAttribute('data-staged', 'false');
-    await expect(serviceRow.getByTestId('component-upgrade-pill')).toHaveAttribute('data-staged', 'true');
-    await expect(page.getByTestId('component-upgrade-button')).toContainText('1');
+    // Leave the Deployment's change out; the Service's stays ticked. Ticks are in document order.
+    await expect(page.getByTestId('incoming-value-deployment-metadata-labels-app')).toContainText('web-dep');
+    await expect(page.getByTestId('incoming-value-service-metadata-labels-app')).toContainText('web-svc');
+    await page.getByTestId('incoming-tick-deployment-metadata-labels-app').locator('input').uncheck();
+    await expect(page.getByTestId('incoming-tick-service-metadata-labels-app').locator('input')).toBeChecked();
+    await expect(page.getByTestId('component-upgrade-button')).toHaveText('Upgrade 1');
 
     await page.getByTestId('component-upgrade-button').click();
 

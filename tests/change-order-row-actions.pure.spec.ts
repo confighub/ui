@@ -67,7 +67,7 @@ const LANDED = progressWith(['space-base', 'space-prod']);
  *
  * Aborting is reversible in general: clearing `AbortedReason` "is what puts it
  * back on its way, so it is writable at almost any point in a ChangeOrder's
- * life" (`validateChangeOrderFields`, internal/views/changeorder.go). The
+ * life" (the server's `validateChangeOrderFields`). The
  * server refuses the clearing once something has been RESTORED
  * (`RestoreTagID != uuid.Nil`), and a ChangeOrder already aborted has nothing to
  * decide twice.

@@ -10,6 +10,8 @@ export const ANALYTICS_EVENTS = {
   // Entity creation events
   ENTITY_CREATED: 'entity_created',
   ENTITY_BULK_CREATED: 'entity_bulk_created',
+  // Which view a person reads a Component's configuration in
+  CONFIG_VIEW_SHOWN: 'config_view_shown',
 } as const;
 
 /**

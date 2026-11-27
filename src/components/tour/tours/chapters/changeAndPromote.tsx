@@ -243,7 +243,7 @@ export const changeAndPromoteSteps: TourStep[] = [
   // ── Chapter 8 — preview the diff, then upgrade (the CLI's "promote") ──
   {
     id: 'promote-preview-diff',
-    anchor: { kind: 'selector', css: '[data-testid="component-leaf-row"][data-change-type="upgrade"]' },
+    anchor: { kind: 'selector', css: '[data-testid^="incoming-tick-"]' },
     title: 'Preview the change',
     // States dev's CURRENT value (2) explicitly. The row itself shows only the
     // incoming value once it is staged — `.current-preview`, which carries the

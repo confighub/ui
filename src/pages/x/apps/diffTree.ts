@@ -818,7 +818,7 @@ function walkKeyContext(nodes: DiffTreeNode[], parentPrefix: string, index: KeyC
  * run inside every NodeRow render (allPaths.filter(startsWith),
  * changedPaths.filter(startsWith), upgradeFieldDiffs.keys().some(startsWith)).
  *
- * Built ONCE per tree build (memoized in ComponentValuesSection) and passed by
+ * Built ONCE per tree build (memoized by the caller) and passed by
  * reference to every NodeRow, turning the render-time work from
  * O(folders x allPaths) into O(folders x log allPaths) (counts) / O(1) (ancestor
  * membership).

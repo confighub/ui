@@ -251,7 +251,7 @@ test.describe('component release flow', () => {
     await expect(releaseNode).toBeVisible({ timeout: 10000 });
     await releaseNode.click();
 
-    // Release status/history — and the Release button itself (task #52) —
+    // Release status/history — and the Release button itself —
     // live behind the "Releases" tab; the Configuration tab is the pane
     // default and has no deploy-verb button for a release-enabled Space.
     await page.getByTestId('component-pane-tab-releases').click();

@@ -120,7 +120,8 @@ export const exploreAndInspectSteps: TourStep[] = [
     // watches for that exact row directly — the moment search reveals it,
     // the tour is already on the next step's own anchor.
     id: 'explore-search-value',
-    anchor: { kind: 'selector', css: '[data-testid="component-search"]' },
+    // In a narrow pane the search is an icon until it is pressed.
+    anchor: { kind: 'selector', css: '[data-testid="component-search"], [data-testid="component-search-open"]' },
     title: 'Search for a value',
     body: (
       <>
@@ -131,7 +132,7 @@ export const exploreAndInspectSteps: TourStep[] = [
     ),
     advance: {
       on: 'selector',
-      css: '[data-testid="field-edit-trigger-spec.template.spec.containers.0.image"]',
+      css: '[data-testid="field-sheet"] .v[data-path="spec.template.spec.containers.0.image"]',
     },
   },
 
@@ -152,20 +153,16 @@ export const exploreAndInspectSteps: TourStep[] = [
     // appeared in either). So this step points at a real, ordinary value
     // instead and teaches the same underlying idea (a base sets one value;
     // a variant can set its own) rather than asserting a placeholder that
-    // isn't actually there. Flagged for the parent orchestrator to reconcile
-    // against whatever the master tutorial-step list assumed.
+    // isn't actually there.
     //
-    // `field-edit-trigger-${fullPath}` is instrumentation another agent added
-    // to ComponentValuesSection.tsx's per-row value span (observed already
-    // present, not added by this chapter) specifically so a single row can be
-    // targeted by its config path — `component-leaf-row` alone is repeated
-    // once per row and cannot address one in particular.
+    // The sheet's value carries its config path in `data-path`, so one value
+    // can be targeted by its path.
     // `spec.template.spec.containers.0.image` is the checkout-api Deployment's
     // container image — the only field in the whole sample with this path, so
     // it stays unique regardless of which Units the resources land in.
     anchor: {
       kind: 'selector',
-      css: '[data-testid="field-edit-trigger-spec.template.spec.containers.0.image"]',
+      css: '[data-testid="field-sheet"] .v[data-path="spec.template.spec.containers.0.image"]',
     },
     title: 'Look at one value',
     body: (

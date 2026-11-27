@@ -7,38 +7,32 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useTransition,
 } from 'react';
 
-import CallSplitIcon from '@mui/icons-material/CallSplit';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CloseIcon from '@mui/icons-material/Close';
-import DataObjectIcon from '@mui/icons-material/DataObject';
-import DeviceHubIcon from '@mui/icons-material/DeviceHub';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import SearchIcon from '@mui/icons-material/Search';
-import SettingsIcon from '@mui/icons-material/Settings';
-import StorageOutlinedIcon from '@mui/icons-material/StorageOutlined';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
+import { InfoPeekTooltip } from '@/components/info-peek/InfoPeek';
+import { useLeaveGuard } from '@/components/trail/LeaveGuard';
+import { useAnalytics } from '@/hooks/useAnalytics';
 import CircularProgress from '@mui/material/CircularProgress';
-import IconButton from '@mui/material/IconButton';
-import Link from '@mui/material/Link';
 import Skeleton from '@mui/material/Skeleton';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import TextField from '@mui/material/TextField';
-import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
 
 import { useListAllUnitsQuery, type ExtendedTargetRead, type PathAnnotationList, type ResourceGuards } from '@confighub/rtk-query';
-import { Link as RouterLink } from 'react-router-dom';
 
 import { unitOffersOverview } from '@/components/resource-overview/overviewAvailability';
 import { useUnitMutationSourcesMap } from '@/hooks/useUnitData';
@@ -47,7 +41,7 @@ import { deliveriesOf, deliveryHref } from '../../delivery/deliveryGraph';
 import { useDeliveryResources } from '../../delivery/useDeliveryResources';
 import type { FieldPathMeta } from './configParser';
 import { ComponentToolbar } from './ComponentToolbar';
-import { CompareCollapsible } from './compare/CompareCollapsible';
+import { CONFIG_VIEW_NAME } from './configViewName';
 import { CompareColumnDnd } from './compare/CompareColumnDnd';
 import { ComponentCompareSection, type CompareUnit } from './compare/ComponentCompareSection';
 import { DeploymentSelectors, type DeploymentOption } from './compare/DeploymentSelectors';
@@ -55,8 +49,9 @@ import { resourceAliasesFromMutationSources, type ResourceAliasIndex } from './c
 import { buildFieldPathMeta } from './configParser';
 import { pathContainsArrayIndex } from './componentKeyUtils';
 import { buildProtectedPathLookup } from './protectedPaths';
-import { ComponentValuesSection } from './ComponentValuesSection';
-import type { StagedCommitPayload, StagedCommitResult } from './ComponentValuesSection';
+import type { StagedCommitPayload, StagedCommitResult } from './spec-sheet/staging/types';
+import { ChromePeek, PaneTitleRow } from './PaneChrome';
+import { quietIconButtonSx } from './paneChromeStyles';
 import { SpaceSettingsSheet, type SpaceSettingsFooterState, type SpaceSettingsSheetHandle } from './SpaceSettingsSheet';
 import {
   BottomBar,
@@ -66,16 +61,25 @@ import {
   ErrorHeader,
   PaneContainer,
   PaneContent,
-  PaneHeader,
   ResizeHandle,
   UnitRow,
   bottomBarPrimaryButtonSx,
   bottomBarTextButtonSx,
 } from './diffStyles';
-import { formatTimeAgo } from './diffTree';
+import { formatTimeAgo, stageKeyPath } from './diffTree';
+import { SheetSkeleton } from './spec-sheet/SheetSkeleton';
+import { hasUnreleasedChanges } from './spec-sheet/unreleasedKeys';
+import { UnreleasedKeysProbe } from './spec-sheet/UnreleasedKeysProbe';
+import { UpgradingIcon } from './flow-graph/DeploymentFlowNode';
+import { SpecSheet } from './spec-sheet/SpecSheet';
+import { useUnitStagingStore } from './spec-sheet/staging/useUnitStagingStore';
+import { buildSheetCommit } from './spec-sheet/staging/commitPayload';
+import { buildProtectionEdits } from './spec-sheet/staging/protectionPayload';
+import { isStagedDeleteSentinel } from './spec-sheet/staging/types';
+import { commitPlan, footerVerb, stagedCounts, stagedValueKeys } from './spec-sheet/staging/stagingReducer';
 import { HeavyUnitGate, HeavyUnitLoading, UnitSourceOverrideBar } from './HeavyUnitGate';
 import { isHeavyUnitData, shouldDeferUnitPaint } from './unitSizeGuard';
-import { computeTotalAllFields, countLogicalChanges, countSelectableUpgradeFields, countUpgradableBadgeFields, fieldDiffKey, hasRealUpgrade } from './entryBuilders';
+import { computeTotalAllFields, changesScopeKeys, countChanges, countLogicalChanges, countSelectableUpgradeFields, countUpgradeChanges, countUpgradableBadgeFields, hasRealUpgrade, selectAllUpgradeKeys } from './entryBuilders';
 import { upgradeButtonState } from './upgradeButtonState';
 import { buildDeploymentMap } from './componentData';
 import { componentTheme } from './componentTheme';
@@ -101,7 +105,7 @@ import type {
 } from './componentTypes';
 import type { ReleaseActions } from './useReleaseActions';
 import type { ChangeSetEntry } from './useChangeSetEntries';
-import type { HiddenUnitsState, PaneFilterMode, PaneUnitScope, PaneViewMode } from './ComponentToolbar';
+import type { HiddenUnitsState, PaneFilterMode, PaneScopeFilter, PaneUnitScope, PaneViewMode } from './ComponentToolbar';
 import { changeSetLabel, isChangeSetOpenHere } from './changeSets';
 import { ChangeSetCloseBar, ChangeSetWaitNotice } from './ChangeSetPaneNotices';
 import { GateCountBadge } from './gates/GateCountBadge';
@@ -143,8 +147,11 @@ const EMPTY_RELEASE_SELECTION: readonly string[] = [];
 /** Stable identity for "nothing extra is being compared", so memos downstream don't churn. */
 const EMPTY_COMPARE_IDS: readonly string[] = [];
 
-/** Where the Configuration tab remembers that its compare slots are folded away. */
-const CONFIG_COMPARE_COLLAPSED_KEY = 'confighub.componentPane.config.compareCollapsed';
+/** Under this pane width the chrome is narrow: the search is an icon, the single Target an icon only. */
+const NARROW_PANE_PX = 560;
+/** How long a fold of the title and tabs rows ignores the scroll it causes (one or two frames). */
+const CHROME_FOLD_LOCK_MS = 80;
+
 
 // ============================================================================
 // STYLED COMPONENTS — pane content tabs (Configuration / Releases / Readme)
@@ -160,10 +167,14 @@ const CONFIG_COMPARE_COLLAPSED_KEY = 'confighub.componentPane.config.compareColl
  * own rust-accent, Manrope, dense idiom rather than inheriting a mismatched
  * look.
  */
-type PaneContentTab = 'config' | 'releases' | 'readme' | 'gates';
+type PaneContentTab = 'config' | 'releases' | 'readme' | 'gates' | 'settings';
 
 const PaneTabs = styled(Tabs)({
-  minHeight: 34,
+  minHeight: 36,
+  height: 36,
+  boxSizing: 'border-box',
+  padding: '0 4px',
+  borderTop: `1px solid ${componentTheme.borderMuted}`,
   borderBottom: `1px solid ${componentTheme.borderDefault}`,
   background: componentTheme.bgDefault,
   flexShrink: 0,
@@ -175,7 +186,8 @@ const PaneTabs = styled(Tabs)({
 
 const PaneTab = styled(Tab)({
   minHeight: 34,
-  padding: '6px 14px',
+  padding: '0 12px',
+  '@container (max-width: 520px)': { padding: '0 9px' },
   fontSize: 13,
   fontWeight: 600,
   fontFamily: componentTheme.fontSans,
@@ -270,7 +282,7 @@ interface UnitExpansionState {
   /** Oversized units the user has explicitly asked to render (see `isUnitGated`). */
   materializedUnitIds: Set<string>;
   filterMode: PaneFilterMode;
-  scopeFilter: 'local-overrides' | 'local-only' | 'kept-on-merge' | null;
+  scopeFilter: PaneScopeFilter;
   /** How many units the selected node has, so a lone unit can open with nothing to click. */
   unitCount: number;
   /** Units whose DIFF/PATH content (not just their slug) matched the active search. */
@@ -305,7 +317,8 @@ const isUnitExpandedInPane = (unit: MergedUnit, state: UnitExpansionState): bool
     // Incoming and ChangeSet both show a unit's diff; a unit with one opens.
     (state.filterMode !== 'all' && !!unit.upgradeEntry) ||
     (state.scopeFilter === 'local-overrides' && (unit.variationEntry?.fieldDiffs.length ?? 0) > 0) ||
-    (state.scopeFilter === 'local-only' && (unit.variationEntry?.localOnlyKeys.length ?? 0) > 0) ||
+    ((state.scopeFilter === 'local-only' || state.scopeFilter === 'local-overrides') && (unit.variationEntry?.localOnlyKeys.length ?? 0) > 0) ||
+    (state.scopeFilter === 'changes' && !!unit.applyEntry && !!unit.targetId) ||
     // Over-inclusive on purpose (same reasoning as 'local-overrides'): a unit
     // with zero live diffs has zero candidates for "kept", but a unit WITH
     // live diffs may or may not have any actually kept — expanding it either
@@ -329,7 +342,7 @@ const isUnitExpandedInPane = (unit: MergedUnit, state: UnitExpansionState): bool
  * Independent of `viewMode` on purpose. The treeview swaps in the placeholder
  * card for a gated unit; the field-COUNT chip must also treat it as unparsed in
  * either view, because a unit we never decoded genuinely has no known field
- * count (see `allFieldsPartial` → "N+").
+ * count: the All count leaves it out.
  */
 const isUnitGated = (unit: MergedUnit, materializedUnitIds: Set<string>): boolean =>
   !materializedUnitIds.has(unit.unitId) && isHeavyUnitData(unit.data);
@@ -387,7 +400,7 @@ export interface ComponentSidePaneProps {
   /** Opens a Deployment on the ChangeSet filter. */
   onOpenChangeSet?: (deploymentId: string) => void;
   deployments: ComponentDeployment[];
-  /** Org-wide targets (from `useListAllTargetsQuery`) — the Space settings sheet filters these to OCI-provider ones for the release-target row (design-mockups/variant-settings/BUILD-PLAN.md commit 3). */
+  /** Org-wide targets (from `useListAllTargetsQuery`) — the Space settings sheet filters these to OCI-provider ones for the release-target row. */
   targets: ExtendedTargetRead[];
   unitsByDeployment: Map<string, PaneUnit[]>;
   /** Which units the pane lists: those a Release publishes, or all of them. */
@@ -451,8 +464,8 @@ export interface ComponentSidePaneProps {
   onCommitStaged?: (unitId: string, spaceId: string, payload: StagedCommitPayload) => Promise<StagedCommitResult>;
   /**
    * Commit a single unit's STAGED Keep on merge batch, as Override guard edits
-   * (a separate revision from onCommitStaged — see ComponentValuesSection's
-   * commit-signal effect, Keep on merge first). Resolves true on success.
+   * (a separate revision from onCommitStaged; see handleConfirmCommit for the
+   * order of the two). Resolves true on success.
    */
   onCommitProtection?: (unitId: string, spaceId: string, guards: ResourceGuards[]) => Promise<boolean>;
   /**
@@ -528,41 +541,11 @@ const CodeEditorFallback = () => (
   </Box>
 );
 
-/** A chip in the row under the header: a Target, or the Unit that deploys the Space. */
-const headerChipSx = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '5px',
-  height: 24,
-  maxWidth: '100%',
-  boxSizing: 'border-box',
-  padding: '0 8px 0 7px',
-  borderRadius: `${componentTheme.radiusMd}px`,
-  border: `1px solid ${componentTheme.borderDefault}`,
-  backgroundColor: componentTheme.bgDefault,
-  color: componentTheme.fgMuted,
-  fontSize: 12,
-  fontWeight: 500,
-  fontFamily: componentTheme.fontSans,
-  lineHeight: 1,
-  whiteSpace: 'nowrap',
-  textDecoration: 'none',
-  '& svg': { flexShrink: 0, color: componentTheme.fgSubtle },
-  '& .header-chip-label': { overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 },
-} as const;
-
-/** A header chip that is a link. The trailing icon sits inside the chip so the whole chip reads as one link. */
-const headerLinkChipSx = {
-  ...headerChipSx,
-  transition: 'color 0.15s, border-color 0.15s, background-color 0.15s',
-  '& svg': { ...headerChipSx['& svg'], transition: 'color 0.15s' },
-  '&:hover, &:focus-visible': {
-    color: componentTheme.accent,
-    borderColor: componentTheme.accent,
-    backgroundColor: componentTheme.accentMuted,
-    '& svg': { color: componentTheme.accent },
-  },
-  '&:focus-visible': { outline: `2px solid ${componentTheme.accent}`, outlineOffset: '2px' },
+/** The footer's Update: the theme's primary (rust), so it never reads as the violet Upgrade. */
+const updateButtonSx = {
+  ...bottomBarPrimaryButtonSx,
+  backgroundColor: componentTheme.accent,
+  '&:hover': { backgroundColor: componentTheme.accentEmphasis },
 } as const;
 
 // ============================================================================
@@ -613,9 +596,6 @@ export const ComponentSidePane = memo(
     filterUrl,
     onClose,
     onCreateVariant,
-    fieldOverlay,
-    onSetFieldValue,
-    onDeleteFieldValue,
     onSaveData,
     onCommitStaged,
     onCommitProtection,
@@ -635,12 +615,6 @@ export const ComponentSidePane = memo(
     // local state (viewMode/filterMode/staging) is left untouched, so returning
     // via `onBack` restores the exact prior overview state.
     const [detailsUnit, setDetailsUnit] = useState<{ unitId: string; spaceId: string; slug: string } | null>(null);
-    // Space settings sheet (design-mockups/variant-settings/BUILD-PLAN.md commit 1)
-    // — toggled by the header cog. Deliberately NOT an early return: it renders
-    // absolutely positioned over the content area below, alongside PaneContent,
-    // so PaneContent (and ComponentValuesSection's staged edits inside it) never
-    // unmounts while this is open. See the wrapper Box below `</PaneHeader>`.
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     // Whether the open settings sheet has an unsaved staged edit right now —
     // reported up by SpaceSettingsSheet's onDirtyChange. Exists so every
     // close route (not just the sheet's own footer, which already makes
@@ -677,6 +651,12 @@ export const ComponentSidePane = memo(
     // renders (a Space with neither a release target nor a README never
     // renders it, so this stays 'config').
     const [activeTab, setActiveTab] = useState<PaneContentTab>('config');
+    // The Settings tab shows the Space settings sheet. Deliberately NOT an early return: it
+    // renders absolutely positioned over the content band, with the Configuration content still
+    // mounted under it, so the staged edits there never unmount while it is open.
+    const isSettingsOpen = activeTab === 'settings';
+    // The compare bar opens only when the Compare button is pressed, or while Variants are compared.
+    const [compareBarRequested, setCompareBarRequested] = useState(false);
     // A release-stamp peek's deep-link to one specific release, forwarded to
     // ReleasesPane, which selects that release's bar and scroll-pulses it.
     // The nonce (borrowed from tabFocus) lets re-clicking the same release
@@ -708,37 +688,10 @@ export const ComponentSidePane = memo(
     const [isNamingExpanded, setIsNamingExpanded] = useState(false);
     const [releaseName, setReleaseName] = useState('');
     const [releaseNotes, setReleaseNotes] = useState('');
-    // ── True-staging signals/state ──
-    // Per-unit staged-path counts reported up by each ComponentValuesSection.
-    const [stagedCountByUnit, setStagedCountByUnit] = useState<Map<string, number>>(new Map());
-    // Per-unit staged-PROTECTION counts, reported up separately from the value
-    // count above (card 8: "N staged" and "N kept" are distinct numbers).
-    // `protectCount` (of `total`) is how many keep their path — tells a
-    // uniform "will be kept" batch from a mixed "Update N keys" one.
-    const [stagedProtectionCountByUnit, setStagedProtectionCountByUnit] = useState<Map<string, { total: number; protectCount: number }>>(new Map());
-    // Per-unit staged-edit "keep" summary: of this unit's staged MANUAL edits
-    // (excludes staged upgrade picks — card 3's scenario is specifically about
-    // typed values), how many total and how many are NOT yet effectively kept.
-    // Drives the "N staged · both may be overwritten" / "both kept on merge"
-    // bar disclosure (Section 6).
-    const [stagedEditKeepSummaryByUnit, setStagedEditKeepSummaryByUnit] = useState<Map<string, { total: number; unkept: number }>>(new Map());
-    // Monotonic signals bridged down to each section (mirrors the old accept-all signal).
-    const [commitStagedSignal, setCommitStagedSignal] = useState(0);
-    const [clearStagedSignal, setClearStagedSignal] = useState(0);
-    // Explicit "Discard" (footer) — drops EVERYTHING staged incl. sticky edits.
-    const [discardAllSignal, setDiscardAllSignal] = useState(0);
-    const [stageAllSignal, setStageAllSignal] = useState(0);
-    // "Keep both on merge" / "Undo keep" bar buttons (card 3b) — staging-level
-    // actions, not commits. See ComponentValuesSectionProps.keepStagedEditsSignal.
-    const [keepStagedEditsSignal, setKeepStagedEditsSignal] = useState(0);
-    const [undoKeepStagedEditsSignal, setUndoKeepStagedEditsSignal] = useState(0);
-    // "Stop keeping N keys" — the Scope chip's flattened-view bulk-reverse
-    // (Section 7/card 4b). See ComponentValuesSectionProps.stopKeepingAllSignal.
-    const [stopKeepingAllSignal, setStopKeepingAllSignal] = useState(0);
     const [filterMode, setFilterMode] = useState<PaneFilterMode>(
       (upgradeEntries.length > 0 || hasUpgradableUnits) ? 'incoming' : 'all'
     );
-    const [scopeFilter, setScopeFilter] = useState<'local-overrides' | 'local-only' | 'kept-on-merge' | null>(null);
+    const [scopeFilter, setScopeFilter] = useState<PaneScopeFilter>(null);
 
     // Auto-manage the staged selection as the filter tab changes (done in the
     // setter — not a useEffect — so it covers tab clicks, node switches):
@@ -746,15 +699,7 @@ export const ComponentSidePane = memo(
     //   - leaving 'incoming'  → discard the staged selection (same as Discard)
     // Clearing staged never touches committedDiffs, so committed/"done" rows stay
     // visible; re-staging stages only currently-upgradable paths (committed excluded).
-    const setFilterModeWithStaging = useCallback((next: PaneFilterMode) => {
-      setFilterMode((prev) => {
-        if (next !== prev) {
-          if (next === 'incoming') setStageAllSignal((s) => s + 1);
-          else if (prev === 'incoming') setClearStagedSignal((s) => s + 1);
-        }
-        return next;
-      });
-    }, []);
+    const setFilterModeWithStaging = setFilterMode;
     const [recentlyUpgradedUnitIds, setRecentlyUpgradedUnitIds] = useState<Set<string>>(new Set());
     // ── Oversized-unit gate ("show fast, load full on demand") ──
     // Units whose payload is over `HEAVY_UNIT_BYTES` and which the user
@@ -767,6 +712,62 @@ export const ComponentSidePane = memo(
     const [materializingUnitId, setMaterializingUnitId] = useState<string | null>(null);
     const [isMaterializing, startMaterializing] = useTransition();
     const [viewMode, setViewMode] = useState<PaneViewMode>('diff');
+    const { trackConfigViewShown } = useAnalytics();
+    // One `open` per Component the drawer opens, in the view in use then: the default view is
+    // never clicked, so a click count alone cannot say how many read in it.
+    const viewTrackedForRef = useRef<string | undefined>(undefined);
+    const openedId = selectedDeploymentIds.values().next().value;
+    useEffect(() => {
+      if (openedId === undefined || openedId === viewTrackedForRef.current) return;
+      viewTrackedForRef.current = openedId;
+      trackConfigViewShown({ view: CONFIG_VIEW_NAME[viewMode], surface: 'component_drawer', trigger: 'open' });
+    }, [openedId, viewMode, trackConfigViewShown]);
+    // What each Unit has staged, held above every field view so a scope switch or a
+    // remount loses nothing. Dropped on a node switch.
+    const staging = useUnitStagingStore();
+    // Staged edits are in neither the address nor the server: a link that leaves the page asks first.
+    useLeaveGuard(staging.unitIds.length > 0);
+    // A commit that could not be built: shown in the footer, and that Unit's staged edits stay.
+    const [commitError, setCommitError] = useState<string | null>(null);
+    // The fields each Unit's Kept on merge scope holds, for "Stop keeping N keys".
+    const keptKeysByUnit = useRef<Map<string, string[]>>(new Map());
+    // Each Unit's Unreleased fields by stage key, read by a probe per Unit (UnreleasedKeysProbe),
+    // for the Changes chip.
+    const [unreleasedByUnit, setUnreleasedByUnit] = useState<ReadonlyMap<string, ReadonlySet<string>>>(new Map());
+    const setUnreleasedKeys = useCallback((unitId: string, keys: ReadonlySet<string> | undefined) => {
+      setUnreleasedByUnit((prev) => {
+        if (prev.get(unitId) === keys) return prev;
+        const next = new Map(prev);
+        if (keys === undefined) next.delete(unitId);
+        else next.set(unitId, keys);
+        return next;
+      });
+    }, []);
+    // Each sheet's count of fields that match the search; the search field shows their sum.
+    const [matchCounts, setMatchCounts] = useState<ReadonlyMap<string, number>>(new Map());
+    const setMatchCount = useCallback((unitId: string, count: number | undefined) => {
+      setMatchCounts((prev) => {
+        if (prev.get(unitId) === count) return prev;
+        const next = new Map(prev);
+        if (count === undefined) next.delete(unitId);
+        else next.set(unitId, count);
+        return next;
+      });
+    }, []);
+    const matchCount = matchCounts.size > 0 ? [...matchCounts.values()].reduce((a, b) => a + b, 0) : undefined;
+    const settledDataUnitIds = useRef<Set<string>>(new Set());
+    // Units whose origin read failed: the sheet reports it, the Unit header shows the icon.
+    const [originErrorUnitIds, setOriginErrorUnitIdsState] = useState<ReadonlySet<string>>(new Set());
+    const setOriginErrorUnits = useCallback((unitId: string, failed: boolean) => {
+      setOriginErrorUnitIdsState((prev) => {
+        if (prev.has(unitId) === failed) return prev;
+        const next = new Set(prev);
+        if (failed) next.add(unitId);
+        else next.delete(unitId);
+        return next;
+      });
+    }, []);
+    const resetStaging = staging.reset;
     // ── Per-unit Source-view override ────────────────────────────────────────
     // Oversized units the user opened in Source view FROM their placeholder
     // card. Separate state from `viewMode` on purpose, and `viewMode` is never
@@ -863,7 +864,6 @@ export const ComponentSidePane = memo(
     const headerTargets = selectedDeployment?.targets ?? [];
     const clusterUnitPath =
       clusterUnit?.SpaceID && clusterUnit.UnitID ? `/units/${clusterUnit.SpaceID}/${clusterUnit.UnitID}` : undefined;
-    const showHeaderLinks = headerTargets.length > 0 || !!clusterUnitPath;
     // In a graph of several Components every Component has a "prod", so the
     // header says which Component the open node belongs to.
     const multiComponent = useMemo(() => isMultiComponent(deployments), [deployments]);
@@ -1084,6 +1084,92 @@ export const ComponentSidePane = memo(
       [onCompareSelectionChange],
     );
 
+    // Leaving the Settings tab with an unsaved edit asks first, as closing the sheet does.
+    const handleTabChange = useCallback(
+      (next: PaneContentTab) => {
+        if (activeTab === 'settings' && next !== 'settings' && isSettingsDirty) {
+          if (!window.confirm('Discard unsaved Space settings changes?')) return false;
+          setIsSettingsDirty(false);
+        }
+        setActiveTab(next);
+        return true;
+      },
+      [activeTab, isSettingsDirty],
+    );
+    const isCompareBarOpen = compareBarRequested || isComparing;
+    // Compare opens the bar on the Configuration tab; pressed again it closes the bar and ends
+    // the compare.
+    const handleCompareToggle = useCallback(() => {
+      if (isCompareBarOpen) {
+        setCompareBarRequested(false);
+        if (isComparing) onCompareSelectionChange?.([]);
+        return;
+      }
+      if (activeTab !== 'config' && !handleTabChange('config')) return;
+      setCompareBarRequested(true);
+    }, [isCompareBarOpen, isComparing, onCompareSelectionChange, activeTab, handleTabChange]);
+    const isNarrowPane = width < NARROW_PANE_PX;
+
+    // The title and tabs rows go away once the Configuration list has scrolled down past them,
+    // and come back on any scroll up. Kept per tab and node, so another tab or node opens with
+    // them shown.
+    const chromeKey = `${activeTab}:${selectedDeployment?.deploymentId ?? ''}`;
+    const [chromeAwayFor, setChromeAwayFor] = useState<string | null>(null);
+    const chromeAway = chromeAwayFor === chromeKey;
+    const chromeTopRef = useRef<HTMLDivElement>(null);
+    const chromeScroll = useRef({ top: 0, lockedUntil: 0, height: 0 });
+    // The scroll that keeps the list's content where it was on screen when the rows go or come.
+    const chromeShift = useRef<{ el: HTMLElement; by: number } | null>(null);
+    const handleChromeScroll = useCallback(
+      (e: React.UIEvent<HTMLElement>) => {
+        const el = e.target;
+        if (!(el instanceof HTMLElement) || !el.hasAttribute('data-chrome-scroll')) return;
+        const memo = chromeScroll.current;
+        const top = el.scrollTop;
+        const delta = top - memo.top;
+        memo.top = top;
+        // The shift below moves the scroll position too: that is not the reader scrolling.
+        if (performance.now() < memo.lockedUntil) return;
+        // A jump in the sheet settling (landInView) may scroll back up a little: not the reader.
+        const jumping = performance.now() < Number(el.dataset.chromeJump ?? 0);
+        const fold = (away: boolean, shift: number) => {
+          memo.lockedUntil = performance.now() + CHROME_FOLD_LOCK_MS;
+          chromeShift.current = shift ? { el, by: shift } : null;
+          setChromeAwayFor(away ? chromeKey : null);
+        };
+        if (!chromeAway) {
+          const height = chromeTopRef.current?.offsetHeight ?? 0;
+          if (delta > 2 && height > 0 && top >= height && el.scrollHeight - el.clientHeight > height * 2) {
+            memo.height = height;
+            fold(true, -height);
+          }
+        } else if (top <= 0) {
+          fold(false, 0);
+        } else if (delta < -2 && !jumping) {
+          fold(false, memo.height);
+        }
+      },
+      [chromeAway, chromeKey],
+    );
+    useLayoutEffect(() => {
+      const shift = chromeShift.current;
+      chromeShift.current = null;
+      if (!shift) return;
+      shift.el.scrollTop = Math.max(0, shift.el.scrollTop + shift.by);
+      // The shift is not the reader scrolling: it becomes the base of the next delta, so its own
+      // scroll event moves nothing. The time lock alone failed on a slow machine, where that
+      // event came after the lock and folded or unfolded the rows again, back and forth.
+      chromeScroll.current.top = shift.el.scrollTop;
+      // Coming back, the rows slide in from above.
+      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      if (!chromeAway && !reduced) {
+        chromeTopRef.current?.animate?.([{ transform: 'translateY(-100%)' }, { transform: 'none' }], {
+          duration: 160,
+          easing: 'ease-out',
+        });
+      }
+    }, [chromeAway]);
+
     // A node switch can land on a tab that no longer exists for the new node
     // (e.g. from a release-enabled Space to a plain one) — reset rather than
     // render a tab bar showing something else selected.
@@ -1261,8 +1347,8 @@ export const ComponentSidePane = memo(
     // footer Release button's count chip unconditionally and, in the default
     // state, the diff viewport, which is why it is read with context. Only fed
     // real units while the Releases tab is actually active — on the
-    // Configuration tab the Release button doesn't even render (task #52),
-    // so there's nothing to keep this warm for. With no release yet, it diffs
+    // Configuration tab the Release button doesn't even render, so there's
+    // nothing to keep this warm for. With no release yet, it diffs
     // from nothing.
     const releaseUnitIds = useMemo(
       () => (activeTab === 'releases' ? releaseUnits.map((u) => u.unitId) : EMPTY_UNIT_IDS),
@@ -1381,7 +1467,8 @@ export const ComponentSidePane = memo(
      */
     const handleOpenInSource = useCallback((unitId: string) => {
       setSourceOverrideUnitIds((prev) => setSetMember(prev, unitId, true));
-    }, []);
+      trackConfigViewShown({ view: 'code', surface: 'component_drawer', trigger: 'large_unit' });
+    }, [trackConfigViewShown]);
 
     /** Return one overridden unit to the treeview — i.e. to its gate card. */
     const handleBackToTree = useCallback((unitId: string) => {
@@ -1402,13 +1489,9 @@ export const ComponentSidePane = memo(
     //
     // KEYED ON THE SELECTED NODE ONLY, deliberately. Filter-tab, scope and
     // view changes are NOT in the key, even though they are also expensive
-    // re-renders, because swapping a mounted `ComponentValuesSection` out for a
-    // skeleton UNMOUNTS it — and its staged manual edits live in that
-    // component's own state, which components.md rule 9 requires to survive a
-    // tab switch (only `discardAllSignal` or a commit may clear them). A node
-    // switch is the one transition where those sections are torn down anyway:
-    // the sections are keyed on `unit.unitId` and a different node means
-    // different units, so nothing that should persist is lost.
+    // re-renders: a skeleton in place of a mounted sheet would unmount it and
+    // lose its scroll place and open folds on every tab switch. A node switch
+    // shows different units anyway, and the staging store drops its edits then.
     //
     // Bounded by `shouldDeferUnitPaint` at the point of use, so ordinary units
     // never flash a skeleton they didn't need. Note this defers on CHANGES; the
@@ -1494,43 +1577,33 @@ export const ComponentSidePane = memo(
     // new revision is byte-identical in content, or every diffed path is
     // blocked by a local override. Staging has nothing to offer these units,
     // so they never appear in `totalStaged`, but the revision POINTER is
-    // still genuinely behind and Upgrade should still be able to advance it
-    // (task #61).
+    // still genuinely behind and Upgrade should still be able to advance it.
     const dormantUpgradeableUnits = useMemo(
       () => mergedUnits.filter((u) => !!u.upgradeEntry && countUpgradableBadgeFields(u) === 0),
       [mergedUnits],
     );
-    // Count TRUE per-document leaves. The `allPaths` fallback below is deduplicated by
-    // bare dot-path, so a unit holding several documents that share `apiVersion`/`kind`
-    // under-counts them — the chip must match the fields the grouped tree renders.
-    //
-    // Counting used to structurally parse EVERY unit of the node — including the
-    // collapsed ones the user never opened — on open and again whenever
-    // `mergedUnits` changed, i.e. on every poll. Now a unit is counted only when
-    // that costs nothing: either its count is already known (`peekGroupedLeafCount`
-    // — it was materialized earlier), or the pane is materializing it in this very
-    // render, in which case the parse is the one its values section performs anyway
-    // and both calls share the parse cache. Units left uncounted flip
-    // `allFieldsPartial`, which renders the chip as "N+" — never a silent
-    // under-count.
-    //
-    // An OVERSIZED unit is expanded but not materialized (its body shows the
-    // placeholder card), so it takes the same "+" path as a collapsed one. That
-    // is the correct answer and not a special case: a unit we deliberately never
-    // decoded has no knowable field count, and inventing one — or parsing it just
-    // to count it — would defeat the gate entirely.
-    const { totalAllFields, allFieldsPartial } = useMemo(
+    // The All count is the fields the sheet draws: those of the Units open in the pane, each
+    // counted as the sheet counts it. A closed Unit, or an oversized one still held back, draws
+    // no field, so it adds none; nothing is parsed only to count it.
+    const totalAllFields = useMemo(
       () => computeTotalAllFields(mergedUnits, (u) => isUnitMaterializedInPane(u, expansionState)),
       [mergedUnits, expansionState],
     );
+    // Local overrides, "Local only" folded in: a key only this Unit has is one of the
+    // variation's diffs already (an Add), so it is counted once, as the scope draws it.
     const totalLocalOverrides = useMemo(
-      () => mergedUnits.reduce((n, u) => n + countLogicalChanges((u.variationEntry?.fieldDiffs ?? []).map(fieldDiffKey)), 0),
+      () => mergedUnits.reduce((n, u) => n + countChanges(u.variationEntry?.fieldDiffs ?? []), 0),
       [mergedUnits],
     );
-    const totalLocalOnly = useMemo(
-      () => mergedUnits.reduce((n, u) => n + (u.variationEntry?.localOnlyKeys.length ?? 0), 0),
-      [mergedUnits],
+    // The Changes scope: the Unreleased fields the Unit headers show, plus what is staged, each
+    // field once: the set the scope draws.
+    const stagingStateOf = staging.stateOf;
+    // The Changes chip counts the Unreleased fields only; staged edits show in the footer.
+    const totalChanges = useMemo(
+      () => mergedUnits.reduce((n, u) => n + changesScopeKeys(unreleasedByUnit.get(u.unitId) ?? []).size, 0),
+      [mergedUnits, unreleasedByUnit],
     );
+    const changesTitle = totalChanges > 0 ? `${totalChanges} unreleased` : 'No changes';
 
     // ── "Kept on merge" (L2) ──────────────────────────────────────────────
     // Units that could contribute to the chip: anything liveFieldDiffs (the
@@ -1606,8 +1679,8 @@ export const ComponentSidePane = memo(
       }
       return n;
     }, [contributingUnits, checkablePathsByUnit]);
-    // Per-unit CURRENT effective Keep on merge lookup, handed to each
-    // ComponentValuesSection instance as `isProtected` (see NodeRowProps).
+    // Per-unit CURRENT effective Keep on merge lookup, handed to each Unit's
+    // sheet as `isProtected`.
     const isProtectedByUnit = useMemo(() => {
       const m = new Map<string, (path: string) => boolean>();
       for (const u of mergedUnits) {
@@ -1669,6 +1742,12 @@ export const ComponentSidePane = memo(
 
     const prevSelectedIdRef = useRef<string | undefined>(undefined);
     const prevTabFocusNonceRef = useRef<number | undefined>(undefined);
+    // The Units whose changes entering Incoming has ticked. A node switch drops all staging, so
+    // it forgets these too, and a node opened again in Incoming is ticked again.
+    const autoStagedRef = useRef<Set<string>>(new Set());
+    // The ticks entering Incoming set, per Unit: until the person changes them, there is
+    // nothing of theirs to discard.
+    const [entryTicks, setEntryTicks] = useState<ReadonlyMap<string, ReadonlySet<string>>>(new Map());
     // Bubble the settings sheet's dirty state up to AppComponentView, which
     // owns the close routes THIS component can't guard itself: a node switch
     // (clicking a different deployment) reaches here only after
@@ -1694,12 +1773,14 @@ export const ComponentSidePane = memo(
       if (selectedId === undefined) return; // selection cleared; pane is unmounting anyway
       setFilterMode(hasUpgradableUnits ? 'incoming' : 'all');
       setScopeFilter(null);
+      resetStaging();
+      autoStagedRef.current = new Set();
+      setEntryTicks((prev) => (prev.size ? new Map() : prev));
       // Drop the inline details pane when switching graph nodes so it never
       // persists across deployments.
       setDetailsUnit(null);
-      // Same for the Space settings sheet — it belongs to the node it was
-      // opened on, not a standing preference that should follow the selection.
-      setIsSettingsOpen(false);
+      // Same for the compare bar: it is opened for the node being looked at.
+      setCompareBarRequested(false);
       // Land back on the Configuration tab for the newly-selected node —
       // a manually-chosen Releases tab shouldn't stick across node switches.
       setActiveTab('config');
@@ -1737,7 +1818,7 @@ export const ComponentSidePane = memo(
       // a standing preference, and the pane's own default must be Tree view
       // (components.md rule 13) every time a node is opened.
       setSourceOverrideUnitIds((prev) => (prev.size ? new Set() : prev));
-    }, [selectedDeploymentIds, hasUpgradableUnits]);
+    }, [selectedDeploymentIds, hasUpgradableUnits, resetStaging]);
 
     // Honor a status-chip peek's deep-link to a specific tab. Runs AFTER the
     // node-switch reset above (later effect wins), so a chip that opens a NEW
@@ -1779,44 +1860,50 @@ export const ComponentSidePane = memo(
       }
     }, [tabFocus, selectedDeploymentIds, setFilterModeWithStaging, canRelease]);
 
-    // Initial mount: if we land already on the Incoming tab, no tab CHANGE fires,
-    // so stage-all wouldn't trigger via the setter. Fire it once here. Minimal
-    // one-shot effect (ref-guarded) — justified because there is no transition to
-    // hook for the initial state. Subsequent enters/leaves go through the setter.
-    const didInitialStageAllRef = useRef(false);
+    // The sheet's Incoming ticks live in the staging store: entering Incoming ticks every
+    // change "Select all" would, once per Unit as its dry run lands, so a person starts from the
+    // whole upgrade; leaving it drops the upgrade picks only, as edits and keeps are the
+    // person's own work.
+    const stagingDispatch = staging.dispatch;
     useEffect(() => {
-      if (didInitialStageAllRef.current) return;
-      if (filterMode === 'incoming') {
-        didInitialStageAllRef.current = true;
-        setStageAllSignal((s) => s + 1);
+      if (filterMode !== 'incoming') {
+        if (autoStagedRef.current.size > 0) {
+          for (const u of mergedUnits) stagingDispatch(u.unitId, { type: 'clearUpgradeOnly' });
+          autoStagedRef.current = new Set();
+          setEntryTicks(new Map());
+        }
+        return;
       }
-    }, [filterMode]);
+      const added = new Map<string, ReadonlySet<string>>();
+      for (const u of mergedUnits) {
+        if (!u.upgradeEntry || autoStagedRef.current.has(u.unitId)) continue;
+        autoStagedRef.current.add(u.unitId);
+        const keys = selectAllUpgradeKeys(u);
+        stagingDispatch(u.unitId, { type: 'stageAll', keys });
+        added.set(u.unitId, new Set(keys));
+      }
+      if (added.size > 0) setEntryTicks((prev) => new Map([...prev, ...added]));
+    }, [filterMode, mergedUnits, stagingDispatch]);
+    // In Incoming, the staging is still what entering it set: the same ticks, no edit, no keep.
+    const incomingPristine =
+      filterMode === 'incoming' &&
+      mergedUnits.every((u) => {
+        const st = staging.stateOf(u.unitId);
+        const entry = entryTicks.get(u.unitId) ?? new Set<string>();
+        return (
+          st.edits.size === 0 &&
+          st.protection.size === 0 &&
+          st.upgrades.size === entry.size &&
+          [...st.upgrades].every((k) => entry.has(k))
+        );
+      });
 
-    // Pre-bind the per-unit field handlers so ComponentValuesSection receives
-    // stable callback references across renders. Inline arrows would be
-    // recreated every render, breaking ComponentValuesSection's memo during
-    // unrelated re-renders (group collapse, filter typing, etc.).
+    // Pre-bind the per-unit field handlers so each Unit's view receives stable
+    // callback references across renders. Inline arrows would be recreated
+    // every render, breaking the view's memo during unrelated re-renders
+    // (group collapse, filter typing, etc.).
     // Keyed on mergedUnits (not filteredUnits) so callbacks are stable across
-    // search keystrokes — filteredUnits changes on every character typed,
-    // rebuilding these maps and giving ComponentValuesSection new function
-    // references, defeating its memo on every keypress.
-    const setFieldValueByUnit = useMemo(() => {
-      if (!onSetFieldValue) return null;
-      const m = new Map<string, (path: string, newValue: string, meta?: FieldPathMeta) => Promise<void>>();
-      for (const u of mergedUnits) {
-        m.set(u.unitId, async (path, newValue, meta) => { await onSetFieldValue(u.unitId, u.spaceId, path, newValue, meta); });
-      }
-      return m;
-    }, [mergedUnits, onSetFieldValue]);
-    const deleteFieldValueByUnit = useMemo(() => {
-      if (!onDeleteFieldValue) return null;
-      const m = new Map<string, (path: string, meta?: FieldPathMeta) => Promise<void>>();
-      for (const u of mergedUnits) {
-        m.set(u.unitId, (path, meta) => onDeleteFieldValue(u.unitId, u.spaceId, path, meta));
-      }
-      return m;
-    }, [mergedUnits, onDeleteFieldValue]);
-
+    // search keystrokes: filteredUnits changes on every character typed.
     const saveDataByUnit = useMemo(() => {
       if (!onSaveData) return null;
       const m = new Map<string, (newEncodedData: string) => Promise<void>>();
@@ -1826,58 +1913,8 @@ export const ComponentSidePane = memo(
       return m;
     }, [mergedUnits, onSaveData]);
 
-    // ── True-staging wiring ───────────────────────────────────────────────────
-    // Each section reports its staged-path count up; sum drives the footer chip
-    // and button enablement.
-    const handleStagedCountChange = useCallback((unitId: string, count: number) => {
-      setStagedCountByUnit((prev) => {
-        if ((prev.get(unitId) ?? 0) === count) return prev;
-        const next = new Map(prev);
-        if (count === 0) next.delete(unitId);
-        else next.set(unitId, count);
-        return next;
-      });
-    }, []);
-
-    // Counted SEPARATELY from handleStagedCountChange (card 8's "N staged" vs
-    // "N kept" rule — see ComponentValuesSectionProps.onStagedProtectionChange).
-    const handleStagedProtectionCountChange = useCallback((unitId: string, total: number, protectCount: number) => {
-      setStagedProtectionCountByUnit((prev) => {
-        const existing = prev.get(unitId);
-        if (existing && existing.total === total && existing.protectCount === protectCount) return prev;
-        const next = new Map(prev);
-        if (total === 0) next.delete(unitId);
-        else next.set(unitId, { total, protectCount });
-        return next;
-      });
-    }, []);
-
-    // Card 3/6's "N staged · both may be overwritten / both kept on merge"
-    // disclosure — see ComponentValuesSectionProps.onStagedEditKeepSummaryChange.
-    const handleStagedEditKeepSummaryChange = useCallback((unitId: string, total: number, unkept: number) => {
-      setStagedEditKeepSummaryByUnit((prev) => {
-        const existing = prev.get(unitId);
-        if (existing && existing.total === total && existing.unkept === unkept) return prev;
-        const next = new Map(prev);
-        if (total === 0) next.delete(unitId);
-        else next.set(unitId, { total, unkept });
-        return next;
-      });
-    }, []);
-
-
-    // Per-unit commit binding (stable refs so the section memo isn't broken).
-    const commitStagedByUnit = useMemo(() => {
-      if (!onCommitStaged) return null;
-      const m = new Map<string, (payload: StagedCommitPayload) => Promise<StagedCommitResult>>();
-      for (const u of mergedUnits) {
-        m.set(u.unitId, (payload) => onCommitStaged(u.unitId, u.spaceId, payload));
-      }
-      return m;
-    }, [mergedUnits, onCommitStaged]);
-
-    // Per-unit protection-commit binding — a SEPARATE endpoint/revision from
-    // commitStagedByUnit (see Section 9 / ComponentValuesSectionProps.onCommitProtection).
+    // Per-unit protection-commit binding: Keep on merge is a SEPARATE
+    // endpoint and revision from the value write (onCommitStaged).
     const commitProtectionByUnit = useMemo(() => {
       if (!onCommitProtection) return null;
       const m = new Map<string, (guards: ResourceGuards[]) => Promise<boolean>>();
@@ -1887,32 +1924,79 @@ export const ComponentSidePane = memo(
       return m;
     }, [mergedUnits, onCommitProtection]);
 
+    // Counted as the badge counts (countLogicalChanges), so the footer and the badge agree.
     const totalStaged = useMemo(
-      () => [...stagedCountByUnit.values()].reduce((n, c) => n + c, 0),
-      [stagedCountByUnit],
+      () => mergedUnits.reduce((n, u) => n + countLogicalChanges([...stagedValueKeys(stagingStateOf(u.unitId))]), 0),
+      [mergedUnits, stagingStateOf],
     );
-    // Counted separately per card 8's rule — a staged protection change is
-    // never part of "N staged" (value changes).
+    // Whether every change "Select all" would tick is ticked already: then it has nothing to do.
+    const allSelectableStaged = useMemo(
+      () =>
+        mergedUnits.every((u) => {
+          const upgrades = stagingStateOf(u.unitId).upgrades;
+          return selectAllUpgradeKeys(u).every((k) => upgrades.has(k));
+        }),
+      [mergedUnits, stagingStateOf],
+    );
+    // Counted separately: a staged Keep on merge change is never part of "N staged" (value changes).
     const totalStagedProtection = useMemo(
-      () => [...stagedProtectionCountByUnit.values()].reduce((n, { total }) => n + total, 0),
-      [stagedProtectionCountByUnit],
+      () => mergedUnits.reduce((n, u) => n + stagingStateOf(u.unitId).protection.size, 0),
+      [mergedUnits, stagingStateOf],
     );
     const totalStagedProtectionProtectCount = useMemo(
-      () => [...stagedProtectionCountByUnit.values()].reduce((n, { protectCount }) => n + protectCount, 0),
-      [stagedProtectionCountByUnit],
+      () =>
+        mergedUnits.reduce((n, u) => {
+          let keeps = 0;
+          for (const keep of stagingStateOf(u.unitId).protection.values()) if (keep) keeps++;
+          return n + keeps;
+        }, 0),
+      [mergedUnits, stagingStateOf],
     );
-    // T / K from card 3 & 6 — of the staged MANUAL edits (never staged
-    // upgrade picks), how many total and how many are not yet effectively kept.
+    // T / K: of the staged MANUAL edits (never upgrade picks), how many total and how many are
+    // not yet effectively kept. Removals are not offered a keep.
+    const keepableEditKeys = useCallback(
+      (unitId: string): string[] =>
+        [...stagingStateOf(unitId).edits]
+          .filter(([key, value]) => !isStagedDeleteSentinel(value) && !/\.\d+(\.|$)/.test(stageKeyPath(key)))
+          .map(([key]) => key),
+      [stagingStateOf],
+    );
+    const isEffectivelyKept = useCallback(
+      (unitId: string, key: string) =>
+        stagingStateOf(unitId).protection.get(key) ?? isProtectedByUnit.get(unitId)?.(stageKeyPath(key)) ?? false,
+      [stagingStateOf, isProtectedByUnit],
+    );
     const totalStagedEditsKeepable = useMemo(
-      () => [...stagedEditKeepSummaryByUnit.values()].reduce((n, { total }) => n + total, 0),
-      [stagedEditKeepSummaryByUnit],
+      () => mergedUnits.reduce((n, u) => n + keepableEditKeys(u.unitId).length, 0),
+      [mergedUnits, keepableEditKeys],
     );
     const totalStagedEditsUnkept = useMemo(
-      () => [...stagedEditKeepSummaryByUnit.values()].reduce((n, { unkept }) => n + unkept, 0),
-      [stagedEditKeepSummaryByUnit],
+      () =>
+        mergedUnits.reduce(
+          (n, u) => n + keepableEditKeys(u.unitId).filter((k) => !isEffectivelyKept(u.unitId, k)).length,
+          0,
+        ),
+      [mergedUnits, keepableEditKeys, isEffectivelyKept],
     );
+    // "Keep both on merge" stages a keep for every staged edit not yet kept; "Undo keep" takes
+    // those back (staging-level, not commits).
+    const keepStagedEdits = useCallback(() => {
+      for (const u of mergedUnits) {
+        for (const key of keepableEditKeys(u.unitId)) {
+          if (!isEffectivelyKept(u.unitId, key)) stagingDispatch(u.unitId, { type: 'setProtection', key, keep: true, committed: false });
+        }
+      }
+    }, [mergedUnits, keepableEditKeys, isEffectivelyKept, stagingDispatch]);
+    const undoKeepStagedEdits = useCallback(() => {
+      for (const u of mergedUnits) {
+        for (const key of keepableEditKeys(u.unitId)) {
+          const committed = isProtectedByUnit.get(u.unitId)?.(stageKeyPath(key)) ?? false;
+          stagingDispatch(u.unitId, { type: 'setProtection', key, keep: committed, committed });
+        }
+      }
+    }, [mergedUnits, keepableEditKeys, isProtectedByUnit, stagingDispatch]);
 
-    // ── The bar's derived disclosure state (Section 6 / card 8's five rows) ──
+    // ── The bar's derived disclosure state ──
     // "one derived label, no new control" — this never adds a control, only
     // chooses which of the existing bar strings/buttons to show. The
     // `extraScope` heuristic (protection entries beyond what the T
@@ -1921,19 +2005,32 @@ export const ComponentSidePane = memo(
     // an edited row vs an independent kebab click would need path-level
     // plumbing across unit boundaries that isn't built, so it's a lower
     // bound, appended to the edits-based lead text rather than replacing it.
-    // DEVIATION from card 8's clean five-row table: whenever T > 0 (any
-    // manual edit is staged), this ALWAYS prefers the edits-based
-    // may-be-overwritten/kept-on-merge framing and its Keep-both/Undo-keep
-    // controls — even if an unrelated, independently-staged lock/unlock also
-    // exists — rather than collapsing to a plain "N scope changes" lead with
-    // no controls. Verified against card 7's own mockup (an edited-and-kept
-    // row plus two independent scope changes reads "2 staged · 3 scope
-    // changes" there, with no Undo-keep) — this implementation instead reads
-    // "1 staged · kept on merge · 2 more scope changes" and keeps Undo-keep
-    // available. Chosen deliberately: an unrelated lock elsewhere should
-    // never make the staging-level undo for what you JUST did disappear. It
-    // only affects the WORDING/affordance choice, never which endpoint(s)
-    // actually get called or in what order.
+    // Whenever T > 0 (any manual edit is staged), this ALWAYS prefers the
+    // edits-based may-be-overwritten/kept-on-merge framing and its
+    // Keep-both/Undo-keep controls — even if an unrelated, independently-staged
+    // lock/unlock also exists — rather than collapsing to a plain "N scope
+    // changes" lead with no controls: an edited-and-kept row plus two
+    // independent scope changes reads "1 staged · kept on merge · 2 more scope
+    // changes" and keeps Undo-keep. An unrelated lock elsewhere should never
+    // make the undo for what you JUST did disappear. It only affects the
+    // wording, never which endpoint(s) get called or in what order.
+    // The footer verb: edits and Keep on merge changes write with Update, upstream changes
+    // merge with Upgrade.
+    const footerCounts = useMemo(() => {
+      let edits = 0;
+      let upgrades = 0;
+      const keeps = totalStagedProtection;
+      for (const u of mergedUnits) {
+        const c = stagedCounts(stagingStateOf(u.unitId));
+        edits += c.edits;
+        upgrades += countUpgradeChanges(u, commitPlan(stagingStateOf(u.unitId)).upgrades);
+      }
+      return { edits, upgrades, keeps };
+    }, [mergedUnits, stagingStateOf, totalStagedProtection]);
+    const footer = footerVerb(footerCounts);
+    // The lead counts what is staged as the button and its peek do (footerCounts), so the
+    // three never disagree.
+    const stagedForLead = footerCounts.edits + footerCounts.upgrades;
     const barKeepState = useMemo((): {
       kind: 'none' | 'editsUnkept' | 'editsKept' | 'scopeUniform' | 'scopeMixed' | 'valuesAndScope';
       lead?: string;
@@ -1947,7 +2044,7 @@ export const ComponentSidePane = memo(
         return { kind: 'none', showUndoKeep: false, showKeepButton: false };
       }
       if (totalStaged === 0) {
-        // Pure scope batch — one endpoint, one revision (card 2d/4b/8 row 3-4).
+        // Pure scope batch — one endpoint, one revision.
         const uniform = totalStagedProtectionProtectCount === totalStagedProtection;
         return uniform
           ? {
@@ -1969,16 +2066,15 @@ export const ComponentSidePane = memo(
       // beyond what the T edited paths could plausibly account for — a
       // best-effort lower bound (see the approximation note above), appended
       // to the edits-based lead rather than replacing it, so an unrelated
-      // independent lock/unlock never hides the Keep-both/Undo-keep controls
-      // (card 3's own staging-level actions stay available regardless of
-      // what else happens to be staged at the same time).
+      // independent lock/unlock never hides the Keep-both/Undo-keep controls,
+      // whatever else is staged at the same time.
       const extraScope = Math.max(0, totalStagedProtection - T);
       const extraScopeSuffix = extraScope > 0 ? ` · ${extraScope} more scope ${extraScope === 1 ? 'change' : 'changes'}` : '';
       if (T === 0) {
         if (totalStagedProtection === 0) return { kind: 'none', showUndoKeep: false, showKeepButton: false };
         return {
           kind: 'valuesAndScope',
-          lead: `${totalStaged} staged · ${totalStagedProtection} scope ${totalStagedProtection === 1 ? 'change' : 'changes'}`,
+          lead: `${stagedForLead} staged · ${totalStagedProtection} scope ${totalStagedProtection === 1 ? 'change' : 'changes'}`,
           showUndoKeep: false,
           showKeepButton: false,
         };
@@ -1986,19 +2082,19 @@ export const ComponentSidePane = memo(
       if (K === 0) {
         return {
           kind: 'editsKept',
-          lead: `${totalStaged} staged · ${T === 2 ? 'both' : T} kept on merge${extraScopeSuffix}`,
+          lead: `${stagedForLead} staged · ${T === 2 ? 'both' : T} kept on merge${extraScopeSuffix}`,
           showUndoKeep: true,
           showKeepButton: false,
         };
       }
       return {
         kind: 'editsUnkept',
-        lead: `${totalStaged} staged · ${K === 2 && K === T ? 'both' : K} may be overwritten${extraScopeSuffix}`,
+        lead: `${stagedForLead} staged · ${K === 2 && K === T ? 'both' : K} may be overwritten${extraScopeSuffix}`,
         keepButtonLabel: `Keep ${K === 2 && K === T ? 'both' : K} on merge`,
         showUndoKeep: false,
         showKeepButton: true,
       };
-    }, [totalStaged, totalStagedProtection, totalStagedProtectionProtectCount, totalStagedEditsKeepable, totalStagedEditsUnkept]);
+    }, [totalStaged, stagedForLead, totalStagedProtection, totalStagedProtectionProtectCount, totalStagedEditsKeepable, totalStagedEditsUnkept]);
 
     // Clear the hover flag whenever the Upgrade button becomes disabled while the
     // cursor may still be over it. A disabled element does not dispatch mouseleave,
@@ -2012,35 +2108,75 @@ export const ComponentSidePane = memo(
 
     // Commit the staged changes (upgrades + manual edits) directly — the Upgrade
     // button runs this with no intermediate review step.
+
     const handleConfirmCommit = useCallback(() => {
       // Belt-and-suspenders: also clear the hover flag on commit so the disabled
       // button's swallowed mouseleave can never leave the preview dim stuck on.
       setUpgradeHovered(false);
+      setCommitError(null);
       setRecentlyUpgradedUnitIds((prev) => {
         const next = new Set(prev);
         for (const u of mergedUnits) if (hasRealUpgrade(u)) next.add(u.unitId);
         return next;
       });
-      // Dormant units (task #61): each ComponentValuesSection's own
-      // commitStagedSignal effect no-ops when its staged set is empty
-      // (`if (staged.size === 0 || !onCommitStaged) return;` in that file) —
-      // by construction, a dormant unit's staged set IS always empty (there's
-      // nothing stageable). The normal signal below can never reach these
-      // units, so fire an explicit wholesale upgrade-all commit for each,
-      // bypassing the per-unit staging mechanism entirely. This is the SAME
-      // onCommitStaged call/payload shape ComponentValuesSection itself sends
-      // for a full "everything staged" upgrade, so it hits the identical
-      // upgrade:true mutation and correctly participates in the caller's
-      // isUpgrading tracking (handleCommitStaged in AppComponentView.tsx).
+      // Dormant units have nothing stageable, so the staged commits below never
+      // reach them: a wholesale upgrade advances each one's revision pointer.
+      // It is the same payload as a fully staged upgrade, so it takes the same
+      // upgrade:true mutation and the caller's isUpgrading tracking
+      // (handleCommitStaged in AppComponentView.tsx).
       if (onCommitStaged) {
         for (const u of dormantUpgradeableUnits) {
           void onCommitStaged(u.unitId, u.spaceId, { kind: 'upgrade-all' });
         }
       }
-      setCommitStagedSignal((s) => s + 1);
-    }, [mergedUnits, dormantUpgradeableUnits, onCommitStaged]);
+      // What the sheet staged, per Unit, from the staging store. Keep on merge is its own
+      // revision: a wholesale upgrade is a merge, so the guards go first and it cannot overwrite
+      // what is kept; any other batch writes its values first, then the guards, so a guard set
+      // first does not withhold the values the person chose.
+      const failed: string[] = [];
+      for (const u of mergedUnits) {
+        const state = stagingStateOf(u.unitId);
+        const built = buildSheetCommit(u, state);
+        // Nothing of this Unit is written, guards included: a guard alone would commit Keep on
+        // merge without the values it was staged with.
+        if (built && 'error' in built) {
+          failed.push(`${u.slug}: ${built.error}`);
+          continue;
+        }
+        const commitGuards = commitProtectionByUnit?.get(u.unitId);
+        const guards = state.protection.size > 0 && commitGuards ? buildProtectionEdits(state.protection, u.data, u.hasUpstream) : undefined;
+        /** False when values were staged and not written (the write failed or was cancelled). */
+        const writeValues = async (): Promise<boolean> => {
+          if (!built) return true;
+          if (!onCommitStaged) return false;
+          const outcome = await onCommitStaged(u.unitId, u.spaceId, built.payload);
+          // The write failed (the caller shows why) or the person cancelled it: the edits stay.
+          if (outcome === false) return false;
+          stagingDispatch(u.unitId, {
+            type: 'committed',
+            withheldKeys: typeof outcome === 'object' ? outcome.withheldKeys : undefined,
+          });
+          return true;
+        };
+        const writeGuards = async (): Promise<boolean> => {
+          if (!guards || !commitGuards) return true;
+          const ok = await commitGuards(guards);
+          if (ok) stagingDispatch(u.unitId, { type: 'protectionCommitted' });
+          return ok;
+        };
+        void (async () => {
+          const wholesale = built?.payload.kind === 'upgrade-all';
+          if (wholesale) {
+            if (await writeGuards()) await writeValues();
+          } else if (await writeValues()) {
+            await writeGuards();
+          }
+        })();
+      }
+      if (failed.length > 0) setCommitError(`${failed.join('; ')}. Staged changes were not committed.`);
+    }, [mergedUnits, dormantUpgradeableUnits, onCommitStaged, stagingStateOf, stagingDispatch, commitProtectionByUnit]);
 
-    // The dormant revision-gap state (task #61), surfaced IN the panel rather
+    // The dormant revision-gap state, surfaced IN the panel rather
     // than only through the Upgrade button's tooltip: the component is behind
     // its upstream but the dry run found nothing stageable, so the Incoming
     // list looks empty for no visible reason.
@@ -2059,6 +2195,49 @@ export const ComponentSidePane = memo(
       !isDryRunLoading;
     const showDormantBanner =
       isDormantRevisionGap && dormantBannerDismissedFor !== selectedDeployment?.deploymentId;
+    // Nothing staged, nothing ticked, nothing to say: the Configuration footer goes, rather than
+    // a disabled "Upgrade 0" that reads as broken. Outside Incoming, with incoming changes, it is
+    // one quiet button to review them.
+    const footerIdle =
+      activeTab === 'config' &&
+      !isSettingsOpen &&
+      totalStaged === 0 &&
+      totalStagedProtection === 0 &&
+      !successMessage &&
+      !isDormantRevisionGap &&
+      !isUpgrading &&
+      !(scopeFilter === 'kept-on-merge' && totalKeptOnMergeN > 0);
+    const reviewIncoming = footerIdle && filterMode !== 'incoming' && totalUpgradableFields > 0 && !isComparing;
+    // Outside Incoming, upstream changes keep an entry in the footer, staged edits or not, so
+    // they are not forgotten: a violet text button with the Stale up arrow, which opens the
+    // Incoming scope (whose fields are the Stale ones).
+    const incomingEntry = filterMode !== 'incoming' && totalUpgradableFields > 0 && !isComparing;
+    const reviewIncomingButton = (pushRight: boolean) => (
+            <Button
+              data-testid='component-review-incoming-button'
+              variant='text'
+              size='small'
+              onClick={() => {
+                setFilterModeWithStaging('incoming');
+                setScopeFilter(null);
+              }}
+              startIcon={
+                <Box component='span' aria-hidden sx={{ display: 'inline-flex', width: 12, height: 12, '& svg': { width: 12, height: 12 } }}>
+                  <UpgradingIcon />
+                </Box>
+              }
+              sx={{
+                ...bottomBarTextButtonSx,
+                ml: pushRight ? 'auto' : 0,
+                color: componentTheme.upgradeInk,
+                fontWeight: 600,
+                '& .MuiButton-startIcon': { mr: '6px' },
+                '&:hover': { bgcolor: componentTheme.upgradeMuted, color: componentTheme.upgradeInk },
+              }}
+            >
+              {`Review ${totalUpgradableFields} incoming`}
+            </Button>
+    );
 
     // Inline unit details mode: render the details pane in place of the overview.
     // The overview's local state remains mounted (we early-return above its JSX
@@ -2115,233 +2294,40 @@ export const ComponentSidePane = memo(
           onDoubleClick={handleResizeDoubleClick}
         />
 
-        <PaneHeader sx={showHeaderLinks ? { borderBottom: 'none', paddingBottom: '8px' } : undefined}>
-          {headerComponent && (
-            <Typography
-              component='span'
-              data-testid='component-side-pane-component'
-              title={headerComponent}
-              sx={{
-                flexShrink: 1,
-                minWidth: 0,
-                maxWidth: '45%',
-                fontSize: 12,
-                fontWeight: 600,
-                fontFamily: componentTheme.fontSans,
-                color: componentTheme.fgMuted,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                '&::after': { content: '" ›"', color: componentTheme.fgSubtle },
-              }}
-            >
-              {headerComponent}
-            </Typography>
-          )}
-          {filterUrl ? (
-            <Link
-              href={filterUrl}
-              data-testid='pane-title'
-              sx={{
-                fontSize: 14,
-                fontWeight: 600,
-                fontFamily: componentTheme.fontSans,
-                color: componentTheme.fgDefault,
-                textDecoration: 'underline',
-                textDecorationColor: componentTheme.fgMuted,
-                textUnderlineOffset: 2,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                '&:hover': { color: 'primary.main', textDecorationColor: 'primary.main' },
-              }}
-            >
-              {selectedDeployment?.displayName ?? 'Component Review'}
-            </Link>
-          ) : (
-            <Typography
-              data-testid='pane-title'
-              sx={{
-                fontSize: 14,
-                fontWeight: 600,
-                fontFamily: componentTheme.fontSans,
-                color: componentTheme.fgDefault,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {selectedDeployment?.displayName ?? 'Component Review'}
-            </Typography>
-          )}
-          {/* Single flex wrapper carrying the ONE `ml: 'auto'` for this button
-              group (design-mockups/variant-settings/BUILD-PLAN.md commit 1,
-              step 2). Previously `ml: 'auto'` lived on the create-variant
-              button alone, with close falling back to it when create-variant
-              was absent — inserting the cog between them would have broken
-              that fallback. BUILD-PLAN is authoritative over VERDICT.md's
-              alternative (relocating the per-button `ml`) wherever the two
-              disagree. */}
-          <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
-            {onCreateVariant && selectedDeployment && (
-              <Tooltip title='Create variant' placement='top'>
-                <IconButton
-                  onClick={() => onCreateVariant(selectedDeployment.deploymentId)}
-                  size='small'
-                  sx={{
-                    width: 28,
-                    height: 28,
-                    border: `1px solid ${componentTheme.borderDefault}`,
-                    borderRadius: '50%',
-                    color: componentTheme.fgMuted,
-                    backgroundColor: componentTheme.bgSubtle,
-                    '&:hover': { color: componentTheme.fgDefault, backgroundColor: componentTheme.bgInset },
-                  }}
-                >
-                  <CallSplitIcon sx={{ fontSize: 16 }} />
-                </IconButton>
-              </Tooltip>
-            )}
-            {selectedDeployment && (
-              <Tooltip title='Space settings' placement='top'>
-                <IconButton
-                  onClick={() => {
-                    // Closing (not opening) while dirty is the silent-loss
-                    // route verification caught — apply the same guarantee
-                    // the footer already has to this trigger too.
-                    if (isSettingsOpen && isSettingsDirty) {
-                      if (!window.confirm('Discard unsaved Space settings changes?')) return;
-                    }
-                    setIsSettingsOpen((v) => !v);
-                  }}
-                  size='small'
-                  data-testid='component-space-settings-cog'
-                  sx={{
-                    width: 28,
-                    height: 28,
-                    border: `1px solid ${isSettingsOpen ? 'rgba(186,61,3,.42)' : componentTheme.borderDefault}`,
-                    borderRadius: '50%',
-                    color: isSettingsOpen ? componentTheme.accent : componentTheme.fgMuted,
-                    backgroundColor: isSettingsOpen ? componentTheme.accentMuted : componentTheme.bgSubtle,
-                    '&:hover': {
-                      color: isSettingsOpen ? componentTheme.accent : componentTheme.fgDefault,
-                      backgroundColor: isSettingsOpen ? componentTheme.accentMuted : componentTheme.bgInset,
-                    },
-                  }}
-                >
-                  <SettingsIcon sx={{ fontSize: 16 }} />
-                </IconButton>
-              </Tooltip>
-            )}
-            {onClose && (
-              <IconButton
-                onClick={onClose}
-                size='small'
-                sx={{
-                  width: 28,
-                  height: 28,
-                  border: `1px solid ${componentTheme.borderDefault}`,
-                  borderRadius: '50%',
-                  color: componentTheme.fgMuted,
-                  backgroundColor: componentTheme.bgSubtle,
-                  '&:hover': { color: componentTheme.fgDefault, backgroundColor: componentTheme.bgInset },
-                }}
-              >
-                <CloseIcon sx={{ fontSize: 16 }} />
-              </IconButton>
-            )}
-          </Box>
-        </PaneHeader>
-
-        {showHeaderLinks && (
-          <Box
-            data-testid='component-side-pane-links'
-            sx={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '0 16px 10px',
-              borderBottom: `1px solid ${componentTheme.borderDefault}`,
-              backgroundColor: componentTheme.bgDefault,
-              flexShrink: 0,
-            }}
-          >
-            {headerTargets.map(({ targetId, label, url }) =>
-              url ? (
-                <Tooltip key={targetId} title={`Open ${label}`} placement='top'>
-                  <Link href={url} target='_blank' rel='noopener noreferrer' underline='none' sx={headerLinkChipSx}>
-                    <StorageOutlinedIcon sx={{ fontSize: 13 }} />
-                    <span className='header-chip-label'>{label}</span>
-                    <OpenInNewIcon sx={{ fontSize: 12 }} />
-                  </Link>
-                </Tooltip>
-              ) : (
-                <Box key={targetId} component='span' sx={headerChipSx}>
-                  <StorageOutlinedIcon sx={{ fontSize: 13 }} />
-                  <span className='header-chip-label'>{label}</span>
-                </Box>
-              ),
-            )}
-            {deliveryPath && (
-              <Tooltip title='Show what deploys this Variant' placement='top'>
-                <Link
-                  component={RouterLink}
-                  to={deliveryPath}
-                  underline='none'
-                  data-testid='component-side-pane-delivery'
-                  sx={headerLinkChipSx}
-                >
-                  <DeviceHubIcon sx={{ fontSize: 13 }} />
-                  <span className='header-chip-label'>GitOps</span>
-                </Link>
-              </Tooltip>
-            )}
-            {clusterUnitPath && (
-              <Tooltip title={`Open ${clusterUnit?.Slug}, the Unit that deploys this Space`} placement='top'>
-                <Link
-                  component={RouterLink}
-                  to={clusterUnitPath}
-                  underline='none'
-                  data-testid='component-side-pane-cluster-unit'
-                  sx={headerLinkChipSx}
-                >
-                  <DataObjectIcon sx={{ fontSize: 13 }} />
-                  <span className='header-chip-label'>{clusterUnit?.Slug}</span>
-                  <OpenInNewIcon sx={{ fontSize: 12 }} />
-                </Link>
-              </Tooltip>
-            )}
-          </Box>
-        )}
-
-        {/* Content band: tabs + error card + both PaneContent variants (below)
-            PLUS the Space settings sheet all share this box. It — not
-            PaneContainer — is the settings sheet's positioned ancestor, so the
-            sheet's `position: absolute; inset: 0` covers exactly this band:
-            never the header above (fixed, outside this box) and never
-            BottomBar below (also outside this box, unconditionally rendered
-            after it closes). PaneContent stays a normal mounted flex child
-            here at all times — the sheet only sits visually on top of it via
-            z-index, which is the whole point (design-mockups/variant-settings/
-            BUILD-PLAN.md commit 1, step 1: no early return, ComponentValuesSection
-            never unmounts). */}
-        {/* `isolation: 'isolate'` establishes a fresh stacking context for this
-            band: several treeview rows use their own z-index (up to 20, e.g.
-            diffStyles.ts's $plain ReviewRow at 11, the column-resize divider at
-            10, ComponentKeyComposer's popover at 20) for THEIR internal
-            layering needs. Without isolation those values compete directly
-            against the sheet's z-index at the PaneContainer level instead of
-            staying scoped to this band, and specific rows visibly punch through
-            the sheet. Isolating guarantees the sheet (below) only has to out-
-            rank whatever is used inside this band, never anything outside it. */}
-        <Box sx={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', isolation: 'isolate' }}>
-        {/* Every Variant has Configuration; Releases when it has a release Target, Readme when
-            it has a README.md Unit or Readme annotation, and Gates when its Triggers found
-            something. */}
+        {/* The title and tabs rows. They go away once the Configuration list scrolls down past
+            them, and any scroll up brings them back; the filter row and the resource heading
+            stay. They go or come whole, so they are never shown cut. */}
+        <Box
+          ref={chromeTopRef}
+          data-testid='component-side-pane-chrome-top'
+          sx={{ flexShrink: 0, containerType: 'inline-size', display: chromeAway ? 'none' : 'block', position: 'relative', zIndex: 1 }}
+        >
+          <PaneTitleRow
+            componentName={headerComponent}
+            name={selectedDeployment?.displayName ?? 'Component Review'}
+            nameHref={filterUrl}
+            targets={headerTargets}
+            deliveryPath={deliveryPath}
+            clusterUnit={clusterUnitPath && clusterUnit?.Slug ? { slug: clusterUnit.Slug, path: clusterUnitPath } : undefined}
+            narrow={isNarrowPane}
+            compare={
+              selectedDeployment && compareOptions.length > 1
+                ? { pressed: isCompareBarOpen, onToggle: handleCompareToggle }
+                : undefined
+            }
+            onCreateVariant={
+              onCreateVariant && selectedDeployment ? () => onCreateVariant(selectedDeployment.deploymentId) : undefined
+            }
+            onClose={onClose}
+          />
+          {/* Every Variant has Configuration and Settings; Releases when it has a release Target,
+              Readme when it has a README.md Unit or Readme annotation, and Gates when its Triggers
+              found something. */}
           <PaneTabs
             value={activeTab}
-            onChange={(_, v: PaneContentTab) => setActiveTab(v)}
+            onChange={(_, v: PaneContentTab) => handleTabChange(v)}
+            variant='scrollable'
+            scrollButtons={false}
             aria-label='Side pane content'
           >
             <PaneTab label='Configuration' value='config' data-testid='component-pane-tab-config' />
@@ -2370,7 +2356,33 @@ export const ComponentSidePane = memo(
                 }
               />
             )}
+            {selectedDeployment && <PaneTab label='Settings' value='settings' data-testid='component-pane-tab-settings' />}
           </PaneTabs>
+        </Box>
+
+        {/* Content band: error card + the tab contents (below) PLUS the Space
+            settings sheet of the Settings tab all share this box. It — not
+            PaneContainer — is the settings sheet's positioned ancestor, so the
+            sheet's `position: absolute; inset: 0` covers exactly this band:
+            never the title and tabs above (outside this box) and never
+            BottomBar below (also outside this box, unconditionally rendered
+            after it closes). PaneContent stays a normal mounted flex child
+            here at all times — the sheet only sits visually on top of it via
+            z-index, so the Unit sheets under it never unmount and keep their
+            place. */}
+        {/* `isolation: 'isolate'` establishes a fresh stacking context for this
+            band: several treeview rows use their own z-index (up to 20, e.g.
+            diffStyles.ts's $plain ReviewRow at 11, the column-resize divider at
+            10, ComponentKeyComposer's popover at 20) for THEIR internal
+            layering needs. Without isolation those values compete directly
+            against the sheet's z-index at the PaneContainer level instead of
+            staying scoped to this band, and specific rows visibly punch through
+            the sheet. Isolating guarantees the sheet (below) only has to out-
+            rank whatever is used inside this band, never anything outside it. */}
+        <Box
+          onScrollCapture={handleChromeScroll}
+          sx={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', isolation: 'isolate' }}
+        >
 
         {/* Pane-wide, not tab-scoped: a Release/Withdraw error (Releases tab
             action) and an Apply/Upgrade error (Configuration tab action)
@@ -2467,20 +2479,20 @@ export const ComponentSidePane = memo(
           </PaneContent>
         )}
 
-        {activeTab === 'config' && selectedDeployment && (
+        {(activeTab === 'config' || activeTab === 'settings') && selectedDeployment && (
           <CompareColumnDnd
             order={compareSelection}
             labels={compareLabelById}
             onReorder={handleCompareSelectionChange}
           >
-            {compareOptions.length > 1 && (
-              <CompareCollapsible storageKey={CONFIG_COMPARE_COLLAPSED_KEY} testId='component-compare'>
+            {isCompareBarOpen && compareOptions.length > 1 && (
+              <Box data-testid='component-compare-bar' sx={{ flex: 'none' }}>
                 <DeploymentSelectors
                   options={compareOptions}
                   selection={compareSelection}
                   onSelectionChange={handleCompareSelectionChange}
                 />
-              </CompareCollapsible>
+              </Box>
             )}
 
             {isComparing && (
@@ -2493,17 +2505,25 @@ export const ComponentSidePane = memo(
           </CompareColumnDnd>
         )}
 
-        {activeTab === 'config' && !isComparing && (
+        {mergedUnits.filter(hasUnreleasedChanges).map((u) => (
+          <UnreleasedKeysProbe key={u.unitId} unit={u} onKeys={setUnreleasedKeys} />
+        ))}
+        {(activeTab === 'config' || activeTab === 'settings') && !isComparing && (
         <>
         <ComponentToolbar
           testIdPrefix="component"
+          paneWidth={width}
           filterText={filterText}
+          matchCount={matchCount}
           onFilterTextChange={setFilterText}
           viewMode={viewMode}
           onViewModeChange={(mode) => {
             // Overview cannot be searched, so a search left in the box would
             // narrow the units with nothing on screen saying why.
             if (mode === 'overview') setFilterText('');
+            if (mode !== viewMode) {
+              trackConfigViewShown({ view: CONFIG_VIEW_NAME[mode], surface: 'component_drawer', trigger: 'switch' });
+            }
             setViewMode(mode);
           }}
           searchDisabledReason={viewMode === 'overview' ? 'Search is not available in Overview' : undefined}
@@ -2513,7 +2533,6 @@ export const ComponentSidePane = memo(
           isDryRunLoading={isDryRunLoading}
           hasUpgradableUnits={hasUpgradableUnits}
           totalAllFields={totalAllFields}
-          allFieldsPartial={allFieldsPartial}
           hasChangeSet={hasChangeSet}
           totalChangeSetFields={totalChangeSetFields}
           isChangeSetLoading={isChangeSetLoading}
@@ -2521,7 +2540,8 @@ export const ComponentSidePane = memo(
           scopeFilter={scopeFilter}
           onScopeFilterChange={setScopeFilter}
           totalLocalOverrides={totalLocalOverrides}
-          totalLocalOnly={totalLocalOnly}
+          totalChanges={totalChanges}
+          changesTitle={changesTitle}
           totalCheckableM={totalCheckableM}
           totalKeptOnMergeN={totalKeptOnMergeN}
           totalLiveL={totalLiveL}
@@ -2531,6 +2551,39 @@ export const ComponentSidePane = memo(
           onIncludeHiddenUnitsChange={onIncludeHiddenUnitsChange}
           hiddenUnitsState={hiddenUnitsState}
           hiddenUnitsError={hiddenUnitsError}
+          leading={
+            // While the title row is scrolled away, the filter row names the Variant, so the
+            // reader still knows which one the list is.
+            chromeAway && selectedDeployment ? (
+              <Box
+                component='span'
+                data-testid='component-filter-title'
+                title={selectedDeployment.displayName}
+                sx={{
+                  flex: '0 1 auto',
+                  minWidth: 24,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  fontFamily: componentTheme.fontSans,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: componentTheme.fgMuted,
+                }}
+              >
+                {selectedDeployment.displayName}
+              </Box>
+            ) : undefined
+          }
+          trailing={
+            chromeAway && onClose ? (
+              <ChromePeek title='Close'>
+                <Box component='button' type='button' aria-label='Close' data-testid='component-filter-close' onClick={onClose} sx={quietIconButtonSx}>
+                  <CloseIcon />
+                </Box>
+              </ChromePeek>
+            ) : undefined
+          }
         />
 
         {/* Kept-on-merge flatnote — page-specific explanatory text for the
@@ -2558,6 +2611,7 @@ export const ComponentSidePane = memo(
             (`apiVersion`) while the copy described the entire view. */}
         <PaneContent
           data-testid='unit-list'
+          data-chrome-scroll
           // The container the Unit cards' narrow-pane rules read, on the quiet ground the cards sit on.
           sx={{ containerType: 'inline-size', background: componentTheme.bgSubtle }}
         >
@@ -2704,21 +2758,24 @@ export const ComponentSidePane = memo(
             // `isUnitGated` is re-evaluated here rather than trusting the Set
             // alone, and that is the safety property, not belt-and-braces: it
             // makes the override structurally incapable of applying to a
-            // MATERIALIZED unit. A materialized unit has a mounted
-            // ComponentValuesSection holding staged manual edits in its own
-            // state, and components.md rule 9 requires those to survive
-            // everything except an explicit Discard or a commit. Because this
-            // implies `isUnitGated`, the ComponentValuesSection branch below is
-            // left byte-for-byte unchanged and cannot be reached differently on
-            // account of this state — no unmount, no lost edits. (A gated unit
-            // has no mounted section to lose in the first place: its body is
-            // the placeholder card.)
+            // MATERIALIZED unit: a materialized unit shows its sheet, and a
+            // switch to Source there would unmount it and lose its place.
+            // (A gated unit has no mounted sheet to lose in the first place:
+            // its body is the placeholder card.)
             //
             // Also gated on the pane being in 'diff': when the pane toggle is
             // on Source everything is already source, so the per-unit override
             // is dormant rather than double-applied — and it is remembered, so
             // toggling the pane back to Tree restores exactly what was on
             // screen before.
+            // The field sheet draws All and the scopes but Incoming and Kept on merge, which still
+            // use the tree.
+            // A Unit whose data read has once settled is never "loading" again: a refetch for
+            // another Unit flips the one shared flag, and an empty Unit would wait forever.
+            if (!isUnitDataFetching) settledDataUnitIds.current.add(unit.unitId);
+            const unitDataLoading = !!isUnitDataFetching && !unit.data && !settledDataUnitIds.current.has(unit.unitId);
+            const sheetShown =
+              viewMode === 'diff' && (filterMode === 'incoming' || filterMode === 'all' || filterMode === 'changeset');
             const isSourceOverridden =
               viewMode === 'diff' &&
               isUnitGated(unit, materializedUnitIds) &&
@@ -2732,12 +2789,22 @@ export const ComponentSidePane = memo(
                 // tag unchanged units with the dim class in diff view. The
                 // upgrade-preview dim (.pane-upgrade-preview .unit-unchanged)
                 // therefore never affects the source view.
-                className={viewMode === 'diff' && !isUpgradeChanged ? 'unit-unchanged' : undefined}
+                // A Unit with nothing incoming says so (in its body when open, on its header when
+                // folded), so it dims only while the Upgrade button is hovered, never for the
+                // scope alone.
+                className={viewMode === 'diff' && !isUpgradeChanged && upgradeHovered ? 'unit-unchanged' : undefined}
               >
                 <UnitHeader
                   unit={unit}
+                  dataLoading={unitDataLoading}
+                  originError={originErrorUnitIds.has(unit.unitId)}
                   spaceSlug={deploymentMap.get(unit.spaceId)?.slug ?? unit.spaceId}
                   expanded={isUnitExpanded}
+                  note={
+                    filterMode === 'incoming' && viewMode === 'diff' && !isUnitExpanded && !isUpgradeChanged
+                      ? 'Nothing incoming'
+                      : undefined
+                  }
                   held={isUnitGated(unit, materializedUnitIds)}
                   filterText={filterText}
                   canOpenDetails={!!onUpdateUnitMeta}
@@ -2766,7 +2833,7 @@ export const ComponentSidePane = memo(
                 />
                 {isUnitExpanded && (
                   <>
-                    {upgradeError && (
+                    {upgradeError && !sheetShown && (
                       <Typography
                         data-testid='component-unit-entry-error'
                         sx={{
@@ -2780,7 +2847,10 @@ export const ComponentSidePane = memo(
                         The changes to this Unit could not be read: {upgradeError}
                       </Typography>
                     )}
-                    {upgradeLoading && (
+                    {upgradeLoading && sheetShown && (
+                      <SheetSkeleton />
+                    )}
+                    {upgradeLoading && !sheetShown && (
                       <Box
                         sx={{
                           px: 2,
@@ -2809,7 +2879,7 @@ export const ComponentSidePane = memo(
                       </Box>
                     )}
                     {/* ── Oversized-unit gate ────────────────────────────────
-                        Sits OUTSIDE ComponentValuesSection on purpose: the gate
+                        Sits OUTSIDE the Unit's sheet on purpose: the gate
                         only ever sees `unit.data`, a configuration STRING, and a gated
                         unit's section is never mounted, so no decode, no YAML
                         parse and no tree build happen for it at all. Gating from
@@ -2836,40 +2906,67 @@ export const ComponentSidePane = memo(
                         />
                       )
                     )}
-                    {!upgradeLoading && !upgradeError && viewMode === 'diff' && !isUnitGated(unit, materializedUnitIds) && (
+                    {!upgradeLoading && (!upgradeError || sheetShown) && viewMode === 'diff' && !isUnitGated(unit, materializedUnitIds) && (
                       // A large-but-allowed unit shows skeleton rows for the one
                       // high-priority render before the deferred key catches up,
                       // so the pane's chrome paints without waiting on its tree.
                       // Small units skip this entirely — see shouldDeferUnitPaint.
                       isHeavyPaintPending && shouldDeferUnitPaint(unit.data) ? (
                         <HeavyUnitLoading />
+                      ) : sheetShown ? (
+                        // The spec sheet: the fields of the Unit in document order, all of them or
+                        // the fields of one scope.
+                        <SpecSheet
+                          unit={unit}
+                          filterText={filterText}
+                          scope={
+                            filterMode === 'incoming' || filterMode === 'changeset'
+                              ? 'incoming'
+                              : scopeFilter === 'changes'
+                                ? 'changes'
+                                : scopeFilter === 'kept-on-merge'
+                                  ? 'kept'
+                                  : scopeFilter
+                                    ? 'local'
+                                    : 'all'
+                          }
+                          deployments={deployments}
+                          unitsByDeployment={unitsByDeployment}
+                          readOnly={filterMode === 'changeset'}
+                          onKeptKeys={(keys) => keptKeysByUnit.current.set(unit.unitId, keys)}
+                          onMatchCount={(count) => setMatchCount(unit.unitId, count)}
+                          onToggleUpgrade={(key) =>
+                            staging.dispatch(unit.unitId, {
+                              type: 'stageUpgrade',
+                              key,
+                              on: !staging.stateOf(unit.unitId).upgrades.has(key),
+                            })
+                          }
+                          staging={staging.stateOf(unit.unitId)}
+                          readError={!!upgradeError}
+                          dataLoading={unitDataLoading}
+                          onOriginError={(failed) => setOriginErrorUnits(unit.unitId, failed)}
+                          onStageEdit={
+                            filterMode === 'changeset'
+                              ? undefined
+                              : (key, value, add) => staging.dispatch(unit.unitId, { type: 'stageEdit', key, value, add })
+                          }
+                          onUnstageEdit={(key) => staging.dispatch(unit.unitId, { type: 'unstageEdit', key })}
+                          onToggleRemove={(key) =>
+                            staging.dispatch(
+                              unit.unitId,
+                              isStagedDeleteSentinel(staging.stateOf(unit.unitId).edits.get(key))
+                                ? { type: 'unstageEdit', key }
+                                : { type: 'stageRemove', key },
+                            )
+                          }
+                          onSetProtection={(key, keep, committed) =>
+                            staging.dispatch(unit.unitId, { type: 'setProtection', key, keep, committed })
+                          }
+                          isProtected={isProtectedByUnit.get(unit.unitId)}
+                        />
                       ) : (
-                      <ComponentValuesSection
-                        key={unit.unitId}
-                        unit={unit}
-                        filterText={filterText}
-                        filterMode={filterMode === 'all' ? 'all' : 'upgradable'}
-                        scopeFilter={filterMode === 'all' ? scopeFilter : null}
-                        readOnly={filterMode === 'changeset'}
-                        valueOverlay={fieldOverlay?.get(unit.unitId)}
-                        onSetFieldValue={setFieldValueByUnit?.get(unit.unitId)}
-                        onDeleteFieldValue={deleteFieldValueByUnit?.get(unit.unitId)}
-                        deployments={deployments}
-                        unitsByDeployment={unitsByDeployment}
-                        onStagedCountChange={handleStagedCountChange}
-                        commitStagedSignal={commitStagedSignal}
-                        clearStagedSignal={clearStagedSignal}
-                        discardAllSignal={discardAllSignal}
-                        stageAllSignal={stageAllSignal}
-                        keepStagedEditsSignal={keepStagedEditsSignal}
-                        undoKeepStagedEditsSignal={undoKeepStagedEditsSignal}
-                        onCommitStaged={commitStagedByUnit?.get(unit.unitId)}
-                        onCommitProtection={commitProtectionByUnit?.get(unit.unitId)}
-                        isProtected={isProtectedByUnit.get(unit.unitId)}
-                        onStagedProtectionChange={handleStagedProtectionCountChange}
-                        onStagedEditKeepSummaryChange={handleStagedEditKeepSummaryChange}
-                        stopKeepingAllSignal={stopKeepingAllSignal}
-                      />
+                      null
                       )
                     )}
                     {/* Source view: for the whole pane, or for this one
@@ -2930,13 +3027,13 @@ export const ComponentSidePane = memo(
             unitCount={selectedDeployment.unitCount}
             targets={targets}
             onFooterStateChange={setSheetFooterState}
-            onClose={() => setIsSettingsOpen(false)}
+            onClose={() => setActiveTab('config')}
             // Deleted variant: close the settings sheet AND clear the pane's
-            // selection (BUILD-PLAN step 23) — reuses the same `onClose` the
+            // selection, as nothing is left to show — reuses the same `onClose` the
             // header's own close button uses, since that already empties
             // `selectedDeploymentIds` in AppComponentView (`handleClose`).
             onDeleted={() => {
-              setIsSettingsOpen(false);
+              setActiveTab('config');
               // Clear dirty state SYNCHRONOUSLY (both locally and in the
               // parent, not via the async onDirtyChange effect below, which
               // wouldn't have fired yet by the time onClose() runs in this
@@ -2953,19 +3050,21 @@ export const ComponentSidePane = memo(
         </Box>
 
         {/* The Gates tab saves from each gate's own footer, so the pane footer would be empty. */}
-        {(isSettingsOpen || activeTab !== 'gates') && (
+        {(isSettingsOpen || activeTab !== 'gates') && (!footerIdle || reviewIncoming) && (
         <BottomBar>
-          {isSettingsOpen ? (
+          {reviewIncoming ? (
+            reviewIncomingButton(true)
+          ) : isSettingsOpen ? (
             <>
-              {/* ONE footer, contextual contents (task #34): while the Space
+              {/* ONE footer, contextual contents: while the Space
                   settings sheet is open, this BottomBar shows ITS Save/Discard
                   instead of Upgrade/Release — never both, never stacked. The
                   buttons below call the sheet's own `save`/`discardOrClose`
                   via `settingsSheetRef`; they own no staging logic here. The
                   sheet's OWN drafts (`draftLabels`/`releaseTargetDraft`/etc.)
-                  are a completely separate state tree from the treeview's
-                  staged edits below (`totalStaged`/`discardAllSignal`) — this
-                  branch and the treeview's Discard button are mutually
+                  are a completely separate state tree from the staging store's
+                  edits below (`totalStaged`) — this branch and the staged
+                  edits' Discard button are mutually
                   exclusive in the DOM, so a Discard click can never touch the
                   wrong one. */}
               {sheetFooterState.isDirty && (
@@ -3012,6 +3111,21 @@ export const ComponentSidePane = memo(
             </>
           ) : (
             <>
+          {commitError && !successMessage && (
+            <Box
+              role='alert'
+              data-testid='component-commit-error'
+              sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mr: 'auto', minWidth: 0 }}
+            >
+              <ErrorOutlineIcon sx={{ fontSize: 17, color: componentTheme.danger, flexShrink: 0 }} />
+              <Typography sx={{ fontSize: 12, fontWeight: 600, fontFamily: componentTheme.fontSans, color: componentTheme.danger, overflowWrap: 'anywhere' }}>
+                {commitError}
+              </Typography>
+              <Box component='button' type='button' aria-label='Dismiss' data-testid='component-commit-error-dismiss' onClick={() => setCommitError(null)} sx={quietIconButtonSx}>
+                <CloseIcon sx={{ fontSize: 14 }} />
+              </Box>
+            </Box>
+          )}
           {successMessage && (
             <Box
               data-testid="component-action-success"
@@ -3040,12 +3154,12 @@ export const ComponentSidePane = memo(
               </Typography>
             </Box>
           )}
-          {/* Section 7/card 4b: the flattened "Kept on merge" view's OWN
+          {/* The "Kept on merge" scope's OWN
               dedicated bar — "N kept in this component" / "Stop keeping N
               keys" — REPLACES the normal staged-commit controls while nothing
               is staged yet (the moment something IS staged, e.g. by clicking
               this very button, totalStagedProtection > 0 and the normal bar's
-              Section-6 "scope changes" state takes back over, which is where
+              "scope changes" state takes back over, which is where
               the actual commit happens — this button only stages). */}
           {scopeFilter === 'kept-on-merge' && totalStagedProtection === 0 && totalKeptOnMergeN > 0 && activeTab === 'config' && (
             <>
@@ -3060,7 +3174,9 @@ export const ComponentSidePane = memo(
                 variant='text'
                 size='small'
                 disabled={isUpgrading}
-                onClick={() => setStopKeepingAllSignal((s) => s + 1)}
+                onClick={() => {
+                  for (const [unitId, keys] of keptKeysByUnit.current) stagingDispatch(unitId, { type: 'stopKeepingAll', keys });
+                }}
                 sx={bottomBarTextButtonSx}
               >
                 {`Stop keeping ${totalKeptOnMergeN} ${totalKeptOnMergeN === 1 ? 'key' : 'keys'}`}
@@ -3070,9 +3186,8 @@ export const ComponentSidePane = memo(
           {/* The staged-commit controls show when the deployment can upgrade OR
               whenever ANY change is staged (sticky manual edits can exist even on
               a root deployment with no upstream) — AND only on the Configuration
-              tab (task #56): these are config-scoped actions, same principle as
-              #52 scoping Release to the Releases tab. A Space with no tab bar
-              at all is always 'config' — unaffected. */}
+              tab: these are config-scoped actions, as Release is scoped to the
+              Releases tab. A Space with no tab bar at all is always 'config'. */}
           {!(scopeFilter === 'kept-on-merge' && totalStagedProtection === 0 && totalKeptOnMergeN > 0)
             && (canUpgrade || totalStaged > 0 || totalStagedProtection > 0) && activeTab === 'config'
             // The comparison is a read-only surface. Nothing on it stages
@@ -3080,12 +3195,12 @@ export const ComponentSidePane = memo(
             // changes the user cannot see and did not make here.
             && !isComparing && (
             <>
-              {/* Section 6 lead line (card 3 & 8) — "no new control, one derived
-                  label": states which staged edits will be overwritten vs kept
+              {/* The lead line, one derived label and no new control: states
+                  which staged edits will be overwritten vs kept
                   on the next merge, or names a pure scope batch. Warn colour
                   (accent) for "may be overwritten"/mixed-scope; muted for the
                   reassuring "kept on merge" state. */}
-              {!successMessage && barKeepState.lead && (
+              {!successMessage && !commitError && barKeepState.lead && (
                 <Typography
                   data-testid='component-bar-keep-lead'
                   sx={{
@@ -3099,17 +3214,20 @@ export const ComponentSidePane = memo(
                   {barKeepState.lead}
                 </Typography>
               )}
+              {incomingEntry && !successMessage && reviewIncomingButton(!barKeepState.lead)}
               {/* Select all — STAGES every available upgrade (does not commit).
                   Only meaningful on the Incoming tab: staging is auto-cleared
                   when leaving 'incoming' (setFilterModeWithStaging), so the
                   button is inert on 'all' — gate it to that tab. */}
-              {filterMode === 'incoming' && totalSelectableFields > 0 && totalStaged < totalSelectableFields && (
+              {filterMode === 'incoming' && totalSelectableFields > 0 && !allSelectableStaged && (
                 <Button
                   data-testid='component-select-all-button'
                   variant='text'
                   size='small'
                   disabled={isUpgrading}
-                  onClick={() => setStageAllSignal((s) => s + 1)}
+                  onClick={() => {
+                    for (const u of mergedUnits) stagingDispatch(u.unitId, { type: 'stageAll', keys: selectAllUpgradeKeys(u) });
+                  }}
                   sx={{
                     textTransform: 'none',
                     fontWeight: 600,
@@ -3124,7 +3242,7 @@ export const ComponentSidePane = memo(
                 </Button>
               )}
               {/* Keep both on merge — STAGES a protect for every currently
-                  staged-edited-but-not-yet-kept path (card 3b). Does not
+                  staged-edited-but-not-yet-kept path. Does not
                   write; the same commit button/two-call ordering handles it. */}
               {barKeepState.showKeepButton && (
                 <Button
@@ -3132,7 +3250,7 @@ export const ComponentSidePane = memo(
                   variant='text'
                   size='small'
                   disabled={isUpgrading}
-                  onClick={() => setKeepStagedEditsSignal((s) => s + 1)}
+                  onClick={keepStagedEdits}
                   sx={{
                     textTransform: 'none',
                     fontWeight: 600,
@@ -3157,26 +3275,30 @@ export const ComponentSidePane = memo(
                   variant='text'
                   size='small'
                   disabled={isUpgrading}
-                  onClick={() => setUndoKeepStagedEditsSignal((s) => s + 1)}
+                  onClick={undoKeepStagedEdits}
                   sx={bottomBarTextButtonSx}
                 >
                   Undo keep
                 </Button>
               )}
-              {/* Discard — clears the staged set without committing. */}
-              {(totalStaged > 0 || totalStagedProtection > 0) && (
+              {/* Discard — clears the staged set without committing. On entering Incoming the
+                  ticks are set for the person, so Discard waits until they change something:
+                  before that it would read as "reject upstream". */}
+              {(totalStaged > 0 || totalStagedProtection > 0) && !incomingPristine && (
                 <Button
                   data-testid='component-discard-staged-button'
                   variant='text'
                   size='small'
                   disabled={isUpgrading}
-                  onClick={() => setDiscardAllSignal((s) => s + 1)}
+                  onClick={() => {
+                    for (const u of mergedUnits) stagingDispatch(u.unitId, { type: 'discardAll' });
+                  }}
                   sx={bottomBarTextButtonSx}
                 >
                   Discard
                 </Button>
               )}
-              {/* task #61: a unit can have a REAL revision gap (hasUpgradableUnits)
+              {/* A unit can have a REAL revision gap (hasUpgradableUnits)
                   with literally nothing stageable (totalUpgradableFields === 0 —
                   the upstream's new revision is either byte-identical in content
                   or every diffed path is blocked by a local override). Staging
@@ -3198,16 +3320,30 @@ export const ComponentSidePane = memo(
                   isUpgrading: !!isUpgrading,
                   isChangeSetView: filterMode === 'changeset',
                 });
+                // The button's hover says what it writes, on the light info-peek card.
+                const reasonLine =
+                  upgradeButton.reason === 'revision-gap'
+                    ? 'No fields to stage, but the revision is behind: this brings the revisions in line.'
+                    : upgradeButton.reason === 'preview-pending'
+                      ? 'Reading what the upgrade would change…'
+                      : undefined;
+                const peekLine =
+                  footer.verb === 'Upgrade'
+                    ? `Merges ${footer.count} change${footer.count === 1 ? '' : 's'} from upstream into this Unit. Fields you kept on merge stay.`
+                    : footerCounts.edits > 0 && footerCounts.upgrades > 0
+                      ? `Writes your ${footerCounts.edits} staged edit${footerCounts.edits === 1 ? '' : 's'} and merges ${footerCounts.upgrades} change${footerCounts.upgrades === 1 ? '' : 's'} from upstream into this Unit. Fields you kept on merge stay.`
+                      : footerCounts.edits > 0
+                        ? `Writes your ${footerCounts.edits} staged edit${footerCounts.edits === 1 ? '' : 's'} to this Unit.`
+                        : `Writes ${footer.count} Keep on merge change${footer.count === 1 ? '' : 's'} to this Unit.`;
                 return (
-                  <Tooltip
-                    title={
-                      upgradeButton.reason === 'revision-gap'
-                        ? 'No fields to stage, but the revision is behind — this brings the revisions in line.'
-                        : upgradeButton.reason === 'preview-pending'
-                          ? 'Reading what the upgrade would change…'
-                          : ''
-                    }
+                  <InfoPeekTooltip
+                    color={componentTheme.fgDefault}
+                    sans
+                    spec={{ eyebrow: footer.verb, lines: reasonLine ? [peekLine, reasonLine] : [peekLine] }}
                     placement='top'
+                    maxWidth={320}
+                    describeChild
+                    testId='footer-peek'
                   >
                     <span>
                       <Button
@@ -3221,49 +3357,31 @@ export const ComponentSidePane = memo(
                         }}
                         onMouseEnter={() => setUpgradeHovered(true)}
                         onMouseLeave={() => setUpgradeHovered(false)}
-                        sx={bottomBarPrimaryButtonSx}
+                        // Update writes your edits: the house primary. Violet is the upstream's hue
+                        // (Stale, Incoming), so it is kept for Upgrade alone.
+                        sx={footer.verb === 'Update' ? updateButtonSx : bottomBarPrimaryButtonSx}
                       >
                         {isUpgrading ? (
                           <CircularProgress size={14} sx={{ color: 'inherit' }} />
                         ) : barKeepState.kind === 'scopeUniform' || barKeepState.kind === 'scopeMixed' ? (
-                          // Pure scope batch (card 8 rows 3-4): the button's own
+                          // Pure scope batch: the button's own
                           // label already carries the count — one endpoint call,
                           // one revision, no separate "Upgrade" verb and no badge.
                           barKeepState.keepButtonLabel
                         ) : (
-                          'Upgrade'
-                        )}
-                        {/* Badge count — omitted for the pure-scope states above
-                            (their label already carries the number). Otherwise
-                            prefers the value-staged count, falling back to the
-                            protection count for a protection-only batch, so the
-                            button never shows a misleading "0" while enabled. */}
-                        {barKeepState.kind !== 'scopeUniform' && barKeepState.kind !== 'scopeMixed' && (
-                          <Chip
-                            label={totalStaged > 0 ? totalStaged : totalStagedProtection}
-                            size='small'
-                            sx={{
-                              height: 16,
-                              minWidth: 16,
-                              fontSize: 11,
-                              fontWeight: 700,
-                              backgroundColor: 'rgba(255,255,255,0.25)',
-                              color: 'inherit',
-                              '.MuiChip-label': { px: 0.5 },
-                            }}
-                          />
+                          // The verb and the count in one label.
+                          `${footer.verb} ${footer.count}`
                         )}
                       </Button>
                     </span>
-                  </Tooltip>
+                  </InfoPeekTooltip>
                 );
               })()}
             </>
           )}
           {/* Release only occupies the deploy-verb slot while the Releases
-              tab is active (task #52) — on the Configuration tab the slot
-              is intentionally empty. (The Apply fallback that used to live
-              here was removed upstream — canUpgrade now covers that case.) */}
+              tab is active — on the Configuration tab the slot is
+              intentionally empty. */}
           {/* The action row appears only while UNRELEASED WORK IS ON SCREEN.
               With none there is nothing to release and no way back to offer, so
               the row is absent rather than empty — an empty action bar
@@ -3337,12 +3455,11 @@ export const ComponentSidePane = memo(
                   }}
                 >
                   {release.isReleasing ? <CircularProgress size={14} sx={{ color: 'inherit' }} /> : 'Release'}
-                  {/* task #69: unlike Apply/Upgrade's chips (which always show,
+                  {/* Unlike Apply/Upgrade's chips (which always show,
                       even "0", since those actions are inherently partial/
                       selectable), Release stays chip-less until we have a real,
-                      fully-resolved, non-zero count — publish is atomic (RULE
-                      the fidelity review already established for this button),
-                      so a "0" chip here would misleadingly suggest a partial
+                      fully-resolved, non-zero count — publish is atomic, so a
+                      "0" chip here would misleadingly suggest a partial
                       action, and a chip that pops in in the middle of loading
                       would flicker. */}
                   {unreleasedSettled && totalUnreleasedFields > 0 && (

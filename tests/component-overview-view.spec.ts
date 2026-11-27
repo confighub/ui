@@ -110,22 +110,26 @@ test.describe('component pane Overview view', () => {
 
   test('the variant summary counts resources beside units', async ({ page }) => {
     await openNode(page, prodSlug);
+    // The compare bar opens only when Compare is pressed.
+    await page.getByTestId('component-compare-toggle').click();
     await expect(page.getByTestId('compare-selector-meta-a')).toHaveText('1 unit · 2 resources', { timeout: 15000 });
   });
 
   test('Overview shows each resource in its friendly view, without search', async ({ page }) => {
     await openNode(page, prodSlug);
-    await expect(page.getByTestId('component-leaf-row').first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId('field-sheet')).toBeVisible({ timeout: 15000 });
 
     await page.getByTestId('component-search').locator('input').fill('replicas');
+    // The view is picked in the view menu of the filter row.
+    await page.getByTestId('component-view-menu-button').click();
     await page.getByTestId('component-view-overview').click();
 
     // The search is cleared and disabled, and the tree gives way to the resources.
     const search = page.getByTestId('component-search').locator('input');
     await expect(search).toBeDisabled();
     await expect(search).toHaveValue('');
-    await expect(page.getByTestId('component-leaf-row')).toHaveCount(0);
-    await expect(page.getByTestId('component-scope-local-overrides')).toHaveCount(0);
+    await expect(page.getByTestId('field-sheet')).toHaveCount(0);
+    await expect(page.getByTestId('scope-control')).toHaveCount(0);
 
     const resources = page.getByTestId('component-overview-resource');
     await expect(resources).toHaveCount(2, { timeout: 15000 });
@@ -139,8 +143,9 @@ test.describe('component pane Overview view', () => {
     await expect(section.getByText('Containers')).toBeVisible();
     await expect(section.getByText(IMAGE)).toBeVisible();
 
-    await page.getByTestId('component-view-tree').click();
-    await expect(page.getByTestId('component-leaf-row').first()).toBeVisible({ timeout: 15000 });
+    await page.getByTestId('component-view-menu-button').click();
+    await page.getByTestId('view-fields').click();
+    await expect(page.getByTestId('field-sheet')).toBeVisible({ timeout: 15000 });
     await expect(page.getByTestId('component-search').locator('input')).toBeEnabled();
   });
 });

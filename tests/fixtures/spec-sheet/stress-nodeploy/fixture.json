@@ -1,0 +1,670 @@
+{
+ "unit": {
+  "space": "prod-eu-west-1-customer-acme-corporation-international-holdings",
+  "slug": "payments-config-only",
+  "kind": "Deployment",
+  "upstream": {
+   "space": "base",
+   "slug": "payments-orchestrator",
+   "revision": 776
+  }
+ },
+ "groups": [
+  {
+   "id": "svc0",
+   "name": "svc-0",
+   "kind": "service",
+   "path": "metadata, spec"
+  },
+  {
+   "id": "svc1",
+   "name": "svc-1",
+   "kind": "service",
+   "path": "metadata, spec"
+  },
+  {
+   "id": "cm0",
+   "name": "cm",
+   "kind": "configmap",
+   "path": "metadata, data"
+  },
+  {
+   "id": "cm1",
+   "name": "cm1",
+   "kind": "configmap",
+   "path": "metadata, data"
+  }
+ ],
+ "rows": [
+  {
+   "group": "svc0",
+   "path": [
+    "metadata",
+    "name"
+   ],
+   "fullPath": "metadata.name",
+   "value": "payments-svc-0",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "type"
+   ],
+   "fullPath": "spec.type",
+   "value": "LoadBalancer",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "ports",
+    "p0",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p0.port",
+   "value": "443",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "ports",
+    "p1",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p1.port",
+   "value": "444",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "ports",
+    "p2",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p2.port",
+   "value": "445",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "ports",
+    "p3",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p3.port",
+   "value": "446",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "ports",
+    "p4",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p4.port",
+   "value": "447",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "ports",
+    "p5",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p5.port",
+   "value": "448",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "ports",
+    "p6",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p6.port",
+   "value": "449",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "ports",
+    "p7",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p7.port",
+   "value": "450",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "selector",
+    "app"
+   ],
+   "fullPath": "spec.selector.app",
+   "value": "payments-orchestrator-with-a-name-that-keeps-going-and-going-past-any-sane-limit-v2",
+   "origin": "here"
+  },
+  {
+   "group": "svc1",
+   "path": [
+    "metadata",
+    "name"
+   ],
+   "fullPath": "metadata.name",
+   "value": "payments-svc-1",
+   "origin": "upstream"
+  },
+  {
+   "group": "svc1",
+   "path": [
+    "spec",
+    "type"
+   ],
+   "fullPath": "spec.type",
+   "value": "LoadBalancer",
+   "origin": "upstream"
+  },
+  {
+   "group": "svc1",
+   "path": [
+    "spec",
+    "ports",
+    "p0",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p0.port",
+   "value": "443",
+   "origin": "upstream"
+  },
+  {
+   "group": "svc1",
+   "path": [
+    "spec",
+    "selector",
+    "app"
+   ],
+   "fullPath": "spec.selector.app",
+   "value": "payments-orchestrator-with-a-name-that-keeps-going-and-going-past-any-sane-limit-v2",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "metadata",
+    "name"
+   ],
+   "fullPath": "metadata.name",
+   "value": "payments-config",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "config.json"
+   ],
+   "fullPath": "data.config.json",
+   "value": "{\n  \"db\": {\n    \"host\": \"db.internal\",\n    \"port\": 5432,\n    \"pool\": {\n      \"min\": 0,\n      \"max\": 1000\n    }\n  },\n  \"features\": [\n    \"feature-0\",\n    \"feature-1\",\n    \"feature-2\",\n    \"feature-3\",\n    \"feature-4\",\n    \"feature-5\",\n    \"feature-6\",\n    \"feature-7\",\n    \"feature-8\",\n    \"feature-9\",\n    \"feature-10\",\n    \"feature-11\",\n    \"feature-12\",\n    \"feature-13\",\n    \"feature-14\",\n    \"feature-15\",\n    \"feature-16\",\n    \"feature-17\",\n    \"feature-18\",\n    \"feature-19\",\n    \"feature-20\",\n    \"feature-21\",\n    \"feature-22\",\n    \"feature-23\",\n    \"feature-24\",\n    \"feature-25\",\n    \"feature-26\",\n    \"feature-27\",\n    \"feature-28\",\n    \"feature-29\"\n  ],\n  \"emoji\": \"\\ud83d\\ude80\"\n}",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "empty"
+   ],
+   "fullPath": "data.empty",
+   "value": "",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "zero"
+   ],
+   "fullPath": "data.zero",
+   "value": "0",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "0-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "false"
+   ],
+   "fullPath": "data.false",
+   "value": "false",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "false-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "big.number"
+   ],
+   "fullPath": "data.big.number",
+   "value": "179769313486231570000000000000000000000000000000000000000000000000",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "key.with.dots/and/slashes"
+   ],
+   "fullPath": "data.key.with.dots/and/slashes",
+   "value": "ok",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "multiline.txt"
+   ],
+   "fullPath": "data.multiline.txt",
+   "value": "first\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\n",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "rtl"
+   ],
+   "fullPath": "data.rtl",
+   "value": "שלום — مرحبا",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "html"
+   ],
+   "fullPath": "data.html",
+   "value": "<script>document.cookie</script>&copy;",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "metadata",
+    "name"
+   ],
+   "fullPath": "metadata.name",
+   "value": "payments-flags",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_00"
+   ],
+   "fullPath": "data.FLAG_00",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_01"
+   ],
+   "fullPath": "data.FLAG_01",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_02"
+   ],
+   "fullPath": "data.FLAG_02",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_03"
+   ],
+   "fullPath": "data.FLAG_03",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_04"
+   ],
+   "fullPath": "data.FLAG_04",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_05"
+   ],
+   "fullPath": "data.FLAG_05",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_06"
+   ],
+   "fullPath": "data.FLAG_06",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_07"
+   ],
+   "fullPath": "data.FLAG_07",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_08"
+   ],
+   "fullPath": "data.FLAG_08",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_09"
+   ],
+   "fullPath": "data.FLAG_09",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_10"
+   ],
+   "fullPath": "data.FLAG_10",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_11"
+   ],
+   "fullPath": "data.FLAG_11",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_12"
+   ],
+   "fullPath": "data.FLAG_12",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_13"
+   ],
+   "fullPath": "data.FLAG_13",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_14"
+   ],
+   "fullPath": "data.FLAG_14",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_15"
+   ],
+   "fullPath": "data.FLAG_15",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_16"
+   ],
+   "fullPath": "data.FLAG_16",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_17"
+   ],
+   "fullPath": "data.FLAG_17",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_18"
+   ],
+   "fullPath": "data.FLAG_18",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_19"
+   ],
+   "fullPath": "data.FLAG_19",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_20"
+   ],
+   "fullPath": "data.FLAG_20",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_21"
+   ],
+   "fullPath": "data.FLAG_21",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_22"
+   ],
+   "fullPath": "data.FLAG_22",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_23"
+   ],
+   "fullPath": "data.FLAG_23",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_24"
+   ],
+   "fullPath": "data.FLAG_24",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_25"
+   ],
+   "fullPath": "data.FLAG_25",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_26"
+   ],
+   "fullPath": "data.FLAG_26",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_27"
+   ],
+   "fullPath": "data.FLAG_27",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_28"
+   ],
+   "fullPath": "data.FLAG_28",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_29"
+   ],
+   "fullPath": "data.FLAG_29",
+   "value": "true",
+   "origin": "here"
+  }
+ ],
+ "resources": [
+  {
+   "id": "service-0",
+   "kind": "Service",
+   "name": "payments-svc-0",
+   "apiVersion": "v1",
+   "groups": [
+    "svc0"
+   ]
+  },
+  {
+   "id": "service-1",
+   "kind": "Service",
+   "name": "payments-svc-1",
+   "apiVersion": "v1",
+   "groups": [
+    "svc1"
+   ]
+  },
+  {
+   "id": "configmap-0",
+   "kind": "ConfigMap",
+   "name": "payments-config",
+   "apiVersion": "v1",
+   "groups": [
+    "cm0"
+   ]
+  },
+  {
+   "id": "configmap-1",
+   "kind": "ConfigMap",
+   "name": "payments-flags",
+   "apiVersion": "v1",
+   "groups": [
+    "cm1"
+   ]
+  }
+ ],
+ "meta": {
+  "fixture": "stress-nodeploy",
+  "source": "invented"
+ }
+}

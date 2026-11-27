@@ -7,9 +7,8 @@
  * upgrade, yellow for an edit, green for an add), and `PillTooltipContent`, the
  * hover body that prints the full value.
  *
- * Moved here unchanged from `ComponentValuesSection` so that other views (the
- * ChangeOrders list) can show a change in the same language without importing
- * the whole review pane.
+ * A module of its own so that other views (the ChangeOrders list) can show a
+ * change in the same language without importing the whole review pane.
  */
 
 import Box from '@mui/material/Box';
@@ -18,6 +17,7 @@ import { highlightText } from '@/components/entity-data-grid/utils/highlightText
 import { componentTheme } from './componentTheme';
 import { NO_VALUE_LABEL, isEmptyValue } from './componentValues';
 import type { InlineDiffSegment } from './inlineDiff';
+import { WrapValue } from './spec-sheet/Dotted';
 
 export type RowChangeType = 'upgrade' | 'edit' | 'delete' | 'add' | 'protect';
 
@@ -66,12 +66,14 @@ export const PillTooltipContent = ({
       fontFamily: componentTheme.fontMono,
       fontSize: 11,
       color: accentColor ?? componentTheme.fgDefault,
-      wordBreak: 'break-all',
+      // No orphan letters: the value wraps after a separator (WrapValue); inside a segment
+      // only when the segment alone is wider than the card.
+      overflowWrap: 'break-word',
       lineHeight: 1.4,
       borderBottom: `1px solid ${componentTheme.borderSubtle}`,
       ...((italic || noValue) && { fontStyle: 'italic' }),
     }}>
-      {noValue ? NO_VALUE_LABEL : fullValue}
+      {noValue ? NO_VALUE_LABEL : <WrapValue>{fullValue}</WrapValue>}
     </Box>
     {(meta || action) && (
       <Box sx={{ px: 1.5, py: 0.75, display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -100,6 +102,53 @@ export const PillTooltipContent = ({
       </Box>
     )}
   </Box>
+  );
+};
+
+/**
+ * The segments of an inline token diff: UPGRADE and EDIT use the IDENTICAL treatment — the
+ * unchanged chars dim to muted grey and the CHANGED chars get a subtle bg + border + bold
+ * coloured highlight — differing ONLY in colour: upgrade is purple, edit is yellow. Any other
+ * change type draws the segments flat. Used by `CurrentPill`'s preview and by the field sheet.
+ */
+export const InlineDiffSegments = ({
+  segments,
+  changeType,
+}: {
+  segments: InlineDiffSegment[];
+  changeType?: RowChangeType;
+}) => {
+  const isTokenDiff = changeType === 'upgrade' || changeType === 'edit';
+  // Per-type changed-token highlight palette (mirrored alphas, swapped hue).
+  const tokText = changeType === 'edit' ? EDIT_TOK_TEXT : UP_TOK_TEXT;
+  const tokBg = changeType === 'edit' ? EDIT_TOK_BG : UP_TOK_BG;
+  const tokBorder = changeType === 'edit' ? EDIT_TOK_BORDER : UP_TOK_BORDER;
+  return (
+    <Box component="span" data-fidelity="inline-diff" sx={isTokenDiff ? { color: VAL_MUTED } : undefined}>
+      {segments.map((seg, idx) =>
+        seg.changed && isTokenDiff ? (
+          <Box
+            key={idx}
+            component="span"
+            data-fidelity="token-changed"
+            sx={{
+              color: tokText,
+              fontWeight: 700,
+              background: tokBg,
+              border: `1px solid ${tokBorder}`,
+              borderRadius: '3px',
+              padding: '0 3px',
+              WebkitBoxDecorationBreak: 'clone',
+              boxDecorationBreak: 'clone',
+            }}
+          >
+            {seg.text}
+          </Box>
+        ) : (
+          <Box key={idx} component="span" data-fidelity="token-kept">{seg.text}</Box>
+        ),
+      )}
+    </Box>
   );
 };
 
@@ -289,21 +338,7 @@ export const CurrentPill = ({
         </Box>
       </>
     )}
-    {previewSegments && (() => {
-      // Resolve the preview's effective change type once.
-      const effectiveType = previewChangeType ?? changeType;
-      // UPGRADE and EDIT use the IDENTICAL inline token-diff treatment — the
-      // unchanged chars dim to muted grey and the CHANGED chars get a subtle
-      // bg + border + bold colored highlight — differing ONLY in colour:
-      // upgrade is purple, edit is yellow. This makes a staged edit display
-      // identically to a staged upgrade. ADD renders the proposed value flat
-      // (green) since there is no original to diff against character-by-character.
-      const isTokenDiff = effectiveType === 'upgrade' || effectiveType === 'edit';
-      // Per-type changed-token highlight palette (mirrored alphas, swapped hue).
-      const tokText = effectiveType === 'edit' ? EDIT_TOK_TEXT : UP_TOK_TEXT;
-      const tokBg = effectiveType === 'edit' ? EDIT_TOK_BG : UP_TOK_BG;
-      const tokBorder = effectiveType === 'edit' ? EDIT_TOK_BORDER : UP_TOK_BORDER;
-      return (
+    {previewSegments && (
       <Box
         component="span"
         className="current-preview"
@@ -313,39 +348,12 @@ export const CurrentPill = ({
           lineHeight: 1.35,
           // ADD → plain green text (weight 580). UPGRADE/EDIT dim the unchanged
           // chars (#59636e) and box only the changed chars (purple / yellow below).
-          ...(effectiveType === 'add' && { color: ADD_VAL_TEXT, fontWeight: 580 }),
-          ...(isTokenDiff && { color: VAL_MUTED }),
+          ...((previewChangeType ?? changeType) === 'add' && { color: ADD_VAL_TEXT, fontWeight: 580 }),
         }}
       >
-        {previewSegments.map((seg, idx) =>
-          // UPGRADE and EDIT box their CHANGED chars with the identical subtle
-          // highlight structure (bg + border + bold colored text), differing only
-          // in colour (purple vs yellow). ADD renders flat in its type colour.
-          seg.changed && isTokenDiff ? (
-            <Box
-              key={idx}
-              component="span"
-              data-fidelity="token-changed"
-              sx={{
-                color: tokText,
-                fontWeight: 700,
-                background: tokBg,
-                border: `1px solid ${tokBorder}`,
-                borderRadius: '3px',
-                padding: '0 3px',
-                WebkitBoxDecorationBreak: 'clone',
-                boxDecorationBreak: 'clone',
-              }}
-            >
-              {seg.text}
-            </Box>
-          ) : (
-            <Box key={idx} component="span" data-fidelity="token-kept">{seg.text}</Box>
-          ),
-        )}
+        <InlineDiffSegments segments={previewSegments} changeType={previewChangeType ?? changeType} />
       </Box>
-      );
-    })()}
+    )}
     {previewRemoved && (
       <Box
         component="span"

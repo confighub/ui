@@ -2,16 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The staged-change colours, as the shipped configuration tree uses them.
- *
- * MIRRORED, NOT MOVED — and guarded. `ROW_TYPE_TOKENS` in
- * `ComponentValuesSection.tsx` is built from 32 colour constants whose comments
- * carry the reasoning for each one, and hauling that block out of a shipped
- * 4,000-line file to reach three of them would be a large edit for a small need.
- * So the three are restated here, and `component-compare-staging.pure.spec.ts`
- * reads the other file and fails if the values ever diverge — because two
- * descriptions of one fact do not stay equal on their own, which this feature has
- * already learned twice.
+ * The staged-change colours: one place for them, so the compare grid and the
+ * spec sheet cannot drift apart.
  *
  * Only the three that a compare cell can produce are here. A staged compare edit
  * is an edit, an add, or a delete; there is no upgrade or protect staging on this

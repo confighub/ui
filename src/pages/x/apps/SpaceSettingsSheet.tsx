@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * SpaceSettingsSheet (design-mockups/variant-settings/BUILD-PLAN.md)
+ * SpaceSettingsSheet
  *
  * The cog-triggered Space settings surface for the component right-hand pane.
  * Renders ABSOLUTELY POSITIONED over the pane's content area (see the wrapper
  * Box in `ComponentSidePane.tsx` that hosts both this sheet and `PaneContent`)
- * so the value treeview underneath — and its own staged edits, which live in
- * `ComponentValuesSection`, not here — stays mounted while this is open.
+ * so the Unit sheets underneath stay mounted, and keep their place, while
+ * this is open. Their staged edits are in the pane's staging store, not here.
  *
  * === One model, no exceptions ===
  * Variant rename and user-authored Labels share ONE staged draft
@@ -30,27 +30,18 @@
  * pick would actually move units — `releaseTargetAffectedUnitCount` below is
  * that line's only data dependency.
  *
- * === Unit targets — removed ===
- * An earlier version of this sheet also had a per-unit "Unit targets" row
- * (`bulkPatchUnits` fanned across every unit in the Space, with 207
- * partial-failure handling and a persistent failure strip). Cut from the
- * feature entirely in review ("Get rid of the units target section
- * completely.") — nothing in this sheet writes to more than one entity per
- * Save any more, so Save is a single `patchSpace` call and nothing here
- * needs to inspect a 207 response.
+ * === One entity per Save ===
+ * Nothing in this sheet writes to more than one entity per Save, so Save is a
+ * single `patchSpace` call and nothing here needs to inspect a 207 response.
  *
- * === No footer of its own — removed in favor of the pane's ONE footer ===
- * This sheet used to render its own Save/Discard strip, stacked visually
- * below the pane's own BottomBar (Upgrade/Release/Discard) — two footers at
- * once. Cut in review ("Replace the upgrade footer with the save button. as
- * a footer. style them the same."): `ComponentSidePane.tsx`'s BottomBar now
- * shows this sheet's Save/Discard INSTEAD of the upgrade actions while the
- * sheet is open, using the exact same Button styling. This sheet exposes
+ * === No footer of its own: the pane's ONE footer ===
+ * `ComponentSidePane.tsx`'s BottomBar shows this sheet's Save/Discard INSTEAD
+ * of the upgrade actions while the sheet is open, using the exact same Button
+ * styling, so two footers are never stacked. This sheet exposes
  * `save`/`discardOrClose` via `ref` (see `SpaceSettingsSheetHandle`) and its
  * live footer state via `onFooterStateChange`, so the buttons living in the
- * pane still act on THIS sheet's own local drafts — never on the treeview's
- * staged edits, which are a completely separate state tree the pane's old
- * Discard already acted on and continues to. The two can never be confused
+ * pane still act on THIS sheet's own local drafts — never on the staged field
+ * edits, which are a completely separate state tree with their own Discard. The two can never be confused
  * because only one Discard button ever exists in the DOM at a time (the
  * BottomBar renders one branch or the other, never both).
  */
@@ -235,7 +226,7 @@ export const SpaceSettingsSheet = forwardRef<SpaceSettingsSheetHandle, SpaceSett
   const releaseTargetAffectedUnitCount = useMemo(() => (unitsData ?? []).filter((u) => !u.Unit?.Unreleasable).length, [unitsData]);
 
   // The release-target consequence must be re-stated at Save, not only at
-  // selection (BUILD-PLAN step 14) — gated on the SAME condition
+  // selection, as Save is when it happens — gated on the SAME condition
   // `ReleaseTargetRow` uses for its own inline consequence line.
   const hasStagedRetarget = isReleaseTargetDirty && releaseTargetAffectedUnitCount > 0;
 
@@ -311,9 +302,8 @@ export const SpaceSettingsSheet = forwardRef<SpaceSettingsSheetHandle, SpaceSett
   // have (discard-if-dirty, close-if-not) — moving the BUTTON's location
   // doesn't change what clicking it does. Both actions only ever touch this
   // sheet's own local draft state (`draftLabels`/`draftAnnotations`/
-  // `releaseTargetDraft` above) — never the treeview's staged edits, which
-  // live entirely in `ComponentValuesSection`'s own state and are wired to a
-  // DIFFERENT Discard button that only exists in the DOM while this sheet is
+  // `releaseTargetDraft` above) — never the staged field edits, which live in
+  // the pane's staging store and are wired to a DIFFERENT Discard button that only exists in the DOM while this sheet is
   // CLOSED (see `ComponentSidePane.tsx`'s BottomBar branch). The two Discards
   // can never be confused because only one of them is ever rendered.
   useImperativeHandle(
@@ -416,10 +406,10 @@ export const SpaceSettingsSheet = forwardRef<SpaceSettingsSheetHandle, SpaceSett
           disabled={isSpaceLoading || isSaving}
         />
 
-        {/* ── Labels (Space.Labels, user-authored) — commit 5 ── */}
+        {/* ── Labels (Space.Labels, user-authored) ── */}
         <LabelsRow labels={effectiveLabels} onChange={setDraftLabels} disabled={isSpaceLoading || isSaving} />
 
-        {/* ── Show-more (commit 6) ── */}
+        {/* ── Show-more ── */}
         <ShowMoreSection
           slug={slug}
           spaceId={spaceId}
@@ -429,10 +419,10 @@ export const SpaceSettingsSheet = forwardRef<SpaceSettingsSheetHandle, SpaceSett
           disabled={isSpaceLoading || isSaving}
         />
 
-        {/* ── Delete (commit 7) — outside the staged model by design ── */}
+        {/* ── Delete — outside the staged model by design ── */}
         <DeleteRow spaceId={spaceId} slug={slug} unitCount={unitCount} onDeleted={onDeleted} />
 
-        {/* Re-stated at Save time too (BUILD-PLAN step 14), not only at
+        {/* Re-stated at Save time too, not only at
             selection on `ReleaseTargetRow` — Save is when this actually
             happens, not when the target was picked. Lives in the scrollable
             content now, last item, rather than pinned to a footer: this

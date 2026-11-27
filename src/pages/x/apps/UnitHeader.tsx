@@ -1,8 +1,8 @@
 // Copyright (C) ConfigHub, Inc.
 // SPDX-License-Identifier: MIT
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { HEADER_HEIGHT, HEADER_STICKY_TOP } from './unitHeaderLayout';
+import { useMemo, useRef, type ReactElement, type ReactNode } from 'react';
 
-import { highlightText } from '@/components/entity-data-grid/utils/highlightText';
 import { InfoPeekTooltip } from '@/components/info-peek/InfoPeek';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import Box from '@mui/material/Box';
@@ -20,8 +20,6 @@ import {
   type UnitHeaderStatusKind,
 } from './unitHeaderStatus';
 
-/** The height of a Unit header band; the pinned test below uses it too. */
-const HEADER_HEIGHT = 52;
 /** The widest a status peek gets; a longer line wraps. */
 const PEEK_MAX_WIDTH = 300;
 
@@ -170,43 +168,25 @@ const StatusIcon = ({
   );
 };
 
-/**
- * Whether the header of an open Unit is stuck at the top of the list: the card's top is above
- * the list's top and more than one header's height of the card is still below it. Computed from
- * the scroll position, so the header changes only as the pointer scrolls and never as it hovers.
- */
-const useHeaderStuck = (headerRef: React.RefObject<HTMLElement | null>, enabled: boolean): boolean => {
-  const [stuck, setStuck] = useState(false);
-  useEffect(() => {
-    const header = headerRef.current;
-    const card = header?.parentElement;
-    if (!enabled || !header || !card) {
-      setStuck(false);
-      return undefined;
-    }
-    let scroller: HTMLElement | null = card.parentElement;
-    while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
-    if (!scroller) return undefined;
-    const list = scroller;
-    let frame = 0;
-    const measure = () => {
-      frame = 0;
-      const top = list.getBoundingClientRect().top;
-      const rect = card.getBoundingClientRect();
-      setStuck(list.scrollTop > 0 && rect.top < top - 1 && rect.bottom > top + HEADER_HEIGHT);
-    };
-    const schedule = () => {
-      if (!frame) frame = requestAnimationFrame(measure);
-    };
-    measure();
-    list.addEventListener('scroll', schedule, { passive: true });
-    return () => {
-      list.removeEventListener('scroll', schedule);
-      if (frame) cancelAnimationFrame(frame);
-    };
-  }, [headerRef, enabled]);
-  return stuck;
-};
+/** The search matches in a name: a 2px underline in the text colour, as in the sheet, never a fill. */
+function underlineMatches(text: string, query: string) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return text;
+  const out: ReactNode[] = [];
+  const lower = text.toLowerCase();
+  let at = 0;
+  for (let from = lower.indexOf(needle); from !== -1; from = lower.indexOf(needle, at)) {
+    if (from > at) out.push(text.slice(at, from));
+    out.push(
+      <span key={from} data-testid='unit-header-match' style={{ textDecoration: `underline 2px ${componentTheme.fgDefault}`, textUnderlineOffset: 3 }}>
+        {text.slice(from, from + needle.length)}
+      </span>,
+    );
+    at = from + needle.length;
+  }
+  out.push(text.slice(at));
+  return out;
+}
 
 export interface UnitHeaderProps {
   unit: MergedUnit;
@@ -222,6 +202,12 @@ export interface UnitHeaderProps {
   onOpenDetails: () => void;
   /** Open the Unit's body, where its upgrade or release is reviewed. */
   onReview: () => void;
+  /** The Unit's configuration is still being read. */
+  dataLoading?: boolean;
+  /** The read of where each field comes from failed. */
+  originError?: boolean;
+  /** Why the folded Unit shows nothing in the scope ("Nothing incoming"), after its name. */
+  note?: string;
 }
 
 /**
@@ -239,11 +225,14 @@ export const UnitHeader = ({
   onToggle,
   onOpenDetails,
   onReview,
+  dataLoading = false,
+  originError = false,
+  note,
 }: UnitHeaderProps) => {
   const headerRef = useRef<HTMLDivElement>(null);
-  const stuck = useHeaderStuck(headerRef, expanded);
-  const statuses = useMemo(() => unitHeaderStatuses(unit, { expanded, held }), [unit, expanded, held]);
-  const sideInset = 'var(--unit-gutter, 12px)';
+  const statuses = useMemo(() => unitHeaderStatuses(unit, { expanded, held, dataLoading, originError }),
+    [unit, expanded, held, dataLoading, originError],
+  );
 
   return (
     <Box
@@ -262,11 +251,11 @@ export const UnitHeader = ({
         }
       }}
       sx={{
-        position: expanded ? 'sticky' : 'relative',
+        // An open Unit's header sticks under the drawer's filter row, with the part bar under it.
         // PaneContent's 8px of vertical padding is the scrollport's edge for a sticky box, so the
-        // header sticks flush with the list's top only when it starts that far above it. A closed
-        // header is `relative`, where `top` would shift it out of its card, so it gets none.
-        top: expanded ? -8 : 'auto',
+        // header sticks flush with the list's top only when it starts that far above it.
+        position: expanded ? 'sticky' : 'relative',
+        top: expanded ? HEADER_STICKY_TOP : 'auto',
         // Above the body's value rows (z-index up to 11) that scroll under it.
         zIndex: expanded ? 12 : 'auto',
         boxSizing: 'border-box',
@@ -274,15 +263,11 @@ export const UnitHeader = ({
         display: 'flex',
         alignItems: 'center',
         gap: '12px',
-        padding: stuck ? `0 calc(12px + ${sideInset}) 0 calc(10px + ${sideInset})` : '0 12px 0 10px',
-        margin: stuck ? `0 calc(-1 * (${sideInset} + 1px))` : 0,
+        padding: '0 12px 0 10px',
         cursor: 'pointer',
         background: componentTheme.bgDefault,
-        borderRadius: stuck ? 0 : expanded ? '8px 8px 0 0' : '8px',
-        borderBottom: expanded
-          ? `1px solid ${stuck ? componentTheme.borderDefault : componentTheme.borderMuted}`
-          : 'none',
-        boxShadow: stuck ? '0 6px 10px -6px rgba(0,0,0,0.12)' : 'none',
+        borderRadius: expanded ? '8px 8px 0 0' : '8px',
+        borderBottom: expanded ? `1px solid ${componentTheme.borderMuted}` : 'none',
         outline: 'none',
         transition: 'background .12s',
         '&:hover': { background: componentTheme.bgSubtle },
@@ -353,10 +338,19 @@ export const UnitHeader = ({
             data-testid='unit-header-slug'
             sx={{ flex: '0 1 auto', minWidth: 40, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
           >
-            {filterText ? highlightText(unit.slug, filterText) : unit.slug}
+            {filterText ? underlineMatches(unit.slug, filterText) : unit.slug}
           </Box>
         </Box>
       </Tooltip>
+      {note && (
+        <Box
+          component='span'
+          data-testid='unit-header-note'
+          sx={{ flexShrink: 0, fontFamily: componentTheme.fontSans, fontSize: 12, color: componentTheme.fgMuted, whiteSpace: 'nowrap' }}
+        >
+          {note}
+        </Box>
+      )}
       {statuses.length > 0 && (
         <Box
           data-testid='unit-status-icons'

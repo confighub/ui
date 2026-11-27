@@ -195,6 +195,12 @@ export interface FieldDiff {
   /** What happened to the leaf. A Rename is the Update of its merge-key field. */
   kind?: 'Add' | 'Delete' | 'Update';
   /**
+   * The stage key of the server's change this leaf is part of. The leaves of one added or
+   * deleted list element, or of one replaced block, are one change, so they count once;
+   * the leaves of one element that changed field by field are each a change of their own.
+   */
+  change?: string;
+  /**
    * The types of `oldValue` and `newValue`, from the server's Diff, so a value written
    * back keeps its type: an env var's `"2"` stays a string. Absent on a side with no value,
    * and on a row that does not come from the server's Diff.
@@ -227,6 +233,8 @@ export interface WholeResourceChange {
   key: string;
   wholeResource: 'added' | 'deleted';
   resource: ResourceInfo | undefined;
+  /** The resource as upstream adds it (YAML), for a resource the tree has no document for. */
+  data?: string;
 }
 
 /** A row whose upstream change a guard holds back, and the guards that do. */
@@ -237,6 +245,8 @@ export interface GuardedKey {
   guards: string[];
   /** Whether every one of them is inherited at the path. */
   inherited: boolean;
+  /** The value the guard holds back, when the conflict carries a scalar. */
+  upstreamValue?: string;
 }
 
 export interface UpgradeEntry {
@@ -287,10 +297,9 @@ export interface UpgradeEntry {
    * ChangeOrder detail page is its first and only caller today (a promoted
    * stage's diff, shown against its pre-promotion revision), but the concept — "this upgrade-shaped diff is historical" —
    * belongs to the diff itself, not to any one caller. Read-only rendering
-   * only: `ComponentValuesSection` uses it to pick the 'edit' (yellow)
-   * token-diff palette instead of 'upgrade' (purple) for a field diff, the
-   * same way it already distinguishes a staged manual edit from a staged
-   * upgrade pick — undefined/false renders exactly as before.
+   * only: a view uses it to pick the 'edit' (yellow) token-diff palette
+   * instead of 'upgrade' (purple) for a field diff, as a staged manual edit
+   * differs from a staged upgrade pick — undefined/false is an upgrade.
    */
   historical?: boolean;
 }
@@ -350,7 +359,7 @@ export interface PaneUnit {
   validationWarnings?: { [key: string]: boolean };
   /** Unit.ValidationResults: what each error and warning gate found. */
   validationResults?: { [gate: string]: ValidationResult[] };
-  /** Unit.TargetID — scopes a unit to the Space's Release target set (task #60). */
+  /** Unit.TargetID — scopes a unit to the Space's Release target set. */
   targetId?: string;
   /** Not Unit.Unreleasable: a Release of the Space publishes the unit. */
   releasable: boolean;

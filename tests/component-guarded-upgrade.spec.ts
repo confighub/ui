@@ -252,8 +252,8 @@ test.describe('a guarded change in the Variant drawer', () => {
     await deleteCreated(browser, created);
   });
 
-  const replicasRow = (page: Page) =>
-    page.getByTestId('component-leaf-row').filter({ hasText: 'replicas' });
+  // The guarded change is the one field whose tick is a lock.
+  const guardedTick = (page: Page) => page.locator('[data-testid^="incoming-tick-"][data-held="true"]');
   const dialog = (page: Page) =>
     page.getByRole('dialog', { name: 'Guards withhold some of these changes' });
 
@@ -262,20 +262,15 @@ test.describe('a guarded change in the Variant drawer', () => {
     await expect(page.getByTestId('component-incoming-count')).toHaveText('2', {
       timeout: 15000,
     });
-    await expect(replicasRow(page)).toHaveCount(1);
-    await expect(replicasRow(page).getByTestId('component-upgrade-pill')).toHaveAttribute(
-      'data-staged',
-      'false',
-    );
+    await expect(guardedTick(page)).toHaveCount(1);
+    await expect(guardedTick(page).locator('input')).not.toBeChecked();
     // Upgrade counts what is ticked: the image. Select all ticks no guarded change, so with the
     // image ticked it has nothing left to offer.
-    await expect(page.getByTestId('component-upgrade-button')).toContainText('1');
+    await expect(page.getByTestId('component-upgrade-button')).toHaveText('Upgrade 1');
     await expect(page.getByTestId('component-select-all-button')).toHaveCount(0);
 
-    await replicasRow(page).getByTestId('component-upgrade-pill').hover();
-    await expect(page.getByRole('tooltip')).toContainText(
-      'guard Scale=RegionSpecific (inherited) keeps it',
-    );
+    // Its hover names the guard.
+    await expect(guardedTick(page)).toHaveAttribute('title', /guard Scale=RegionSpecific \(inherited\) keeps it/);
   });
 
   test('left unticked, Upgrade lands the rest and asks nothing', async ({ page }) => {
@@ -291,9 +286,9 @@ test.describe('a guarded change in the Variant drawer', () => {
 
   test('ticked, Upgrade asks, and cleared it lands', async ({ page }) => {
     await openProdPane(page, appLabel, chain!);
-    await expect(replicasRow(page)).toHaveCount(1, { timeout: 15000 });
-    await replicasRow(page).getByRole('checkbox').click();
-    await expect(page.getByTestId('component-upgrade-button')).toContainText('2');
+    await expect(guardedTick(page)).toHaveCount(1, { timeout: 15000 });
+    await guardedTick(page).locator('input').click();
+    await expect(page.getByTestId('component-upgrade-button')).toHaveText('Upgrade 2');
     await page.getByTestId('component-upgrade-button').click();
 
     await expect(dialog(page).getByTestId('guarded-changes')).toContainText(
@@ -311,17 +306,13 @@ test.describe('a guarded change in the Variant drawer', () => {
     page,
   }) => {
     await openProdPane(page, appLabel, chain!);
-    await expect(replicasRow(page)).toHaveCount(1, { timeout: 15000 });
-    await replicasRow(page).getByRole('checkbox').click();
+    await expect(guardedTick(page)).toHaveCount(1, { timeout: 15000 });
+    await guardedTick(page).locator('input').click();
     await page.getByTestId('component-upgrade-button').click();
     await dialog(page).getByRole('button', { name: 'Upgrade without them' }).click();
     await expect.poll(prodData, { timeout: 15000 }).toContain('nginx:1.28');
     expect(await prodData()).toContain('replicas: 1');
-    // The row still offers the change rather than showing it as written.
-    await expect(replicasRow(page).getByTestId('component-upgrade-pill')).toHaveAttribute(
-      'data-staged',
-      'false',
-      { timeout: 15000 },
-    );
+    // The field still offers the change rather than showing it as written.
+    await expect(guardedTick(page).locator('input')).not.toBeChecked({ timeout: 15000 });
   });
 });

@@ -4,7 +4,7 @@
 import { useState } from 'react';
 
 import CloseIcon from '@mui/icons-material/Close';
-import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
+import { CompareIcon } from '@/components/icons/CompareIcon';
 import FunctionsIcon from '@mui/icons-material/Functions';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
@@ -115,7 +115,7 @@ export function SelectionBar() {
                   iconOnlyBelow(COMPACT, 32),
                 ]}
               >
-                <CompareArrowsIcon className={ICON} sx={ICON_SX} />
+                <CompareIcon className={ICON} size={ICON_SX.fontSize} />
                 <span className={LABEL}>Compare with…</span>
                 <Kbd aria-hidden sx={KBD_ON_BUTTON_SX}>c</Kbd>
               </Button>
@@ -132,7 +132,7 @@ export function SelectionBar() {
                 data-testid='vx-selection-compare'
                 sx={[{ gap: 0.75, whiteSpace: 'nowrap' }, iconOnlyBelow(COMPACT, 32)]}
               >
-                <CompareArrowsIcon className={ICON} sx={ICON_SX} />
+                <CompareIcon className={ICON} size={ICON_SX.fontSize} />
                 <span className={LABEL}>{firstFive ? `Compare first ${MAX_COMPARE_SLOTS}` : 'Compare'}</span>
                 <Kbd aria-hidden sx={KBD_ON_BUTTON_SX}>c</Kbd>
               </Button>

@@ -19,8 +19,10 @@ async function navigateAndSelectApp(page: Page, appLabel: string): Promise<void>
   await page
     .waitForSelector('[role="progressbar"]', { state: 'hidden', timeout: 20000 })
     .catch(() => {});
-  await expect(page.getByText(appLabel)).toBeVisible({ timeout: 20000 });
-  await page.getByText(appLabel).click();
+  // The tree's own item: the page's trail can name the Component too.
+  const item = page.getByTestId(`app-tree-item-${appLabel}`);
+  await expect(item).toBeVisible({ timeout: 20000 });
+  await item.click();
 }
 
 test.describe('space settings sheet', () => {
@@ -95,9 +97,9 @@ test.describe('space settings sheet', () => {
     await expect(node).toBeVisible({ timeout: 10000 });
     await node.click();
 
-    const cog = page.getByTestId('component-space-settings-cog');
-    await expect(cog).toBeVisible();
-    await cog.click();
+    const settingsTab = page.getByTestId('component-pane-tab-settings');
+    await expect(settingsTab).toBeVisible();
+    await settingsTab.click();
     const sheet = page.getByTestId('space-settings-sheet');
     await expect(sheet).toBeVisible();
     await expect(sheet.getByText('Owner', { exact: true })).toBeVisible();
@@ -128,7 +130,7 @@ test.describe('space settings sheet', () => {
     const node = page.locator('.react-flow__node').filter({ hasText: targetSlug });
     await expect(node).toBeVisible({ timeout: 10000 });
     await node.click();
-    await page.getByTestId('component-space-settings-cog').click();
+    await page.getByTestId('component-pane-tab-settings').click();
     await expect(page.getByTestId('space-settings-sheet')).toBeVisible();
 
     await page.getByTestId('space-settings-delete-open').click();

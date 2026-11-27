@@ -576,7 +576,7 @@ export function promotionFor(
  * THE RESTORED BAR, WHICH IS BOTH INTENTS'. Setting `AbortedReason` is
  * otherwise reversible — clearing it "is what puts it back on its way, so it is
  * writable at almost any point in a ChangeOrder's life"
- * (`validateChangeOrderFields`, internal/views/changeorder.go) — and the server
+ * (the server's `validateChangeOrderFields`) — and the server
  * refuses the clearing in exactly one case, a ChangeOrder something has been
  * restored of, which is `RestoreTagID != uuid.Nil`. Read from the Tag rather
  * than from `RestoredSpaceIDs`, which is a projection of it: the server's own

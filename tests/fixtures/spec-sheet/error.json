@@ -1,0 +1,25 @@
+{
+ "unit": {
+  "space": "prod",
+  "slug": "openclaw",
+  "kind": "Deployment"
+ },
+ "error": {
+  "status": 500
+ },
+ "groups": [],
+ "rows": [],
+ "meta": {
+  "fixture": "error",
+  "source": "invented"
+ },
+ "resources": [
+  {
+   "id": "deployment-openclaw",
+   "kind": "Deployment",
+   "name": "openclaw",
+   "apiVersion": "apps/v1",
+   "groups": []
+  }
+ ]
+}

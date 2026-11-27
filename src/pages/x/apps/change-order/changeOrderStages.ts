@@ -131,7 +131,7 @@ const FAN_OUT_UPDATE_TYPES: ReadonlySet<string> = new Set(['TransformPaths', 'Up
 
 /**
  * Whether the Space a ChangeOrder resides in holds the change before anything
- * has been promoted into it — the server's `changeOrderOwnSpaceReached`.
+ * has been promoted into it — the server's `ChangeOrderOwnSpaceReached`.
  *
  * It does for UpgradeUnit and MergeUnits: the ChangeOrder was made in the Space
  * holding the change, which is the base its variants upgrade from. It does not

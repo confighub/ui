@@ -4,7 +4,9 @@
 import { usePostHog } from 'posthog-js/react';
 import { useCallback } from 'react';
 import { ANALYTICS_EVENTS } from '../utility/analytics-constants';
+import { telemetryEnabled } from '../utility/telemetry';
 import type {
+  ConfigViewShownProperties,
   EntityCreatedProperties,
   EntityBulkCreatedProperties,
 } from '../types/analytics';
@@ -18,8 +20,9 @@ import type {
 export function useAnalytics() {
   const posthog = usePostHog();
 
-  // Disable tracking in development and test environments
-  const isTrackingEnabled = import.meta.env.MODE === 'production';
+  // Disable tracking in development and test environments, and where the deployment has no
+  // PostHog key (no provider, so nothing to send to).
+  const isTrackingEnabled = import.meta.env.MODE === 'production' && telemetryEnabled();
 
   /**
    * Track entity creation event
@@ -47,8 +50,19 @@ export function useAnalytics() {
     [posthog, isTrackingEnabled]
   );
 
+  /** A view of a Component's configuration is on screen. */
+  const trackConfigViewShown = useCallback(
+    (properties: ConfigViewShownProperties) => {
+      if (isTrackingEnabled) {
+        posthog.capture(ANALYTICS_EVENTS.CONFIG_VIEW_SHOWN, properties);
+      }
+    },
+    [posthog, isTrackingEnabled]
+  );
+
   return {
     trackEntityCreated,
     trackEntityBulkCreated,
+    trackConfigViewShown,
   };
 }

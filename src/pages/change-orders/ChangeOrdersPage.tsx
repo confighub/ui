@@ -1207,7 +1207,7 @@ export default function ChangeOrdersPage() {
           REVERTED. Routing `componentTheme`'s tokens through
           `var(--ct-x, <present value>)` should have been inert everywhere the
           property is undefined. A computed-colour census of the ChangeOrder side
-          pane — `ComponentValuesSection`'s other consumer — showed six values
+          pane showed six values
           moving outside this page: two alpha-tinted backgrounds
           (`rgba(21,128,61,.15)`, `rgba(159,66,0,.15)`) vanished entirely and
           black rose by 76 elements. Something composites alpha from these
@@ -1221,9 +1221,7 @@ export default function ChangeOrdersPage() {
 
           `.seg-dot`/`.seg-label` are `TreeDiffSection`'s own path-segment dot
           and label classes, still present now that the page's diffs render
-          through it. `.dim-path` is NOT: that class belongs to
-          `ComponentValuesSection` alone, which this page no longer mounts, so
-          the override was removed with it rather than left aimed at nothing.
+          through it.
         */
         '& .seg-dot': { opacity: 1, color: changeOrderInk.subtle },
         '& .seg-label': { color: changeOrderInk.muted },

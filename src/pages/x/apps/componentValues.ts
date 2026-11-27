@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Shared helpers for presenting component field values. Kept in a leaf module so
-// both ComponentValuesSection and InspectPanel can use them without a cycle.
+// the views that present values can use them without a cycle.
 
 import type { LeafValueType } from './configParser';
 

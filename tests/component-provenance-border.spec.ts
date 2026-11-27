@@ -45,8 +45,8 @@ async function navigateAndSelectApp(page: Page, appLabel: string): Promise<void>
   await page
     .waitForSelector('[role="progressbar"]', { state: 'hidden', timeout: 20000 })
     .catch(() => {});
-  await expect(page.getByText(appLabel)).toBeVisible({ timeout: 20000 });
-  await page.getByText(appLabel).click();
+  await expect(page.getByTestId(`app-tree-item-${appLabel}`)).toBeVisible({ timeout: 20000 });
+  await page.getByTestId(`app-tree-item-${appLabel}`).click();
 }
 
 test.describe('provenance border (differs-from-upstream) survives a landed dry-run', () => {
@@ -169,24 +169,20 @@ test.describe('provenance border (differs-from-upstream) survives a landed dry-r
     await expect(prodNode).toBeVisible({ timeout: 10000 });
     await prodNode.click();
 
-    await expect(page.getByTestId('component-upgrade-button')).toBeVisible({ timeout: 10000 });
+    // The pane is ready: its scope chips are drawn (the footer shows only when something is staged).
+  await expect(page.getByTestId('component-filter-all')).toBeVisible({ timeout: 10000 });
 
     // Gate on the dry-run having actually landed and having found the pending
     // upgrade — not a bare timeout, which would pass vacuously pre-dry-run.
     await expect(page.getByTestId('component-incoming-count')).toHaveText('1', { timeout: 20000 });
 
-    // The pane defaults to the Incoming/Upgradable filter for a node with a real
-    // upgrade, which is already narrowed to upgradable rows — so `replicas`
-    // showing here also proves it is simultaneously listed as upgradable.
-    const searchBox = page.getByPlaceholder('Search...');
-    await searchBox.fill('replicas');
-
-    const leafRow = page.getByTestId('component-leaf-row').filter({ hasText: 'replicas' });
-    await expect(async () => {
-      expect(await leafRow.count()).toBe(1);
-    }).toPass({ timeout: 15000 });
-
-    await expect(leafRow).toHaveAttribute('data-differs-upstream', 'true', { timeout: 10000 });
+    // The pane opens on Incoming for a node with a real upgrade. The sheet has no provenance
+    // border: a field this Unit set is bold, and the field keeps its own value in All while the
+    // dry run is about to overwrite it.
+    await page.getByTestId('component-filter-all').click();
+    const replicas = page.locator('.bbody .v[data-path="data.replicas"]');
+    await expect(replicas).toHaveText('3', { timeout: 15000 });
+    await expect(replicas).toHaveClass(/\bhere\b/);
   });
 
   // T3 — a staged (uncommitted) manual edit must show the border IMMEDIATELY,
@@ -200,40 +196,36 @@ test.describe('provenance border (differs-from-upstream) survives a landed dry-r
     await expect(prodNode).toBeVisible({ timeout: 10000 });
     await prodNode.click();
 
-    await expect(page.getByTestId('component-upgrade-button')).toBeVisible({ timeout: 10000 });
+    // The pane is ready: its scope chips are drawn (the footer shows only when something is staged).
+  await expect(page.getByTestId('component-filter-all')).toBeVisible({ timeout: 10000 });
     const allTab = page.getByTestId('component-filter-all');
     await expect(allTab).toBeVisible({ timeout: 10000 });
     await allTab.click();
 
-    const searchBox = page.getByPlaceholder('Search...');
-    await searchBox.fill('untouched');
+    const untouched = page.locator('.bbody .v[data-path="data.untouched"]');
+    await expect(untouched).toHaveText('same', { timeout: 15000 });
+    // Sanity: unedited, this field matches upstream and is not a change.
+    await expect(page.getByTestId('scope-changes')).toContainText('0');
 
-    const leafRow = page.getByTestId('component-leaf-row').filter({ hasText: 'untouched' });
-    await expect(async () => {
-      expect(await leafRow.count()).toBe(1);
-    }).toPass({ timeout: 15000 });
-
-    // Sanity: unedited, this path matches upstream — no border.
-    await expect(leafRow).toHaveAttribute('data-differs-upstream', 'false', { timeout: 10000 });
-
-    // Inline-edit the value (deferred — nothing written until commit).
-    await leafRow.getByText('same').click();
-    const editInput = page.getByTestId('field-edit-input');
+    // Edit the value (deferred: nothing is written until the footer commits).
+    await untouched.click();
+    const editInput = page.getByTestId('field-editor-input');
     await expect(editInput).toBeVisible({ timeout: 5000 });
     await editInput.fill('same-but-edited');
     await editInput.press('Enter');
 
-    // The border must appear the instant the edit is staged, before any commit.
-    await expect(leafRow.locator('.pill-group.pill-staged')).toHaveCount(1, { timeout: 10000 });
-    await expect(leafRow).toHaveAttribute('data-differs-upstream', 'true', { timeout: 10000 });
+    // The change shows the instant the edit is staged, before any commit, in the footer. The
+    // Changes count is the Unreleased fields only, so it stays.
+    await expect(untouched).toHaveClass(/staged/, { timeout: 10000 });
+    await expect(page.getByTestId('component-upgrade-button')).toHaveText('Update 1');
+    await expect(page.getByTestId('scope-changes')).toContainText('0');
 
-    // Revert the staged edit (uncheck its pill) — the border must clear again.
-    // A plain click (not .uncheck()) on the checkbox's own visible box, rather
-    // than the input, avoids Playwright's post-action "wait for navigation"
-    // actionability check hanging on this MUI-wrapped control.
-    const pill = leafRow.getByTestId('component-upgrade-pill');
-    await pill.locator('input[type="checkbox"]').click({ force: true });
-    await expect(leafRow).toHaveAttribute('data-differs-upstream', 'false', { timeout: 10000 });
+    // Typing the value the Unit holds takes the staged edit back: the change clears again.
+    await untouched.click();
+    await page.getByTestId('field-editor-input').fill('same');
+    await page.getByTestId('field-editor-input').press('Enter');
+    await expect(untouched).not.toHaveClass(/staged/, { timeout: 10000 });
+    await expect(page.getByTestId('component-upgrade-button')).toHaveCount(0);
   });
 });
 
@@ -337,12 +329,13 @@ async function setupL2Fixture(page: Page, api: ApiHelper, devYaml: string): Prom
 async function openProdPane(page: Page, appLabel: string, prodTargetSlug: string): Promise<void> {
   await page.goto(`/components?app=${encodeURIComponent(appLabel)}`);
   await page.waitForSelector('[role="progressbar"]', { state: 'hidden', timeout: 20000 }).catch(() => {});
-  await expect(page.getByText(appLabel)).toBeVisible({ timeout: 20000 });
-  await page.getByText(appLabel).click();
+  await expect(page.getByTestId(`app-tree-item-${appLabel}`)).toBeVisible({ timeout: 20000 });
+  await page.getByTestId(`app-tree-item-${appLabel}`).click();
   const prodNode = page.locator('.react-flow__node').filter({ hasText: prodTargetSlug });
   await expect(prodNode).toBeVisible({ timeout: 10000 });
   await prodNode.click();
-  await expect(page.getByTestId('component-upgrade-button')).toBeVisible({ timeout: 10000 });
+  // The pane is ready: its scope chips are drawn (the footer shows only when something is staged).
+  await expect(page.getByTestId('component-filter-all')).toBeVisible({ timeout: 10000 });
   // The fixture below has no pending upgrade (dev never moves past prod's
   // clone point), so the pane already defaults to the "All" tab — but click it
   // explicitly (idempotent) rather than assume that default holds.
@@ -357,7 +350,7 @@ test.describe('Kept on merge chip (L2)', () => {
   // T5 — protected path. Two scalar local overrides in prod: fieldA
   // unprotected (plain write), fieldB protected (via `protect: true`). The
   // chip must read 1 of 2 and be amber (risk).
-  test('a protected local override counts toward N; an unprotected one does not', async ({ page }) => {
+  test('only a protected local override is kept on merge', async ({ page }) => {
     const api = new ApiHelper(page);
     await page.goto('/');
     await page.waitForResponse((r) => r.url().includes('/api/space') && r.request().method() === 'GET' && r.ok());
@@ -385,10 +378,11 @@ test.describe('Kept on merge chip (L2)', () => {
 
     await openProdPane(page, appLabel, prodTargetSlug);
 
-    const chip = page.getByTestId('component-kept-on-merge-chip');
-    await expect(chip).toBeVisible({ timeout: 15000 });
-    await expect(page.getByTestId('component-kept-on-merge-count')).toHaveText('1 of 2');
-    await expect(chip).toHaveAttribute('data-risk', 'true');
+    // The Kept on merge scope counts the protected override alone, and draws it alone.
+    await expect(page.getByTestId('component-kept-on-merge-count')).toHaveText('1', { timeout: 15000 });
+    await page.getByTestId('scope-kept').click();
+    await expect(page.locator('.bbody .v[data-path="data.fieldB"]')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('.bbody .v[data-path="data.fieldA"]')).toHaveCount(0);
 
     await api.deleteSpace(prodSpaceId, true).catch(() => {});
     await api.deleteSpace(devSpaceId, true).catch(() => {});

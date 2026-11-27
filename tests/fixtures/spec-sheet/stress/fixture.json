@@ -1,0 +1,4559 @@
+{
+ "unit": {
+  "space": "prod-eu-west-1-customer-acme-corporation-international-holdings",
+  "slug": "payments-orchestrator-with-an-extremely-long-unit-slug-that-does-not-stop",
+  "kind": "Deployment",
+  "upstream": {
+   "space": "base",
+   "slug": "payments-orchestrator",
+   "revision": 776
+  }
+ },
+ "groups": [
+  {
+   "id": "dep1",
+   "name": "payments-orchestrator-with-a-name-that-keeps-going-and-going-past-any-sane-limit-v2",
+   "kind": "deployment",
+   "path": "metadata, spec"
+  },
+  {
+   "id": "pod1",
+   "name": "Pod",
+   "kind": "pod",
+   "path": "spec.template"
+  },
+  {
+   "id": "init0",
+   "name": "init-step-00-with-an-extra-long-init-container-name",
+   "kind": "init",
+   "path": "spec.template.spec.initContainers.?name=init-step-00"
+  },
+  {
+   "id": "init1",
+   "name": "init-step-01",
+   "kind": "init",
+   "path": "spec.template.spec.initContainers.?name=init-step-01"
+  },
+  {
+   "id": "init2",
+   "name": "init-step-02",
+   "kind": "init",
+   "path": "spec.template.spec.initContainers.?name=init-step-02"
+  },
+  {
+   "id": "init3",
+   "name": "init-step-03",
+   "kind": "init",
+   "path": "spec.template.spec.initContainers.?name=init-step-03"
+  },
+  {
+   "id": "init4",
+   "name": "init-step-04",
+   "kind": "init",
+   "path": "spec.template.spec.initContainers.?name=init-step-04"
+  },
+  {
+   "id": "init5",
+   "name": "init-step-05",
+   "kind": "init",
+   "path": "spec.template.spec.initContainers.?name=init-step-05"
+  },
+  {
+   "id": "init6",
+   "name": "init-step-06",
+   "kind": "init",
+   "path": "spec.template.spec.initContainers.?name=init-step-06"
+  },
+  {
+   "id": "init7",
+   "name": "init-step-07",
+   "kind": "init",
+   "path": "spec.template.spec.initContainers.?name=init-step-07"
+  },
+  {
+   "id": "init8",
+   "name": "init-step-08",
+   "kind": "init",
+   "path": "spec.template.spec.initContainers.?name=init-step-08"
+  },
+  {
+   "id": "init9",
+   "name": "init-step-09",
+   "kind": "init",
+   "path": "spec.template.spec.initContainers.?name=init-step-09"
+  },
+  {
+   "id": "c0",
+   "name": "app",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=app"
+  },
+  {
+   "id": "c1",
+   "name": "sidecar-01-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=sidecar-01-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "id": "c2",
+   "name": "sidecar-02",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=sidecar-02"
+  },
+  {
+   "id": "c3",
+   "name": "sidecar-03",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=sidecar-03"
+  },
+  {
+   "id": "c4",
+   "name": "sidecar-04",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=sidecar-04"
+  },
+  {
+   "id": "c5",
+   "name": "sidecar-05",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=sidecar-05"
+  },
+  {
+   "id": "c6",
+   "name": "sidecar-06",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=sidecar-06"
+  },
+  {
+   "id": "c7",
+   "name": "sidecar-07",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=sidecar-07"
+  },
+  {
+   "id": "c8",
+   "name": "sidecar-08",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=sidecar-08"
+  },
+  {
+   "id": "c9",
+   "name": "sidecar-09",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=sidecar-09"
+  },
+  {
+   "id": "c10",
+   "name": "sidecar-10",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=sidecar-10"
+  },
+  {
+   "id": "c11",
+   "name": "sidecar-11",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=sidecar-11"
+  },
+  {
+   "id": "c12",
+   "name": "sidecar-12",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=sidecar-12"
+  },
+  {
+   "id": "c13",
+   "name": "sidecar-13",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=sidecar-13"
+  },
+  {
+   "id": "c14",
+   "name": "sidecar-14",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=sidecar-14"
+  },
+  {
+   "id": "vol1",
+   "name": "Volumes",
+   "kind": "volumes",
+   "path": "spec.template.spec.volumes"
+  },
+  {
+   "id": "dep2",
+   "name": "(no name)",
+   "kind": "deployment",
+   "path": "metadata, spec"
+  },
+  {
+   "id": "dep2-c0",
+   "name": "worker",
+   "kind": "container",
+   "path": "spec.template.spec.containers.?name=worker"
+  },
+  {
+   "id": "svc0",
+   "name": "svc-0",
+   "kind": "service",
+   "path": "metadata, spec"
+  },
+  {
+   "id": "svc1",
+   "name": "svc-1",
+   "kind": "service",
+   "path": "metadata, spec"
+  },
+  {
+   "id": "cm0",
+   "name": "cm",
+   "kind": "configmap",
+   "path": "metadata, data"
+  },
+  {
+   "id": "cm1",
+   "name": "cm1",
+   "kind": "configmap",
+   "path": "metadata, data"
+  },
+  {
+   "id": "vs0",
+   "name": "vs",
+   "kind": "custom",
+   "path": "metadata, spec"
+  },
+  {
+   "id": "sa0",
+   "name": "sa",
+   "kind": "custom",
+   "path": "metadata"
+  }
+ ],
+ "rows": [
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "name"
+   ],
+   "fullPath": "metadata.name",
+   "value": "payments-orchestrator-with-a-name-that-keeps-going-and-going-past-any-sane-limit-v2",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "namespace"
+   ],
+   "fullPath": "metadata.namespace",
+   "value": "",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "app.kubernetes.io/very-long-label-key-segment-very-long-label-key-segment-very-long-label-key-segment-very-long-label-key-segment-very-long-label-key-segment-very-long-label-key-segment-very-long-labe"
+   ],
+   "fullPath": "metadata.labels.app.kubernetes.io/very-long-label-key-segment-very-long-label-key-segment-very-long-label-key-segment-very-long-label-key-segment-very-long-label-key-segment-very-long-label-key-segment-very-long-labe",
+   "value": "value-0",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-value-0",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-01"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-01",
+   "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-xxxxxxxxxxxx",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-02"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-02",
+   "value": "",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-03"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-03",
+   "value": "value-3",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-value-3",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-04"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-04",
+   "value": "value-4",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-value-4",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-05"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-05",
+   "value": "value-5",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-value-5",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-06"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-06",
+   "value": "value-6",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-value-6",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-07"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-07",
+   "value": "value-7",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-value-7",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-08"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-08",
+   "value": "value-8",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-value-8",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-09"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-09",
+   "value": "value-9",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-value-9",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-10"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-10",
+   "value": "value-10",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-11"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-11",
+   "value": "value-11",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-12"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-12",
+   "value": "value-12",
+   "origin": "here"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-13"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-13",
+   "value": "value-13",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-14"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-14",
+   "value": "value-14",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-15"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-15",
+   "value": "value-15",
+   "origin": "here"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-16"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-16",
+   "value": "value-16",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-17"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-17",
+   "value": "value-17",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-18"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-18",
+   "value": "value-18",
+   "origin": "here"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-19"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-19",
+   "value": "value-19",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-20"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-20",
+   "value": "value-20",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-21"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-21",
+   "value": "value-21",
+   "origin": "here"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-22"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-22",
+   "value": "value-22",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-23"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-23",
+   "value": "value-23",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-24"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-24",
+   "value": "value-24",
+   "origin": "here"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-25"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-25",
+   "value": "value-25",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-26"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-26",
+   "value": "value-26",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-27"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-27",
+   "value": "value-27",
+   "origin": "here"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-28"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-28",
+   "value": "value-28",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-29"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-29",
+   "value": "value-29",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-30"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-30",
+   "value": "value-30",
+   "origin": "here"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-31"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-31",
+   "value": "value-31",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-32"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-32",
+   "value": "value-32",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-33"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-33",
+   "value": "value-33",
+   "origin": "here"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-34"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-34",
+   "value": "value-34",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-35"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-35",
+   "value": "value-35",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-36"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-36",
+   "value": "value-36",
+   "origin": "here"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-37"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-37",
+   "value": "value-37",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-38"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-38",
+   "value": "value-38",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "labels",
+    "team.example.com/label-39"
+   ],
+   "fullPath": "metadata.labels.team.example.com/label-39",
+   "value": "value-39",
+   "origin": "here"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-00"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-00",
+   "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-01"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-01",
+   "value": "{\"rules\":[{\"apiGroups\":[\"*\"],\"resources\":[\"*\"],\"verbs\":[\"*\"]}],\"nested\":{\"a\":{\"b\":{\"c\":{\"d\":[1,2,3,null,true,false,0,-1,1e308]}}}}}",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "{\"rules\":[{\"apiGroups\":[\"*\"],\"resources\":[\"*\"],\"verbs\":[\"*\"]}],\"nested\":{\"a\":{\"b\":{\"c\":{\"d\":[1,2,3,null,true,false,0,-1,1e308]}}}}}-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-02"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-02",
+   "value": "line one\nline two\n\tindented line three\n\n\nline six after blanks",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "line one\nline two\n\tindented line three\n\n\nline six after blanks-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-03"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-03",
+   "value": "<script>alert('x')</script> & &amp; \"quotes\" 'single'",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "<script>alert('x')</script> & &amp; \"quotes\" 'single'-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-04"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-04",
+   "value": "مرحبا بالعالم — שלום עולם — 你好世界 — 🚀🔥💥👩🏽‍💻🏳️‍🌈",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "مرحبا بالعالم — שלום עולם — 你好世界 — 🚀🔥💥👩🏽‍💻🏳️‍🌈-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-05"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-05",
+   "value": "note 5",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "note 5-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-06"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-06",
+   "value": "note 6",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-07"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-07",
+   "value": "note 7",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-08"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-08",
+   "value": "note 8",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-09"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-09",
+   "value": "note 9",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-10"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-10",
+   "value": "note 10",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-11"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-11",
+   "value": "note 11",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-12"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-12",
+   "value": "note 12",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-13"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-13",
+   "value": "note 13",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-14"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-14",
+   "value": "note 14",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-15"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-15",
+   "value": "note 15",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-16"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-16",
+   "value": "note 16",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-17"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-17",
+   "value": "note 17",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-18"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-18",
+   "value": "note 18",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-19"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-19",
+   "value": "note 19",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-20"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-20",
+   "value": "note 20",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-21"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-21",
+   "value": "note 21",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-22"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-22",
+   "value": "note 22",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-23"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-23",
+   "value": "note 23",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "metadata",
+    "annotations",
+    "annotations.example.com/note-24"
+   ],
+   "fullPath": "metadata.annotations.annotations.example.com/note-24",
+   "value": "note 24",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "spec",
+    "replicas"
+   ],
+   "fullPath": "spec.replicas",
+   "value": "50",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-50",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "spec",
+    "revisionHistoryLimit"
+   ],
+   "fullPath": "spec.revisionHistoryLimit",
+   "value": "0",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "spec",
+    "progressDeadlineSeconds"
+   ],
+   "fullPath": "spec.progressDeadlineSeconds",
+   "value": "999999999999999999999999",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "spec",
+    "paused"
+   ],
+   "fullPath": "spec.paused",
+   "value": "false",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "spec",
+    "minReadySeconds"
+   ],
+   "fullPath": "spec.minReadySeconds",
+   "value": null,
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "spec",
+    "selector",
+    "matchLabels",
+    "app"
+   ],
+   "fullPath": "spec.selector.matchLabels.app",
+   "value": "payments-orchestrator-with-a-name-that-keeps-going-and-going-past-any-sane-limit-v2",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "spec",
+    "strategy",
+    "type"
+   ],
+   "fullPath": "spec.strategy.type",
+   "value": "RollingUpdate",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep1",
+   "path": [
+    "spec",
+    "strategy",
+    "rollingUpdate",
+    "maxSurge"
+   ],
+   "fullPath": "spec.strategy.rollingUpdate.maxSurge",
+   "value": "100%",
+   "origin": "upstream"
+  },
+  {
+   "group": "pod1",
+   "path": [
+    "metadata",
+    "labels",
+    "pod.example.com/l0"
+   ],
+   "fullPath": "spec.template.metadata.labels.pod.example.com/l0",
+   "value": "v0",
+   "origin": "upstream"
+  },
+  {
+   "group": "pod1",
+   "path": [
+    "metadata",
+    "labels",
+    "pod.example.com/l1"
+   ],
+   "fullPath": "spec.template.metadata.labels.pod.example.com/l1",
+   "value": "v1",
+   "origin": "upstream"
+  },
+  {
+   "group": "pod1",
+   "path": [
+    "metadata",
+    "labels",
+    "pod.example.com/l2"
+   ],
+   "fullPath": "spec.template.metadata.labels.pod.example.com/l2",
+   "value": "v2",
+   "origin": "upstream"
+  },
+  {
+   "group": "pod1",
+   "path": [
+    "metadata",
+    "labels",
+    "pod.example.com/l3"
+   ],
+   "fullPath": "spec.template.metadata.labels.pod.example.com/l3",
+   "value": "v3",
+   "origin": "upstream"
+  },
+  {
+   "group": "pod1",
+   "path": [
+    "metadata",
+    "labels",
+    "pod.example.com/l4"
+   ],
+   "fullPath": "spec.template.metadata.labels.pod.example.com/l4",
+   "value": "v4",
+   "origin": "upstream"
+  },
+  {
+   "group": "pod1",
+   "path": [
+    "metadata",
+    "labels",
+    "pod.example.com/l5"
+   ],
+   "fullPath": "spec.template.metadata.labels.pod.example.com/l5",
+   "value": "v5",
+   "origin": "upstream"
+  },
+  {
+   "group": "pod1",
+   "path": [
+    "spec",
+    "automountServiceAccountToken"
+   ],
+   "fullPath": "spec.template.spec.automountServiceAccountToken",
+   "value": "false",
+   "origin": "upstream"
+  },
+  {
+   "group": "pod1",
+   "path": [
+    "spec",
+    "securityContext",
+    "fsGroup"
+   ],
+   "fullPath": "spec.template.spec.securityContext.fsGroup",
+   "value": "0",
+   "origin": "upstream"
+  },
+  {
+   "group": "pod1",
+   "path": [
+    "spec",
+    "nodeSelector",
+    "topology.kubernetes.io/zone"
+   ],
+   "fullPath": "spec.template.spec.nodeSelector.topology.kubernetes.io/zone",
+   "value": "eu-west-1a",
+   "origin": "upstream"
+  },
+  {
+   "group": "init0",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-00.image",
+   "value": "busybox:1.37",
+   "origin": "upstream"
+  },
+  {
+   "group": "init0",
+   "path": [
+    "command"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-00.command",
+   "value": [
+    "sh",
+    "-c",
+    "echo step 0"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "init1",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-01.image",
+   "value": "busybox:1.37",
+   "origin": "upstream"
+  },
+  {
+   "group": "init1",
+   "path": [
+    "command"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-01.command",
+   "value": [
+    "sh",
+    "-c",
+    "echo step 1"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "init2",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-02.image",
+   "value": "busybox:1.37",
+   "origin": "upstream"
+  },
+  {
+   "group": "init2",
+   "path": [
+    "command"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-02.command",
+   "value": [
+    "sh",
+    "-c",
+    "echo step 2"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "init3",
+   "path": [
+    "command"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-03.command",
+   "value": [
+    "sh",
+    "-c",
+    "echo step 3"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "init4",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-04.image",
+   "value": "busybox:1.37",
+   "origin": "upstream"
+  },
+  {
+   "group": "init4",
+   "path": [
+    "command"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-04.command",
+   "value": [
+    "sh",
+    "-c",
+    "echo step 4"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "init5",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-05.image",
+   "value": "busybox:1.37",
+   "origin": "upstream"
+  },
+  {
+   "group": "init5",
+   "path": [
+    "command"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-05.command",
+   "value": [
+    "sh",
+    "-c",
+    "echo step 5"
+   ],
+   "origin": "here"
+  },
+  {
+   "group": "init6",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-06.image",
+   "value": "busybox:1.37",
+   "origin": "upstream"
+  },
+  {
+   "group": "init6",
+   "path": [
+    "command"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-06.command",
+   "value": [
+    "sh",
+    "-c",
+    "echo step 6"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "init7",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-07.image",
+   "value": "busybox:1.37",
+   "origin": "upstream"
+  },
+  {
+   "group": "init7",
+   "path": [
+    "command"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-07.command",
+   "value": [
+    "sh",
+    "-c",
+    "echo step 7"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "init8",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-08.image",
+   "value": "busybox:1.37",
+   "origin": "upstream"
+  },
+  {
+   "group": "init8",
+   "path": [
+    "command"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-08.command",
+   "value": [
+    "sh",
+    "-c",
+    "echo step 8"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "init9",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-09.image",
+   "value": "busybox:1.37",
+   "origin": "upstream"
+  },
+  {
+   "group": "init9",
+   "path": [
+    "command"
+   ],
+   "fullPath": "spec.template.spec.initContainers.?name=init-step-09.command",
+   "value": [
+    "sh",
+    "-c",
+    "echo step 9"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.image",
+   "value": "registry.internal.example.com:5000/org/org/org/org/org/org/org/org/org/org/org/org/org/org/org/org/org/org/org/org/payments/orchestrator@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "registry.internal.example.com:5000/org/org/org/org/org/org/org/org/org/org/org/org/org/org/org/org/org/org/org/org/payments/orchestrator@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "imagePullPolicy"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.imagePullPolicy",
+   "value": "Always",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "command"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.command",
+   "value": [
+    "sh",
+    "-c",
+    "until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "args"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.args",
+   "value": [
+    "--flag-0=value-0",
+    "--flag-1=value-1",
+    "--flag-2=value-2",
+    "--flag-3=value-3",
+    "--flag-4=value-4",
+    "--flag-5=value-5",
+    "--flag-6=value-6",
+    "--flag-7=value-7",
+    "--flag-8=value-8",
+    "--flag-9=value-9",
+    "--flag-10=value-10",
+    "--flag-11=value-11",
+    "--flag-12=value-12",
+    "--flag-13=value-13",
+    "--flag-14=value-14",
+    "--flag-15=value-15",
+    "--flag-16=value-16",
+    "--flag-17=value-17",
+    "--flag-18=value-18",
+    "--flag-19=value-19",
+    "--flag-20=value-20",
+    "--flag-21=value-21",
+    "--flag-22=value-22",
+    "--flag-23=value-23",
+    "--flag-24=value-24",
+    "--flag-25=value-25",
+    "--flag-26=value-26",
+    "--flag-27=value-27",
+    "--flag-28=value-28",
+    "--flag-29=value-29",
+    "--flag-30=value-30",
+    "--flag-31=value-31",
+    "--flag-32=value-32",
+    "--flag-33=value-33",
+    "--flag-34=value-34",
+    "--flag-35=value-35",
+    "--flag-36=value-36",
+    "--flag-37=value-37",
+    "--flag-38=value-38",
+    "--flag-39=value-39",
+    "--flag-40=value-40",
+    "--flag-41=value-41",
+    "--flag-42=value-42",
+    "--flag-43=value-43",
+    "--flag-44=value-44",
+    "--flag-45=value-45",
+    "--flag-46=value-46",
+    "--flag-47=value-47",
+    "--flag-48=value-48",
+    "--flag-49=value-49",
+    "--flag-50=value-50",
+    "--flag-51=value-51",
+    "--flag-52=value-52",
+    "--flag-53=value-53",
+    "--flag-54=value-54",
+    "--flag-55=value-55",
+    "--flag-56=value-56",
+    "--flag-57=value-57",
+    "--flag-58=value-58",
+    "--flag-59=value-59",
+    "--flag-60=value-60",
+    "--flag-61=value-61",
+    "--flag-62=value-62",
+    "--flag-63=value-63",
+    "--flag-64=value-64",
+    "--flag-65=value-65",
+    "--flag-66=value-66",
+    "--flag-67=value-67",
+    "--flag-68=value-68",
+    "--flag-69=value-69",
+    "--flag-70=value-70",
+    "--flag-71=value-71",
+    "--flag-72=value-72",
+    "--flag-73=value-73",
+    "--flag-74=value-74",
+    "--flag-75=value-75",
+    "--flag-76=value-76",
+    "--flag-77=value-77",
+    "--flag-78=value-78",
+    "--flag-79=value-79",
+    "--flag-80=value-80",
+    "--flag-81=value-81",
+    "--flag-82=value-82",
+    "--flag-83=value-83",
+    "--flag-84=value-84",
+    "--flag-85=value-85",
+    "--flag-86=value-86",
+    "--flag-87=value-87",
+    "--flag-88=value-88",
+    "--flag-89=value-89",
+    "--flag-90=value-90",
+    "--flag-91=value-91",
+    "--flag-92=value-92",
+    "--flag-93=value-93",
+    "--flag-94=value-94",
+    "--flag-95=value-95",
+    "--flag-96=value-96",
+    "--flag-97=value-97",
+    "--flag-98=value-98",
+    "--flag-99=value-99",
+    "--flag-100=value-100",
+    "--flag-101=value-101",
+    "--flag-102=value-102",
+    "--flag-103=value-103",
+    "--flag-104=value-104",
+    "--flag-105=value-105",
+    "--flag-106=value-106",
+    "--flag-107=value-107",
+    "--flag-108=value-108",
+    "--flag-109=value-109",
+    "--flag-110=value-110",
+    "--flag-111=value-111",
+    "--flag-112=value-112",
+    "--flag-113=value-113",
+    "--flag-114=value-114",
+    "--flag-115=value-115",
+    "--flag-116=value-116",
+    "--flag-117=value-117",
+    "--flag-118=value-118",
+    "--flag-119=value-119",
+    "--flag-120=value-120",
+    "--flag-121=value-121",
+    "--flag-122=value-122",
+    "--flag-123=value-123",
+    "--flag-124=value-124",
+    "--flag-125=value-125",
+    "--flag-126=value-126",
+    "--flag-127=value-127",
+    "--flag-128=value-128",
+    "--flag-129=value-129",
+    "--flag-130=value-130",
+    "--flag-131=value-131",
+    "--flag-132=value-132",
+    "--flag-133=value-133",
+    "--flag-134=value-134",
+    "--flag-135=value-135",
+    "--flag-136=value-136",
+    "--flag-137=value-137",
+    "--flag-138=value-138",
+    "--flag-139=value-139",
+    "--flag-140=value-140",
+    "--flag-141=value-141",
+    "--flag-142=value-142",
+    "--flag-143=value-143",
+    "--flag-144=value-144",
+    "--flag-145=value-145",
+    "--flag-146=value-146",
+    "--flag-147=value-147",
+    "--flag-148=value-148",
+    "--flag-149=value-149",
+    "--flag-150=value-150",
+    "--flag-151=value-151",
+    "--flag-152=value-152",
+    "--flag-153=value-153",
+    "--flag-154=value-154",
+    "--flag-155=value-155",
+    "--flag-156=value-156",
+    "--flag-157=value-157",
+    "--flag-158=value-158",
+    "--flag-159=value-159",
+    "--flag-160=value-160",
+    "--flag-161=value-161",
+    "--flag-162=value-162",
+    "--flag-163=value-163",
+    "--flag-164=value-164",
+    "--flag-165=value-165",
+    "--flag-166=value-166",
+    "--flag-167=value-167",
+    "--flag-168=value-168",
+    "--flag-169=value-169",
+    "--flag-170=value-170",
+    "--flag-171=value-171",
+    "--flag-172=value-172",
+    "--flag-173=value-173",
+    "--flag-174=value-174",
+    "--flag-175=value-175",
+    "--flag-176=value-176",
+    "--flag-177=value-177",
+    "--flag-178=value-178",
+    "--flag-179=value-179",
+    "--flag-180=value-180",
+    "--flag-181=value-181",
+    "--flag-182=value-182",
+    "--flag-183=value-183",
+    "--flag-184=value-184",
+    "--flag-185=value-185",
+    "--flag-186=value-186",
+    "--flag-187=value-187",
+    "--flag-188=value-188",
+    "--flag-189=value-189",
+    "--flag-190=value-190",
+    "--flag-191=value-191",
+    "--flag-192=value-192",
+    "--flag-193=value-193",
+    "--flag-194=value-194",
+    "--flag-195=value-195",
+    "--flag-196=value-196",
+    "--flag-197=value-197",
+    "--flag-198=value-198",
+    "--flag-199=value-199",
+    "--flag-200=value-200",
+    "--flag-201=value-201",
+    "--flag-202=value-202",
+    "--flag-203=value-203",
+    "--flag-204=value-204",
+    "--flag-205=value-205",
+    "--flag-206=value-206",
+    "--flag-207=value-207",
+    "--flag-208=value-208",
+    "--flag-209=value-209",
+    "--flag-210=value-210",
+    "--flag-211=value-211",
+    "--flag-212=value-212",
+    "--flag-213=value-213",
+    "--flag-214=value-214",
+    "--flag-215=value-215",
+    "--flag-216=value-216",
+    "--flag-217=value-217",
+    "--flag-218=value-218",
+    "--flag-219=value-219",
+    "--flag-220=value-220",
+    "--flag-221=value-221",
+    "--flag-222=value-222",
+    "--flag-223=value-223",
+    "--flag-224=value-224",
+    "--flag-225=value-225",
+    "--flag-226=value-226",
+    "--flag-227=value-227",
+    "--flag-228=value-228",
+    "--flag-229=value-229",
+    "--flag-230=value-230",
+    "--flag-231=value-231",
+    "--flag-232=value-232",
+    "--flag-233=value-233",
+    "--flag-234=value-234",
+    "--flag-235=value-235",
+    "--flag-236=value-236",
+    "--flag-237=value-237",
+    "--flag-238=value-238",
+    "--flag-239=value-239",
+    "--flag-240=value-240",
+    "--flag-241=value-241",
+    "--flag-242=value-242",
+    "--flag-243=value-243",
+    "--flag-244=value-244",
+    "--flag-245=value-245",
+    "--flag-246=value-246",
+    "--flag-247=value-247",
+    "--flag-248=value-248",
+    "--flag-249=value-249",
+    "--flag-250=value-250",
+    "--flag-251=value-251",
+    "--flag-252=value-252",
+    "--flag-253=value-253",
+    "--flag-254=value-254",
+    "--flag-255=value-255",
+    "--flag-256=value-256",
+    "--flag-257=value-257",
+    "--flag-258=value-258",
+    "--flag-259=value-259",
+    "--flag-260=value-260",
+    "--flag-261=value-261",
+    "--flag-262=value-262",
+    "--flag-263=value-263",
+    "--flag-264=value-264",
+    "--flag-265=value-265",
+    "--flag-266=value-266",
+    "--flag-267=value-267",
+    "--flag-268=value-268",
+    "--flag-269=value-269",
+    "--flag-270=value-270",
+    "--flag-271=value-271",
+    "--flag-272=value-272",
+    "--flag-273=value-273",
+    "--flag-274=value-274",
+    "--flag-275=value-275",
+    "--flag-276=value-276",
+    "--flag-277=value-277",
+    "--flag-278=value-278",
+    "--flag-279=value-279",
+    "--flag-280=value-280",
+    "--flag-281=value-281",
+    "--flag-282=value-282",
+    "--flag-283=value-283",
+    "--flag-284=value-284",
+    "--flag-285=value-285",
+    "--flag-286=value-286",
+    "--flag-287=value-287",
+    "--flag-288=value-288",
+    "--flag-289=value-289",
+    "--flag-290=value-290",
+    "--flag-291=value-291",
+    "--flag-292=value-292",
+    "--flag-293=value-293",
+    "--flag-294=value-294",
+    "--flag-295=value-295",
+    "--flag-296=value-296",
+    "--flag-297=value-297",
+    "--flag-298=value-298",
+    "--flag-299=value-299"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "THIS_IS_A_SINGLE_WORD_ENVIRONMENT_VARIABLE_NAME_THAT_NEVER_ENDS_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=THIS_IS_A_SINGLE_WORD_ENVIRONMENT_VARIABLE_NAME_THAT_NEVER_ENDS_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.value",
+   "value": "",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_01",
+    "valueFrom",
+    "secretKeyRef",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_01.valueFrom.secretKeyRef.name",
+   "value": "a-secret-with-a-long-name-ssssssssssssssssssssssssssssssssssssssss",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_01",
+    "valueFrom",
+    "secretKeyRef",
+    "key"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_01.valueFrom.secretKeyRef.key",
+   "value": "KEY_KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_02"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_02.value",
+   "value": null,
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_03"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_03.value",
+   "value": "0",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_04"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_04.value",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_05"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_05.value",
+   "value": "line1\nline2\nline3",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_06"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_06.value",
+   "value": "🙂 émoji ünïcode ✓",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_07"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_07.value",
+   "value": "<b>&nbsp;</b>",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_08"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_08.value",
+   "value": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_09"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_09.value",
+   "value": "value-9",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_10"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_10.value",
+   "value": "value-10",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-value-10",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_11",
+    "valueFrom",
+    "secretKeyRef",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_11.valueFrom.secretKeyRef.name",
+   "value": "a-secret-with-a-long-name-ssssssssssssssssssssssssssssssssssssssss",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_11",
+    "valueFrom",
+    "secretKeyRef",
+    "key"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_11.valueFrom.secretKeyRef.key",
+   "value": "KEY_KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_12"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_12.value",
+   "value": "value-12",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-value-12",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_13"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_13.value",
+   "value": "value-13",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-value-13",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_14"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_14.value",
+   "value": "value-14",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-value-14",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_15"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_15.value",
+   "value": "value-15",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-value-15",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_16"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_16.value",
+   "value": "value-16",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-value-16",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_17"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_17.value",
+   "value": "value-17",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-value-17",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_18"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_18.value",
+   "value": "value-18",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-value-18",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_19"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_19.value",
+   "value": "value-19",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_20"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_20.value",
+   "value": "value-20",
+   "origin": "here",
+   "state": "stale",
+   "upstreamValue": "value-20-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_21",
+    "valueFrom",
+    "secretKeyRef",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_21.valueFrom.secretKeyRef.name",
+   "value": "a-secret-with-a-long-name-ssssssssssssssssssssssssssssssssssssssss",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_21",
+    "valueFrom",
+    "secretKeyRef",
+    "key"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_21.valueFrom.secretKeyRef.key",
+   "value": "KEY_KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_22"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_22.value",
+   "value": "value-22",
+   "origin": "here",
+   "state": "stale",
+   "upstreamValue": "value-22-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_23"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_23.value",
+   "value": "value-23",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "value-23-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_24"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_24.value",
+   "value": "value-24",
+   "origin": "here",
+   "state": "stale",
+   "upstreamValue": "value-24-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_25"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_25.value",
+   "value": "value-25",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "value-25-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_26"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_26.value",
+   "value": "value-26",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_27"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_27.value",
+   "value": "value-27",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_28"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_28.value",
+   "value": "value-28",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_29"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_29.value",
+   "value": "value-29",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_30"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_30.value",
+   "value": "value-30",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_31",
+    "valueFrom",
+    "secretKeyRef",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_31.valueFrom.secretKeyRef.name",
+   "value": "a-secret-with-a-long-name-ssssssssssssssssssssssssssssssssssssssss",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_31",
+    "valueFrom",
+    "secretKeyRef",
+    "key"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_31.valueFrom.secretKeyRef.key",
+   "value": "KEY_KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_32"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_32.value",
+   "value": "value-32",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_33"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_33.value",
+   "value": "value-33",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_34"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_34.value",
+   "value": "value-34",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_35"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_35.value",
+   "value": "value-35",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_36"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_36.value",
+   "value": "value-36",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_37"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_37.value",
+   "value": "value-37",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_38"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_38.value",
+   "value": "value-38",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_39"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_39.value",
+   "value": "value-39",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_40"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_40.value",
+   "value": "value-40",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_41",
+    "valueFrom",
+    "secretKeyRef",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_41.valueFrom.secretKeyRef.name",
+   "value": "a-secret-with-a-long-name-ssssssssssssssssssssssssssssssssssssssss",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_41",
+    "valueFrom",
+    "secretKeyRef",
+    "key"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_41.valueFrom.secretKeyRef.key",
+   "value": "KEY_KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_42"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_42.value",
+   "value": "value-42",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_43"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_43.value",
+   "value": "value-43",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_44"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_44.value",
+   "value": "value-44",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_45"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_45.value",
+   "value": "value-45",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_46"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_46.value",
+   "value": "value-46",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_47"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_47.value",
+   "value": "value-47",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_48"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_48.value",
+   "value": "value-48",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_49"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_49.value",
+   "value": "value-49",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_50"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_50.value",
+   "value": "value-50",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_51",
+    "valueFrom",
+    "secretKeyRef",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_51.valueFrom.secretKeyRef.name",
+   "value": "a-secret-with-a-long-name-ssssssssssssssssssssssssssssssssssssssss",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_51",
+    "valueFrom",
+    "secretKeyRef",
+    "key"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_51.valueFrom.secretKeyRef.key",
+   "value": "KEY_KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_52"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_52.value",
+   "value": "value-52",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_53"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_53.value",
+   "value": "value-53",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_54"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_54.value",
+   "value": "value-54",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_55"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_55.value",
+   "value": "value-55",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_56"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_56.value",
+   "value": "value-56",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_57"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_57.value",
+   "value": "value-57",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_58"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_58.value",
+   "value": "value-58",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_59"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_59.value",
+   "value": "value-59",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_60"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_60.value",
+   "value": "value-60",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_61",
+    "valueFrom",
+    "secretKeyRef",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_61.valueFrom.secretKeyRef.name",
+   "value": "a-secret-with-a-long-name-ssssssssssssssssssssssssssssssssssssssss",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_61",
+    "valueFrom",
+    "secretKeyRef",
+    "key"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_61.valueFrom.secretKeyRef.key",
+   "value": "KEY_KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_62"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_62.value",
+   "value": "value-62",
+   "origin": "here"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "env",
+    "ENV_VAR_63"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.env.?name=ENV_VAR_63.value",
+   "value": "value-63",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "resources",
+    "requests",
+    "cpu"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.resources.requests.cpu",
+   "value": "1",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "resources",
+    "requests",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.resources.requests.memory",
+   "value": "1099511627776Ki",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "resources",
+    "requests",
+    "nvidia.com/gpu"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.resources.requests.nvidia.com/gpu",
+   "value": "8",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "resources",
+    "limits",
+    "cpu"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.resources.limits.cpu",
+   "value": "64000m",
+   "origin": "here",
+   "state": "unreleased",
+   "released": "previous-64000m",
+   "revision": 9001,
+   "when": "1m ago"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.resources.limits.memory",
+   "value": "1099511627776Ki",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "resources",
+    "limits",
+    "nvidia.com/gpu"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.resources.limits.nvidia.com/gpu",
+   "value": "8",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "livenessProbe",
+    "exec",
+    "command"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.livenessProbe.exec.command",
+   "value": [
+    "sh",
+    "-c",
+    "until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?probe=liveness&verbose=true; do sleep 1; done && echo ok && until curl -fsS http://127.0.0.1:8080/healthz?"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "livenessProbe",
+    "initialDelaySeconds"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.livenessProbe.initialDelaySeconds",
+   "value": "86400",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "livenessProbe",
+    "periodSeconds"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.livenessProbe.periodSeconds",
+   "value": "0",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "0-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "livenessProbe",
+    "timeoutSeconds"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.livenessProbe.timeoutSeconds",
+   "value": "3600",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "livenessProbe",
+    "failureThreshold"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.livenessProbe.failureThreshold",
+   "value": "2147483647",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "livenessProbe",
+    "successThreshold"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.livenessProbe.successThreshold",
+   "value": "1",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "readinessProbe",
+    "httpGet",
+    "path"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.readinessProbe.httpGet.path",
+   "value": "/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/ready/",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "readinessProbe",
+    "httpGet",
+    "port"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.readinessProbe.httpGet.port",
+   "value": "65535",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "ports",
+    "port-00",
+    "containerPort"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.ports.?name=port-00.containerPort",
+   "value": "8000",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "ports",
+    "port-01",
+    "containerPort"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.ports.?name=port-01.containerPort",
+   "value": "8001",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "ports",
+    "port-02",
+    "containerPort"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.ports.?name=port-02.containerPort",
+   "value": "8002",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "ports",
+    "port-03",
+    "containerPort"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.ports.?name=port-03.containerPort",
+   "value": "8003",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "ports",
+    "port-04",
+    "containerPort"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.ports.?name=port-04.containerPort",
+   "value": "8004",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "ports",
+    "port-05",
+    "containerPort"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.ports.?name=port-05.containerPort",
+   "value": "8005",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "ports",
+    "port-06",
+    "containerPort"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.ports.?name=port-06.containerPort",
+   "value": "8006",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "ports",
+    "port-07",
+    "containerPort"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.ports.?name=port-07.containerPort",
+   "value": "8007",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "ports",
+    "port-08",
+    "containerPort"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.ports.?name=port-08.containerPort",
+   "value": "8008",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "ports",
+    "port-09",
+    "containerPort"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.ports.?name=port-09.containerPort",
+   "value": "8009",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "ports",
+    "port-10",
+    "containerPort"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.ports.?name=port-10.containerPort",
+   "value": "8010",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "ports",
+    "port-11",
+    "containerPort"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.ports.?name=port-11.containerPort",
+   "value": "8011",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "volumeMounts",
+    "vol-00",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.volumeMounts.?name=vol-00.mountPath",
+   "value": "/deep/mount",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "volumeMounts",
+    "vol-01",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.volumeMounts.?name=vol-01.mountPath",
+   "value": "/deep/deep/mount",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "volumeMounts",
+    "vol-02",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.volumeMounts.?name=vol-02.mountPath",
+   "value": "/deep/deep/deep/mount",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "volumeMounts",
+    "vol-03",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.volumeMounts.?name=vol-03.mountPath",
+   "value": "/deep/deep/deep/deep/mount",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "volumeMounts",
+    "vol-04",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.volumeMounts.?name=vol-04.mountPath",
+   "value": "/deep/deep/deep/deep/deep/mount",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "volumeMounts",
+    "vol-05",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.volumeMounts.?name=vol-05.mountPath",
+   "value": "/deep/deep/deep/deep/deep/deep/mount",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "volumeMounts",
+    "vol-06",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.volumeMounts.?name=vol-06.mountPath",
+   "value": "/deep/deep/deep/deep/deep/deep/deep/mount",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "volumeMounts",
+    "vol-07",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.volumeMounts.?name=vol-07.mountPath",
+   "value": "/deep/deep/deep/deep/deep/deep/deep/deep/mount",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "volumeMounts",
+    "vol-08",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.volumeMounts.?name=vol-08.mountPath",
+   "value": "/deep/deep/deep/deep/deep/deep/deep/deep/deep/mount",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "volumeMounts",
+    "vol-09",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.volumeMounts.?name=vol-09.mountPath",
+   "value": "/deep/deep/deep/deep/deep/deep/deep/deep/deep/deep/mount",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "volumeMounts",
+    "vol-10",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.volumeMounts.?name=vol-10.mountPath",
+   "value": "/deep/deep/deep/deep/deep/deep/deep/deep/deep/deep/deep/mount",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "volumeMounts",
+    "vol-11",
+    "mountPath"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.volumeMounts.?name=vol-11.mountPath",
+   "value": "/deep/deep/deep/deep/deep/deep/deep/deep/deep/deep/deep/deep/mount",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "securityContext",
+    "runAsNonRoot"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.securityContext.runAsNonRoot",
+   "value": "true",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "securityContext",
+    "runAsUser"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.securityContext.runAsUser",
+   "value": "4294967295",
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "securityContext",
+    "capabilities",
+    "add"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.securityContext.capabilities.add",
+   "value": [
+    "NET_ADMIN",
+    "SYS_ADMIN",
+    "SYS_PTRACE",
+    "NET_RAW",
+    "IPC_LOCK"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "c0",
+   "path": [
+    "lifecycle",
+    "preStop",
+    "exec",
+    "x",
+    "y",
+    "z",
+    "deeper",
+    "still",
+    "deepest",
+    "level10"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=app.lifecycle.preStop.exec.x.y.z.deeper.still.deepest.level10",
+   "value": "bottom",
+   "origin": "upstream"
+  },
+  {
+   "group": "c1",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-01-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.image",
+   "value": "ghcr.io/example/sidecar:1.0.0",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "ghcr.io/example/sidecar:1.0.0-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "c1",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-01-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.resources.limits.memory",
+   "value": "64Mi",
+   "origin": "upstream"
+  },
+  {
+   "group": "c2",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-02.resources.limits.memory",
+   "value": "128Mi",
+   "origin": "upstream"
+  },
+  {
+   "group": "c3",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-03.image",
+   "value": "ghcr.io/example/sidecar:3.0.0",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "ghcr.io/example/sidecar:3.0.0-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "c3",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-03.resources.limits.memory",
+   "value": "192Mi",
+   "origin": "upstream"
+  },
+  {
+   "group": "c4",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-04.image",
+   "value": "ghcr.io/example/sidecar:4.0.0",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "ghcr.io/example/sidecar:4.0.0-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "c4",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-04.resources.limits.memory",
+   "value": "256Mi",
+   "origin": "upstream"
+  },
+  {
+   "group": "c5",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-05.image",
+   "value": "ghcr.io/example/sidecar:5.0.0",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "ghcr.io/example/sidecar:5.0.0-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "c5",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-05.resources.limits.memory",
+   "value": "320Mi",
+   "origin": "upstream"
+  },
+  {
+   "group": "c6",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-06.image",
+   "value": "ghcr.io/example/sidecar:6.0.0",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "ghcr.io/example/sidecar:6.0.0-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "c6",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-06.resources.limits.memory",
+   "value": "384Mi",
+   "origin": "upstream"
+  },
+  {
+   "group": "c7",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-07.image",
+   "value": "ghcr.io/example/sidecar:7.0.0",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "ghcr.io/example/sidecar:7.0.0-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "c7",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-07.resources.limits.memory",
+   "value": "448Mi",
+   "origin": "upstream"
+  },
+  {
+   "group": "c8",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-08.image",
+   "value": "ghcr.io/example/sidecar:8.0.0",
+   "origin": "upstream"
+  },
+  {
+   "group": "c8",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-08.resources.limits.memory",
+   "value": "512Mi",
+   "origin": "upstream"
+  },
+  {
+   "group": "c9",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-09.image",
+   "value": "ghcr.io/example/sidecar:9.0.0",
+   "origin": "upstream"
+  },
+  {
+   "group": "c9",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-09.resources.limits.memory",
+   "value": "576Mi",
+   "origin": "upstream"
+  },
+  {
+   "group": "c10",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-10.image",
+   "value": "ghcr.io/example/sidecar:10.0.0",
+   "origin": "upstream"
+  },
+  {
+   "group": "c10",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-10.resources.limits.memory",
+   "value": "640Mi",
+   "origin": "upstream"
+  },
+  {
+   "group": "c11",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-11.image",
+   "value": "ghcr.io/example/sidecar:11.0.0",
+   "origin": "upstream"
+  },
+  {
+   "group": "c11",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-11.resources.limits.memory",
+   "value": "704Mi",
+   "origin": "upstream"
+  },
+  {
+   "group": "c12",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-12.image",
+   "value": "ghcr.io/example/sidecar:12.0.0",
+   "origin": "upstream"
+  },
+  {
+   "group": "c12",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-12.resources.limits.memory",
+   "value": "768Mi",
+   "origin": "upstream"
+  },
+  {
+   "group": "c13",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-13.image",
+   "value": "ghcr.io/example/sidecar:13.0.0",
+   "origin": "upstream"
+  },
+  {
+   "group": "c13",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-13.resources.limits.memory",
+   "value": "832Mi",
+   "origin": "upstream"
+  },
+  {
+   "group": "c14",
+   "path": [
+    "image"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-14.image",
+   "value": "ghcr.io/example/sidecar:14.0.0",
+   "origin": "upstream"
+  },
+  {
+   "group": "c14",
+   "path": [
+    "resources",
+    "limits",
+    "memory"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=sidecar-14.resources.limits.memory",
+   "value": "896Mi",
+   "origin": "upstream"
+  },
+  {
+   "group": "vol1",
+   "path": [
+    "vol-00",
+    "configMap",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.volumes.?name=vol-00.configMap.name",
+   "value": "vol-00-source-",
+   "origin": "upstream"
+  },
+  {
+   "group": "vol1",
+   "path": [
+    "vol-01",
+    "persistentVolumeClaim",
+    "claimName"
+   ],
+   "fullPath": "spec.template.spec.volumes.?name=vol-01.persistentVolumeClaim.claimName",
+   "value": "vol-01-source-nnnnnn",
+   "origin": "upstream"
+  },
+  {
+   "group": "vol1",
+   "path": [
+    "vol-02",
+    "emptyDir"
+   ],
+   "fullPath": "spec.template.spec.volumes.?name=vol-02.emptyDir",
+   "value": "{}",
+   "origin": "upstream"
+  },
+  {
+   "group": "vol1",
+   "path": [
+    "vol-03",
+    "secret",
+    "secretName"
+   ],
+   "fullPath": "spec.template.spec.volumes.?name=vol-03.secret.secretName",
+   "value": "vol-03-source-nnnnnnnnnnnnnnnnnn",
+   "origin": "upstream"
+  },
+  {
+   "group": "vol1",
+   "path": [
+    "vol-04",
+    "configMap",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.volumes.?name=vol-04.configMap.name",
+   "value": "vol-04-source-nnnnnnnnnnnnnnnnnnnnnnnn",
+   "origin": "upstream"
+  },
+  {
+   "group": "vol1",
+   "path": [
+    "vol-05",
+    "persistentVolumeClaim",
+    "claimName"
+   ],
+   "fullPath": "spec.template.spec.volumes.?name=vol-05.persistentVolumeClaim.claimName",
+   "value": "vol-05-source-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+   "origin": "upstream"
+  },
+  {
+   "group": "vol1",
+   "path": [
+    "vol-06",
+    "emptyDir"
+   ],
+   "fullPath": "spec.template.spec.volumes.?name=vol-06.emptyDir",
+   "value": "{}",
+   "origin": "upstream"
+  },
+  {
+   "group": "vol1",
+   "path": [
+    "vol-07",
+    "secret",
+    "secretName"
+   ],
+   "fullPath": "spec.template.spec.volumes.?name=vol-07.secret.secretName",
+   "value": "vol-07-source-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+   "origin": "upstream"
+  },
+  {
+   "group": "vol1",
+   "path": [
+    "vol-08",
+    "configMap",
+    "name"
+   ],
+   "fullPath": "spec.template.spec.volumes.?name=vol-08.configMap.name",
+   "value": "vol-08-source-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+   "origin": "upstream"
+  },
+  {
+   "group": "vol1",
+   "path": [
+    "vol-09",
+    "persistentVolumeClaim",
+    "claimName"
+   ],
+   "fullPath": "spec.template.spec.volumes.?name=vol-09.persistentVolumeClaim.claimName",
+   "value": "vol-09-source-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+   "origin": "upstream"
+  },
+  {
+   "group": "vol1",
+   "path": [
+    "vol-10",
+    "emptyDir"
+   ],
+   "fullPath": "spec.template.spec.volumes.?name=vol-10.emptyDir",
+   "value": "{}",
+   "origin": "upstream"
+  },
+  {
+   "group": "vol1",
+   "path": [
+    "vol-11",
+    "secret",
+    "secretName"
+   ],
+   "fullPath": "spec.template.spec.volumes.?name=vol-11.secret.secretName",
+   "value": "vol-11-source-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep2",
+   "path": [
+    "metadata",
+    "labels",
+    "app"
+   ],
+   "fullPath": "metadata.labels.app",
+   "value": "nameless",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep2",
+   "path": [
+    "spec",
+    "replicas"
+   ],
+   "fullPath": "spec.replicas",
+   "value": "1",
+   "origin": "upstream"
+  },
+  {
+   "group": "dep2-c0",
+   "path": [
+    "command"
+   ],
+   "fullPath": "spec.template.spec.containers.?name=worker.command",
+   "value": [
+    "/bin/worker"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "metadata",
+    "name"
+   ],
+   "fullPath": "metadata.name",
+   "value": "payments-svc-0",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "type"
+   ],
+   "fullPath": "spec.type",
+   "value": "LoadBalancer",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "ports",
+    "p0",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p0.port",
+   "value": "443",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "ports",
+    "p1",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p1.port",
+   "value": "444",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "ports",
+    "p2",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p2.port",
+   "value": "445",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "ports",
+    "p3",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p3.port",
+   "value": "446",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "ports",
+    "p4",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p4.port",
+   "value": "447",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "ports",
+    "p5",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p5.port",
+   "value": "448",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "ports",
+    "p6",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p6.port",
+   "value": "449",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "ports",
+    "p7",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p7.port",
+   "value": "450",
+   "origin": "here"
+  },
+  {
+   "group": "svc0",
+   "path": [
+    "spec",
+    "selector",
+    "app"
+   ],
+   "fullPath": "spec.selector.app",
+   "value": "payments-orchestrator-with-a-name-that-keeps-going-and-going-past-any-sane-limit-v2",
+   "origin": "here"
+  },
+  {
+   "group": "svc1",
+   "path": [
+    "metadata",
+    "name"
+   ],
+   "fullPath": "metadata.name",
+   "value": "payments-svc-1",
+   "origin": "upstream"
+  },
+  {
+   "group": "svc1",
+   "path": [
+    "spec",
+    "type"
+   ],
+   "fullPath": "spec.type",
+   "value": "LoadBalancer",
+   "origin": "upstream"
+  },
+  {
+   "group": "svc1",
+   "path": [
+    "spec",
+    "ports",
+    "p0",
+    "port"
+   ],
+   "fullPath": "spec.ports.?name=p0.port",
+   "value": "443",
+   "origin": "upstream"
+  },
+  {
+   "group": "svc1",
+   "path": [
+    "spec",
+    "selector",
+    "app"
+   ],
+   "fullPath": "spec.selector.app",
+   "value": "payments-orchestrator-with-a-name-that-keeps-going-and-going-past-any-sane-limit-v2",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "metadata",
+    "name"
+   ],
+   "fullPath": "metadata.name",
+   "value": "payments-config",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "config.json"
+   ],
+   "fullPath": "data.config.json",
+   "value": "{\n  \"db\": {\n    \"host\": \"db.internal\",\n    \"port\": 5432,\n    \"pool\": {\n      \"min\": 0,\n      \"max\": 1000\n    }\n  },\n  \"features\": [\n    \"feature-0\",\n    \"feature-1\",\n    \"feature-2\",\n    \"feature-3\",\n    \"feature-4\",\n    \"feature-5\",\n    \"feature-6\",\n    \"feature-7\",\n    \"feature-8\",\n    \"feature-9\",\n    \"feature-10\",\n    \"feature-11\",\n    \"feature-12\",\n    \"feature-13\",\n    \"feature-14\",\n    \"feature-15\",\n    \"feature-16\",\n    \"feature-17\",\n    \"feature-18\",\n    \"feature-19\",\n    \"feature-20\",\n    \"feature-21\",\n    \"feature-22\",\n    \"feature-23\",\n    \"feature-24\",\n    \"feature-25\",\n    \"feature-26\",\n    \"feature-27\",\n    \"feature-28\",\n    \"feature-29\"\n  ],\n  \"emoji\": \"\\ud83d\\ude80\"\n}",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "empty"
+   ],
+   "fullPath": "data.empty",
+   "value": "",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "zero"
+   ],
+   "fullPath": "data.zero",
+   "value": "0",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "0-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "false"
+   ],
+   "fullPath": "data.false",
+   "value": "false",
+   "origin": "upstream",
+   "state": "stale",
+   "upstreamValue": "false-next",
+   "upstreamRevision": 777,
+   "when": "3w ago"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "big.number"
+   ],
+   "fullPath": "data.big.number",
+   "value": "179769313486231570000000000000000000000000000000000000000000000000",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "key.with.dots/and/slashes"
+   ],
+   "fullPath": "data.key.with.dots/and/slashes",
+   "value": "ok",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "multiline.txt"
+   ],
+   "fullPath": "data.multiline.txt",
+   "value": "first\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\n",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "rtl"
+   ],
+   "fullPath": "data.rtl",
+   "value": "שלום — مرحبا",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm0",
+   "path": [
+    "data",
+    "html"
+   ],
+   "fullPath": "data.html",
+   "value": "<script>document.cookie</script>&copy;",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "metadata",
+    "name"
+   ],
+   "fullPath": "metadata.name",
+   "value": "payments-flags",
+   "origin": "upstream"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_00"
+   ],
+   "fullPath": "data.FLAG_00",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_01"
+   ],
+   "fullPath": "data.FLAG_01",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_02"
+   ],
+   "fullPath": "data.FLAG_02",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_03"
+   ],
+   "fullPath": "data.FLAG_03",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_04"
+   ],
+   "fullPath": "data.FLAG_04",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_05"
+   ],
+   "fullPath": "data.FLAG_05",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_06"
+   ],
+   "fullPath": "data.FLAG_06",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_07"
+   ],
+   "fullPath": "data.FLAG_07",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_08"
+   ],
+   "fullPath": "data.FLAG_08",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_09"
+   ],
+   "fullPath": "data.FLAG_09",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_10"
+   ],
+   "fullPath": "data.FLAG_10",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_11"
+   ],
+   "fullPath": "data.FLAG_11",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_12"
+   ],
+   "fullPath": "data.FLAG_12",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_13"
+   ],
+   "fullPath": "data.FLAG_13",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_14"
+   ],
+   "fullPath": "data.FLAG_14",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_15"
+   ],
+   "fullPath": "data.FLAG_15",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_16"
+   ],
+   "fullPath": "data.FLAG_16",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_17"
+   ],
+   "fullPath": "data.FLAG_17",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_18"
+   ],
+   "fullPath": "data.FLAG_18",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_19"
+   ],
+   "fullPath": "data.FLAG_19",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_20"
+   ],
+   "fullPath": "data.FLAG_20",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_21"
+   ],
+   "fullPath": "data.FLAG_21",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_22"
+   ],
+   "fullPath": "data.FLAG_22",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_23"
+   ],
+   "fullPath": "data.FLAG_23",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_24"
+   ],
+   "fullPath": "data.FLAG_24",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_25"
+   ],
+   "fullPath": "data.FLAG_25",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_26"
+   ],
+   "fullPath": "data.FLAG_26",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_27"
+   ],
+   "fullPath": "data.FLAG_27",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_28"
+   ],
+   "fullPath": "data.FLAG_28",
+   "value": "false",
+   "origin": "here"
+  },
+  {
+   "group": "cm1",
+   "path": [
+    "data",
+    "FLAG_29"
+   ],
+   "fullPath": "data.FLAG_29",
+   "value": "true",
+   "origin": "here"
+  },
+  {
+   "group": "vs0",
+   "path": [
+    "metadata",
+    "name"
+   ],
+   "fullPath": "metadata.name",
+   "value": "payments-routes",
+   "origin": "upstream"
+  },
+  {
+   "group": "vs0",
+   "path": [
+    "spec",
+    "hosts"
+   ],
+   "fullPath": "spec.hosts",
+   "value": [
+    "tenant-000.payments.example.com",
+    "tenant-001.payments.example.com",
+    "tenant-002.payments.example.com",
+    "tenant-003.payments.example.com",
+    "tenant-004.payments.example.com",
+    "tenant-005.payments.example.com",
+    "tenant-006.payments.example.com",
+    "tenant-007.payments.example.com",
+    "tenant-008.payments.example.com",
+    "tenant-009.payments.example.com",
+    "tenant-010.payments.example.com",
+    "tenant-011.payments.example.com",
+    "tenant-012.payments.example.com",
+    "tenant-013.payments.example.com",
+    "tenant-014.payments.example.com",
+    "tenant-015.payments.example.com",
+    "tenant-016.payments.example.com",
+    "tenant-017.payments.example.com",
+    "tenant-018.payments.example.com",
+    "tenant-019.payments.example.com",
+    "tenant-020.payments.example.com",
+    "tenant-021.payments.example.com",
+    "tenant-022.payments.example.com",
+    "tenant-023.payments.example.com",
+    "tenant-024.payments.example.com",
+    "tenant-025.payments.example.com",
+    "tenant-026.payments.example.com",
+    "tenant-027.payments.example.com",
+    "tenant-028.payments.example.com",
+    "tenant-029.payments.example.com",
+    "tenant-030.payments.example.com",
+    "tenant-031.payments.example.com",
+    "tenant-032.payments.example.com",
+    "tenant-033.payments.example.com",
+    "tenant-034.payments.example.com",
+    "tenant-035.payments.example.com",
+    "tenant-036.payments.example.com",
+    "tenant-037.payments.example.com",
+    "tenant-038.payments.example.com",
+    "tenant-039.payments.example.com",
+    "tenant-040.payments.example.com",
+    "tenant-041.payments.example.com",
+    "tenant-042.payments.example.com",
+    "tenant-043.payments.example.com",
+    "tenant-044.payments.example.com",
+    "tenant-045.payments.example.com",
+    "tenant-046.payments.example.com",
+    "tenant-047.payments.example.com",
+    "tenant-048.payments.example.com",
+    "tenant-049.payments.example.com",
+    "tenant-050.payments.example.com",
+    "tenant-051.payments.example.com",
+    "tenant-052.payments.example.com",
+    "tenant-053.payments.example.com",
+    "tenant-054.payments.example.com",
+    "tenant-055.payments.example.com",
+    "tenant-056.payments.example.com",
+    "tenant-057.payments.example.com",
+    "tenant-058.payments.example.com",
+    "tenant-059.payments.example.com",
+    "tenant-060.payments.example.com",
+    "tenant-061.payments.example.com",
+    "tenant-062.payments.example.com",
+    "tenant-063.payments.example.com",
+    "tenant-064.payments.example.com",
+    "tenant-065.payments.example.com",
+    "tenant-066.payments.example.com",
+    "tenant-067.payments.example.com",
+    "tenant-068.payments.example.com",
+    "tenant-069.payments.example.com",
+    "tenant-070.payments.example.com",
+    "tenant-071.payments.example.com",
+    "tenant-072.payments.example.com",
+    "tenant-073.payments.example.com",
+    "tenant-074.payments.example.com",
+    "tenant-075.payments.example.com",
+    "tenant-076.payments.example.com",
+    "tenant-077.payments.example.com",
+    "tenant-078.payments.example.com",
+    "tenant-079.payments.example.com",
+    "tenant-080.payments.example.com",
+    "tenant-081.payments.example.com",
+    "tenant-082.payments.example.com",
+    "tenant-083.payments.example.com",
+    "tenant-084.payments.example.com",
+    "tenant-085.payments.example.com",
+    "tenant-086.payments.example.com",
+    "tenant-087.payments.example.com",
+    "tenant-088.payments.example.com",
+    "tenant-089.payments.example.com",
+    "tenant-090.payments.example.com",
+    "tenant-091.payments.example.com",
+    "tenant-092.payments.example.com",
+    "tenant-093.payments.example.com",
+    "tenant-094.payments.example.com",
+    "tenant-095.payments.example.com",
+    "tenant-096.payments.example.com",
+    "tenant-097.payments.example.com",
+    "tenant-098.payments.example.com",
+    "tenant-099.payments.example.com",
+    "tenant-100.payments.example.com",
+    "tenant-101.payments.example.com",
+    "tenant-102.payments.example.com",
+    "tenant-103.payments.example.com",
+    "tenant-104.payments.example.com",
+    "tenant-105.payments.example.com",
+    "tenant-106.payments.example.com",
+    "tenant-107.payments.example.com",
+    "tenant-108.payments.example.com",
+    "tenant-109.payments.example.com",
+    "tenant-110.payments.example.com",
+    "tenant-111.payments.example.com",
+    "tenant-112.payments.example.com",
+    "tenant-113.payments.example.com",
+    "tenant-114.payments.example.com",
+    "tenant-115.payments.example.com",
+    "tenant-116.payments.example.com",
+    "tenant-117.payments.example.com",
+    "tenant-118.payments.example.com",
+    "tenant-119.payments.example.com",
+    "tenant-120.payments.example.com",
+    "tenant-121.payments.example.com",
+    "tenant-122.payments.example.com",
+    "tenant-123.payments.example.com",
+    "tenant-124.payments.example.com",
+    "tenant-125.payments.example.com",
+    "tenant-126.payments.example.com",
+    "tenant-127.payments.example.com",
+    "tenant-128.payments.example.com",
+    "tenant-129.payments.example.com",
+    "tenant-130.payments.example.com",
+    "tenant-131.payments.example.com",
+    "tenant-132.payments.example.com",
+    "tenant-133.payments.example.com",
+    "tenant-134.payments.example.com",
+    "tenant-135.payments.example.com",
+    "tenant-136.payments.example.com",
+    "tenant-137.payments.example.com",
+    "tenant-138.payments.example.com",
+    "tenant-139.payments.example.com",
+    "tenant-140.payments.example.com",
+    "tenant-141.payments.example.com",
+    "tenant-142.payments.example.com",
+    "tenant-143.payments.example.com",
+    "tenant-144.payments.example.com",
+    "tenant-145.payments.example.com",
+    "tenant-146.payments.example.com",
+    "tenant-147.payments.example.com",
+    "tenant-148.payments.example.com",
+    "tenant-149.payments.example.com",
+    "tenant-150.payments.example.com",
+    "tenant-151.payments.example.com",
+    "tenant-152.payments.example.com",
+    "tenant-153.payments.example.com",
+    "tenant-154.payments.example.com",
+    "tenant-155.payments.example.com",
+    "tenant-156.payments.example.com",
+    "tenant-157.payments.example.com",
+    "tenant-158.payments.example.com",
+    "tenant-159.payments.example.com",
+    "tenant-160.payments.example.com",
+    "tenant-161.payments.example.com",
+    "tenant-162.payments.example.com",
+    "tenant-163.payments.example.com",
+    "tenant-164.payments.example.com",
+    "tenant-165.payments.example.com",
+    "tenant-166.payments.example.com",
+    "tenant-167.payments.example.com",
+    "tenant-168.payments.example.com",
+    "tenant-169.payments.example.com",
+    "tenant-170.payments.example.com",
+    "tenant-171.payments.example.com",
+    "tenant-172.payments.example.com",
+    "tenant-173.payments.example.com",
+    "tenant-174.payments.example.com",
+    "tenant-175.payments.example.com",
+    "tenant-176.payments.example.com",
+    "tenant-177.payments.example.com",
+    "tenant-178.payments.example.com",
+    "tenant-179.payments.example.com",
+    "tenant-180.payments.example.com",
+    "tenant-181.payments.example.com",
+    "tenant-182.payments.example.com",
+    "tenant-183.payments.example.com",
+    "tenant-184.payments.example.com",
+    "tenant-185.payments.example.com",
+    "tenant-186.payments.example.com",
+    "tenant-187.payments.example.com",
+    "tenant-188.payments.example.com",
+    "tenant-189.payments.example.com",
+    "tenant-190.payments.example.com",
+    "tenant-191.payments.example.com",
+    "tenant-192.payments.example.com",
+    "tenant-193.payments.example.com",
+    "tenant-194.payments.example.com",
+    "tenant-195.payments.example.com",
+    "tenant-196.payments.example.com",
+    "tenant-197.payments.example.com",
+    "tenant-198.payments.example.com",
+    "tenant-199.payments.example.com",
+    "tenant-200.payments.example.com",
+    "tenant-201.payments.example.com",
+    "tenant-202.payments.example.com",
+    "tenant-203.payments.example.com",
+    "tenant-204.payments.example.com",
+    "tenant-205.payments.example.com",
+    "tenant-206.payments.example.com",
+    "tenant-207.payments.example.com",
+    "tenant-208.payments.example.com",
+    "tenant-209.payments.example.com",
+    "tenant-210.payments.example.com",
+    "tenant-211.payments.example.com",
+    "tenant-212.payments.example.com",
+    "tenant-213.payments.example.com",
+    "tenant-214.payments.example.com",
+    "tenant-215.payments.example.com",
+    "tenant-216.payments.example.com",
+    "tenant-217.payments.example.com",
+    "tenant-218.payments.example.com",
+    "tenant-219.payments.example.com",
+    "tenant-220.payments.example.com",
+    "tenant-221.payments.example.com",
+    "tenant-222.payments.example.com",
+    "tenant-223.payments.example.com",
+    "tenant-224.payments.example.com",
+    "tenant-225.payments.example.com",
+    "tenant-226.payments.example.com",
+    "tenant-227.payments.example.com",
+    "tenant-228.payments.example.com",
+    "tenant-229.payments.example.com",
+    "tenant-230.payments.example.com",
+    "tenant-231.payments.example.com",
+    "tenant-232.payments.example.com",
+    "tenant-233.payments.example.com",
+    "tenant-234.payments.example.com",
+    "tenant-235.payments.example.com",
+    "tenant-236.payments.example.com",
+    "tenant-237.payments.example.com",
+    "tenant-238.payments.example.com",
+    "tenant-239.payments.example.com",
+    "tenant-240.payments.example.com",
+    "tenant-241.payments.example.com",
+    "tenant-242.payments.example.com",
+    "tenant-243.payments.example.com",
+    "tenant-244.payments.example.com",
+    "tenant-245.payments.example.com",
+    "tenant-246.payments.example.com",
+    "tenant-247.payments.example.com",
+    "tenant-248.payments.example.com",
+    "tenant-249.payments.example.com",
+    "tenant-250.payments.example.com",
+    "tenant-251.payments.example.com",
+    "tenant-252.payments.example.com",
+    "tenant-253.payments.example.com",
+    "tenant-254.payments.example.com",
+    "tenant-255.payments.example.com",
+    "tenant-256.payments.example.com",
+    "tenant-257.payments.example.com",
+    "tenant-258.payments.example.com",
+    "tenant-259.payments.example.com",
+    "tenant-260.payments.example.com",
+    "tenant-261.payments.example.com",
+    "tenant-262.payments.example.com",
+    "tenant-263.payments.example.com",
+    "tenant-264.payments.example.com",
+    "tenant-265.payments.example.com",
+    "tenant-266.payments.example.com",
+    "tenant-267.payments.example.com",
+    "tenant-268.payments.example.com",
+    "tenant-269.payments.example.com",
+    "tenant-270.payments.example.com",
+    "tenant-271.payments.example.com",
+    "tenant-272.payments.example.com",
+    "tenant-273.payments.example.com",
+    "tenant-274.payments.example.com",
+    "tenant-275.payments.example.com",
+    "tenant-276.payments.example.com",
+    "tenant-277.payments.example.com",
+    "tenant-278.payments.example.com",
+    "tenant-279.payments.example.com",
+    "tenant-280.payments.example.com",
+    "tenant-281.payments.example.com",
+    "tenant-282.payments.example.com",
+    "tenant-283.payments.example.com",
+    "tenant-284.payments.example.com",
+    "tenant-285.payments.example.com",
+    "tenant-286.payments.example.com",
+    "tenant-287.payments.example.com",
+    "tenant-288.payments.example.com",
+    "tenant-289.payments.example.com",
+    "tenant-290.payments.example.com",
+    "tenant-291.payments.example.com",
+    "tenant-292.payments.example.com",
+    "tenant-293.payments.example.com",
+    "tenant-294.payments.example.com",
+    "tenant-295.payments.example.com",
+    "tenant-296.payments.example.com",
+    "tenant-297.payments.example.com",
+    "tenant-298.payments.example.com",
+    "tenant-299.payments.example.com"
+   ],
+   "origin": "upstream"
+  },
+  {
+   "group": "vs0",
+   "path": [
+    "spec",
+    "http",
+    "route-a",
+    "match",
+    "headers",
+    "x-tenant",
+    "exact",
+    "nested",
+    "deeper",
+    "level10"
+   ],
+   "fullPath": "spec.http.?name=route-a.match.headers.x-tenant.exact.nested.deeper.level10",
+   "value": "tenant-001",
+   "origin": "upstream"
+  },
+  {
+   "group": "sa0",
+   "path": [
+    "metadata",
+    "name"
+   ],
+   "fullPath": "metadata.name",
+   "value": "payments",
+   "origin": "upstream"
+  }
+ ],
+ "resources": [
+  {
+   "id": "deployment-payments",
+   "kind": "Deployment",
+   "name": "payments-orchestrator-with-a-name-that-keeps-going-and-going-past-any-sane-limit-v2",
+   "apiVersion": "apps/v1",
+   "groups": [
+    "dep1",
+    "pod1",
+    "init0",
+    "init1",
+    "init2",
+    "init3",
+    "init4",
+    "init5",
+    "init6",
+    "init7",
+    "init8",
+    "init9",
+    "c0",
+    "c1",
+    "c2",
+    "c3",
+    "c4",
+    "c5",
+    "c6",
+    "c7",
+    "c8",
+    "c9",
+    "c10",
+    "c11",
+    "c12",
+    "c13",
+    "c14",
+    "vol1"
+   ]
+  },
+  {
+   "id": "deployment-noname",
+   "kind": "Deployment",
+   "name": "",
+   "apiVersion": "apps/v1",
+   "groups": [
+    "dep2",
+    "dep2-c0"
+   ]
+  },
+  {
+   "id": "service-0",
+   "kind": "Service",
+   "name": "payments-svc-0",
+   "apiVersion": "v1",
+   "groups": [
+    "svc0"
+   ]
+  },
+  {
+   "id": "service-1",
+   "kind": "Service",
+   "name": "payments-svc-1",
+   "apiVersion": "v1",
+   "groups": [
+    "svc1"
+   ]
+  },
+  {
+   "id": "configmap-0",
+   "kind": "ConfigMap",
+   "name": "payments-config",
+   "apiVersion": "v1",
+   "groups": [
+    "cm0"
+   ]
+  },
+  {
+   "id": "configmap-1",
+   "kind": "ConfigMap",
+   "name": "payments-flags",
+   "apiVersion": "v1",
+   "groups": [
+    "cm1"
+   ]
+  },
+  {
+   "id": "virtualservice-0",
+   "kind": "VirtualService",
+   "name": "payments-routes",
+   "apiVersion": "networking.istio.io/v1beta1",
+   "groups": [
+    "vs0"
+   ]
+  },
+  {
+   "id": "serviceaccount-0",
+   "kind": "ServiceAccount",
+   "name": "payments",
+   "apiVersion": "v1",
+   "groups": [
+    "sa0"
+   ]
+  }
+ ],
+ "meta": {
+  "fixture": "stress",
+  "source": "invented",
+  "changed": 20,
+  "stale": 21
+ }
+}

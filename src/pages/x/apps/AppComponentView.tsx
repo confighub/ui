@@ -43,7 +43,7 @@ import { ComponentFlowGraphSkeleton } from './ComponentFlowGraphSkeleton';
 import { ComponentSidePane } from './ComponentSidePane';
 import type { HiddenUnitsState, PaneUnitScope } from './ComponentToolbar';
 import { usePreviewUnitUpgradeMutation } from './upgradePreviewApi';
-import type { StagedCommitPayload, StagedCommitResult } from './ComponentValuesSection';
+import type { StagedCommitPayload, StagedCommitResult } from './spec-sheet/staging/types';
 import { resolveConflictPath } from './configDiffFieldDiffs';
 import { useUnitDataMap, useUploadUnitData } from '@/hooks/useUnitData';
 import { guardedChanges } from '@/components/guarded-write/guardedWrite';
@@ -687,8 +687,8 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
       const validationErrors = u.Unit?.ValidationErrors as { [key: string]: boolean } | undefined;
       const validationWarnings = u.Unit?.ValidationWarnings;
       const validationResults = u.Unit?.ValidationResults;
-      // TargetID scopes a unit to the Space's Release target set (task #60:
-      // release_core.go only bundles Units whose TargetID equals the Space's
+      // TargetID scopes a unit to the Space's Release target set (a Release
+      // only bundles Units whose TargetID equals the Space's
       // ReleaseTargetID — this is the same filter the "Unreleased changes"
       // section uses to decide which units to diff against the last release).
       const targetId = u.Unit?.TargetID;
@@ -1632,9 +1632,9 @@ export const AppComponentView = memo(({ spaces, componentSpaces, targets, graphK
 
   // Commit ONE unit's STAGED Keep on merge batch, as Override guards set or
   // removed through SetUnitGuard — a SEPARATE revision from handleCommitStaged
-  // above (see ComponentValuesSection's commit-signal effect: Keep on merge
-  // commits after the values committed with it, or before a wholesale upgrade, and is never
-  // rolled back if the other write fails).
+  // above (the side pane's handleConfirmCommit orders them: Keep on merge commits after the
+  // values committed with it, or before a wholesale upgrade, and is never rolled back if the
+  // other write fails).
   // Returns true on success so the section can clear its staged set. The write
   // invalidates the Unit tag (invalidationMap.ts), so the unit queries that
   // carry PathAnnotations refetch; unitsStaleSince covers the invalidation that

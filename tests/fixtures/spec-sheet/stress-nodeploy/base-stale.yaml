@@ -1,0 +1,36 @@
+apiVersion: "v1"
+kind: "Service"
+metadata:
+  name: "payments-svc-0"
+---
+apiVersion: "v1"
+kind: "Service"
+metadata:
+  name: "payments-svc-1"
+spec:
+  selector:
+    app: "payments-orchestrator-with-a-name-that-keeps-going-and-going-past-any-sane-limit-v2"
+  type: "LoadBalancer"
+  ports:
+    - name: "p0"
+      port: 443
+---
+apiVersion: "v1"
+kind: "ConfigMap"
+metadata:
+  name: "payments-config"
+data:
+  config.json: "{\n  \"db\": {\n    \"host\": \"db.internal\",\n    \"port\": 5432,\n    \"pool\": {\n      \"min\": 0,\n      \"max\": 1000\n    }\n  },\n  \"features\": [\n    \"feature-0\",\n    \"feature-1\",\n    \"feature-2\",\n    \"feature-3\",\n    \"feature-4\",\n    \"feature-5\",\n    \"feature-6\",\n    \"feature-7\",\n    \"feature-8\",\n    \"feature-9\",\n    \"feature-10\",\n    \"feature-11\",\n    \"feature-12\",\n    \"feature-13\",\n    \"feature-14\",\n    \"feature-15\",\n    \"feature-16\",\n    \"feature-17\",\n    \"feature-18\",\n    \"feature-19\",\n    \"feature-20\",\n    \"feature-21\",\n    \"feature-22\",\n    \"feature-23\",\n    \"feature-24\",\n    \"feature-25\",\n    \"feature-26\",\n    \"feature-27\",\n    \"feature-28\",\n    \"feature-29\"\n  ],\n  \"emoji\": \"\\ud83d\\ude80\"\n}"
+  empty: ""
+  zero: "0-next"
+  "false": "false-next"
+  big.number: "179769313486231570000000000000000000000000000000000000000000000000"
+  key.with.dots/and/slashes: "ok"
+  multiline.txt: "first\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\nfirst\nsecond\nthird\n"
+  rtl: "שלום — مرحبا"
+  html: "<script>document.cookie</script>&copy;"
+---
+apiVersion: "v1"
+kind: "ConfigMap"
+metadata:
+  name: "payments-flags"

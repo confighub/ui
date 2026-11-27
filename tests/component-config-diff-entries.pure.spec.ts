@@ -15,6 +15,10 @@
 // Takes no `page` fixture and starts no browser:
 //   cd ui && npx playwright test -c playwright.pure.config.ts component-config-diff-entries
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { expect, test } from '@playwright/test';
 
 import type { ConfigDiff, ExtendedUnitRead, MutationConflict, PathChange, PathSegment, ResourceDiff, UnitRead } from '@confighub/rtk-query';
@@ -33,12 +37,14 @@ import {
   blockedDeleteKey,
   buildUpgradeEntries,
   buildVariationEntries,
+  computeTotalAllFields,
   countUpgradableBadgeFields,
   countSelectableUpgradeFields,
   guardedKeysOf,
   type VariationDiffs,
 } from '../src/pages/x/apps/entryBuilders';
 import type { MergedUnit, VariationEntry } from '../src/pages/x/apps/componentTypes';
+import { buildSpecSheet } from '../src/pages/x/apps/spec-sheet/specSheetModel';
 
 // ── Builders ────────────────────────────────────────────────────────────────
 
@@ -139,6 +145,7 @@ test.describe('document keys', () => {
         oldValueType: 'string',
         newValueType: 'string',
         kind: 'Update',
+        change: treeKey(TWO_DOCS, 0, 'metadata.labels.app'),
       },
       {
         key: treeKey(TWO_DOCS, 1, 'metadata.labels.app'),
@@ -149,6 +156,7 @@ test.describe('document keys', () => {
         oldValueType: 'string',
         newValueType: 'string',
         kind: 'Update',
+        change: treeKey(TWO_DOCS, 1, 'metadata.labels.app'),
       },
     ]);
     expect(rows[0].key).not.toBe(rows[1].key);
@@ -229,9 +237,11 @@ test.describe('array elements', () => {
     // Written, it goes after A, the element it follows upstream.
     const insertion = { arrayPath: env, index: 3, after: 0, order: 1 };
     expect(rows).toEqual([
-      { key: treeKey(TWO_DOCS, 0, `${env}.3.name`), path: `${env}.3.name`, oldValue: '-', newValue: 'X', newValueType: 'string', kind: 'Add', insertion },
-      { key: treeKey(TWO_DOCS, 0, `${env}.3.value`), path: `${env}.3.value`, oldValue: '-', newValue: 'x', newValueType: 'string', kind: 'Add', insertion },
+      { key: treeKey(TWO_DOCS, 0, `${env}.3.name`), path: `${env}.3.name`, oldValue: '-', newValue: 'X', newValueType: 'string', kind: 'Add', change: treeKey(TWO_DOCS, 0, `${env}.3`), insertion },
+      { key: treeKey(TWO_DOCS, 0, `${env}.3.value`), path: `${env}.3.value`, oldValue: '-', newValue: 'x', newValueType: 'string', kind: 'Add', change: treeKey(TWO_DOCS, 0, `${env}.3`), insertion },
     ]);
+    // The two leaves are one change of the server's Diff.
+    expect(new Set(rows.map((r) => r.change)).size).toBe(1);
     // One element: every row is under the one made-up index after the last element.
     expect(new Set(rows.map((r) => r.path.split('.').slice(0, 7).join('.')))).toEqual(new Set([`${env}.3`]));
   });
@@ -312,7 +322,9 @@ test.describe('array elements', () => {
     const rows = leafRows(fieldDiffsFromConfigDiff(diff, TWO_DOCS, { treeSide: 'from' }));
 
     const path = 'spec.template.spec.containers.0.env.1.name';
-    expect(rows).toEqual([{ key: treeKey(TWO_DOCS, 0, path), path, oldValue: 'B', newValue: 'B2', kind: 'Update' }]);
+    expect(rows).toEqual([
+      { key: treeKey(TWO_DOCS, 0, path), path, oldValue: 'B', newValue: 'B2', kind: 'Update', change: treeKey(TWO_DOCS, 0, 'spec.template.spec.containers.0.env.1') },
+    ]);
   });
 
   test('a Reorder and a comment change give no rows', () => {
@@ -553,6 +565,32 @@ test.describe('upgrade entries from the dry-run Diff', () => {
     hasAction: true,
   });
 
+  test('the All count leaves out what names a resource or a row: 83 fields for most-items', () => {
+    // The contract's most-items: "74 rows (83 fields counting list items)". The sheet also draws
+    // apiVersion, kind and the name of each list element (an env var, a container, a volume),
+    // as the row's label: 105 atoms.
+    const data = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'spec-sheet', 'most-items', 'prod-released.yaml'), 'utf8');
+    expect(buildSpecSheet(data, { scopedWritesSupported: true }).atoms).toHaveLength(105);
+    const unit = { ...merged({ Resources: [] }, data), unitId: 'most-items' };
+    expect(computeTotalAllFields([unit], () => true)).toBe(83);
+  });
+
+  test('an element with only its name keeps the name as its field', () => {
+    const data = 'apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  name: sa\nimagePullSecrets:\n  - name: ghcr\n';
+    const unit = { ...merged({ Resources: [] }, data), unitId: 'sa' };
+    // metadata.name and the one secret's name.
+    expect(computeTotalAllFields([unit], () => true)).toBe(2);
+  });
+
+  test('the All count is of the Units the sheet draws: a Unit not drawn adds none', () => {
+    const open = { ...merged({ Resources: [] }, TWO_DOCS), unitId: 'open' };
+    const closed = { ...merged({ Resources: [] }, SERVICE_YAML), unitId: 'closed' };
+    const openOnly = computeTotalAllFields([open], () => true);
+    expect(openOnly).toBeGreaterThan(0);
+    expect(computeTotalAllFields([closed], () => true)).toBeGreaterThan(0);
+    expect(computeTotalAllFields([open, closed], (u) => u.unitId === 'open')).toBe(openOnly);
+  });
+
   test('no entry is built before the Unit\'s Diff lands', () => {
     expect(entriesFor(undefined, TWO_DOCS)).toEqual([]);
   });
@@ -573,6 +611,41 @@ test.describe('upgrade entries from the dry-run Diff', () => {
 
     expect(unit.upgradeEntry?.fieldDiffs.map((d) => d.key)).toEqual([treeKey(TWO_DOCS, 1, 'metadata.labels.app')]);
     expect(countUpgradableBadgeFields(unit)).toBe(1);
+  });
+
+  test('two fields changed in one container are two changes, and an element added whole is one', () => {
+    const diff: ConfigDiff = {
+      Resources: [update(DEPLOYMENT, [
+        {
+          ChangeType: 'Update',
+          Segments: [...CONTAINER, field('image')],
+          FromValue: 'web:1.4.0',
+          FromDataType: 'string',
+          ToValue: 'web:1.5.0',
+          ToDataType: 'string',
+        },
+        {
+          ChangeType: 'Update',
+          Segments: [...CONTAINER, field('env'), keyed('name', 'A', 0, 0), field('value')],
+          FromValue: '1',
+          FromDataType: 'string',
+          ToValue: '10',
+          ToDataType: 'string',
+        },
+        {
+          ChangeType: 'Add',
+          Segments: [...CONTAINER, field('env'), keyed('name', 'X', -1, 3)],
+          ToValue: 'name: X\nvalue: x',
+          ToDataType: 'YAML',
+        },
+      ])],
+    };
+
+    const unit = merged(diff, TWO_DOCS);
+
+    // Four rows: image, A's value, and X's name and value. Three changes.
+    expect(unit.upgradeEntry?.fieldDiffs).toHaveLength(4);
+    expect(countUpgradableBadgeFields(unit)).toBe(3);
   });
 
   test('an env var inserted mid-list counts as one change', () => {
@@ -610,7 +683,7 @@ test.describe('upgrade entries from the dry-run Diff', () => {
     const unit = merged(diff, TWO_DOCS, undefined, [guarded]);
 
     expect(unit.upgradeEntry?.guardedKeys).toEqual([
-      { key: treeKey(TWO_DOCS, 0, 'spec.replicas'), guards: ['Scale=RegionSpecific'], inherited: false },
+      { key: treeKey(TWO_DOCS, 0, 'spec.replicas'), guards: ['Scale=RegionSpecific'], inherited: false, upstreamValue: '10' },
     ]);
     expect(countUpgradableBadgeFields(unit)).toBe(2);
     // "Select all" leaves it for the person to tick.

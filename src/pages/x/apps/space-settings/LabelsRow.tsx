@@ -2,13 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * User-authored Space labels (design-mockups/variant-settings/BUILD-PLAN.md
- * commit 5). Reuses the `unit-details/AddLabelPopover.tsx` + `LabelChip.tsx`
- * idiom rather than a new component, per BUILD-PLAN step 16 — those two
+ * User-authored Space labels. Reuses the `unit-details/AddLabelPopover.tsx` +
+ * `LabelChip.tsx` idiom rather than a new component — those two
  * components write immediately in their existing UnitDetailsPane call site,
  * but here `onAdd`/delete only update the STAGED draft (`onChange` below);
- * the sheet's single Save/Discard model (BUILD-PLAN "one model, no
- * exceptions") is what actually persists it via `usePatchSpaceMutation`.
+ * the sheet's single Save/Discard model is what actually persists it via `usePatchSpaceMutation`.
  *
  * `Variant` is filtered out via `RESERVED_LABEL_KEYS`
  * (`useCreateVariantMutation.ts:41`) — the rename row above owns it, and two

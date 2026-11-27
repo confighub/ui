@@ -34,3 +34,21 @@ export interface EntityBulkCreatedProperties {
   // Additional non-sensitive metadata
   [key: string]: string | number | boolean | undefined;
 }
+
+/** The views of a Component's configuration, as analytics names them. */
+export type ConfigViewName = 'sheet' | 'code' | 'stacked';
+
+/**
+ * A view of a Component's configuration is on screen. Fixed words only: no ids, no names.
+ */
+export interface ConfigViewShownProperties {
+  view: ConfigViewName;
+  /** Where the view is. */
+  surface: 'component_drawer';
+  /**
+   * `open`: the drawer opened a Component in this view (the one in use, often the default).
+   * `switch`: the person picked the view in the View menu.
+   * `large_unit`: the person opened a Unit too large for the sheet as code.
+   */
+  trigger: 'open' | 'switch' | 'large_unit';
+}

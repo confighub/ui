@@ -87,26 +87,47 @@ test.describe('component pane Units row', () => {
     await expect(node).toBeVisible({ timeout: 20000 });
     await node.click();
 
-    await expect(page.getByTestId('component-units-releasable')).toHaveAttribute('aria-pressed', 'true');
+    // The Units filter is in the view menu of the filter row. A dot on the menu button shows a
+    // Units filter that is not the default.
+    const menuButton = page.getByTestId('component-view-menu-button');
+    const dot = page.getByTestId('component-units-filter-dot');
+    const openMenu = async () => {
+      if ((await menuButton.getAttribute('aria-expanded')) !== 'true') await menuButton.click();
+      await expect(page.getByTestId('component-view-menu')).toBeVisible();
+    };
+    await expect(dot).toHaveCount(0);
+    await openMenu();
+    await expect(page.getByTestId('component-units-releasable')).toHaveAttribute('aria-checked', 'true');
+    await page.keyboard.press('Escape');
     await expect(unitLink(page, unitIds.releasable)).toBeVisible({ timeout: 15000 });
     await expect(unitLink(page, unitIds.appConfig)).toHaveCount(0);
     await expect(unitLink(page, unitIds.hidden)).toHaveCount(0);
 
+    await openMenu();
     await page.getByTestId('component-units-all').click();
+    await expect(dot).toBeVisible();
     await expect(unitLink(page, unitIds.appConfig)).toBeVisible();
     await expect(unitLink(page, unitIds.releasable)).toBeVisible();
     await expect(unitLink(page, unitIds.hidden)).toHaveCount(0);
 
+    // Include hidden is a check box: the menu stays open.
+    await openMenu();
     await page.getByTestId('component-units-include-hidden').click();
-    await expect(page.getByTestId('component-units-include-hidden')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('component-units-include-hidden')).toHaveAttribute('aria-checked', 'true');
+    await page.keyboard.press('Escape');
     await expect(unitLink(page, unitIds.hidden)).toBeVisible({ timeout: 15000 });
 
     // The hidden unit is a Kubernetes unit, which is releasable; the AppConfig one is not.
+    await openMenu();
     await page.getByTestId('component-units-releasable').click();
     await expect(unitLink(page, unitIds.appConfig)).toHaveCount(0);
     await expect(unitLink(page, unitIds.hidden)).toBeVisible();
+    await expect(dot).toBeVisible();
 
+    await openMenu();
     await page.getByTestId('component-units-include-hidden').click();
+    await page.keyboard.press('Escape');
     await expect(unitLink(page, unitIds.hidden)).toHaveCount(0);
+    await expect(dot).toHaveCount(0);
   });
 });

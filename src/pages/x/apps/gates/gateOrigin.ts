@@ -131,3 +131,27 @@ export const hopDescription = (hop: BlameOrigin): { text: string; date?: string 
   const date = hop.When ? SHORT_DATE.format(new Date(hop.When)) : undefined;
   return { text: parts.join(', '), date };
 };
+
+/** Where a field's value was set, as the sheet and the gates say it. */
+export type OriginKind = 'here' | 'link' | 'inherited' | 'unreadable';
+
+/** Sources that carry a value in from elsewhere: a hop with one of them did not set it here. */
+const CARRIED_SOURCES = new Set(['CloneUnit', 'UpgradeUnit', 'MergeUnits', 'MergeExternal', 'NeedsProvides']);
+
+/**
+ * The origin of one Blame field of `unitId`. "here" only when the last hop of the chain is this
+ * Unit and that hop set the value itself (not a clone, merge, upgrade or Link resolve): Blame
+ * ends a chain at the merge hop in this Unit when the upstream cannot be read, and such a value
+ * was not set here. A Link that provides or needs the value is "link".
+ */
+export function originKindOf(field: BlameField, unitId: string): { kind: OriginKind; from?: BlameOrigin } {
+  const chain = field.Chain ?? [];
+  const from = chain[chain.length - 1];
+  const flags = field.Flags ?? [];
+  if (flags.includes('SetByLink') || flags.includes('Needed')) return { kind: 'link', from };
+  if (!from) return { kind: 'unreadable' };
+  const inThisUnit = from.UnitID ? from.UnitID === unitId : from.UnitSlug === field.UnitSlug && from.SpaceSlug === field.SpaceSlug;
+  if (!inThisUnit) return { kind: 'inherited', from };
+  if (from.LinkUpstreamUnitID || CARRIED_SOURCES.has(from.Source ?? '')) return { kind: 'unreadable', from };
+  return { kind: 'here', from };
+}

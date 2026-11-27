@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Show-more section (design-mockups/variant-settings/BUILD-PLAN.md commit
- * 6). Governing rule, per BUILD-PLAN's "primary/show-more split": PRIMARY is
+ * Show-more section. Governing rule: PRIMARY is
  * what a person sets; SHOW-MORE is what the system sets. Apply that rule to
  * anything added later rather than ranking by taste.
  *
@@ -17,10 +16,7 @@
  * thing; the graph reads Labels.Variant").
  *
  * === The four system-written annotation keys are HIDDEN, not locked ===
- * This is a deliberate override of BUILD-PLAN.md's own text (step 20 there
- * says "Visible, locked" for these) — the task instructions for this commit
- * explicitly correct that to hidden. `ComponentFlow-Position` /
- * `ComponentFlow-Links` (graph-layout keys that existing Spaces can still
+ * `ComponentFlow-Position` / `ComponentFlow-Links` (graph-layout keys that existing Spaces can still
  * carry; nothing in the UI reads or writes them) and `UpstreamSpaceID` / `TargetID`
  * (`RESERVED_ANNOTATION_KEYS`, `useCreateVariantMutation.ts:34`, written
  * `:212-213` — write-only breadcrumbs nothing reads) are filtered out of the

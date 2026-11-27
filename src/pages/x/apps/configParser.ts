@@ -22,7 +22,7 @@ import { sameKubernetesResourceType } from '@/utility/resource-type-functions';
  *
  * The returned structures are treated as READ-ONLY by all callers (they only
  * `.get()` / `.entries()` / `.find()` / iterate — verified across InspectPanel,
- * entryBuilders, ComponentValuesSection, useSetAttributesMutation), so it is safe
+ * entryBuilders, useSetAttributesMutation), so it is safe
  * to hand out the same shared instance across calls. The budget bounds memory
  * growth across many units/polls; least-recently-used entries are evicted first.
  */
@@ -222,10 +222,10 @@ interface ParsedDocs {
  *    exactly `docs[0]`, flattened by the same code path. Removing it is right, but
  *    it is a cleanup, not the win.
  *  - The real cost was that the flat and structured flatteners each parsed the
- *    SAME payload for themselves. ComponentValuesSection memoizes
- *    `buildFieldPathMeta(unit.data)` beside the flat parse of that identical
- *    string, so opening one component parsed its bytes three times (old, new, and
- *    old again structurally) instead of twice. Sharing this result removes a whole
+ *    SAME payload for themselves, so a view that reads both
+ *    `buildFieldPathMeta(unit.data)` and the flat parse of that identical string
+ *    parsed its bytes three times (old, new, and old again structurally) instead of
+ *    twice. Sharing this result removes a whole
  *    parse from every build: measured 1,161ms → 891ms end-to-end on the 5.3MB
  *    fixture (~23%), with the remaining ~700ms being the two parses a build
  *    genuinely needs.

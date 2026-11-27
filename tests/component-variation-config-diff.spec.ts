@@ -198,29 +198,27 @@ test.describe('a local override of a path two documents share, in one of them', 
     await deleteCreated(browser, created);
   });
 
-  test('marks only that document\'s row as differing from upstream', async ({ page }) => {
+  test('counts only that document\'s field as a local override', async ({ page }) => {
     await openProdPane(page, appLabel, chain!);
 
-    // Nothing to upgrade, so the pane shows every row.
-    const serviceRow = page.getByTestId('component-leaf-row').filter({ hasText: 'web-local' });
-    await expect(serviceRow).toHaveCount(1, { timeout: 15000 });
-    await expect(serviceRow).toHaveAttribute('data-differs-upstream', 'true', { timeout: 15000 });
-    const differing = page.locator('[data-testid="component-leaf-row"][data-differs-upstream="true"]');
-    await expect(differing).toHaveCount(1);
-    await expect(page.getByTestId('component-local-overrides-count')).toHaveText('1');
+    // Nothing to upgrade, so the pane opens on All, which draws every field.
+    await expect(page.getByTestId('component-local-overrides-count')).toHaveText('1', { timeout: 15000 });
+    const sheet = page.getByTestId('field-sheet');
+    await expect(sheet.locator('.v', { hasText: 'web-local' })).toHaveCount(1, { timeout: 15000 });
   });
 
-  test('the local-overrides scope shows that row alone', async ({ page }) => {
+  test('the local-overrides scope shows that field alone', async ({ page }) => {
     await openProdPane(page, appLabel, chain!);
 
     await expect(page.getByTestId('component-local-overrides-count')).toHaveText('1', { timeout: 15000 });
-    await page.getByTestId('component-scope-local-overrides').click();
+    await page.getByTestId('scope-local').click();
 
-    const leafRows = page.getByTestId('component-leaf-row');
-    await expect(leafRows).toHaveCount(1, { timeout: 10000 });
-    await expect(leafRows.first()).toContainText('web-local');
-    await expect(page.getByTestId('component-folder-row').filter({ hasText: 'Service web' })).toHaveCount(1);
-    await expect(page.getByTestId('component-folder-row').filter({ hasText: 'ConfigMap web' })).toHaveCount(0);
+    const sheet = page.getByTestId('field-sheet');
+    const fields = sheet.locator('.bbody .v[data-stage-key]');
+    await expect(fields).toHaveCount(1, { timeout: 10000 });
+    await expect(fields.first()).toContainText('web-local');
+    await expect(sheet.getByTestId('res-head-service-web')).toBeVisible();
+    await expect(sheet.getByTestId('res-head-configmap-web')).toHaveCount(0);
   });
 });
 
@@ -262,22 +260,22 @@ test.describe('an upstream deletion blocked in one document of a multi-document 
     await openProdPane(page, appLabel, chain!);
     await expect(page.getByTestId('component-upgrade-button')).toBeVisible({ timeout: 10000 });
 
-    // The Service's deletion and the ConfigMap's blocked one: two changes.
+    // The Service's deletion and the ConfigMap's blocked one: two changes, in document order.
     await expect(page.getByTestId('component-incoming-count')).toHaveText('2', { timeout: 20000 });
-    const tierRows = page.getByTestId('component-leaf-row').filter({ hasText: 'tier' });
-    await expect(tierRows).toHaveCount(2, { timeout: 15000 });
+    const ticks = page.locator('[data-testid^="incoming-tick-"]');
+    await expect(ticks).toHaveCount(2, { timeout: 15000 });
 
-    // The rows are in document order: the ConfigMap's, then the Service's.
-    const configMapRow = tierRows.nth(0);
-    const serviceRow = tierRows.nth(1);
-    await expect(configMapRow).toContainText('local');
-    await expect(configMapRow.locator('.upgrade-pill-blocked')).toHaveCount(1);
-    await expect(serviceRow).toContainText('base');
-    await expect(serviceRow.locator('.upgrade-pill-blocked')).toHaveCount(0);
-    await expect(serviceRow).toHaveAttribute('data-change-type', 'delete');
+    // The ConfigMap's is a blocked deletion (the lock tick, its value kept here, held back); the
+    // Service's is a plain one, drawn struck through. Each shows one value, its mark naming it.
+    await expect(ticks.nth(0)).toHaveAttribute('data-held', 'true');
+    await expect(ticks.nth(1)).not.toHaveAttribute('data-held', 'true');
+    const next = page.locator('[data-testid^="incoming-value-"]');
+    await expect(next.nth(0).getByRole('img', { name: 'Held back' })).toBeVisible();
+    await expect(next.nth(1).getByRole('img', { name: 'Deleted upstream' })).toBeVisible();
+    await expect(next.nth(1).locator('.inc-removed')).toBeVisible();
 
-    // Entering Incoming staged both; the commit accepts the blocked deletion too.
-    await expect(page.getByTestId('component-upgrade-button')).toContainText('2');
+    // Entering Incoming ticked both; the commit accepts the blocked deletion too.
+    await expect(page.getByTestId('component-upgrade-button')).toHaveText('Upgrade 2');
     await page.getByTestId('component-upgrade-button').click();
 
     await expect(async () => {

@@ -4,18 +4,13 @@
 /**
  * Release target row (Space.ReleaseTargetID).
  *
- * Originally shipped as a two-mode control — a locked read-only display once
- * set, gated behind a "Change or clear ›" link before the picker opened at
- * all (design-mockups/variant-settings/BUILD-PLAN.md step 9's "This field is
- * not lazy" reasoning). Rejected in review: "I don't like the change or
- * clear things. Just allow them to be changeable off the bat please." This
- * is the replacement — ONE always-editable picker, exactly like the Variant
- * name text field above it in `SpaceSettingsSheet.tsx`. Offers every Target,
+ * ONE always-editable picker, with no locked display or "Change" step before
+ * it, exactly like the Variant name text field above it in `SpaceSettingsSheet.tsx`. Offers every Target,
  * with a "None" option inside the SAME picker standing in for clearing — not
  * a separate mode, not a separate control.
  * Stages like every other row; nothing writes until Save.
  *
- * The one piece of ceremony kept from the old design, deliberately: a Unit's
+ * The one piece of ceremony, deliberately: a Unit's
  * TargetID is its Space's release Target unless the Unit is Unreleasable, so
  * setting, changing or clearing the release target moves every releasable
  * unit in the Space at once, with no per-item result. A user picking a new
@@ -24,12 +19,8 @@
  * something — i.e. only when the Space has releasable units — matching the
  * instruction that this stay a sentence, not a workflow.
  *
- * The unit-targets row this control's affected-unit count once shared visual DNA with (`UnitTargetsRow.tsx`, the enumerated
- * affected-units surface, the partial-failure strip) was cut from the
- * feature entirely in review ("Get rid of the units target section
- * completely.") — this row is now the ONLY retarget-shaped control left in
- * the sheet, and owns its own option type below rather than importing one
- * from a component that no longer exists.
+ * This row is the ONLY retarget-shaped control in the sheet, and owns its own
+ * option type below.
  */
 import MenuItem from '@mui/material/MenuItem';
 import Select, { type SelectChangeEvent } from '@mui/material/Select';

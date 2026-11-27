@@ -73,8 +73,8 @@ interface TreeDocument {
 
 /**
  * The documents exactly as the tree groups them. `computeDocumentScopes` and
- * `groupFieldEntriesByDocument` are what `ComponentValuesSection` builds the tree and its
- * stage keys from, so the ids here are the ids there. A YAML document with no leaves
+ * `groupFieldEntriesByDocument` are what the stage keys are built from, so the ids here are
+ * the ids there. A YAML document with no leaves
  * forms no group, which is why the documents are not taken from the YAML stream itself.
  */
 function treeDocumentsOf(treeData: TreeData): TreeDocument[] {
@@ -396,6 +396,7 @@ function changeRows(
   const from = sideLeaves(change.ChangeType !== 'Add', change.FromValue, change.FromDataType);
   const to = sideLeaves(change.ChangeType !== 'Delete', change.ToValue, change.ToDataType);
   const rows: KeyedFieldDiff[] = [];
+  const changeKey = docStageKey(scope, joinPath(base, ''));
   for (const rel of new Set([...from.keys(), ...to.keys()])) {
     const oldLeaf = from.get(rel);
     const newLeaf = to.get(rel);
@@ -410,6 +411,7 @@ function changeRows(
       ...(oldLeaf?.type ? { oldValueType: oldLeaf.type } : {}),
       ...(newLeaf?.type ? { newValueType: newLeaf.type } : {}),
       kind: oldLeaf === undefined ? 'Add' : newLeaf === undefined ? 'Delete' : 'Update',
+      change: changeKey,
       ...(insertion ? { insertion } : {}),
     });
   }
@@ -436,7 +438,7 @@ function renameRows(change: PathChange, elementPath: string, scope: DocumentScop
   return keys.flatMap((kv, i) => {
     if (before[i] === after[i]) return [];
     const path = joinPath(elementPath, kv.Key ?? '');
-    return [{ key: docStageKey(scope, path), path, oldValue: before[i], newValue: after[i], kind: 'Update' as const }];
+    return [{ key: docStageKey(scope, path), path, oldValue: before[i], newValue: after[i], kind: 'Update' as const, change: docStageKey(scope, elementPath) }];
   });
 }
 
@@ -455,7 +457,8 @@ function wholeResourceRow(
   // against the From side would find a different one of the same name.
   const inTree = (wholeResource === 'deleted') === (side === 'from');
   const doc = inTree && docs.length > 1 ? documentFor(docs, resource) : undefined;
-  return { key: doc?.scope?.id ?? wholeResourceKey(resource), wholeResource, resource };
+  const data = !inTree && wholeResource === 'added' ? resourceDiff.ToValue : undefined;
+  return { key: doc?.scope?.id ?? wholeResourceKey(resource), wholeResource, resource, ...(data ? { data } : {}) };
 }
 
 /** How the tree relates to the diff. */
@@ -608,8 +611,27 @@ export function resolveConflictPath(
   conflict: Pick<MutationConflict, 'Resource' | 'Path'>,
   treeData: TreeData,
 ): string | undefined {
+  return resolveInDocuments(conflict, treeDocumentsOf(treeData));
+}
+
+/**
+ * {@link resolveConflictPath} for many paths of one Unit: the documents are read once, so a
+ * Unit's whole Blame resolves in one pass.
+ */
+export function resolveConflictPaths(
+  conflicts: readonly Pick<MutationConflict, 'Resource' | 'Path'>[],
+  treeData: TreeData,
+): (string | undefined)[] {
+  const docs = treeDocumentsOf(treeData);
+  return conflicts.map((conflict) => resolveInDocuments(conflict, docs));
+}
+
+function resolveInDocuments(
+  conflict: Pick<MutationConflict, 'Resource' | 'Path'>,
+  docs: TreeDocument[],
+): string | undefined {
   if (!conflict.Path) return undefined;
-  const doc = documentFor(treeDocumentsOf(treeData), conflict.Resource);
+  const doc = documentFor(docs, conflict.Resource);
   if (!doc) return undefined;
 
   let path = '';

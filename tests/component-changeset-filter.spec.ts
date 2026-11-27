@@ -193,19 +193,20 @@ test.describe('a ChangeSet that changes a path two documents share, in one of th
     await deleteCreated(browser, created);
   });
 
-  test('shows only that document\'s row as changed, and the count is 1', async ({ page }) => {
+  test('shows only that document\'s field as changed, and the count is 1', async ({ page }) => {
     await openChangeSetFilter(page, appLabel, fixture!);
 
-    const leafRows = page.getByTestId('component-leaf-row');
-    await expect(leafRows).toHaveCount(1, { timeout: 15000 });
-    await expect(leafRows.first()).toContainText('web-svc');
-    await expect(leafRows.first()).not.toHaveAttribute('data-change-type', 'none');
-    // The narrowed tree holds the Service's document only.
-    await expect(page.getByTestId('component-folder-row').filter({ hasText: 'Service web' })).toHaveCount(1);
-    await expect(page.getByTestId('component-folder-row').filter({ hasText: 'Deployment web' })).toHaveCount(0);
+    // The ChangeSet scope draws the incoming fields of the Service alone, read-only.
+    const values = page.locator('[data-testid^="incoming-value-"]');
+    await expect(values).toHaveCount(1, { timeout: 15000 });
+    await expect(values.first()).toContainText('web-svc');
+    await expect(page.getByTestId('res-head-service-web')).toBeVisible();
+    await expect(page.getByTestId('res-head-deployment-web')).toHaveCount(0);
     await expect(page.getByTestId('component-changeset-count')).toHaveText('1');
-    // Read-only: nothing to stage.
-    await expect(page.getByTestId('component-upgrade-pill').locator('input[type="checkbox"]')).toHaveCount(0);
+    // Read-only: nothing to tick, nothing to edit.
+    await expect(page.locator('[data-testid^="incoming-tick-"]')).toHaveCount(0);
+    await page.getByTestId('field-sheet').locator('.bbody .v[data-stage-key]').first().click();
+    await expect(page.getByTestId('field-editor')).toHaveCount(0);
   });
 });
 
@@ -234,14 +235,14 @@ test.describe('a ChangeSet that inserts an env var in the middle of the list', (
   test('is one added element, and the elements after it are not changed', async ({ page }) => {
     await openChangeSetFilter(page, appLabel, fixture!);
 
-    // XRAY's name and value, both new, and nothing else.
-    const leafRows = page.getByTestId('component-leaf-row');
-    await expect(leafRows).toHaveCount(2, { timeout: 15000 });
-    await expect(leafRows.filter({ hasText: /XRAY/ })).toHaveCount(1);
-    await expect(leafRows.filter({ hasText: 'xray-value' })).toHaveCount(1);
-    for (const row of await leafRows.all()) await expect(row).toHaveAttribute('data-change-type', 'add');
-    for (const name of ['ALPHA', 'BRAVO', 'CHARLIE']) {
-      await expect(leafRows.filter({ hasText: name })).toHaveCount(0);
+    // XRAY, new, and nothing else: one row, named XRAY, with the new value on its second line.
+    // The elements after it are not drawn.
+    const values = page.locator('[data-testid^="incoming-value-"]');
+    await expect(values).toHaveCount(1, { timeout: 15000 });
+    await expect(page.getByTestId('field-env-name-container-web-xray')).toHaveText('XRAY');
+    await expect(values.filter({ hasText: 'xray-value' })).toHaveCount(1);
+    for (const name of ['alpha', 'bravo', 'charlie']) {
+      await expect(page.getByTestId(`field-value-container-web-env-${name}`)).toHaveCount(0);
     }
     await expect(page.getByTestId('component-changeset-count')).toHaveText('1');
   });

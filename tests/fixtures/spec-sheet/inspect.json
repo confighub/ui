@@ -1,0 +1,13 @@
+{
+ "field": "container-gateway-resources-limits-memory",
+ "history": [
+  {"rev": 24, "unit": "prod/openclaw", "source": "UpdateUnit", "value": "4Gi", "when": "3d", "by": "set here"},
+  {"rev": 19, "unit": "base/openclaw", "source": "UpgradeUnit", "value": "2Gi", "when": "9d", "by": "merged from upstream"},
+  {"rev": 1, "unit": "base/openclaw", "source": "CreateUnit", "value": "2Gi", "when": "41d", "by": "created"}
+ ],
+ "variants": [
+  {"name": "base", "unit": "base/openclaw", "value": "2Gi"},
+  {"name": "prod", "unit": "prod/openclaw", "value": "4Gi", "self": true}
+ ],
+ "meta": {"source": "derived: values from test-data/openclaw/deployment.yaml (base 2Gi) and fixtures/most-items.json (prod 4Gi); revision numbers, sources and ages written for the mock"}
+}

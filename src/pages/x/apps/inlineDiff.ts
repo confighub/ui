@@ -5,9 +5,8 @@
  * Token-level inline (substring) diff of two config VALUES.
  *
  * Lives beside `diffStyles` / `diffConstants` — the shared leaves of the
- * component-view diff renderers — so both the staged-preview pill
- * (`ComponentValuesSection`) and the 3-column side-by-side tree
- * (`TreeDiffSection`) can use it without either importing the other.
+ * component-view diff renderers — so the diff views (the 3-column side-by-side
+ * tree, `TreeDiffSection`, among them) can use it without importing each other.
  */
 
 export interface InlineDiffSegment {
